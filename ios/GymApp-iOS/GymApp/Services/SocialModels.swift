@@ -244,10 +244,35 @@ struct SocialWorkoutInvite: Identifiable, Equatable, Sendable {
     let workout: SharedWorkoutPlan?
 }
 
+struct SocialWorkoutInboxCursor: Equatable, Sendable {
+    let createdAt: String
+    let inviteID: String
+    let pending: Bool
+}
+
 struct SocialWorkoutInbox: Equatable, Sendable {
     let pendingIncomingCount: Int
     let incoming: [SocialWorkoutInvite]
     let outgoing: [SocialWorkoutInvite]
+    let nextCursor: SocialWorkoutInboxCursor?
+
+    init(
+        pendingIncomingCount: Int,
+        incoming: [SocialWorkoutInvite],
+        outgoing: [SocialWorkoutInvite],
+        nextCursor: SocialWorkoutInboxCursor? = nil
+    ) {
+        self.pendingIncomingCount = pendingIncomingCount
+        self.incoming = incoming
+        self.outgoing = outgoing
+        self.nextCursor = nextCursor
+    }
+}
+
+struct SocialWorkoutInvitePlan: Equatable, Sendable {
+    let inviteID: String
+    let inviteRevision: Int
+    let workout: SharedWorkoutPlan
 }
 
 struct SocialWorkoutInviteMutation: Equatable, Sendable {
@@ -264,7 +289,12 @@ enum SocialPayloadError: Error, Equatable, Sendable {
 enum SocialPayloadParser {
     static let maximumResponseBytes = 256 * 1_024
     static let maximumMutationResponseBytes = 32 * 1_024
+    static let maximumWorkoutPlanResponseBytes = 32 * 1_024
     static let maximumFriendCodeResponseBytes = 1_024
+    static let workoutInboxPageLimit = 10
+    static let workoutInboxMaximumPageCount = 2
+    static let workoutInboxMaximumIncomingCount = 20
+    static let workoutInboxMaximumOutgoingCount = 20
 
     private static let maximumFriends = 200
     private static let maximumIncoming = 100
@@ -544,6 +574,121 @@ enum SocialPayloadParser {
             incoming: incoming,
             outgoing: outgoing
         )
+    }
+
+    static func workoutInboxPage(
+        from data: Data,
+        expectedLimit: Int = workoutInboxPageLimit
+    ) throws -> SocialWorkoutInbox {
+        guard (1 ... workoutInboxPageLimit).contains(expectedLimit) else {
+            throw SocialPayloadError.invalidResponse
+        }
+        let root = try object(
+            try json(from: data),
+            keys: ["version", "pendingIncomingCount", "incoming", "outgoing", "nextCursor"]
+        )
+        guard try integer(root["version"], range: 2 ... 2) == 2 else {
+            throw SocialPayloadError.invalidResponse
+        }
+        let incoming = try array(root["incoming"], maximumCount: expectedLimit).map {
+            try workoutInvite($0, includesWorkout: false)
+        }
+        let outgoing = try array(
+            root["outgoing"],
+            maximumCount: workoutInboxMaximumOutgoingCount
+        ).map {
+            try workoutInvite($0, includesWorkout: false)
+        }
+        let pendingIncomingCount = try integer(
+            root["pendingIncomingCount"],
+            range: 0 ... maximumFriends
+        )
+        let nextCursor: SocialWorkoutInboxCursor?
+        if isNull(root["nextCursor"]) {
+            nextCursor = nil
+        } else {
+            let cursor = try object(
+                root["nextCursor"],
+                keys: ["createdAt", "inviteId", "pending"]
+            )
+            nextCursor = SocialWorkoutInboxCursor(
+                createdAt: try timestamp(cursor["createdAt"]),
+                inviteID: try inviteID(cursor["inviteId"]),
+                pending: try boolean(cursor["pending"])
+            )
+        }
+        let shownPendingCount = incoming.lazy.filter { $0.status == .pending }.count
+        guard incoming.allSatisfy({ $0.status == .pending || $0.status == .accepted }),
+              pendingIncomingCount >= shownPendingCount,
+              unique(incoming.map(\.inviteID)),
+              unique(outgoing.map(\.inviteID)),
+              Set(incoming.map(\.inviteID)).isDisjoint(with: outgoing.map(\.inviteID)),
+              workoutInvitesAreStrictlyDescending(incoming, prioritizesPending: true),
+              workoutInvitesAreStrictlyDescending(outgoing, prioritizesPending: false) else {
+            throw SocialPayloadError.invalidResponse
+        }
+        if let nextCursor {
+            guard incoming.count == expectedLimit,
+                  incoming.last?.createdAt == nextCursor.createdAt,
+                  incoming.last?.inviteID == nextCursor.inviteID,
+                  (incoming.last?.status == .pending) == nextCursor.pending else {
+                throw SocialPayloadError.invalidResponse
+            }
+        }
+        return SocialWorkoutInbox(
+            pendingIncomingCount: pendingIncomingCount,
+            incoming: incoming,
+            outgoing: outgoing,
+            nextCursor: nextCursor
+        )
+    }
+
+    static func workoutInvitePlan(from data: Data) throws -> SocialWorkoutInvitePlan {
+        let root = try object(
+            try json(from: data),
+            keys: ["version", "inviteId", "inviteRevision", "workout"]
+        )
+        try version(root["version"])
+        return SocialWorkoutInvitePlan(
+            inviteID: try inviteID(root["inviteId"]),
+            inviteRevision: try revision(root["inviteRevision"]),
+            workout: try workoutPlan(root["workout"])
+        )
+    }
+
+    static func mergingWorkoutInboxPage(
+        _ page: SocialWorkoutInbox,
+        into current: SocialWorkoutInbox,
+        after cursor: SocialWorkoutInboxCursor
+    ) throws -> SocialWorkoutInbox {
+        let incoming = current.incoming + page.incoming
+        guard current.nextCursor == cursor,
+              current.pendingIncomingCount == page.pendingIncomingCount,
+              current.outgoing == page.outgoing,
+              incoming.count <= workoutInboxMaximumIncomingCount,
+              unique(incoming.map(\.inviteID)),
+              Set(incoming.map(\.inviteID)).isDisjoint(with: current.outgoing.map(\.inviteID)),
+              workoutInvitesAreStrictlyDescending(incoming, prioritizesPending: true),
+              current.pendingIncomingCount >= incoming.lazy.filter({
+                  $0.status == .pending
+              }).count else {
+            throw SocialPayloadError.invalidResponse
+        }
+        return SocialWorkoutInbox(
+            pendingIncomingCount: current.pendingIncomingCount,
+            incoming: incoming,
+            outgoing: current.outgoing,
+            // The shared surface is deliberately bounded to two 10-row incoming
+            // pages. A server cursor beyond row 20 is not exposed as a third UI
+            // action or followed by an exact-object push resolver.
+            nextCursor: incoming.count < workoutInboxMaximumIncomingCount
+                ? page.nextCursor
+                : nil
+        )
+    }
+
+    static func isValidWorkoutInboxCursor(_ cursor: SocialWorkoutInboxCursor) -> Bool {
+        isValidInviteID(cursor.inviteID) && parseTimestamp(cursor.createdAt) != nil
     }
 
     static func submittedWorkoutInvite(from data: Data) throws {
@@ -944,6 +1089,27 @@ enum SocialPayloadParser {
             setCount: try integer(object["setCount"], range: exerciseCount ... 120),
             exerciseNames: exerciseNames
         )
+    }
+
+    private static func workoutInvitesAreStrictlyDescending(
+        _ invites: [SocialWorkoutInvite],
+        prioritizesPending: Bool
+    ) -> Bool {
+        zip(invites, invites.dropFirst()).allSatisfy { earlier, later in
+            if prioritizesPending {
+                let earlierPending = earlier.status == .pending
+                let laterPending = later.status == .pending
+                if earlierPending != laterPending {
+                    return earlierPending && !laterPending
+                }
+            }
+            guard let earlierDate = parseTimestamp(earlier.createdAt),
+                  let laterDate = parseTimestamp(later.createdAt) else {
+                return false
+            }
+            return earlierDate > laterDate
+                || (earlierDate == laterDate && earlier.inviteID > later.inviteID)
+        }
     }
 
     private static func workoutPlan(_ value: Any?) throws -> SharedWorkoutPlan {

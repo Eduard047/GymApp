@@ -190,6 +190,24 @@ class LiveWorkoutContractTest {
     }
 
     @Test
+    fun `accept parser prefers active and keeps ready only as response compatibility`() {
+        fun response(status: String) = JSONObject()
+            .put("version", 1)
+            .put("result", "joined")
+            .put("roomId", ROOM_ID)
+            .put("status", status)
+            .put("roomRevision", 5)
+            .put("membershipRevision", 2)
+            .toString()
+
+        assertEquals("active", parseLiveRespondInviteResult(response("active")).status)
+        assertEquals("ready", parseLiveRespondInviteResult(response("ready")).status)
+        assertThrows(IllegalArgumentException::class.java) {
+            parseLiveRespondInviteResult(response("waiting"))
+        }
+    }
+
+    @Test
     fun `apply parser requires completion timestamp only for complete`() {
         val complete = parseLiveApplyResult(
             JSONObject()

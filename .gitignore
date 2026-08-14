@@ -36,6 +36,7 @@ local.properties
 /apk_share/
 
 # Signing / secrets
+google-services*.json
 *.jks
 *.keystore
 *.der

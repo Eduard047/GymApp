@@ -228,16 +228,22 @@ if ($Release) {
     $compilerArgs += @('-r', '-e')
 } else {
     $compilerArgs += @('-d', $Device)
-    # CIQ 3.4 watch apps on these products have a 96 KiB ceiling. SDK 9.2 debug
-    # metadata exceeds that cap even though the compact runtime code fits.
-    $lowMemoryDevices = @(
+    # These constrained CIQ watch-app targets need debug metadata stripped to
+    # stay within their loader limit. Runtime workout/FIT/sync code is unchanged.
+    $constrainedDevices = @(
         'descentg1',
+        'enduro',
+        'fenix6',
+        'fenix6s',
+        'fr245',
+        'fr55',
         'instinct2',
         'instinct2s',
         'instinct2x',
-        'instinctcrossover'
+        'instinctcrossover',
+        'venusq'
     )
-    if ($lowMemoryDevices -contains $Device) {
+    if ($constrainedDevices -contains $Device) {
         $compilerArgs += '-r'
     }
 }

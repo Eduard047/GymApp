@@ -240,6 +240,35 @@ function sharedWorkoutFixture() {
   };
 }
 
+function emptySocialWorkoutInboxPage() {
+  return {
+    version: 2,
+    pendingIncomingCount: 0,
+    incoming: [],
+    outgoing: [],
+    nextCursor: null
+  };
+}
+
+function socialWorkoutInviteMetadataFixture({
+  inviteId = `wi_${"3".repeat(32)}`,
+  status = "pending",
+  inviteRevision = status === "pending" ? 1 : 2,
+  createdAt = "2026-08-09T12:00:00Z"
+} = {}) {
+  return {
+    inviteId,
+    profileId: `p_${"2".repeat(32)}`,
+    displayName: "Friend",
+    status,
+    inviteRevision,
+    createdAt,
+    expiresAt: "2026-08-16T12:00:00Z",
+    respondedAt: status === "pending" ? null : "2026-08-09T12:05:00Z",
+    summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] }
+  };
+}
+
 function activeLiveInboxFixture(roomId = `lr_${"a".repeat(32)}`) {
   return {
     version: 1,
@@ -1037,6 +1066,7 @@ test("exercise media thumbnails appear across library, progress, workout detail,
       exerciseNames: [exercise.name],
       sets: [{ id: 11, exerciseName: exercise.name, catalogKey: exercise.catalogKey, weight: 50, reps: 8, orderIndex: 0 }]
     }];
+    progressHubSection = "exercises";
     return [
       exerciseRow(exercise),
       progressScreen(),
@@ -1230,9 +1260,12 @@ test("friend caches and in-flight work are invalidated by account generation", (
   const context = loadPwaContext();
   vm.runInContext(`
     let socialAbortObserved = false;
+    let socialInboxPageAbortObserved = false;
     let socialDetailAbortObserved = false;
     socialRequestId = 7;
     socialRequestController = { abort() { socialAbortObserved = true; } };
+    socialWorkoutInboxPageRequestId = 13;
+    socialWorkoutInboxPageRequestController = { abort() { socialInboxPageAbortObserved = true; } };
     socialDetailRequestId = 11;
     socialDetailRequestController = { abort() { socialDetailAbortObserved = true; } };
     socialState = { status: "loaded", source: "old", dashboard: { version: 1 }, inbox: { version: 1 }, error: "" };
@@ -1243,8 +1276,10 @@ test("friend caches and in-flight work are invalidated by account generation", (
     resetSocialContext();
   `, context);
   assert.equal(vm.runInContext("socialAbortObserved", context), true);
+  assert.equal(vm.runInContext("socialInboxPageAbortObserved", context), true);
   assert.equal(vm.runInContext("socialDetailAbortObserved", context), true);
   assert.equal(vm.runInContext("socialRequestId", context), 8);
+  assert.equal(vm.runInContext("socialWorkoutInboxPageRequestId", context), 14);
   assert.equal(vm.runInContext("socialDetailRequestId", context), 12);
   assert.deepEqual(jsonFrom(context, "socialState"), {
     status: "idle",
@@ -1252,6 +1287,9 @@ test("friend caches and in-flight work are invalidated by account generation", (
     dashboard: null,
     inbox: null,
     friendCode: null,
+    inboxPageCount: 0,
+    inboxLoadingMore: false,
+    inboxLoadMoreError: "",
     workoutDetailPrivacy: null,
     workoutDetailPrivacySupported: false,
     error: ""
@@ -1720,7 +1758,7 @@ test("dashboard refresh invalidates and refetches an open friend detail after pr
       if (name === "social_workout_detail_privacy") return {
         version: 1, shareWorkoutDetails: false, settingsRevision: 1
       };
-      if (name === "social_workout_inbox") return { version: 1, pendingIncomingCount: 0, incoming: [], outgoing: [] };
+      if (name === "social_workout_inbox_page") return ${JSON.stringify(emptySocialWorkoutInboxPage())};
       if (name === "social_friend_details") return ${JSON.stringify(refreshedDetail)};
       throw new Error("unexpected RPC");
     };
@@ -1755,7 +1793,7 @@ test("friend-code refresh falls back only for validated missing-function errors 
       render = () => {};
       socialRpc = async name => {
         if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
-        if (name === "social_workout_inbox") return ${JSON.stringify(inbox)};
+        if (name === "social_workout_inbox_page") return ${JSON.stringify(emptySocialWorkoutInboxPage())};
         if (name === "social_workout_detail_privacy") return {
           version: 1, shareWorkoutDetails: false, settingsRevision: 1
         };
@@ -1800,7 +1838,7 @@ test("friend-code refresh falls back only for validated missing-function errors 
       render = () => {};
       socialRpc = async name => {
         if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
-        if (name === "social_workout_inbox") return ${JSON.stringify(inbox)};
+        if (name === "social_workout_inbox_page") return ${JSON.stringify(emptySocialWorkoutInboxPage())};
         if (name === "social_my_friend_code") {
           if (Object.hasOwn(friendCodeFailureScenario, "value")) {
             return friendCodeFailureScenario.value;
@@ -1840,7 +1878,7 @@ test("friend-code refresh falls back only for validated missing-function errors 
     render = () => {};
     socialRpc = async name => {
       if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
-      if (name === "social_workout_inbox") return ${JSON.stringify(inbox)};
+      if (name === "social_workout_inbox_page") return ${JSON.stringify(emptySocialWorkoutInboxPage())};
       if (name === "social_my_friend_code") return delayedSocialCode;
       throw new Error("unexpected RPC");
     };
@@ -1953,6 +1991,520 @@ test("workout invitation parser rejects private fields and enforces the canonica
   assert.match(acceptedMarkup, /Open copy again/);
 });
 
+test("metadata workout inbox pages exclude exact plans and validate the pending cursor tuple", () => {
+  const context = loadPwaContext();
+  const incoming = Array.from({ length: 10 }, (_, index) => socialWorkoutInviteMetadataFixture({
+    inviteId: `wi_${index.toString(16).padStart(32, "0")}`,
+    createdAt: new Date(Date.UTC(2026, 7, 9, 12, 0, 10 - index)).toISOString()
+  }));
+  const last = incoming.at(-1);
+  const page = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming,
+    outgoing: [],
+    nextCursor: { createdAt: last.createdAt, inviteId: last.inviteId, pending: true }
+  };
+  const parsed = jsonFrom(context, `parseSocialWorkoutInboxPage(${JSON.stringify(page)})`);
+  assert.equal(parsed.version, 2);
+  assert.equal(parsed.incoming.length, 10);
+  assert.equal(Object.hasOwn(parsed.incoming[0], "workout"), false);
+  assert.deepEqual(parsed.nextCursor, page.nextCursor);
+
+  const leaked = structuredClone(page);
+  leaked.incoming[0].workout = sharedWorkoutFixture();
+  assert.throws(
+    () => vm.runInContext(`parseSocialWorkoutInboxPage(${JSON.stringify(leaked)})`, context),
+    /shape/
+  );
+  const incompleteCursor = structuredClone(page);
+  delete incompleteCursor.nextCursor.pending;
+  assert.throws(
+    () => vm.runInContext(`parseSocialWorkoutInboxPage(${JSON.stringify(incompleteCursor)})`, context),
+    /shape/
+  );
+  const wrongPendingCursor = structuredClone(page);
+  wrongPendingCursor.nextCursor.pending = false;
+  assert.throws(
+    () => vm.runInContext(`parseSocialWorkoutInboxPage(${JSON.stringify(wrongPendingCursor)})`, context),
+    /cursor is inconsistent/
+  );
+});
+
+test("metadata inbox uses the four-argument stable cursor and legacy fallback only for a missing RPC", async () => {
+  const context = loadPwaContext();
+  const firstIncoming = Array.from({ length: 10 }, (_, index) => socialWorkoutInviteMetadataFixture({
+    inviteId: `wi_${(index + 1).toString(16).padStart(32, "0")}`,
+    createdAt: new Date(Date.UTC(2026, 7, 9, 12, 0, 20 - index)).toISOString()
+  }));
+  const last = firstIncoming.at(-1);
+  const firstPage = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming: firstIncoming,
+    outgoing: [],
+    nextCursor: { createdAt: last.createdAt, inviteId: last.inviteId, pending: true }
+  };
+  vm.runInContext(`
+    const boundedInboxCalls = [];
+    socialRpc = async (name, body) => {
+      boundedInboxCalls.push({ name, body });
+      if (name !== "social_workout_inbox_page") throw new Error("unexpected legacy fallback");
+      return ${JSON.stringify(firstPage)};
+    };
+  `, context);
+  const parsed = await vm.runInContext("loadSocialWorkoutInbox({ user: { id: 'test' } }, undefined)", context);
+  assert.equal(parsed.version, 2);
+  assert.equal(parsed.incoming.length, 10);
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed.nextCursor)), firstPage.nextCursor);
+  assert.deepEqual(jsonFrom(context, "boundedInboxCalls.map(call => call.body)"), [{
+    p_cursor_created_at: null,
+    p_cursor_invite_id: null,
+    p_cursor_pending: null,
+    p_limit: 10
+  }]);
+
+  for (const postgrestCode of ["PGRST202", "42883"]) {
+    const fallbackContext = loadPwaContext();
+    vm.runInContext(`
+      const legacyFallbackCalls = [];
+      socialRpc = async name => {
+        legacyFallbackCalls.push(name);
+        if (name === "social_workout_inbox_page") {
+          const error = new Error("missing page RPC");
+          error.status = 404;
+          error.postgrestCode = ${JSON.stringify(postgrestCode)};
+          throw error;
+        }
+        if (name === "social_workout_inbox") {
+          return { version: 1, pendingIncomingCount: 0, incoming: [], outgoing: [] };
+        }
+        throw new Error("unexpected RPC");
+      };
+    `, fallbackContext);
+    const fallback = await vm.runInContext(
+      "loadSocialWorkoutInbox({ user: { id: 'test' } }, undefined)",
+      fallbackContext
+    );
+    assert.equal(fallback.version, 1);
+    assert.deepEqual(jsonFrom(fallbackContext, "legacyFallbackCalls"), [
+      "social_workout_inbox_page",
+      "social_workout_inbox"
+    ]);
+  }
+
+  const deniedFallbackContext = loadPwaContext();
+  vm.runInContext(`
+    const deniedFallbackCalls = [];
+    socialRpc = async name => {
+      deniedFallbackCalls.push(name);
+      const error = new Error("ordinary not found");
+      error.status = 404;
+      error.postgrestCode = "PGRST205";
+      throw error;
+    };
+  `, deniedFallbackContext);
+  await assert.rejects(vm.runInContext(
+    "loadSocialWorkoutInbox({ user: { id: 'test' } }, undefined)",
+    deniedFallbackContext
+  ));
+  assert.deepEqual(jsonFrom(deniedFallbackContext, "deniedFallbackCalls"), [
+    "social_workout_inbox_page"
+  ]);
+});
+
+test("workout inbox loads one explicit second page, keeps the outgoing snapshot exact, and stops at 20", async () => {
+  const context = loadPwaContext();
+  const incomingPage = (start, end) => Array.from({ length: end - start + 1 }, (_, offset) => {
+    const value = start + offset;
+    return socialWorkoutInviteMetadataFixture({
+      inviteId: `wi_${value.toString(16).padStart(32, "0")}`,
+      createdAt: new Date(Date.UTC(2026, 7, 9, 12, 0, 21 - value)).toISOString()
+    });
+  });
+  const firstIncoming = incomingPage(1, 10);
+  const secondIncoming = incomingPage(11, 20);
+  const outgoing = [socialWorkoutInviteMetadataFixture({
+    inviteId: `wi_${"f".repeat(32)}`,
+    createdAt: "2026-08-09T12:00:30.000Z"
+  })];
+  const firstPage = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming: firstIncoming,
+    outgoing,
+    nextCursor: {
+      createdAt: firstIncoming.at(-1).createdAt,
+      inviteId: firstIncoming.at(-1).inviteId,
+      pending: true
+    }
+  };
+  const secondPage = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming: secondIncoming,
+    outgoing,
+    nextCursor: null
+  };
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      userId: "11111111-1111-4111-8111-111111111111",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 17;
+    loadRemoteSession = () => ({
+      access_token: "bounded-session-token",
+      user: { id: activeAccount.userId }
+    });
+    socialState = {
+      ...socialState,
+      status: "loaded",
+      source: "test-source",
+      inbox: parseSocialWorkoutInboxPage(${JSON.stringify(firstPage)}),
+      inboxPageCount: 1,
+      inboxLoadingMore: false,
+      inboxLoadMoreError: ""
+    };
+    const explicitLoadMoreMarkup = socialWorkoutInviteRows();
+    const loadMoreCalls = [];
+    socialRpc = async (name, body) => {
+      loadMoreCalls.push({ name, body });
+      return ${JSON.stringify(secondPage)};
+    };
+    render = () => {};
+  `, context);
+
+  assert.match(vm.runInContext("explicitLoadMoreMarkup", context), /data-action="load-more-workout-invites"/);
+  assert.match(vm.runInContext("explicitLoadMoreMarkup", context), />Load more</);
+  assert.equal(await vm.runInContext("loadMoreSocialWorkoutInbox()", context), true);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 20);
+  assert.equal(vm.runInContext("socialState.inbox.outgoing.length", context), 1);
+  assert.equal(vm.runInContext("socialState.inboxPageCount", context), 2);
+  assert.equal(vm.runInContext("socialState.inbox.nextCursor", context), null);
+  assert.equal(vm.runInContext("socialWorkoutInboxCanLoadMore()", context), false);
+  assert.deepEqual(jsonFrom(context, "loadMoreCalls"), [{
+    name: "social_workout_inbox_page",
+    body: {
+      p_cursor_created_at: firstPage.nextCursor.createdAt,
+      p_cursor_invite_id: firstPage.nextCursor.inviteId,
+      p_cursor_pending: true,
+      p_limit: 10
+    }
+  }]);
+
+  const changedOutgoingPage = structuredClone(secondPage);
+  changedOutgoingPage.outgoing[0].inviteRevision = 2;
+  assert.throws(() => vm.runInContext(
+    `mergeSocialWorkoutInboxPage(
+      parseSocialWorkoutInboxPage(${JSON.stringify(firstPage)}),
+      parseSocialWorkoutInboxPage(${JSON.stringify(changedOutgoingPage)})
+    )`,
+    context
+  ), /snapshot changed/);
+
+  vm.runInContext(`
+    socialState = {
+      ...socialState,
+      status: "loaded",
+      source: "test-source",
+      inbox: parseSocialWorkoutInboxPage(${JSON.stringify(firstPage)}),
+      inboxPageCount: 1,
+      inboxLoadingMore: false,
+      inboxLoadMoreError: ""
+    };
+    let snapshotRestartCount = 0;
+    socialRpc = async () => (${JSON.stringify(changedOutgoingPage)});
+    refreshSocialData = async force => {
+      if (!force) throw new Error("snapshot restart must be authoritative");
+      snapshotRestartCount += 1;
+      socialState = {
+        ...socialState,
+        status: "loaded",
+        inbox: parseSocialWorkoutInboxPage(${JSON.stringify(firstPage)}),
+        inboxPageCount: 1,
+        inboxLoadingMore: false,
+        inboxLoadMoreError: ""
+      };
+      return true;
+    };
+  `, context);
+  assert.equal(await vm.runInContext("loadMoreSocialWorkoutInbox()", context), true);
+  assert.equal(vm.runInContext("snapshotRestartCount", context), 1);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 10);
+  assert.equal(vm.runInContext("socialState.inboxPageCount", context), 1);
+
+  vm.runInContext(`
+    socialState = {
+      ...socialState,
+      inbox: parseSocialWorkoutInboxPage(${JSON.stringify(firstPage)}),
+      inboxPageCount: 1,
+      inboxLoadingMore: false,
+      inboxLoadMoreError: ""
+    };
+    loadRemoteSession = () => ({
+      access_token: "session-before-refresh",
+      user: { id: activeAccount.userId }
+    });
+    let releaseStaleInboxPage;
+    socialRpc = () => new Promise(resolve => { releaseStaleInboxPage = resolve; });
+  `, context);
+  const staleLoad = vm.runInContext("loadMoreSocialWorkoutInbox()", context);
+  vm.runInContext(`
+    loadRemoteSession = () => ({
+      access_token: "session-after-refresh",
+      user: { id: activeAccount.userId }
+    });
+    releaseStaleInboxPage(${JSON.stringify(secondPage)});
+  `, context);
+  assert.equal(await staleLoad, false);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 10);
+  assert.equal(vm.runInContext("socialState.inboxLoadingMore", context), false);
+});
+
+test("metadata invite acceptance fetches the exact revision once per winning action and never duplicates mutation", async () => {
+  const context = loadPwaContext();
+  const workout = sharedWorkoutFixture();
+  const invite = socialWorkoutInviteMetadataFixture();
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      userId: "11111111-1111-4111-8111-111111111111",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 40;
+    loadRemoteSession = () => ({
+      access_token: ${JSON.stringify(testAccessToken(
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222"
+      ))},
+      user: { id: activeAccount.userId }
+    });
+    socialState.inbox = parseSocialWorkoutInboxPage({
+      version: 2,
+      pendingIncomingCount: 1,
+      incoming: [${JSON.stringify(invite)}],
+      outgoing: [],
+      nextCursor: null
+    });
+    activeWorkout = null;
+    workoutDraft = null;
+    let exactPlanReads = 0;
+    let acceptMutations = 0;
+    let acceptedRefreshes = 0;
+    socialRpc = async (name, body) => {
+      if (name === "social_workout_invite_plan") {
+        exactPlanReads += 1;
+        return {
+          version: 1,
+          inviteId: body.p_invite_id,
+          inviteRevision: body.p_expected_revision,
+          workout: ${JSON.stringify(workout)}
+        };
+      }
+      if (name === "social_respond_workout_invite") {
+        acceptMutations += 1;
+        return {
+          version: 1,
+          inviteId: body.p_invite_id,
+          status: "accepted",
+          inviteRevision: 2,
+          workout: ${JSON.stringify(workout)}
+        };
+      }
+      throw new Error("unexpected RPC");
+    };
+    refreshSocialData = async () => { acceptedRefreshes += 1; };
+    window.GymSharedWorkoutFlow = {
+      prepareImport(plan, options) {
+        return {
+          status: "ready",
+          draft: {
+            startedAt: options.now,
+            note: "",
+            blocks: [{ exerciseName: plan.exercises[0].name, sets: plan.exercises[0].sets }]
+          }
+        };
+      }
+    };
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  const results = await vm.runInContext(`Promise.all([
+    respondWorkoutInvite({ dataset: {
+      inviteId: "${invite.inviteId}", decision: "accept", revision: "1"
+    } }),
+    respondWorkoutInvite({ dataset: {
+      inviteId: "${invite.inviteId}", decision: "accept", revision: "1"
+    } })
+  ])`, context);
+  assert.equal(results.filter(Boolean).length, 1);
+  assert.equal(vm.runInContext("exactPlanReads", context), 2);
+  assert.equal(vm.runInContext("acceptMutations", context), 1);
+  assert.equal(vm.runInContext("acceptedRefreshes", context), 1);
+  assert.equal(vm.runInContext("workoutDraft.blocks[0].exerciseName", context), "Bench Press");
+});
+
+test("metadata accepted invite recovery reauthorizes the exact plan without another mutation", async () => {
+  const context = loadPwaContext();
+  const workout = sharedWorkoutFixture();
+  const invite = socialWorkoutInviteMetadataFixture({ status: "accepted", inviteRevision: 2 });
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      userId: "11111111-1111-4111-8111-111111111111",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 41;
+    loadRemoteSession = () => ({ access_token: "session-a", user: { id: activeAccount.userId } });
+    socialState.inbox = parseSocialWorkoutInboxPage({
+      version: 2,
+      pendingIncomingCount: 0,
+      incoming: [${JSON.stringify(invite)}],
+      outgoing: [],
+      nextCursor: null
+    });
+    activeWorkout = null;
+    workoutDraft = null;
+    let recoveryPlanReads = 0;
+    let recoveryMutations = 0;
+    socialRpc = async (name, body) => {
+      if (name === "social_workout_invite_plan") {
+        recoveryPlanReads += 1;
+        return {
+          version: 1,
+          inviteId: body.p_invite_id,
+          inviteRevision: body.p_expected_revision,
+          workout: ${JSON.stringify(workout)}
+        };
+      }
+      recoveryMutations += 1;
+      throw new Error("recovery must not mutate");
+    };
+    window.GymSharedWorkoutFlow = {
+      prepareImport(plan, options) {
+        return {
+          status: "ready",
+          draft: {
+            startedAt: options.now,
+            note: "",
+            blocks: [{ exerciseName: plan.exercises[0].name, sets: plan.exercises[0].sets }]
+          }
+        };
+      }
+    };
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  assert.equal(await vm.runInContext(`openAcceptedWorkoutInvite({ dataset: {
+    inviteId: "${invite.inviteId}"
+  } })`, context), true);
+  assert.equal(vm.runInContext("recoveryPlanReads", context), 1);
+  assert.equal(vm.runInContext("recoveryMutations", context), 0);
+  assert.equal(vm.runInContext("workoutDraft.blocks[0].exerciseName", context), "Bench Press");
+});
+
+test("exact invite plan reads are account and session fenced with one neutral privacy fallback", async () => {
+  const context = loadPwaContext();
+  const invite = socialWorkoutInviteMetadataFixture();
+  vm.runInContext(`
+    let detailResolve;
+    const delayedDetail = new Promise(resolve => { detailResolve = resolve; });
+    let sessionUserId = "11111111-1111-4111-8111-111111111111";
+    let sessionAccessToken = "session-a";
+    activeAccount = {
+      id: "remote-" + sessionUserId,
+      userId: sessionUserId,
+      remote: "supabase",
+      name: "Owner A"
+    };
+    accountEpoch = 50;
+    loadRemoteSession = () => ({ access_token: sessionAccessToken, user: { id: sessionUserId } });
+    socialState.inbox = parseSocialWorkoutInboxPage({
+      version: 2,
+      pendingIncomingCount: 1,
+      incoming: [${JSON.stringify(invite)}],
+      outgoing: [],
+      nextCursor: null
+    });
+    activeWorkout = null;
+    let staleAcceptMutations = 0;
+    socialRpc = async name => {
+      if (name === "social_workout_invite_plan") return delayedDetail;
+      if (name === "social_respond_workout_invite") {
+        staleAcceptMutations += 1;
+        throw new Error("stale mutation must not run");
+      }
+      throw new Error("unexpected RPC");
+    };
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  const staleAction = vm.runInContext(`respondWorkoutInvite({ dataset: {
+    inviteId: "${invite.inviteId}", decision: "accept", revision: "1"
+  } })`, context);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  vm.runInContext(`
+    sessionAccessToken = "session-b";
+    detailResolve({
+      version: 1,
+      inviteId: "${invite.inviteId}",
+      inviteRevision: 1,
+      workout: ${JSON.stringify(sharedWorkoutFixture())}
+    });
+  `, context);
+  assert.equal(await staleAction, false);
+  assert.equal(vm.runInContext("staleAcceptMutations", context), 0);
+
+  const privacyContext = loadPwaContext();
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      userId: "11111111-1111-4111-8111-111111111111",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 51;
+    loadRemoteSession = () => ({ user: { id: activeAccount.userId } });
+    socialState.inbox = parseSocialWorkoutInboxPage({
+      version: 2,
+      pendingIncomingCount: 1,
+      incoming: [${JSON.stringify(invite)}],
+      outgoing: [],
+      nextCursor: null
+    });
+    activeWorkout = null;
+    let privacyMutations = 0;
+    let privacyRefreshes = 0;
+    let privacyToast = "";
+    socialRpc = async name => {
+      if (name === "social_workout_invite_plan") {
+        const error = new Error("private resource changed");
+        error.status = 404;
+        error.postgrestCode = "P0002";
+        throw error;
+      }
+      if (name === "social_respond_workout_invite") privacyMutations += 1;
+      throw new Error("unexpected RPC");
+    };
+    refreshSocialData = async () => { privacyRefreshes += 1; };
+    render = () => {};
+    showToast = message => { privacyToast = message; };
+  `, privacyContext);
+  assert.equal(await vm.runInContext(`respondWorkoutInvite({ dataset: {
+    inviteId: "${invite.inviteId}", decision: "accept", revision: "1"
+  } })`, privacyContext), false);
+  assert.equal(vm.runInContext("privacyMutations", privacyContext), 0);
+  assert.equal(vm.runInContext("privacyRefreshes", privacyContext), 1);
+  assert.equal(
+    vm.runInContext("privacyToast", privacyContext),
+    "Friends changed. Current account data was refreshed."
+  );
+});
+
 test("one unimportable social plan cannot poison the workout inbox", () => {
   const context = loadPwaContext();
   const aliasPlan = {
@@ -1993,6 +2545,14 @@ test("an unimportable pending invite stays declineable without an accept RPC", a
     }]
   };
   vm.runInContext(`
+    activeAccount = {
+      id: "remote-11111111-1111-4111-8111-111111111111",
+      userId: "11111111-1111-4111-8111-111111111111",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 7;
+    loadRemoteSession = () => ({ user: { id: activeAccount.userId } });
     socialState.inbox = parseSocialWorkoutInbox({
       version: 1,
       pendingIncomingCount: 1,
@@ -2031,7 +2591,7 @@ test("an unimportable pending invite stays declineable without an accept RPC", a
   assert.match(vm.runInContext("unsafeAcceptToast", context), /cannot be imported safely/);
 });
 
-test("accepted friend plan can be recovered after reload without another server mutation", () => {
+test("accepted friend plan can be recovered after reload without another server mutation", async () => {
   const context = loadPwaContext();
   const workout = sharedWorkoutFixture();
   vm.runInContext(`
@@ -2042,7 +2602,13 @@ test("accepted friend plan can be recovered after reload without another server 
       name: "Owner"
     };
     accountEpoch = 8;
-    loadRemoteSession = () => ({ user: { id: "11111111-1111-4111-8111-111111111111" } });
+    loadRemoteSession = () => ({
+      access_token: ${JSON.stringify(testAccessToken(
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222"
+      ))},
+      user: { id: "11111111-1111-4111-8111-111111111111" }
+    });
     socialState.inbox = parseSocialWorkoutInbox({
       version: 1,
       pendingIncomingCount: 0,
@@ -2074,7 +2640,7 @@ test("accepted friend plan can be recovered after reload without another server 
     render = () => {};
     showToast = () => {};
   `, context);
-  const opened = vm.runInContext(`openAcceptedWorkoutInvite({ dataset: {
+  const opened = await vm.runInContext(`openAcceptedWorkoutInvite({ dataset: {
     inviteId: "wi_33333333333333333333333333333333"
   } })`, context);
   assert.equal(opened, true);
@@ -2220,6 +2786,7 @@ test("accepted friend plan preserves an existing draft until replacement confirm
     });
     refreshSocialData = async () => {};
     render = () => {};
+    showToast = () => {};
   `, context);
   await vm.runInContext(`respondWorkoutInvite({ dataset: {
     inviteId: "wi_33333333333333333333333333333333", decision: "accept", revision: "1"
@@ -2334,7 +2901,7 @@ test("unknown live invitation outcomes reuse ids and never evict at capacity", (
   assert.equal(jsonFrom(context, `liveWorkoutInviteRequests.get(${JSON.stringify(first.key)})`).requestId, first.requestId);
 });
 
-test("live invitation UI escapes friend data and exposes join or decline only", () => {
+test("live invitation UI escapes friend data and exposes Start together or decline only", () => {
   const context = loadPwaContext();
   vm.runInContext(`
     liveWorkoutState = {
@@ -2360,7 +2927,9 @@ test("live invitation UI escapes friend data and exposes join or decline only", 
   const markup = vm.runInContext("liveWorkoutInboxMarkup()", context);
   assert.match(markup, /&lt;Friend&gt;/);
   assert.match(markup, /data-action="respond-live-invite" data-decision="accept"/);
+  assert.match(markup, />Start together<\/button>/);
   assert.match(markup, /data-decision="decline"/);
+  assert.doesNotMatch(markup, /data-action="start-live-room"/);
   assert.doesNotMatch(markup, /<Friend>|userId|sessionId|completedSets/);
 });
 
@@ -2428,15 +2997,26 @@ test("live room renders escaped per-exercise self and peer set lanes", () => {
 test("PWA push targets preserve an exact live room and clean consumed URL state", () => {
   const context = loadPwaContext();
   const roomId = `lr_${"b".repeat(32)}`;
+  const friendshipId = `f_${"c".repeat(32)}`;
+  const bindingId = "55555555-5555-4555-8555-555555555555";
   assert.deepEqual(jsonFrom(context,
-    `parseAppPushData({ version: 1, target: "live", roomId: "${roomId}" })`
-  ), { version: 1, target: "live", roomId });
+    `parseAppPushData({ version: 1, target: "live", bindingId: "${bindingId}", roomId: "${roomId}" })`
+  ), { version: 1, target: "live", bindingId, roomId });
   assert.deepEqual(jsonFrom(context,
     `parseAppPushData({ version: 1, target: "live" })`
   ), { version: 1, target: "live" });
   assert.deepEqual(jsonFrom(context,
     `parseAppPushData({ version: 1, target: "social" })`
   ), { version: 1, target: "social" });
+  assert.deepEqual(jsonFrom(context,
+    `parseAppPushData({ version: 1, target: "social", socialType: "friend_request_received", objectId: "${friendshipId}", objectRevision: 4 })`
+  ), {
+    version: 1,
+    target: "social",
+    socialType: "friend_request_received",
+    objectId: friendshipId,
+    objectRevision: 4
+  });
   assert.throws(() => vm.runInContext(
     `parseAppPushData({ version: 1, target: "social", roomId: "${roomId}" })`,
     context
@@ -2451,13 +3031,14 @@ test("PWA push targets preserve an exact live room and clean consumed URL state"
   ), /shape is invalid/);
 
   vm.runInContext(`
-    window.location.href = "https://gymapptracker.com/GymApp/?notification=live&room=${roomId}&keep=1#section";
+    window.location.href = "https://gymapptracker.com/GymApp/?notification=live&binding=${bindingId}&room=${roomId}&keep=1#section";
     capturedPushCleanUrl = null;
     history.replaceState = (_state, _title, url) => { capturedPushCleanUrl = url; };
   `, context);
   assert.deepEqual(jsonFrom(context, "captureAppPushTargetFromLocation()"), {
     version: 1,
     target: "live",
+    bindingId,
     roomId
   });
   assert.equal(vm.runInContext("capturedPushCleanUrl", context), "/GymApp/?keep=1#section");
@@ -2468,6 +3049,193 @@ test("PWA push targets preserve an exact live room and clean consumed URL state"
   `, context);
   assert.equal(vm.runInContext("captureAppPushTargetFromLocation()", context), null);
   assert.equal(vm.runInContext("capturedPushCleanUrl", context), "/GymApp/?keep=1");
+
+  vm.runInContext(`
+    window.location.href = "https://gymapptracker.com/GymApp/?notification=social&social_type=friend_request_received&object=${friendshipId}&revision=4&keep=1";
+    capturedPushCleanUrl = null;
+  `, context);
+  assert.deepEqual(jsonFrom(context, "captureAppPushTargetFromLocation()"), {
+    version: 1,
+    target: "social",
+    socialType: "friend_request_received",
+    objectId: friendshipId,
+    objectRevision: 4
+  });
+  assert.equal(vm.runInContext("capturedPushCleanUrl", context), "/GymApp/?keep=1");
+});
+
+test("a service-worker push binding cannot navigate a different account after an async switch", async () => {
+  const context = loadPwaContext();
+  const userA = "11111111-1111-4111-8111-111111111111";
+  const userB = "22222222-2222-4222-8222-222222222222";
+  const bindingId = "55555555-5555-4555-8555-555555555555";
+  context.pushBindingValues.set("current", {
+    version: 1,
+    ownerId: userA,
+    bindingId
+  });
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userA}", userId: "${userA}", remote: "supabase", name: "Owner A"
+    };
+    accountEpoch = 40;
+    nav = [{ name: "workouts" }];
+    loadRemoteSession = () => ({ user: { id: activeAccount.userId } });
+    render = () => {};
+    replaceNavigationHistory = () => {};
+    pushBindingRefreshes = 0;
+    refreshSocialData = async () => { pushBindingRefreshes += 1; };
+  `, context);
+  const opening = vm.runInContext(`openBoundAppPushTarget(parseAppPushData({
+    version: 1,
+    target: "social",
+    bindingId: "${bindingId}"
+  }))`, context);
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userB}", userId: "${userB}", remote: "supabase", name: "Owner B"
+    };
+    accountEpoch = 41;
+  `, context);
+
+  assert.equal(await opening, false);
+  assert.deepEqual(jsonFrom(context, "nav"), [{ name: "workouts" }]);
+  assert.equal(vm.runInContext("pushBindingRefreshes", context), 0);
+});
+
+test("social push targets resolve only after an account-fenced authoritative refresh", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const dashboard = socialDashboardFixture();
+  dashboard.pendingWorkoutInviteCount = 0;
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    accountEpoch = 31;
+    loadRemoteSession = () => ({ user: { id: "${userId}" } });
+    render = () => {};
+    neutralPushToasts = 0;
+    showToast = () => { neutralPushToasts += 1; };
+    authoritativePushRefreshes = 0;
+    refreshSocialData = async () => {
+      authoritativePushRefreshes += 1;
+      socialState = {
+        status: "loaded",
+        source: "test",
+        dashboard: parseSocialDashboard(${JSON.stringify(dashboard)}),
+        inbox: parseSocialWorkoutInbox({ version: 1, pendingIncomingCount: 0, incoming: [], outgoing: [] }),
+        friendCode: null,
+        workoutDetailPrivacy: null,
+        workoutDetailPrivacySupported: false,
+        error: ""
+      };
+    };
+  `, context);
+  const accepted = {
+    version: 1,
+    target: "social",
+    socialType: "friend_request_accepted",
+    objectId: "f_22222222222222222222222222222222",
+    objectRevision: 3
+  };
+  assert.equal(await vm.runInContext(
+    `openSocialPushTarget(${JSON.stringify(accepted)})`,
+    context
+  ), true);
+  assert.equal(vm.runInContext("authoritativePushRefreshes", context), 1);
+  assert.equal(vm.runInContext("neutralPushToasts", context), 0);
+
+  assert.equal(await vm.runInContext(
+    `openSocialPushTarget(${JSON.stringify({ ...accepted, objectId: `f_${"e".repeat(32)}` })})`,
+    context
+  ), false);
+  assert.equal(vm.runInContext("authoritativePushRefreshes", context), 2);
+  assert.equal(vm.runInContext("neutralPushToasts", context), 1);
+});
+
+test("an exact workout push may authorize the bounded second inbox page without an existence oracle", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const dashboard = socialDashboardFixture();
+  dashboard.pendingWorkoutInviteCount = 20;
+  const makeRows = (start, end) => Array.from({ length: end - start + 1 }, (_, offset) => {
+    const value = start + offset;
+    return socialWorkoutInviteMetadataFixture({
+      inviteId: `wi_${value.toString(16).padStart(32, "0")}`,
+      createdAt: new Date(Date.UTC(2026, 7, 9, 12, 0, 21 - value)).toISOString()
+    });
+  });
+  const firstIncoming = makeRows(1, 10);
+  const secondIncoming = makeRows(11, 20);
+  const firstPage = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming: firstIncoming,
+    outgoing: [],
+    nextCursor: {
+      createdAt: firstIncoming.at(-1).createdAt,
+      inviteId: firstIncoming.at(-1).inviteId,
+      pending: true
+    }
+  };
+  const secondPage = {
+    version: 2,
+    pendingIncomingCount: 20,
+    incoming: secondIncoming,
+    outgoing: [],
+    nextCursor: null
+  };
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    accountEpoch = 32;
+    loadRemoteSession = () => ({
+      access_token: "push-page-session",
+      user: { id: "${userId}" }
+    });
+    render = () => {};
+    pushPageToasts = 0;
+    showToast = () => { pushPageToasts += 1; };
+    pushPageReads = 0;
+    refreshSocialData = async () => {
+      socialState = {
+        status: "loaded",
+        source: "push-page-source",
+        dashboard: parseSocialDashboard(${JSON.stringify(dashboard)}),
+        inbox: parseSocialWorkoutInboxPage(${JSON.stringify(firstPage)}),
+        friendCode: null,
+        inboxPageCount: 1,
+        inboxLoadingMore: false,
+        inboxLoadMoreError: "",
+        workoutDetailPrivacy: null,
+        workoutDetailPrivacySupported: false,
+        error: ""
+      };
+    };
+    socialRpc = async (name, body) => {
+      pushPageReads += 1;
+      if (name !== "social_workout_inbox_page" || body.p_limit !== 10) {
+        throw new Error("unexpected push page read");
+      }
+      return ${JSON.stringify(secondPage)};
+    };
+  `, context);
+  const target = {
+    version: 1,
+    target: "social",
+    socialType: "workout_invite_received",
+    objectId: secondIncoming[4].inviteId,
+    objectRevision: 1
+  };
+  assert.equal(await vm.runInContext(
+    `openSocialPushTarget(${JSON.stringify(target)})`,
+    context
+  ), true);
+  assert.equal(vm.runInContext("pushPageReads", context), 1);
+  assert.equal(vm.runInContext("socialState.inbox.incoming.length", context), 20);
+  assert.equal(vm.runInContext("pushPageToasts", context), 0);
 });
 
 test("a precise live push opens only a server-visible room and fences a late account result", async () => {
@@ -2615,6 +3383,308 @@ test("an accepted room discovered as active auto-attaches and opens its frozen w
   assert.equal(await vm.runInContext("refreshLiveWorkoutData(true)", context), true);
   assert.equal(vm.runInContext("activeWorkout.id", context), localWorkoutId);
   assert.equal(vm.runInContext("liveWorkoutAutoAttachAttempts.size", context), 1);
+});
+
+test("same-owner sign-in recovers an old-session live queue only after an authoritative exact-room snapshot", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const oldSessionId = "22222222-2222-4222-8222-222222222222";
+  const newSessionId = "33333333-3333-4333-8333-333333333333";
+  const otherUserId = "44444444-4444-4444-8444-444444444444";
+  const otherSessionId = "55555555-5555-4555-8555-555555555555";
+  const roomId = `lr_${"e".repeat(32)}`;
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, oldSessionId))},
+      refresh_token: "refresh-old", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    let recoveryUid = 8_000_000_000_100_000;
+    uid = () => ++recoveryUid;
+    const recoverySnapshotRaw = ${JSON.stringify(activeLiveSnapshotFixture(roomId))};
+    const recoveryInboxRaw = ${JSON.stringify(activeLiveInboxFixture(roomId))};
+    const recoveryCreatedAt = Date.now() - 120_000;
+    const recoveryStartedAt = recoveryCreatedAt + 60_000;
+    const recoveryExpiresAt = recoveryStartedAt + 86_400_000;
+    recoverySnapshotRaw.room.createdAt = new Date(recoveryCreatedAt).toISOString();
+    recoverySnapshotRaw.room.inviteExpiresAt = new Date(recoveryCreatedAt + 604_800_000).toISOString();
+    recoverySnapshotRaw.room.startedAt = new Date(recoveryStartedAt).toISOString();
+    recoverySnapshotRaw.room.activeExpiresAt = new Date(recoveryExpiresAt).toISOString();
+    recoveryInboxRaw.rooms[0].createdAt = new Date(recoveryCreatedAt).toISOString();
+    recoveryInboxRaw.rooms[0].startedAt = new Date(recoveryStartedAt).toISOString();
+    recoveryInboxRaw.rooms[0].activeExpiresAt = new Date(recoveryExpiresAt).toISOString();
+    recoverySnapshot = window.GymLiveWorkout.snapshot(recoverySnapshotRaw);
+    recoveryInbox = window.GymLiveWorkout.inbox(recoveryInboxRaw);
+    localStorage.setItem(liveWorkoutReservationKey("${userId}"), JSON.stringify({
+      version: 1, userId: "${userId}", sessionId: "${oldSessionId}", role: "participant",
+      operationId: "88888888-8888-4888-8888-888888888888",
+      roomId: "${roomId}", phase: "active", createdAt: recoveryCreatedAt,
+      expiresAt: recoveryExpiresAt
+    }));
+    workoutDraft = liveDraftFromSnapshot(recoverySnapshot);
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true, value: await operation()
+    });
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  assert.equal(await vm.runInContext(`startWorkout({
+    liveSnapshot: recoverySnapshot,
+    liveIdentity: liveSessionIdentity()
+  })`, context), true);
+  vm.runInContext(`
+    const queuedBeforeLogout = window.GymLiveWorkoutState.enqueue(liveWorkoutBinding, {
+      clientOperationId: "66666666-6666-4666-8666-666666666666",
+      kind: "complete_set", serverSetId: "s_01_01", weight: 80, reps: 8,
+      localMutationAt: Date.now()
+    });
+    if (!persistLiveWorkoutBinding(queuedBeforeLogout)) throw new Error("test queue failed");
+    recoveryRawBeforeSessionChange = localStorage.getItem(liveWorkoutBindingKey("${userId}"));
+    resetLiveWorkoutContext({ eraseBinding: false });
+    clearRemoteSession();
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, newSessionId))},
+      refresh_token: "refresh-new", user: { id: "${userId}" }
+    });
+    reloadActiveWorkoutContext(activeAccount);
+    recoveryGatewayCalls = [];
+    liveGateway = async (action, payload) => {
+      recoveryGatewayCalls.push({ action, payload });
+      if (action === "live_inbox") return recoveryInbox;
+      if (action === "live_snapshot" && payload.roomId === "${roomId}") return recoverySnapshot;
+      throw new Error("unexpected recovery request");
+    };
+    ensureLiveWorkoutRealtime = async () => false;
+    syncWebPushIfEnabled = () => {};
+    scheduleLiveWorkoutPoll = () => {};
+    recoverFinishedLiveWorkoutIntent = () => false;
+    drainLiveWorkoutOperations = async () => true;
+  `, context);
+
+  assert.equal(vm.runInContext("loadLiveWorkoutBinding()", context), null);
+  assert.equal(await vm.runInContext("refreshLiveWorkoutData(true, null)", context), true);
+  assert.deepEqual(jsonFrom(context, "recoveryGatewayCalls.map(call => call.action)"), [
+    "live_inbox", "live_snapshot"
+  ]);
+  assert.equal(vm.runInContext("liveWorkoutBinding.sessionId", context), newSessionId);
+  assert.equal(
+    vm.runInContext("liveWorkoutBinding.pendingOperations[0].clientOperationId", context),
+    "66666666-6666-4666-8666-666666666666"
+  );
+  assert.notEqual(
+    context.localStorage.getItem(`gym-pwa-live-workout-v1:${userId}`),
+    vm.runInContext("recoveryRawBeforeSessionChange", context)
+  );
+
+  const ownerRaw = context.localStorage.getItem(`gym-pwa-live-workout-v1:${userId}`);
+  vm.runInContext(`
+    resetLiveWorkoutContext({ eraseBinding: false });
+    clearRemoteSession();
+    activeAccount = {
+      id: "remote-${otherUserId}", userId: "${otherUserId}", remote: "supabase", name: "Other"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(otherUserId, otherSessionId))},
+      refresh_token: "refresh-other", user: { id: "${otherUserId}" }
+    });
+    state = defaultAppState();
+    clearActiveWorkoutMemory();
+    recoveryGatewayCalls = [];
+    const emptyInbox = window.GymLiveWorkout.inbox({ version: 1, invitations: [], rooms: [] });
+    liveGateway = async (action, payload) => {
+      recoveryGatewayCalls.push({ action, payload });
+      if (action === "live_inbox") return emptyInbox;
+      throw new Error("another owner must not fetch a stored room");
+    };
+  `, context);
+  assert.equal(await vm.runInContext("refreshLiveWorkoutData(true, null)", context), true);
+  assert.deepEqual(jsonFrom(context, "recoveryGatewayCalls.map(call => call.action)"), ["live_inbox"]);
+  assert.equal(context.localStorage.getItem(`gym-pwa-live-workout-v1:${userId}`), ownerRaw);
+  assert.equal(vm.runInContext("liveWorkoutBinding", context), null);
+});
+
+test("an authoritative missing old-session live room closes only that sidecar and keeps the local workout", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const oldSessionId = "22222222-2222-4222-8222-222222222222";
+  const newSessionId = "33333333-3333-4333-8333-333333333333";
+  const roomId = `lr_${"d".repeat(32)}`;
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    accountEpoch = 23;
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, newSessionId))},
+      refresh_token: "refresh-new", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    activeWorkout = { id: 700, protectedFixture: true };
+    const terminalBinding = window.GymLiveWorkoutState.normalize({
+      version: 1, userId: "${userId}", sessionId: "${oldSessionId}",
+      roomId: "${roomId}", role: "participant",
+      peerProfileId: "p_22222222222222222222222222222222", peerDisplayName: "Friend",
+      roomRevision: 3, membershipRevision: 2, progressRevision: 1, localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701 }, pendingOperations: [{
+        clientOperationId: "77777777-7777-4777-8777-777777777777",
+        kind: "finish", expectedProgressRevision: 1, serverSetId: null,
+        weight: null, reps: null, localMutationAt: Date.now()
+      }]
+    });
+    localStorage.setItem(
+      liveWorkoutBindingKey("${userId}"),
+      window.GymLiveWorkoutState.encode(terminalBinding)
+    );
+    liveWorkoutBinding = null;
+    terminalRecoveryCalls = [];
+    const terminalEmptyInbox = window.GymLiveWorkout.inbox({
+      version: 1, invitations: [], rooms: []
+    });
+    liveGateway = async (action, payload) => {
+      terminalRecoveryCalls.push({ action, payload });
+      if (action === "live_inbox") return terminalEmptyInbox;
+      if (action === "live_snapshot" && payload.roomId === "${roomId}") {
+        const error = new Error("room missing");
+        error.status = 404;
+        throw error;
+      }
+      throw new Error("unexpected terminal recovery request");
+    };
+    ensureLiveWorkoutRealtime = async () => false;
+    syncWebPushIfEnabled = () => {};
+    scheduleLiveWorkoutPoll = () => {};
+    render = () => {};
+  `, context);
+
+  assert.equal(await vm.runInContext("refreshLiveWorkoutData(true, null)", context), true);
+  assert.deepEqual(jsonFrom(context, "terminalRecoveryCalls.map(call => call.action)"), [
+    "live_inbox", "live_snapshot"
+  ]);
+  assert.equal(context.localStorage.getItem(`gym-pwa-live-workout-v1:${userId}`), null);
+  assert.equal(vm.runInContext("activeWorkout.id", context), 700);
+  assert.equal(vm.runInContext("activeWorkout.protectedFixture", context), true);
+  assert.match(vm.runInContext("liveWorkoutState.error", context), /previous live room/);
+});
+
+test("a terminal live snapshot immediately drains the durable local queue", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const roomId = `lr_${"c".repeat(32)}`;
+  const terminalSnapshot = activeLiveSnapshotFixture(roomId);
+  terminalSnapshot.room.status = "completed";
+  terminalSnapshot.room.roomRevision = 4;
+  terminalSnapshot.room.closeReason = "completed";
+  terminalSnapshot.room.endedAt = "2026-08-10T08:20:00Z";
+  terminalSnapshot.participants.forEach(participant => {
+    participant.state = "finished";
+    participant.finishedAt = "2026-08-10T08:20:00Z";
+    participant.progress.finishedAt = "2026-08-10T08:20:00Z";
+  });
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    accountEpoch = 24;
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-owner", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    state.sessions = [{
+      id: 700, startedAt: Date.now() - 60000, note: "", xp: 0,
+      sets: [{ id: 701, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 80, reps: 8 }]
+    }];
+    activeWorkout = null;
+    const terminalBinding = window.GymLiveWorkoutState.normalize({
+      version: 1, userId: "${userId}", sessionId: "${sessionId}",
+      roomId: "${roomId}", role: "participant",
+      peerProfileId: "p_22222222222222222222222222222222", peerDisplayName: "Friend",
+      roomRevision: 3, membershipRevision: 2, progressRevision: 1, localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701 }, pendingOperations: [{
+        clientOperationId: "77777777-7777-4777-8777-777777777777",
+        kind: "finish", expectedProgressRevision: 1, serverSetId: null,
+        weight: null, reps: null, localMutationAt: Date.now()
+      }]
+    });
+    if (!persistLiveWorkoutBinding(terminalBinding)) throw new Error("terminal binding failed");
+    const terminalInbox = window.GymLiveWorkout.inbox({ version: 1, invitations: [], rooms: [] });
+    const terminalSnapshotValue = window.GymLiveWorkout.snapshot(${JSON.stringify(terminalSnapshot)});
+    terminalGatewayCalls = [];
+    liveGateway = async (action, payload) => {
+      terminalGatewayCalls.push({ action, payload });
+      if (action === "live_inbox") return terminalInbox;
+      if (action === "live_snapshot") return terminalSnapshotValue;
+      if (action === "live_finish") return {
+        version: 1, roomId: "${roomId}", result: "closed", status: "expired"
+      };
+      throw new Error("unexpected terminal queue request");
+    };
+    ensureLiveWorkoutRealtime = async () => false;
+    syncWebPushIfEnabled = () => {};
+    scheduleLiveWorkoutPoll = () => {};
+    localLiveOperationReflection = () => "reflected";
+    render = () => {};
+  `, context);
+
+  assert.equal(await vm.runInContext(`refreshLiveWorkoutData(true, "${roomId}")`, context), true);
+  const terminalDrain = vm.runInContext("liveWorkoutOperationDrain", context);
+  if (terminalDrain) await terminalDrain;
+  assert.deepEqual(jsonFrom(context, "terminalGatewayCalls.map(call => call.action)"), [
+    "live_inbox", "live_snapshot", "live_finish"
+  ]);
+  assert.equal(vm.runInContext("liveWorkoutBinding", context), null);
+  assert.equal(vm.runInContext("state.sessions[0].id", context), 700);
+});
+
+test("offline sign-out clears reusable credentials while preserving owner-bound cloud and live recovery", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-owner", user: { id: "${userId}" }
+    });
+    state = defaultAppState();
+    state.profile.goal = "strength";
+    markRemoteStateDirtyBeforeWrite(state);
+    const logoutBinding = window.GymLiveWorkoutState.normalize({
+      version: 1, userId: "${userId}", sessionId: "${sessionId}",
+      roomId: "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", role: "participant",
+      peerProfileId: "p_22222222222222222222222222222222", peerDisplayName: "Friend",
+      roomRevision: 3, membershipRevision: 2, progressRevision: 1, localWorkoutId: 700,
+      serverToLocalSetIds: { s_01_01: 701 }, pendingOperations: [{
+        clientOperationId: "77777777-7777-4777-8777-777777777777",
+        kind: "finish", expectedProgressRevision: 1, serverSetId: null,
+        weight: null, reps: null, localMutationAt: Date.now()
+      }]
+    });
+    localStorage.setItem(liveWorkoutBindingKey("${userId}"), window.GymLiveWorkoutState.encode(logoutBinding));
+    liveWorkoutBinding = logoutBinding;
+    flushPendingLiveWorkoutOperationsForTransition = async () => false;
+    flushPendingRemoteSave = async () => { throw new Error("offline"); };
+    revokeWebPush = async () => false;
+    render = () => {};
+    logoutToast = "";
+    showToast = message => { logoutToast = message; };
+  `, context);
+  const rawBefore = context.localStorage.getItem(`gym-pwa-live-workout-v1:${userId}`);
+  await vm.runInContext("logoutAccount()", context);
+  assert.equal(vm.runInContext("activeAccount", context), null);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
+  assert.equal(context.localStorage.getItem(`gym-pwa-live-workout-v1:${userId}`), rawBefore);
+  assert.equal(vm.runInContext(`loadSyncBaseline("${userId}").dirty`, context), true);
+  assert.match(vm.runInContext("logoutToast", context), /Unsynced owner-bound changes/);
 });
 
 test("opening a live push keeps invitation actions visible when a waiting snapshot is available", () => {
@@ -4310,6 +5380,13 @@ test("an outcome-unknown workout invitation retries the exact client request id"
   await vm.runInContext(expression, context);
   assert.equal(vm.runInContext("modal.type", context), "workout-share");
   assert.equal(vm.runInContext("socialWorkoutInviteRequests.size", context), 1);
+  assert.equal(vm.runInContext(`loadSocialWorkoutInviteRequestJournal(
+    "11111111-1111-4111-8111-111111111111"
+  ).length`, context), 1);
+  vm.runInContext(`
+    socialWorkoutInviteRequests.clear();
+    accountEpoch = 13;
+  `, context);
   await vm.runInContext(expression, context);
   const attempts = jsonFrom(context, "socialInviteAttempts");
   assert.equal(attempts.length, 2);
@@ -4317,6 +5394,9 @@ test("an outcome-unknown workout invitation retries the exact client request id"
   assert.equal(attempts[0].body.p_client_request_id, attempts[1].body.p_client_request_id);
   assert.match(attempts[0].body.p_client_request_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(vm.runInContext("socialWorkoutInviteRequests.size", context), 0);
+  assert.equal(vm.runInContext(`loadSocialWorkoutInviteRequestJournal(
+    "11111111-1111-4111-8111-111111111111"
+  ).length`, context), 0);
   assert.equal(vm.runInContext("modal", context), null);
 });
 
@@ -4330,17 +5410,21 @@ test("unresolved workout invitation ids are never evicted at the bounded capacit
       name: "Owner"
     };
     accountEpoch = 14;
-    window.crypto = { getRandomValues(bytes) { for (let index = 0; index < bytes.length; index += 1) bytes[index] = index + 1; return bytes; } };
-    for (let index = 0; index < MAX_PENDING_SOCIAL_WORKOUT_REQUESTS; index += 1) {
-      socialWorkoutInviteRequests.set("unknown-" + index, {
-        key: "unknown-" + index,
-        source: socialSourceKey(),
-        fingerprint: "fingerprint-" + index,
-        requestId: "11111111-1111-4111-8111-111111111111"
-      });
+    loadRemoteSession = () => ({ user: { id: "11111111-1111-4111-8111-111111111111" } });
+    const journal = Array.from({ length: MAX_PENDING_SOCIAL_WORKOUT_REQUESTS }, (_, index) => ({
+      profileId: "p_22222222222222222222222222222222",
+      fingerprint: "1:" + index.toString(16).padStart(16, "0") + ":" +
+        (index + 100).toString(16).padStart(16, "0"),
+      requestId: "00000000-0000-4000-8000-" + index.toString(16).padStart(12, "0"),
+      createdAt: Date.now()
+    }));
+    if (!saveSocialWorkoutInviteRequestJournal(activeAccount.userId, journal)) {
+      throw new Error("fixture journal failed");
     }
   `, context);
-  const before = jsonFrom(context, "[...socialWorkoutInviteRequests.keys()]");
+  const before = jsonFrom(context,
+    "loadSocialWorkoutInviteRequestJournal(activeAccount.userId)"
+  );
   assert.throws(
     () => vm.runInContext(`prepareSocialWorkoutInviteRequest(
       "p_22222222222222222222222222222222",
@@ -4348,11 +5432,17 @@ test("unresolved workout invitation ids are never evicted at the bounded capacit
     )`, context),
     /outcomes are still unknown/
   );
-  assert.deepEqual(jsonFrom(context, "[...socialWorkoutInviteRequests.keys()]"), before);
+  assert.deepEqual(jsonFrom(context,
+    "loadSocialWorkoutInviteRequestJournal(activeAccount.userId)"
+  ), before);
 });
 
 test("saving unchanged friend privacy accepts the server no-op revision", async () => {
   const context = loadPwaContext();
+  const privacyToken = testAccessToken(
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222"
+  );
   vm.runInContext(`
     activeAccount = {
       id: "remote-11111111-1111-4111-8111-111111111111",
@@ -4361,7 +5451,10 @@ test("saving unchanged friend privacy accepts the server no-op revision", async 
       name: "Owner"
     };
     accountEpoch = 13;
-    loadRemoteSession = () => ({ user: { id: "11111111-1111-4111-8111-111111111111" } });
+    loadRemoteSession = () => ({
+      access_token: ${JSON.stringify(privacyToken)},
+      user: { id: "11111111-1111-4111-8111-111111111111" }
+    });
     app.querySelector = selector => ({ checked: selector !== "#social-share-records" });
     socialRpc = async () => ({
       version: 1,
@@ -4382,6 +5475,71 @@ test("saving unchanged friend privacy accepts the server no-op revision", async 
   await vm.runInContext(`saveSocialPrivacy({ dataset: { revision: "7" } })`, context);
   assert.equal(vm.runInContext("privacyRefreshCount", context), 1);
   assert.match(vm.runInContext("privacyToast", context), /visibility updated/);
+});
+
+test("a confirmed friend mutation retries only authoritative reads after refresh failure", async () => {
+  const context = loadPwaContext();
+  const dashboard = socialDashboardFixture();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const tokenBeforeRefresh = testAccessToken(userId, sessionId);
+  const tokenAfterRefresh = `${testAccessToken(userId, sessionId)}-rotated`;
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}",
+      userId: "${userId}",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 31;
+    confirmedSessionToken = ${JSON.stringify(tokenBeforeRefresh)};
+    loadRemoteSession = () => ({
+      access_token: confirmedSessionToken,
+      user: { id: activeAccount.userId }
+    });
+    socialState = {
+      status: "loaded", source: socialSourceKey(),
+      dashboard: parseSocialDashboard(${JSON.stringify(dashboard)}),
+      inbox: null, friendCode: "g_a1b2c3d4e5f6",
+      inboxPageCount: 0, inboxLoadingMore: false, inboxLoadMoreError: "",
+      workoutDetailPrivacy: null, workoutDetailPrivacySupported: false, error: ""
+    };
+    friendMutationCalls = 0;
+    friendRefreshCalls = 0;
+    socialRpc = async name => {
+      friendMutationCalls += 1;
+      if (name !== "social_cancel_friend_request") throw new Error("mutation replayed as read");
+      return {
+        version: 1,
+        friendshipId: "f_33333333333333333333333333333333",
+        status: "removed",
+        friendshipRevision: 2
+      };
+    };
+    refreshSocialData = async () => {
+      friendRefreshCalls += 1;
+      if (friendRefreshCalls === 1) {
+        confirmedSessionToken = ${JSON.stringify(tokenAfterRefresh)};
+        return false;
+      }
+      completeConfirmedSocialRestoration();
+      return true;
+    };
+    render = () => {};
+    showToast = message => { confirmedFriendToast = message; };
+  `, context);
+  await vm.runInContext(`cancelFriendRequest({ dataset: {
+    friendshipId: "f_33333333333333333333333333333333", revision: "1"
+  } })`, context);
+  assert.equal(vm.runInContext("friendMutationCalls", context), 1);
+  assert.equal(vm.runInContext("friendRefreshCalls", context), 1);
+  assert.equal(vm.runInContext("socialMutationInProgress", context), true);
+  assert.match(vm.runInContext("socialState.error", context), /Change saved/);
+  assert.equal(await vm.runInContext("retryConfirmedSocialRestoration()", context), true);
+  assert.equal(vm.runInContext("friendMutationCalls", context), 1);
+  assert.equal(vm.runInContext("friendRefreshCalls", context), 2);
+  assert.equal(vm.runInContext("socialMutationInProgress", context), false);
+  assert.match(vm.runInContext("confirmedFriendToast", context), /cancelled/);
 });
 
 test("lost remove and block responses immediately hide cached friend data", async () => {

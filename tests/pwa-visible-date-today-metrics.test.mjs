@@ -192,13 +192,16 @@ test("Today plan metrics are history-only, finite, bounded, zero-safe, and order
   }
 });
 
-test("Today plan metrics stay quiet and narrow beside weekly rhythm and plan actions", () => {
+test("Today keeps only exact-plan metrics while global progress metrics live in Progress", () => {
   assert.match(stylesSource, /\.focus-lens-plan-metrics \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics strong \{[\s\S]*white-space: nowrap/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics span \{[\s\S]*font-size: 11px[\s\S]*-webkit-line-clamp: 2/);
-  const rhythm = appSource.indexOf("focus-lens-metrics single");
-  const metrics = appSource.indexOf("${todayPlanMetricsMarkup()}", rhythm);
+  const focus = appSource.indexOf("function focusLensCard(");
+  const metrics = appSource.indexOf("smartPlanMetricsMarkup(launch.plan)", focus);
   const actions = appSource.indexOf("focus-lens-actions plan-actions", metrics);
-  assert.ok(rhythm >= 0 && rhythm < metrics && metrics < actions);
-  assert.doesNotMatch(appSource.slice(rhythm, metrics), /focus-lens-eyebrow/);
+  const progress = appSource.indexOf("function progressScreen()");
+  const progressEnd = appSource.indexOf("function exerciseProgressPanel()", progress);
+  assert.ok(focus >= 0 && focus < metrics && metrics < actions);
+  assert.doesNotMatch(appSource.slice(focus, actions), /todayPlanMetricsMarkup|Weekly rhythm/);
+  assert.match(appSource.slice(progress, progressEnd), /overviewCards\(selectedMonthSessions\(\)\)/);
 });

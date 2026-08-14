@@ -3,6 +3,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -29,17 +30,55 @@ data class FirebaseClientBuildConfig(
     val senderId: String
 )
 
+fun firebaseSha256(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it) }
+
+fun containsFirebaseServerCredential(value: Any?): Boolean = when (value) {
+    is Map<*, *> -> value.any { (rawKey, child) ->
+        val key = rawKey as? String
+        key in setOf("private_key", "private_key_id", "client_email", "token_uri") ||
+            (key == "type" && child == "service_account") ||
+            containsFirebaseServerCredential(child)
+    }
+    is Iterable<*> -> value.any(::containsFirebaseServerCredential)
+    else -> false
+}
+
 fun firebaseClientBuildConfigs(): Map<String, FirebaseClientBuildConfig> {
+    val requireReviewedConfig =
+        (findProperty("gymappRequireReviewedFirebaseConfig") as String?) == "true"
     val configuredPath = (findProperty("gymappFirebaseConfigFile") as String?)
         ?.trim()
         ?.takeIf(String::isNotEmpty)
-        ?: return emptyMap()
+    if (configuredPath == null) {
+        require(!requireReviewedConfig) {
+            "Production release tooling requires a reviewed Firebase client config."
+        }
+        return emptyMap()
+    }
     val configFile = rootProject.file(configuredPath)
     require(configFile.isFile) {
         "gymappFirebaseConfigFile must point to a readable google-services.json file."
     }
-    val root = JsonSlurper().parse(configFile) as? Map<*, *>
+    val configBytes = configFile.readBytes()
+    if (requireReviewedConfig) {
+        val expectedSha256 = (findProperty("gymappFirebaseConfigSha256") as String?)
+            ?.trim()
+            ?.lowercase()
+        require(expectedSha256?.matches(Regex("^[0-9a-f]{64}$")) == true) {
+            "Production release tooling requires a valid reviewed Firebase SHA-256."
+        }
+        require(firebaseSha256(configBytes) == expectedSha256) {
+            "The Firebase client config changed after release review."
+        }
+    }
+    val root = JsonSlurper().parseText(configBytes.toString(Charsets.UTF_8)) as? Map<*, *>
         ?: error("google-services.json must contain a JSON object.")
+    require(!requireReviewedConfig || !containsFirebaseServerCredential(root)) {
+        "A server credential JSON cannot be used as an Android Firebase client config."
+    }
     val projectInfo = root["project_info"] as? Map<*, *>
         ?: error("google-services.json is missing project_info.")
     val projectId = projectInfo["project_id"] as? String

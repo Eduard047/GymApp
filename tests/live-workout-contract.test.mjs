@@ -235,6 +235,14 @@ test("mutation parsers bind result kind, ids, revisions and timestamps", () => {
     roomRevision: 2,
     membershipRevision: 2
   }).status, "ready");
+  assert.equal(api.respondResult({
+    version: 1,
+    result: "joined",
+    roomId,
+    status: "active",
+    roomRevision: 3,
+    membershipRevision: 2
+  }).status, "active");
   assert.equal(api.startResult({
     version: 1,
     result: "started",

@@ -155,6 +155,10 @@ class GymApp extends App.AppBase {
         if (!GymStore.hasAccountBinding() || GymStore.pending.size() == 0) {
             return;
         }
+        if (!GymStore.recoverQueuedWorkout()) {
+            GymStore.status = "DATA KEPT";
+            return;
+        }
         // Drain exactly one oldest item per durable database acknowledgement. The
         // item remains queued until its own ack, so disconnects and retries are safe.
         GymStore.status = "SENDING NEXT";

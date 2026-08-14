@@ -67,7 +67,7 @@ function jsFunction(name) {
 
 test("friends/live v2 contract is the same three-client product", () => {
   assert.equal(contract.schemaVersion, 2);
-  assert.equal(contract.productVersion, "3.0.9");
+  assert.equal(contract.productVersion, "3.0.10");
   assert.deepEqual(contract.clients, ["android", "ios", "pwa"]);
   assert.equal(contract.friendWorkoutSharing.summaryConsent.mayAuthorizeExactSets, false);
   assert.equal(contract.friendWorkoutSharing.detailConsent.default, false);
@@ -87,6 +87,14 @@ test("friends/live v2 contract is the same three-client product", () => {
   assert.equal(contract.liveWorkout.localActiveSlotReservation.standaloneStartWhileReserved, "denyWithoutMutation");
   assert.equal(contract.liveWorkout.localActiveSlotReservation.unknownMutationOutcome, "retainUntilAuthoritativeReconciliation");
   assert.equal(contract.liveWorkout.localActiveSlotReservation.activeTransition, "consumeOnlyAfterLocalDraftAndBindingCommit");
+  assert.deepEqual(contract.liveWorkout.invitationAccept.visibleAction, {
+    en: "Start together",
+    uk: "Почати разом",
+    ru: "Начать вместе"
+  });
+  assert.equal(contract.liveWorkout.invitationAccept.authoritativeRoomStatus, "active");
+  assert.deepEqual(contract.liveWorkout.invitationAccept.legacyResponseStatusesAccepted, ["ready", "active"]);
+  assert.equal(contract.liveWorkout.invitationAccept.ownerOnlyStartActionVisible, false);
   assert.equal(contract.compatibility.legacyDashboardResponseKeysUnchanged, true);
   assert.equal(contract.compatibility.legacyFriendDetailsResponseKeysUnchanged, true);
 });
@@ -174,7 +182,11 @@ test("accepting live starts one room and all clients render exactly two particip
   assert.match(accept, /set status = 'active'/);
   assert.match(accept, /insert into gymapp_private\.live_workout_progress/);
   assert.match(accept, /'result', 'joined'/);
+  // Released clients still receive `ready` as a compatibility acknowledgement;
+  // it is not the authoritative room state, which was atomically stored above.
   assert.match(accept, /'status', 'ready'/);
+  assert.match(iosFriends, /Start together/);
+  assert.doesNotMatch(iosFriends, /startLiveRoom\(/);
   assert.match(androidActive, /LiveParticipantTab\.Self/);
   assert.match(androidActive, /LiveParticipantTab\.Peer/);
   assert.match(androidActive, /LivePeerExerciseCard/);

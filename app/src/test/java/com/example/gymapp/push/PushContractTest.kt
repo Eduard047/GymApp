@@ -38,7 +38,14 @@ class PushContractTest {
         )
 
         assertTrue(payload is PushPayload.Social)
-        assertEquals(PushNavigationTarget.Social, payload?.navigationTarget())
+        assertEquals(
+            PushNavigationTarget.Social(
+                SocialPushType.FriendRequestReceived,
+                "f_${"a".repeat(32)}",
+                0
+            ),
+            payload?.navigationTarget()
+        )
     }
 
     @Test
@@ -49,7 +56,11 @@ class PushContractTest {
         )
 
         assertEquals(
-            PushNavigationTarget.Live("lr_${"b".repeat(32)}"),
+            PushNavigationTarget.Live(
+                LivePushKind.Invite,
+                "lr_${"b".repeat(32)}",
+                7
+            ),
             payload?.navigationTarget()
         )
         assertNull(parsePushPayload(livePayload("roomRevision" to "01"), false))

@@ -70,12 +70,29 @@ class PushAndroidConfigurationTest {
     }
 
     @Test
-    fun `Firebase configuration is optional and resolved outside the repository`() {
+    fun `Firebase is optional only for debug while production release is reviewed and fail closed`() {
         val gradle = Files.readString(appFile("build.gradle.kts"))
+        val playRelease = Files.readString(appFile("scripts/build-play-release-aab.ps1"))
+        val phoneRelease = Files.readString(appFile("scripts/build-phone-release-apk.ps1"))
+        val releaseGate = Files.readString(
+            appFile("scripts/android-release-firebase-gate.ps1")
+        )
 
         assertTrue(gradle.contains("findProperty(\"gymappFirebaseConfigFile\")"))
+        assertTrue(gradle.contains("gymappRequireReviewedFirebaseConfig"))
+        assertTrue(gradle.contains("gymappFirebaseConfigSha256"))
         assertTrue(gradle.contains("com.google.firebase:firebase-messaging"))
         assertTrue(gradle.contains("FIREBASE_CONFIGURED"))
+        listOf(playRelease, phoneRelease).forEach { script ->
+            assertTrue(script.contains("Resolve-ReviewedReleaseFirebaseConfig"))
+            assertTrue(script.contains("-PgymappRequireReviewedFirebaseConfig=true"))
+            assertTrue(script.contains("-PgymappFirebaseConfigSha256="))
+            assertTrue(script.contains("Assert-ReleaseFirebaseBuildConfig"))
+            assertTrue(script.contains("Assert-ReleaseFirebaseArtifact"))
+        }
+        assertTrue(releaseGate.contains("must remain outside the repository"))
+        assertTrue(releaseGate.contains("owner-only mode 0600"))
+        assertTrue(releaseGate.contains("FIREBASE_CONFIGURED = true"))
         assertNull(appFileOrNull("google-services.json"))
     }
 

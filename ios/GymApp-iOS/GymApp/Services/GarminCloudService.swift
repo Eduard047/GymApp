@@ -669,7 +669,25 @@ final class GarminCloudService: ObservableObject {
             lastMessage = GarminCloudError.deviceCreationRecoveryRequired.errorDescription
             return
         }
-        let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        let session: CloudAccountSession
+        do {
+            session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
+        } catch {
+            // The raw one-shot Garmin credential was already replaced by a
+            // nonsecret, owner-bound cleanup marker. Offline token refresh must
+            // not prevent local logout; a real account transition still fails
+            // closed so this operation cannot finish for a replacement owner.
+            switch auth.session {
+            case .some(.cloud(let cloud)) where cloud.userID == identity.rawUserID:
+                lastMessage = GarminCloudError.pendingRevocation.errorDescription
+                return
+            case .none:
+                lastMessage = GarminCloudError.pendingRevocation.errorDescription
+                return
+            default:
+                throw AuthServiceError.sessionChanged
+            }
+        }
         try ensureIdentityIsCurrent(identity)
         if await bestEffortRevoke(
             deviceID: pending.deviceID,

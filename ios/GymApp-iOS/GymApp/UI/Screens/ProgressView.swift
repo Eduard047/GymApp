@@ -2,6 +2,229 @@ import Charts
 import SwiftUI
 
 @MainActor
+struct ProgressHubView: View {
+    private enum Section: String, CaseIterable, Identifiable {
+        case overview
+        case exercises
+        case goals
+
+        var id: String { rawValue }
+
+        func title(_ languageCode: String) -> String {
+            switch self {
+            case .overview:
+                gymText("Overview", "Огляд", "Обзор", languageCode: languageCode)
+            case .exercises:
+                gymText("Exercises", "Вправи", "Упражнения", languageCode: languageCode)
+            case .goals:
+                gymText("Goals", "Цілі", "Цели", languageCode: languageCode)
+            }
+        }
+    }
+
+    @ObservedObject private var store: WorkoutStore
+    @Environment(\.calendar) private var calendar
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @State private var section: Section = .overview
+    @State private var referenceDate = Date()
+    @State private var monthOffset = 0
+    @State private var musclePeriod: WorkoutMusclePeriod = .month
+    @State private var selectedMuscleID: String?
+
+    private let onOpenRanks: () -> Void
+
+    init(store: WorkoutStore, onOpenRanks: @escaping () -> Void) {
+        self.store = store
+        self.onOpenRanks = onOpenRanks
+    }
+
+    var body: some View {
+        GymBackground {
+            VStack(spacing: 0) {
+                VStack(spacing: GymTheme.contentSpacing) {
+                    GymScreenHeader(
+                        title: gymText("Progress", "Прогрес", "Прогресс", languageCode: languageCode)
+                    )
+                    GymPanel(
+                        contentPadding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7)
+                    ) {
+                        Picker(
+                            gymText(
+                                "Progress section",
+                                "Розділ прогресу",
+                                "Раздел прогресса",
+                                languageCode: languageCode
+                            ),
+                            selection: $section
+                        ) {
+                            ForEach(Section.allCases) { item in
+                                Text(item.title(languageCode)).tag(item)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+                .padding(.horizontal, GymTheme.screenHorizontalInset)
+                .padding(.top, GymTheme.screenVerticalInset)
+
+                switch section {
+                case .overview:
+                    overview
+                case .exercises:
+                    ExerciseProgressView(store: store, showsHeader: false)
+                case .goals:
+                    MissionsView(store: store, onOpenRanks: onOpenRanks, embedded: true)
+                }
+            }
+        }
+        .environment(\.locale, appLocale)
+        .onAppear { referenceDate = Date() }
+        .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { referenceDate = Date() }
+        }
+    }
+
+    private var overview: some View {
+        ScrollView {
+            LazyVStack(spacing: GymTheme.contentSpacing) {
+                WorkoutProgressHero(
+                    snapshot: gamification,
+                    monthXP: monthXP,
+                    weeklyStreakWeeks: weeklyStreakWeeks,
+                    weeklyTarget: trainingProfile.workoutsPerWeek,
+                    onOpenRanks: onOpenRanks
+                )
+
+                lifetimeMetricsCard
+
+                WorkoutMonthSwitcher(
+                    month: selectedMonth,
+                    isCurrentMonth: monthOffset == 0,
+                    onPrevious: { monthOffset -= 1 },
+                    onCurrent: { monthOffset = 0 },
+                    onNext: { monthOffset = min(0, monthOffset + 1) }
+                )
+
+                WorkoutActivityHeatmap(
+                    month: selectedMonth,
+                    sessions: store.workoutSummaries,
+                    now: referenceDate,
+                    calendar: calendar
+                )
+
+                WorkoutMuscleLoadCard(
+                    period: $musclePeriod,
+                    selectedMuscleID: $selectedMuscleID,
+                    data: muscleDashboardData
+                )
+            }
+            .padding(.horizontal, GymTheme.screenHorizontalInset)
+            .padding(.top, GymTheme.contentSpacing)
+            .padding(.bottom, GymTheme.screenBottomInset)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var lifetimeMetricsCard: some View {
+        let metrics = TodayHeroMetrics(
+            sessions: store.workoutSummaries,
+            weeklyStreakWeeks: weeklyStreakWeeks
+        )
+        return GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    title: gymText(
+                        "Lifetime progress",
+                        "Прогрес за весь час",
+                        "Прогресс за всё время",
+                        languageCode: languageCode
+                    )
+                )
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
+                    spacing: 8
+                ) {
+                    GymMetricTile(
+                        label: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode),
+                        value: metrics.totalWorkouts.formatted()
+                    )
+                    GymMetricTile(
+                        label: gymText("Week streak", "Серія тижнів", "Серия недель", languageCode: languageCode),
+                        value: gymText(
+                            "\(metrics.weeklyStreakWeeks) wk",
+                            "\(metrics.weeklyStreakWeeks) тиж",
+                            "\(metrics.weeklyStreakWeeks) нед",
+                            languageCode: languageCode
+                        )
+                    )
+                    GymMetricTile(
+                        label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode),
+                        value: metrics.totalVolume.formatted(
+                            .number.notation(.compactName).precision(.fractionLength(0 ... 1))
+                        ),
+                        emphasized: true
+                    )
+                }
+            }
+        }
+    }
+
+    private var trainingProfile: TrainingProfile {
+        TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
+    }
+
+    private var selectedMonth: Date {
+        calendar.date(byAdding: .month, value: monthOffset, to: referenceDate) ?? referenceDate
+    }
+
+    private var selectedMonthInterval: DateInterval {
+        calendar.dateInterval(of: .month, for: selectedMonth)
+            ?? DateInterval(start: calendar.startOfDay(for: selectedMonth), duration: 1)
+    }
+
+    private var monthWorkouts: [WorkoutSessionSummary] {
+        store.workoutSummaries.filter { selectedMonthInterval.contains($0.date) }
+    }
+
+    private var gamification: GamificationSnapshot {
+        store.gamificationSnapshot(now: referenceDate, calendar: calendar)
+    }
+
+    private var monthXP: Int {
+        monthWorkouts.reduce(0) { $0 + GamificationEngine.xpForSession($1) }
+    }
+
+    private var weeklyStreakWeeks: Int {
+        WeeklyStreakCalculator.current(
+            sessions: store.workoutSummaries,
+            targetTrainingDays: trainingProfile.workoutsPerWeek,
+            now: referenceDate,
+            calendar: calendar
+        )
+    }
+
+    private var muscleDashboardData: WorkoutMuscleDashboardData {
+        let history = WorkoutDashboardDataBuilder.filteredHistory(
+            store.allExerciseHistory(),
+            for: musclePeriod,
+            now: referenceDate,
+            calendar: calendar
+        )
+        return WorkoutDashboardDataBuilder.muscleData(
+            history: history,
+            mappings: store.muscleMappings,
+            selectedMuscleID: selectedMuscleID
+        )
+    }
+
+    private var appLocale: Locale {
+        AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    }
+}
+
+@MainActor
 struct ExerciseProgressView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.calendar) private var calendar
@@ -11,18 +234,22 @@ struct ExerciseProgressView: View {
     @State private var monthOffset = 0
     @State private var selectedExerciseID: UUID?
     @State private var showingExerciseSelector = false
+    private let showsHeader: Bool
 
-    init(store: WorkoutStore) {
+    init(store: WorkoutStore, showsHeader: Bool = true) {
         self.store = store
+        self.showsHeader = showsHeader
     }
 
     var body: some View {
         GymBackground {
             ScrollView {
                 LazyVStack(spacing: GymTheme.contentSpacing) {
-                    GymScreenHeader(
-                        title: t("Progress", "Прогрес")
-                    )
+                    if showsHeader {
+                        GymScreenHeader(
+                            title: t("Progress", "Прогрес")
+                        )
+                    }
 
                     WorkoutMonthSwitcher(
                         month: selectedMonth,

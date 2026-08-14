@@ -429,6 +429,7 @@ class GymNavGraphSecurityTest {
             var customMediaPresent = true
             var backupSharesPresent = true
             var restTimersPresent = true
+            var liveStatePresent = true
             var garminAccountStatePresent = true
 
             repeat(2) {
@@ -454,6 +455,10 @@ class GymNavGraphSecurityTest {
                         restTimersPresent = false
                         true
                     },
+                    clearLiveState = {
+                        liveStatePresent = false
+                        true
+                    },
                     clearGarminState = {
                         garminAccountStatePresent = false
                         true
@@ -468,6 +473,7 @@ class GymNavGraphSecurityTest {
             assertFalse(customMediaPresent)
             assertFalse(backupSharesPresent)
             assertFalse(restTimersPresent)
+            assertFalse(liveStatePresent)
             assertFalse(garminAccountStatePresent)
             assertEquals(
                 CloudAccountDeletionSessionDisposition.AlreadySignedOut,

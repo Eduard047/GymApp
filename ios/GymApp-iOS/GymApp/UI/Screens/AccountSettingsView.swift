@@ -38,9 +38,14 @@ struct AccountSettingsView: View {
     @State private var isChangingPushSetting = false
 
     private let showsCloseButton: Bool
+    private let hasBlockingLiveWorkout: Bool
 
-    init(showsCloseButton: Bool = false) {
+    init(
+        showsCloseButton: Bool = false,
+        hasBlockingLiveWorkout: Bool = false
+    ) {
         self.showsCloseButton = showsCloseButton
+        self.hasBlockingLiveWorkout = hasBlockingLiveWorkout
     }
 
     var body: some View {
@@ -373,6 +378,22 @@ struct AccountSettingsView: View {
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
                 .accessibilityHint("Asks for confirmation before ending this session")
+                .disabled(hasBlockingLiveWorkout)
+
+                if hasBlockingLiveWorkout {
+                    Label(
+                        gymText(
+                            "Finish, leave, or cancel the live workout before signing out so queued partner updates are not abandoned.",
+                            "Заверши, покинь або скасуй живе тренування перед виходом, щоб не залишити оновлення для партнера в черзі.",
+                            "Заверши, покинь или отмени живую тренировку перед выходом, чтобы не оставить обновления для партнёра в очереди.",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "exclamationmark.arrow.triangle.2.circlepath"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -417,7 +438,12 @@ struct AccountSettingsView: View {
 
     private var signOutSupportingText: String {
         if isCloudAccount {
-            return "Ends this session without deleting your account or cloud data. Your selected Garmin watch remains paired until you explicitly revoke it."
+            return gymText(
+                "Ends this session without deleting your account or cloud data. Your selected Garmin watch remains paired until you explicitly revoke it.",
+                "Завершує цей сеанс без видалення акаунта чи хмарних даних. Вибраний годинник Garmin залишиться прив’язаним, доки ти не відкличеш його вручну.",
+                "Завершает этот сеанс без удаления аккаунта или облачных данных. Выбранные часы Garmin останутся привязанными, пока ты не отзовёшь их вручную.",
+                languageCode: gymCurrentLanguageCode()
+            )
         }
         return gymText(
             "Leaves this profile signed out. Its workouts remain on this device and the saved profile can be opened again.",

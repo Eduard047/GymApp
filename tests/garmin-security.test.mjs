@@ -180,12 +180,14 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(comm, /"action" => "ackPlan"/);
   assert.match(comm, /"planId" => planId\.toString\(\)/);
   assert.match(view, /GymComm\.acknowledgeCloudPlan\(message/);
-  assert.match(view, /GymStore\.canQueueWorkout\(message\)/);
-  assert.match(view, /if \(!GymStore\.hasAccountBinding\(\) \|\| GymStore\.pending\.size\(\) == 0\)/);
+  assert.match(store, /static function queueWorkout\(message\)[\s\S]*canQueueWorkout\(message\)/);
+  assert.doesNotMatch(view, /GymStore\.canQueueWorkout\(message\)/,
+    "the queue owner must recognize a durable same-id retry before applying capacity");
+  assert.match(view, /if \(!GymStore\.hasAccountBinding\(\) \|\| GymStore\.pending\.size\(\) == 0 \|\|[\s\S]*pendingSendInFlight\)/);
   assert.match(view, /if \(!GymStore\.queueWorkout\(message\)\)/);
   assert.match(
     view,
-    /if \(!finishWorkout\(\)\)[\s\S]*return;[\s\S]*if \(!GymSession\.stopAndSave\(\)\)/
+    /GymStore\.prepareWorkoutCommit\(\)[\s\S]*GymSession\.stopAndSave\(\)[\s\S]*GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*finishWorkout\(\)/
   );
   assert.doesNotMatch(view, /if \(!GymSession\.recording\) \{\s*GymStore\.clearActiveWorkout\(\)/);
   assert.match(app, /GymStore\.applyPhoneSync\(message\)/);

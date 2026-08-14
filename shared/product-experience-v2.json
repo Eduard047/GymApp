@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 2,
+  "productVersion": "3.0.10",
+  "fullClients": ["android", "ios", "pwa"],
+  "wearableClient": "garmin",
+  "terminology": {
+    "navigation": ["today", "exercises", "progress", "profile"],
+    "progressSections": ["overview", "exercises", "goals"],
+    "missionsPlacement": "progress.goals",
+    "manualPlanAction": {
+      "en": "Create manually",
+      "uk": "Створити вручну",
+      "ru": "Создать вручную"
+    },
+    "tutorialAction": {
+      "en": "Show tutorial",
+      "uk": "Показати навчання",
+      "ru": "Показать обучение"
+    },
+    "liveAcceptAction": {
+      "en": "Start together",
+      "uk": "Почати разом",
+      "ru": "Начать вместе"
+    },
+    "liveAcceptMeaning": "acceptAtomicallyStartsBothParticipants"
+  },
+  "navigation": {
+    "fullClientTabOrder": ["today", "exercises", "progress", "profile"],
+    "today": "oneCurrentActionFirst",
+    "exercises": "catalogAndMovementGuides",
+    "progress": "overviewExerciseProgressAndGoals",
+    "profile": "accountProfilesPreferencesFriendsSettingsAndHelp",
+    "nativePresentationMayDiffer": true,
+    "capabilityOrderAndOutcomeMustMatch": true
+  },
+  "todayFocusLens": {
+    "states": ["recommendedPlan", "activeWorkout", "recovery"],
+    "recommendedPlan": {
+      "contentOrder": ["focus", "exerciseAndSetCount", "estimatedDuration", "weeklyRhythm"],
+      "actionsInOrder": ["startPlan", "editPlan", "createManually"]
+    },
+    "activeWorkout": {
+      "contentOrder": ["currentExercise", "currentSet", "completedProgress", "restOrNextAction"],
+      "actionsInOrder": ["continueWorkout", "discardWorkout"]
+    },
+    "recovery": {
+      "contentOrder": ["reason", "nextRecommendedDay"],
+      "actionsInOrder": ["trainAnyway", "editPlan"]
+    },
+    "lifetimeMetricsPlacement": "progress.overview",
+    "heatmapPlacement": "progress.overview",
+    "muscleLoadPlacement": "progress.overview",
+    "recommendationExplanation": "progressiveDisclosureWhyThisPlan"
+  },
+  "firstWorkout": {
+    "entryActionsInOrder": ["startPlan", "editPlan", "createManually"],
+    "skipAction": "createManually",
+    "sameValidatedLaunchContract": true,
+    "activeWorkoutOverwrite": "never",
+    "accountBound": true
+  },
+  "tutorial": {
+    "version": 1,
+    "visualSignature": "focusHalo",
+    "automaticTrigger": "firstStableRootAfterAuthenticationOrLocalProfileActivation",
+    "automaticRunsPerAccountOrLocalProfile": 1,
+    "completionStates": ["completed", "skipped"],
+    "automaticReplayAfterCompletionOrSkip": false,
+    "manualReplayPath": "profile.help.showTutorial",
+    "manualReplayChangesCompletion": false,
+    "accountBound": true,
+    "lateOldAccountResult": "ignored",
+    "deferWhile": [
+      "authenticationCallback",
+      "pushOrDeepLinkTarget",
+      "sharedWorkoutImport",
+      "activeWorkout",
+      "liveWorkoutReservationOrRoom",
+      "blockingPermissionOrDestructiveDialog",
+      "accountSwitch"
+    ],
+    "steps": [
+      {
+        "id": "todayFocus",
+        "target": "today.focusLens",
+        "title": {
+          "en": "Your next workout",
+          "uk": "Твоє наступне тренування",
+          "ru": "Твоя следующая тренировка"
+        },
+        "body": {
+          "en": "Start, continue, or adjust today’s plan here.",
+          "uk": "Тут можна почати, продовжити або змінити план на сьогодні.",
+          "ru": "Здесь можно начать, продолжить или изменить план на сегодня."
+        }
+      },
+      {
+        "id": "todayPrimaryAction",
+        "target": "today.primaryAction",
+        "title": {
+          "en": "One clear next step",
+          "uk": "Один зрозумілий наступний крок",
+          "ru": "Один понятный следующий шаг"
+        },
+        "body": {
+          "en": "GymApp keeps the current workout action within easy reach.",
+          "uk": "GymApp тримає поточну дію тренування під рукою.",
+          "ru": "GymApp держит текущее действие тренировки под рукой."
+        }
+      },
+      {
+        "id": "exercises",
+        "target": "navigation.exercises",
+        "title": {
+          "en": "Exercises",
+          "uk": "Вправи",
+          "ru": "Упражнения"
+        },
+        "body": {
+          "en": "Find movements and open their technique guide.",
+          "uk": "Знаходь вправи та відкривай підказки з техніки.",
+          "ru": "Находи упражнения и открывай подсказки по технике."
+        }
+      },
+      {
+        "id": "progress",
+        "target": "navigation.progress",
+        "title": {
+          "en": "Progress and goals",
+          "uk": "Прогрес і цілі",
+          "ru": "Прогресс и цели"
+        },
+        "body": {
+          "en": "Review your trend, muscle load, records, and missions.",
+          "uk": "Переглядай динаміку, навантаження м’язів, рекорди та місії.",
+          "ru": "Смотри динамику, нагрузку мышц, рекорды и миссии."
+        }
+      },
+      {
+        "id": "profile",
+        "target": "navigation.profile",
+        "title": {
+          "en": "Profile and help",
+          "uk": "Профіль і допомога",
+          "ru": "Профиль и помощь"
+        },
+        "body": {
+          "en": "Manage profiles, training preferences, friends, settings, and replay this tutorial.",
+          "uk": "Керуй профілями, тренувальними вподобаннями, друзями, налаштуваннями та повторюй це навчання.",
+          "ru": "Управляй профилями, тренировочными предпочтениями, друзьями, настройками и повторяй это обучение."
+        }
+      }
+    ],
+    "controls": ["back", "next", "skip", "done"],
+    "accessibility": {
+      "announcesStepCount": true,
+      "dialogSemantics": true,
+      "keyboardAndSwitchControl": true,
+      "focusContainedUntilDismissed": true,
+      "dynamicTypeAndFontScaling": true,
+      "reducedMotionDisablesHaloAnimation": true,
+      "missingTarget": "advanceWithoutBlocking"
+    }
+  },
+  "socialAndLive": {
+    "successfulMutationRefreshFailure": {
+      "state": "confirmedRestoring",
+      "mustNotReportMutationFailure": true,
+      "automaticReconcile": true,
+      "mutationReplay": "neverWithoutSameIdempotencyKey"
+    },
+    "liveAcceptance": {
+      "visibleAction": "startTogether",
+      "authoritativeRoomStatusAfterAccept": "active",
+      "legacyMutationResponseStatusesAccepted": ["ready", "active"],
+      "legacyReadyMeaning": "confirmedCompatibilityResponseThenAuthoritativeRefresh",
+      "ownerOnlyStartActionVisible": false
+    },
+    "pushTarget": {
+      "preserve": ["type", "opaqueObjectId", "revision", "accountBinding"],
+      "openAfterAuthoritativeRefresh": true,
+      "missingOrRevokedFallback": "genericSocialSurfaceWithoutExistenceOracle"
+    },
+    "workoutInbox": {
+      "listPayload": "metadataOnly",
+      "planPayload": "separateBoundedOwnerAuthorizedFetch",
+      "incomingPageSize": 10,
+      "maximumPages": 2,
+      "maximumIncomingItems": 20,
+      "maximumOutgoingItems": 20,
+      "maximumRenderedItems": 40,
+      "maximumResponseBytes": 262144,
+      "pagination": "stableIncomingCursorWithIdenticalOutgoingSnapshot",
+      "loadMoreAction": "visibleOnlyWhenNextCursorExists"
+    },
+    "realtime": {
+      "payload": "opaqueInvalidationOnly",
+      "wireEvent": "gymapp_social_changed",
+      "wireKinds": ["privacy_changed"],
+      "coveredAuthoritativeChanges": ["privacy", "friendshipAuthorization"],
+      "workoutInviteFreshness": ["push", "boundedAuthoritativeRefresh"],
+      "activityFreshness": ["boundedAuthoritativeRefresh", "focusRefresh", "pollWhereSupported"],
+      "authoritativeAccountBoundRefetch": true,
+      "wirePayloadMustNotContainPrivateObjectData": true
+    }
+  },
+  "garmin": {
+    "tutorial": {
+      "version": 1,
+      "automaticTrigger": "firstSafeReadyAfterInstallOrPairing",
+      "deferWhile": ["recoveredWorkout", "recording", "fitCleanup", "accountTransition"],
+      "steps": ["startOrResume", "syncStatusAndPendingCount", "settings"],
+      "controls": ["back", "next", "skip", "done"],
+      "manualReplayPath": "settings.tutorial"
+    },
+    "finishTransaction": {
+      "states": ["active", "prepared", "fitSaved", "queued", "acknowledged"],
+      "fitSaveBeforeQueue": true,
+      "activeSnapshotClearedAfterDurableQueue": true,
+      "preparedMessageBoundToAccountDeviceAndRequest": true,
+      "recoveryIsIdempotent": true,
+      "discardNeverSendsPreparedWorkout": true,
+      "queueFailureNeverBlocksLocalFitSave": true
+    },
+    "sync": {
+      "automaticRetry": true,
+      "oldestFirst": true,
+      "boundedBackoff": true,
+      "pendingCountVisible": true,
+      "lastSuccessfulSyncVisible": true,
+      "manualRetryVisible": true,
+      "neverEvictWithoutExplicitUserChoice": true
+    },
+    "visibleStatus": [
+      "savedOnWatch",
+      "waitingForPhone",
+      "syncing",
+      "synced",
+      "retryAvailable"
+    ],
+    "deviceLayouts": ["compactButton", "fullButton", "touch"],
+    "technicalProtocolStatusPrimaryUi": false
+  },
+  "releaseEvidence": {
+    "fullClients": [
+      "comparableScreenshots",
+      "firstLoginTutorialCompleteSkipAndReplay",
+      "offlineAndAccountSwitch",
+      "twoAccountFriendsAndLive",
+      "coldAndWarmPushTap"
+    ],
+    "garmin": [
+      "compactButtonSimulator",
+      "fullButtonSimulator",
+      "touchSimulator",
+      "fitFailureRecovery",
+      "offlineQueueReconnect",
+      "restartDuringWorkout",
+      "duplicateAck",
+      "physicalWatchBoundary"
+    ]
+  }
+}

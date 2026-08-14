@@ -1,6 +1,15 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum NativePushScrollBehavior: Equatable, Sendable {
+    case animated
+    case immediate
+}
+
+func nativePushScrollBehavior(reduceMotion: Bool) -> NativePushScrollBehavior {
+    reduceMotion ? .immediate : .animated
+}
+
 @MainActor
 struct ProfileView: View {
     private enum ProfileSection: String, CaseIterable, Identifiable {
@@ -29,6 +38,8 @@ struct ProfileView: View {
     @ObservedObject private var garminPhoneSync: GarminPhoneSyncService
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AccessibilityFocusState private var focusedProfilePushTarget: NativePushProfileFocus?
 
     @State private var activeAlert: ActiveAlert?
     @State private var showsAccountSettings = false
@@ -40,9 +51,12 @@ struct ProfileView: View {
     @State private var exportFilename = "GymApp-backup"
     @State private var resultMessage: String?
     @State private var fulfilledNativePushRequestID: UUID?
+    @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
     @State private var selectedSection: ProfileSection = .training
+    @State private var trainingProfile = TrainingProfile()
     private let canAcceptWorkoutInvites: Bool
     private let nativePushRequest: NativePushProfileRequest?
+    private let onShowTutorial: () -> Void
     private let onOpenLiveWorkout: () -> Void
 
     init(
@@ -52,6 +66,7 @@ struct ProfileView: View {
         canAcceptWorkoutInvites: Bool = true,
         liveWorkoutCoordinator: LiveWorkoutCoordinator,
         nativePushRequest: NativePushProfileRequest? = nil,
+        onShowTutorial: @escaping () -> Void = {},
         onOpenLiveWorkout: @escaping () -> Void
     ) {
         self.appState = appState
@@ -62,6 +77,7 @@ struct ProfileView: View {
         self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
         self.nativePushRequest = nativePushRequest
+        self.onShowTutorial = onShowTutorial
         self.onOpenLiveWorkout = onOpenLiveWorkout
     }
 
@@ -83,16 +99,23 @@ struct ProfileView: View {
                                 auth: auth,
                                 canAcceptWorkoutInvites: canAcceptWorkoutInvites,
                                 liveWorkoutCoordinator: liveWorkoutCoordinator,
+                                nativePushAccessibilityTarget: requestedNativePushAccessibilityTarget,
                                 onOpenAccountSettings: {
                                     showsAccountSettings = true
                                 },
                                 onOpenLiveWorkout: onOpenLiveWorkout
                             )
                             .id(NativePushProfileFocus.friends)
+                            .accessibilityFocused(
+                                $focusedProfilePushTarget,
+                                equals: .friends
+                            )
                         } else {
+                            trainingPreferencesCard
                             accountCard
                             garminCard
                             backupCard
+                            helpCard
                         }
                     }
                     .padding(.horizontal, GymTheme.screenHorizontalInset)
@@ -102,6 +125,8 @@ struct ProfileView: View {
                 .scrollDismissesKeyboard(.interactively)
             }
             .task(id: nativePushRequest?.id) {
+                requestedNativePushAccessibilityTarget = nil
+                focusedProfilePushTarget = nil
                 guard let nativePushRequest else { return }
                 await scrollToNativePushRequest(
                     nativePushRequest,
@@ -118,7 +143,10 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showsAccountSettings) {
             NavigationStack {
-                AccountSettingsView(showsCloseButton: true)
+                AccountSettingsView(
+                    showsCloseButton: true,
+                    hasBlockingLiveWorkout: liveWorkoutCoordinator.hasBlockingLiveWorkout
+                )
             }
             .environmentObject(appState)
             .environmentObject(auth)
@@ -138,8 +166,23 @@ struct ProfileView: View {
             onCompletion: handleExportCompletion
         )
         .task(id: auth.session?.storageKey) {
+            trainingProfile = TrainingProfileStore().load(
+                accountStorageKey: store.accountStorageKey
+            )
             guard isCloudAccount, !garminCloud.isWorking else { return }
             try? await garminCloud.refreshDevices()
+        }
+        .onChange(of: trainingProfile) { profile in
+            guard !TrainingProfileStore().save(
+                profile,
+                accountStorageKey: store.accountStorageKey
+            ) else { return }
+            resultMessage = gymText(
+                "Training preferences could not be saved.",
+                "Не вдалося зберегти тренувальні вподобання.",
+                "Не удалось сохранить тренировочные предпочтения.",
+                languageCode: languageCode
+            )
         }
     }
 
@@ -176,6 +219,10 @@ struct ProfileView: View {
         switch request.focus {
         case .friends:
             exactAnchor = .friends
+        case let .friendRequest(friendshipID):
+            exactAnchor = socialFriendshipIsVisible(friendshipID) ? .friendRequest(friendshipID) : nil
+        case let .workoutInvite(inviteID):
+            exactAnchor = socialWorkoutInviteIsVisible(inviteID) ? .workoutInvite(inviteID) : nil
         case .liveWorkouts:
             exactAnchor = appState.socialDashboard == nil ? nil : .liveWorkouts
         case let .liveRoom(roomID):
@@ -187,14 +234,49 @@ struct ProfileView: View {
         }
 
         if let exactAnchor {
-            withAnimation { proxy.scrollTo(exactAnchor, anchor: .top) }
+            scroll(proxy, to: exactAnchor)
+            requestedNativePushAccessibilityTarget = exactAnchor
+            focusedProfilePushTarget = exactAnchor == .friends ? .friends : nil
+            // Let the exact card appear and accept VoiceOver focus before this
+            // route is considered fulfilled.
+            await Task.yield()
             fulfilledNativePushRequestID = request.id
         } else if allowFallback {
             let fallback: NativePushProfileFocus = appState.socialDashboard == nil
                 ? .friends
                 : .liveWorkouts
-            withAnimation { proxy.scrollTo(fallback, anchor: .top) }
+            scroll(proxy, to: fallback)
+            requestedNativePushAccessibilityTarget = fallback
+            focusedProfilePushTarget = fallback == .friends ? .friends : nil
+            // The parent creates this request only after its bounded authoritative
+            // fetch/open attempt finishes. A missing exact object therefore resolves
+            // once to the nearest safe surface instead of repeatedly pulling the user
+            // back on every later dashboard or inbox refresh.
+            await Task.yield()
+            fulfilledNativePushRequestID = request.id
         }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to target: NativePushProfileFocus) {
+        switch nativePushScrollBehavior(reduceMotion: reduceMotion) {
+        case .animated:
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
+        case .immediate:
+            proxy.scrollTo(target, anchor: .top)
+        }
+    }
+
+    private func socialFriendshipIsVisible(_ friendshipID: String) -> Bool {
+        guard let dashboard = appState.socialDashboard else { return false }
+        return dashboard.incoming.contains { $0.friendshipID == friendshipID }
+            || dashboard.outgoing.contains { $0.friendshipID == friendshipID }
+            || dashboard.friends.contains { $0.friendshipID == friendshipID }
+    }
+
+    private func socialWorkoutInviteIsVisible(_ inviteID: String) -> Bool {
+        guard let inbox = appState.socialWorkoutInbox else { return false }
+        return inbox.incoming.contains { $0.inviteID == inviteID }
+            || inbox.outgoing.contains { $0.inviteID == inviteID }
     }
 
     private var header: some View {
@@ -261,6 +343,117 @@ struct ProfileView: View {
                 .buttonStyle(GymSecondaryButtonStyle())
                 .accessibilityHint("Opens account settings, Garmin, support, sign out, and account deletion")
             }
+        }
+    }
+
+    private var trainingPreferencesCard: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    title: gymText(
+                        "Training preferences",
+                        "Тренувальні вподобання",
+                        "Тренировочные предпочтения",
+                        languageCode: languageCode
+                    )
+                )
+
+                profilePicker(
+                    gymText("Split", "Спліт", "Сплит", languageCode: languageCode),
+                    selection: $trainingProfile.split,
+                    label: trainingSplitLabel
+                )
+                profilePicker(
+                    gymText("Goal", "Ціль", "Цель", languageCode: languageCode),
+                    selection: $trainingProfile.goal,
+                    label: trainingGoalLabel
+                )
+                profilePicker(
+                    gymText("Calories", "Калорії", "Калории", languageCode: languageCode),
+                    selection: $trainingProfile.calorieMode,
+                    label: calorieModeLabel
+                )
+                Stepper(value: $trainingProfile.workoutsPerWeek, in: 2 ... 6) {
+                    HStack {
+                        Text(gymText(
+                            "Training days",
+                            "Тренувальні дні",
+                            "Тренировочные дни",
+                            languageCode: languageCode
+                        ))
+                        Spacer()
+                        Text(trainingProfile.workoutsPerWeek.formatted())
+                            .font(.body.monospacedDigit().weight(.bold))
+                            .foregroundStyle(GymTheme.primary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var helpCard: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                GymSectionTitle(
+                    title: gymText("Help", "Допомога", "Помощь", languageCode: languageCode)
+                )
+                Button(action: onShowTutorial) {
+                    Label(
+                        gymText(
+                            "Show tutorial",
+                            "Показати навчання",
+                            "Показать обучение",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "questionmark.circle"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+            }
+        }
+    }
+
+    private func profilePicker<Value: Hashable & CaseIterable>(
+        _ title: String,
+        selection: Binding<Value>,
+        label: @escaping (Value) -> String
+    ) -> some View where Value.AllCases: RandomAccessCollection {
+        HStack {
+            Text(title)
+            Spacer()
+            Picker(title, selection: selection) {
+                ForEach(Array(Value.allCases), id: \.self) { value in
+                    Text(label(value)).tag(value)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+    }
+
+    private func trainingSplitLabel(_ split: TrainingSplit) -> String {
+        switch split {
+        case .upperLower: gymText("Upper / Lower", "Верх / низ", "Верх/низ", languageCode: languageCode)
+        case .fullBody: gymText("Full Body", "Все тіло", "Все тело", languageCode: languageCode)
+        case .pushPullLegs: gymText("Push Pull Legs", "Жим / тяга / ноги", "Жим/тяга/ноги", languageCode: languageCode)
+        case .custom: gymText("Custom", "Своя", "Своя", languageCode: languageCode)
+        }
+    }
+
+    private func trainingGoalLabel(_ goal: TrainingGoal) -> String {
+        switch goal {
+        case .aestheticFatLoss: gymText("Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка", languageCode: languageCode)
+        case .muscleGain: gymText("Muscle Gain", "Набір мʼязів", "Набор мышц", languageCode: languageCode)
+        case .strength: gymText("Strength", "Сила", "Сила", languageCode: languageCode)
+        case .balanced: gymText("Balanced", "Баланс", "Баланс", languageCode: languageCode)
+        }
+    }
+
+    private func calorieModeLabel(_ mode: CalorieMode) -> String {
+        switch mode {
+        case .deficit: gymText("Deficit", "Дефіцит", "Дефицит", languageCode: languageCode)
+        case .maintenance: gymText("Maintenance", "Підтримка", "Поддержание", languageCode: languageCode)
+        case .surplus: gymText("Surplus", "Профіцит", "Профицит", languageCode: languageCode)
         }
     }
 

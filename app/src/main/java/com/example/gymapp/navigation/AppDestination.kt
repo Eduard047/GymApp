@@ -84,7 +84,7 @@ sealed class AppDestination(
     companion object {
         const val ADD_WORKOUT_LAUNCH_ARGUMENT = "launch"
         const val ADD_WORKOUT_ROUTE_PATTERN = "add_workout?launch={launch}"
-        val bottomTabs = listOf(Workouts, Missions, Exercises, Progress, Profile)
+        val bottomTabs = listOf(Workouts, Exercises, Progress, Profile)
 
         fun workoutDetailRoute(sessionId: Long): String {
             return "workout_detail/$sessionId"

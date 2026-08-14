@@ -228,11 +228,10 @@ else
     temporary_debug="$temporary_output.debug.xml"
     rm -f -- "$temporary_output" "$temporary_settings" "$temporary_debug"
     compiler_args+=(-o "$temporary_output" -d "$device")
-    # CIQ 3.4 watch apps on these products have a 96 KiB ceiling. The SDK 9.2
-    # debug table alone pushes the otherwise-valid compact build over that cap;
-    # strip only debug metadata while retaining identical runtime code.
+    # These constrained CIQ watch-app targets need debug metadata stripped to
+    # stay within their loader limit. Runtime workout/FIT/sync code is unchanged.
     case "$device" in
-        descentg1|instinct2|instinct2s|instinct2x|instinctcrossover)
+        descentg1|enduro|fenix6|fenix6s|fr245|fr55|instinct2|instinct2s|instinct2x|instinctcrossover|venusq)
             compiler_args+=(-r)
             ;;
     esac

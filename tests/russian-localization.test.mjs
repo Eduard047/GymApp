@@ -150,7 +150,8 @@ test("retained browser source accepts Russian while the public landing owns its 
     ["A previous Garmin device creation is still awaiting revocation. Keep this page open and retry before pairing again.", "Предыдущее создание устройства Garmin всё ещё ожидает отзыва. Не закрывай эту страницу и повтори попытку перед новым сопряжением."],
     ["Aesthetic goal: the plan favors clean volume and technique.", "Цель сушки: план делает упор на качественный объём и технику."],
     ["Achievements", "Достижения"],
-    ["Back", "Сзади"],
+    ["Back", "Назад"],
+    ["Rear", "Сзади"],
     ["Back to workouts", "К тренировкам"],
     ["Backup JSON ready", "Резервная копия JSON готова"],
     ["Backup imported.", "Резервная копия импортирована."],
@@ -246,12 +247,12 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.match(indexSource, /russian-text\.v80\.js/);
+  assert.match(indexSource, /russian-text\.v81\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v88\.js/);
-  assert.match(workerSource, /russian-text\.v80\.js/);
+  assert.match(indexSource, /app\.v91\.js/);
+  assert.match(workerSource, /russian-text\.v81\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v88\.js/);
+  assert.match(workerSource, /app\.v91\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });

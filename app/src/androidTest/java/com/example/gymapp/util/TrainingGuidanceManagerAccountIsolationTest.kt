@@ -205,6 +205,90 @@ class TrainingGuidanceManagerAccountIsolationTest {
         }
     }
 
+    @Test
+    fun tutorialCompletionIsVersionedAccountBoundAndRejectsLateOldAccountWrites() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        clear(context)
+        val accountA = AccountSession.Local("Tutorial A")
+        val accountB = AccountSession.Local("Tutorial B")
+        val manager = TrainingGuidanceManager(context)
+
+        try {
+            manager.switchAccount(accountA)
+            val bindingA = manager.accountBinding(accountA)
+            assertTrue(manager.shouldRunAutomaticTutorial(1, bindingA))
+            assertTrue(
+                manager.recordTutorialCompletion(
+                    1,
+                    FirstRunTutorialCompletion.Completed,
+                    bindingA
+                )
+            )
+            assertFalse(manager.shouldRunAutomaticTutorial(1, bindingA))
+
+            manager.switchAccount(accountB)
+            val bindingB = manager.accountBinding(accountB)
+            assertTrue(manager.shouldRunAutomaticTutorial(1, bindingB))
+            assertFalse(
+                manager.recordTutorialCompletion(
+                    1,
+                    FirstRunTutorialCompletion.Skipped,
+                    bindingA
+                )
+            )
+            assertTrue(manager.shouldRunAutomaticTutorial(1, bindingB))
+            assertTrue(
+                manager.recordTutorialCompletion(
+                    1,
+                    FirstRunTutorialCompletion.Skipped,
+                    bindingB
+                )
+            )
+
+            val reloaded = TrainingGuidanceManager(context)
+            reloaded.switchAccount(accountA)
+            assertEquals(FirstRunTutorialCompletion.Completed, reloaded.tutorialProgress.value.completion)
+            assertFalse(reloaded.shouldRunAutomaticTutorial(1, reloaded.accountBinding(accountA)))
+            assertTrue(reloaded.shouldRunAutomaticTutorial(2, reloaded.accountBinding(accountA)))
+        } finally {
+            clear(context)
+        }
+    }
+
+    @Test
+    fun clearingAccountRemovesOnlyThatProfilesTutorialTerminalState() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        clear(context)
+        val accountA = AccountSession.Local("Clear tutorial A")
+        val accountB = AccountSession.Local("Clear tutorial B")
+        val manager = TrainingGuidanceManager(context)
+
+        try {
+            manager.switchAccount(accountA)
+            assertTrue(
+                manager.recordTutorialCompletion(
+                    1,
+                    FirstRunTutorialCompletion.Skipped,
+                    manager.accountBinding(accountA)
+                )
+            )
+            manager.switchAccount(accountB)
+            assertTrue(
+                manager.recordTutorialCompletion(
+                    1,
+                    FirstRunTutorialCompletion.Completed,
+                    manager.accountBinding(accountB)
+                )
+            )
+            assertTrue(manager.clearAccount(accountA))
+            assertFalse(manager.shouldRunAutomaticTutorial(1, manager.accountBinding(accountB)))
+            manager.switchAccount(accountA)
+            assertTrue(manager.shouldRunAutomaticTutorial(1, manager.accountBinding(accountA)))
+        } finally {
+            clear(context)
+        }
+    }
+
     private fun clear(context: Context) {
         context.deleteSharedPreferences(PREFERENCES)
     }

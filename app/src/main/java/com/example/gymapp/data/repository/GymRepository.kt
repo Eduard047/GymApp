@@ -302,6 +302,11 @@ internal fun canonicalV229CloudWorkoutDigest(backup: ValidatedBackup): String =
         )
     )
 
+internal data class LiveWorkoutLocalRecoveryState(
+    val active: ActiveWorkoutDetails?,
+    val exactHistory: List<WorkoutSessionDetails>
+)
+
 class GymRepository(
     private val database: GymDatabase,
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
@@ -1416,6 +1421,19 @@ class GymRepository(
 
     suspend fun getActiveWorkoutSnapshot(): ActiveWorkoutDetails? =
         activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)?.sortedActiveWorkout()
+
+    internal suspend fun getLiveWorkoutLocalRecoveryState(
+        workoutStartedAt: Long
+    ): LiveWorkoutLocalRecoveryState = activeWorkoutMutationMutex.withLock {
+        database.withTransaction {
+            LiveWorkoutLocalRecoveryState(
+                active = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                    ?.sortedActiveWorkout(),
+                exactHistory = workoutDao.getSessionDetailsAtExactDate(workoutStartedAt)
+                    .map(::sortSessionDetails)
+            )
+        }
+    }
 
     suspend fun startActiveWorkout(
         date: Long,

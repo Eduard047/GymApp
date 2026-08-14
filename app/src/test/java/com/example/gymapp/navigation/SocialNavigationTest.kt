@@ -2,6 +2,8 @@ package com.example.gymapp.navigation
 
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.push.PushNavigationTarget
+import com.example.gymapp.push.LivePushKind
+import com.example.gymapp.push.SocialPushType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -30,12 +32,22 @@ class SocialNavigationTest {
     fun pushOpenedProfileThenWorkoutsUsesTheSameNonRestoringRootPolicy() {
         assertEquals(
             AppDestination.Profile,
-            pushNavigationDestination(PushNavigationTarget.Social)
+            pushNavigationDestination(
+                PushNavigationTarget.Social(
+                    SocialPushType.FriendRequestReceived,
+                    "f_${"b".repeat(32)}",
+                    1
+                )
+            )
         )
         assertEquals(
             AppDestination.Profile,
             pushNavigationDestination(
-                PushNavigationTarget.Live("lr_${"a".repeat(32)}")
+                PushNavigationTarget.Live(
+                    LivePushKind.Started,
+                    "lr_${"a".repeat(32)}",
+                    2
+                )
             )
         )
         assertFalse(shouldPreserveBottomTabState(AppDestination.Workouts))
@@ -45,6 +57,49 @@ class SocialNavigationTest {
     fun activeWorkoutBlocksInviteAcceptanceBeforeAnyRpcCanRun() {
         assertEquals(false, canAcceptSocialWorkoutInvite(activeWorkoutExists = true))
         assertEquals(true, canAcceptSocialWorkoutInvite(activeWorkoutExists = false))
+    }
+
+    @Test
+    fun automaticTutorialRunsOnlyOnTheStableUnblockedWorkoutsRoot() {
+        fun eligible(
+            externalTarget: Boolean = false,
+            activeWorkout: Boolean = false,
+            liveReservation: Boolean = false,
+            blockingDialog: Boolean = false,
+            accountTransition: Boolean = false
+        ) = canPresentAutomaticTutorial(
+            shouldRunForAccount = true,
+            hasSession = true,
+            isStableWorkoutsRoot = true,
+            authenticationInProgress = false,
+            introVisible = false,
+            hasPendingExternalTarget = externalTarget,
+            hasActiveWorkout = activeWorkout,
+            hasLiveReservationOrRoom = liveReservation,
+            hasBlockingDialog = blockingDialog,
+            accountTransitionInProgress = accountTransition
+        )
+
+        assertTrue(eligible())
+        assertFalse(eligible(externalTarget = true))
+        assertFalse(eligible(activeWorkout = true))
+        assertFalse(eligible(liveReservation = true))
+        assertFalse(eligible(blockingDialog = true))
+        assertFalse(eligible(accountTransition = true))
+        assertFalse(
+            canPresentAutomaticTutorial(
+                shouldRunForAccount = true,
+                hasSession = true,
+                isStableWorkoutsRoot = false,
+                authenticationInProgress = false,
+                introVisible = false,
+                hasPendingExternalTarget = false,
+                hasActiveWorkout = false,
+                hasLiveReservationOrRoom = false,
+                hasBlockingDialog = false,
+                accountTransitionInProgress = false
+            )
+        )
     }
 
     @Test

@@ -52,13 +52,22 @@ internal sealed interface PushPayload {
 }
 
 internal sealed interface PushNavigationTarget {
-    data object Social : PushNavigationTarget
-    data class Live(val roomId: String) : PushNavigationTarget
+    data class Social(
+        val type: SocialPushType,
+        val objectId: String,
+        val objectRevision: Int
+    ) : PushNavigationTarget
+
+    data class Live(
+        val kind: LivePushKind,
+        val roomId: String,
+        val roomRevision: Int
+    ) : PushNavigationTarget
 }
 
 internal fun PushPayload.navigationTarget(): PushNavigationTarget = when (this) {
-    is PushPayload.Social -> PushNavigationTarget.Social
-    is PushPayload.Live -> PushNavigationTarget.Live(roomId)
+    is PushPayload.Social -> PushNavigationTarget.Social(type, objectId, objectRevision)
+    is PushPayload.Live -> PushNavigationTarget.Live(kind, roomId, objectRevision)
 }
 
 /**

@@ -119,6 +119,9 @@ class GymApplication : Application() {
                                 record.sessionGeneration
                             )
                         },
+                        clearLiveState = {
+                            clearCloudAccountLiveState(record.userId)
+                        },
                         clearGarminState = {
                             garminManager.clearCloudAccountLocalState(
                                 record.userId,
@@ -167,6 +170,13 @@ class GymApplication : Application() {
             val record = cloudAuthManager.prepareLocalProfileDeletion(expectedSession)
             clearPendingLocalProfileDeletion(record)
         }
+
+    internal fun clearCloudAccountLiveState(userId: String): Boolean {
+        val liveCleared = liveWorkoutSidecarStore.clearCloudAccountLocalState(userId)
+        val socialRequestsCleared =
+            cloudAuthManager.clearCloudAccountSocialWorkoutRequestState(userId)
+        return liveCleared && socialRequestsCleared
+    }
 
     private fun clearPendingLocalProfileDeletion(
         record: PendingLocalProfileDeletion

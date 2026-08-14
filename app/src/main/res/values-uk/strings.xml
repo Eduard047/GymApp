@@ -1,7 +1,7 @@
 ﻿<resources>
     <string name="app_name">Трекер тренувань</string>
 
-    <string name="tab_workouts">Тренування</string>
+    <string name="tab_workouts">Сьогодні</string>
     <string name="tab_missions">Завдання</string>
     <string name="tab_exercises">Вправи</string>
     <string name="tab_progress">Прогрес</string>
@@ -92,6 +92,7 @@
     <string name="friends_privacy_share_workout_details_supporting">Вимкнено за замовчуванням. Друзі зможуть відкрити точні підходи лише після ввімкнення.</string>
     <string name="friends_privacy_share_records">Показувати рекорди у вправах</string>
     <string name="friends_privacy_saved">Налаштування приватності збережено.</string>
+    <string name="friends_privacy_partially_saved">Частину налаштувань приватності збережено. Перевір їх і повтори решту зміни.</string>
     <string name="friends_privacy_save_failed">Налаштування змінилися на іншому пристрої або не збереглися. Онови дані й повтори.</string>
     <string name="friends_safety_eyebrow">БЕЗПЕКА</string>
     <string name="friends_blocked_title">Заблоковані профілі</string>
@@ -734,6 +735,8 @@
     <string name="workout_plan_clear_message">Усі вправи й підходи буде видалено.</string>
     <string name="workout_plan_clear_keep">Залишити план</string>
     <string name="today_rest">Сьогодні відпочинок</string>
+    <string name="today_recovery_reason_target">Тижневу ціль виконано: %1$d із %2$d тренувальних днів.</string>
+    <string name="today_next_recommended_day">Наступний рекомендований день: %1$s</string>
     <string name="today_train_anyway">Усе одно тренуватися</string>
     <string name="today_reason_recovery">Відновлення безпечніше для нещодавно навантажених м’язів.</string>
     <string name="today_reason_feedback_hard">Минулого разу було важко, тому сьогодні відновлення.</string>
@@ -1120,7 +1123,7 @@
     <string name="live_workout_invite_unavailable">Запрошення надіслано. Можливо, друг зараз недоступний.</string>
     <string name="live_workout_invite_sent">Запрошення на спільне тренування надіслано.</string>
     <string name="live_workout_action_failed">Не вдалося оновити спільне тренування.</string>
-    <string name="live_workout_ready_waiting_owner">Готово. Тренування почнеться, коли його запустить власник.</string>
+    <string name="live_workout_ready_waiting_owner">Спільне тренування почалося. Відновлюємо його стан…</string>
     <string name="live_workout_started_after_accept">Спільне тренування почалося.</string>
     <string name="live_workout_invite_declined">Запрошення на спільне тренування відхилено.</string>
     <string name="live_workout_start_failed">Не вдалося почати спільне тренування.</string>
@@ -1132,7 +1135,7 @@
     <string name="workout_share_copy_friend_title">Надіслати незалежну копію</string>
     <string name="workout_share_copy_friend_action">Надіслати копію: %1$s</string>
     <string name="workout_share_live_friend_title">Тренуватися разом</string>
-    <string name="workout_share_live_friend_supporting">Дочекайтеся підключення друга, потім власник запустить одне синхронне тренування.</string>
+    <string name="workout_share_live_friend_supporting">Коли друг прийме запрошення, одне синхронне тренування почнеться для вас обох.</string>
     <string name="workout_share_live_friend_action">Разом із %1$s</string>
     <string name="live_workout_lobby_eyebrow">Разом</string>
     <string name="live_workout_lobby_title">Кімната спільного тренування</string>
@@ -1143,7 +1146,7 @@
     <string name="live_workout_plan_summary">Вправ: %1$d · підходів: %2$d</string>
     <string name="live_workout_with_friend">Разом із %1$s</string>
     <string name="live_workout_status_waiting">Очікуємо відповідь друга.</string>
-    <string name="live_workout_status_ready">Обидва готові. Власник може почати.</string>
+    <string name="live_workout_status_ready">Оновлюємо стан спільного тренування…</string>
     <string name="live_workout_status_active">Тренування триває.</string>
     <string name="live_workout_start_action">Почати разом</string>
     <string name="live_workout_open_action">Відкрити тренування</string>
@@ -1189,11 +1192,41 @@
     <string name="push_live_invite_received_title">Запрошення на спільне тренування</string>
     <string name="push_live_invite_received_body">Відкрий GymApp, щоб приєднатися.</string>
     <string name="push_live_invite_accepted_title">Друг приєднався</string>
-    <string name="push_live_invite_accepted_body">Спільне тренування готове до старту.</string>
+    <string name="push_live_invite_accepted_body">Спільне тренування вже почалося.</string>
     <string name="push_live_room_started_title">Тренування почалося</string>
     <string name="push_live_room_started_body">Спільне тренування вже розпочато.</string>
     <string name="push_live_participant_finished_title">Друг завершив тренування</string>
     <string name="push_live_participant_finished_body">Переглянь актуальний стан у GymApp.</string>
     <string name="push_live_room_closed_title">Спільне тренування завершено</string>
     <string name="push_live_room_closed_body">Відкрий GymApp, щоб переглянути стан.</string>
+    <string name="activation_edit_plan">Редагувати план</string>
+    <string name="activation_create_manually">Створити вручну</string>
+    <string name="today_plan_size">%1$d вправ · %2$d підходів</string>
+    <string name="today_plan_duration">Близько %1$d хв</string>
+    <string name="progress_section_overview">Огляд</string>
+    <string name="progress_section_exercises">Вправи</string>
+    <string name="progress_section_goals">Цілі</string>
+    <string name="profile_help_title">Допомога</string>
+    <string name="profile_help_supporting">Переглянь, де розташовані основні інструменти тренувань.</string>
+    <string name="tutorial_show_action">Показати навчання</string>
+    <string name="tutorial_step_count">Крок %1$d із %2$d</string>
+    <string name="tutorial_back">Назад</string>
+    <string name="tutorial_next">Далі</string>
+    <string name="tutorial_replay_unavailable">Заверши поточну дію, а потім відкрий навчання знову.</string>
+    <string name="tutorial_completion_save_failed">Не вдалося зберегти прогрес навчання. Спробуй ще раз.</string>
+    <string name="tutorial_skip">Пропустити</string>
+    <string name="tutorial_done">Готово</string>
+    <string name="tutorial_today_focus_title">Твоє наступне тренування</string>
+    <string name="tutorial_today_focus_body">Тут можна почати, продовжити або змінити план на сьогодні.</string>
+    <string name="tutorial_today_primary_title">Один зрозумілий наступний крок</string>
+    <string name="tutorial_today_primary_body">GymApp тримає поточну дію тренування під рукою.</string>
+    <string name="tutorial_exercises_title">Вправи</string>
+    <string name="tutorial_exercises_body">Знаходь вправи та відкривай підказки з техніки.</string>
+    <string name="tutorial_progress_title">Прогрес і цілі</string>
+    <string name="tutorial_progress_body">Переглядай динаміку, навантаження м’язів, рекорди та місії.</string>
+    <string name="tutorial_profile_title">Профіль і допомога</string>
+    <string name="tutorial_profile_body">Керуй профілями, тренувальними вподобаннями, друзями, налаштуваннями та повторюй це навчання.</string>
+    <string name="live_workout_accept_action">Почати разом</string>
+    <string name="live_workout_confirmed_restoring">Спільне тренування почалося. Відновлюємо його стан…</string>
+    <string name="workout_invites_load_more">Показати попередні запрошення</string>
 </resources>

@@ -4,6 +4,7 @@ import com.example.gymapp.auth.LiveCanonicalExercise
 import com.example.gymapp.auth.LiveCanonicalPlan
 import com.example.gymapp.auth.LiveCanonicalSet
 import com.example.gymapp.auth.LiveCompletedSet
+import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.auth.LiveParticipant
 import com.example.gymapp.auth.LiveProfile
 import com.example.gymapp.auth.LiveProgress
@@ -13,6 +14,18 @@ import com.example.gymapp.auth.LiveWorkoutSummary
 import com.example.gymapp.data.repository.LivePendingOperation
 import com.example.gymapp.data.repository.LivePendingOperationKind
 import com.example.gymapp.data.repository.LiveWorkoutBinding
+import com.example.gymapp.data.repository.LiveWorkoutLocalRecoveryState
+import com.example.gymapp.data.entity.ActiveWorkoutDetails
+import com.example.gymapp.data.entity.ActiveWorkoutEntity
+import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
+import com.example.gymapp.data.entity.ActiveWorkoutExerciseWithDetails
+import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
+import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.SetEntryEntity
+import com.example.gymapp.data.entity.WorkoutExerciseEntity
+import com.example.gymapp.data.entity.WorkoutExerciseWithDetails
+import com.example.gymapp.data.entity.WorkoutSessionDetails
+import com.example.gymapp.data.entity.WorkoutSessionEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -163,6 +176,127 @@ class LiveWorkoutQueueReconcileTest {
         assertEquals(LiveQueueReconcileResult.Unsafe, result)
     }
 
+    @Test
+    fun `new session adopts only exact snapshot local mapping and applied queue prefix`() {
+        val queued = operation(
+            "11111111-1111-4111-8111-111111111111",
+            "s_01_01",
+            1,
+            80.0
+        )
+        val previous = binding(listOf(queued))
+        val authoritative = snapshot(
+            revision = 2,
+            completed = listOf(LiveCompletedSet("s_01_01", 80.0, 8, NOW)),
+            undoable = "s_01_01"
+        )
+
+        val result = reconcileSessionMismatchedLiveBinding(
+            previous = previous,
+            newSessionGeneration = NEW_SESSION_GENERATION,
+            inboxRoom = inboxRoom(),
+            snapshot = authoritative,
+            local = LiveWorkoutLocalRecoveryState(
+                active = activeWorkout(firstCompleted = true),
+                exactHistory = emptyList()
+            )
+        ) as LiveSessionBindingReconcileResult.Adopted
+
+        assertEquals(NEW_SESSION_GENERATION, result.binding.sessionGeneration)
+        assertEquals(2, result.binding.progressRevision)
+        assertTrue(result.binding.pendingOperations.isEmpty())
+    }
+
+    @Test
+    fun `new session rejects missing or wrong local mapping`() {
+        val previous = binding(emptyList())
+        val authoritative = snapshot(1, emptyList(), null)
+
+        assertEquals(
+            LiveSessionBindingReconcileResult.Unsafe,
+            reconcileSessionMismatchedLiveBinding(
+                previous = previous,
+                newSessionGeneration = NEW_SESSION_GENERATION,
+                inboxRoom = inboxRoom(),
+                snapshot = authoritative,
+                local = LiveWorkoutLocalRecoveryState(null, emptyList())
+            )
+        )
+        assertEquals(
+            LiveSessionBindingReconcileResult.Unsafe,
+            reconcileSessionMismatchedLiveBinding(
+                previous = previous,
+                newSessionGeneration = NEW_SESSION_GENERATION,
+                inboxRoom = inboxRoom(),
+                snapshot = authoritative,
+                local = LiveWorkoutLocalRecoveryState(
+                    active = activeWorkout(firstLocalSetId = WRONG_LOCAL_SET_ID),
+                    exactHistory = emptyList()
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `finished local history is required for finished binding adoption`() {
+        val previous = binding(emptyList()).copy(
+            progressRevision = 2,
+            localFinished = true
+        )
+        val authoritative = snapshot(
+            revision = 2,
+            completed = listOf(LiveCompletedSet("s_01_01", 80.0, 8, NOW)),
+            undoable = "s_01_01",
+            selfState = "finished",
+            finishedAt = NOW
+        )
+        val matchingHistory = workoutHistory(weight = 80.0)
+
+        val adopted = reconcileSessionMismatchedLiveBinding(
+            previous = previous,
+            newSessionGeneration = NEW_SESSION_GENERATION,
+            inboxRoom = inboxRoom(memberState = "finished"),
+            snapshot = authoritative,
+            local = LiveWorkoutLocalRecoveryState(null, listOf(matchingHistory))
+        )
+        val rejected = reconcileSessionMismatchedLiveBinding(
+            previous = previous,
+            newSessionGeneration = NEW_SESSION_GENERATION,
+            inboxRoom = inboxRoom(memberState = "finished"),
+            snapshot = authoritative,
+            local = LiveWorkoutLocalRecoveryState(
+                null,
+                listOf(workoutHistory(weight = 120.0))
+            )
+        )
+
+        assertTrue(adopted is LiveSessionBindingReconcileResult.Adopted)
+        assertEquals(LiveSessionBindingReconcileResult.Unsafe, rejected)
+    }
+
+    @Test
+    fun `exact terminal snapshot clears stale generation without local adoption`() {
+        val terminal = snapshot(1, emptyList(), null).copy(
+            room = snapshot(1, emptyList(), null).room.copy(
+                status = "cancelled",
+                startedAt = null,
+                activeExpiresAt = null,
+                endedAt = NOW
+            )
+        )
+
+        assertEquals(
+            LiveSessionBindingReconcileResult.Terminal,
+            reconcileSessionMismatchedLiveBinding(
+                previous = binding(emptyList()),
+                newSessionGeneration = NEW_SESSION_GENERATION,
+                inboxRoom = null,
+                snapshot = terminal,
+                local = LiveWorkoutLocalRecoveryState(null, emptyList())
+            )
+        )
+    }
+
     private fun operation(
         id: String,
         setId: String,
@@ -177,6 +311,87 @@ class LiveWorkoutQueueReconcileTest {
         reps = 8
     )
 
+    private fun inboxRoom(memberState: String = "joined") = LiveInboxRoom(
+        roomId = ROOM_ID,
+        status = "active",
+        roomRevision = 4,
+        role = "owner",
+        memberState = memberState,
+        membershipRevision = 2,
+        createdAt = NOW,
+        startedAt = NOW,
+        activeExpiresAt = LATER,
+        summary = LiveWorkoutSummary(1, 2, listOf("Bench press")),
+        peer = LiveProfile("p_0123456789abcdef0123456789abcdef", "Partner")
+    )
+
+    private fun activeWorkout(
+        firstCompleted: Boolean = false,
+        firstLocalSetId: String = FIRST_LOCAL_SET_ID
+    ) = ActiveWorkoutDetails(
+        activeWorkout = ActiveWorkoutEntity(
+            id = 1,
+            date = STARTED_AT,
+            note = null,
+            startedAt = STARTED_AT,
+            revision = if (firstCompleted) 1 else 0,
+            undoableSetId = firstLocalSetId.takeIf { firstCompleted }
+        ),
+        exercises = listOf(
+            ActiveWorkoutExerciseWithDetails(
+                activeWorkoutExercise = ActiveWorkoutExerciseEntity(
+                    id = "82345678-1234-4123-8123-123456789abc",
+                    activeWorkoutId = 1,
+                    exerciseName = "Bench press",
+                    catalogKey = "bench_press",
+                    orderIndex = 0
+                ),
+                sets = listOf(
+                    ActiveWorkoutSetEntity(
+                        id = firstLocalSetId,
+                        activeWorkoutExerciseId = "82345678-1234-4123-8123-123456789abc",
+                        weight = 80.0,
+                        reps = 8,
+                        orderIndex = 0,
+                        completedAt = STARTED_AT.takeIf { firstCompleted }
+                    ),
+                    ActiveWorkoutSetEntity(
+                        id = SECOND_LOCAL_SET_ID,
+                        activeWorkoutExerciseId = "82345678-1234-4123-8123-123456789abc",
+                        weight = 82.5,
+                        reps = 8,
+                        orderIndex = 1,
+                        completedAt = null
+                    )
+                )
+            )
+        )
+    )
+
+    private fun workoutHistory(weight: Double) = WorkoutSessionDetails(
+        session = WorkoutSessionEntity(id = 41, date = STARTED_AT, note = null),
+        workoutExercises = listOf(
+            WorkoutExerciseWithDetails(
+                workoutExercise = WorkoutExerciseEntity(
+                    id = 42,
+                    sessionId = 41,
+                    exerciseId = 43,
+                    orderIndex = 0
+                ),
+                exercise = ExerciseEntity(id = 43, name = "Bench press"),
+                sets = listOf(
+                    SetEntryEntity(
+                        id = 44,
+                        workoutExerciseId = 42,
+                        weight = weight,
+                        reps = 8,
+                        orderIndex = 0
+                    )
+                )
+            )
+        )
+    )
+
     private fun binding(queue: List<LivePendingOperation>) = LiveWorkoutBinding(
         userId = "42345678-1234-4123-8123-123456789abc",
         sessionGeneration = "52345678-1234-4123-8123-123456789abc",
@@ -187,10 +402,10 @@ class LiveWorkoutQueueReconcileTest {
         roomRevision = 3,
         membershipRevision = 1,
         progressRevision = 1,
-        workoutStartedAt = 1_786_330_800_000L,
+        workoutStartedAt = STARTED_AT,
         serverToLocalSetIds = mapOf(
-            "s_01_01" to "62345678-1234-4123-8123-123456789abc",
-            "s_01_02" to "72345678-1234-4123-8123-123456789abc"
+            "s_01_01" to FIRST_LOCAL_SET_ID,
+            "s_01_02" to SECOND_LOCAL_SET_ID
         ),
         localFinished = queue.any { it.kind == LivePendingOperationKind.Finish },
         pendingOperations = queue
@@ -230,7 +445,7 @@ class LiveWorkoutQueueReconcileTest {
         )
         val peer = LiveParticipant(
             isSelf = false,
-            profile = LiveProfile("p_${"2".repeat(32)}", "Partner"),
+            profile = LiveProfile("p_0123456789abcdef0123456789abcdef", "Partner"),
             role = "participant",
             state = "joined",
             membershipRevision = 1,
@@ -261,5 +476,10 @@ class LiveWorkoutQueueReconcileTest {
         const val ROOM_ID = "lr_0123456789abcdef0123456789abcdef"
         const val NOW = "2026-08-10T09:00:00Z"
         const val LATER = "2026-08-10T11:00:00Z"
+        const val STARTED_AT = 1_786_352_400_000L
+        const val FIRST_LOCAL_SET_ID = "62345678-1234-4123-8123-123456789abc"
+        const val SECOND_LOCAL_SET_ID = "72345678-1234-4123-8123-123456789abc"
+        const val WRONG_LOCAL_SET_ID = "92345678-1234-4123-8123-123456789abc"
+        const val NEW_SESSION_GENERATION = "92345678-1234-4123-8123-123456789abd"
     }
 }

@@ -296,7 +296,9 @@ internal fun parseLiveRespondInviteResult(raw: String): LiveRespondInviteResult 
     val root = liveRoot(raw, expected)
     require(result in setOf("joined", "declined")) { "Live workout response is invalid." }
     val status = root.liveString("status", 16)
-    require((result == "joined" && status == "ready") ||
+    // `ready` is the legacy response emitted by the atomic start-on-accept RPC even though
+    // its committed room is already active. Callers must still restore from a fresh snapshot.
+    require((result == "joined" && status in setOf("active", "ready")) ||
         (result == "declined" && status == "cancelled")) {
         "Live workout response is invalid."
     }

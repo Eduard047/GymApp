@@ -10,13 +10,13 @@ const section = (source, start, end) => {
   return source.slice(startIndex, endIndex);
 };
 
-test("fresh Garmin launch is Ready and performs no workout or outbound sync mutation", async () => {
+test("fresh Garmin launch is Ready or a prepared recovery and never starts a workout", async () => {
   const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
   const onShow = section(view, "function onShow()", "function onHide()");
   const tick = section(view, "function tick()", "function requestSyncNow()");
 
   assert.match(view, /var page = 7/);
-  assert.match(onShow, /page = 7/);
+  assert.match(onShow, /page = GymStore\.hasPreparedWorkout\(\) \? 3 : 7/);
   assert.match(onShow, /selected = 0/);
   assert.match(onShow, /getApp\(\)\.pollMailbox\(\)/);
   assert.doesNotMatch(
@@ -27,10 +27,7 @@ test("fresh Garmin launch is Ready and performs no workout or outbound sync muta
     tick.indexOf("if (page == 7 || !GymSession.recording)") < tick.indexOf("GymSession.tick()"),
     "the idle tick must return before recording logic"
   );
-  assert.ok(
-    tick.indexOf("return;") < tick.indexOf("requestSyncNow()"),
-    "the idle tick must return before periodic phone sync"
-  );
+  assert.match(tick, /maybeRetryPending\(\)[\s\S]*if \(page == 7 \|\| !GymSession\.recording\)/);
   assert.doesNotMatch(view, /scheduleCloudSyncOnOpen|requestCloudSyncOnOpen|cloudAuto/);
 });
 
@@ -39,14 +36,25 @@ test("Start and Resume are explicit, single-shot, and fail closed", async () => 
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/source/GymSession.mc", "utf8")
   ]);
-  const start = section(view, "function startOrResumeWorkout()", "function syncFromReady()");
+  const start = section(
+    view,
+    "(:enhancedRecoveryCheckpoint)\n    function startOrResumeWorkout()",
+    "(:compactRecovery96)\n    function startOrResumeWorkout()"
+  );
+  const compactStart = section(
+    view,
+    "(:compactRecovery96)\n    function startOrResumeWorkout()",
+    "function syncFromReady()"
+  );
   const fitStart = section(session, "static function start()", "static function failStartAndCleanup()");
   const failedFitStart = section(session, "static function failStartAndCleanup()", "static function pause()");
 
-  assert.match(start, /if \(page != 7 \|\| GymSession\.fitSaved\)/);
+  assert.match(start, /if \(page != 7 \|\| GymSession\.fitSaved \|\| GymStore\.hasPreparedWorkout\(\)\)/);
   assert.match(start, /var resuming = hasWorkoutToResume\(\)/);
   assert.match(start, /GymSession\.recording[\s\S]*GymSession\.paused[\s\S]*GymSession\.resume\(\)/);
   assert.equal((start.match(/GymSession\.start\(\)/g) || []).length, 1);
+  assert.equal((compactStart.match(/GymSession\.start\(\)/g) || []).length, 1);
+  assert.match(compactStart, /GymStore\.hasPreparedWorkout\(\)/);
   assert.ok(start.indexOf("if (!started)") < start.indexOf("page = 0"));
   assert.match(fitStart, /if \(recording\) \{\s*startSensors\(\);\s*\} else \{\s*stopSensors\(\);/);
   assert.ok(
@@ -91,7 +99,7 @@ test("durable unfinished state is resumable while an empty snapshot remains a to
   assert.match(view, /"RESUME WORKOUT", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ"/);
 });
 
-test("Ready manual Sync is the only launch-surface outbound action", async () => {
+test("Ready exposes manual Sync while a bounded retry drains only durable pending work", async () => {
   const [view, app] = await Promise.all([
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/source/GymApp.mc", "utf8")
@@ -100,6 +108,9 @@ test("Ready manual Sync is the only launch-surface outbound action", async () =>
   assert.match(readySync, /requestSyncNow\(\)/);
   assert.match(readySync, /flushPending\(\)/);
   assert.match(readySync, /GymComm\.hasCloudDeviceToken\(\)[\s\S]*requestCloudSyncNow\(\)/);
+  const retry = section(view, "function maybeRetryPending()", "function hasWorkoutToResume()");
+  assert.match(retry, /pendingRetryStartedAt == null[\s\S]*return;/);
+  assert.match(retry, /pendingRetryDelayMs\.toLong\(\)[\s\S]*flushPending\(\)/);
   assert.match(app, /Comm\.registerForPhoneAppMessages\(phoneMessageMethod\)/);
   assert.match(app, /typeText\.equals\("sync"\)[\s\S]*GymStore\.applyPhoneSync\(message\)/);
 });
@@ -119,7 +130,7 @@ test("Back from Ready exits without falling through to pause or workout navigati
   );
 });
 
-test("Ready copy, order, version, and redacted pairing status stay compact in EN UK RU", async () => {
+test("Ready copy, order, version, and redacted sync status stay compact in EN UK RU", async () => {
   const [view, manifest] = await Promise.all([
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/manifest.xml", "utf8")
@@ -127,18 +138,24 @@ test("Ready copy, order, version, and redacted pairing status stay compact in EN
   const version = manifest.match(/version="(\d+\.\d+\.\d+)"/)?.[1];
   assert.ok(version);
 
-  const ready = section(view, "(:fullLegacyState)\n    function drawReady(dc, w, h)", "(:compactLegacyState)\n    function drawReady(dc, w, h)");
+  const ready = section(view, "(:fullLegacyState)\n    function drawReady(dc, w, h)", "(:compactRichRecovery)\n    function drawReady(dc, w, h)");
   assert.ok(ready.indexOf("readyPrimaryText()") < ready.indexOf('"SYNC PLAN"'));
   assert.ok(ready.indexOf('"SYNC PLAN"') < ready.indexOf('"SETTINGS"'));
-  const compactReady = section(view, "(:compactLegacyState)\n    function drawReady(dc, w, h)", "(:fullLegacyState)\n    function drawReadyRow(");
+  const compactReady = section(view, "(:compactRichRecovery)\n    function drawReady(dc, w, h)", "(:compactRecovery96)\n    function drawReady(dc, w, h)");
   assert.ok(compactReady.indexOf("readyPrimaryText()") < compactReady.indexOf('"SYNC"'));
   assert.ok(compactReady.indexOf('"SYNC"') < compactReady.indexOf('"SETTINGS"'));
   assert.match(view, /"START WORKOUT", "ПОЧАТИ ТРЕН\.", "НАЧАТЬ ТРЕН\."/);
   assert.match(view, /"SYNC PLAN", "СИНХ\. ПЛАН", "СИНХ\. ПЛАН"/);
-  assert.match(view, /"PAIRED", "ПРИВ'ЯЗАНО", "СОПРЯЖЕНО"/);
   assert.match(view, /"NOT PAIRED", "НЕ ПРИВ'ЯЗАНО", "НЕ СОПРЯЖЕНО"/);
-  const binding = section(view, "function readyBindingText()", "function readyPrimaryText()");
-  assert.match(binding, /GymStore\.hasAccountBinding\(\)/);
+  assert.match(view, /"SYNC ", "СИНХ ", "СИНХ "/);
+  assert.match(view, /" WAITING · LAST ", " ЧЕКАЄ · ОСТ\. ", " ЖДУТ · ПОСЛ\. "/);
+  const binding = section(
+    view,
+    "function readyBindingText()",
+    "(:fullLegacyState)\n    function readyStatusText()"
+  );
+  assert.match(binding, /readyStatusText\(\)/);
   assert.doesNotMatch(binding, /accountBinding|deviceBinding|CloudDeviceToken/);
   assert.match(compactReady, /"GYMAPP READY", "GYMAPP ГОТОВ", "GYMAPP ГОТОВО"/);
+  assert.match(compactReady, /w >= 200 \? Gfx\.FONT_SMALL : Gfx\.FONT_XTINY/);
 });

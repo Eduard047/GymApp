@@ -304,7 +304,8 @@ enum class WeeklyTrainingDecision {
 data class WeeklyTrainingRhythm(
     val completedTrainingDays: Int,
     val targetTrainingDays: Int,
-    val decision: WeeklyTrainingDecision
+    val decision: WeeklyTrainingDecision,
+    val nextRecommendedDayMillis: Long? = null
 )
 
 internal object WeeklyTrainingRhythmCalculator {
@@ -330,13 +331,21 @@ internal object WeeklyTrainingRhythmCalculator {
             .distinct()
             .count()
 
+        val decision = when {
+            completedDays >= targetTrainingDays -> WeeklyTrainingDecision.Rest
+            recoveryRecommended -> WeeklyTrainingDecision.Recovery
+            else -> WeeklyTrainingDecision.Train
+        }
         return WeeklyTrainingRhythm(
             completedTrainingDays = completedDays,
             targetTrainingDays = targetTrainingDays,
-            decision = when {
-                completedDays >= targetTrainingDays -> WeeklyTrainingDecision.Rest
-                recoveryRecommended -> WeeklyTrainingDecision.Recovery
-                else -> WeeklyTrainingDecision.Train
+            decision = decision,
+            nextRecommendedDayMillis = when (decision) {
+                WeeklyTrainingDecision.Rest ->
+                    weekStart.plusWeeks(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+                WeeklyTrainingDecision.Recovery ->
+                    today.atStartOfDay(zoneId).toInstant().toEpochMilli()
+                WeeklyTrainingDecision.Train -> null
             }
         )
     }

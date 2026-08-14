@@ -309,6 +309,20 @@ class GymSession {
         return true;
     }
 
+    (:recoveryCore)
+    static function fitOutcomeUnknownAfterRestart() {
+        return session == null && !recording && !fitSaved;
+    }
+
+    // The 96 KiB products cannot afford the richer decision screen, but they
+    // still need to distinguish a live FIT handle from the phase-0 marker left
+    // by a process termination. This predicate never creates, saves, or
+    // discards an ActivityRecording session.
+    (:compactRecovery96)
+    static function fitOutcomeUnknownAfterRestart() {
+        return session == null && !recording && !fitSaved;
+    }
+
     static function discard() {
         stopSensors();
         if (session == null) {
@@ -562,9 +576,9 @@ class GymSession {
         }
     }
 
-    // The five 96 KiB products use the proven accelerometer + HR path. The
-    // synchronized gyro implementation above is excluded only to respect their
-    // executable ceiling; failure still falls back to HR-only detection.
+    // The compact hardware tier uses the proven accelerometer + HR path. The
+    // synchronized gyro implementation above is excluded only to preserve its
+    // loader reserve; failure still falls back to HR-only detection.
     (:compactLegacyState)
     static function startMotionListener() {
         if (motionListenerRegistered || !(Sensor has :registerSensorDataListener)) {
@@ -791,35 +805,25 @@ class GymSession {
             }
             if (count < 2) {
                 return;
-            } else if (count > 40) {
-                count = 40;
             }
-            var total = 0.0;
-            var accepted = 0;
-            for (var i = 1; i < count; i += 1) {
-                if (!isFiniteSensorNumber(xs[i]) || !isFiniteSensorNumber(ys[i]) ||
-                    !isFiniteSensorNumber(zs[i]) || !isFiniteSensorNumber(xs[i - 1]) ||
-                    !isFiniteSensorNumber(ys[i - 1]) || !isFiniteSensorNumber(zs[i - 1])) {
-                    continue;
-                }
-                total += absolute(xs[i] - xs[i - 1]);
-                total += absolute(ys[i] - ys[i - 1]);
-                total += absolute(zs[i] - zs[i - 1]);
-                accepted += 1;
+            var last = count - 1;
+            if (!isFiniteSensorNumber(xs[0]) || !isFiniteSensorNumber(ys[0]) ||
+                !isFiniteSensorNumber(zs[0]) || !isFiniteSensorNumber(xs[last]) ||
+                !isFiniteSensorNumber(ys[last]) || !isFiniteSensorNumber(zs[last])) {
+                return;
             }
-            if (accepted > 0) {
-                var sampleScore = total / accepted;
-                motionScore = (motionScore * 0.55) + (sampleScore * 0.45);
-                lastMotionTimerMs = System.getTimer();
-                motionAvailable = true;
-                if (motionScore >= motionThreshold() * 0.55) {
-                    lastCredibleMotionSeconds = elapsedSeconds;
-                    if (effortState.equals("SET ACTIVE") && activeSetSeen && !autoLogPrompt) {
-                        currentSetLastEvidenceGymCalories = gymCalories;
-                        currentSetLastEvidenceGarminCalories = garminCalories;
-                    } else if (!activeSetSeen && !paused) {
-                        beginSetCandidate(hr);
-                    }
+            var sampleScore = absolute(xs[last] - xs[0]) +
+                absolute(ys[last] - ys[0]) + absolute(zs[last] - zs[0]);
+            motionScore = (motionScore + sampleScore) / 2.0;
+            lastMotionTimerMs = System.getTimer();
+            motionAvailable = true;
+            if (motionScore >= motionThreshold() * 0.55) {
+                lastCredibleMotionSeconds = elapsedSeconds;
+                if (effortState.equals("SET ACTIVE") && activeSetSeen) {
+                    currentSetLastEvidenceGymCalories = gymCalories;
+                    currentSetLastEvidenceGarminCalories = garminCalories;
+                } else if (!activeSetSeen && !paused) {
+                    beginSetCandidate(hr);
                 }
             }
         } catch (ex) {
@@ -1393,13 +1397,7 @@ class GymSession {
         var wasActiveSet = effortState.equals("SET ACTIVE") && activeSetSeen;
         if (wasActiveSet) {
             currentSetEndHr = hr;
-            if (GymStore.autoPromptEnabled) {
-                lastSetEndSeconds = activeEvidenceEndSeconds();
-                currentSetEndGymCalories = currentSetLastEvidenceGymCalories != null ?
-                    currentSetLastEvidenceGymCalories : currentSetStartGymCalories;
-                currentSetEndGarminCalories = currentSetLastEvidenceGarminCalories != null ?
-                    currentSetLastEvidenceGarminCalories : currentSetStartGarminCalories;
-            }
+            lastSetEndSeconds = activeEvidenceEndSeconds();
         }
         hr = null;
         activityHr = null;
@@ -1415,7 +1413,6 @@ class GymSession {
         if (wasActiveSet) {
             if (!GymStore.autoPromptEnabled) {
                 effortState = "SET ACTIVE";
-                lastAutoReason = "manual no hr";
                 return;
             }
             var minimum = GymStore.sensitivityIndex == 0 ? 20 :
@@ -1424,7 +1421,6 @@ class GymSession {
                 effortState = "REST";
                 autoLogPrompt = true;
                 lastPromptSeconds = elapsedSeconds;
-                lastAutoReason = "hr signal lost";
             } else {
                 clearAutoPrompt();
                 GymStore.status = "HR SHORT";
@@ -1438,8 +1434,6 @@ class GymSession {
         if (!effortState.equals("PAUSED")) {
             effortState = "READY";
         }
-        lastAutoReason = "hr missing";
-        debugText = "no hr";
     }
 
     static function trackMinuteHeartRate(value) {
@@ -1459,6 +1453,7 @@ class GymSession {
         minuteHrSamples += 1;
     }
 
+    (:fullLegacyState)
     static function updateEffortState(value) {
         var previous = lastHr;
         var wasSetActive = effortState.equals("SET ACTIVE");
@@ -1674,6 +1669,77 @@ class GymSession {
             " c" + setConfidence.toString() + " " + lastAutoReason;
     }
 
+    // API 3.4 watches have a 96 KiB program ceiling. Keep the same bounded
+    // three-sample confirmation and manual-mode safety without the diagnostic
+    // branches used by larger products.
+    (:compactLegacyState)
+    static function updateEffortState(value) {
+        var previous = lastHr;
+        var wasActive = effortState.equals("SET ACTIVE");
+        lastHr = value;
+        if (sessionBaselineHr == null) {
+            sessionBaselineHr = value;
+        }
+        if (autoLogPrompt || previous == null) {
+            return;
+        }
+        var delta = value - previous;
+        hrTrend = ((hrTrend * 2.0) + delta.toFloat()) / 3.0;
+        var rise = GymStore.sensitivityIndex == 0 ? 7 :
+            (GymStore.sensitivityIndex == 2 ? 4 : 5);
+        var minimum = GymStore.sensitivityIndex == 0 ? 20 :
+            (GymStore.sensitivityIndex == 2 ? 12 : 15);
+        var baselineDelta = value - sessionBaselineHr;
+        var moving = isMotionFresh() && motionScore >= motionThreshold() * 0.55;
+        var activeEvidence = baselineDelta >= 8 &&
+            (delta >= rise || hrTrend >= 3.0 || moving);
+        updateSetConfidence(activeEvidence, zone >= 3 && delta >= 2);
+        if (activeEvidence && setConfidence >= 70) {
+            activeSignalCount += 1;
+        } else {
+            activeSignalCount = 0;
+        }
+        if (activeSignalCount >= 3) {
+            if (!activeSetSeen) {
+                activeSetSeen = true;
+                activeStartSeconds = elapsedSeconds;
+                currentSetStartHr = value;
+                currentSetPeakHr = value;
+                currentSetMaxConfidence = setConfidence;
+                beginSetInterval();
+            }
+            effortState = "SET ACTIVE";
+            currentSetEndHr = value;
+            if (currentSetPeakHr == null || value > currentSetPeakHr) {
+                currentSetPeakHr = value;
+            }
+            lastHrChangeSeconds = elapsedSeconds;
+            return;
+        }
+        if (wasActive && activeSetSeen &&
+            (delta <= -3 || hrTrend <= -3.0 ||
+                elapsedSeconds - lastHrChangeSeconds > 35)) {
+            if (!GymStore.autoPromptEnabled) {
+                effortState = "SET ACTIVE";
+                return;
+            }
+            lastSetEndSeconds = elapsedSeconds;
+            currentSetEndHr = value;
+            if (elapsedSeconds - activeStartSeconds >= minimum) {
+                effortState = "REST";
+                autoLogPrompt = true;
+                lastPromptSeconds = elapsedSeconds;
+            } else {
+                clearAutoPrompt();
+                GymStore.status = "HR SHORT";
+            }
+            return;
+        }
+        if (!activeSetSeen && baselineDelta < 4) {
+            sessionBaselineHr = ((sessionBaselineHr * 3) + value) / 4;
+        }
+    }
+
     (:fullLegacyState)
     static function updateSetConfidence(risingEnough, zoneEntrySignal) {
         var score = 0;
@@ -1786,6 +1852,7 @@ class GymSession {
         return 130.0;
     }
 
+    (:fullLegacyState)
     static function captureSetStatistics() {
         promoteSetCandidateForCapture();
         var hasEndedInterval = (restoredSetInterval instanceof Lang.Array) ||
@@ -1838,6 +1905,39 @@ class GymSession {
             "endHeartRate" => endHrValue,
             "detectionConfidence" => confidence,
             "setInterval" => setInterval
+        };
+    }
+
+    (:compactLegacyState)
+    static function captureSetStatistics() {
+        promoteSetCandidateForCapture();
+        var ended = lastSetEndSeconds > 0 ? lastSetEndSeconds : elapsedSeconds;
+        var started = activeSetSeen && activeStartSeconds >= 0 &&
+            activeStartSeconds <= ended ? activeStartSeconds : ended;
+        var duration = ended - started;
+        if (duration > 7200) {
+            duration = 7200;
+        }
+        var peak = currentSetPeakHr;
+        if (peak == null && isValidHeartRate(hr)) {
+            peak = hr;
+        }
+        var confidence = currentSetMaxConfidence > setConfidence ?
+            currentSetMaxConfidence : setConfidence;
+        if (confidence > 100) {
+            confidence = 100;
+        }
+        var interval = restoredSetInterval instanceof Lang.Array ?
+            copySetInterval(restoredSetInterval) : capturedSetInterval(started, ended);
+        return {
+            "activeSeconds" => duration,
+            "setStartedSeconds" => started,
+            "setEndedSeconds" => ended,
+            "startHeartRate" => currentSetStartHr,
+            "peakHeartRate" => peak,
+            "endHeartRate" => currentSetEndHr,
+            "detectionConfidence" => confidence,
+            "setInterval" => interval
         };
     }
 
@@ -2024,6 +2124,7 @@ class GymSession {
         }
     }
 
+    (:fullLegacyState)
     static function capturedSetInterval(started, ended) {
         if (started < 0) {
             started = 0;
@@ -2080,6 +2181,42 @@ class GymSession {
                     seconds = 0;
                 }
                 if (seconds > remaining) {
+                    seconds = remaining;
+                }
+                interval[i + 4] = seconds;
+                remaining -= seconds;
+            }
+        }
+        return interval;
+    }
+
+    (:compactLegacyState)
+    static function capturedSetInterval(started, ended) {
+        if (started < 0) {
+            started = 0;
+        }
+        if (ended < started) {
+            ended = started;
+        } else if (ended > started + 7200) {
+            ended = started + 7200;
+        }
+        var gymDelta = 0.0;
+        if (currentSetStartGymCalories != null &&
+            gymCalories >= currentSetStartGymCalories) {
+            gymDelta = gymCalories - currentSetStartGymCalories;
+            if (gymDelta > 100000.0) {
+                gymDelta = 100000.0;
+            }
+        }
+        var interval = [started, ended, gymDelta, null, 0, 0, 0, 0, 0, 0];
+        var remaining = ended - started;
+        if (currentSetZoneSeconds instanceof Lang.Array &&
+            currentSetZoneSeconds.size() == 6) {
+            for (var i = 0; i < 6; i += 1) {
+                var seconds = currentSetZoneSeconds[i];
+                if (!(seconds instanceof Lang.Number) || seconds < 0) {
+                    seconds = 0;
+                } else if (seconds > remaining) {
                     seconds = remaining;
                 }
                 interval[i + 4] = seconds;
@@ -2212,6 +2349,7 @@ class GymSession {
         zones = null;
     }
 
+    (:fullLegacyState)
     static function loadProfile() {
         try {
             var profile = UserProfile.getProfile();
@@ -2249,6 +2387,27 @@ class GymSession {
             } else {
                 zones = UserProfile.getHeartRateZones(UserProfile.HR_ZONE_SPORT_GENERIC);
             }
+        } catch (ex2) {
+            zones = null;
+        }
+    }
+
+    (:compactLegacyState)
+    static function loadProfile() {
+        try {
+            var profile = UserProfile.getProfile();
+            if (profile != null && profile.weight != null &&
+                profile.weight >= 30000 && profile.weight <= 300000) {
+                profileWeightKg = profile.weight / 1000.0;
+            }
+            if (profile != null && profile.restingHeartRate != null &&
+                profile.restingHeartRate > 30 && profile.restingHeartRate < 120) {
+                restingHr = profile.restingHeartRate;
+            }
+        } catch (ex) {
+        }
+        try {
+            zones = UserProfile.getHeartRateZones(UserProfile.HR_ZONE_SPORT_GENERIC);
         } catch (ex2) {
             zones = null;
         }

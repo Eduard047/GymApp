@@ -158,14 +158,24 @@ class WeeklyStreakCalculatorTest {
         )
         val now = date(2026, 6, 5)
 
-        assertEquals(
-            WeeklyTrainingDecision.Rest,
-            WeeklyTrainingRhythmCalculator.calculate(timestamps, 4, false, now, zoneId).decision
+        val restRhythm = WeeklyTrainingRhythmCalculator.calculate(
+            timestamps,
+            4,
+            false,
+            now,
+            zoneId
         )
-        assertEquals(
-            WeeklyTrainingDecision.Recovery,
-            WeeklyTrainingRhythmCalculator.calculate(timestamps, 6, true, now, zoneId).decision
+        assertEquals(WeeklyTrainingDecision.Rest, restRhythm.decision)
+        assertEquals(date(2026, 6, 8), restRhythm.nextRecommendedDayMillis)
+        val recoveryRhythm = WeeklyTrainingRhythmCalculator.calculate(
+            timestamps,
+            6,
+            true,
+            now,
+            zoneId
         )
+        assertEquals(WeeklyTrainingDecision.Recovery, recoveryRhythm.decision)
+        assertEquals(now, recoveryRhythm.nextRecommendedDayMillis)
         assertEquals(
             WeeklyTrainingDecision.Train,
             WeeklyTrainingRhythmCalculator.calculate(timestamps, 6, false, now, zoneId).decision

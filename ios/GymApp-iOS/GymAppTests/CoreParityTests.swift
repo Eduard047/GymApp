@@ -7529,6 +7529,61 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(try bindingStore.pendingRevocation(for: userID))
     }
 
+    func testGarminSessionEndOfflineRefreshStillStripsSecretAndAllowsLogout() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let request = GarminPendingDeviceCreation(
+            version: GarminPendingDeviceCreation.currentVersion,
+            userID: userID,
+            requestID: "10000000-0000-4000-8000-000000000001",
+            deviceID: "20000000-0000-4000-8000-000000000002",
+            deviceToken: String(repeating: "ef", count: 32),
+            displayName: "Offline Logout Watch",
+            createdAt: Date(),
+            legacyFallbackAttempted: false
+        )
+        let keychain = InMemoryKeychainStore()
+        let bindingStore = GarminDeviceBindingStore(keychain: keychain)
+        try bindingStore.save(pendingCreation: request)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-session-end-offline-refresh")
+        )
+        try auth.installSessionForTesting(.cloud(CloudAccountSession(
+            userID: userID,
+            email: "offline-logout@example.invalid",
+            displayName: "Offline Logout",
+            accessToken: "expired-access-token",
+            refreshToken: "synthetic-refresh-token",
+            expiresAt: Date().addingTimeInterval(-60)
+        )))
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+        AuthURLProtocolStub.handler = { _ in throw URLError(.notConnectedToInternet) }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.prepareForSessionEnd(expectedUserID: userID)
+
+        XCTAssertNil(try bindingStore.pendingCreation(for: userID))
+        XCTAssertEqual(
+            try bindingStore.pendingRevocation(for: userID)?.deviceID,
+            request.deviceID
+        )
+        XCTAssertFalse(keychain.allData.contains {
+            String(decoding: $0, as: UTF8.self).contains(request.deviceToken)
+        })
+        XCTAssertNotNil(auth.session)
+    }
+
     func testGarminLegacyCleanupListsForExplicitRecoveryWithoutRevokingClientID() async throws {
         let userID = "00000000-0000-4000-8000-0000000000a1"
         let clientDeviceID = "20000000-0000-4000-8000-000000000002"
@@ -10150,6 +10205,70 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(appState.isCloudWritePaused)
     }
 
+    func testKnownCloudAccountOpensOwnerBoundLocalSnapshotOfflineThenReconcilesOnline() async throws {
+        let directory = try temporaryDirectory(named: "known-cloud-offline-activation")
+        let defaults = temporaryDefaults(named: "known-cloud-offline-activation")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let cloud = cloudSession(userID: "known-cloud-offline-user")
+        let session = AppAccountSession.cloud(cloud)
+        let owner = BackupOwner(
+            accountID: cloud.userID,
+            userID: cloud.userID,
+            email: cloud.email,
+            remote: true
+        )
+        let priorStore = try WorkoutStore(
+            accountStorageKey: session.storageKey,
+            directoryURL: directory
+        )
+        _ = try priorStore.seedBuiltInExercises()
+        _ = try priorStore.seedDefaultMuscleMappings()
+        let localExercise = try priorStore.addExercise(name: "Offline Preserved Exercise")
+        _ = try priorStore.createWorkout(
+            date: Date(timeIntervalSince1970: 1_755_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: localExercise.id,
+                    sets: [.init(weight: 42.5, reps: 9)]
+                )
+            ]
+        )
+        let authoritative = try priorStore.exportCloudBackupData(owner: owner)
+        var offline = true
+        var loadAttempts = 0
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            remoteStateLoader: { requestedUserID in
+                XCTAssertEqual(requestedUserID, cloud.userID)
+                loadAttempts += 1
+                if offline { throw URLError(.notConnectedToInternet) }
+                return authoritative
+            }
+        )
+
+        try auth.installSessionForTesting(session)
+        let openedOffline = await waitUntil {
+            appState.isAccountReady && appState.isCloudWritePaused
+        }
+        XCTAssertTrue(openedOffline)
+        XCTAssertNil(appState.accountPreparationError)
+        XCTAssertEqual(customExerciseNames(in: appState.workoutStore), ["Offline Preserved Exercise"])
+        XCTAssertEqual(appState.workoutStore.workoutSummaries.count, 1)
+        XCTAssertEqual(loadAttempts, 1)
+
+        offline = false
+        await appState.forceCloudSync()
+        let reconciled = await waitUntil { !appState.isCloudWritePaused }
+
+        XCTAssertTrue(reconciled)
+        XCTAssertTrue(appState.isAccountReady)
+        XCTAssertEqual(loadAttempts, 2)
+        XCTAssertEqual(customExerciseNames(in: appState.workoutStore), ["Offline Preserved Exercise"])
+        XCTAssertEqual(appState.workoutStore.workoutSummaries.count, 1)
+    }
+
     func testCanonicalCloudConflictRequiresChoiceAndCanLoadVerifiedCloudHistory() async throws {
         let directory = try temporaryDirectory(named: "cloud-conflict-use-cloud")
         let defaults = temporaryDefaults(named: "cloud-conflict-use-cloud")
@@ -10536,7 +10655,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertLessThan(profileIndex, logoutIndex)
     }
 
-    func testSignOutUploadFailureKeepsCurrentAccountForRetry() async throws {
+    func testSignOutUploadFailureClearsLocalSessionAndRetainsAccountStore() async throws {
         let directory = try temporaryDirectory(named: "signout-cloud-failure")
         let defaults = temporaryDefaults(named: "signout-cloud-failure")
         let recorder = AuthRequestRecorder()
@@ -10565,10 +10684,10 @@ final class CoreParityTests: XCTestCase {
                     statusCode: 503,
                     json: #"{"message":"temporarily unavailable"}"#
                 )
-            case ("/rest/v1/profiles", "POST"):
+            case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
             default:
-                XCTFail("Logout must not be requested after a failed final upload: \(request.url?.absoluteString ?? "nil")")
+                XCTFail("Unexpected failed-upload logout request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
             }
         }
@@ -10592,11 +10711,14 @@ final class CoreParityTests: XCTestCase {
         await Task.yield()
         let signedOut = await appState.signOut()
 
-        XCTAssertFalse(signedOut)
-        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
-        XCTAssertTrue(appState.isAccountReady)
-        XCTAssertTrue(customExerciseNames(in: appState.workoutStore).contains("Unsynced logout edit"))
-        XCTAssertTrue(appState.statusIsError)
+        XCTAssertTrue(signedOut)
+        XCTAssertNil(auth.session)
+        let retainedStore = try WorkoutStore(
+            accountStorageKey: AppAccountSession.cloud(cloud).storageKey,
+            directoryURL: directory
+        )
+        XCTAssertTrue(customExerciseNames(in: retainedStore).contains("Unsynced logout edit"))
+        XCTAssertFalse(appState.statusIsError)
         XCTAssertNotNil(appState.statusMessage)
         let finalRequests = Array(recorder.requests.dropFirst(baselineRequestCount))
         let failedStateWrites = finalRequests.filter {
@@ -10608,7 +10730,9 @@ final class CoreParityTests: XCTestCase {
             as: UTF8.self
         )
         XCTAssertTrue(finalFailedBody.contains("Unsynced logout edit"))
-        XCTAssertFalse(finalRequests.contains(where: { $0.url?.path == "/auth/v1/logout" }))
+        XCTAssertEqual(finalRequests.filter {
+            $0.url?.path == "/auth/v1/logout" && $0.httpMethod == "POST"
+        }.count, 1)
     }
 
     func testSignOutRepeatsFinalUploadWhenStoreChangesDuringAwait() async throws {
@@ -11268,8 +11392,8 @@ final class CoreParityTests: XCTestCase {
 
     func testFirstWorkoutActivationUsesParityChipRowsAndOneTodayHeader() throws {
         let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
-        XCTAssertTrue(source.contains("screenHeader\n                            if hasActiveWorkout"))
-        XCTAssertTrue(source.contains("else if activationDismissed"))
+        XCTAssertTrue(source.contains("screenHeader\n                        if activeWorkoutDraft != nil"))
+        XCTAssertTrue(source.contains("store.workoutSummaries.isEmpty, !activationDismissed"))
         XCTAssertTrue(source.contains("activationGoalChoiceGrid("))
         XCTAssertTrue(source.contains("options: TrainingActivationChoices.goals"))
         XCTAssertTrue(source.contains("options: TrainingActivationChoices.days"))
@@ -11292,6 +11416,7 @@ final class CoreParityTests: XCTestCase {
         for exactCopy in [
             "Start plan", "Почати план", "Начать план",
             "Edit plan", "Редагувати план", "Редактировать план",
+            "Create manually", "Створити вручну", "Создать вручную",
             "Train anyway", "Усе одно тренуватися", "Всё равно тренироваться"
         ] {
             XCTAssertTrue(source.contains("\"\(exactCopy)\""))

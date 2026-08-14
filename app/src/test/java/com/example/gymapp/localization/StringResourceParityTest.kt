@@ -41,6 +41,38 @@ class StringResourceParityTest {
     }
 
     @Test
+    fun firstPlanActionsMatchTheSharedEnglishUkrainianAndRussianCopy() {
+        val english = loadStrings("values")
+        val ukrainian = loadStrings("values-uk")
+        val russian = loadStrings("values-ru")
+
+        assertEquals(
+            listOf("Start plan", "Edit plan", "Create manually"),
+            listOf(
+                english["activation_start_plan"],
+                english["activation_edit_plan"],
+                english["activation_create_manually"]
+            )
+        )
+        assertEquals(
+            listOf("Почати план", "Редагувати план", "Створити вручну"),
+            listOf(
+                ukrainian["activation_start_plan"],
+                ukrainian["activation_edit_plan"],
+                ukrainian["activation_create_manually"]
+            )
+        )
+        assertEquals(
+            listOf("Начать план", "Редактировать план", "Создать вручную"),
+            listOf(
+                russian["activation_start_plan"],
+                russian["activation_edit_plan"],
+                russian["activation_create_manually"]
+            )
+        )
+    }
+
+    @Test
     fun releaseCriticalRussianCopyStaysDeviceNeutralAndPolished() {
         val english = loadStrings("values")
         val ukrainian = loadStrings("values-uk")

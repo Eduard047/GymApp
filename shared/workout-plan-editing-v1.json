@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "productVersion": "3.0.9",
+  "productVersion": "3.0.10",
   "scope": {
     "fullEditors": ["android", "ios", "browser"],
     "browser": "full-workout-client"
@@ -17,6 +17,11 @@
         "en": "Start plan",
         "uk": "Почати план",
         "ru": "Начать план"
+      },
+      "todayCreateManually": {
+        "en": "Create manually",
+        "uk": "Створити вручну",
+        "ru": "Создать вручную"
       },
       "editorTitle": {
         "en": "Workout plan",
@@ -96,9 +101,10 @@
     }
   },
   "todayRecommended": {
-    "actionsInOrder": ["startPlan", "editPlan"],
+    "actionsInOrder": ["startPlan", "editPlan", "createManually"],
     "startPlanProminence": "primary",
     "editPlanProminence": "secondary",
+    "createManuallyProminence": "tertiary",
     "bothUseSameValidatedLaunchSnapshot": true,
     "startPlanOpensEditor": false,
     "oneTimeClaimCommitsBeforeActiveWorkoutWrite": true,
@@ -245,6 +251,12 @@
       "from": "todayRecommended",
       "action": "editPlan",
       "to": "planEditorClean",
+      "mutations": []
+    },
+    {
+      "from": "todayRecommended",
+      "action": "createManually",
+      "to": "planEditorEmptyClean",
       "mutations": []
     },
     {

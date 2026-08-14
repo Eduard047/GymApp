@@ -98,7 +98,7 @@ test("Garmin FIT pause, resume, discard, and startup fail without false UI succe
   assert.match(resume, /!session\.start\(\)[\s\S]*return false/);
   assert.ok(resume.indexOf("session.start()") < resume.indexOf("paused = false"));
   assert.match(discard, /discarded = session\.discard\(\)[\s\S]*if \(!discarded\)[\s\S]*return false/);
-  assert.match(onShow, /page = 7/);
+  assert.match(onShow, /page = GymStore\.hasPreparedWorkout\(\) \? 3 : 7/);
   assert.doesNotMatch(onShow, /GymSession\.(?:start|resume|startSensors)\(/);
   assert.match(explicitStart, /GymSession\.recording[\s\S]*GymSession\.paused[\s\S]*GymSession\.resume\(\)/);
   assert.match(explicitStart, /else \{[\s\S]*started = GymSession\.start\(\)/);

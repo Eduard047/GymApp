@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v124";
+const CACHE_VERSION = "v127";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -37,7 +37,7 @@ const ASSETS = [
   "./confirmed.v56.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v72.css",
+  "./styles.v73.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v70.js",
@@ -46,11 +46,11 @@ const ASSETS = [
   "./shared-workout.v65.js",
   "./shared-workout-flow.v71.js",
   "./supabase-realtime.v1.js",
-  "./live-workout.v1.js",
+  "./live-workout.v2.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v80.js",
+  "./russian-text.v81.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v88.js",
+  "./app.v91.js",
   "./workout/",
   "./workout/index.html",
   "./workout/landing.v2.css",
@@ -387,7 +387,13 @@ function pushEnvelope(value) {
 function pushNavigationUrl(data) {
   const target = new URL("./", self.registration.scope);
   target.searchParams.set("notification", data.roomId ? "live" : "social");
+  target.searchParams.set("binding", data.bindingId);
   if (data.roomId) target.searchParams.set("room", data.roomId);
+  else {
+    target.searchParams.set("social_type", data.type);
+    target.searchParams.set("object", data.objectId);
+    target.searchParams.set("revision", String(data.objectRevision));
+  }
   return target;
 }
 
@@ -409,7 +415,14 @@ async function openPushTarget(data) {
       version: 1,
       type: "gymapp_notification_click",
       target: parsed.roomId ? "live" : "social",
-      ...(parsed.roomId ? { roomId: parsed.roomId } : {})
+      bindingId: parsed.bindingId,
+      ...(parsed.roomId
+        ? { roomId: parsed.roomId }
+        : {
+            socialType: parsed.type,
+            objectId: parsed.objectId,
+            objectRevision: parsed.objectRevision
+          })
     });
     await existing.focus();
     return;

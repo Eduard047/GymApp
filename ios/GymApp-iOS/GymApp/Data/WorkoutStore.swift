@@ -568,12 +568,21 @@ public final class WorkoutStore: ObservableObject {
         let liveWorkoutURL = LiveWorkoutSidecarStore.storageURL(
             forWorkoutStorageURL: primaryURL
         )
+        let workoutInviteJournalURL = WorkoutInviteRequestStore.storageURL(
+            forWorkoutStorageURL: primaryURL
+        )
         let liveSlotReservationURL = LiveWorkoutSlotReservationStore.storageURL(
             forWorkoutStorageURL: primaryURL
         )
         let liveWorkoutStem = liveWorkoutURL.deletingPathExtension().lastPathComponent
         let liveWorkoutRecoveryPrefix = "\(liveWorkoutStem).recovery-"
-        var candidates = [primaryURL, activeWorkoutURL, liveWorkoutURL, liveSlotReservationURL]
+        var candidates = [
+            primaryURL,
+            activeWorkoutURL,
+            liveWorkoutURL,
+            liveSlotReservationURL,
+            workoutInviteJournalURL
+        ]
         do {
             let children = try fileManager.contentsOfDirectory(
                 at: directory,

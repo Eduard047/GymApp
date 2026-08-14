@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,7 +37,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,7 +55,10 @@ import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.LiveInvitation
 import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.auth.formatSocialFriendCode
+import com.example.gymapp.auth.hasAnotherBoundedPage
 import com.example.gymapp.auth.rankedSocialFriends
+import com.example.gymapp.push.PushNavigationTarget
+import com.example.gymapp.push.SocialPushType
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.LoadingStatePanel
@@ -79,29 +88,59 @@ internal fun FriendsScreen(
     onDeclineWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onReuseWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onCancelWorkoutInvite: (SocialOutgoingWorkoutInvite) -> Unit,
+    onLoadMoreWorkoutInvites: () -> Unit,
     onClearMessages: () -> Unit,
     onAcceptLiveInvitation: (LiveInvitation) -> Unit,
     onDeclineLiveInvitation: (LiveInvitation) -> Unit,
-    onStartLiveRoom: (LiveInboxRoom) -> Unit,
     onCloseLiveRoom: (LiveInboxRoom) -> Unit,
     onOpenLiveRoom: (LiveInboxRoom) -> Unit,
     onClearLiveMessages: () -> Unit,
     onOpenAccountSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-    headerContent: LazyListScope.() -> Unit = {}
+    focusedSocialPush: PushNavigationTarget.Social? = null,
+    focusedLiveRoomId: String? = null,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var friendCode by rememberSaveable { mutableStateOf("") }
     var copiedCode by rememberSaveable { mutableStateOf(false) }
     var inviteToAccept by remember { mutableStateOf<SocialIncomingWorkoutInvite?>(null) }
     var requestToBlock by remember { mutableStateOf<SocialFriendRequest?>(null) }
+    val listState = rememberLazyListState()
+    val focusedObjectRequester = remember { FocusRequester() }
     val dashboard = uiState.dashboard
     val displayedFriendCode = dashboard?.let {
         formatSocialFriendCode(uiState.myFriendCode ?: it.self.friendCode)
     }.orEmpty()
+    val focusedObjectIndex = friendsFocusedObjectIndex(
+        uiState = uiState,
+        liveUiState = liveUiState,
+        focusedSocialPush = focusedSocialPush,
+        focusedLiveRoomId = focusedLiveRoomId
+    )
+    val focusedObjectKey = focusedLiveRoomId
+        ?: focusedSocialPush?.let { "${it.type.wireValue}:${it.objectId}" }
+
+    LaunchedEffect(focusedObjectKey, focusedObjectIndex) {
+        if (focusedObjectKey != null && focusedObjectIndex != null) {
+            // A direct jump avoids non-essential motion while still placing an exact push target
+            // in the viewport for keyboard, switch-control, and screen-reader users.
+            listState.scrollToItem(focusedObjectIndex)
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { focusedObjectRequester.requestFocus() }
+        }
+    }
+
+    fun focusedObjectModifier(isFocused: Boolean): Modifier = if (isFocused) {
+        Modifier
+            .focusRequester(focusedObjectRequester)
+            .focusable()
+    } else {
+        Modifier
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(
             start = GymSpacing.ScreenHorizontal,
             top = GymSpacing.ScreenTop,
@@ -110,8 +149,6 @@ internal fun FriendsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
-        headerContent()
-
         uiState.error?.let { error ->
             item {
                 MessagePanel(
@@ -158,9 +195,10 @@ internal fun FriendsScreen(
             state = liveUiState,
             onAccept = onAcceptLiveInvitation,
             onDecline = onDeclineLiveInvitation,
-            onStart = onStartLiveRoom,
             onClose = onCloseLiveRoom,
-            onOpen = onOpenLiveRoom
+            onOpen = onOpenLiveRoom,
+            focusedRoomId = focusedLiveRoomId,
+            focusedModifier = focusedObjectModifier(focusedLiveRoomId != null)
         )
 
         val incomingInvites = uiState.workoutInbox?.incoming.orEmpty()
@@ -173,13 +211,30 @@ internal fun FriendsScreen(
                 )
             }
             items(incomingInvites, key = { "incoming-workout-${it.inviteId}" }) { invite ->
+                val highlighted = socialPushTargetsWorkoutInvite(
+                    focusedSocialPush,
+                    invite.inviteId
+                )
                 IncomingWorkoutInviteCard(
                     invite = invite,
+                    highlighted = highlighted,
                     isLoading = "invite-${invite.inviteId}" in uiState.actionsInFlight,
                     onAccept = { inviteToAccept = invite },
                     onDecline = { onDeclineWorkoutInvite(invite) },
-                    onReuse = { inviteToAccept = invite }
+                    onReuse = { inviteToAccept = invite },
+                    modifier = focusedObjectModifier(highlighted)
                 )
+            }
+        }
+        if (uiState.workoutInbox?.hasAnotherBoundedPage() == true) {
+            item {
+                OutlinedButton(
+                    onClick = onLoadMoreWorkoutInvites,
+                    enabled = !uiState.isInboxLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.workout_invites_load_more))
+                }
             }
         }
 
@@ -192,13 +247,19 @@ internal fun FriendsScreen(
                 )
             }
             items(incomingFriendRequests, key = { "incoming-${it.friendshipId}" }) { request ->
+                val highlighted = socialPushTargetsFriendRequest(
+                    focusedSocialPush,
+                    request.friendshipId
+                )
                 IncomingFriendRequestCard(
                     request = request,
+                    highlighted = highlighted,
                     isLoading = "friend-${request.friendshipId}" in uiState.actionsInFlight ||
                         "profile-${request.profileId}" in uiState.actionsInFlight,
                     onAccept = { onAcceptFriendRequest(request) },
                     onDecline = { onDeclineFriendRequest(request) },
-                    onBlock = { requestToBlock = request }
+                    onBlock = { requestToBlock = request },
+                    modifier = focusedObjectModifier(highlighted)
                 )
             }
         }
@@ -299,10 +360,16 @@ internal fun FriendsScreen(
                 )
             }
             items(dashboard.outgoing, key = { "outgoing-${it.friendshipId}" }) { request ->
+                val highlighted = socialPushTargetsFriendRequest(
+                    focusedSocialPush,
+                    request.friendshipId
+                )
                 OutgoingFriendRequestCard(
                     request = request,
+                    highlighted = highlighted,
                     isLoading = "friend-${request.friendshipId}" in uiState.actionsInFlight,
-                    onCancel = { onCancelFriendRequest(request) }
+                    onCancel = { onCancelFriendRequest(request) },
+                    modifier = focusedObjectModifier(highlighted)
                 )
             }
         }
@@ -316,10 +383,16 @@ internal fun FriendsScreen(
                 )
             }
             items(outgoingInvites, key = { "outgoing-workout-${it.inviteId}" }) { invite ->
+                val highlighted = socialPushTargetsWorkoutInvite(
+                    focusedSocialPush,
+                    invite.inviteId
+                )
                 OutgoingWorkoutInviteCard(
                     invite = invite,
+                    highlighted = highlighted,
                     isLoading = "invite-${invite.inviteId}" in uiState.actionsInFlight,
-                    onCancel = { onCancelWorkoutInvite(invite) }
+                    onCancel = { onCancelWorkoutInvite(invite) },
+                    modifier = focusedObjectModifier(highlighted)
                 )
             }
         }
@@ -406,13 +479,109 @@ internal fun FriendsScreen(
     }
 }
 
+internal fun socialPushTargetsFriendRequest(
+    target: PushNavigationTarget.Social?,
+    friendshipId: String
+): Boolean = target?.type == SocialPushType.FriendRequestReceived &&
+    target.objectId == friendshipId
+
+internal fun socialPushTargetsWorkoutInvite(
+    target: PushNavigationTarget.Social?,
+    inviteId: String
+): Boolean = target?.type in setOf(
+    SocialPushType.WorkoutInviteReceived,
+    SocialPushType.WorkoutInviteAccepted
+) && target?.objectId == inviteId
+
+/** Returns the exact lazy-list slot only after the authoritative object is present. */
+internal fun friendsFocusedObjectIndex(
+    uiState: FriendsUiState,
+    liveUiState: LiveWorkoutUiState,
+    focusedSocialPush: PushNavigationTarget.Social?,
+    focusedLiveRoomId: String?
+): Int? {
+    if (!uiState.isCloudAccount ||
+        focusedSocialPush == null && focusedLiveRoomId == null
+    ) return null
+    var index = listOf(
+        uiState.error,
+        uiState.notice,
+        liveUiState.error,
+        liveUiState.notice
+    ).count { it != null }
+
+    val liveInvitations = liveUiState.inbox?.invitations.orEmpty()
+    val liveRooms = liveUiState.inbox?.rooms.orEmpty()
+    if (liveInvitations.isNotEmpty() || liveRooms.isNotEmpty()) {
+        index += 1 // Lobby heading.
+        liveInvitations.indexOfFirst { it.roomId == focusedLiveRoomId }
+            .takeIf { it >= 0 }
+            ?.let { return index + it }
+        index += liveInvitations.size
+        liveRooms.indexOfFirst { it.roomId == focusedLiveRoomId }
+            .takeIf { it >= 0 }
+            ?.let { return index + it }
+        index += liveRooms.size
+    }
+
+    val incomingWorkoutInvites = uiState.workoutInbox?.incoming.orEmpty()
+    if (incomingWorkoutInvites.isNotEmpty()) {
+        index += 1 // Incoming workout heading.
+        incomingWorkoutInvites.indexOfFirst {
+            socialPushTargetsWorkoutInvite(focusedSocialPush, it.inviteId)
+        }.takeIf { it >= 0 }?.let { return index + it }
+        index += incomingWorkoutInvites.size
+    }
+    if (uiState.workoutInbox?.hasAnotherBoundedPage() == true) index += 1
+
+    val incomingFriendRequests = uiState.dashboard?.incoming.orEmpty()
+    if (incomingFriendRequests.isNotEmpty()) {
+        index += 1 // Incoming friend heading.
+        incomingFriendRequests.indexOfFirst {
+            socialPushTargetsFriendRequest(focusedSocialPush, it.friendshipId)
+        }.takeIf { it >= 0 }?.let { return index + it }
+        index += incomingFriendRequests.size
+    }
+
+    index += 2 // Friends header and refresh card.
+    val dashboard = uiState.dashboard ?: return null
+    index += 1 // Ranking heading.
+    index += rankedSocialFriends(dashboard.friends).size.coerceAtLeast(1)
+    index += 3 // Add friend, own code, and privacy.
+
+    if (dashboard.outgoing.isNotEmpty()) {
+        index += 1 // Outgoing friend heading.
+        dashboard.outgoing.indexOfFirst {
+            socialPushTargetsFriendRequest(focusedSocialPush, it.friendshipId)
+        }.takeIf { it >= 0 }?.let { return index + it }
+        index += dashboard.outgoing.size
+    }
+
+    val outgoingWorkoutInvites = uiState.workoutInbox?.outgoing.orEmpty()
+    if (outgoingWorkoutInvites.isNotEmpty()) {
+        index += 1 // Outgoing workout heading.
+        outgoingWorkoutInvites.indexOfFirst {
+            socialPushTargetsWorkoutInvite(focusedSocialPush, it.inviteId)
+        }.takeIf { it >= 0 }?.let { return index + it }
+    }
+    return null
+}
+
+internal enum class LiveLobbyPrimaryAction {
+    OpenActiveWorkout
+}
+
+internal fun liveLobbyPrimaryAction(roomStatus: String): LiveLobbyPrimaryAction? =
+    if (roomStatus == "active") LiveLobbyPrimaryAction.OpenActiveWorkout else null
+
 private fun LazyListScope.liveWorkoutLobby(
     state: LiveWorkoutUiState,
     onAccept: (LiveInvitation) -> Unit,
     onDecline: (LiveInvitation) -> Unit,
-    onStart: (LiveInboxRoom) -> Unit,
     onClose: (LiveInboxRoom) -> Unit,
-    onOpen: (LiveInboxRoom) -> Unit
+    onOpen: (LiveInboxRoom) -> Unit,
+    focusedRoomId: String?,
+    focusedModifier: Modifier
 ) {
     val invitations = state.inbox?.invitations.orEmpty()
     val rooms = state.inbox?.rooms.orEmpty()
@@ -432,7 +601,18 @@ private fun LazyListScope.liveWorkoutLobby(
         )
     }
     items(invitations, key = { "live-invite-${it.roomId}" }) { invitation ->
-        AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+        AppPanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (invitation.roomId == focusedRoomId) {
+                        focusedModifier.testTag("focused_live_push_object")
+                    } else {
+                        Modifier
+                    }
+                ),
+            highlighted = true
+        ) {
             Column(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -453,12 +633,14 @@ private fun LazyListScope.liveWorkoutLobby(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = { onAccept(invitation) },
-                        enabled = "respond-${invitation.roomId}" !in state.actionsInFlight,
+                        enabled = "respond-${invitation.roomId}" !in state.actionsInFlight &&
+                            state.confirmedRestoringRoomId != invitation.roomId,
                         modifier = Modifier.weight(1f)
-                    ) { Text(stringResource(R.string.action_accept)) }
+                    ) { Text(stringResource(R.string.live_workout_accept_action)) }
                     OutlinedButton(
                         onClick = { onDecline(invitation) },
-                        enabled = "respond-${invitation.roomId}" !in state.actionsInFlight,
+                        enabled = "respond-${invitation.roomId}" !in state.actionsInFlight &&
+                            state.confirmedRestoringRoomId != invitation.roomId,
                         modifier = Modifier.weight(1f)
                     ) { Text(stringResource(R.string.action_decline)) }
                 }
@@ -466,7 +648,18 @@ private fun LazyListScope.liveWorkoutLobby(
         }
     }
     items(rooms, key = { "live-room-${it.roomId}" }) { room ->
-        AppPanel(modifier = Modifier.fillMaxWidth()) {
+        AppPanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (room.roomId == focusedRoomId) {
+                        focusedModifier.testTag("focused_live_push_object")
+                    } else {
+                        Modifier
+                    }
+                ),
+            highlighted = room.roomId == focusedRoomId
+        ) {
             Column(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -486,17 +679,14 @@ private fun LazyListScope.liveWorkoutLobby(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (room.role == "owner" && room.status == "ready") {
-                        Button(
-                            onClick = { onStart(room) },
-                            enabled = "start-${room.roomId}" !in state.actionsInFlight,
-                            modifier = Modifier.weight(1f)
-                        ) { Text(stringResource(R.string.live_workout_start_action)) }
-                    } else if (room.status == "active") {
-                        Button(
-                            onClick = { onOpen(room) },
-                            modifier = Modifier.weight(1f)
-                        ) { Text(stringResource(R.string.live_workout_open_action)) }
+                    when (liveLobbyPrimaryAction(room.status)) {
+                        LiveLobbyPrimaryAction.OpenActiveWorkout -> {
+                            Button(
+                                onClick = { onOpen(room) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text(stringResource(R.string.live_workout_open_action)) }
+                        }
+                        null -> Unit
                     }
                     OutlinedButton(
                         onClick = { onClose(room) },
@@ -657,12 +847,19 @@ private fun AddFriendCard(
 @Composable
 private fun IncomingFriendRequestCard(
     request: SocialFriendRequest,
+    highlighted: Boolean,
     isLoading: Boolean,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
-    onBlock: () -> Unit
+    onBlock: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (highlighted) Modifier.testTag("focused_social_push_object") else Modifier),
+        highlighted = highlighted
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -687,10 +884,17 @@ private fun IncomingFriendRequestCard(
 @Composable
 private fun OutgoingFriendRequestCard(
     request: SocialFriendRequest,
+    highlighted: Boolean,
     isLoading: Boolean,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (highlighted) Modifier.testTag("focused_social_push_object") else Modifier),
+        highlighted = highlighted
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -838,15 +1042,22 @@ private fun PrivacySwitchRow(
 @Composable
 private fun IncomingWorkoutInviteCard(
     invite: SocialIncomingWorkoutInvite,
+    highlighted: Boolean,
     isLoading: Boolean,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
-    onReuse: () -> Unit
+    onReuse: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val localizedNames = invite.workout.exercises.map { exercise ->
-        localizedExerciseName(exercise.name)
+    val localizedNames = invite.summary.exerciseNames.map { rawName: String ->
+        localizedExerciseName(rawName)
     }
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = invite.status == "pending") {
+    AppPanel(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (highlighted) Modifier.testTag("focused_social_push_object") else Modifier),
+        highlighted = highlighted || invite.status == "pending"
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -891,10 +1102,17 @@ private fun IncomingWorkoutInviteCard(
 @Composable
 private fun OutgoingWorkoutInviteCard(
     invite: SocialOutgoingWorkoutInvite,
+    highlighted: Boolean,
     isLoading: Boolean,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (highlighted) Modifier.testTag("focused_social_push_object") else Modifier),
+        highlighted = highlighted
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)

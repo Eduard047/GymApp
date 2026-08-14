@@ -70,10 +70,28 @@ Development compilation remains the default for compatibility. `-CompileOnly`
 or `--compile-only` can be supplied when an explicit non-release mode is useful
 in automation.
 
-Development PRGs for Descent G1, Instinct 2/2S/2X, and Instinct Crossover are
-compiled with debug metadata stripped because those CIQ 3.4 products have a
-96 KiB watch-app limit. Runtime behavior is unchanged; use a larger-memory
-target when source-level simulator debugging is required.
+Development PRGs for Descent G1, Forerunner 55 / ForeAthlete 55, Instinct
+2/2S/2X, and Instinct Crossover use the stable compact hardware-key build and
+are compiled with debug metadata stripped. The five 96 KiB products require it;
+the shared `fr55` target uses it because the full 128 KiB build did not retain
+enough real loader/runtime headroom. The compact build preserves account/device
+binding, completed sets, the FIT-before-queue commit, offline ordering, and the
+same tutorial. It checkpoints the live timeline in the atomic workout snapshot,
+but a process termination cannot reattach Garmin's native ActivityRecording
+session; the next explicit Resume starts a new FIT session, and a paused rest
+countdown may resume from the last compact checkpoint rather than the exact
+instant of termination. On `fr55` and larger profiles, a phase-zero restart
+opens an explicit FIT-history decision before any GymApp sync. The five 96 KiB
+profiles keep the smaller Summary: a second explicit Save & Exit safely queues
+the preserved sets with the same request ID, without claiming that the unknown
+FIT activity was saved and without calling Garmin's recording API again. Use a
+larger-memory target when source-level simulator debugging is required.
+
+Enduro, Fenix 6, Fenix 6S, Forerunner 245, and Venu Sq retain the full workout,
+FIT, queue, recovery, sync, and tutorial profile. Their 128 KiB development
+build strips debug metadata and omits only the decorative page-dot indicator so
+the executable remains within the device loader limit; hardware-key navigation
+and every action remain unchanged.
 
 Store export:
 

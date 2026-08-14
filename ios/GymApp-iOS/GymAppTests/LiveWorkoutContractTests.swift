@@ -68,6 +68,16 @@ final class LiveWorkoutContractTests: XCTestCase {
         ]))
         XCTAssertEqual(joined.status, .ready)
 
+        let joinedActive = try LiveWorkoutPayloadParser.respondResult(from: liveJSONData([
+            "version": 1,
+            "result": "joined",
+            "roomId": liveRoomID,
+            "status": "active",
+            "roomRevision": 3,
+            "membershipRevision": 2
+        ]))
+        XCTAssertEqual(joinedActive.status, .active)
+
         let started = try LiveWorkoutPayloadParser.startResult(from: liveJSONData([
             "version": 1,
             "result": "started",
@@ -281,7 +291,7 @@ final class LiveWorkoutContractTests: XCTestCase {
         )
 
         do {
-            try await coordinator.respond(to: invitation, accept: true)
+            _ = try await coordinator.respond(to: invitation, accept: true)
             XCTFail("A locally ambiguous frozen plan must remain waiting")
         } catch LiveWorkoutGatewayError.invalidRequest {
             // The local import boundary rejects the alias pair before membership changes.
@@ -420,7 +430,7 @@ final class LiveWorkoutContractTests: XCTestCase {
         )
 
         do {
-            try await coordinator.respond(to: invitation, accept: true)
+            _ = try await coordinator.respond(to: invitation, accept: true)
             XCTFail("Ambiguous local catalog must block membership mutation")
         } catch WorkoutStoreError.duplicateExerciseName {
             // The exact dry-run resolver found two current local matches.
@@ -432,6 +442,144 @@ final class LiveWorkoutContractTests: XCTestCase {
         XCTAssertEqual(workoutStore.snapshot, before)
         XCTAssertNil(activeWorkoutStore.draft)
         XCTAssertNil(coordinator.sidecar.attachment)
+    }
+
+    func testConfirmedAcceptRefreshFailureRestoresWithoutReplayingMutation() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymApp-LiveConfirmedRestoreTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suiteName = "LiveWorkoutConfirmedRestoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let recorder = LiveGatewayActionRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        defer {
+            LiveGatewayURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let auth = AuthService(
+            keychain: LiveWorkoutTestKeychain(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        try auth.installSessionForTesting(.cloud(CloudAccountSession(
+            userID: liveUserID,
+            email: "restore-after-accept@example.invalid",
+            displayName: "Restore Tester",
+            accessToken: try liveSyntheticJWT(sessionID: liveSessionID),
+            refreshToken: "synthetic-refresh-token",
+            expiresAt: Date().addingTimeInterval(3_600)
+        )))
+        let storageKey = try XCTUnwrap(auth.session?.storageKey)
+        let workoutStore = try WorkoutStore(accountStorageKey: storageKey, directoryURL: root)
+        let activeWorkoutStore = ActiveWorkoutStore(
+            accountStorageKey: storageKey,
+            workoutStorageURL: workoutStore.storageURL
+        )
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let createdAt = formatter.string(from: Date().addingTimeInterval(-60))
+        let expiresAt = formatter.string(from: Date().addingTimeInterval(15 * 60))
+        var waiting = liveWaitingAliasSnapshotObject()
+        var room = try XCTUnwrap(waiting["room"] as? [String: Any])
+        room["createdAt"] = createdAt
+        room["inviteExpiresAt"] = expiresAt
+        room["summary"] = [
+            "exerciseCount": 1,
+            "setCount": 1,
+            "exerciseNames": ["Bench Press"]
+        ]
+        waiting["room"] = room
+        waiting["plan"] = [
+            "version": 1,
+            "exercises": [[
+                "exerciseId": "e_01",
+                "catalogKey": "bench_press",
+                "name": "Bench Press",
+                "sets": [["setId": "s_01_01", "weight": 80, "reps": 8]]
+            ]]
+        ]
+        var participants = try XCTUnwrap(waiting["participants"] as? [[String: Any]])
+        participants[0]["joinedAt"] = createdAt
+        waiting["participants"] = participants
+
+        LiveGatewayURLProtocolStub.handler = { request in
+            let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
+            let action = try XCTUnwrap(requestObject["action"] as? String)
+            recorder.append(action)
+            switch action {
+            case "live_snapshot" where recorder.actions.filter({ $0 == action }).count == 1:
+                return try LiveGatewayURLProtocolStub.response(
+                    for: request,
+                    jsonData: liveJSONData(["version": 1, "result": waiting])
+                )
+            case "live_respond_invite":
+                return try LiveGatewayURLProtocolStub.response(
+                    for: request,
+                    jsonData: liveJSONData(["version": 1, "result": [
+                        "version": 1,
+                        "result": "joined",
+                        "roomId": liveRoomID,
+                        "status": "active",
+                        "roomRevision": 2,
+                        "membershipRevision": 2
+                    ]])
+                )
+            default:
+                return try LiveGatewayURLProtocolStub.response(
+                    for: request,
+                    statusCode: 503,
+                    jsonData: liveJSONData(["error": "synthetic_refresh_failure"])
+                )
+            }
+        }
+        let coordinator = LiveWorkoutCoordinator(
+            auth: auth,
+            workoutStore: workoutStore,
+            activeWorkoutStore: activeWorkoutStore,
+            urlSession: urlSession
+        )
+        let invitation = LiveWorkoutInvitation(
+            roomID: liveRoomID,
+            roomRevision: 1,
+            createdAt: createdAt,
+            inviteExpiresAt: expiresAt,
+            summary: LiveWorkoutSummary(
+                exerciseCount: 1,
+                setCount: 1,
+                exerciseNames: ["Bench Press"]
+            ),
+            owner: LiveWorkoutProfile(
+                profileID: "p_11111111111111111111111111111111",
+                displayName: "Owner"
+            )
+        )
+
+        let outcome = try await coordinator.respond(to: invitation, accept: true)
+
+        XCTAssertEqual(outcome, .confirmedRestoring)
+        XCTAssertTrue(coordinator.isRestoring(roomID: liveRoomID))
+        XCTAssertNil(coordinator.lastError)
+        XCTAssertNil(activeWorkoutStore.draft)
+        XCTAssertNotNil(activeWorkoutStore.liveSlotReservationStore.reservation)
+        XCTAssertEqual(recorder.actions.filter { $0 == "live_respond_invite" }.count, 1)
+
+        do {
+            _ = try await coordinator.respond(to: invitation, accept: true)
+            XCTFail("A confirmed mutation must not be replayed with a new operation ID")
+        } catch LiveWorkoutGatewayError.invalidRequest {
+            // The restoring state owns the slot until authoritative reconciliation.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(recorder.actions.filter { $0 == "live_respond_invite" }.count, 1)
     }
 
     func testActiveSnapshotMaterializesAuthoritativeProgressAndServerStart() async throws {
@@ -561,6 +709,68 @@ final class LiveWorkoutContractTests: XCTestCase {
             [.finish]
         )
 
+        coordinator.stopMonitoring()
+        let replacementSessionID = "33333333-3333-4333-8333-333333333333"
+        try auth.installSessionForTesting(.cloud(CloudAccountSession(
+            userID: liveUserID,
+            email: "restore@example.invalid",
+            displayName: "Restore Tester",
+            accessToken: try liveSyntheticJWT(sessionID: replacementSessionID),
+            refreshToken: "replacement-refresh-token",
+            expiresAt: Date().addingTimeInterval(3_600)
+        )))
+        let inboxObject: [String: Any] = [
+            "version": 1,
+            "invitations": [],
+            "rooms": [[
+                "roomId": liveRoomID,
+                "status": "active",
+                "roomRevision": 3,
+                "role": "owner",
+                "memberState": "joined",
+                "membershipRevision": 1,
+                "createdAt": createdAt,
+                "startedAt": startedAt,
+                "activeExpiresAt": activeExpiresAt,
+                "summary": [
+                    "exerciseCount": 1,
+                    "setCount": 2,
+                    "exerciseNames": ["Bench Press"]
+                ],
+                "peer": [
+                    "profileId": "p_22222222222222222222222222222222",
+                    "displayName": "Friend"
+                ]
+            ]]
+        ]
+        LiveGatewayURLProtocolStub.handler = { request in
+            let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
+            switch requestObject["action"] as? String {
+            case "live_inbox":
+                return try LiveGatewayURLProtocolStub.response(
+                    for: request,
+                    jsonData: liveJSONData(["version": 1, "result": inboxObject])
+                )
+            case "live_snapshot":
+                return try LiveGatewayURLProtocolStub.response(
+                    for: request,
+                    jsonData: liveJSONData(["version": 1, "result": object])
+                )
+            case "live_finish":
+                throw URLError(.notConnectedToInternet)
+            default:
+                throw URLError(.unsupportedURL)
+            }
+        }
+
+        await coordinator.refreshAll()
+
+        XCTAssertEqual(coordinator.sidecar.attachment?.sessionID, replacementSessionID)
+        XCTAssertEqual(coordinator.sidecar.attachment?.pendingOperations.map(\.kind), [.finish])
+        XCTAssertNil(activeWorkoutStore.draft)
+        XCTAssertEqual(workoutStore.workout(id: draft.id), completedWorkout)
+        coordinator.stopMonitoring()
+
         LiveGatewayURLProtocolStub.handler = { request in
             try LiveGatewayURLProtocolStub.response(
                 for: request,
@@ -622,7 +832,7 @@ final class LiveWorkoutSidecarStoreTests: XCTestCase {
         XCTAssertEqual(reopened.attachment?.pendingOperations.map(\.expectedProgressRevision), [2])
     }
 
-    func testSessionAndAccountChangesClearBeforeReplay() throws {
+    func testSameUserSessionChangePreservesThenAuthoritativelyRebindsQueue() throws {
         let fixture = try makeFixture()
         let storageKey = "cloud-\(liveUserID)"
         let store = LiveWorkoutSidecarStore(
@@ -640,24 +850,133 @@ final class LiveWorkoutSidecarStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.bind(to: differentSession)) {
             XCTAssertEqual($0 as? LiveWorkoutSidecarError, .sessionMismatch)
         }
-        XCTAssertNil(store.attachment)
+        let preserved = try XCTUnwrap(store.attachment)
+        XCTAssertEqual(preserved.sessionID, liveSessionID)
+        XCTAssertEqual(preserved.pendingOperations.count, 1)
 
         let afterSessionChange = LiveWorkoutSidecarStore(
             accountStorageKey: storageKey,
             workoutStorageURL: fixture.workoutStorageURL
         )
-        XCTAssertNil(afterSessionChange.attachment)
+        XCTAssertEqual(afterSessionChange.attachment, preserved)
 
-        try afterSessionChange.attach(snapshot: fixture.snapshot, draft: fixture.draft, context: liveContext)
+        let authoritative = try liveSnapshotWithSelfProgress(
+            revision: 2,
+            completed: [[
+                "setId": "s_01_01", "weight": 80, "reps": 8,
+                "completedAt": liveCompletedAt
+            ]],
+            undoable: "s_01_01"
+        )
+        try afterSessionChange.reconcileAfterSessionChange(
+            snapshot: authoritative,
+            draft: fixture.draft,
+            context: differentSession
+        )
+        XCTAssertEqual(afterSessionChange.attachment?.sessionID, differentSession.sessionID)
+        XCTAssertEqual(afterSessionChange.attachment?.progressRevision, 2)
+        XCTAssertEqual(afterSessionChange.attachment?.pendingOperations, [])
+        XCTAssertNoThrow(try afterSessionChange.bind(to: differentSession))
+    }
+
+    func testSameUserSessionChangeRebindsExactCommittedHistoryWithPendingFinish() throws {
+        let fixture = try makeFixture()
+        let storageKey = "cloud-\(liveUserID)"
+        let store = LiveWorkoutSidecarStore(
+            accountStorageKey: storageKey,
+            workoutStorageURL: fixture.workoutStorageURL
+        )
+        try store.attach(snapshot: fixture.snapshot, draft: fixture.draft, context: liveContext)
+        try store.enqueueCompletedSet(
+            localSetID: fixture.firstSetID,
+            weight: 80,
+            reps: 8
+        )
+        try store.enqueueFinish()
+        let before = try XCTUnwrap(store.attachment)
+        XCTAssertEqual(before.pendingOperations.map(\.kind), [.completeSet, .finish])
+
+        let committed = WorkoutSession(
+            id: fixture.draft.id,
+            date: fixture.draft.workoutDate,
+            exercises: [
+                WorkoutExercise(
+                    id: fixture.draft.exercises[0].id,
+                    exerciseID: fixture.draft.exercises[0].exerciseID,
+                    sets: [WorkoutSet(id: fixture.firstSetID, weight: 80, reps: 8)]
+                )
+            ]
+        )
+        let replacement = LiveWorkoutSessionContext(
+            userID: liveUserID,
+            sessionID: "33333333-3333-4333-8333-333333333333",
+            accessToken: "replacement-token"
+        )
+
+        try store.reconcileAfterSessionChange(
+            snapshot: fixture.snapshot,
+            committedWorkout: committed,
+            context: replacement
+        )
+
+        XCTAssertEqual(store.attachment?.sessionID, replacement.sessionID)
+        XCTAssertEqual(store.attachment?.pendingOperations.map(\.kind), [.completeSet, .finish])
+        XCTAssertNoThrow(try store.bind(to: replacement))
+
+        let mismatchedStore = LiveWorkoutSidecarStore(
+            accountStorageKey: storageKey,
+            workoutStorageURL: fixture.workoutStorageURL
+        )
+        let wrongHistory = WorkoutSession(
+            id: committed.id,
+            date: committed.date,
+            exercises: [
+                WorkoutExercise(
+                    id: committed.exercises[0].id,
+                    exerciseID: committed.exercises[0].exerciseID,
+                    sets: [WorkoutSet(id: fixture.firstSetID, weight: 81, reps: 8)]
+                )
+            ]
+        )
+        let anotherSession = LiveWorkoutSessionContext(
+            userID: liveUserID,
+            sessionID: "44444444-4444-4444-8444-444444444444",
+            accessToken: "another-token"
+        )
+        XCTAssertThrowsError(try mismatchedStore.reconcileAfterSessionChange(
+            snapshot: fixture.snapshot,
+            committedWorkout: wrongHistory,
+            context: anotherSession
+        ))
+        XCTAssertEqual(mismatchedStore.attachment?.sessionID, replacement.sessionID)
+    }
+
+    func testWrongAccountBindDoesNotDeleteAnotherOwnersLiveQueue() throws {
+        let fixture = try makeFixture()
+        let storageKey = "cloud-\(liveUserID)"
+        let store = LiveWorkoutSidecarStore(
+            accountStorageKey: storageKey,
+            workoutStorageURL: fixture.workoutStorageURL
+        )
+        try store.attach(snapshot: fixture.snapshot, draft: fixture.draft, context: liveContext)
+        try store.enqueueCompletedSet(localSetID: fixture.firstSetID, weight: 80, reps: 8)
+        let preserved = try XCTUnwrap(store.attachment)
+
         let differentAccount = LiveWorkoutSessionContext(
             userID: "44444444-4444-4444-8444-444444444444",
             sessionID: liveSessionID,
             accessToken: "replacement-token"
         )
-        XCTAssertThrowsError(try afterSessionChange.bind(to: differentAccount)) {
+        XCTAssertThrowsError(try store.bind(to: differentAccount)) {
             XCTAssertEqual($0 as? LiveWorkoutSidecarError, .accountMismatch)
         }
-        XCTAssertNil(afterSessionChange.attachment)
+        XCTAssertEqual(store.attachment, preserved)
+
+        let reopened = LiveWorkoutSidecarStore(
+            accountStorageKey: storageKey,
+            workoutStorageURL: fixture.workoutStorageURL
+        )
+        XCTAssertEqual(reopened.attachment, preserved)
     }
 
     func testFailedPersistenceDoesNotPublishAttachmentOrQueuedMutation() throws {

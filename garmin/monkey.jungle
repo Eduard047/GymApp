@@ -1,13 +1,26 @@
 project.manifest = manifest.xml
 base.sourcePath = source
 base.resourcePath = resources
-base.excludeAnnotations = compactLegacyState
+base.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBridge;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;enhancedCompactCheckpoint;noPageDots
+
+# These five 128 KiB products fit the full workout/recovery implementation once
+# the decorative page dots are omitted. Keep all FIT, queue, recovery, sync,
+# and tutorial behavior identical to the normal full profile.
+enduro.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBridge;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;enhancedCompactCheckpoint;pageDots
+fenix6.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBridge;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;enhancedCompactCheckpoint;pageDots
+fenix6s.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBridge;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;enhancedCompactCheckpoint;pageDots
+fr245.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBridge;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;enhancedCompactCheckpoint;pageDots
+venusq.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBridge;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;enhancedCompactCheckpoint;pageDots
 
 # These five API 3.4 products cap watch apps at 98,304 bytes. Select the compact
 # one-time legacy migration path while retaining the current atomic workout,
 # interval, account-binding, replay, and sync implementation.
-descentg1.excludeAnnotations = fullLegacyState
-instinct2.excludeAnnotations = fullLegacyState
-instinct2s.excludeAnnotations = fullLegacyState
-instinct2x.excludeAnnotations = fullLegacyState
-instinctcrossover.excludeAnnotations = fullLegacyState
+descentg1.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots
+# Forerunner 55 and its Japanese ForeAthlete 55 variant share the `fr55`
+# binary. The full legacy/cloud renderer exceeds the real 128 KiB loader
+# reserve on this target, so use the proven hardware-key compact build.
+fr55.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots
+instinct2.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots
+instinct2s.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots
+instinct2x.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots
+instinctcrossover.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots

@@ -23,6 +23,14 @@ final class NativePushTests: XCTestCase {
         XCTAssertEqual(parsedSocial.eventType, .friendRequestReceived)
         XCTAssertEqual(parsedSocial.objectID, "f_0123456789abcdef0123456789abcdef")
         XCTAssertEqual(parsedSocial.objectRevision, 7)
+        XCTAssertEqual(
+            parsedSocial.routeTarget,
+            .socialObject(NativePushSocialObjectTarget(
+                eventType: .friendRequestReceived,
+                objectID: "f_0123456789abcdef0123456789abcdef",
+                objectRevision: 7
+            ))
+        )
 
         let live: [AnyHashable: Any] = [
             "aps": ["content-available": 1],
@@ -162,6 +170,24 @@ final class NativePushTests: XCTestCase {
         XCTAssertFalse(scheduled.title.contains(userA))
         XCTAssertFalse(scheduled.body.contains("f_"))
 
+        let exactUserInfo = NativePushSystemController.localUserInfo(for: scheduled)
+        XCTAssertEqual(
+            NativePushPayloadParser.localTarget(
+                from: exactUserInfo,
+                expectedBindingID: bindingA
+            ),
+            scheduled.target
+        )
+        harness.manager.handleLocalNotificationTap(
+            identifier: scheduled.identifier,
+            userInfo: exactUserInfo
+        )
+        let exactRoute = try XCTUnwrap(harness.manager.consumePendingRoute())
+        XCTAssertEqual(
+            makeNativePushProfileRequest(for: exactRoute).focus,
+            .friendRequest("f_0123456789abcdef0123456789abcdef")
+        )
+
         harness.manager.handleLocalNotificationTap(
             identifier: scheduled.identifier,
             userInfo: localTapPayload(bindingID: bindingA, destination: .social)
@@ -180,6 +206,49 @@ final class NativePushTests: XCTestCase {
             )
         )
         XCTAssertNil(harness.manager.consumePendingRoute())
+    }
+
+    func testRouteV3RejectsMalformedOrMismatchedExactSocialObjects() {
+        let base: [String: Any] = [
+            "version": 3,
+            "bindingId": bindingA.uuidString.lowercased(),
+            "destination": NativePushDestination.social.rawValue,
+            "type": NativePushRemoteEvent.EventType.workoutInviteReceived.rawValue,
+            "objectId": "wi_0123456789abcdef0123456789abcdef",
+            "objectRevision": 9
+        ]
+        XCTAssertEqual(
+            NativePushPayloadParser.localTarget(
+                from: ["gymappLocal": base],
+                expectedBindingID: bindingA
+            ),
+            .socialObject(NativePushSocialObjectTarget(
+                eventType: .workoutInviteReceived,
+                objectID: "wi_0123456789abcdef0123456789abcdef",
+                objectRevision: 9
+            ))
+        )
+
+        var mismatched = base
+        mismatched["objectId"] = "f_0123456789abcdef0123456789abcdef"
+        XCTAssertNil(NativePushPayloadParser.localTarget(
+            from: ["gymappLocal": mismatched],
+            expectedBindingID: bindingA
+        ))
+
+        var oversizedRevision = base
+        oversizedRevision["objectRevision"] = 2_147_483_648
+        XCTAssertNil(NativePushPayloadParser.localTarget(
+            from: ["gymappLocal": oversizedRevision],
+            expectedBindingID: bindingA
+        ))
+
+        var extra = base
+        extra["displayName"] = "private"
+        XCTAssertNil(NativePushPayloadParser.localTarget(
+            from: ["gymappLocal": extra],
+            expectedBindingID: bindingA
+        ))
     }
 
     func testLiveTapPreservesExactRoomAndRejectsMalformedLocalTargets() async throws {

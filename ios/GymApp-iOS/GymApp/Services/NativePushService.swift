@@ -52,11 +52,12 @@ enum NativePushDestination: String, Equatable, Sendable {
 
 enum NativePushRouteTarget: Equatable, Sendable {
     case social
+    case socialObject(NativePushSocialObjectTarget)
     case live(roomID: String?)
 
     var destination: NativePushDestination {
         switch self {
-        case .social: .social
+        case .social, .socialObject: .social
         case .live: .live
         }
     }
@@ -65,6 +66,12 @@ enum NativePushRouteTarget: Equatable, Sendable {
         guard case let .live(roomID) = self else { return nil }
         return roomID
     }
+}
+
+struct NativePushSocialObjectTarget: Equatable, Sendable {
+    let eventType: NativePushRemoteEvent.EventType
+    let objectID: String
+    let objectRevision: Int
 }
 
 struct NativePushRoute: Identifiable, Equatable, Sendable {
@@ -131,7 +138,12 @@ struct NativePushRemoteEvent: Equatable, Sendable {
 
     var routeTarget: NativePushRouteTarget {
         switch eventType.destination {
-        case .social: .social
+        case .social:
+            .socialObject(NativePushSocialObjectTarget(
+                eventType: eventType,
+                objectID: objectID,
+                objectRevision: objectRevision
+            ))
         case .live: .live(roomID: objectID)
         }
     }
@@ -205,7 +217,7 @@ enum NativePushPayloadParser {
               userInfo.keys.count == 1,
               let payload = stringDictionary(userInfo["gymappLocal"]),
               let version = exactInteger(payload["version"]),
-              version == 1 || version == 2,
+              (1 ... 3).contains(version),
               let bindingString = boundedString(payload["bindingId"], maximumBytes: 36),
               versionFourUUID(bindingString) == expectedBindingID,
               let destinationString = boundedString(
@@ -225,11 +237,40 @@ enum NativePushPayloadParser {
             return destination == .social ? .social : .live(roomID: nil)
         }
 
+
+        if version == 3, destination == .social {
+            guard Set(payload.keys) == baseKeys.union([
+                "type", "objectId", "objectRevision"
+            ]),
+            let typeString = boundedString(payload["type"], maximumBytes: 32),
+            let eventType = NativePushRemoteEvent.EventType(rawValue: typeString),
+            eventType.destination == .social,
+            let objectID = boundedString(payload["objectId"], maximumBytes: 35),
+            let revision = boundedRevision(payload["objectRevision"]) else {
+                return nil
+            }
+            let expectedPattern = typeString.hasPrefix("friend_")
+                ? "^f_[0-9a-f]{32}$"
+                : "^wi_[0-9a-f]{32}$"
+            guard objectID.range(
+                of: expectedPattern,
+                options: .regularExpression
+            ) != nil else {
+                return nil
+            }
+            return .socialObject(NativePushSocialObjectTarget(
+                eventType: eventType,
+                objectID: objectID,
+                objectRevision: revision
+            ))
+        }
+
         switch destination {
         case .social:
-            guard Set(payload.keys) == baseKeys else { return nil }
+            guard version == 2, Set(payload.keys) == baseKeys else { return nil }
             return .social
         case .live:
+            guard version == 2 || version == 3 else { return nil }
             guard Set(payload.keys) == baseKeys.union(["roomId"]),
                   let roomID = boundedString(payload["roomId"], maximumBytes: 35),
                   roomID.range(
@@ -1188,6 +1229,17 @@ final class NativePushSystemController: NativePushSystemControlling {
             "bindingId": notification.bindingID.uuidString.lowercased(),
             "destination": notification.destination.rawValue
         ]
+        switch notification.target {
+        case .social:
+            break
+        case let .socialObject(object):
+            routePayload["version"] = 3
+            routePayload["type"] = object.eventType.rawValue
+            routePayload["objectId"] = object.objectID
+            routePayload["objectRevision"] = object.objectRevision
+        case let .live(roomID):
+            if roomID != nil { routePayload["version"] = 3 }
+        }
         if let roomID = notification.roomID {
             routePayload["roomId"] = roomID
         }
@@ -2748,7 +2800,7 @@ final class NativePushManager: ObservableObject {
         case .liveInviteAccepted:
             return (
                 gymText("Friend joined", "Друг приєднався", "Друг присоединился", languageCode: languageCode),
-                gymText("Your live workout is ready.", "Спільне тренування готове до старту.", "Совместная тренировка готова к старту.", languageCode: languageCode)
+                gymText("Your live workout has started.", "Спільне тренування розпочалося.", "Совместная тренировка началась.", languageCode: languageCode)
             )
         case .liveRoomStarted:
             return (

@@ -3,10 +3,21 @@ import SwiftUI
 struct MissionsView: View {
     @ObservedObject var store: WorkoutStore
     let onOpenRanks: () -> Void
+    let embedded: Bool
 
     @Environment(\.calendar) private var calendar
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @State private var period: MissionCadence = .daily
+
+    init(
+        store: WorkoutStore,
+        onOpenRanks: @escaping () -> Void,
+        embedded: Bool = false
+    ) {
+        self.store = store
+        self.onOpenRanks = onOpenRanks
+        self.embedded = embedded
+    }
 
     private var snapshot: GamificationSnapshot {
         store.gamificationSnapshot(calendar: calendar)
@@ -55,14 +66,18 @@ struct MissionsView: View {
                 .padding(.bottom, 20)
             }
         }
-        .navigationTitle(gymText("Missions", "Місії", "Миссии", languageCode: languageCode))
+        .navigationTitle(
+            embedded ? "" : gymText("Missions", "Місії", "Миссии", languageCode: languageCode)
+        )
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onOpenRanks) {
-                    Label(
-                        gymText("Ranks", "Ранги", "Ранги", languageCode: languageCode),
-                        systemImage: "trophy.fill"
-                    )
+            if !embedded {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: onOpenRanks) {
+                        Label(
+                            gymText("Ranks", "Ранги", "Ранги", languageCode: languageCode),
+                            systemImage: "trophy.fill"
+                        )
+                    }
                 }
             }
         }
@@ -111,6 +126,18 @@ struct MissionsView: View {
                         value: streakValue,
                         onHero: true
                     )
+                }
+
+                if embedded {
+                    Button(action: onOpenRanks) {
+                        Label(
+                            gymText("View ranks", "Переглянути ранги", "Посмотреть ранги", languageCode: languageCode),
+                            systemImage: "trophy.fill"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.white)
                 }
             }
         }

@@ -18,10 +18,16 @@ import com.example.gymapp.auth.SocialIncomingWorkoutInvite
 import com.example.gymapp.auth.SocialMyFriendCode
 import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.SocialWorkoutInbox
+import com.example.gymapp.auth.SocialWorkoutInboxCursor
+import com.example.gymapp.auth.SOCIAL_MAX_WORKOUT_INBOX_ITEMS
+import com.example.gymapp.auth.SOCIAL_MAX_WORKOUT_INBOX_PAGE_COUNT
+import com.example.gymapp.auth.SOCIAL_WORKOUT_INBOX_PAGE_SIZE
 import com.example.gymapp.auth.SocialWorkoutDetailPrivacy
 import com.example.gymapp.auth.SocialRealtimeClient
 import com.example.gymapp.auth.authErrorText
+import com.example.gymapp.auth.hasAnotherBoundedPage
 import com.example.gymapp.auth.normalizeSocialFriendCode
+import com.example.gymapp.auth.socialWorkoutInviteRequestFingerprint
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.util.LocalizedText
@@ -36,7 +42,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.UUID
 
 internal data class AcceptedSocialWorkout(
     val inviteId: String,
@@ -44,9 +49,120 @@ internal data class AcceptedSocialWorkout(
 )
 
 internal fun acceptedSocialWorkoutForReuse(
-    invite: SocialIncomingWorkoutInvite
-): AcceptedSocialWorkout? = invite.takeIf { it.status == "accepted" }?.let {
-    AcceptedSocialWorkout(inviteId = it.inviteId, plan = it.workout)
+    invite: SocialIncomingWorkoutInvite,
+    loadedPlan: SharedWorkoutPlan? = invite.workout
+): AcceptedSocialWorkout? = invite.takeIf { it.status == "accepted" }
+    ?.let { accepted ->
+        loadedPlan?.takeIf { plan -> socialInviteSummaryMatchesPlan(accepted, plan) }
+    }
+    ?.let { plan ->
+        AcceptedSocialWorkout(inviteId = invite.inviteId, plan = plan)
+    }
+
+internal fun socialInviteSummaryMatchesPlan(
+    invite: SocialIncomingWorkoutInvite,
+    plan: SharedWorkoutPlan
+): Boolean = invite.summary.exerciseCount == plan.exerciseCount &&
+    invite.summary.setCount == plan.setCount &&
+    invite.summary.exerciseNames == plan.exercises.map { it.name }
+
+internal fun mergeSocialWorkoutInboxPage(
+    current: SocialWorkoutInbox,
+    next: SocialWorkoutInbox
+): SocialWorkoutInbox {
+    require(!current.usesLegacyFullPayload && !next.usesLegacyFullPayload)
+    require(current.hasAnotherBoundedPage())
+    require(next.loadedPageCount == 1)
+    require(current.pendingIncomingCount == next.pendingIncomingCount)
+    require(current.outgoing == next.outgoing)
+    val currentIds = current.incoming.mapTo(mutableSetOf()) { it.inviteId }
+    require(next.incoming.none { it.inviteId in currentIds })
+    val incoming = current.incoming + next.incoming
+    val incomingIds = incoming.map { it.inviteId }
+    val outgoingIds = current.outgoing.map { it.inviteId }
+    require(incoming.size <= SOCIAL_MAX_WORKOUT_INBOX_ITEMS)
+    require(incomingIds.toSet().size == incomingIds.size)
+    require(outgoingIds.toSet().size == outgoingIds.size)
+    require(incomingIds.toSet().intersect(outgoingIds.toSet()).isEmpty())
+    require(current.pendingIncomingCount >= incoming.count { it.status == "pending" })
+    requireWorkoutInboxMergeOrder(incoming)
+    val loadedPageCount = current.loadedPageCount + 1
+    require(loadedPageCount <= SOCIAL_MAX_WORKOUT_INBOX_PAGE_COUNT)
+    return next.copy(
+        incoming = incoming,
+        outgoing = current.outgoing,
+        nextCursor = next.nextCursor?.takeIf {
+            loadedPageCount < SOCIAL_MAX_WORKOUT_INBOX_PAGE_COUNT &&
+                incoming.size < SOCIAL_MAX_WORKOUT_INBOX_ITEMS
+        },
+        loadedPageCount = loadedPageCount
+    )
+}
+
+internal data class SocialWorkoutInboxPageLoadResult(
+    val inbox: SocialWorkoutInbox,
+    val replacedChangedSnapshot: Boolean
+)
+
+internal fun hasSocialWorkoutInboxSnapshotChanged(
+    current: SocialWorkoutInbox,
+    next: SocialWorkoutInbox
+): Boolean = current.pendingIncomingCount != next.pendingIncomingCount ||
+    current.outgoing != next.outgoing
+
+internal suspend fun loadNextSocialWorkoutInboxPage(
+    current: SocialWorkoutInbox,
+    isRequestCurrent: () -> Boolean,
+    loadPage: suspend (
+        cursor: SocialWorkoutInboxCursor?,
+        limit: Int
+    ) -> SocialWorkoutInbox
+): SocialWorkoutInboxPageLoadResult? {
+    require(current.hasAnotherBoundedPage())
+    val cursor = requireNotNull(current.nextCursor)
+    val remaining = SOCIAL_MAX_WORKOUT_INBOX_ITEMS - current.incoming.size
+    require(remaining > 0)
+    if (!isRequestCurrent()) return null
+
+    val next = loadPage(
+        cursor,
+        minOf(SOCIAL_WORKOUT_INBOX_PAGE_SIZE, remaining)
+    )
+    if (!isRequestCurrent()) return null
+
+    if (hasSocialWorkoutInboxSnapshotChanged(current, next)) {
+        // A count/outgoing change means the cursor page belongs to a different
+        // authoritative snapshot. Replace it with one fresh bounded first page;
+        // never combine rows across those snapshots.
+        val refreshedFirstPage = loadPage(null, SOCIAL_WORKOUT_INBOX_PAGE_SIZE)
+        if (!isRequestCurrent()) return null
+        require(refreshedFirstPage.loadedPageCount == 1)
+        return SocialWorkoutInboxPageLoadResult(
+            inbox = refreshedFirstPage,
+            replacedChangedSnapshot = true
+        )
+    }
+
+    return SocialWorkoutInboxPageLoadResult(
+        inbox = mergeSocialWorkoutInboxPage(current, next),
+        replacedChangedSnapshot = false
+    )
+}
+
+private fun requireWorkoutInboxMergeOrder(incoming: List<SocialIncomingWorkoutInvite>) {
+    incoming.zipWithNext().forEach { (previous, current) ->
+        val previousPending = previous.status == "pending"
+        val currentPending = current.status == "pending"
+        require(previousPending || !currentPending)
+        if (previousPending == currentPending) {
+            val previousTime = java.time.OffsetDateTime.parse(previous.createdAt).toInstant()
+            val currentTime = java.time.OffsetDateTime.parse(current.createdAt).toInstant()
+            require(
+                previousTime > currentTime ||
+                    (previousTime == currentTime && previous.inviteId > current.inviteId)
+            )
+        }
+    }
 }
 
 internal data class FriendsUiState(
@@ -66,10 +182,15 @@ internal data class FriendsUiState(
     val isDetailsLoading: Boolean = false,
     val isFriendWorkoutsLoading: Boolean = false,
     val isWorkoutDetailPrivacyLoading: Boolean = false,
+    val dashboardRefreshGeneration: Long = 0L,
+    val inboxRefreshGeneration: Long = 0L,
     val actionsInFlight: Set<String> = emptySet(),
     val error: LocalizedText? = null,
     val notice: LocalizedText? = null
 )
+
+private fun Long.nextRefreshGeneration(): Long =
+    if (this == Long.MAX_VALUE) 1L else this + 1L
 
 internal fun invalidateSelectedFriendDetailsForRefresh(state: FriendsUiState): FriendsUiState =
     if (state.selectedProfileId == null) {
@@ -84,6 +205,14 @@ internal fun invalidateSelectedFriendDetailsForRefresh(state: FriendsUiState): F
             isFriendWorkoutsLoading = false
         )
     }
+
+internal fun invalidateSocialRealtimeSurfaces(state: FriendsUiState): FriendsUiState =
+    invalidateSelectedFriendDetailsForRefresh(state).copy(workoutInbox = null)
+
+internal fun partialPrivacyCommitState(state: FriendsUiState): FriendsUiState = state.copy(
+    error = null,
+    notice = LocalizedText(R.string.friends_privacy_partially_saved)
+)
 
 internal fun friendSummaryFallbackState(
     state: FriendsUiState,
@@ -115,6 +244,18 @@ internal fun shouldApplySocialDashboardRefresh(
     activeSession is AccountSession.Cloud &&
     activeSession.userId == expectedSession.userId &&
     activeSession.sessionGeneration == expectedSession.sessionGeneration
+
+internal fun shouldApplySocialInboxRefresh(
+    expectedSession: AccountSession.Cloud,
+    activeSession: AccountSession?,
+    requestVersion: Long,
+    latestRequestVersion: Long
+): Boolean = shouldApplySocialDashboardRefresh(
+    expectedSession = expectedSession,
+    activeSession = activeSession,
+    requestVersion = requestVersion,
+    latestRequestVersion = latestRequestVersion
+)
 
 internal enum class SocialRevocationKind {
     RemoveFriend,
@@ -153,7 +294,6 @@ internal class FriendsViewModel(
     private var inboxRequestVersion = 0L
     private var detailRequestVersion = 0L
     private var privacyRequestVersion = 0L
-    private val retainedWorkoutRequestIds = mutableMapOf<String, String>()
     private val mutationJobsLock = Any()
     private val mutationJobs = mutableSetOf<Job>()
 
@@ -170,8 +310,11 @@ internal class FriendsViewModel(
                     try {
                         SocialRealtimeClient(authManager, session).events().collectLatest {
                             detailRequestVersion += 1
-                            _uiState.update(::invalidateSelectedFriendDetailsForRefresh)
-                            refreshDashboard()
+                            _uiState.update(::invalidateSocialRealtimeSurfaces)
+                            // Relationship/privacy invalidations can revoke workout-inbox access.
+                            // Refresh every bounded social surface instead of leaving stale invite
+                            // actions visible until the next lifecycle or manual refresh.
+                            refreshAll()
                         }
                     } catch (error: CancellationException) {
                         throw error
@@ -267,7 +410,9 @@ internal class FriendsViewModel(
                             friendWorkouts = emptyList(),
                             friendWorkoutActivityRevision = null,
                             friendWorkoutDetailsAvailable = false,
-                            isDetailsLoading = selectedProfileToReload != null
+                            isDetailsLoading = selectedProfileToReload != null,
+                            dashboardRefreshGeneration =
+                                state.dashboardRefreshGeneration.nextRefreshGeneration()
                         )
                     }
                     selectedProfileToReload?.let(::openFriend)
@@ -304,20 +449,127 @@ internal class FriendsViewModel(
         val cloudSession = session ?: return
         val requestVersion = ++inboxRequestVersion
         viewModelScope.launch {
+            if (!shouldApplySocialInboxRefresh(
+                    expectedSession = cloudSession,
+                    activeSession = authManager.authState.value.session,
+                    requestVersion = requestVersion,
+                    latestRequestVersion = inboxRequestVersion
+                )
+            ) {
+                return@launch
+            }
             _uiState.update { it.copy(isInboxLoading = true, error = null) }
             try {
                 val inbox = authManager.loadSocialWorkoutInbox(cloudSession)
-                if (requestVersion == inboxRequestVersion) {
+                if (shouldApplySocialInboxRefresh(
+                        expectedSession = cloudSession,
+                        activeSession = authManager.authState.value.session,
+                        requestVersion = requestVersion,
+                        latestRequestVersion = inboxRequestVersion
+                    )
+                ) {
                     _uiState.update { state ->
-                        state.copy(workoutInbox = inbox, isInboxLoading = false)
+                        state.copy(
+                            workoutInbox = inbox,
+                            isInboxLoading = false,
+                            inboxRefreshGeneration =
+                                state.inboxRefreshGeneration.nextRefreshGeneration()
+                        )
                     }
                 }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                if (requestVersion == inboxRequestVersion) {
+                if (shouldApplySocialInboxRefresh(
+                        expectedSession = cloudSession,
+                        activeSession = authManager.authState.value.session,
+                        requestVersion = requestVersion,
+                        latestRequestVersion = inboxRequestVersion
+                    )
+                ) {
                     _uiState.update { state ->
                         state.copy(
+                            isInboxLoading = false,
+                            error = authErrorText(error, R.string.workout_invites_load_failed)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun loadMoreWorkoutInvites() {
+        val cloudSession = session ?: return
+        val current = _uiState.value.workoutInbox ?: return
+        if (_uiState.value.isInboxLoading || !current.hasAnotherBoundedPage()) return
+        val cursor = current.nextCursor ?: return
+        val remaining = SOCIAL_MAX_WORKOUT_INBOX_ITEMS - current.incoming.size
+        if (remaining <= 0) return
+        val requestVersion = ++inboxRequestVersion
+        viewModelScope.launch {
+            if (!shouldApplySocialInboxRefresh(
+                    expectedSession = cloudSession,
+                    activeSession = authManager.authState.value.session,
+                    requestVersion = requestVersion,
+                    latestRequestVersion = inboxRequestVersion
+                )
+            ) {
+                return@launch
+            }
+            _uiState.update { it.copy(isInboxLoading = true, error = null) }
+            try {
+                val loaded = loadNextSocialWorkoutInboxPage(
+                    current = current,
+                    isRequestCurrent = {
+                        shouldApplySocialInboxRefresh(
+                            expectedSession = cloudSession,
+                            activeSession = authManager.authState.value.session,
+                            requestVersion = requestVersion,
+                            latestRequestVersion = inboxRequestVersion
+                        ) && _uiState.value.workoutInbox == current &&
+                            _uiState.value.workoutInbox?.nextCursor == cursor
+                    },
+                    loadPage = { requestedCursor, requestedLimit ->
+                        authManager.loadSocialWorkoutInbox(
+                            session = cloudSession,
+                            cursor = requestedCursor,
+                            limit = requestedLimit
+                        )
+                    }
+                )
+                if (shouldApplySocialInboxRefresh(
+                        expectedSession = cloudSession,
+                        activeSession = authManager.authState.value.session,
+                        requestVersion = requestVersion,
+                        latestRequestVersion = inboxRequestVersion
+                    )
+                ) {
+                    _uiState.update { state ->
+                        val latest = state.workoutInbox
+                        if (loaded == null || latest != current || latest.nextCursor != cursor) {
+                            state.copy(isInboxLoading = false)
+                        } else {
+                            state.copy(
+                                workoutInbox = loaded.inbox,
+                                isInboxLoading = false,
+                                inboxRefreshGeneration =
+                                    state.inboxRefreshGeneration.nextRefreshGeneration()
+                            )
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (shouldApplySocialInboxRefresh(
+                        expectedSession = cloudSession,
+                        activeSession = authManager.authState.value.session,
+                        requestVersion = requestVersion,
+                        latestRequestVersion = inboxRequestVersion
+                    )
+                ) {
+                    _uiState.update {
+                        it.copy(
                             isInboxLoading = false,
                             error = authErrorText(error, R.string.workout_invites_load_failed)
                         )
@@ -529,23 +781,37 @@ internal class FriendsViewModel(
         var expectedRevision = dashboard.self.settingsRevision
         val savedDetails = current.workoutDetailPrivacy
         launchMutation("privacy", R.string.friends_privacy_save_failed) { cloudSession ->
-            if (privacy != savedPrivacy) {
-                expectedRevision = authManager.updateSocialPrivacy(
-                    cloudSession,
-                    privacy,
-                    expectedRevision
-                ).settingsRevision
-            }
-            if (shareWorkoutDetails != null &&
-                savedDetails != null &&
-                shareWorkoutDetails != savedDetails.shareWorkoutDetails
-            ) {
-                val detailPrivacy = authManager.updateSocialWorkoutDetailPrivacy(
-                    cloudSession,
-                    shareWorkoutDetails,
-                    expectedRevision
-                )
-                _uiState.update { it.copy(workoutDetailPrivacy = detailPrivacy) }
+            var primaryPrivacyCommitted = false
+            try {
+                if (privacy != savedPrivacy) {
+                    expectedRevision = authManager.updateSocialPrivacy(
+                        cloudSession,
+                        privacy,
+                        expectedRevision
+                    ).settingsRevision
+                    primaryPrivacyCommitted = true
+                }
+                if (shareWorkoutDetails != null &&
+                    savedDetails != null &&
+                    shareWorkoutDetails != savedDetails.shareWorkoutDetails
+                ) {
+                    val detailPrivacy = authManager.updateSocialWorkoutDetailPrivacy(
+                        cloudSession,
+                        shareWorkoutDetails,
+                        expectedRevision
+                    )
+                    _uiState.update { it.copy(workoutDetailPrivacy = detailPrivacy) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (!primaryPrivacyCommitted) throw error
+                // The first RPC is already authoritative. Never report the whole save as failed
+                // or keep the old projection; refresh both revisions and ask the user to review.
+                _uiState.update(::partialPrivacyCommitState)
+                refreshDashboard()
+                refreshWorkoutDetailPrivacy()
+                return@launchMutation
             }
             _uiState.update { state ->
                 state.copy(notice = LocalizedText(R.string.friends_privacy_saved))
@@ -563,27 +829,35 @@ internal class FriendsViewModel(
                 }
                 return
             }
-        val fingerprint = "$profileId:${SharedWorkoutLink.encode(canonicalPlan.exercises)}"
-        if (fingerprint !in retainedWorkoutRequestIds &&
-            retainedWorkoutRequestIds.size >= MAX_RETAINED_WORKOUT_REQUEST_IDS
-        ) {
+        val cloudSession = session ?: return
+        val fingerprint = runCatching {
+            socialWorkoutInviteRequestFingerprint(profileId, canonicalPlan)
+        }.getOrElse {
             _uiState.update {
                 it.copy(error = LocalizedText(R.string.workout_invite_send_failed))
             }
             return
         }
-        val requestId = retainedWorkoutRequestIds.getOrPut(fingerprint) {
-            UUID.randomUUID().toString()
-        }
+        val requestId = authManager.retainSocialWorkoutInviteRequest(cloudSession, fingerprint)
+            ?: run {
+                _uiState.update {
+                    it.copy(error = LocalizedText(R.string.workout_invite_send_failed))
+                }
+                return
+            }
         launchMutation("send-workout-$profileId", R.string.workout_invite_send_failed) {
-                cloudSession ->
+                activeSession ->
             authManager.sendSocialWorkoutInvite(
-                session = cloudSession,
+                session = activeSession,
                 profileId = profileId,
                 clientRequestId = requestId,
                 workout = canonicalPlan
             )
-            retainedWorkoutRequestIds.remove(fingerprint)
+            authManager.clearSocialWorkoutInviteRequest(
+                activeSession,
+                fingerprint,
+                requestId
+            )
             _uiState.update { it.copy(notice = LocalizedText(R.string.workout_invite_sent)) }
             refreshDashboard()
             refreshWorkoutInbox()
@@ -593,13 +867,23 @@ internal class FriendsViewModel(
     fun acceptWorkoutInvite(invite: SocialIncomingWorkoutInvite) {
         launchMutation("invite-${invite.inviteId}", R.string.workout_invite_action_failed) {
                 cloudSession ->
+            val plan = invite.workout ?: authManager.loadSocialWorkoutInvitePlan(
+                session = cloudSession,
+                inviteId = invite.inviteId,
+                expectedRevision = invite.inviteRevision
+            ) ?: error("Social resource unavailable.")
+            check(socialInviteSummaryMatchesPlan(invite, plan)) {
+                "Social response is invalid."
+            }
             val mutation = authManager.respondSocialWorkoutInvite(
                 session = cloudSession,
                 inviteId = invite.inviteId,
                 decision = "accept",
                 expectedRevision = invite.inviteRevision
             )
-            val plan = checkNotNull(mutation.workout) { "Accepted workout was unavailable." }
+            mutation.workout?.let { returnedPlan ->
+                check(returnedPlan == plan) { "Social response is invalid." }
+            }
             _uiState.update {
                 it.copy(acceptedWorkout = AcceptedSocialWorkout(invite.inviteId, plan))
             }
@@ -623,8 +907,19 @@ internal class FriendsViewModel(
     }
 
     fun reuseAcceptedWorkoutInvite(invite: SocialIncomingWorkoutInvite) {
-        val recovered = acceptedSocialWorkoutForReuse(invite) ?: return
-        _uiState.update { it.copy(acceptedWorkout = recovered) }
+        if (invite.status != "accepted") return
+        launchMutation("invite-${invite.inviteId}", R.string.workout_invite_action_failed) {
+                cloudSession ->
+            val plan = invite.workout ?: authManager.loadSocialWorkoutInvitePlan(
+                session = cloudSession,
+                inviteId = invite.inviteId,
+                expectedRevision = invite.inviteRevision
+            ) ?: error("Social resource unavailable.")
+            val recovered = checkNotNull(acceptedSocialWorkoutForReuse(invite, plan)) {
+                "Social response is invalid."
+            }
+            _uiState.update { it.copy(acceptedWorkout = recovered) }
+        }
     }
 
     fun cancelWorkoutInvite(inviteId: String, inviteRevision: Int) {
@@ -651,7 +946,6 @@ internal class FriendsViewModel(
     }
 
     override fun onCleared() {
-        retainedWorkoutRequestIds.clear()
         _uiState.value = FriendsUiState()
         super.onCleared()
     }
@@ -679,7 +973,7 @@ internal class FriendsViewModel(
         inboxRequestVersion += 1
         detailRequestVersion += 1
         _uiState.update { invalidateSocialAccessAfterRevocation(it, kind) }
-        // Intentionally keep retainedWorkoutRequestIds: an unresolved send retry must reuse its UUID.
+        // The durable request store intentionally keeps an unresolved send retry's UUID.
     }
 
     private fun launchMutation(
@@ -721,8 +1015,6 @@ internal class FriendsViewModel(
     }
 
     companion object {
-        private const val MAX_RETAINED_WORKOUT_REQUEST_IDS = 25
-
         fun factory(
             authManager: CloudAuthManager,
             session: AccountSession.Cloud?

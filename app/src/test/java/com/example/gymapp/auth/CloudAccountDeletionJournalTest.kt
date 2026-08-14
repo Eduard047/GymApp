@@ -177,6 +177,7 @@ class CloudAccountDeletionJournalTest {
             clearCustomMedia = { firstAttemptCalls += "media"; false },
             clearBackupShares = { firstAttemptCalls += "shares"; true },
             clearRestTimers = { firstAttemptCalls += "timers"; true },
+            clearLiveState = { firstAttemptCalls += "live"; true },
             clearGarminState = { firstAttemptCalls += "garmin"; true },
             clearJournal = restartedProcess::clear
         )
@@ -191,6 +192,7 @@ class CloudAccountDeletionJournalTest {
                 "media",
                 "shares",
                 "timers",
+                "live",
                 "garmin"
             ),
             firstAttemptCalls
@@ -207,6 +209,7 @@ class CloudAccountDeletionJournalTest {
             clearCustomMedia = { true },
             clearBackupShares = { true },
             clearRestTimers = { true },
+            clearLiveState = { true },
             clearGarminState = { true },
             clearJournal = secondRestart::clear
         )

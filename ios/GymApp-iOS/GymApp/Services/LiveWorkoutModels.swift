@@ -421,7 +421,12 @@ enum LiveWorkoutPayloadParser {
         guard result == "joined" || result == "declined" else {
             throw LiveWorkoutContractError.invalidResponse
         }
-        let status = try roomStatus(row["status"], allowed: joined ? [.ready] : [.cancelled])
+        // The atomic-accept contract activates the room immediately. Keep `.ready`
+        // decode compatibility for responses delivered by the previous server version.
+        let status = try roomStatus(
+            row["status"],
+            allowed: joined ? [.ready, .active] : [.cancelled]
+        )
         return LiveWorkoutRespondResult(
             result: result,
             roomID: try identifier(row["roomId"], pattern: roomPattern),

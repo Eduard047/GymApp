@@ -184,6 +184,13 @@ interface WorkoutDao {
 
     @androidx.room.Transaction
     @Query(
+        "SELECT * FROM workout_sessions WHERE date = :date " +
+            "ORDER BY id ASC LIMIT 2"
+    )
+    suspend fun getSessionDetailsAtExactDate(date: Long): List<WorkoutSessionDetails>
+
+    @androidx.room.Transaction
+    @Query(
         """
         SELECT *
         FROM workout_sessions ws

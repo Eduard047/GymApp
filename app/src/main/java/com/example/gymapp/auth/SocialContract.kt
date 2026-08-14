@@ -19,6 +19,9 @@ internal const val SOCIAL_MAX_RECENT_WORKOUTS = 5
 internal const val SOCIAL_MAX_WORKOUT_EXERCISES = 20
 internal const val SOCIAL_MAX_EXERCISE_RECORDS = 100
 internal const val SOCIAL_MAX_WORKOUT_INVITES = 25
+internal const val SOCIAL_WORKOUT_INBOX_PAGE_SIZE = 10
+internal const val SOCIAL_MAX_WORKOUT_INBOX_ITEMS = 20
+internal const val SOCIAL_MAX_WORKOUT_INBOX_PAGE_COUNT = 2
 internal const val SOCIAL_MAX_FRIEND_WORKOUT_PAGE = 5
 internal const val SOCIAL_MAX_FRIEND_WORKOUT_SETS = 100
 internal const val SOCIAL_MAX_INVITE_JSON_BYTES = 32 * 1_024
@@ -220,7 +223,7 @@ internal data class SocialIncomingWorkoutInvite(
     val expiresAt: String,
     val respondedAt: String?,
     val summary: SocialWorkoutInviteSummary,
-    val workout: SharedWorkoutPlan
+    val workout: SharedWorkoutPlan? = null
 )
 
 internal data class SocialOutgoingWorkoutInvite(
@@ -238,7 +241,28 @@ internal data class SocialOutgoingWorkoutInvite(
 internal data class SocialWorkoutInbox(
     val pendingIncomingCount: Int,
     val incoming: List<SocialIncomingWorkoutInvite>,
-    val outgoing: List<SocialOutgoingWorkoutInvite>
+    val outgoing: List<SocialOutgoingWorkoutInvite>,
+    val nextCursor: SocialWorkoutInboxCursor? = null,
+    val usesLegacyFullPayload: Boolean = false,
+    val loadedPageCount: Int = 1
+)
+
+internal fun SocialWorkoutInbox.hasAnotherBoundedPage(): Boolean =
+    !usesLegacyFullPayload &&
+        nextCursor != null &&
+        loadedPageCount in 1 until SOCIAL_MAX_WORKOUT_INBOX_PAGE_COUNT &&
+        incoming.size < SOCIAL_MAX_WORKOUT_INBOX_ITEMS
+
+internal data class SocialWorkoutInboxCursor(
+    val createdAt: String,
+    val inviteId: String,
+    val pending: Boolean
+)
+
+internal data class SocialWorkoutInvitePlan(
+    val inviteId: String,
+    val inviteRevision: Int,
+    val workout: SharedWorkoutPlan
 )
 
 internal data class SocialWorkoutInviteMutation(
@@ -571,8 +595,118 @@ internal fun parseSocialWorkoutInbox(raw: String): SocialWorkoutInbox {
         incoming.size + outgoing.size) { "Social response is invalid." }
     return SocialWorkoutInbox(
         pendingIncomingCount = pendingCount,
+        incoming = incoming.take(SOCIAL_MAX_WORKOUT_INBOX_ITEMS),
+        outgoing = outgoing.take(SOCIAL_MAX_WORKOUT_INBOX_ITEMS),
+        usesLegacyFullPayload = true
+    )
+}
+
+internal fun parseSocialWorkoutInboxPage(
+    raw: String,
+    expectedLimit: Int = SOCIAL_WORKOUT_INBOX_PAGE_SIZE
+): SocialWorkoutInbox {
+    require(expectedLimit in 1..SOCIAL_WORKOUT_INBOX_PAGE_SIZE) {
+        "Social response is invalid."
+    }
+    val root = socialRoot(
+        raw,
+        setOf("version", "pendingIncomingCount", "incoming", "outgoing", "nextCursor"),
+        expectedVersion = 2
+    )
+    val incoming = root.requiredArray("incoming", expectedLimit)
+        .mapObjects { parseSocialIncomingWorkoutInvite(it, includesWorkout = false) }
+    val outgoing = root.requiredArray("outgoing", SOCIAL_MAX_WORKOUT_INBOX_ITEMS)
+        .mapObjects(::parseSocialOutgoingWorkoutInvite)
+    val pendingCount = root.requiredInt(
+        "pendingIncomingCount",
+        0,
+        SOCIAL_MAX_WORKOUT_INVITES
+    )
+    require(pendingCount >= incoming.count { it.status == "pending" }) {
+        "Social response is invalid."
+    }
+    require(incoming.map { it.inviteId }.toSet().size == incoming.size &&
+        outgoing.map { it.inviteId }.toSet().size == outgoing.size &&
+        (incoming.map { it.inviteId } + outgoing.map { it.inviteId }).toSet().size ==
+        incoming.size + outgoing.size) { "Social response is invalid." }
+    val cursor = if (root.isNull("nextCursor")) {
+        null
+    } else {
+        root.requiredObject("nextCursor").let { rawCursor ->
+            rawCursor.requireExactKeys(setOf("createdAt", "inviteId", "pending"))
+            SocialWorkoutInboxCursor(
+                createdAt = rawCursor.requiredTimestamp("createdAt"),
+                inviteId = rawCursor.requiredWorkoutInviteId("inviteId"),
+                pending = rawCursor.requiredBoolean("pending")
+            )
+        }
+    }
+    if (cursor != null) {
+        val last = incoming.lastOrNull()
+        require(
+            incoming.size == expectedLimit &&
+                last != null &&
+                cursor.createdAt == last.createdAt &&
+                cursor.inviteId == last.inviteId &&
+                cursor.pending == (last.status == "pending")
+        ) { "Social response is invalid." }
+    }
+    requireSocialWorkoutInviteOrder(incoming, prioritizesPending = true)
+    requireSocialWorkoutInviteOrder(outgoing, prioritizesPending = false)
+    return SocialWorkoutInbox(
+        pendingIncomingCount = pendingCount,
         incoming = incoming,
-        outgoing = outgoing
+        outgoing = outgoing,
+        nextCursor = cursor
+    )
+}
+
+private fun <T> requireSocialWorkoutInviteOrder(
+    rows: List<T>,
+    prioritizesPending: Boolean
+) {
+    fun status(row: T): String = when (row) {
+        is SocialIncomingWorkoutInvite -> row.status
+        is SocialOutgoingWorkoutInvite -> row.status
+        else -> error("Unsupported workout invitation row.")
+    }
+    fun createdAt(row: T): String = when (row) {
+        is SocialIncomingWorkoutInvite -> row.createdAt
+        is SocialOutgoingWorkoutInvite -> row.createdAt
+        else -> error("Unsupported workout invitation row.")
+    }
+    fun inviteId(row: T): String = when (row) {
+        is SocialIncomingWorkoutInvite -> row.inviteId
+        is SocialOutgoingWorkoutInvite -> row.inviteId
+        else -> error("Unsupported workout invitation row.")
+    }
+
+    rows.zipWithNext().forEach { (previous, current) ->
+        val previousPending = status(previous) == "pending"
+        val currentPending = status(current) == "pending"
+        require(!prioritizesPending || previousPending || !currentPending) {
+            "Social response is invalid."
+        }
+        if (!prioritizesPending || previousPending == currentPending) {
+            val previousTime = java.time.OffsetDateTime.parse(createdAt(previous)).toInstant()
+            val currentTime = java.time.OffsetDateTime.parse(createdAt(current)).toInstant()
+            require(
+                previousTime > currentTime ||
+                    (previousTime == currentTime && inviteId(previous) > inviteId(current))
+            ) { "Social response is invalid." }
+        }
+    }
+}
+
+internal fun parseSocialWorkoutInvitePlan(raw: String): SocialWorkoutInvitePlan {
+    val root = socialRoot(
+        raw,
+        setOf("version", "inviteId", "inviteRevision", "workout")
+    )
+    return SocialWorkoutInvitePlan(
+        inviteId = root.requiredWorkoutInviteId("inviteId"),
+        inviteRevision = root.requiredRevision("inviteRevision"),
+        workout = parseSocialWorkoutObject(root.requiredObject("workout"))
     )
 }
 
@@ -607,25 +741,39 @@ internal fun parseSocialWorkoutInviteCancellation(raw: String): SocialWorkoutInv
     )
 }
 
-private fun parseSocialIncomingWorkoutInvite(raw: JSONObject): SocialIncomingWorkoutInvite {
+private fun parseSocialIncomingWorkoutInvite(
+    raw: JSONObject,
+    includesWorkout: Boolean = true
+): SocialIncomingWorkoutInvite {
     raw.requireExactKeys(
-        setOf(
+        buildSet {
+            addAll(
+                setOf(
             "inviteId", "profileId", "displayName", "status", "inviteRevision", "createdAt",
-            "expiresAt", "respondedAt", "summary", "workout"
-        )
+                    "expiresAt", "respondedAt", "summary"
+                )
+            )
+            if (includesWorkout) add("workout")
+        }
     )
     val status = raw.requiredIncomingWorkoutInviteStatus("status")
     val summary = parseSocialWorkoutInviteSummary(raw.requiredObject("summary"))
-    val workout = parseSocialWorkoutObject(raw.requiredObject("workout"))
+    val workout = if (includesWorkout) {
+        parseSocialWorkoutObject(raw.requiredObject("workout"))
+    } else {
+        null
+    }
     val respondedAt = raw.nullableTimestamp("respondedAt")
     require((status == "pending") == (respondedAt == null)) {
         "Social response is invalid."
     }
-    require(
-        summary.exerciseCount == workout.exerciseCount &&
-            summary.setCount == workout.setCount &&
-            summary.exerciseNames == workout.exercises.map { it.name }
-    ) { "Social response is invalid." }
+    if (workout != null) {
+        require(
+            summary.exerciseCount == workout.exerciseCount &&
+                summary.setCount == workout.setCount &&
+                summary.exerciseNames == workout.exercises.map { it.name }
+        ) { "Social response is invalid." }
+    }
     return SocialIncomingWorkoutInvite(
         inviteId = raw.requiredWorkoutInviteId("inviteId"),
         profileId = raw.requiredProfileId("profileId"),
@@ -965,13 +1113,18 @@ private fun requireUniqueSocialDashboardIds(dashboard: SocialDashboard) {
     require(dashboard.self.profileId !in visibleProfiles)
 }
 
-private fun socialRoot(raw: String, expectedKeys: Set<String>): JSONObject {
+private fun socialRoot(
+    raw: String,
+    expectedKeys: Set<String>,
+    expectedVersion: Int = SOCIAL_CONTRACT_VERSION
+): JSONObject {
     require(raw.toByteArray(Charsets.UTF_8).size <= 256 * 1_024) { "Social response is invalid." }
     val root = runCatching { JSONObject(raw) }
         .getOrElse { throw IllegalArgumentException("Social response is invalid.") }
     root.requireExactKeys(expectedKeys)
-    require(root.requiredInt("version", SOCIAL_CONTRACT_VERSION, SOCIAL_CONTRACT_VERSION) ==
-        SOCIAL_CONTRACT_VERSION) { "Social response is invalid." }
+    require(root.requiredInt("version", expectedVersion, expectedVersion) == expectedVersion) {
+        "Social response is invalid."
+    }
     return root
 }
 

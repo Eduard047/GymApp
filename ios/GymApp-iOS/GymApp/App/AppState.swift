@@ -81,11 +81,10 @@ final class AppState: ObservableObject {
     }
 
     private struct PendingWorkoutInviteRequestKey: Hashable {
-        let generation: UInt64
         let storageKey: String
         let userID: String
         let profileID: String
-        let canonicalWorkout: Data
+        let canonicalWorkoutDigest: Data
     }
 
     let auth: AuthService
@@ -110,6 +109,7 @@ final class AppState: ObservableObject {
     @Published private(set) var socialWorkoutInbox: SocialWorkoutInbox?
     @Published private(set) var socialWorkoutDetailPrivacy: SocialWorkoutDetailPrivacy?
     @Published private(set) var socialDashboardRefreshRevision: UInt64 = 0
+    @Published private(set) var isRestoringConfirmedSocialMutation = false
 
     private var sessionSubscription: AnyCancellable?
     private var storeSubscription: AnyCancellable?
@@ -125,9 +125,16 @@ final class AppState: ObservableObject {
     private var restTimerOwnerFingerprint: String?
     private var applyingRemoteState = false
     private var cloudWritableAccountStorageKey: String?
+    /// A previously verified, account-keyed local snapshot may remain available while
+    /// the first authoritative cloud read is offline. Uploads stay blocked until a
+    /// later full read proves the current remote revision and completes three-way
+    /// reconciliation for this exact account.
+    private var cloudReconciliationRequiredStorageKey: String?
     private var pendingCloudSyncConflict: PendingCloudSyncConflict?
     private var socialCacheGeneration: UInt64 = 0
-    private var pendingWorkoutInviteRequestIDs: [PendingWorkoutInviteRequestKey: UUID] = [:]
+    private var pendingSocialReconciliationSurfaces: SocialReconciliationSurfaces = []
+    private var socialReconciliationTask: Task<Void, Never>?
+    private var socialReconciliationTaskID: UUID?
     private weak var nativePushManager: NativePushManager?
     private let defaults: UserDefaults
     private let workoutDirectoryURL: URL?
@@ -140,7 +147,7 @@ final class AppState: ObservableObject {
         "gymapp.pending-account-deletion-garmin-user-id"
     private static let hiddenLeaderboardProfilesKey = "leaderboard-hidden-profile-ids"
     private static let cloudCheckpointKeyPrefix = "gymapp.cloud-sync-checkpoint.v1."
-    static let maximumPendingWorkoutInviteRequests = 25
+    static let maximumPendingWorkoutInviteRequests = WorkoutInviteRequestStore.maximumEntries
 
     private struct CloudSyncCheckpoint: Codable {
         let version: Int
@@ -238,6 +245,7 @@ final class AppState: ObservableObject {
         pendingCloudSave?.cancel()
         accountActivationTask?.cancel()
         accountDeletionTask?.cancel()
+        socialReconciliationTask?.cancel()
     }
 
     var isAccountReady: Bool {
@@ -373,7 +381,12 @@ final class AppState: ObservableObject {
     func signOut() async -> Bool {
         guard !isSigningOut else { return false }
         isSigningOut = true
+        let signingOutCloudUserID = auth.session?.cloud?.userID
+        let signingOutAuthSessionID = NativePushAuthSessionIdentity.sessionID(
+            from: auth.session?.cloud
+        )
         var shouldRescheduleCloudSave = false
+        var deferredCloudUploadStorageKey: String?
         defer {
             isSigningOut = false
             if shouldRescheduleCloudSave {
@@ -423,17 +436,23 @@ final class AppState: ObservableObject {
                     }
                 }
             } catch {
-                // Keep the authenticated account and writable store intact. The user
-                // can retry sign-out after connectivity or cloud state is repaired.
+                // Logout is a local security boundary and must not depend on network
+                // availability. Keep the account-bound store and dirty checkpoint for
+                // a later sign-in, then continue to clear reusable local credentials.
+                try? store.saveNow()
+                markCloudPending(storageKey: session.storageKey)
+                deferredCloudUploadStorageKey = session.storageKey
                 shouldRescheduleCloudSave = isAccountReady
                     && auth.session?.storageKey == session.storageKey
                     && workoutStore === store
                     && cloudWritableAccountStorageKey == session.storageKey
-                show(error: error)
-                return false
             }
         }
-        if let cloudUserID = auth.session?.cloud?.userID {
+        if let cloudUserID = signingOutCloudUserID {
+            guard signOutSessionIsCurrent(
+                userID: cloudUserID,
+                authSessionID: signingOutAuthSessionID
+            ) else { return false }
             do {
                 try await garminCloud.prepareForSessionEnd(
                     expectedUserID: cloudUserID
@@ -445,11 +464,56 @@ final class AppState: ObservableObject {
                 show(error: error)
                 return false
             }
-            await nativePushManager?.prepareForSessionEnd(expectedUserID: cloudUserID)
+            if auth.session != nil {
+                guard signOutSessionIsCurrent(
+                    userID: cloudUserID,
+                    authSessionID: signingOutAuthSessionID
+                ) else { return false }
+                await nativePushManager?.prepareForSessionEnd(expectedUserID: cloudUserID)
+                guard signOutSessionIsCurrent(
+                    userID: cloudUserID,
+                    authSessionID: signingOutAuthSessionID
+                ) else {
+                    await nativePushManager?.resumeAfterFailedSessionEnd(
+                        expectedUserID: cloudUserID
+                    )
+                    return false
+                }
+            }
         }
-        clearRestTimersForAccountTransition(to: nil)
         await auth.signOut()
-        return auth.session == nil
+        guard auth.session == nil else {
+            if let signingOutCloudUserID {
+                await nativePushManager?.resumeAfterFailedSessionEnd(
+                    expectedUserID: signingOutCloudUserID
+                )
+            }
+            return false
+        }
+        shouldRescheduleCloudSave = false
+        clearRestTimersForAccountTransition(to: nil)
+        if deferredCloudUploadStorageKey != nil {
+            show(
+                message: gymText(
+                    "Signed out. Unsynced workouts remain in this account’s isolated local app storage and will be reconciled after the next sign-in.",
+                    "Вихід виконано. Несинхронізовані тренування залишилися в локальному сховищі цього акаунта й будуть узгоджені після наступного входу.",
+                    "Выход выполнен. Несинхронизированные тренировки остались в локальном хранилище этого аккаунта и будут согласованы после следующего входа.",
+                    languageCode: gymCurrentLanguageCode(defaults: defaults)
+                ),
+                isError: false
+            )
+        }
+        return true
+    }
+
+    private func signOutSessionIsCurrent(
+        userID: String,
+        authSessionID: String?
+    ) -> Bool {
+        guard let current = auth.session else { return true }
+        guard let cloud = current.cloud, cloud.userID == userID else { return false }
+        guard let authSessionID else { return true }
+        return NativePushAuthSessionIdentity.sessionID(from: cloud) == authSessionID
     }
 
     private func scheduleActivation(_ session: AppAccountSession?) {
@@ -470,15 +534,20 @@ final class AppState: ObservableObject {
         accountActivationGeneration &+= 1
         abandonPendingCloudSave()
         cloudSync.resetForAccountTransition()
+        socialReconciliationTask?.cancel()
+        socialReconciliationTask = nil
+        socialReconciliationTaskID = nil
+        pendingSocialReconciliationSurfaces = []
+        isRestoringConfirmedSocialMutation = false
         socialDashboard = nil
         socialFriendCode = nil
         socialWorkoutInbox = nil
         socialWorkoutDetailPrivacy = nil
         socialCacheGeneration &+= 1
         socialDashboardRefreshRevision &+= 1
-        pendingWorkoutInviteRequestIDs.removeAll(keepingCapacity: false)
         pendingSharedWorkout = nil
         cloudWritableAccountStorageKey = nil
+        cloudReconciliationRequiredStorageKey = nil
         pendingCloudSyncConflict = nil
         cloudSyncConflict = nil
         isResolvingCloudSyncConflict = false
@@ -536,6 +605,11 @@ final class AppState: ObservableObject {
                 directoryURL: workoutDirectoryURL
             )
             let candidate = openedStore.store
+            // Capture this before seeding can create the first persisted envelope. Only
+            // a pre-existing, successfully decoded account-keyed snapshot is eligible
+            // for offline activation; a new or quarantined store still waits for cloud.
+            let hadVerifiedLocalSnapshot = openedStore.quarantinedFileURL == nil &&
+                FileManager.default.fileExists(atPath: candidate.storageURL.path)
             try ensureActivationIsCurrent(
                 generation: generation,
                 expectedStorageKey: expectedStorageKey
@@ -548,6 +622,7 @@ final class AppState: ObservableObject {
             var cloudWritesAllowed = false
             var loadedReadOnlyUnsupportedState = false
             var requiresCanonicalCloudUpload = false
+            var requiresAuthoritativeCloudReconciliation = false
             if let expectedUserID {
                 let remoteData: Data?
                 do {
@@ -561,13 +636,24 @@ final class AppState: ObservableObject {
                 } catch is CancellationError {
                     return
                 } catch {
-                    // Do not publish an editable account from an unverified local snapshot when
-                    // the authoritative cloud read itself failed. The retry screen must reload
-                    // the current remote revision before this account can become active.
-                    throw error
+                    guard hadVerifiedLocalSnapshot else {
+                        // A first-time cloud account has no owner-bound local state to show.
+                        // Keep it behind the retry screen until an authoritative read succeeds.
+                        throw error
+                    }
+                    // Keep the verified local projection usable offline, but never infer a
+                    // writable cloud revision from a transport failure. Local changes remain
+                    // account-scoped and pending until forceCloudSync performs a full read and
+                    // three-way reconciliation; the failed request itself is never replayed as
+                    // an upload.
+                    cloudError = error
+                    requiresAuthoritativeCloudReconciliation = true
+                    remoteData = nil
                 }
 
-                if let remoteData {
+                if requiresAuthoritativeCloudReconciliation {
+                    // The local snapshot is published below with cloud writes paused.
+                } else if let remoteData {
                     do {
                         try ensureActivationIsCurrent(
                             generation: generation,
@@ -684,6 +770,8 @@ final class AppState: ObservableObject {
                 expectedStorageKey: expectedStorageKey
             )
             cloudWritableAccountStorageKey = cloudWritesAllowed ? expectedStorageKey : nil
+            cloudReconciliationRequiredStorageKey =
+                requiresAuthoritativeCloudReconciliation ? expectedStorageKey : nil
             publish(store: candidate, activeStorageKey: expectedStorageKey)
             if expectedUserID != nil, cloudSyncStatus == .checking {
                 restoreCloudCheckpointStatus(storageKey: expectedStorageKey)
@@ -810,6 +898,7 @@ final class AppState: ObservableObject {
             )
 
             cloudWritableAccountStorageKey = pending.storageKey
+            cloudReconciliationRequiredStorageKey = nil
             pendingCloudSyncConflict = nil
             cloudSyncConflict = nil
             accountPreparationError = nil
@@ -957,6 +1046,18 @@ final class AppState: ObservableObject {
             return
         }
         guard cloudWritableAccountStorageKey == session.storageKey else {
+            if cloudReconciliationRequiredStorageKey == session.storageKey {
+                await reconcileStaleManualSync(
+                    store: workoutStore,
+                    session: session,
+                    userID: cloud.userID,
+                    owner: Self.backupOwner(
+                        for: session,
+                        fallbackStorageKey: session.storageKey
+                    )
+                )
+                return
+            }
             show(
                 message: "Cloud upload is paused because this row contains unsupported future workout fields.",
                 isError: true
@@ -1028,6 +1129,8 @@ final class AppState: ObservableObject {
                         expectedUserID: userID
                     )
                 }
+                cloudWritableAccountStorageKey = storageKey
+                cloudReconciliationRequiredStorageKey = nil
                 show(message: "Cloud data is up to date.", isError: false)
                 return
             }
@@ -1052,6 +1155,8 @@ final class AppState: ObservableObject {
             try store.setCloudExtensionsData(prepared.extensionsData)
             if remoteIdentity == localIdentity {
                 recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                cloudWritableAccountStorageKey = storageKey
+                cloudReconciliationRequiredStorageKey = nil
                 show(message: "Cloud data is up to date.", isError: false)
                 return
             }
@@ -1068,6 +1173,8 @@ final class AppState: ObservableObject {
                         expectedUserID: userID
                     )
                 }
+                cloudWritableAccountStorageKey = storageKey
+                cloudReconciliationRequiredStorageKey = nil
                 show(message: "Cloud data is up to date.", isError: false)
                 return
             }
@@ -1080,6 +1187,8 @@ final class AppState: ObservableObject {
                 _ = try store.seedBuiltInExercises()
                 _ = try store.seedDefaultMuscleMappings()
                 recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                cloudWritableAccountStorageKey = storageKey
+                cloudReconciliationRequiredStorageKey = nil
                 show(message: "Newer cloud workout data was loaded.", isError: false)
                 return
             }
@@ -1164,6 +1273,7 @@ final class AppState: ObservableObject {
             }
             self.socialDashboard = dashboard
             self.socialFriendCode = friendCode
+            self.markSocialSurfaceReconciled(.dashboard)
             return dashboard
         }
     }
@@ -1227,6 +1337,7 @@ final class AppState: ObservableObject {
             throw AuthServiceError.sessionChanged
         }
         socialWorkoutDetailPrivacy = privacy
+        markSocialSurfaceReconciled(.workoutDetailPrivacy)
         return privacy
     }
 
@@ -1235,12 +1346,18 @@ final class AppState: ObservableObject {
         guard let normalizedFriendCode = SocialFriendCode.normalize(friendCode) else {
             throw CloudSyncError.invalidSocialProfile
         }
+        // If the RPC commits but its response is lost, an old request action must
+        // not remain reusable from a dashboard read started before this mutation.
+        invalidateSocialDashboardCache()
         try await cloudSync.socialSendFriendRequest(
             friendCode: normalizedFriendCode,
             expectedUserID: context.userID
         )
         try validateSocialContext(context)
-        _ = try await refreshSocialDashboard()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.dashboard]
+        )
     }
 
     func respondFriendRequest(
@@ -1251,6 +1368,7 @@ final class AppState: ObservableObject {
         guard socialDashboard?.incoming.contains(request) == true else {
             throw CloudSyncError.invalidFriendship
         }
+        invalidateSocialRelationshipCaches()
         _ = try await cloudSync.socialRespondFriendRequest(
             friendshipID: request.friendshipID,
             decision: accept ? "accept" : "decline",
@@ -1258,7 +1376,10 @@ final class AppState: ObservableObject {
             expectedUserID: context.userID
         )
         try validateSocialContext(context)
-        _ = try await refreshSocialDashboard()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.dashboard, .workoutInbox]
+        )
     }
 
     func cancelFriendRequest(_ request: SocialFriendRequest) async throws {
@@ -1266,13 +1387,17 @@ final class AppState: ObservableObject {
         guard socialDashboard?.outgoing.contains(request) == true else {
             throw CloudSyncError.invalidFriendship
         }
+        invalidateSocialRelationshipCaches()
         _ = try await cloudSync.socialCancelFriendRequest(
             friendshipID: request.friendshipID,
             expectedRevision: request.friendshipRevision,
             expectedUserID: context.userID
         )
         try validateSocialContext(context)
-        _ = try await refreshSocialDashboard()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.dashboard, .workoutInbox]
+        )
     }
 
     func removeFriend(_ friend: SocialFriendSummary) async throws {
@@ -1289,8 +1414,10 @@ final class AppState: ObservableObject {
             expectedUserID: context.userID
         )
         try validateSocialContext(context)
-        _ = try await refreshSocialDashboard()
-        _ = try await refreshSocialWorkoutInbox()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.dashboard, .workoutInbox]
+        )
     }
 
     func blockSocialProfile(profileID: String) async throws {
@@ -1306,12 +1433,15 @@ final class AppState: ObservableObject {
             throw CloudSyncError.invalidResponse
         }
         try validateSocialContext(context)
-        _ = try await refreshSocialDashboard()
-        _ = try await refreshSocialWorkoutInbox()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.dashboard, .workoutInbox]
+        )
     }
 
     func unblockSocialProfile(profileID: String) async throws {
         let context = try socialContext()
+        invalidateSocialRelationshipCaches()
         let result = try await cloudSync.socialUnblockProfile(
             profileID: profileID,
             expectedUserID: context.userID
@@ -1320,7 +1450,10 @@ final class AppState: ObservableObject {
             throw CloudSyncError.invalidResponse
         }
         try validateSocialContext(context)
-        _ = try await refreshSocialDashboard()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.dashboard, .workoutInbox]
+        )
     }
 
     func updateSocialPrivacy(_ privacy: SocialPrivacy) async throws {
@@ -1328,6 +1461,7 @@ final class AppState: ObservableObject {
         guard let current = socialDashboard?.currentUser else {
             throw CloudSyncError.invalidResponse
         }
+        invalidateSocialDashboardCache()
         let result = try await cloudSync.socialUpdatePrivacy(
             privacy,
             expectedRevision: current.settingsRevision,
@@ -1335,8 +1469,10 @@ final class AppState: ObservableObject {
         )
         guard result.0 == privacy else { throw CloudSyncError.invalidResponse }
         try validateSocialContext(context)
-        _ = try await refreshSocialDashboard()
-        _ = try await refreshSocialWorkoutDetailPrivacy()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.dashboard, .workoutDetailPrivacy]
+        )
     }
 
     func updateSocialWorkoutDetailPrivacy(_ enabled: Bool) async throws {
@@ -1344,6 +1480,7 @@ final class AppState: ObservableObject {
         guard let current = socialWorkoutDetailPrivacy else {
             throw CloudSyncError.invalidResponse
         }
+        invalidateSocialWorkoutDetailPrivacyCache()
         let result = try await cloudSync.socialUpdateWorkoutDetailPrivacy(
             enabled,
             expectedRevision: current.settingsRevision,
@@ -1363,7 +1500,80 @@ final class AppState: ObservableObject {
             throw AuthServiceError.sessionChanged
         }
         socialWorkoutInbox = inbox
+        markSocialSurfaceReconciled(.workoutInbox)
         return inbox
+    }
+
+    func loadMoreSocialWorkoutInbox() async throws -> SocialWorkoutInbox {
+        let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
+        guard let current = socialWorkoutInbox else {
+            throw CloudSyncError.invalidResponse
+        }
+        guard let cursor = current.nextCursor else { return current }
+        let page = try await cloudSync.socialWorkoutInboxPage(
+            after: cursor,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration,
+              socialWorkoutInbox == current else {
+            throw AuthServiceError.sessionChanged
+        }
+        let merged: SocialWorkoutInbox
+        do {
+            merged = try SocialPayloadParser.mergingWorkoutInboxPage(
+                page,
+                into: current,
+                after: cursor
+            )
+        } catch {
+            // A valid page can still belong to a newer server snapshot (privacy,
+            // cancellation, expiry, or another device changed the list between
+            // requests). Never splice revisions and never leave the stale cursor as
+            // the next retry target. Invalidate it, then perform exactly one bounded
+            // first-page read for this same account/generation.
+            socialWorkoutInbox = nil
+            let refreshed = try await cloudSync.socialWorkoutInbox(
+                expectedUserID: context.userID
+            )
+            try validateSocialContext(context)
+            guard socialCacheGeneration == cacheGeneration,
+                  socialWorkoutInbox == nil else {
+                throw AuthServiceError.sessionChanged
+            }
+            socialWorkoutInbox = refreshed
+            markSocialSurfaceReconciled(.workoutInbox)
+            return refreshed
+        }
+        socialWorkoutInbox = merged
+        return merged
+    }
+
+    func resolveSocialWorkoutInvite(
+        inviteID: String,
+        minimumRevision: Int
+    ) async throws -> Bool {
+        guard SocialPayloadParser.isValidInviteID(inviteID),
+              (1 ... 2_147_483_647).contains(minimumRevision),
+              socialWorkoutInbox != nil else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        for pageIndex in 0 ..< SocialPayloadParser.workoutInboxMaximumPageCount {
+            guard let inbox = socialWorkoutInbox else {
+                throw CloudSyncError.invalidResponse
+            }
+            if let invite = inbox.incoming.first(where: { $0.inviteID == inviteID })
+                ?? inbox.outgoing.first(where: { $0.inviteID == inviteID }) {
+                return invite.inviteRevision >= minimumRevision
+            }
+            guard inbox.nextCursor != nil,
+                  pageIndex + 1 < SocialPayloadParser.workoutInboxMaximumPageCount else {
+                return false
+            }
+            _ = try await loadMoreSocialWorkoutInbox()
+        }
+        return false
     }
 
     func sendWorkoutInvite(
@@ -1379,18 +1589,15 @@ final class AppState: ObservableObject {
             profileID: profileID,
             plan: plan
         )
-        let clientRequestID: UUID
-        if let pendingID = pendingWorkoutInviteRequestIDs[requestKey] {
-            clientRequestID = pendingID
-        } else {
-            guard pendingWorkoutInviteRequestIDs.count < Self.maximumPendingWorkoutInviteRequests else {
-                throw CloudSyncError.requestFailed(
-                    "Too many workout invitation attempts are awaiting a confirmed outcome."
-                )
-            }
-            clientRequestID = UUID()
-            pendingWorkoutInviteRequestIDs[requestKey] = clientRequestID
-        }
+        let requestStore = try WorkoutInviteRequestStore(
+            accountStorageKey: requestKey.storageKey,
+            userID: requestKey.userID,
+            workoutStorageURL: workoutStore.storageURL
+        )
+        let clientRequestID = try requestStore.requestID(
+            profileID: requestKey.profileID,
+            canonicalWorkoutDigest: requestKey.canonicalWorkoutDigest
+        )
 
         try await cloudSync.socialSendWorkoutInvite(
             profileID: profileID,
@@ -1399,16 +1606,19 @@ final class AppState: ObservableObject {
             expectedUserID: context.userID
         )
         try validateSocialContext(context)
-        pendingWorkoutInviteRequestIDs.removeValue(forKey: requestKey)
-
-        do {
-            _ = try await refreshSocialWorkoutInbox()
-        } catch {
-            // The mutation itself has a confirmed generic outcome. Do not make the UI
-            // retry it with a fresh UUID merely because the follow-up inbox read failed.
-            try validateSocialContext(context)
-            socialWorkoutInbox = nil
-        }
+        // The server has confirmed this idempotency key. If the local cleanup
+        // itself fails, retaining the same key is conservative: a later retry
+        // can only ask the server to return the already committed result.
+        try? requestStore.confirm(
+            profileID: requestKey.profileID,
+            canonicalWorkoutDigest: requestKey.canonicalWorkoutDigest,
+            clientRequestID: clientRequestID
+        )
+        invalidateSocialWorkoutInboxCache()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.workoutInbox]
+        )
     }
 
     func respondWorkoutInvite(
@@ -1417,23 +1627,34 @@ final class AppState: ObservableObject {
         replacingPendingSharedWorkoutID: UUID? = nil
     ) async throws -> SharedWorkoutPlan? {
         let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
         guard invite.status == .pending,
               socialWorkoutInbox?.incoming.contains(invite) == true else {
             throw CloudSyncError.invalidWorkoutInvite
         }
-        if accept, let pendingSharedWorkout {
-            guard replacingPendingSharedWorkoutID == pendingSharedWorkout.id else {
+        let pendingSharedWorkoutID = pendingSharedWorkout?.id
+        if accept {
+            guard replacingPendingSharedWorkoutID == pendingSharedWorkoutID else {
                 throw CloudSyncError.invalidWorkoutInvite
             }
         }
+        let acceptedPlan: SharedWorkoutPlan?
         if accept {
-            guard let plan = invite.workout else {
+            let plan = try await workoutInvitePlan(
+                for: invite,
+                context: context,
+                cacheGeneration: cacheGeneration
+            )
+            guard pendingSharedWorkout?.id == pendingSharedWorkoutID else {
                 throw CloudSyncError.invalidWorkoutInvite
             }
             // The social wire contract intentionally does not infer local catalog aliases.
             // Preflight the local-copy boundary before accepting so a server-portable plan
             // that is ambiguous on this device stays pending and does not mutate remotely.
             try validateWorkoutInviteForLocalImport(plan)
+            acceptedPlan = plan
+        } else {
+            acceptedPlan = nil
         }
         let result = try await cloudSync.socialRespondWorkoutInvite(
             inviteID: invite.inviteID,
@@ -1442,33 +1663,56 @@ final class AppState: ObservableObject {
             expectedUserID: context.userID
         )
         try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration else {
+            throw AuthServiceError.sessionChanged
+        }
         if accept {
-            guard result.status == .accepted, let plan = result.workout else {
+            guard result.status == .accepted,
+                  let acceptedPlan,
+                  result.workout == acceptedPlan else {
                 throw CloudSyncError.invalidResponse
             }
             try stageWorkoutInvitePlan(
-                plan,
+                acceptedPlan,
                 replacingPendingID: replacingPendingSharedWorkoutID
             )
         } else if result.status != .declined || result.workout != nil {
             throw CloudSyncError.invalidResponse
         }
-        _ = try await refreshSocialWorkoutInbox()
-        return result.workout
+        // The mutation is confirmed. Remove the stale action before the refetch so a
+        // transient read failure cannot invite a duplicate response with a new UI task.
+        invalidateSocialWorkoutInboxCache()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.workoutInbox]
+        )
+        return acceptedPlan
     }
 
     func recoverAcceptedWorkoutInvite(
         _ invite: SocialWorkoutInvite,
         replacingPendingSharedWorkoutID: UUID? = nil
-    ) throws -> SharedWorkoutPlan {
+    ) async throws -> SharedWorkoutPlan {
         let context = try socialContext()
+        let cacheGeneration = socialCacheGeneration
+        let pendingSharedWorkoutID = pendingSharedWorkout?.id
         guard invite.status == .accepted,
-              let plan = invite.workout,
               socialWorkoutInbox?.incoming.contains(invite) == true,
-              socialDashboard?.friends.contains(where: { $0.profileID == invite.profileID }) == true else {
+              socialDashboard?.friends.contains(where: { $0.profileID == invite.profileID }) == true,
+              replacingPendingSharedWorkoutID == pendingSharedWorkoutID else {
             throw CloudSyncError.invalidWorkoutInvite
         }
-        try validateSocialContext(context)
+        let plan = try await workoutInvitePlan(
+            for: invite,
+            context: context,
+            cacheGeneration: cacheGeneration
+        )
+        guard pendingSharedWorkout?.id == pendingSharedWorkoutID,
+              socialDashboard?.friends.contains(where: {
+                  $0.profileID == invite.profileID
+              }) == true else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
         try stageWorkoutInvitePlan(
             plan,
             replacingPendingID: replacingPendingSharedWorkoutID
@@ -1483,6 +1727,7 @@ final class AppState: ObservableObject {
               socialWorkoutInbox?.outgoing.contains(invite) == true else {
             throw CloudSyncError.invalidWorkoutInvite
         }
+        invalidateSocialWorkoutInboxCache()
         let result = try await cloudSync.socialCancelWorkoutInvite(
             inviteID: invite.inviteID,
             expectedRevision: invite.inviteRevision,
@@ -1490,7 +1735,18 @@ final class AppState: ObservableObject {
         )
         guard result.status == .cancelled else { throw CloudSyncError.invalidResponse }
         try validateSocialContext(context)
-        _ = try await refreshSocialWorkoutInbox()
+        try await reconcileConfirmedSocialMutation(
+            context: context,
+            surfaces: [.workoutInbox]
+        )
+    }
+
+    private struct SocialReconciliationSurfaces: OptionSet, Sendable {
+        let rawValue: Int
+
+        static let dashboard = Self(rawValue: 1 << 0)
+        static let workoutInbox = Self(rawValue: 1 << 1)
+        static let workoutDetailPrivacy = Self(rawValue: 1 << 2)
     }
 
     private struct SocialContext {
@@ -1527,10 +1783,104 @@ final class AppState: ObservableObject {
     private func invalidateSocialRelationshipCaches() {
         socialCacheGeneration &+= 1
         socialDashboard = nil
+        socialFriendCode = nil
         socialWorkoutInbox = nil
         // FriendDetailView keys its refetch lifecycle to this revision. Increment it
         // synchronously so visible private data disappears before the mutation awaits.
         socialDashboardRefreshRevision &+= 1
+    }
+
+    private func invalidateSocialDashboardCache() {
+        socialCacheGeneration &+= 1
+        socialDashboard = nil
+        socialFriendCode = nil
+        socialDashboardRefreshRevision &+= 1
+    }
+
+    private func invalidateSocialWorkoutInboxCache() {
+        socialCacheGeneration &+= 1
+        socialWorkoutInbox = nil
+    }
+
+    private func invalidateSocialWorkoutDetailPrivacyCache() {
+        socialCacheGeneration &+= 1
+        socialWorkoutDetailPrivacy = nil
+        socialDashboardRefreshRevision &+= 1
+    }
+
+    /// Once a mutation response has been validated, only authoritative reads are
+    /// retried. The mutating RPC is never replayed merely because a read failed.
+    private func reconcileConfirmedSocialMutation(
+        context: SocialContext,
+        surfaces: SocialReconciliationSurfaces
+    ) async throws {
+        try validateSocialContext(context)
+        pendingSocialReconciliationSurfaces.formUnion(surfaces)
+        isRestoringConfirmedSocialMutation = true
+        try await attemptPendingSocialReconciliation(context: context)
+        try validateSocialContext(context)
+        guard !pendingSocialReconciliationSurfaces.isEmpty else { return }
+        schedulePendingSocialReconciliation(context: context)
+    }
+
+    private func attemptPendingSocialReconciliation(
+        context: SocialContext
+    ) async throws {
+        let requested = pendingSocialReconciliationSurfaces
+        if requested.contains(.dashboard) {
+            do {
+                _ = try await refreshSocialDashboard()
+            } catch {
+                try validateSocialContext(context)
+            }
+        }
+        if requested.contains(.workoutInbox) {
+            do {
+                _ = try await refreshSocialWorkoutInbox()
+            } catch {
+                try validateSocialContext(context)
+            }
+        }
+        if requested.contains(.workoutDetailPrivacy) {
+            do {
+                _ = try await refreshSocialWorkoutDetailPrivacy()
+            } catch {
+                try validateSocialContext(context)
+            }
+        }
+        try validateSocialContext(context)
+    }
+
+    private func markSocialSurfaceReconciled(_ surface: SocialReconciliationSurfaces) {
+        pendingSocialReconciliationSurfaces.subtract(surface)
+        isRestoringConfirmedSocialMutation = !pendingSocialReconciliationSurfaces.isEmpty
+    }
+
+    private func schedulePendingSocialReconciliation(context: SocialContext) {
+        guard socialReconciliationTask == nil,
+              !pendingSocialReconciliationSurfaces.isEmpty else { return }
+        let taskID = UUID()
+        socialReconciliationTaskID = taskID
+        socialReconciliationTask = Task { [weak self] in
+            guard let self else { return }
+            let delays: [Duration] = [.seconds(2), .seconds(5), .seconds(12)]
+            for delay in delays {
+                do {
+                    try await Task.sleep(for: delay)
+                    try Task.checkCancellation()
+                    guard self.socialReconciliationTaskID == taskID else { return }
+                    try await self.attemptPendingSocialReconciliation(context: context)
+                    guard !self.pendingSocialReconciliationSurfaces.isEmpty else { break }
+                } catch {
+                    break
+                }
+            }
+            guard self.socialReconciliationTaskID == taskID else { return }
+            self.socialReconciliationTask = nil
+            self.socialReconciliationTaskID = nil
+            self.isRestoringConfirmedSocialMutation =
+                !self.pendingSocialReconciliationSurfaces.isEmpty
+        }
     }
 
     private func validateWorkoutInviteForLocalImport(_ plan: SharedWorkoutPlan) throws {
@@ -1539,6 +1889,31 @@ final class AppState: ObservableObject {
         } catch {
             throw CloudSyncError.invalidWorkoutInvite
         }
+    }
+
+    private func workoutInvitePlan(
+        for invite: SocialWorkoutInvite,
+        context: SocialContext,
+        cacheGeneration: UInt64
+    ) async throws -> SharedWorkoutPlan {
+        guard socialWorkoutInbox?.incoming.contains(invite) == true else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        let plan = try await cloudSync.socialWorkoutInvitePlan(
+            inviteID: invite.inviteID,
+            expectedRevision: invite.inviteRevision,
+            legacyWorkout: invite.workout,
+            expectedUserID: context.userID
+        )
+        try validateSocialContext(context)
+        guard socialCacheGeneration == cacheGeneration,
+              socialWorkoutInbox?.incoming.contains(invite) == true,
+              invite.summary.exerciseCount == plan.exercises.count,
+              invite.summary.setCount == plan.totalSetCount,
+              invite.summary.exerciseNames == plan.exercises.map(\.name) else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        return plan
     }
 
     private func stageWorkoutInvitePlan(
@@ -1573,11 +1948,10 @@ final class AppState: ObservableObject {
             throw CloudSyncError.invalidPayload
         }
         return PendingWorkoutInviteRequestKey(
-            generation: context.generation,
             storageKey: context.storageKey,
             userID: context.userID,
             profileID: profileID,
-            canonicalWorkout: canonicalWorkout
+            canonicalWorkoutDigest: Data(SHA256.hash(data: canonicalWorkout))
         )
     }
 
@@ -1734,6 +2108,7 @@ final class AppState: ObservableObject {
         }
         garminPhoneSync.clearLocalData(storageKey: storageKey)
         TrainingProfileStore(defaults: defaults).clear(accountStorageKey: storageKey)
+        AppTutorialStore(defaults: defaults).clear(accountStorageKey: storageKey)
         defaults.removeObject(forKey: Self.hiddenLeaderboardProfilesKey)
         defaults.removeObject(
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)
@@ -2025,6 +2400,7 @@ final class AppState: ObservableObject {
         }
 
         TrainingProfileStore(defaults: defaults).clear(accountStorageKey: storageKey)
+        AppTutorialStore(defaults: defaults).clear(accountStorageKey: storageKey)
         defaults.removeObject(forKey: hiddenLeaderboardProfilesKey)
         defaults.removeObject(
             forKey: leaderboardHiddenProfilesDefaultsKey(for: storageKey)

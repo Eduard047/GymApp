@@ -2,6 +2,7 @@ package com.example.gymapp.navigation
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -63,6 +64,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
@@ -85,6 +88,7 @@ import com.example.gymapp.auth.PasswordReauthenticationRequiredException
 import com.example.gymapp.auth.activeCloudSessionFor
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
+import com.example.gymapp.auth.hasAnotherBoundedPage
 import com.example.gymapp.auth.requiresEmailConfirmation
 import com.example.gymapp.auth.shouldRetireCloudAccountDeletionJournal
 import com.example.gymapp.data.repository.BackupOwner
@@ -99,7 +103,14 @@ import com.example.gymapp.data.repository.handOffSkippedFirstWorkoutNavigation
 import com.example.gymapp.push.AndroidPushManager
 import com.example.gymapp.push.PushNavigationInbox
 import com.example.gymapp.push.PushNavigationTarget
+import com.example.gymapp.push.SocialPushType
 import com.example.gymapp.push.matchesSession
+import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_STEPS
+import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_VERSION
+import com.example.gymapp.ui.components.FirstRunTutorialOverlay
+import com.example.gymapp.ui.components.TutorialAnchorRegistry
+import com.example.gymapp.ui.components.TutorialTarget
+import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.AppIntroSplash
@@ -113,6 +124,7 @@ import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
 import com.example.gymapp.ui.screens.MissionsScreen
 import com.example.gymapp.ui.screens.ProfileScreen
+import com.example.gymapp.ui.screens.ProgressHubScreen
 import com.example.gymapp.ui.screens.RanksScreen
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
 import com.example.gymapp.ui.screens.PasswordUpdateScreen
@@ -148,6 +160,7 @@ import com.example.gymapp.sync.runCurrentCloudSyncConflictAction
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.LocalizedText
+import com.example.gymapp.util.FirstRunTutorialCompletion
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.restTimerAccountKey
 import com.example.gymapp.util.asString
@@ -191,6 +204,7 @@ internal suspend fun runConfirmedAccountDeletionLocalCleanup(
     clearCustomMedia: () -> Boolean = { true },
     clearBackupShares: () -> Boolean = { true },
     clearRestTimers: () -> Boolean = { true },
+    clearLiveState: () -> Boolean = { true },
     clearGarminState: () -> Boolean = { true }
 ): Int {
     var failures = 0
@@ -202,6 +216,7 @@ internal suspend fun runConfirmedAccountDeletionLocalCleanup(
     if (runCatching { check(clearCustomMedia()) }.isFailure) failures += 1
     if (runCatching { check(clearBackupShares()) }.isFailure) failures += 1
     if (runCatching { check(clearRestTimers()) }.isFailure) failures += 1
+    if (runCatching { check(clearLiveState()) }.isFailure) failures += 1
     if (runCatching { check(clearGarminState()) }.isFailure) failures += 1
     return failures
 }
@@ -245,9 +260,202 @@ internal fun isFriendWorkoutPickerBindingCurrent(
     currentFriendshipRevision == binding.friendshipRevision
 
 internal fun pushNavigationDestination(target: PushNavigationTarget): AppDestination = when (target) {
-    PushNavigationTarget.Social,
+    is PushNavigationTarget.Social,
     is PushNavigationTarget.Live -> AppDestination.Profile
 }
+
+internal sealed interface SocialPushTargetResolution {
+    data object AwaitingAuthoritativeRefresh : SocialPushTargetResolution
+    data object GenericSocialFallback : SocialPushTargetResolution
+    data class FocusSocialObject(
+        val target: PushNavigationTarget.Social
+    ) : SocialPushTargetResolution
+    data class OpenFriend(val profileId: String) : SocialPushTargetResolution
+}
+
+internal data class PendingSocialPushResolution(
+    val inboxEntryId: Long,
+    val target: PushNavigationTarget.Social,
+    val minimumDashboardGeneration: Long,
+    val minimumInboxGeneration: Long
+)
+
+internal data class PendingLivePushResolution(
+    val inboxEntryId: Long,
+    val target: PushNavigationTarget.Live,
+    val minimumInboxGeneration: Long
+)
+
+internal sealed interface LivePushTargetResolution {
+    data object AwaitingAuthoritativeRefresh : LivePushTargetResolution
+    data object GenericSocialFallback : LivePushTargetResolution
+    data class FocusLiveRoom(val roomId: String) : LivePushTargetResolution
+}
+
+internal fun resolveLivePushTarget(
+    target: PushNavigationTarget.Live,
+    state: LiveWorkoutUiState,
+    minimumInboxGeneration: Long = 0L
+): LivePushTargetResolution {
+    if (state.isLoading || (
+            state.inboxRefreshGeneration < minimumInboxGeneration && state.error == null
+            )
+    ) {
+        return LivePushTargetResolution.AwaitingAuthoritativeRefresh
+    }
+    if (state.inboxRefreshGeneration < minimumInboxGeneration) {
+        return LivePushTargetResolution.GenericSocialFallback
+    }
+    val inbox = state.inbox ?: return LivePushTargetResolution.GenericSocialFallback
+    val exactInvitation = inbox.invitations.any {
+        it.roomId == target.roomId && it.roomRevision >= target.roomRevision
+    }
+    val exactRoom = inbox.rooms.any {
+        it.roomId == target.roomId && it.roomRevision >= target.roomRevision
+    }
+    return if (exactInvitation || exactRoom) {
+        LivePushTargetResolution.FocusLiveRoom(target.roomId)
+    } else {
+        LivePushTargetResolution.GenericSocialFallback
+    }
+}
+
+internal fun resolveSocialPushTarget(
+    target: PushNavigationTarget.Social,
+    state: FriendsUiState,
+    minimumDashboardGeneration: Long = 0L,
+    minimumInboxGeneration: Long = 0L
+): SocialPushTargetResolution = when (target.type) {
+    SocialPushType.FriendRequestReceived -> {
+        val dashboard = state.dashboard
+        if (state.isDashboardLoading || (
+                state.dashboardRefreshGeneration < minimumDashboardGeneration &&
+                    state.error == null
+                )
+        ) {
+            SocialPushTargetResolution.AwaitingAuthoritativeRefresh
+        } else if (state.dashboardRefreshGeneration < minimumDashboardGeneration) {
+            SocialPushTargetResolution.GenericSocialFallback
+        } else if (dashboard == null) {
+            SocialPushTargetResolution.GenericSocialFallback
+        } else if (dashboard.incoming.any {
+                it.friendshipId == target.objectId &&
+                    it.friendshipRevision >= target.objectRevision
+            }
+        ) {
+            SocialPushTargetResolution.FocusSocialObject(target)
+        } else {
+            SocialPushTargetResolution.GenericSocialFallback
+        }
+    }
+
+    SocialPushType.FriendRequestAccepted -> {
+        val dashboard = state.dashboard
+        if (state.isDashboardLoading || (
+                state.dashboardRefreshGeneration < minimumDashboardGeneration &&
+                    state.error == null
+                )
+        ) {
+            SocialPushTargetResolution.AwaitingAuthoritativeRefresh
+        } else if (state.dashboardRefreshGeneration < minimumDashboardGeneration) {
+            SocialPushTargetResolution.GenericSocialFallback
+        } else if (dashboard == null) {
+            SocialPushTargetResolution.GenericSocialFallback
+        } else {
+            dashboard.friends.firstOrNull {
+                it.friendshipId == target.objectId &&
+                    it.friendshipRevision >= target.objectRevision
+            }
+                ?.let { SocialPushTargetResolution.OpenFriend(it.profileId) }
+                ?: SocialPushTargetResolution.GenericSocialFallback
+        }
+    }
+
+    SocialPushType.WorkoutInviteReceived,
+    SocialPushType.WorkoutInviteAccepted -> {
+        val inbox = state.workoutInbox
+        if (state.isInboxLoading || (
+                state.inboxRefreshGeneration < minimumInboxGeneration && state.error == null
+                )
+        ) {
+            SocialPushTargetResolution.AwaitingAuthoritativeRefresh
+        } else if (state.inboxRefreshGeneration < minimumInboxGeneration) {
+            SocialPushTargetResolution.GenericSocialFallback
+        } else if (inbox == null) {
+            SocialPushTargetResolution.GenericSocialFallback
+        } else if (inbox.incoming.any {
+                it.inviteId == target.objectId && it.inviteRevision >= target.objectRevision
+            } || inbox.outgoing.any {
+                it.inviteId == target.objectId && it.inviteRevision >= target.objectRevision
+            }
+        ) {
+            SocialPushTargetResolution.FocusSocialObject(target)
+        } else if (inbox.hasAnotherBoundedPage()) {
+            SocialPushTargetResolution.AwaitingAuthoritativeRefresh
+        } else {
+            SocialPushTargetResolution.GenericSocialFallback
+        }
+    }
+}
+
+internal enum class FirstRunTutorialMode {
+    Automatic,
+    Replay
+}
+
+internal fun tutorialDestinationForStep(stepIndex: Int): AppDestination = when (
+    FIRST_RUN_TUTORIAL_STEPS.getOrNull(stepIndex)?.target
+) {
+    TutorialTarget.TodayFocus,
+    TutorialTarget.TodayPrimaryAction -> AppDestination.Workouts
+    TutorialTarget.NavigationExercises -> AppDestination.Exercises
+    TutorialTarget.NavigationProgress -> AppDestination.Progress
+    TutorialTarget.NavigationProfile -> AppDestination.Profile
+    null -> AppDestination.Workouts
+}
+
+internal fun tutorialDestinationAfterDismissal(
+    completion: FirstRunTutorialCompletion
+): AppDestination? = when (completion) {
+    FirstRunTutorialCompletion.Completed,
+    FirstRunTutorialCompletion.Skipped -> null
+}
+
+internal fun canPresentAutomaticTutorial(
+    shouldRunForAccount: Boolean,
+    hasSession: Boolean,
+    isStableWorkoutsRoot: Boolean,
+    authenticationInProgress: Boolean,
+    introVisible: Boolean,
+    hasPendingExternalTarget: Boolean,
+    hasActiveWorkout: Boolean,
+    hasLiveReservationOrRoom: Boolean,
+    hasBlockingDialog: Boolean,
+    accountTransitionInProgress: Boolean
+): Boolean = shouldRunForAccount &&
+    hasSession &&
+    isStableWorkoutsRoot &&
+    !authenticationInProgress &&
+    !introVisible &&
+    !hasPendingExternalTarget &&
+    !hasActiveWorkout &&
+    !hasLiveReservationOrRoom &&
+    !hasBlockingDialog &&
+    !accountTransitionInProgress
+
+internal fun canRequestTutorialReplay(
+    authenticationInProgress: Boolean,
+    hasPendingExternalTarget: Boolean,
+    hasActiveWorkout: Boolean,
+    hasLiveReservationOrRoom: Boolean,
+    hasBlockingDialog: Boolean,
+    accountTransitionInProgress: Boolean
+): Boolean = !authenticationInProgress &&
+    !hasPendingExternalTarget &&
+    !hasActiveWorkout &&
+    !hasLiveReservationOrRoom &&
+    !hasBlockingDialog &&
+    !accountTransitionInProgress
 
 internal fun pendingSocialWorkoutInviteBadgeCount(
     inboxCount: Int?,
@@ -356,6 +564,28 @@ internal fun GymAppRoot(
     val coroutineScope = key(uiIsolationKey) { rememberCoroutineScope() }
     val accountDeletionScope = rememberCoroutineScope()
     val applicationContext = LocalContext.current.applicationContext
+    val gymApplication = remember(applicationContext) { applicationContext.gymApplication }
+    val trainingGuidanceManager = gymApplication.trainingGuidanceManager
+    val tutorialProgress by trainingGuidanceManager.tutorialProgress.collectAsState()
+    val tutorialAnchors = remember(uiIsolationKey) { TutorialAnchorRegistry() }
+    var tutorialMode by remember(uiIsolationKey) {
+        mutableStateOf<FirstRunTutorialMode?>(null)
+    }
+    var tutorialStepIndex by remember(uiIsolationKey) { mutableStateOf(0) }
+    var pendingTutorialStepIndex by remember(uiIsolationKey) { mutableStateOf<Int?>(null) }
+    var tutorialAccountBinding by remember(uiIsolationKey) { mutableStateOf<String?>(null) }
+    var tutorialReplayRequested by remember(uiIsolationKey) { mutableStateOf(false) }
+    var tutorialCompletionSaveFailed by remember(uiIsolationKey) { mutableStateOf(false) }
+    var pendingExactSocialPush by remember(uiIsolationKey) {
+        mutableStateOf<PendingSocialPushResolution?>(null)
+    }
+    var focusedSocialPush by remember(uiIsolationKey) {
+        mutableStateOf<PushNavigationTarget.Social?>(null)
+    }
+    var pendingExactLivePush by remember(uiIsolationKey) {
+        mutableStateOf<PendingLivePushResolution?>(null)
+    }
+    var focusedLivePushRoomId by remember(uiIsolationKey) { mutableStateOf<String?>(null) }
     val cloudSyncBaselineStore = remember(applicationContext) {
         CloudSyncBaselineStore(applicationContext)
     }
@@ -496,21 +726,267 @@ internal fun GymAppRoot(
             return@LaunchedEffect
         }
         when (val target = navigation.target) {
-            PushNavigationTarget.Social -> {
+            is PushNavigationTarget.Social -> {
                 val social = friendsViewModel ?: return@LaunchedEffect
+                val state = social.uiState.value
+                pendingExactSocialPush = PendingSocialPushResolution(
+                    inboxEntryId = pending.id,
+                    target = target,
+                    minimumDashboardGeneration = state.dashboardRefreshGeneration + 1L,
+                    minimumInboxGeneration = state.inboxRefreshGeneration + 1L
+                )
+                pendingExactLivePush = null
+                focusedSocialPush = null
+                focusedLivePushRoomId = null
                 social.refreshAll()
                 liveWorkoutViewModel?.refresh()
             }
             is PushNavigationTarget.Live -> {
                 val live = liveWorkoutViewModel ?: return@LaunchedEffect
+                val state = live.liveUiState.value
+                pendingExactLivePush = PendingLivePushResolution(
+                    inboxEntryId = pending.id,
+                    target = target,
+                    minimumInboxGeneration = state.inboxRefreshGeneration + 1L
+                )
+                pendingExactSocialPush = null
+                focusedSocialPush = null
+                focusedLivePushRoomId = null
                 friendsViewModel?.refreshAll()
-                live.refreshRoom(target.roomId)
+                live.refresh()
             }
         }
         navController.navigate(pushNavigationDestination(navigation.target).route) {
             launchSingleTop = true
         }
-        pushNavigationInbox.consume(pending.id)
+    }
+    LaunchedEffect(pendingExactSocialPush, friendsState) {
+        val pending = pendingExactSocialPush ?: return@LaunchedEffect
+        val state = friendsState ?: return@LaunchedEffect
+        when (
+            val resolution = resolveSocialPushTarget(
+                target = pending.target,
+                state = state,
+                minimumDashboardGeneration = pending.minimumDashboardGeneration,
+                minimumInboxGeneration = pending.minimumInboxGeneration
+            )
+        ) {
+            SocialPushTargetResolution.AwaitingAuthoritativeRefresh -> {
+                if (pending.target.type in setOf(
+                        SocialPushType.WorkoutInviteReceived,
+                        SocialPushType.WorkoutInviteAccepted
+                    ) && state.workoutInbox?.hasAnotherBoundedPage() == true &&
+                    !state.isInboxLoading
+                ) {
+                    friendsViewModel?.loadMoreWorkoutInvites()
+                }
+            }
+            SocialPushTargetResolution.GenericSocialFallback -> {
+                focusedSocialPush = null
+                navController.navigate(AppDestination.Profile.route) { launchSingleTop = true }
+                pushNavigationInbox.consume(pending.inboxEntryId)
+                pendingExactSocialPush = null
+            }
+            is SocialPushTargetResolution.FocusSocialObject -> {
+                focusedSocialPush = resolution.target
+                navController.navigate(AppDestination.Profile.route) { launchSingleTop = true }
+                pushNavigationInbox.consume(pending.inboxEntryId)
+                pendingExactSocialPush = null
+            }
+            is SocialPushTargetResolution.OpenFriend -> {
+                focusedSocialPush = null
+                navController.navigate(AppDestination.friendDetailRoute(resolution.profileId)) {
+                    launchSingleTop = true
+                }
+                pushNavigationInbox.consume(pending.inboxEntryId)
+                pendingExactSocialPush = null
+            }
+        }
+    }
+    LaunchedEffect(pendingExactLivePush, liveWorkoutState) {
+        val pending = pendingExactLivePush ?: return@LaunchedEffect
+        when (
+            val resolution = resolveLivePushTarget(
+                target = pending.target,
+                state = liveWorkoutState,
+                minimumInboxGeneration = pending.minimumInboxGeneration
+            )
+        ) {
+            LivePushTargetResolution.AwaitingAuthoritativeRefresh -> Unit
+            LivePushTargetResolution.GenericSocialFallback -> {
+                focusedLivePushRoomId = null
+                navController.navigate(AppDestination.Profile.route) { launchSingleTop = true }
+                pushNavigationInbox.consume(pending.inboxEntryId)
+                pendingExactLivePush = null
+            }
+            is LivePushTargetResolution.FocusLiveRoom -> {
+                focusedLivePushRoomId = resolution.roomId
+                navController.navigate(AppDestination.Profile.route) { launchSingleTop = true }
+                pushNavigationInbox.consume(pending.inboxEntryId)
+                pendingExactLivePush = null
+            }
+        }
+    }
+    val expectedTutorialBinding = authState.session?.let(trainingGuidanceManager::accountBinding)
+    val tutorialAccountTransitionInProgress = expectedTutorialBinding == null ||
+        trainingGuidanceManager.activeBinding != expectedTutorialBinding
+    val tutorialHasLiveReservationOrRoom =
+        liveWorkoutState.activeRoomId != null ||
+            liveWorkoutState.inbox?.rooms.orEmpty().isNotEmpty() ||
+            liveWorkoutState.actionsInFlight.isNotEmpty()
+    val tutorialHasPendingExternalTarget = pendingSharedWorkout != null ||
+        pendingPushNavigation != null ||
+        pendingExactSocialPush != null ||
+        pendingExactLivePush != null
+    val tutorialHasBlockingDialog = showCloudSyncConflictDialog ||
+        cloudConflictResolutionInProgress || accountDeletionInProgress
+    val tutorialRootIsSafe = canPresentAutomaticTutorial(
+        shouldRunForAccount = true,
+        hasSession = authState.session != null,
+        isStableWorkoutsRoot = currentRoute == AppDestination.Workouts.route,
+        authenticationInProgress = authState.isLoading || authState.needsPasswordUpdate,
+        introVisible = showIntro,
+        hasPendingExternalTarget = tutorialHasPendingExternalTarget,
+        hasActiveWorkout = activeWorkout != null,
+        hasLiveReservationOrRoom = tutorialHasLiveReservationOrRoom,
+        hasBlockingDialog = tutorialHasBlockingDialog,
+        accountTransitionInProgress = tutorialAccountTransitionInProgress
+    )
+    LaunchedEffect(
+        uiIsolationKey,
+        tutorialProgress,
+        tutorialRootIsSafe,
+        tutorialMode,
+        expectedTutorialBinding
+    ) {
+        val binding = expectedTutorialBinding ?: return@LaunchedEffect
+        if (tutorialMode != null || tutorialReplayRequested || !tutorialRootIsSafe ||
+            !trainingGuidanceManager.shouldRunAutomaticTutorial(
+                FIRST_RUN_TUTORIAL_VERSION,
+                binding
+            )
+        ) {
+            return@LaunchedEffect
+        }
+        // Let the first Workouts layout and its anchors settle before moving accessibility focus.
+        delay(300)
+        if (trainingGuidanceManager.activeBinding == binding &&
+            trainingGuidanceManager.shouldRunAutomaticTutorial(
+                FIRST_RUN_TUTORIAL_VERSION,
+                binding
+            )
+        ) {
+            tutorialAccountBinding = binding
+            tutorialStepIndex = 0
+            pendingTutorialStepIndex = null
+            tutorialCompletionSaveFailed = false
+            tutorialMode = FirstRunTutorialMode.Automatic
+        }
+    }
+    LaunchedEffect(
+        uiIsolationKey,
+        tutorialReplayRequested,
+        tutorialRootIsSafe,
+        expectedTutorialBinding
+    ) {
+        if (!tutorialReplayRequested || !tutorialRootIsSafe) return@LaunchedEffect
+        val binding = expectedTutorialBinding ?: return@LaunchedEffect
+        delay(300)
+        if (trainingGuidanceManager.activeBinding == binding) {
+            tutorialAccountBinding = binding
+            tutorialStepIndex = 0
+            pendingTutorialStepIndex = null
+            tutorialCompletionSaveFailed = false
+            tutorialMode = FirstRunTutorialMode.Replay
+            tutorialReplayRequested = false
+        }
+    }
+    LaunchedEffect(
+        tutorialMode,
+        tutorialHasPendingExternalTarget,
+        activeWorkout != null,
+        tutorialHasLiveReservationOrRoom,
+        tutorialHasBlockingDialog,
+        tutorialAccountTransitionInProgress
+    ) {
+        if (tutorialMode != null && (
+                tutorialHasPendingExternalTarget || activeWorkout != null ||
+                    tutorialHasLiveReservationOrRoom || tutorialHasBlockingDialog ||
+                    tutorialAccountTransitionInProgress
+                )
+        ) {
+            tutorialMode = null
+            tutorialAccountBinding = null
+            pendingTutorialStepIndex = null
+            tutorialCompletionSaveFailed = false
+        }
+    }
+    fun showTutorialStep(stepIndex: Int) {
+        tutorialCompletionSaveFailed = false
+        val safeIndex = stepIndex.coerceIn(FIRST_RUN_TUTORIAL_STEPS.indices)
+        val destination = tutorialDestinationForStep(safeIndex)
+        if (currentRoute == destination.route) {
+            pendingTutorialStepIndex = null
+            tutorialStepIndex = safeIndex
+        } else {
+            pendingTutorialStepIndex = safeIndex
+            val preserveState = shouldPreserveBottomTabState(destination)
+            navController.navigate(destination.route) {
+                popUpTo(navController.graph.startDestinationId) {
+                    saveState = preserveState
+                }
+                launchSingleTop = true
+                restoreState = preserveState
+            }
+        }
+    }
+    LaunchedEffect(currentRoute, pendingTutorialStepIndex, tutorialMode) {
+        val pendingStep = pendingTutorialStepIndex ?: return@LaunchedEffect
+        if (tutorialMode == null ||
+            currentRoute != tutorialDestinationForStep(pendingStep).route
+        ) {
+            return@LaunchedEffect
+        }
+        // Wait for the destination to place its target before moving the dialog focus/halo.
+        delay(32)
+        tutorialStepIndex = pendingStep
+        pendingTutorialStepIndex = null
+    }
+    BackHandler(enabled = tutorialMode != null) {
+        if (tutorialStepIndex > 0) showTutorialStep(tutorialStepIndex - 1)
+    }
+    val finishTutorial: (FirstRunTutorialCompletion) -> Unit = { completion ->
+        when (tutorialMode) {
+            FirstRunTutorialMode.Replay -> {
+                tutorialMode = null
+                tutorialAccountBinding = null
+                pendingTutorialStepIndex = null
+                tutorialCompletionSaveFailed = false
+            }
+            FirstRunTutorialMode.Automatic -> {
+                val binding = tutorialAccountBinding
+                if (binding != null && trainingGuidanceManager.recordTutorialCompletion(
+                        version = FIRST_RUN_TUTORIAL_VERSION,
+                        completion = completion,
+                        expectedAccountBinding = binding
+                    )
+                ) {
+                    tutorialMode = null
+                    tutorialAccountBinding = null
+                    pendingTutorialStepIndex = null
+                    tutorialCompletionSaveFailed = false
+                } else {
+                    tutorialCompletionSaveFailed = true
+                }
+            }
+            null -> Unit
+        }
+    }
+    val dismissTutorial: (FirstRunTutorialCompletion) -> Unit = { completion ->
+        tutorialDestinationAfterDismissal(completion)?.let { destination ->
+            navController.navigate(destination.route) { launchSingleTop = true }
+        }
+        finishTutorial(completion)
     }
     val workoutInviteBadgeCount = (pendingSocialWorkoutInviteBadgeCount(
         inboxCount = friendsState?.workoutInbox?.pendingIncomingCount,
@@ -1197,7 +1673,10 @@ internal fun GymAppRoot(
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                    .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                    .semantics {
+                        if (tutorialMode != null) hideFromAccessibility()
+                    },
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onBackground,
                 snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
@@ -1256,7 +1735,19 @@ internal fun GymAppRoot(
                                         } else {
                                             0
                                         }
+                                        val tutorialTarget = when (tab) {
+                                            AppDestination.Exercises ->
+                                                TutorialTarget.NavigationExercises
+                                            AppDestination.Progress ->
+                                                TutorialTarget.NavigationProgress
+                                            AppDestination.Profile ->
+                                                TutorialTarget.NavigationProfile
+                                            else -> null
+                                        }
                                         NavigationBarItem(
+                                            modifier = tutorialTarget?.let { target ->
+                                                Modifier.tutorialAnchor(tutorialAnchors, target)
+                                            } ?: Modifier,
                                             selected = currentRoute == tab.route,
                                             onClick = {
                                                 // Workouts is the retained start destination. Saving
@@ -1468,6 +1959,18 @@ internal fun GymAppRoot(
                                         }
                                     }
                                 },
+                                onEditFirstWorkout = { goal, days, effort ->
+                                    val token = viewModel.buildFirstWorkoutLaunch(goal, days, effort)
+                                    handOffFirstWorkoutNavigation(
+                                        token = token,
+                                        open = { launchToken ->
+                                            navController.navigate(
+                                                AppDestination.addWorkoutRoute(launchToken)
+                                            )
+                                        },
+                                        cancel = viewModel::cancelFirstWorkoutLaunch
+                                    )
+                                },
                                 onSkipFirstWorkout = {
                                     val previousDismissed =
                                         viewModel.isFirstWorkoutActivationDismissed()
@@ -1502,6 +2005,7 @@ internal fun GymAppRoot(
                                         }
                                     }
                                 },
+                                tutorialAnchors = tutorialAnchors,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -2159,18 +2663,39 @@ internal fun GymAppRoot(
                         }
 
                         composable(route = AppDestination.Progress.route) {
-                            val viewModel: ExerciseProgressViewModel = viewModel(
+                            val progressViewModel: ExerciseProgressViewModel = viewModel(
+                                key = "progress_exercises",
                                 factory = ExerciseProgressViewModel.factory(repository)
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val exerciseProgressState by
+                                progressViewModel.uiState.collectAsState()
+                            val overviewViewModel: WorkoutListViewModel = viewModel(
+                                key = "progress_overview",
+                                factory = WorkoutListViewModel.factory(
+                                    repository = repository,
+                                    trainingProfileManager = gymApplication.trainingProfileManager,
+                                    trainingGuidanceManager = trainingGuidanceManager
+                                )
+                            )
+                            val overviewState by overviewViewModel.uiState.collectAsState()
 
-                            ExerciseProgressScreen(
-                                uiState = uiState,
+                            ProgressHubScreen(
+                                overviewState = overviewState,
+                                exerciseState = exerciseProgressState,
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
-                                onSelectExercise = viewModel::selectExercise,
-                                onPreviousMonth = viewModel::previousMonth,
-                                onCurrentMonth = viewModel::currentMonth,
-                                onNextMonth = viewModel::nextMonth,
+                                onSelectExercise = progressViewModel::selectExercise,
+                                onPreviousExerciseMonth = progressViewModel::previousMonth,
+                                onCurrentExerciseMonth = progressViewModel::currentMonth,
+                                onNextExerciseMonth = progressViewModel::nextMonth,
+                                onPreviousOverviewMonth = overviewViewModel::previousMonth,
+                                onCurrentOverviewMonth = overviewViewModel::currentMonth,
+                                onNextOverviewMonth = overviewViewModel::nextMonth,
+                                onMuscleMapPeriodSelected =
+                                    overviewViewModel::selectMuscleMapPeriod,
+                                onMuscleSelected = overviewViewModel::selectMuscle,
+                                onOpenRanks = {
+                                    navController.navigate(AppDestination.Ranks.route)
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -2266,6 +2791,9 @@ internal fun GymAppRoot(
                                         invite.inviteRevision
                                     )
                                 },
+                                onLoadMoreWorkoutInvites = {
+                                    friendsViewModel?.loadMoreWorkoutInvites()
+                                },
                                 onClearFriendsMessages = {
                                     friendsViewModel?.clearMessages()
                                 },
@@ -2285,19 +2813,6 @@ internal fun GymAppRoot(
                                 onDeclineLiveInvitation = { invitation ->
                                     liveWorkoutViewModel?.declineInvitation(invitation)
                                 },
-                                onStartLiveRoom = { room ->
-                                    if (activeWorkout == null) {
-                                        liveWorkoutViewModel?.startRoom(room)
-                                    } else {
-                                        coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                applicationContext.getString(
-                                                    R.string.live_workout_active_blocked
-                                                )
-                                            )
-                                        }
-                                    }
-                                },
                                 onCloseLiveRoom = { room ->
                                     liveWorkoutViewModel?.cancelOrLeaveRoom(room)
                                 },
@@ -2313,6 +2828,8 @@ internal fun GymAppRoot(
                                 onClearLiveMessages = {
                                     liveWorkoutViewModel?.clearMessages()
                                 },
+                                focusedSocialPush = focusedSocialPush,
+                                focusedLiveRoomId = focusedLivePushRoomId,
                                 cloudSyncStatus = cloudSyncStatus,
                                 onSyncNow = {
                                     cloudSession?.let { session ->
@@ -2338,6 +2855,40 @@ internal fun GymAppRoot(
                                 onExportDiagnostics = profileViewModel::exportDiagnostics,
                                 onClearBackup = profileViewModel::clearBackupJson,
                                 onOpenImport = profileViewModel::openImport,
+                                onShowTutorial = {
+                                    if (canRequestTutorialReplay(
+                                            authenticationInProgress = authState.isLoading ||
+                                                authState.needsPasswordUpdate,
+                                            hasPendingExternalTarget =
+                                                tutorialHasPendingExternalTarget,
+                                            hasActiveWorkout = activeWorkout != null,
+                                            hasLiveReservationOrRoom =
+                                                tutorialHasLiveReservationOrRoom,
+                                            hasBlockingDialog = tutorialHasBlockingDialog,
+                                            accountTransitionInProgress =
+                                                tutorialAccountTransitionInProgress
+                                        )
+                                    ) {
+                                        tutorialMode = null
+                                        tutorialAccountBinding = null
+                                        tutorialReplayRequested = true
+                                        navController.navigate(AppDestination.Workouts.route) {
+                                            popUpTo(navController.graph.startDestinationId) {
+                                                saveState = false
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = false
+                                        }
+                                    } else {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(
+                                                    R.string.tutorial_replay_unavailable
+                                                )
+                                            )
+                                        }
+                                    }
+                                },
                                 onCloseImport = profileViewModel::closeImport,
                                 onImportJsonChange = profileViewModel::updateImportJson,
                                 onImportBackup = profileViewModel::importBackup,
@@ -2474,6 +3025,12 @@ internal fun GymAppRoot(
                                                             applicationContext.gymApplication
                                                                 .restTimerController
                                                                 .clearAccount(deletedSession)
+                                                        },
+                                                        clearLiveState = {
+                                                            applicationContext.gymApplication
+                                                                .clearCloudAccountLiveState(
+                                                                    deletedSession.userId
+                                                                )
                                                         },
                                                         clearGarminState = {
                                                             applicationContext.gymApplication
@@ -3067,6 +3624,24 @@ internal fun GymAppRoot(
                 exit = fadeOut() + scaleOut(targetScale = 1.03f)
             ) {
                 AppIntroSplash()
+            }
+            if (tutorialMode != null) {
+                FirstRunTutorialOverlay(
+                    stepIndex = tutorialStepIndex,
+                    registry = tutorialAnchors,
+                    showCompletionSaveError = tutorialCompletionSaveFailed,
+                    onBack = {
+                        if (tutorialStepIndex > 0) showTutorialStep(tutorialStepIndex - 1)
+                    },
+                    onNext = {
+                        showTutorialStep(tutorialStepIndex + 1)
+                    },
+                    onSkip = {
+                        dismissTutorial(FirstRunTutorialCompletion.Skipped)
+                    },
+                    onDone = { dismissTutorial(FirstRunTutorialCompletion.Completed) },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
             }
         }

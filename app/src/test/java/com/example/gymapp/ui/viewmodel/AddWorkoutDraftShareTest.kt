@@ -67,14 +67,28 @@ class AddWorkoutDraftShareTest {
             expiresAt = "2026-08-16T10:00:00Z",
             respondedAt = "2026-08-09T10:01:00Z",
             summary = SocialWorkoutInviteSummary(1, 1, listOf("Bench Press")),
-            workout = plan
+            workout = null
         )
 
-        val recovered = acceptedSocialWorkoutForReuse(acceptedInvite)
+        val recovered = acceptedSocialWorkoutForReuse(acceptedInvite, loadedPlan = plan)
 
         assertEquals(acceptedInvite.inviteId, recovered?.inviteId)
         assertEquals(plan, recovered?.plan)
-        assertNull(acceptedSocialWorkoutForReuse(acceptedInvite.copy(status = "pending")))
+        assertNull(
+            acceptedSocialWorkoutForReuse(
+                acceptedInvite.copy(status = "pending"),
+                loadedPlan = plan
+            )
+        )
+        assertNull(acceptedSocialWorkoutForReuse(acceptedInvite, loadedPlan = null))
+        assertNull(
+            acceptedSocialWorkoutForReuse(
+                acceptedInvite.copy(
+                    summary = SocialWorkoutInviteSummary(1, 2, listOf("Bench Press"))
+                ),
+                loadedPlan = plan
+            )
+        )
     }
 
     @Test

@@ -360,9 +360,9 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
   ]);
 
   assert.match(indexHtml, /garmin-cloud-sync\.v57\.js/);
-  assert.match(indexHtml, /app\.v88\.js/);
+  assert.match(indexHtml, /app\.v91\.js/);
   assert.match(swJs, /garmin-cloud-sync\.v57\.js/);
-  assert.match(swJs, /app\.v88\.js/);
+  assert.match(swJs, /app\.v91\.js/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
   assert.match(appJs, /\/rest\/v1\/rpc\/garmin_enqueue_plan/);
   assert.doesNotMatch(appJs, /supabaseRequest\("\/rest\/v1\/garmin_plans"/);

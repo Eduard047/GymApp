@@ -465,15 +465,121 @@ final class CloudSyncService: ObservableObject {
     }
 
     func socialWorkoutInbox(expectedUserID: String? = nil) async throws -> SocialWorkoutInbox {
-        let (data, _) = try await socialRequest(
-            path: "/rest/v1/rpc/social_workout_inbox",
-            expectedUserID: expectedUserID,
-            body: [:],
-            maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
+        try await socialWorkoutInboxPage(
+            after: nil,
+            permitsLegacyFallback: true,
+            expectedUserID: expectedUserID
         )
+    }
+
+    func socialWorkoutInboxPage(
+        after cursor: SocialWorkoutInboxCursor,
+        expectedUserID: String? = nil
+    ) async throws -> SocialWorkoutInbox {
+        guard SocialPayloadParser.isValidWorkoutInboxCursor(cursor) else {
+            throw CloudSyncError.invalidResponse
+        }
+        return try await socialWorkoutInboxPage(
+            after: cursor,
+            permitsLegacyFallback: false,
+            expectedUserID: expectedUserID
+        )
+    }
+
+    private func socialWorkoutInboxPage(
+        after cursor: SocialWorkoutInboxCursor?,
+        permitsLegacyFallback: Bool,
+        expectedUserID: String?
+    ) async throws -> SocialWorkoutInbox {
+        let data: Data
         do {
-            return try SocialPayloadParser.workoutInbox(from: data)
+            let limit = SocialPayloadParser.workoutInboxPageLimit
+            var body: [String: Any] = [
+                "p_cursor_created_at": NSNull(),
+                "p_cursor_invite_id": NSNull(),
+                "p_cursor_pending": NSNull(),
+                "p_limit": limit
+            ]
+            if let cursor {
+                body["p_cursor_created_at"] = cursor.createdAt
+                body["p_cursor_invite_id"] = cursor.inviteID
+                body["p_cursor_pending"] = cursor.pending
+            }
+            (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/social_workout_inbox_page",
+                expectedUserID: expectedUserID,
+                body: body,
+                maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
+            )
+        } catch let error where Self.isMissingSocialRPC(error) {
+            // Compatibility for installations that have not received the bounded
+            // metadata/detail RPC pair yet. Only a confirmed missing-function result
+            // may fall back; authorization, validation, and transient failures remain
+            // observable instead of silently changing the trust boundary.
+            guard permitsLegacyFallback, cursor == nil else {
+                throw CloudSyncError.invalidResponse
+            }
+            let (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/social_workout_inbox",
+                expectedUserID: expectedUserID,
+                body: [:],
+                maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
+            )
+            do {
+                return try SocialPayloadParser.workoutInbox(from: data)
+            } catch {
+                throw CloudSyncError.invalidResponse
+            }
+        }
+        do {
+            return try SocialPayloadParser.workoutInboxPage(
+                from: data,
+                expectedLimit: SocialPayloadParser.workoutInboxPageLimit
+            )
         } catch {
+            throw CloudSyncError.invalidResponse
+        }
+    }
+
+    func socialWorkoutInvitePlan(
+        inviteID: String,
+        expectedRevision: Int,
+        legacyWorkout: SharedWorkoutPlan?,
+        expectedUserID: String? = nil
+    ) async throws -> SharedWorkoutPlan {
+        guard SocialPayloadParser.isValidInviteID(inviteID),
+              (1 ... 2_147_483_647).contains(expectedRevision) else {
+            throw CloudSyncError.invalidWorkoutInvite
+        }
+        do {
+            let (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/social_workout_invite_plan",
+                expectedUserID: expectedUserID,
+                body: [
+                    "p_invite_id": inviteID,
+                    "p_expected_revision": expectedRevision
+                ],
+                maximumResponseBytes: SocialPayloadParser.maximumWorkoutPlanResponseBytes
+            )
+            let result = try SocialPayloadParser.workoutInvitePlan(from: data)
+            guard result.inviteID == inviteID,
+                  result.inviteRevision == expectedRevision else {
+                throw SocialPayloadError.invalidResponse
+            }
+            return result.workout
+        } catch let error where Self.isMissingSocialRPC(error) {
+            // An embedded workout can only originate from the strictly parsed legacy
+            // inbox. A metadata-only v2 invite has no fallback and fails generically.
+            guard let legacyWorkout else { throw CloudSyncError.invalidWorkoutInvite }
+            do {
+                return try SharedWorkoutLinkValidator.validate(legacyWorkout)
+            } catch {
+                throw CloudSyncError.invalidWorkoutInvite
+            }
+        } catch CloudSyncError.postgRESTFailure(_, let code, _)
+                    where code == "P0001" || code == "P0002" || code == "22023" {
+            throw CloudSyncError.invalidWorkoutInvite
+        } catch is SocialPayloadError {
             throw CloudSyncError.invalidResponse
         }
     }
@@ -539,7 +645,9 @@ final class CloudSyncService: ObservableObject {
             let expectedStatus: SocialWorkoutInviteStatus =
                 decision == "accept" ? .accepted : .declined
             guard result.inviteID == inviteID,
-                  result.status == expectedStatus else {
+                  result.status == expectedStatus,
+                  expectedRevision < 2_147_483_647,
+                  result.inviteRevision == expectedRevision + 1 else {
                 throw SocialPayloadError.invalidResponse
             }
             return result
@@ -803,6 +911,20 @@ final class CloudSyncService: ObservableObject {
     ) -> CloudSyncError {
         guard let code else { return .requestFailed(message) }
         return .postgRESTFailure(statusCode: statusCode, code: code, message: message)
+    }
+
+    private static func isMissingSocialRPC(_ error: Error) -> Bool {
+        switch error {
+        case CloudSyncError.postgRESTFailure(let statusCode, let code, _):
+            return statusCode == 404 && (code == "PGRST202" || code == "42883")
+        case CloudSyncError.requestFailed(let message):
+            // Some older test/proxy layers omit PostgREST's structured error body.
+            // Keep this exact generic 404 compatible without treating arbitrary
+            // request failures as evidence that the RPC is absent.
+            return message == "Cloud sync failed (HTTP 404)."
+        default:
+            return false
+        }
     }
 
     private static func postgRESTErrorCode(_ value: Any?) -> String? {

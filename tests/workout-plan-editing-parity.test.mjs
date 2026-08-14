@@ -99,6 +99,7 @@ function iosTranslation(key, locale) {
 
 test("workout-plan editing v1 defines one exact three-client flow", () => {
   assert.equal(contract.schemaVersion, 1);
+  assert.equal(contract.productVersion, "3.0.10");
   assert.deepEqual(contract.scope, {
     fullEditors: ["android", "ios", "browser"],
     browser: "full-workout-client"
@@ -113,6 +114,11 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
     en: "Start plan",
     uk: "Почати план",
     ru: "Начать план"
+  });
+  assert.deepEqual(contract.locales.copy.todayCreateManually, {
+    en: "Create manually",
+    uk: "Створити вручну",
+    ru: "Создать вручную"
   });
   assert.deepEqual(contract.locales.copy.editorTitle, {
     en: "Workout plan",
@@ -170,9 +176,10 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
     ru: "Создать умную тренировку"
   });
   assert.deepEqual(contract.todayRecommended, {
-    actionsInOrder: ["startPlan", "editPlan"],
+    actionsInOrder: ["startPlan", "editPlan", "createManually"],
     startPlanProminence: "primary",
     editPlanProminence: "secondary",
+    createManuallyProminence: "tertiary",
     bothUseSameValidatedLaunchSnapshot: true,
     startPlanOpensEditor: false,
     oneTimeClaimCommitsBeforeActiveWorkoutWrite: true,
@@ -302,6 +309,7 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
     [
       ["todayRecommended", "startPlan", "activeWorkout"],
       ["todayRecommended", "editPlan", "planEditorClean"],
+      ["todayRecommended", "createManually", "planEditorEmptyClean"],
       ["planEditorClean", "cancel", "todayRecommended"],
       ["planEditorClean", "editDraft", "planEditorDirty"],
       ["planEditorDirty", "cancel", "dirtyCancelConfirmation"],
@@ -884,7 +892,8 @@ test("Garmin sync submits the edited draft without starting or writing workout h
 test("an active workout keeps Continue instead of exposing a second plan editor", () => {
   assert.match(androidWorkouts, /hasActiveWorkout[\s\S]*R\.string\.action_continue_workout/);
   assert.doesNotMatch(androidActive, /onAddExerciseDraft|onRemoveExerciseDraft|onGenerateSmartWorkout/);
-  assert.match(iosWorkouts, /hasActiveWorkout[\s\S]*"Continue workout"/);
+  assert.match(iosWorkouts, /activeWorkoutDraft != nil[\s\S]*activeFocusLens/);
+  assert.match(iosWorkouts, /private var activeFocusLens[\s\S]*"Continue workout"/);
   assert.match(iosRoot, /if activeWorkoutStore\.draft != nil[\s\S]*showsActiveWorkout = true[\s\S]*return false/);
   assert.doesNotMatch(iosActive, /applySmartCoach|showingExercisePicker|removeExercise/);
 });

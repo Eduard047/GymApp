@@ -156,19 +156,176 @@ final class LiveWorkoutSidecarStore: ObservableObject {
     }
 
     /// The JWT session is part of the replay boundary. A refreshed access token keeps the
-    /// same session id; a new sign-in session discards the old queue before any network use.
+    /// same session id; a new sign-in session cannot replay the old queue until the
+    /// coordinator proves it against a fresh authenticated inbox and snapshot.
     func bind(to context: LiveWorkoutSessionContext) throws {
         guard !writesBlocked else { throw LiveWorkoutSidecarError.storageUnavailable }
         guard let current = attachment else { return }
         guard current.userID == context.userID else {
-            try persist(nil)
-            attachment = nil
+            // Account-keyed storage should make this impossible. Preserve the
+            // envelope for forensic/recovery safety instead of deleting another
+            // owner's queued mutations from an unexpected context.
             throw LiveWorkoutSidecarError.accountMismatch
         }
         guard current.sessionID == context.sessionID else {
-            try persist(nil)
-            attachment = nil
             throw LiveWorkoutSidecarError.sessionMismatch
+        }
+    }
+
+    /// A new JWT session for the same user may adopt the durable queue only after
+    /// an authenticated snapshot proves that the room, membership, peer, plan,
+    /// local draft mapping, and queued-operation prefix are still authoritative.
+    func reconcileAfterSessionChange(
+        snapshot: LiveWorkoutSnapshot,
+        draft: ActiveWorkoutDraft,
+        context: LiveWorkoutSessionContext
+    ) throws {
+        guard let previous = attachment,
+              previous.localDraftID == draft.id else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        let draftSetIDs = Set(draft.exercises.flatMap { exercise in
+            exercise.sets.map(\.id)
+        })
+        guard draftSetIDs.count == previous.serverToLocalSetIDs.count,
+              Set(previous.serverToLocalSetIDs.values) == draftSetIDs else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        try persistReboundCandidate(
+            try sessionReboundCandidate(snapshot: snapshot, context: context)
+        )
+    }
+
+    /// A locally committed history row is the durable continuation marker after the
+    /// active draft has been cleared. Rebind only when the authoritative snapshot plus
+    /// the retained operation suffix projects to that exact row; this permits an offline
+    /// queued finish to survive a same-user sign-in without letting unrelated history
+    /// adopt another room's queue.
+    func reconcileAfterSessionChange(
+        snapshot: LiveWorkoutSnapshot,
+        committedWorkout: WorkoutSession,
+        context: LiveWorkoutSessionContext
+    ) throws {
+        guard let previous = attachment,
+              previous.localDraftID == committedWorkout.id else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        let candidate = try sessionReboundCandidate(snapshot: snapshot, context: context)
+        try Self.validate(
+            committedWorkout: committedWorkout,
+            against: snapshot,
+            attachment: candidate
+        )
+        try persistReboundCandidate(candidate)
+    }
+
+    private func sessionReboundCandidate(
+        snapshot: LiveWorkoutSnapshot,
+        context: LiveWorkoutSessionContext
+    ) throws -> LiveWorkoutAttachment {
+        guard !writesBlocked else { throw LiveWorkoutSidecarError.storageUnavailable }
+        guard let previous = attachment,
+              previous.userID == context.userID,
+              previous.sessionID != context.sessionID,
+              snapshot.room.roomID == previous.roomID,
+              snapshot.room.status == .active,
+              let participant = snapshot.currentParticipant,
+              participant.role == previous.role,
+              [.joined, .finished].contains(participant.state),
+              let peer = snapshot.peerParticipant,
+              peer.profile.profileID == previous.peerProfileID else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        let snapshotSetIDs = Set(snapshot.plan.exercises.flatMap { exercise in
+            exercise.sets.map(\.setID)
+        })
+        guard snapshotSetIDs.count == previous.serverToLocalSetIDs.count,
+              Set(previous.serverToLocalSetIDs.keys) == snapshotSetIDs else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        guard case .reconciled(let reconciled) = try Self.reconcile(
+            attachment: previous,
+            snapshot: snapshot
+        ) else {
+            throw LiveWorkoutSidecarError.staleOperation
+        }
+        let candidate = LiveWorkoutAttachment(
+            version: reconciled.version,
+            userID: reconciled.userID,
+            sessionID: context.sessionID,
+            roomID: reconciled.roomID,
+            role: reconciled.role,
+            peerProfileID: reconciled.peerProfileID,
+            peerDisplayName: reconciled.peerDisplayName,
+            roomRevision: reconciled.roomRevision,
+            membershipRevision: reconciled.membershipRevision,
+            progressRevision: reconciled.progressRevision,
+            localDraftID: reconciled.localDraftID,
+            serverToLocalSetIDs: reconciled.serverToLocalSetIDs,
+            pendingOperations: reconciled.pendingOperations
+        )
+        try Self.validate(candidate)
+        return candidate
+    }
+
+    private func persistReboundCandidate(_ candidate: LiveWorkoutAttachment) throws {
+        try persist(candidate)
+        attachment = candidate
+        recoveryMessage = nil
+    }
+
+    private static func validate(
+        committedWorkout: WorkoutSession,
+        against snapshot: LiveWorkoutSnapshot,
+        attachment: LiveWorkoutAttachment
+    ) throws {
+        guard committedWorkout.id == attachment.localDraftID,
+              let progress = snapshot.currentParticipant?.progress else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        var projected = Dictionary(
+            uniqueKeysWithValues: progress.completedSets.map {
+                ($0.setID, (weight: $0.weight, reps: $0.reps))
+            }
+        )
+        var projectedOrder = progress.completedSets.map(\.setID)
+        for operation in attachment.pendingOperations {
+            switch operation.kind {
+            case .completeSet:
+                guard let setID = operation.serverSetID,
+                      let weight = operation.weight,
+                      let reps = operation.reps,
+                      projected[setID] == nil else {
+                    throw LiveWorkoutSidecarError.staleOperation
+                }
+                projected[setID] = (weight, reps)
+                projectedOrder.append(setID)
+            case .undoSet:
+                guard let setID = operation.serverSetID,
+                      projectedOrder.last == setID else {
+                    throw LiveWorkoutSidecarError.staleOperation
+                }
+                projected.removeValue(forKey: setID)
+                projectedOrder.removeLast()
+            case .finish:
+                break
+            }
+        }
+
+        let localRows = committedWorkout.exercises.flatMap { $0.sets }
+        guard !localRows.isEmpty,
+              Set(localRows.map(\.id)).count == localRows.count,
+              localRows.count == projected.count else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        let localByID = Dictionary(uniqueKeysWithValues: localRows.map { ($0.id, $0) })
+        for (serverSetID, values) in projected {
+            guard let localID = attachment.serverToLocalSetIDs[serverSetID],
+                  let local = localByID[localID],
+                  local.weight == values.weight,
+                  local.reps == values.reps else {
+                throw LiveWorkoutSidecarError.sessionMismatch
+            }
         }
     }
 

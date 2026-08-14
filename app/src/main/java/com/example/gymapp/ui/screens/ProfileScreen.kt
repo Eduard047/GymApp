@@ -55,6 +55,7 @@ import com.example.gymapp.auth.LiveInboxRoom
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.push.PushUiState
+import com.example.gymapp.push.PushNavigationTarget
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
@@ -71,7 +72,8 @@ import java.util.Date
 
 private enum class ProfileSection {
     Training,
-    Settings
+    Settings,
+    Help
 }
 
 @Composable
@@ -97,13 +99,15 @@ internal fun ProfileScreen(
     onDeclineWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onReuseWorkoutInvite: (SocialIncomingWorkoutInvite) -> Unit,
     onCancelWorkoutInvite: (SocialOutgoingWorkoutInvite) -> Unit,
+    onLoadMoreWorkoutInvites: () -> Unit,
     onClearFriendsMessages: () -> Unit,
     onAcceptLiveInvitation: (LiveInvitation) -> Unit,
     onDeclineLiveInvitation: (LiveInvitation) -> Unit,
-    onStartLiveRoom: (LiveInboxRoom) -> Unit,
     onCloseLiveRoom: (LiveInboxRoom) -> Unit,
     onOpenLiveRoom: (LiveInboxRoom) -> Unit,
     onClearLiveMessages: () -> Unit,
+    focusedSocialPush: PushNavigationTarget.Social? = null,
+    focusedLiveRoomId: String? = null,
     cloudSyncStatus: CloudSyncUiStatus?,
     onSyncNow: () -> Unit,
     cloudSyncChoiceRequired: Boolean,
@@ -113,6 +117,7 @@ internal fun ProfileScreen(
     onExportDiagnostics: () -> Unit,
     onClearBackup: () -> Unit,
     onOpenImport: () -> Unit,
+    onShowTutorial: () -> Unit,
     onCloseImport: () -> Unit,
     onImportJsonChange: (String) -> Unit,
     onImportBackup: () -> Unit,
@@ -154,6 +159,11 @@ internal fun ProfileScreen(
     LaunchedEffect(Unit) {
         onRefreshGarminDevices()
     }
+    LaunchedEffect(focusedSocialPush, focusedLiveRoomId) {
+        if (focusedSocialPush != null || focusedLiveRoomId != null) {
+            selectedSection = ProfileSection.Training
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         ProfileSectionSwitcher(
@@ -179,17 +189,19 @@ internal fun ProfileScreen(
                 onDeclineWorkoutInvite = onDeclineWorkoutInvite,
                 onReuseWorkoutInvite = onReuseWorkoutInvite,
                 onCancelWorkoutInvite = onCancelWorkoutInvite,
+                onLoadMoreWorkoutInvites = onLoadMoreWorkoutInvites,
                 onClearMessages = onClearFriendsMessages,
                 onAcceptLiveInvitation = onAcceptLiveInvitation,
                 onDeclineLiveInvitation = onDeclineLiveInvitation,
-                onStartLiveRoom = onStartLiveRoom,
                 onCloseLiveRoom = onCloseLiveRoom,
                 onOpenLiveRoom = onOpenLiveRoom,
                 onClearLiveMessages = onClearLiveMessages,
                 onOpenAccountSettings = { selectedSection = ProfileSection.Settings },
+                focusedSocialPush = focusedSocialPush,
+                focusedLiveRoomId = focusedLiveRoomId,
                 modifier = Modifier.weight(1f)
             )
-        } else {
+        } else if (selectedSection == ProfileSection.Settings) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
@@ -238,6 +250,19 @@ internal fun ProfileScreen(
                     onExportDiagnostics = onExportDiagnostics,
                     onOpenImport = onOpenImport
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = GymSpacing.ScreenHorizontal,
+                    top = GymSpacing.ScreenTop,
+                    end = GymSpacing.ScreenHorizontal,
+                    bottom = GymSpacing.ScreenBottom
+                ),
+                verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+            ) {
+                item { TutorialHelpCard(onShowTutorial = onShowTutorial) }
             }
         }
     }
@@ -380,6 +405,10 @@ private fun ProfileSectionSwitcher(
                 GymSegmentItem(
                     ProfileSection.Settings,
                     stringResource(R.string.profile_section_settings)
+                ),
+                GymSegmentItem(
+                    ProfileSection.Help,
+                    stringResource(R.string.profile_help_title)
                 )
             ),
             selected = selected,
@@ -472,6 +501,28 @@ private fun LazyListScope.profileSettingsContent(
             onExportDiagnostics = onExportDiagnostics,
             onOpenImport = onOpenImport
         )
+    }
+}
+
+@Composable
+private fun TutorialHelpCard(onShowTutorial: () -> Unit) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SectionTitle(
+                eyebrow = "",
+                title = stringResource(R.string.profile_help_title),
+                supporting = stringResource(R.string.profile_help_supporting)
+            )
+            OutlinedButton(
+                onClick = onShowTutorial,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+                Text(stringResource(R.string.tutorial_show_action))
+            }
+        }
     }
 }
 

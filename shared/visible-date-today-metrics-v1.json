@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "productVersion": "3.0.9",
+  "productVersion": "3.0.10",
   "clients": ["android", "ios", "pwa"],
   "visibleCalendarDate": {
     "includeLocalizedWeekday": true,
@@ -56,9 +56,9 @@
     }
   },
   "pwaReleaseCoupling": {
-    "appBundle": "app.v88.js",
-    "styleBundle": "styles.v72.css",
-    "russianBundle": "russian-text.v80.js",
-    "serviceWorkerCache": "gym-pwa-v124"
+    "appBundle": "app.v91.js",
+    "styleBundle": "styles.v73.css",
+    "russianBundle": "russian-text.v81.js",
+    "serviceWorkerCache": "gym-pwa-v127"
   }
 }

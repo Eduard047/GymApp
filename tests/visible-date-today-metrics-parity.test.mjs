@@ -23,9 +23,9 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/russian-text.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v88.js", "utf8"),
-    readFile("pwa/styles.v72.css", "utf8"),
-    readFile("pwa/russian-text.v80.js", "utf8")
+    readFile("pwa/app.v91.js", "utf8"),
+    readFile("pwa/styles.v73.css", "utf8"),
+    readFile("pwa/russian-text.v81.js", "utf8")
   ]);
 
 const contract = JSON.parse(contractSource);
@@ -54,7 +54,7 @@ const nativeDateSurfaces = Object.fromEntries(await Promise.all([
 ].map(async path => [path, await readFile(path, "utf8")])));
 
 test("visible date contract requires weekday without changing relative or timestamp labels", () => {
-  assert.equal(contract.productVersion, "3.0.9");
+  assert.equal(contract.productVersion, "3.0.10");
   assert.deepEqual(contract.clients, ["android", "ios", "pwa"]);
   assert.equal(contract.visibleCalendarDate.includeLocalizedWeekday, true);
   assert.deepEqual(contract.visibleCalendarDate.supportedLanguages, ["en", "uk", "ru"]);
@@ -158,8 +158,8 @@ test("PWA date and Today helpers implement the shared localized, history-only co
     assert.ok(pwaRussian.includes(label.ru));
   }
 
-  const rhythm = pwaApp.indexOf("focus-lens-metrics single");
-  const metrics = pwaApp.indexOf("${todayPlanMetricsMarkup()}", rhythm);
+  const rhythm = pwaApp.indexOf("function focusLensCard(sessions)");
+  const metrics = pwaApp.indexOf("${launch ? smartPlanMetricsMarkup(launch.plan) : \"\"}", rhythm);
   const actions = pwaApp.indexOf("focus-lens-actions plan-actions", metrics);
   assert.ok(rhythm >= 0 && rhythm < metrics && metrics < actions);
   assert.match(pwaStyles, /\.focus-lens-plan-metrics \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
@@ -167,18 +167,18 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v88.js",
-    styleBundle: "styles.v72.css",
-    russianBundle: "russian-text.v80.js",
-    serviceWorkerCache: "gym-pwa-v124"
+    appBundle: "app.v91.js",
+    styleBundle: "styles.v73.css",
+    russianBundle: "russian-text.v81.js",
+    serviceWorkerCache: "gym-pwa-v127"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v88\.js"/);
-  assert.match(pwaIndex, /href="\.\/styles\.v72\.css"/);
-  assert.match(pwaIndex, /src="\.\/russian-text\.v80\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v124"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v88\.js"/);
-  assert.match(pwaServiceWorker, /"\.\/styles\.v72\.css"/);
-  assert.match(pwaServiceWorker, /"\.\/russian-text\.v80\.js"/);
+  assert.match(pwaIndex, /src="\.\/app\.v91\.js"/);
+  assert.match(pwaIndex, /href="\.\/styles\.v73\.css"/);
+  assert.match(pwaIndex, /src="\.\/russian-text\.v81\.js"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v127"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v91\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/styles\.v73\.css"/);
+  assert.match(pwaServiceWorker, /"\.\/russian-text\.v81\.js"/);
   assert.equal(pwaAppBundle, pwaApp);
   assert.equal(pwaStyleBundle, pwaStyles);
   assert.equal(pwaRussianBundle, pwaRussian);

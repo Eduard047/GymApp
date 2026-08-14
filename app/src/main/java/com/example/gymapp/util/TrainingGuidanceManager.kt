@@ -13,6 +13,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal enum class FirstRunTutorialCompletion(val wireValue: String) {
+    Completed("completed"),
+    Skipped("skipped");
+
+    companion object {
+        fun fromWireValue(value: String?): FirstRunTutorialCompletion? = entries.firstOrNull {
+            it.wireValue == value
+        }
+    }
+}
+
+internal data class FirstRunTutorialProgress(
+    val version: Int = 0,
+    val completion: FirstRunTutorialCompletion? = null
+) {
+    val isTerminal: Boolean
+        get() = version > 0 && completion != null
+}
+
 class TrainingGuidanceManager(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
         PREFERENCES_NAME,
@@ -22,12 +41,18 @@ class TrainingGuidanceManager(context: Context) {
     private var activeAccountKey: String? = null
     private val _activationDismissed = MutableStateFlow(false)
     private val _feedback = MutableStateFlow<Map<Long, WorkoutFeedbackRecord>>(emptyMap())
+    private val _tutorialProgress = MutableStateFlow(FirstRunTutorialProgress())
 
     val activationDismissed: StateFlow<Boolean> = _activationDismissed.asStateFlow()
     val feedback: StateFlow<Map<Long, WorkoutFeedbackRecord>> = _feedback.asStateFlow()
+    internal val tutorialProgress: StateFlow<FirstRunTutorialProgress> =
+        _tutorialProgress.asStateFlow()
 
     internal val activeBinding: String?
         get() = synchronized(lock) { activeAccountKey }
+
+    internal fun accountBinding(session: AccountSession): String =
+        accountKey(session.databaseName())
 
     internal fun switchAccount(session: AccountSession?) {
         val nextKey = session?.databaseName()?.let(::accountKey)
@@ -38,7 +63,50 @@ class TrainingGuidanceManager(context: Context) {
                 preferences.all[scopedKey(key, KEY_ACTIVATION_DISMISSED)] as? Boolean ?: false
             } ?: false
             _feedback.value = nextKey?.let(::readFeedback).orEmpty()
+            _tutorialProgress.value = nextKey?.let(::readTutorialProgress)
+                ?: FirstRunTutorialProgress()
         }
+    }
+
+    internal fun shouldRunAutomaticTutorial(
+        version: Int,
+        expectedAccountBinding: String
+    ): Boolean = synchronized(lock) {
+        version > 0 &&
+            activeAccountKey == expectedAccountBinding &&
+            (_tutorialProgress.value.version < version ||
+                !_tutorialProgress.value.isTerminal)
+    }
+
+    internal fun recordTutorialCompletion(
+        version: Int,
+        completion: FirstRunTutorialCompletion,
+        expectedAccountBinding: String
+    ): Boolean = synchronized(lock) {
+        if (version <= 0 || activeAccountKey != expectedAccountBinding) return false
+        val previous = _tutorialProgress.value
+        val next = FirstRunTutorialProgress(version, completion)
+        val versionKey = scopedKey(expectedAccountBinding, KEY_TUTORIAL_VERSION)
+        val completionKey = scopedKey(expectedAccountBinding, KEY_TUTORIAL_COMPLETION)
+        val saved = preferences.edit()
+            .putInt(versionKey, next.version)
+            .putString(completionKey, next.completion?.wireValue)
+            .commit()
+        if (saved) {
+            _tutorialProgress.value = next
+        } else {
+            val rollback = preferences.edit()
+            if (previous.isTerminal) {
+                rollback
+                    .putInt(versionKey, previous.version)
+                    .putString(completionKey, previous.completion?.wireValue)
+            } else {
+                rollback.remove(versionKey).remove(completionKey)
+            }
+            rollback.commit()
+            _tutorialProgress.value = previous
+        }
+        saved
     }
 
     fun dismissActivation(): Boolean = setActivationDismissed(true)
@@ -144,10 +212,13 @@ class TrainingGuidanceManager(context: Context) {
             val cleared = preferences.edit()
                 .remove(scopedKey(key, KEY_ACTIVATION_DISMISSED))
                 .remove(scopedKey(key, KEY_FEEDBACK))
+                .remove(scopedKey(key, KEY_TUTORIAL_VERSION))
+                .remove(scopedKey(key, KEY_TUTORIAL_COMPLETION))
                 .commit()
             if (cleared && activeAccountKey == key) {
                 _activationDismissed.value = false
                 _feedback.value = emptyMap()
+                _tutorialProgress.value = FirstRunTutorialProgress()
             }
             return cleared
         }
@@ -206,6 +277,16 @@ class TrainingGuidanceManager(context: Context) {
         }.getOrElse { emptyMap() }
     }
 
+    private fun readTutorialProgress(accountKey: String): FirstRunTutorialProgress {
+        val version = (preferences.all[scopedKey(accountKey, KEY_TUTORIAL_VERSION)] as? Int)
+            ?.takeIf { it > 0 }
+            ?: return FirstRunTutorialProgress()
+        val completion = FirstRunTutorialCompletion.fromWireValue(
+            preferences.all[scopedKey(accountKey, KEY_TUTORIAL_COMPLETION)] as? String
+        ) ?: return FirstRunTutorialProgress()
+        return FirstRunTutorialProgress(version, completion)
+    }
+
     private fun scopedKey(accountKey: String, field: String): String = "$accountKey:$field"
 
     private fun exactLong(raw: Any?): Long = when (raw) {
@@ -229,6 +310,8 @@ class TrainingGuidanceManager(context: Context) {
         const val ACCOUNT_KEY_SALT = "GymAppTrainingGuidanceAccountV1:"
         const val KEY_ACTIVATION_DISMISSED = "activation_dismissed"
         const val KEY_FEEDBACK = "feedback"
+        const val KEY_TUTORIAL_VERSION = "tutorial_version"
+        const val KEY_TUTORIAL_COMPLETION = "tutorial_completion"
         const val MAX_FEEDBACK_ENTRIES = 128
         const val MAX_FEEDBACK_BYTES = 32 * 1_024
         val ACCOUNT_KEY_PATTERN = Regex("^[0-9a-f]{64}$")

@@ -1,6 +1,12 @@
 import Combine
 import Foundation
 
+enum LiveWorkoutInvitationResponseOutcome: Equatable, Sendable {
+    case declined
+    case active
+    case confirmedRestoring
+}
+
 @MainActor
 final class LiveWorkoutCoordinator: ObservableObject {
     @Published private(set) var inbox: LiveWorkoutInbox?
@@ -10,6 +16,7 @@ final class LiveWorkoutCoordinator: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var lastStatus: String?
     @Published private(set) var realtimeConnected = false
+    @Published private(set) var restoringRoomIDs: Set<String> = []
 
     let sidecar: LiveWorkoutSidecarStore
     private var slotReservation: LiveWorkoutSlotReservationStore {
@@ -53,6 +60,19 @@ final class LiveWorkoutCoordinator: ObservableObject {
     }
 
     var pendingInvitationCount: Int { inbox?.invitations.count ?? 0 }
+
+    var hasBlockingLiveWorkout: Bool {
+        slotReservation.reservation != nil
+            || sidecar.attachment != nil
+            || !restoringRoomIDs.isEmpty
+            || inbox?.rooms.contains(where: {
+                [.waiting, .ready, .active].contains($0.status)
+            }) == true
+    }
+
+    func isRestoring(roomID: String) -> Bool {
+        restoringRoomIDs.contains(roomID)
+    }
 
     var attachedRoomID: String? { sidecar.attachment?.roomID }
 
@@ -105,6 +125,7 @@ final class LiveWorkoutCoordinator: ObservableObject {
         lastError = nil
         lastStatus = nil
         realtimeConnected = false
+        restoringRoomIDs = []
     }
 
     func refreshAll(showErrors: Bool = true) async {
@@ -113,10 +134,20 @@ final class LiveWorkoutCoordinator: ObservableObject {
         defer { isRefreshing = false }
         do {
             let context = try await gateway.currentContext(expectedUserID: expectedUserID)
-            do { try sidecar.bind(to: context) } catch LiveWorkoutSidecarError.sessionMismatch {
+            let sessionMismatchedAttachment: LiveWorkoutAttachment?
+            do {
+                try sidecar.bind(to: context)
+                sessionMismatchedAttachment = nil
+            } catch LiveWorkoutSidecarError.sessionMismatch {
                 snapshot = nil
+                sessionMismatchedAttachment = sidecar.attachment
             } catch LiveWorkoutSidecarError.accountMismatch {
                 snapshot = nil
+                // Preserve the unexpected envelope for recovery, but never use
+                // its room identifier from another account as a network target.
+                throw LiveWorkoutSidecarError.accountMismatch
+            } catch {
+                throw error
             }
             let sessionMismatchedReservation: LiveWorkoutSlotReservation?
             do {
@@ -141,6 +172,14 @@ final class LiveWorkoutCoordinator: ObservableObject {
             try reconcileSlotReservation(with: freshInbox, context: context)
             inbox = freshInbox
 
+            if let sessionMismatchedAttachment {
+                try await reconcileSessionMismatchedAttachment(
+                    sessionMismatchedAttachment,
+                    with: freshInbox,
+                    context: context
+                )
+            }
+
             if let attachedRoomID = sidecar.attachment?.roomID,
                !freshInbox.rooms.contains(where: { $0.roomID == attachedRoomID }) {
                 // Friendship removal/blocking closes the room and intentionally makes
@@ -162,6 +201,11 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 )
             } else if snapshot?.room.status != .completed {
                 snapshot = nil
+            }
+            let openRoomIDs = Set(freshInbox.rooms.map(\.roomID))
+            restoringRoomIDs = restoringRoomIDs.filter { roomID in
+                openRoomIDs.contains(roomID)
+                    && (!isAttachedToCurrentDraft || sidecar.attachment?.roomID != roomID)
             }
             lastError = nil
             scheduleFlush()
@@ -238,9 +282,15 @@ final class LiveWorkoutCoordinator: ObservableObject {
         inbox = try? await gateway.inbox(expectedUserID: expectedUserID)
     }
 
-    func respond(to invitation: LiveWorkoutInvitation, accept: Bool) async throws {
+    func respond(
+        to invitation: LiveWorkoutInvitation,
+        accept: Bool
+    ) async throws -> LiveWorkoutInvitationResponseOutcome {
         try beginMutation()
         defer { endMutation() }
+        if accept, restoringRoomIDs.contains(invitation.roomID) {
+            throw LiveWorkoutGatewayError.invalidRequest
+        }
         if accept, activeWorkoutStore.draft != nil {
             throw ActiveWorkoutStoreError.alreadyActive
         }
@@ -300,23 +350,44 @@ final class LiveWorkoutCoordinator: ObservableObject {
             throw LiveWorkoutGatewayError.invalidResponse
         }
         if accept {
-            try await refreshSnapshot(
-                roomID: invitation.roomID,
-                context: context,
-                materializeWhenActive: true
-            )
-            try ensureCurrent(context)
-            guard snapshot?.room.roomID == invitation.roomID,
-                  snapshot?.room.status == .active,
-                  isAttachedToCurrentDraft else {
+            guard result.roomID == invitation.roomID,
+                  [.ready, .active].contains(result.status),
+                  result.roomRevision >= invitation.roomRevision else {
                 throw LiveWorkoutGatewayError.invalidResponse
             }
-            lastStatus = "Live workout started."
-            inbox = try? await gateway.inbox(expectedUserID: expectedUserID)
-            scheduleFlush()
+            do {
+                try await refreshSnapshot(
+                    roomID: invitation.roomID,
+                    context: context,
+                    materializeWhenActive: true
+                )
+                try ensureCurrent(context)
+                guard snapshot?.room.roomID == invitation.roomID,
+                      snapshot?.room.status == .active,
+                      isAttachedToCurrentDraft else {
+                    throw LiveWorkoutGatewayError.invalidResponse
+                }
+                restoringRoomIDs.remove(invitation.roomID)
+                lastStatus = "Live workout started."
+                inbox = try? await gateway.inbox(expectedUserID: expectedUserID)
+                scheduleFlush()
+                return .active
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try ensureCurrent(context)
+                restoringRoomIDs.insert(invitation.roomID)
+                lastError = nil
+                lastStatus = "Acceptance was confirmed. Restoring the started workout…"
+                Task { @MainActor [weak self] in
+                    await self?.refreshAll(showErrors: false)
+                }
+                return .confirmedRestoring
+            }
         } else {
             lastStatus = "Live workout invitation declined."
             await refreshAll(showErrors: true)
+            return .declined
         }
     }
 
@@ -923,6 +994,53 @@ final class LiveWorkoutCoordinator: ObservableObject {
             with: nil,
             context: context
         )
+    }
+
+    private func reconcileSessionMismatchedAttachment(
+        _ previous: LiveWorkoutAttachment,
+        with freshInbox: LiveWorkoutInbox,
+        context: LiveWorkoutSessionContext
+    ) async throws {
+        guard previous.userID == context.userID,
+              previous.sessionID != context.sessionID else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        guard freshInbox.rooms.contains(where: {
+            $0.roomID == previous.roomID
+                && $0.status == .active
+                && [.joined, .finished].contains($0.memberState)
+        }) else {
+            // A successful, account-fenced inbox is authoritative evidence that
+            // the old session's room can no longer accept queued mutations. Keep
+            // the local draft, but release only the stale collaboration sidecar.
+            try sidecar.clear()
+            snapshot = nil
+            lastStatus = "The previous live room is no longer active. Your local workout remains on this iPhone."
+            return
+        }
+        let fresh = try await gateway.snapshot(
+            roomID: previous.roomID,
+            expectedUserID: expectedUserID
+        )
+        try ensureCurrent(context)
+        if let draft = activeWorkoutStore.draft,
+           draft.id == previous.localDraftID {
+            try sidecar.reconcileAfterSessionChange(
+                snapshot: fresh,
+                draft: draft,
+                context: context
+            )
+        } else if let committed = workoutStore.workout(id: previous.localDraftID) {
+            try sidecar.reconcileAfterSessionChange(
+                snapshot: fresh,
+                committedWorkout: committed,
+                context: context
+            )
+        } else {
+            throw LiveWorkoutSidecarError.sessionMismatch
+        }
+        snapshot = fresh
+        lastStatus = "Live workout restored after sign-in. Queued updates will continue syncing."
     }
 
     private func ensureSlotReservation(

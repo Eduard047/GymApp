@@ -1,7 +1,7 @@
 ﻿<resources>
     <string name="app_name">Gym Workout Tracker</string>
 
-    <string name="tab_workouts">Workouts</string>
+    <string name="tab_workouts">Today</string>
     <string name="tab_missions">Missions</string>
     <string name="tab_exercises">Exercises</string>
     <string name="tab_progress">Progress</string>
@@ -92,6 +92,7 @@
     <string name="friends_privacy_share_workout_details_supporting">Off by default. Friends can open exact sets only when this is enabled.</string>
     <string name="friends_privacy_share_records">Share exercise records</string>
     <string name="friends_privacy_saved">Privacy settings saved.</string>
+    <string name="friends_privacy_partially_saved">Some privacy settings were saved. Review them and retry the remaining change.</string>
     <string name="friends_privacy_save_failed">Privacy settings changed elsewhere or could not be saved. Refresh and try again.</string>
     <string name="friends_safety_eyebrow">SAFETY</string>
     <string name="friends_blocked_title">Blocked profiles</string>
@@ -728,6 +729,8 @@
     <string name="workout_plan_clear_message">All exercises and sets will be removed.</string>
     <string name="workout_plan_clear_keep">Keep plan</string>
     <string name="today_rest">Rest today</string>
+    <string name="today_recovery_reason_target">You reached your weekly target: %1$d of %2$d training days.</string>
+    <string name="today_next_recommended_day">Next recommended day: %1$s</string>
     <string name="today_train_anyway">Train anyway</string>
     <string name="today_reason_recovery">Recovery is safer for recently trained muscles.</string>
     <string name="today_reason_feedback_hard">Last time felt hard, so today is recovery.</string>
@@ -1114,7 +1117,7 @@
     <string name="live_workout_invite_unavailable">The invitation was submitted. This friend may be unavailable.</string>
     <string name="live_workout_invite_sent">Live workout invitation sent.</string>
     <string name="live_workout_action_failed">Couldn’t update the live workout.</string>
-    <string name="live_workout_ready_waiting_owner">Ready. The workout will begin when the owner starts it.</string>
+    <string name="live_workout_ready_waiting_owner">Started together. Restoring the shared workout…</string>
     <string name="live_workout_started_after_accept">Live workout started.</string>
     <string name="live_workout_invite_declined">Live workout invitation declined.</string>
     <string name="live_workout_start_failed">Couldn’t start the live workout.</string>
@@ -1126,7 +1129,7 @@
     <string name="workout_share_copy_friend_title">Send an independent copy</string>
     <string name="workout_share_copy_friend_action">Send copy to %1$s</string>
     <string name="workout_share_live_friend_title">Live with a friend</string>
-    <string name="workout_share_live_friend_supporting">Wait for your friend to join, then the owner starts one synchronized workout.</string>
+    <string name="workout_share_live_friend_supporting">When your friend accepts, one synchronized workout starts for both of you.</string>
     <string name="workout_share_live_friend_action">Live with %1$s</string>
     <string name="live_workout_lobby_eyebrow">Live</string>
     <string name="live_workout_lobby_title">Shared workout lobby</string>
@@ -1137,7 +1140,7 @@
     <string name="live_workout_plan_summary">%1$d exercises · %2$d sets</string>
     <string name="live_workout_with_friend">With %1$s</string>
     <string name="live_workout_status_waiting">Waiting for your friend to respond.</string>
-    <string name="live_workout_status_ready">Both are ready. The owner can start.</string>
+    <string name="live_workout_status_ready">Refreshing the shared workout state…</string>
     <string name="live_workout_status_active">Workout in progress.</string>
     <string name="live_workout_start_action">Start together</string>
     <string name="live_workout_open_action">Open workout</string>
@@ -1183,11 +1186,41 @@
     <string name="push_live_invite_received_title">Live workout invitation</string>
     <string name="push_live_invite_received_body">Open GymApp to join the workout.</string>
     <string name="push_live_invite_accepted_title">Friend joined</string>
-    <string name="push_live_invite_accepted_body">Your live workout is ready.</string>
+    <string name="push_live_invite_accepted_body">Your shared live workout has started.</string>
     <string name="push_live_room_started_title">Workout started</string>
     <string name="push_live_room_started_body">Your shared live workout has started.</string>
     <string name="push_live_participant_finished_title">Friend finished</string>
     <string name="push_live_participant_finished_body">Your friend finished the live workout.</string>
     <string name="push_live_room_closed_title">Live workout ended</string>
     <string name="push_live_room_closed_body">Open GymApp to view the latest state.</string>
+    <string name="activation_edit_plan">Edit plan</string>
+    <string name="activation_create_manually">Create manually</string>
+    <string name="today_plan_size">%1$d exercises · %2$d sets</string>
+    <string name="today_plan_duration">About %1$d min</string>
+    <string name="progress_section_overview">Overview</string>
+    <string name="progress_section_exercises">Exercises</string>
+    <string name="progress_section_goals">Goals</string>
+    <string name="profile_help_title">Help</string>
+    <string name="profile_help_supporting">Review where the main workout tools are located.</string>
+    <string name="tutorial_show_action">Show tutorial</string>
+    <string name="tutorial_step_count">Step %1$d of %2$d</string>
+    <string name="tutorial_back">Back</string>
+    <string name="tutorial_next">Next</string>
+    <string name="tutorial_replay_unavailable">Finish the current action, then show the tutorial again.</string>
+    <string name="tutorial_completion_save_failed">Couldn’t save tutorial progress. Try again.</string>
+    <string name="tutorial_skip">Skip</string>
+    <string name="tutorial_done">Done</string>
+    <string name="tutorial_today_focus_title">Your next workout</string>
+    <string name="tutorial_today_focus_body">Start, continue, or adjust today’s plan here.</string>
+    <string name="tutorial_today_primary_title">One clear next step</string>
+    <string name="tutorial_today_primary_body">GymApp keeps the current workout action within easy reach.</string>
+    <string name="tutorial_exercises_title">Exercises</string>
+    <string name="tutorial_exercises_body">Find movements and open their technique guide.</string>
+    <string name="tutorial_progress_title">Progress and goals</string>
+    <string name="tutorial_progress_body">Review your trend, muscle load, records, and missions.</string>
+    <string name="tutorial_profile_title">Profile and help</string>
+    <string name="tutorial_profile_body">Manage profiles, training preferences, friends, settings, and replay this tutorial.</string>
+    <string name="live_workout_accept_action">Start together</string>
+    <string name="live_workout_confirmed_restoring">Started together. Restoring the shared workout…</string>
+    <string name="workout_invites_load_more">Show earlier invitations</string>
 </resources>

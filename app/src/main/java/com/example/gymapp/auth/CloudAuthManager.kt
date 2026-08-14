@@ -141,6 +141,31 @@ internal fun isUnavailableSocialMyFriendCodeRpc(
     errorCode: String?
 ): Boolean = responseCode == 404 && errorCode in setOf("PGRST202", "42883")
 
+internal fun isUnavailableSocialWorkoutInboxPageRpc(
+    responseCode: Int,
+    errorCode: String?
+): Boolean = responseCode == 404 && errorCode in setOf("PGRST202", "42883")
+
+internal fun socialWorkoutInboxPageRequestBody(
+    cursor: SocialWorkoutInboxCursor?,
+    limit: Int = SOCIAL_WORKOUT_INBOX_PAGE_SIZE
+): JSONObject {
+    require(limit in 1..SOCIAL_WORKOUT_INBOX_PAGE_SIZE) {
+        "Workout inbox page size is invalid."
+    }
+    cursor?.let {
+        require(isValidRemoteStateRevision(it.createdAt) &&
+            isValidSocialWorkoutInviteId(it.inviteId)) {
+            "Workout inbox cursor is invalid."
+        }
+    }
+    return JSONObject()
+        .put("p_cursor_created_at", cursor?.createdAt ?: JSONObject.NULL)
+        .put("p_cursor_invite_id", cursor?.inviteId ?: JSONObject.NULL)
+        .put("p_cursor_pending", cursor?.pending ?: JSONObject.NULL)
+        .put("p_limit", limit)
+}
+
 internal fun authCallbackKind(purpose: String?): AuthCallbackKind {
     return if (purpose.equals("recovery", ignoreCase = true)) {
         AuthCallbackKind.PasswordRecovery
@@ -596,8 +621,12 @@ class CloudAuthManager internal constructor(
         clearAuthPreferencesSynchronously(prefs)
     }
     private val liveWorkoutSidecarStore = LiveWorkoutSidecarStore(context.applicationContext)
+    private val socialWorkoutInviteRequestStore =
+        SocialWorkoutInviteRequestStore(context.applicationContext)
     private val localSidecarClearer = localSidecarClearerOverride
-        ?: liveWorkoutSidecarStore::clearAll
+        // Live bindings are already exact cloud-owner/session scoped. Opening or deleting a
+        // local profile must not destroy another account's durable offline queue.
+        ?: { true }
     private val localDatabaseMaterializer = localDatabaseMaterializerOverride ?: { databaseName ->
         materializeLocalDatabase(context.applicationContext, databaseName)
     }
@@ -1017,7 +1046,6 @@ class CloudAuthManager internal constructor(
             }
             authMutationVersion += 1
             remoteStateRevisions.clear()
-            liveWorkoutSidecarStore.clearAll()
             val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
             if (!preferencesCleared) {
                 // A storage failure must never keep the captured access token active in memory.
@@ -1318,7 +1346,7 @@ class CloudAuthManager internal constructor(
         ) ?: return@synchronized
         authMutationVersion += 1
         remoteStateRevisions.clear()
-        liveWorkoutSidecarStore.clearAll()
+        liveWorkoutSidecarStore.clearCloudAccountLocalState(expectedSession.userId)
         if (!clearAuthPreferencesSynchronously(prefs)) {
             prefs.edit().clear().apply()
         }
@@ -1336,7 +1364,7 @@ class CloudAuthManager internal constructor(
         if (disposition == CloudAccountDeletionSessionDisposition.ClearCapturedSession) {
             authMutationVersion += 1
             remoteStateRevisions.clear()
-            liveWorkoutSidecarStore.clearAll()
+            liveWorkoutSidecarStore.clearCloudAccountLocalState(expectedSession.userId)
             val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
             durableAuthCleanupCompleted = preferencesCleared
             if (!preferencesCleared) {
@@ -1355,7 +1383,7 @@ class CloudAuthManager internal constructor(
         } else if (disposition == CloudAccountDeletionSessionDisposition.AlreadySignedOut) {
             // A concurrent logout may have cleared only the in-memory state. Retry the durable
             // clear before allowing the deletion journal to retire.
-            liveWorkoutSidecarStore.clearAll()
+            liveWorkoutSidecarStore.clearCloudAccountLocalState(expectedSession.userId)
             durableAuthCleanupCompleted = clearAuthPreferencesSynchronously(prefs)
             if (!durableAuthCleanupCompleted) prefs.edit().clear().apply()
         }
@@ -1723,13 +1751,61 @@ class CloudAuthManager internal constructor(
     }
 
     internal suspend fun loadSocialWorkoutInbox(
-        session: AccountSession.Cloud
-    ): SocialWorkoutInbox = socialRpc(
-        session = session,
-        function = "social_workout_inbox",
-        body = JSONObject(),
-        parser = ::parseSocialWorkoutInbox
-    )
+        session: AccountSession.Cloud,
+        cursor: SocialWorkoutInboxCursor? = null,
+        limit: Int = SOCIAL_WORKOUT_INBOX_PAGE_SIZE
+    ): SocialWorkoutInbox {
+        val pageRequest = socialWorkoutInboxPageRequestBody(cursor, limit)
+        return try {
+            socialRpc(
+                session = session,
+                function = "social_workout_inbox_page",
+                body = pageRequest,
+                parser = { raw -> parseSocialWorkoutInboxPage(raw, expectedLimit = limit) }
+            )
+        } catch (error: SupabaseHttpException) {
+            if (cursor == null && isUnavailableSocialWorkoutInboxPageRpc(
+                    error.responseCode,
+                    error.errorCode
+                )
+            ) {
+                socialRpc(
+                    session = session,
+                    function = "social_workout_inbox",
+                    body = JSONObject(),
+                    parser = ::parseSocialWorkoutInbox
+                )
+            } else {
+                throw error
+            }
+        }
+    }
+
+    internal suspend fun loadSocialWorkoutInvitePlan(
+        session: AccountSession.Cloud,
+        inviteId: String,
+        expectedRevision: Int
+    ): SharedWorkoutPlan? {
+        require(isValidSocialWorkoutInviteId(inviteId)) { "Workout invite ID is invalid." }
+        require(expectedRevision > 0) { "Workout invite revision is invalid." }
+        return try {
+            socialRpc(
+                session = session,
+                function = "social_workout_invite_plan",
+                body = JSONObject()
+                    .put("p_invite_id", inviteId)
+                    .put("p_expected_revision", expectedRevision),
+                parser = ::parseSocialWorkoutInvitePlan
+            ).also { plan ->
+                require(plan.inviteId == inviteId &&
+                    plan.inviteRevision == expectedRevision) {
+                    "Social response is invalid."
+                }
+            }.workout
+        } catch (error: SupabaseHttpException) {
+            if (error.errorCode == "P0002") null else throw error
+        }
+    }
 
     internal suspend fun respondSocialWorkoutInvite(
         session: AccountSession.Cloud,
@@ -1989,6 +2065,27 @@ class CloudAuthManager internal constructor(
         synchronized(authStateLock) {
             activeCloudSessionFor(_authState.value.session, session) != null
         }
+
+    internal fun retainSocialWorkoutInviteRequest(
+        session: AccountSession.Cloud,
+        fingerprint: String
+    ): String? = synchronized(authStateLock) {
+        if (activeCloudSessionFor(_authState.value.session, session) == null) null
+        else socialWorkoutInviteRequestStore.retainOrCreate(session, fingerprint)
+    }
+
+    internal fun clearSocialWorkoutInviteRequest(
+        session: AccountSession.Cloud,
+        fingerprint: String,
+        expectedRequestId: String
+    ): Boolean = socialWorkoutInviteRequestStore.clear(
+        session,
+        fingerprint,
+        expectedRequestId
+    )
+
+    internal fun clearCloudAccountSocialWorkoutRequestState(userId: String): Boolean =
+        socialWorkoutInviteRequestStore.clearCloudAccountLocalState(userId)
 
     internal suspend fun registerPushInstallation(
         session: AccountSession.Cloud,
@@ -2443,10 +2540,6 @@ class CloudAuthManager internal constructor(
         ) {
             "Local deletion cleanup is still pending for this account. Restart GymApp and try again."
         }
-        val current = _authState.value.session as? AccountSession.Cloud
-        if (current == null || activeCloudSessionFor(current, session) == null) {
-            liveWorkoutSidecarStore.clearAll()
-        }
         prefs.edit()
             .putString("mode", "cloud")
             .putString(
@@ -2596,7 +2689,6 @@ class CloudAuthManager internal constructor(
             if (activeCloudSessionFor(_authState.value.session, expectedSession) == null) return
             authMutationVersion += 1
             remoteStateRevisions.clear()
-            liveWorkoutSidecarStore.clearAll()
             if (!clearAuthPreferencesSynchronously(prefs)) {
                 prefs.edit().clear().apply()
             }

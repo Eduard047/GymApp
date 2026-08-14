@@ -1,9 +1,13 @@
 param(
     [string]$VersionName,
-    [int]$VersionCode
+    [int]$VersionCode,
+    [string]$FirebaseConfigFile = $env:ORG_GRADLE_PROJECT_gymappFirebaseConfigFile,
+    [string]$FirebaseConfigSha256 = $env:GYMAPP_FIREBASE_CONFIG_SHA256
 )
 
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "android-release-firebase-gate.ps1")
 
 $expectedPackageId = "com.setforge.gymapp"
 
@@ -331,6 +335,12 @@ $projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $projectRoot
 
 $isWindowsPlatform = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+$firebaseConfig = Resolve-ReviewedReleaseFirebaseConfig `
+    -ProjectRoot $projectRoot `
+    -ConfigPath $FirebaseConfigFile `
+    -ExpectedSha256 $FirebaseConfigSha256 `
+    -ExpectedPackageId $expectedPackageId `
+    -IsWindowsPlatform $isWindowsPlatform
 $javaExecutableName = if ($isWindowsPlatform) { "java.exe" } else { "java" }
 $gradleWrapperPath = Join-Path $projectRoot $(if ($isWindowsPlatform) { "gradlew.bat" } else { "gradlew" })
 $javaExePath = $null
@@ -442,7 +452,7 @@ if ([string]::IsNullOrWhiteSpace($VersionName) -or
 
 Write-Host "Building phone release APK with versionCode=$VersionCode versionName=$VersionName"
 
-& $gradleWrapperPath :app:assembleRelease "-PappVersionCode=$VersionCode" "-PappVersionName=$VersionName" "-PdevApplicationIdSuffix=false"
+& $gradleWrapperPath :app:assembleRelease "-PappVersionCode=$VersionCode" "-PappVersionName=$VersionName" "-PdevApplicationIdSuffix=false" "-PgymappRequireReviewedFirebaseConfig=true" "-PgymappFirebaseConfigFile=$($firebaseConfig.Path)" "-PgymappFirebaseConfigSha256=$($firebaseConfig.Sha256)"
 if ($LASTEXITCODE -ne 0) {
     throw "Gradle build failed."
 }
@@ -476,6 +486,9 @@ $metadataArguments = @{
 Assert-ReleaseOutputMetadata @metadataArguments
 Assert-AaptReleaseIdentity $aapt2Path $phoneApkSource $VersionCode $VersionName
 Assert-ApkSignature $apkSignerPath $phoneApkSource $expectedCertificateSha256
+$firebaseBuildConfigPath = Join-Path $projectRoot 'app/build/generated/source/buildConfig/release/com/example/gymapp/BuildConfig.java'
+Assert-ReleaseFirebaseBuildConfig $firebaseBuildConfigPath $firebaseConfig
+Assert-ReleaseFirebaseArtifact $phoneApkSource 'APK' $firebaseConfig
 
 Copy-Item -Path $phoneApkSource -Destination $phoneApkTarget -Force
 

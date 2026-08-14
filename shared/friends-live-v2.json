@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "productVersion": "3.0.9",
+  "productVersion": "3.0.10",
   "clients": ["android", "ios", "pwa"],
   "friendWorkoutSharing": {
     "summaryConsent": {
@@ -72,6 +72,11 @@
       "unrelatedLocalActiveWorkout": "neverOverwrite"
     },
     "invitationAccept": {
+      "visibleAction": {
+        "en": "Start together",
+        "uk": "Почати разом",
+        "ru": "Начать вместе"
+      },
       "serverTransition": "waitingToActive",
       "atomicMutations": [
         "participantJoined",
@@ -80,6 +85,10 @@
         "bothProgressRows"
       ],
       "createsLocalActiveWorkoutAfterAuthoritativeSnapshot": true,
+      "authoritativeRoomStatus": "active",
+      "legacyResponseStatusesAccepted": ["ready", "active"],
+      "legacyReadyResponseRequiresAuthoritativeRefresh": true,
+      "ownerOnlyStartActionVisible": false,
       "unrelatedLocalActiveWorkout": "neverOverwrite",
       "replay": "sameOperationReturnsSameResult",
       "staleOrCrossAccount": "rejectWithoutMutation"
@@ -109,6 +118,7 @@
     "legacyDashboardResponseKeysUnchanged": true,
     "legacyFriendDetailsResponseKeysUnchanged": true,
     "legacySummarySharingUnchanged": true,
-    "newExactDetailDisclosureDefault": "deny"
+    "newExactDetailDisclosureDefault": "deny",
+    "legacyReadyAcceptResponse": "confirmedMutationOnlyNotAuthoritativeRoomState"
   }
 }

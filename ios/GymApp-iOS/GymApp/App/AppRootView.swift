@@ -395,6 +395,8 @@ private struct AccountPreparationView: View {
 
 enum NativePushProfileFocus: Hashable, Sendable {
     case friends
+    case friendRequest(String)
+    case workoutInvite(String)
     case liveWorkouts
     case liveRoom(String)
 }
@@ -409,6 +411,16 @@ func makeNativePushProfileRequest(for route: NativePushRoute) -> NativePushProfi
     switch route.target {
     case .social:
         focus = .friends
+    case let .socialObject(object):
+        switch object.eventType {
+        case .friendRequestReceived, .friendRequestAccepted:
+            focus = .friendRequest(object.objectID)
+        case .workoutInviteReceived, .workoutInviteAccepted:
+            focus = .workoutInvite(object.objectID)
+        case .liveInviteReceived, .liveInviteAccepted, .liveRoomStarted,
+             .liveParticipantFinished, .liveRoomClosed:
+            focus = .friends
+        }
     case let .live(roomID):
         focus = roomID.map(NativePushProfileFocus.liveRoom) ?? .liveWorkouts
     }
@@ -418,13 +430,12 @@ func makeNativePushProfileRequest(for route: NativePushRoute) -> NativePushProfi
 @MainActor
 private struct MainTabShell: View {
     private enum Tab: String, CaseIterable, Identifiable {
-        case workouts, missions, exercises, progress, profile
+        case workouts, exercises, progress, profile
         var id: String { rawValue }
 
         var icon: String {
             switch self {
-            case .workouts: "figure.strengthtraining.traditional"
-            case .missions: "scope"
+            case .workouts: "calendar"
             case .exercises: "dumbbell.fill"
             case .progress: "chart.xyaxis.line"
             case .profile: "person.crop.circle.fill"
@@ -433,8 +444,7 @@ private struct MainTabShell: View {
 
         func title(_ language: String) -> String {
             switch self {
-            case .workouts: gymText("Workouts", "Тренування", languageCode: language)
-            case .missions: gymText("Missions", "Місії", languageCode: language)
+            case .workouts: gymText("Today", "Сьогодні", "Сегодня", languageCode: language)
             case .exercises: gymText("Exercises", "Вправи", languageCode: language)
             case .progress: gymText("Progress", "Прогрес", languageCode: language)
             case .profile: gymText("Profile", "Профіль", languageCode: language)
@@ -474,6 +484,13 @@ private struct MainTabShell: View {
     @State private var sharedWorkoutDraftTransitionID: UUID?
     @State private var showingActiveDraftDiscardConfirmation = false
     @State private var nativePushProfileRequest: NativePushProfileRequest?
+    @State private var isResolvingNativePushRoute = false
+    @State private var resolvingNativePushRouteID: UUID?
+    @State private var tutorialStepIndex: Int?
+    @State private var tutorialIsManualReplay = false
+    @State private var tutorialAutomaticPresentationSuppressedForSession = false
+    @State private var tutorialTask: Task<Void, Never>?
+    @State private var tutorialPrimaryActionGlobalFrame: CGRect?
 
     init(appState: AppState, nativePush: NativePushManager) {
         self.appState = appState
@@ -501,10 +518,23 @@ private struct MainTabShell: View {
             .split(separator: "=", maxSplits: 1)
             .last
             .map(String.init)
-        let initialTab = requested == "rating" || requested == "friends"
+        let tutorialScreenshotIndex = appTutorialScreenshotStepIndex(
+            arguments: ProcessInfo.processInfo.arguments
+        )
+        let tutorialTab: Tab?
+        switch tutorialScreenshotIndex {
+        case 0, 1: tutorialTab = .workouts
+        case 2: tutorialTab = .exercises
+        case 3: tutorialTab = .progress
+        case 4: tutorialTab = .profile
+        default: tutorialTab = nil
+        }
+        let requestedTab = requested == "rating" || requested == "friends"
             ? Tab.profile
             : requested.flatMap(Tab.init(rawValue:))
-        _selectedTab = State(initialValue: initialTab ?? .workouts)
+        _selectedTab = State(initialValue: tutorialTab ?? requestedTab ?? .workouts)
+        _tutorialStepIndex = State(initialValue: tutorialScreenshotIndex)
+        _tutorialIsManualReplay = State(initialValue: tutorialScreenshotIndex != nil)
     }
 
     var body: some View {
@@ -513,11 +543,6 @@ private struct MainTabShell: View {
                 .tabItem { Label(Tab.workouts.title(languageCode), systemImage: Tab.workouts.icon) }
                 .tag(Tab.workouts)
                 .accessibilityIdentifier("tab-workouts")
-
-            missionsTab
-                .tabItem { Label(Tab.missions.title(languageCode), systemImage: Tab.missions.icon) }
-                .tag(Tab.missions)
-                .accessibilityIdentifier("tab-missions")
 
             exercisesTab
                 .tabItem { Label(Tab.exercises.title(languageCode), systemImage: Tab.exercises.icon) }
@@ -750,9 +775,9 @@ private struct MainTabShell: View {
                                 .font(.subheadline.bold())
                                 Text(
                                     gymText(
-                                        "Open Friends to join the lobby. The owner starts after both are ready.",
-                                        "Відкрий Друзів, щоб увійти в лобі. Власник стартує, коли обоє готові.",
-                                        "Открой Друзей, чтобы войти в лобби. Владелец стартует, когда оба готовы.",
+                                        "Open Friends to review it. Accepting starts the workout for both immediately.",
+                                        "Відкрий Друзів, щоб переглянути. Прийняття одразу запускає тренування для обох.",
+                                        "Открой Друзей, чтобы посмотреть. Принятие сразу запускает тренировку для обоих.",
                                         languageCode: languageCode
                                     )
                                 )
@@ -856,6 +881,17 @@ private struct MainTabShell: View {
                 )
             )
         }
+        .appTutorialOverlay(
+            step: currentTutorialStep,
+            stepNumber: (tutorialStepIndex ?? -1) + 1,
+            stepCount: tutorialSteps.count,
+            languageCode: languageCode,
+            canGoBack: (tutorialStepIndex ?? 0) > 0,
+            primaryActionGlobalFrame: tutorialPrimaryActionGlobalFrame,
+            onBack: moveTutorialBack,
+            onNext: moveTutorialForward,
+            onSkip: { finishTutorial(.skipped) }
+        )
         .task {
             liveWorkoutCoordinator.startMonitoring()
             openPendingPushRouteIfNeeded()
@@ -872,15 +908,21 @@ private struct MainTabShell: View {
             }
             reconcilePersistedActiveRest()
             presentSharedWorkoutPreviewIfPossible()
+            scheduleAutomaticTutorial()
         }
         .onDisappear {
+            tutorialTask?.cancel()
             liveWorkoutCoordinator.stopMonitoring()
             workoutLaunchSeed = nil
             workoutLaunchConsumerID = nil
             workoutLaunchDrafts = nil
         }
         .onChange(of: appState.pendingSharedWorkout?.id) { _ in
+            if appState.pendingSharedWorkout != nil {
+                yieldTutorialToExternalNavigation()
+            }
             presentSharedWorkoutPreviewIfPossible()
+            scheduleAutomaticTutorial()
         }
         .onChange(of: showsAddWorkout) { isPresented in
             if !isPresented {
@@ -889,11 +931,13 @@ private struct MainTabShell: View {
                 workoutLaunchConsumerID = nil
                 workoutLaunchDrafts = nil
                 presentSharedWorkoutPreviewIfPossible()
+                scheduleAutomaticTutorial()
             }
         }
         .onChange(of: showsActiveWorkout) { isPresented in
             if !isPresented {
                 presentSharedWorkoutPreviewIfPossible()
+                scheduleAutomaticTutorial()
             }
         }
         .onChange(of: liveWorkoutCoordinator.sidecar.attachment?.localDraftID) { draftID in
@@ -902,32 +946,290 @@ private struct MainTabShell: View {
             showsActiveWorkout = true
         }
         .onChange(of: nativePush.pendingRoute?.id) { _ in
+            if nativePush.pendingRoute != nil {
+                yieldTutorialToExternalNavigation()
+            }
             openPendingPushRouteIfNeeded()
+            scheduleAutomaticTutorial()
+        }
+        .onReceive(activeWorkoutStore.objectWillChange) { _ in scheduleAutomaticTutorial() }
+        .onReceive(liveWorkoutCoordinator.objectWillChange) { _ in scheduleAutomaticTutorial() }
+    }
+
+    private var tutorialSteps: [AppTutorialStep] {
+        AppTutorialStep.all(languageCode: languageCode)
+    }
+
+    private var currentTutorialStep: AppTutorialStep? {
+        guard let tutorialStepIndex,
+              tutorialSteps.indices.contains(tutorialStepIndex) else {
+            return nil
+        }
+        return tutorialSteps[tutorialStepIndex]
+    }
+
+    private var tutorialPresentationIsDeferred: Bool {
+        !appState.isAccountReady
+            || appState.activeAccountStorageKey != store.accountStorageKey
+            || appState.workoutStore !== store
+            || nativePush.pendingRoute != nil
+            || isResolvingNativePushRoute
+            || appState.pendingSharedWorkout != nil
+            || showsSharedWorkoutPreview
+            || showsAddWorkout
+            || showsActiveWorkout
+            || activeWorkoutStore.draft != nil
+            || showingActiveDraftDiscardConfirmation
+            || liveWorkoutCoordinator.hasBlockingLiveWorkout
+    }
+
+    private func scheduleAutomaticTutorial() {
+        tutorialTask?.cancel()
+        guard tutorialStepIndex == nil,
+              !tutorialAutomaticPresentationSuppressedForSession,
+              AppTutorialStore().needsAutomaticPresentation(
+                accountStorageKey: store.accountStorageKey
+              ) else {
+            return
+        }
+        let accountStorageKey = store.accountStorageKey
+        tutorialTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled,
+                  tutorialStepIndex == nil,
+                  appState.activeAccountStorageKey == accountStorageKey,
+                  !tutorialPresentationIsDeferred,
+                  AppTutorialStore().needsAutomaticPresentation(
+                    accountStorageKey: accountStorageKey
+                  ) else {
+                return
+            }
+            beginTutorial(manualReplay: false)
         }
     }
 
+    private func requestTutorialReplay() {
+        guard !tutorialPresentationIsDeferred else {
+            appState.show(
+                message: gymText(
+                    "Finish the current action, import, or live workout before showing the tutorial.",
+                    "Заверши поточну дію, імпорт або живе тренування, перш ніж показувати навчання.",
+                    "Заверши текущее действие, импорт или живую тренировку перед показом обучения.",
+                    languageCode: languageCode
+                ),
+                isError: false
+            )
+            return
+        }
+        tutorialAutomaticPresentationSuppressedForSession = false
+        beginTutorial(manualReplay: true)
+    }
+
+    private func beginTutorial(manualReplay: Bool) {
+        guard tutorialStepIndex == nil, !tutorialPresentationIsDeferred else { return }
+        tutorialTask?.cancel()
+        tutorialIsManualReplay = manualReplay
+        tutorialStepIndex = 0
+        selectTab(for: tutorialSteps[0].target)
+    }
+
+    private func moveTutorialBack() {
+        guard let tutorialStepIndex, tutorialStepIndex > 0 else { return }
+        let previous = tutorialStepIndex - 1
+        self.tutorialStepIndex = previous
+        selectTab(for: tutorialSteps[previous].target)
+    }
+
+    private func moveTutorialForward() {
+        guard let tutorialStepIndex else { return }
+        let next = tutorialStepIndex + 1
+        guard tutorialSteps.indices.contains(next) else {
+            finishTutorial(.completed)
+            return
+        }
+        self.tutorialStepIndex = next
+        selectTab(for: tutorialSteps[next].target)
+    }
+
+    private func finishTutorial(_ completion: AppTutorialCompletion) {
+        guard let currentTutorialStep else { return }
+        let tutorialStore = AppTutorialStore()
+        let needsAutomaticPresentation = tutorialStore.needsAutomaticPresentation(
+            accountStorageKey: store.accountStorageKey
+        )
+        if appTutorialShouldRecordCompletion(
+            isManualReplay: tutorialIsManualReplay,
+            needsAutomaticPresentation: needsAutomaticPresentation
+        ), !tutorialStore.record(
+            completion,
+            accountStorageKey: store.accountStorageKey
+        ) {
+            appState.show(
+                message: gymText(
+                    "The tutorial result could not be saved. Try again.",
+                    "Не вдалося зберегти результат навчання. Спробуй ще раз.",
+                    "Не удалось сохранить результат обучения. Попробуй ещё раз.",
+                    languageCode: languageCode
+                ),
+                isError: true
+            )
+            return
+        }
+        let finishRoute = appTutorialFinishRoute(
+            currentTarget: currentTutorialStep.target,
+            externalTargetOwnsNavigation: tutorialPresentationIsDeferred
+        )
+        tutorialStepIndex = nil
+        tutorialIsManualReplay = false
+        if case .keep(let target) = finishRoute {
+            selectTab(for: target)
+        }
+    }
+
+    private func selectTab(for target: AppTutorialTarget) {
+        switch target {
+        case .todayFocus, .todayPrimaryAction: selectedTab = .workouts
+        case .exercises: selectedTab = .exercises
+        case .progress: selectedTab = .progress
+        case .profile: selectedTab = .profile
+        }
+    }
+
+    private func yieldTutorialToExternalNavigation() {
+        let interruption = appTutorialExternalInterruption(
+            currentStepIndex: tutorialStepIndex,
+            isManualReplay: tutorialIsManualReplay
+        )
+        tutorialTask?.cancel()
+        tutorialStepIndex = interruption.stepIndex
+        tutorialIsManualReplay = interruption.isManualReplay
+        tutorialAutomaticPresentationSuppressedForSession =
+            interruption.suppressAutomaticPresentationForSession
+    }
+
     private func openPendingPushRouteIfNeeded() {
+        if nativePush.pendingRoute != nil {
+            yieldTutorialToExternalNavigation()
+        }
         guard let route = nativePush.consumePendingRoute() else { return }
-        nativePushProfileRequest = makeNativePushProfileRequest(for: route)
+        nativePushProfileRequest = nil
         selectedTab = .profile
+        resolvingNativePushRouteID = route.id
+        isResolvingNativePushRoute = true
         Task { @MainActor in
-            guard nativePush.isRouteBoundToCurrentSession(route) else { return }
+            defer {
+                if resolvingNativePushRouteID == route.id {
+                    resolvingNativePushRouteID = nil
+                    isResolvingNativePushRoute = false
+                    scheduleAutomaticTutorial()
+                }
+            }
+            guard resolvingNativePushRouteID == route.id,
+                  nativePush.isRouteBoundToCurrentSession(route) else { return }
             switch route.target {
             case .social:
                 _ = try? await appState.refreshSocialDashboard()
-                guard nativePush.isRouteBoundToCurrentSession(route) else { return }
+                guard resolvingNativePushRouteID == route.id,
+                      nativePush.isRouteBoundToCurrentSession(route) else { return }
                 _ = try? await appState.refreshSocialWorkoutInbox()
+                guard resolvingNativePushRouteID == route.id,
+                      nativePush.isRouteBoundToCurrentSession(route) else { return }
+                nativePushProfileRequest = NativePushProfileRequest(
+                    id: route.id,
+                    focus: .friends
+                )
+            case let .socialObject(object):
+                _ = try? await appState.refreshSocialDashboard()
+                guard resolvingNativePushRouteID == route.id,
+                      nativePush.isRouteBoundToCurrentSession(route) else { return }
+                _ = try? await appState.refreshSocialWorkoutInbox()
+                guard resolvingNativePushRouteID == route.id,
+                      nativePush.isRouteBoundToCurrentSession(route) else { return }
+                var exactWorkoutInviteUnavailable = false
+                switch object.eventType {
+                case .workoutInviteReceived, .workoutInviteAccepted:
+                    exactWorkoutInviteUnavailable = (try? await appState.resolveSocialWorkoutInvite(
+                        inviteID: object.objectID,
+                        minimumRevision: object.objectRevision
+                    )) != true
+                    guard resolvingNativePushRouteID == route.id,
+                          nativePush.isRouteBoundToCurrentSession(route) else { return }
+                default:
+                    break
+                }
+                if exactWorkoutInviteUnavailable {
+                    appState.show(
+                        message: gymText(
+                            "This workout invitation is no longer available.",
+                            "Це запрошення на тренування більше недоступне.",
+                            "Это приглашение на тренировку больше недоступно.",
+                            languageCode: languageCode
+                        ),
+                        isError: false
+                    )
+                }
+                nativePushProfileRequest = NativePushProfileRequest(
+                    id: route.id,
+                    focus: resolvedSocialFocus(for: object)
+                )
             case let .live(roomID):
                 if let roomID {
                     // Open the room named by the authenticated, bounded payload.
                     // The coordinator rechecks the account/session around its network
                     // boundary and materializes an active room only for that owner.
-                    try? await liveWorkoutCoordinator.openRoom(roomID)
+                    let opened = (try? await liveWorkoutCoordinator.openRoom(roomID)) != nil
+                    guard resolvingNativePushRouteID == route.id,
+                          nativePush.isRouteBoundToCurrentSession(route) else { return }
+                    nativePushProfileRequest = NativePushProfileRequest(
+                        id: route.id,
+                        focus: opened && liveWorkoutCoordinator.snapshot?.room.roomID == roomID
+                            ? .liveRoom(roomID)
+                            : .liveWorkouts
+                    )
                 } else {
                     // Compatibility for already-delivered route-v1 notifications.
                     await liveWorkoutCoordinator.refreshAll(showErrors: false)
+                    guard resolvingNativePushRouteID == route.id,
+                          nativePush.isRouteBoundToCurrentSession(route) else { return }
+                    nativePushProfileRequest = NativePushProfileRequest(
+                        id: route.id,
+                        focus: .liveWorkouts
+                    )
                 }
             }
+        }
+    }
+
+    private func resolvedSocialFocus(
+        for object: NativePushSocialObjectTarget
+    ) -> NativePushProfileFocus {
+        switch object.eventType {
+        case .friendRequestReceived, .friendRequestAccepted:
+            let dashboard = appState.socialDashboard
+            let revision = dashboard?.incoming.first(where: {
+                $0.friendshipID == object.objectID
+            })?.friendshipRevision
+                ?? dashboard?.outgoing.first(where: {
+                    $0.friendshipID == object.objectID
+                })?.friendshipRevision
+                ?? dashboard?.friends.first(where: {
+                    $0.friendshipID == object.objectID
+                })?.friendshipRevision
+            guard let revision, revision >= object.objectRevision else { return .friends }
+            return .friendRequest(object.objectID)
+        case .workoutInviteReceived, .workoutInviteAccepted:
+            let inbox = appState.socialWorkoutInbox
+            let revision = inbox?.incoming.first(where: {
+                $0.inviteID == object.objectID
+            })?.inviteRevision
+                ?? inbox?.outgoing.first(where: {
+                    $0.inviteID == object.objectID
+                })?.inviteRevision
+            guard let revision, revision >= object.objectRevision else { return .friends }
+            return .workoutInvite(object.objectID)
+        case .liveInviteReceived, .liveInviteAccepted, .liveRoomStarted,
+             .liveParticipantFinished, .liveRoomClosed:
+            return .friends
         }
     }
 
@@ -968,6 +1270,9 @@ private struct MainTabShell: View {
     }
 
     private func presentSharedWorkoutPreviewIfPossible() {
+        if appState.pendingSharedWorkout != nil {
+            yieldTutorialToExternalNavigation()
+        }
         guard appState.pendingSharedWorkout != nil,
               !showsAddWorkout,
               !showsActiveWorkout else { return }
@@ -1090,7 +1395,7 @@ private struct MainTabShell: View {
         NavigationStack(path: $workoutPath) {
             WorkoutsView(
                 store: store,
-                hasActiveWorkout: activeWorkoutStore.draft != nil,
+                activeWorkoutDraft: activeWorkoutStore.draft,
                 onStartPlan: { launchSeed in
                     guard activeWorkoutStore.draft == nil,
                           !showsAddWorkout,
@@ -1159,6 +1464,12 @@ private struct MainTabShell: View {
                     showsAddWorkout = false
                     showsActiveWorkout = true
                 },
+                onDiscardWorkout: {
+                    showingActiveDraftDiscardConfirmation = true
+                },
+                onTutorialPrimaryActionFrameChange: { frame in
+                    tutorialPrimaryActionGlobalFrame = frame
+                },
                 onOpenWorkout: { workoutPath.append(.detail($0)) },
                 onOpenRanks: { workoutPath.append(.ranks) }
             )
@@ -1190,18 +1501,6 @@ private struct MainTabShell: View {
         }
     }
 
-    private var missionsTab: some View {
-        NavigationStack(path: $missionPath) {
-            MissionsView(store: store) { missionPath.append(.ranks) }
-                .gymLanguageToolbar()
-                .navigationDestination(for: MissionRoute.self) { route in
-                    switch route {
-                    case .ranks: RanksView(store: store)
-                    }
-                }
-        }
-    }
-
     private var exercisesTab: some View {
         NavigationStack {
             ExercisesView()
@@ -1210,9 +1509,17 @@ private struct MainTabShell: View {
     }
 
     private var progressTab: some View {
-        NavigationStack {
-            ExerciseProgressView(store: store)
+        NavigationStack(path: $missionPath) {
+            ProgressHubView(
+                store: store,
+                onOpenRanks: { missionPath.append(.ranks) }
+            )
                 .gymLanguageToolbar()
+                .navigationDestination(for: MissionRoute.self) { route in
+                    switch route {
+                    case .ranks: RanksView(store: store)
+                    }
+                }
         }
     }
 
@@ -1225,6 +1532,7 @@ private struct MainTabShell: View {
                 canAcceptWorkoutInvites: activeWorkoutStore.draft == nil,
                 liveWorkoutCoordinator: liveWorkoutCoordinator,
                 nativePushRequest: nativePushProfileRequest,
+                onShowTutorial: requestTutorialReplay,
                 onOpenLiveWorkout: {
                     showsAddWorkout = false
                     showsActiveWorkout = true

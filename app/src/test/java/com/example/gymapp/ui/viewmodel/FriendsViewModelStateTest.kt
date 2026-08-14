@@ -1,5 +1,6 @@
 package com.example.gymapp.ui.viewmodel
 
+import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.SocialExerciseRecord
 import com.example.gymapp.auth.SocialDashboard
@@ -84,6 +85,44 @@ class FriendsViewModelStateTest {
     }
 
     @Test
+    fun workoutInboxRefreshUsesTheSameAccountAndGenerationFence() {
+        val expected = cloudSession(userId = "user-a", generation = "generation-a")
+
+        assertTrue(
+            shouldApplySocialInboxRefresh(
+                expected,
+                cloudSession(userId = "user-a", generation = "generation-a"),
+                requestVersion = 8,
+                latestRequestVersion = 8
+            )
+        )
+        assertFalse(
+            shouldApplySocialInboxRefresh(
+                expected,
+                cloudSession(userId = "user-a", generation = "generation-b"),
+                requestVersion = 8,
+                latestRequestVersion = 8
+            )
+        )
+        assertFalse(
+            shouldApplySocialInboxRefresh(
+                expected,
+                cloudSession(userId = "user-b", generation = "generation-a"),
+                requestVersion = 8,
+                latestRequestVersion = 8
+            )
+        )
+        assertFalse(
+            shouldApplySocialInboxRefresh(
+                expected,
+                cloudSession(userId = "user-a", generation = "generation-a"),
+                requestVersion = 7,
+                latestRequestVersion = 8
+            )
+        )
+    }
+
+    @Test
     fun foregroundRefreshDropsPreviouslySharedDetailsBeforePrivacyCanTurnFalse() {
         val profileId = "p_${"a".repeat(32)}"
         val previouslyShared = SocialFriendDetails(
@@ -123,6 +162,25 @@ class FriendsViewModelStateTest {
 
         assertNull(refreshed.selectedFriendDetails)
         assertTrue(refreshed.isDetailsLoading)
+    }
+
+    @Test
+    fun realtimeRelationshipInvalidationHidesStaleInboxUntilBoundedRefetch() {
+        val invalidated = invalidateSocialRealtimeSurfaces(loadedSocialState())
+
+        assertNull(invalidated.workoutInbox)
+        assertNull(invalidated.selectedFriendDetails)
+        assertTrue(invalidated.isDetailsLoading)
+    }
+
+    @Test
+    fun partialPrivacyCommitIsNotReportedAsAWholeSaveFailure() {
+        val state = partialPrivacyCommitState(
+            FriendsUiState(error = com.example.gymapp.util.LocalizedText(R.string.friends_privacy_save_failed))
+        )
+
+        assertNull(state.error)
+        assertEquals(R.string.friends_privacy_partially_saved, state.notice?.resourceId)
     }
 
     @Test

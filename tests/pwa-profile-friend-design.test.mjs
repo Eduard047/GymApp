@@ -179,7 +179,11 @@ test("Fluid Focus interaction contract keeps choices, navigation, and touch targ
   assert.match(stylesSource, /\.period-tabs button\s*\{[\s\S]*?min-height:\s*44px;/);
   assert.match(stylesSource, /html\[lang="ru"\] \.tab-button > span:last-child\s*\{[\s\S]*?text-overflow:\s*clip;/);
   assert.match(stylesSource, /@media \(max-width: 460px\)[\s\S]*?\.profile-hub-switch button strong\s*\{[\s\S]*?text-overflow:\s*clip;[\s\S]*?white-space:\s*normal;/);
+  assert.match(stylesSource, /\.active-live-participant-panel:not\(\[hidden\]\)\s*\{[\s\S]*animation:\s*active-live-panel-enter 180ms/);
+  assert.match(stylesSource, /\.onboarding-coach\s*\{[\s\S]*max-height:\s*calc\(100dvh[\s\S]*overflow-y:\s*auto;/);
+  assert.match(stylesSource, /\.onboarding-actions\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*-18px;/);
   assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\*::after\s*\{[\s\S]*?transition-duration:\s*0\.01ms !important;/);
+  assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.active-live-participant-panel\s*\{\s*animation:\s*none;/);
 });
 
 test("main empty states explain the next action instead of ending the flow", () => {
@@ -193,4 +197,85 @@ test("main empty states explain the next action instead of ending the flow", () 
   assert.match(appSource, /if \(action === "reset-exercise-filters"\)[\s\S]*?exerciseSortMode = "name";\s+return render\(\);/);
   assert.match(spotlight, /data-action="open-add"/);
   assert.match(missions, /empty-state-panel[\s\S]*data-action="open-add"/);
+});
+
+test("root navigation has four parity tabs and Progress exposes the shared Goals subtab", () => {
+  const nav = sourceBetween("function bottomNav()", "function screenMarkup");
+  const workouts = sourceBetween("function workoutsScreen()", "function overviewCards");
+  const progress = sourceBetween("function progressScreen()", "function exerciseProgressPanel");
+
+  assert.match(nav, /\[\["workouts"[\s\S]*\["exercises"[\s\S]*\["progress"[\s\S]*\["leaderboard"/);
+  assert.doesNotMatch(nav, /\["missions"/);
+  assert.match(stylesSource, /\.bottom-nav\s*\{[\s\S]*grid-template-columns:\s*repeat\(4,/);
+  assert.doesNotMatch(workouts, /overviewCards\(/);
+  assert.match(workouts, /focusOverview\(sessions\)[\s\S]*monthSwitcher\(\)[\s\S]*workout-list-section/);
+  assert.match(progress, /overviewCards\(selectedMonthSessions\(\)\)/);
+  assert.match(progress, /exerciseProgressPanel\(\)/);
+  assert.match(progress, /missionsScreen\(\)/);
+  assert.match(progress, /role="tablist"/);
+  assert.match(progress, /data-action="progress-hub-section"/);
+  assert.match(progress, /goals:\s*\{[\s\S]*tx\("Goals", "Цілі"\)/);
+  assert.match(progress, /selectedSection === "goals"/);
+  assert.doesNotMatch(progress, /missions:\s*\{[\s\S]*label:/);
+  assert.match(appSource, /current\.name === "missions"[\s\S]*progressHubSection = "goals"/);
+});
+
+test("first-entry app tour is account-bound, accessible, deferrable, and replayable from Help", () => {
+  const storage = sourceBetween("function onboardingTourAccountDescriptor", "function emptyTrainingGuidance");
+  const tour = sourceBetween("function onboardingTourSteps()", "function render()");
+  const finish = sourceBetween("function finishOnboardingTour", "function render()");
+  const profileData = sourceBetween("function profileDataPanel()", "function garminProfilePanel");
+  const deletion = sourceBetween("async function deleteLocalAccount()", "async function logoutAccount");
+
+  assert.match(storage, /ONBOARDING_TOUR_PREFIX/);
+  assert.match(storage, /owner:\s*normalized\.remote === "supabase"/);
+  assert.match(storage, /schemaVersion:\s*1/);
+  assert.match(storage, /tourVersion:\s*ONBOARDING_TOUR_VERSION/);
+  assert.match(storage, /\["completed", "skipped"\]/);
+  assert.match(tour, /role="dialog" aria-modal="true"/);
+  assert.match(tour, /data-action="onboarding-back"/);
+  assert.match(tour, /"onboarding-done"\s*:\s*"onboarding-next"/);
+  assert.match(tour, /data-action="onboarding-skip"/);
+  assert.match(tour, /"onboarding-done"\s*:\s*"onboarding-next"/);
+  assert.match(tour, /pendingSharedWorkout/);
+  assert.match(tour, /activeWorkout/);
+  assert.match(tour, /session\?\.activation_pending/);
+  assert.match(tour, /element\.inert = true/);
+  assert.match(tour, /event\.key === "Escape"/);
+  assert.match(tour, /const candidates = \[/);
+  assert.match(tour, /candidate\.top >= bottom \+ gap/);
+  assert.match(tour, /candidates\.find\(candidate => fitsViewport\(candidate\) && avoidsSpotlight\(candidate\)\)/);
+  assert.match(tour, /const aboveTop = top - gap - coachRect\.height/);
+  assert.match(tour, /belowTop \+ coachRect\.height <= viewportHeight - margin/);
+  assert.doesNotMatch(finish, /nav\s*=/);
+  assert.match(profileData, /data-action="replay-onboarding"/);
+  assert.match(profileData, /Show tutorial/);
+  assert.match(profileData, /Показати навчання/);
+  assert.match(deletion, /onboardingDescriptor\.storageKey/);
+  assert.match(stylesSource, /\.onboarding-spotlight[\s\S]*box-shadow:\s*0 0 0 9999px/);
+  assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.onboarding-spotlight\s*\{\s*transition:\s*none;/);
+});
+
+test("social push routing retains opaque type and object ID and authorizes it after refresh", () => {
+  const parser = sourceBetween("function parseAppPushData", "async function openLiveWorkoutPushRoom");
+  const resolver = sourceBetween("function authoritativeSocialPushObject", "async function openLiveWorkoutPushRoom");
+  const opener = sourceBetween("async function openBoundAppPushTarget", "function captureAppPushTargetFromLocation");
+  const capture = sourceBetween("function captureAppPushTargetFromLocation", "function showToast");
+
+  assert.match(parser, /socialType/);
+  assert.match(parser, /objectId/);
+  assert.match(parser, /objectRevision/);
+  assert.match(resolver, /await refreshSocialData\(true\)/);
+  assert.match(resolver, /expectedEpoch !== accountEpoch/);
+  assert.match(resolver, /loadRemoteSession\(\)\?\.user\?\.id !== expectedUserId/);
+  assert.match(resolver, /authoritativeSocialPushObject\(target\)/);
+  assert.match(resolver, /Notification opened\. Current account data was refreshed\./);
+  assert.match(opener, /readStoredWebPushBinding\(\)/);
+  assert.match(opener, /stored\.bindingId !== target\.bindingId/);
+  assert.match(opener, /stored\.ownerId !== expectedUserId/);
+  assert.match(opener, /profileHubSection = "training"/);
+  assert.match(capture, /searchParams\.delete\("binding"\)/);
+  assert.match(capture, /searchParams\.delete\("social_type"\)/);
+  assert.match(capture, /searchParams\.delete\("object"\)/);
+  assert.match(capture, /searchParams\.delete\("revision"\)/);
 });

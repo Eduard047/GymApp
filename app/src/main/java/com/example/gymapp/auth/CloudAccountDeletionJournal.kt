@@ -181,6 +181,7 @@ internal suspend fun recoverPendingCloudAccountDeletion(
     clearCustomMedia: () -> Boolean,
     clearBackupShares: () -> Boolean,
     clearRestTimers: () -> Boolean,
+    clearLiveState: () -> Boolean,
     clearGarminState: () -> Boolean,
     clearJournal: (PendingCloudAccountDeletion) -> Boolean
 ): Int {
@@ -192,6 +193,7 @@ internal suspend fun recoverPendingCloudAccountDeletion(
     if (runCatching { check(clearCustomMedia()) }.isFailure) failures += 1
     if (runCatching { check(clearBackupShares()) }.isFailure) failures += 1
     if (runCatching { check(clearRestTimers()) }.isFailure) failures += 1
+    if (runCatching { check(clearLiveState()) }.isFailure) failures += 1
     if (runCatching { check(clearGarminState()) }.isFailure) failures += 1
     if (failures == 0 && runCatching { check(clearJournal(record)) }.isFailure) {
         failures += 1

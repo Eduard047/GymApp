@@ -1266,11 +1266,19 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         let liveSlotURL = LiveWorkoutSlotReservationStore.storageURL(
             forWorkoutStorageURL: context.history.storageURL
         )
+        let workoutInviteJournalURL = WorkoutInviteRequestStore.storageURL(
+            forWorkoutStorageURL: context.history.storageURL
+        )
         try Data("private live slot".utf8).write(to: liveSlotURL, options: .atomic)
+        try Data("private invite retry state".utf8).write(
+            to: workoutInviteJournalURL,
+            options: .atomic
+        )
         XCTAssertTrue(FileManager.default.fileExists(atPath: context.active.storageURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveSlotURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workoutInviteJournalURL.path))
 
         try WorkoutStore.destroyAccountFiles(
             accountStorageKey: context.history.accountStorageKey,
@@ -1282,6 +1290,7 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveSlotURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workoutInviteJournalURL.path))
     }
 
     private struct Context {

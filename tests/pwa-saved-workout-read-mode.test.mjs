@@ -193,6 +193,7 @@ test("Progress is read-only and uses a compact bounded searchable picker", () =>
       progressExerciseId: 1
     };
     progressExerciseSearchQuery = "";
+    progressHubSection = "exercises";
   `, context);
 
   const screen = vm.runInContext("progressScreen()", context);

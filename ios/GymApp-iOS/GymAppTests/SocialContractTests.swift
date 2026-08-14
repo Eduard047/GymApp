@@ -462,6 +462,123 @@ final class SocialContractTests: XCTestCase {
         )
     }
 
+    func testWorkoutInboxPageAndInvitePlanAreMetadataOnlyExactAndBounded() throws {
+        XCTAssertEqual(SocialPayloadParser.workoutInboxPageLimit, 10)
+        XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumPageCount, 2)
+        XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumIncomingCount, 20)
+        XCTAssertEqual(SocialPayloadParser.workoutInboxMaximumOutgoingCount, 20)
+        let page = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(try workoutInboxPageObject())
+        )
+        XCTAssertEqual(page.pendingIncomingCount, 1)
+        XCTAssertEqual(page.incoming.map(\.inviteID), [inviteID(1)])
+        XCTAssertNil(page.incoming.first?.workout)
+        XCTAssertNil(page.outgoing.first?.workout)
+        XCTAssertNil(page.nextCursor)
+
+        let detail = try SocialPayloadParser.workoutInvitePlan(
+            from: jsonData(try workoutInvitePlanObject())
+        )
+        XCTAssertEqual(detail.inviteID, inviteID(1))
+        XCTAssertEqual(detail.inviteRevision, 1)
+        XCTAssertEqual(detail.workout.totalSetCount, 2)
+
+        let cursorPage = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(try workoutInboxPageObject(nextCursor: true)),
+            expectedLimit: 1
+        )
+        XCTAssertEqual(cursorPage.nextCursor?.inviteID, inviteID(1))
+        XCTAssertEqual(cursorPage.nextCursor?.createdAt, "2026-08-09T18:00:00Z")
+        XCTAssertEqual(cursorPage.nextCursor?.pending, true)
+
+        var leakedWorkout = try workoutInboxPageObject()
+        var incoming = try XCTUnwrap(leakedWorkout["incoming"] as? [[String: Any]])
+        incoming[0]["workout"] = try workoutInvitePlanObject()["workout"]
+        leakedWorkout["incoming"] = incoming
+        XCTAssertThrowsError(
+            try SocialPayloadParser.workoutInboxPage(from: jsonData(leakedWorkout))
+        )
+
+        var mismatchedCursor = try workoutInboxPageObject(nextCursor: true)
+        mismatchedCursor["nextCursor"] = [
+            "createdAt": "2026-08-09T17:59:59Z",
+            "inviteId": inviteID(1),
+            "pending": true
+        ]
+        XCTAssertThrowsError(
+            try SocialPayloadParser.workoutInboxPage(
+                from: jsonData(mismatchedCursor),
+                expectedLimit: 1
+            )
+        )
+
+        var mismatchedPendingCursor = try workoutInboxPageObject(nextCursor: true)
+        var cursor = try XCTUnwrap(
+            mismatchedPendingCursor["nextCursor"] as? [String: Any]
+        )
+        cursor["pending"] = false
+        mismatchedPendingCursor["nextCursor"] = cursor
+        XCTAssertThrowsError(
+            try SocialPayloadParser.workoutInboxPage(
+                from: jsonData(mismatchedPendingCursor),
+                expectedLimit: 1
+            )
+        )
+
+        var pendingPriorityPage = try workoutInboxPageObject()
+        var priorityIncoming = try XCTUnwrap(
+            pendingPriorityPage["incoming"] as? [[String: Any]]
+        )
+        var pendingInvite = try XCTUnwrap(priorityIncoming.first)
+        pendingInvite["createdAt"] = "2026-08-09T17:00:00Z"
+        var newerAcceptedInvite = pendingInvite
+        newerAcceptedInvite["inviteId"] = inviteID(3)
+        newerAcceptedInvite["status"] = "accepted"
+        newerAcceptedInvite["inviteRevision"] = 2
+        newerAcceptedInvite["createdAt"] = "2026-08-09T19:00:00Z"
+        newerAcceptedInvite["respondedAt"] = "2026-08-09T19:30:00Z"
+        priorityIncoming = [pendingInvite, newerAcceptedInvite]
+        pendingPriorityPage["incoming"] = priorityIncoming
+        let prioritized = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(pendingPriorityPage)
+        )
+        XCTAssertEqual(prioritized.incoming.map(\.status), [.pending, .accepted])
+
+        pendingPriorityPage["incoming"] = Array(priorityIncoming.reversed())
+        XCTAssertThrowsError(
+            try SocialPayloadParser.workoutInboxPage(from: jsonData(pendingPriorityPage))
+        )
+
+        var oversizedRevision = try workoutInvitePlanObject()
+        oversizedRevision["inviteRevision"] = 2_147_483_648 as Int64
+        XCTAssertThrowsError(
+            try SocialPayloadParser.workoutInvitePlan(from: jsonData(oversizedRevision))
+        )
+
+        let firstTen = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(pagedWorkoutInboxObject(
+                inviteIndices: Array(1 ... 10),
+                pendingIncomingCount: 21,
+                hasMore: true
+            ))
+        )
+        let secondTen = try SocialPayloadParser.workoutInboxPage(
+            from: jsonData(pagedWorkoutInboxObject(
+                inviteIndices: Array(11 ... 20),
+                pendingIncomingCount: 21,
+                hasMore: true
+            ))
+        )
+        let firstCursor = try XCTUnwrap(firstTen.nextCursor)
+        let bounded = try SocialPayloadParser.mergingWorkoutInboxPage(
+            secondTen,
+            into: firstTen,
+            after: firstCursor
+        )
+        XCTAssertEqual(bounded.incoming.count, 20)
+        XCTAssertNil(bounded.nextCursor)
+    }
+
     func testWorkoutInboxUsesPortableServerIdentityWithoutInferringLocalAliases() throws {
         let parsed = try SocialPayloadParser.workoutInbox(
             from: jsonData(try aliasPairWorkoutInboxObject())
@@ -678,6 +795,447 @@ final class SocialContractTests: XCTestCase {
         let blockBody = try requestJSON(requests[3])
         XCTAssertEqual(Set(blockBody.keys), Set(["p_profile_id"]))
         XCTAssertEqual(blockBody["p_profile_id"] as? String, profileID(3))
+    }
+
+    func testWorkoutInvitePlanNotFoundIsGenericAndDoesNotUseLegacyInbox() async throws {
+        let recorder = SocialRequestRecorder()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        defer {
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try SocialURLProtocolStub.response(
+                for: request,
+                statusCode: 400,
+                json: #"{"code":"P0002","message":"Social resource unavailable."}"#
+            )
+        }
+        let service = CloudSyncService(auth: auth, urlSession: urlSession)
+
+        do {
+            _ = try await service.socialWorkoutInvitePlan(
+                inviteID: inviteID(1),
+                expectedRevision: 1,
+                legacyWorkout: nil,
+                expectedUserID: cloudUserID
+            )
+            XCTFail("An unavailable exact-revision plan must fail closed")
+        } catch CloudSyncError.invalidWorkoutInvite {
+            let safeMessage = gymSafeEnglishErrorMessage(CloudSyncError.invalidWorkoutInvite)
+            XCTAssertFalse(safeMessage.contains(inviteID(1)))
+            XCTAssertFalse(safeMessage.contains("P0002"))
+            XCTAssertFalse(safeMessage.contains("Social resource unavailable"))
+        } catch {
+            XCTFail("Unexpected unavailable-plan error: \(error)")
+        }
+
+        XCTAssertEqual(
+            recorder.requests.map { $0.url?.path },
+            ["/rest/v1/rpc/social_workout_invite_plan"]
+        )
+        XCTAssertFalse(recorder.requests.contains {
+            $0.url?.path == "/rest/v1/rpc/social_workout_inbox"
+                || $0.url?.path == "/rest/v1/rpc/social_respond_workout_invite"
+        })
+    }
+
+    func testBoundedInboxFetchesExactPlanBeforeAcceptWithoutMutationReplay() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppBoundedWorkoutInbox", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = SocialRequestRecorder()
+        let server = SocialTestServerState()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let dashboardData = try jsonData(dashboardObject())
+        let pageData = try jsonData(try workoutInboxPageObject())
+        let planObject = try workoutInvitePlanObject()
+        let planData = try jsonData(planObject)
+        let workout = try XCTUnwrap(planObject["workout"])
+        defer {
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/rpc/social_workout_inbox_page", "POST"):
+                if server.flag("accepted") {
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        statusCode: 503,
+                        json: #"{"code":"PGRST000","message":"temporarily unavailable"}"#
+                    )
+                }
+                return try SocialURLProtocolStub.response(for: request, jsonData: pageData)
+            case ("/rest/v1/rpc/social_workout_invite_plan", "POST"):
+                return try SocialURLProtocolStub.response(for: request, jsonData: planData)
+            case ("/rest/v1/rpc/social_respond_workout_invite", "POST"):
+                server.set("accepted")
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    jsonData: try self.jsonData([
+                        "version": 1,
+                        "inviteId": self.inviteID(1),
+                        "status": "accepted",
+                        "inviteRevision": 2,
+                        "workout": workout
+                    ])
+                )
+            default:
+                if let response = try self.baseCloudStateResponse(for: request) {
+                    return response
+                }
+                switch (request.url?.path, request.httpMethod) {
+                case ("/rest/v1/rpc/social_dashboard", "POST"):
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        jsonData: dashboardData
+                    )
+                default:
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        statusCode: 404,
+                        json: "{}"
+                    )
+                }
+            }
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        _ = try await appState.refreshSocialDashboard()
+        let inbox = try await appState.refreshSocialWorkoutInbox()
+        let invite = try XCTUnwrap(inbox.incoming.first)
+        XCTAssertNil(invite.workout)
+
+        let accepted = try await appState.respondWorkoutInvite(invite, accept: true)
+        XCTAssertEqual(accepted?.totalSetCount, 2)
+        XCTAssertEqual(appState.pendingSharedWorkout?.plan, accepted)
+        XCTAssertNil(appState.socialWorkoutInbox)
+
+        let relevant = recorder.requests.filter {
+            [
+                "/rest/v1/rpc/social_workout_inbox_page",
+                "/rest/v1/rpc/social_workout_invite_plan",
+                "/rest/v1/rpc/social_respond_workout_invite"
+            ].contains($0.url?.path ?? "")
+        }
+        XCTAssertEqual(relevant.map { $0.url?.path }, [
+            "/rest/v1/rpc/social_workout_inbox_page",
+            "/rest/v1/rpc/social_workout_invite_plan",
+            "/rest/v1/rpc/social_respond_workout_invite",
+            "/rest/v1/rpc/social_workout_inbox_page"
+        ])
+        let pageBody = try requestJSON(relevant[0])
+        XCTAssertEqual(
+            Set(pageBody.keys),
+            Set([
+                "p_cursor_created_at", "p_cursor_invite_id", "p_cursor_pending", "p_limit"
+            ])
+        )
+        XCTAssertTrue(pageBody["p_cursor_created_at"] is NSNull)
+        XCTAssertTrue(pageBody["p_cursor_invite_id"] is NSNull)
+        XCTAssertTrue(pageBody["p_cursor_pending"] is NSNull)
+        XCTAssertEqual(pageBody["p_limit"] as? Int, 10)
+        let detailBody = try requestJSON(relevant[1])
+        XCTAssertEqual(Set(detailBody.keys), Set(["p_invite_id", "p_expected_revision"]))
+        XCTAssertEqual(detailBody["p_invite_id"] as? String, inviteID(1))
+        XCTAssertEqual(detailBody["p_expected_revision"] as? Int, 1)
+        XCTAssertFalse(recorder.requests.contains {
+            $0.url?.path == "/rest/v1/rpc/social_workout_inbox"
+        })
+
+        do {
+            _ = try await appState.respondWorkoutInvite(invite, accept: true)
+            XCTFail("A confirmed acceptance must remove its stale retry action")
+        } catch {
+            // Expected: the confirmed mutation is never sent again.
+        }
+        XCTAssertEqual(recorder.requests.filter {
+            $0.url?.path == "/rest/v1/rpc/social_respond_workout_invite"
+        }.count, 1)
+    }
+
+    func testInboxPaginationResolvesExactPushObjectBeyondFirstTen() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppWorkoutInboxPagination", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = SocialRequestRecorder()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let dashboardData = try jsonData(dashboardObject())
+        let firstPageData = try jsonData(pagedWorkoutInboxObject(
+            inviteIndices: Array(1 ... 10),
+            pendingIncomingCount: 11,
+            hasMore: true
+        ))
+        let secondPageData = try jsonData(pagedWorkoutInboxObject(
+            inviteIndices: [11],
+            pendingIncomingCount: 11,
+            hasMore: false
+        ))
+        defer {
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/rpc/social_workout_inbox_page", "POST"):
+                let body = try self.requestJSON(request)
+                let isFirstPage = body["p_cursor_created_at"] is NSNull
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    jsonData: isFirstPage ? firstPageData : secondPageData
+                )
+            default:
+                if let response = try self.baseCloudStateResponse(for: request) {
+                    return response
+                }
+                if request.url?.path == "/rest/v1/rpc/social_dashboard" {
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        jsonData: dashboardData
+                    )
+                }
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    statusCode: 404,
+                    json: "{}"
+                )
+            }
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        _ = try await appState.refreshSocialDashboard()
+        let firstPage = try await appState.refreshSocialWorkoutInbox()
+        XCTAssertEqual(firstPage.incoming.count, 10)
+        XCTAssertNotNil(firstPage.nextCursor)
+
+        let resolvedEleventh = try await appState.resolveSocialWorkoutInvite(
+            inviteID: inviteID(11),
+            minimumRevision: 1
+        )
+        XCTAssertTrue(resolvedEleventh)
+        XCTAssertEqual(appState.socialWorkoutInbox?.incoming.count, 11)
+        XCTAssertNil(appState.socialWorkoutInbox?.nextCursor)
+        let resolvedTwelfth = try await appState.resolveSocialWorkoutInvite(
+            inviteID: inviteID(12),
+            minimumRevision: 1
+        )
+        XCTAssertFalse(resolvedTwelfth)
+
+        let pageRequests = recorder.requests.filter {
+            $0.url?.path == "/rest/v1/rpc/social_workout_inbox_page"
+        }
+        XCTAssertEqual(pageRequests.count, 2)
+        let nextBody = try requestJSON(pageRequests[1])
+        XCTAssertEqual(nextBody["p_cursor_created_at"] as? String, "2026-08-09T18:50:00Z")
+        XCTAssertEqual(nextBody["p_cursor_invite_id"] as? String, inviteID(10))
+        XCTAssertEqual(nextBody["p_cursor_pending"] as? Bool, true)
+        XCTAssertEqual(nextBody["p_limit"] as? Int, 10)
+        XCTAssertFalse(recorder.requests.contains {
+            $0.url?.path == "/rest/v1/rpc/social_workout_inbox"
+                || $0.url?.path == "/rest/v1/rpc/social_workout_invite_plan"
+        })
+    }
+
+    func testInboxPaginationMismatchReplacesWithOneFreshFirstPageWithoutMerging() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppWorkoutInboxPaginationRebase", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = SocialRequestRecorder()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let initial = try jsonData(pagedWorkoutInboxObject(
+            inviteIndices: Array(1 ... 10),
+            pendingIncomingCount: 11,
+            hasMore: true
+        ))
+        // Valid on its own, but from a newer list snapshot: the aggregate count no
+        // longer matches the cursor's first page, so it must never be merged.
+        let changedSecondPage = try jsonData(pagedWorkoutInboxObject(
+            inviteIndices: [11],
+            pendingIncomingCount: 12,
+            hasMore: false
+        ))
+        let refreshedFirstPage = try jsonData(pagedWorkoutInboxObject(
+            inviteIndices: [21],
+            pendingIncomingCount: 1,
+            hasMore: false
+        ))
+        var firstPageReads = 0
+        defer {
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if request.url?.path == "/rest/v1/rpc/social_workout_inbox_page",
+               request.httpMethod == "POST" {
+                let body = try self.requestJSON(request)
+                if body["p_cursor_created_at"] is NSNull {
+                    firstPageReads += 1
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        jsonData: firstPageReads == 1 ? initial : refreshedFirstPage
+                    )
+                }
+                return try SocialURLProtocolStub.response(
+                    for: request,
+                    jsonData: changedSecondPage
+                )
+            }
+            if let response = try self.baseCloudStateResponse(for: request) {
+                return response
+            }
+            return try SocialURLProtocolStub.response(
+                for: request,
+                statusCode: 404,
+                json: "{}"
+            )
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        let first = try await appState.refreshSocialWorkoutInbox()
+        XCTAssertEqual(first.incoming.map(\.inviteID), (1 ... 10).map { inviteID($0) })
+
+        let rebased = try await appState.loadMoreSocialWorkoutInbox()
+
+        XCTAssertEqual(rebased.incoming.map(\.inviteID), [inviteID(21)])
+        XCTAssertEqual(appState.socialWorkoutInbox, rebased)
+        XCTAssertNil(rebased.nextCursor)
+        XCTAssertEqual(firstPageReads, 2)
+        let pageBodies = try recorder.requests
+            .filter { $0.url?.path == "/rest/v1/rpc/social_workout_inbox_page" }
+            .map { try requestJSON($0) }
+        XCTAssertEqual(pageBodies.count, 3)
+        XCTAssertTrue(pageBodies[0]["p_cursor_created_at"] is NSNull)
+        XCTAssertFalse(pageBodies[1]["p_cursor_created_at"] is NSNull)
+        XCTAssertTrue(pageBodies[2]["p_cursor_created_at"] is NSNull)
+    }
+
+    func testLateWorkoutInvitePlanCannotCrossAccountSwitchOrReachMutation() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppWorkoutInvitePlanFence", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let detailStarted = expectation(description: "exact workout plan request started")
+        let deferredResponses = SocialDeferredResponseStore()
+        let recorder = SocialRequestRecorder()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let dashboardData = try jsonData(dashboardObject())
+        let pageData = try jsonData(try workoutInboxPageObject())
+        let planData = try jsonData(try workoutInvitePlanObject())
+        defer {
+            deferredResponses.failAll(with: URLError(.cancelled))
+            SocialURLProtocolStub.deferredHandler = nil
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.deferredHandler = { request, response in
+            guard request.url?.path == "/rest/v1/rpc/social_workout_invite_plan",
+                  request.httpMethod == "POST" else {
+                return false
+            }
+            recorder.append(request)
+            deferredResponses.store(response, for: "invite-plan")
+            detailStarted.fulfill()
+            return true
+        }
+        SocialURLProtocolStub.handler = { request in
+            recorder.append(request)
+            switch (request.url?.path, request.httpMethod) {
+            case ("/rest/v1/rpc/social_workout_inbox_page", "POST"):
+                return try SocialURLProtocolStub.response(for: request, jsonData: pageData)
+            default:
+                if let response = try self.baseCloudStateResponse(for: request) {
+                    return response
+                }
+                switch (request.url?.path, request.httpMethod) {
+                case ("/rest/v1/rpc/social_dashboard", "POST"):
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        jsonData: dashboardData
+                    )
+                default:
+                    return try SocialURLProtocolStub.response(
+                        for: request,
+                        statusCode: 404,
+                        json: "{}"
+                    )
+                }
+            }
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountReady)
+        _ = try await appState.refreshSocialDashboard()
+        let inbox = try await appState.refreshSocialWorkoutInbox()
+        let invite = try XCTUnwrap(inbox.incoming.first)
+
+        let acceptTask = Task {
+            try await appState.respondWorkoutInvite(invite, accept: true)
+        }
+        await fulfillment(of: [detailStarted], timeout: 2)
+        try auth.clearSession()
+        try auth.installSessionForTesting(.local(
+            id: "00000000-0000-4000-8000-000000000812",
+            displayName: "Replacement"
+        ))
+        let switchedAccountReady = await waitUntil {
+            appState.isAccountReady && auth.session?.cloud == nil
+        }
+        XCTAssertTrue(switchedAccountReady)
+        try XCTUnwrap(deferredResponses.take("invite-plan")).succeed(jsonData: planData)
+        do {
+            _ = try await acceptTask.value
+            XCTFail("A previous account's detail must not reach acceptance")
+        } catch {
+            // Expected: both service and AppState generation fences reject it.
+        }
+        XCTAssertNil(appState.pendingSharedWorkout)
+        XCTAssertFalse(recorder.requests.contains {
+            $0.url?.path == "/rest/v1/rpc/social_respond_workout_invite"
+        })
     }
 
     func testDashboardRefreshUsesShortCodeAndFallsBackToLegacyCode() async throws {
@@ -1079,6 +1637,70 @@ final class SocialContractTests: XCTestCase {
         )
     }
 
+    func testWorkoutInviteRetryJournalSurvivesProcessRestartWithoutPrivatePayload() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppWorkoutInviteJournal", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workoutURL = directory.appendingPathComponent("account.json")
+        let digest = Data(repeating: 0xA5, count: 32)
+        let profile = profileID(2)
+        let first = try WorkoutInviteRequestStore(
+            accountStorageKey: "cloud_\(cloudUserID)",
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        let requestID = try first.requestID(
+            profileID: profile,
+            canonicalWorkoutDigest: digest
+        )
+
+        let persisted = try Data(contentsOf: first.storageURL)
+        let persistedText = try XCTUnwrap(String(data: persisted, encoding: .utf8))
+        XCTAssertFalse(persistedText.contains("Bench Press"))
+        XCTAssertFalse(persistedText.contains("synthetic-access-token"))
+
+        let relaunched = try WorkoutInviteRequestStore(
+            accountStorageKey: "cloud_\(cloudUserID)",
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        XCTAssertEqual(
+            try relaunched.requestID(
+                profileID: profile,
+                canonicalWorkoutDigest: digest
+            ),
+            requestID
+        )
+
+        XCTAssertThrowsError(try WorkoutInviteRequestStore(
+            accountStorageKey: "cloud_\(cloudUserID)",
+            userID: "10000000-0000-4000-8000-000000000099",
+            workoutStorageURL: workoutURL
+        )) {
+            XCTAssertEqual($0 as? WorkoutInviteRequestStoreError, .invalidState)
+        }
+
+        try relaunched.confirm(
+            profileID: profile,
+            canonicalWorkoutDigest: digest,
+            clientRequestID: requestID
+        )
+        let afterConfirmation = try WorkoutInviteRequestStore(
+            accountStorageKey: "cloud_\(cloudUserID)",
+            userID: cloudUserID,
+            workoutStorageURL: workoutURL
+        )
+        XCTAssertNotEqual(
+            try afterConfirmation.requestID(
+                profileID: profile,
+                canonicalWorkoutDigest: digest
+            ),
+            requestID
+        )
+    }
+
     func testAccountTransitionRejectsLateSocialResponse() async throws {
         let started = expectation(description: "social request started")
         let release = DispatchSemaphore(value: 0)
@@ -1187,9 +1809,14 @@ final class SocialContractTests: XCTestCase {
             summary: accepted.summary,
             workout: accepted.workout
         )
-        XCTAssertThrowsError(try relaunched.recoverAcceptedWorkoutInvite(stale))
+        do {
+            _ = try await relaunched.recoverAcceptedWorkoutInvite(stale)
+            XCTFail("A stale accepted invitation must not be recovered")
+        } catch {
+            // Expected: the exact inbox revision is required before detail fetch.
+        }
 
-        let recovered = try relaunched.recoverAcceptedWorkoutInvite(accepted)
+        let recovered = try await relaunched.recoverAcceptedWorkoutInvite(accepted)
         XCTAssertEqual(relaunched.pendingSharedWorkout?.plan, recovered)
 
         let replacementPlan = SharedWorkoutPlan(exercises: [
@@ -1205,8 +1832,13 @@ final class SocialContractTests: XCTestCase {
             replacingPendingID: recoveredPendingID
         )
         let replacementPendingID = try XCTUnwrap(relaunched.pendingSharedWorkout?.id)
-        XCTAssertThrowsError(try relaunched.recoverAcceptedWorkoutInvite(accepted))
-        _ = try relaunched.recoverAcceptedWorkoutInvite(
+        do {
+            _ = try await relaunched.recoverAcceptedWorkoutInvite(accepted)
+            XCTFail("Replacing a pending preview must require its exact ID")
+        } catch {
+            // Expected.
+        }
+        _ = try await relaunched.recoverAcceptedWorkoutInvite(
             accepted,
             replacingPendingSharedWorkoutID: replacementPendingID
         )
@@ -1214,6 +1846,10 @@ final class SocialContractTests: XCTestCase {
         XCTAssertFalse(recorder.requests.contains {
             $0.url?.path == "/rest/v1/rpc/social_respond_workout_invite"
         })
+        let requestPaths = recorder.requests.compactMap { $0.url?.path }
+        XCTAssertTrue(requestPaths.contains("/rest/v1/rpc/social_workout_inbox_page"))
+        XCTAssertTrue(requestPaths.contains("/rest/v1/rpc/social_workout_inbox"))
+        XCTAssertTrue(requestPaths.contains("/rest/v1/rpc/social_workout_invite_plan"))
     }
 
     func testAliasPairInviteImportFailureDoesNotPoisonSocialCachesOrMutateAcceptance() async throws {
@@ -1284,7 +1920,7 @@ final class SocialContractTests: XCTestCase {
         let acceptedInbox = try await appState.refreshSocialWorkoutInbox()
         let acceptedInvite = try XCTUnwrap(acceptedInbox.incoming.first)
         do {
-            _ = try appState.recoverAcceptedWorkoutInvite(acceptedInvite)
+            _ = try await appState.recoverAcceptedWorkoutInvite(acceptedInvite)
             XCTFail("A retained ambiguous plan must not open as a local draft")
         } catch CloudSyncError.invalidWorkoutInvite {
             // Expected: only this local import fails; social caches remain usable.
@@ -1397,7 +2033,7 @@ final class SocialContractTests: XCTestCase {
         )
     }
 
-    func testRemoveFriendClearsInboxFailClosedWhenRefreshFails() async throws {
+    func testRemoveFriendReportsConfirmedRestoringWhenInboxRefreshFails() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("GymAppRemoveFriendFailClosed", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1465,14 +2101,13 @@ final class SocialContractTests: XCTestCase {
         let initialInbox = try await appState.refreshSocialWorkoutInbox()
         let oldInvite = try XCTUnwrap(initialInbox.incoming.first)
 
-        do {
-            try await appState.removeFriend(friend)
-            XCTFail("The failed inbox refresh must remain observable")
-        } catch {
-            // The relation mutation succeeded, but stale invite data must stay cleared.
-        }
+        try await appState.removeFriend(friend)
         XCTAssertNil(appState.socialWorkoutInbox)
         XCTAssertTrue(appState.socialDashboard?.friends.isEmpty == true)
+        XCTAssertTrue(appState.isRestoringConfirmedSocialMutation)
+        XCTAssertEqual(recorder.requests.filter {
+            $0.url?.path == "/rest/v1/rpc/social_remove_friend"
+        }.count, 1)
         do {
             _ = try await appState.respondWorkoutInvite(oldInvite, accept: true)
             XCTFail("A stale invite must not reopen after relationship removal")
@@ -1484,7 +2119,7 @@ final class SocialContractTests: XCTestCase {
         })
     }
 
-    func testBlockIncomingRequesterClearsInboxFailClosedWhenRefreshFails() async throws {
+    func testBlockIncomingRequesterReportsConfirmedRestoringWhenInboxRefreshFails() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("GymAppBlockRequesterFailClosed", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1560,17 +2195,16 @@ final class SocialContractTests: XCTestCase {
         let initialInbox = try await appState.refreshSocialWorkoutInbox()
         let oldInvite = try XCTUnwrap(initialInbox.incoming.first)
 
-        do {
-            try await appState.blockSocialProfile(profileID: request.profileID)
-            XCTFail("The failed inbox refresh must remain observable")
-        } catch {
-            // The block succeeded; stale invite memory must still remain unavailable.
-        }
+        try await appState.blockSocialProfile(profileID: request.profileID)
         XCTAssertNil(appState.socialWorkoutInbox)
         XCTAssertTrue(appState.socialDashboard?.incoming.isEmpty == true)
         XCTAssertTrue(appState.socialDashboard?.blocked.contains {
             $0.profileID == request.profileID
         } == true)
+        XCTAssertTrue(appState.isRestoringConfirmedSocialMutation)
+        XCTAssertEqual(recorder.requests.filter {
+            $0.url?.path == "/rest/v1/rpc/social_block_profile"
+        }.count, 1)
         do {
             _ = try await appState.respondWorkoutInvite(oldInvite, accept: true)
             XCTFail("A cached invite must not reopen after a block")
@@ -2140,6 +2774,86 @@ final class SocialContractTests: XCTestCase {
         ]
     }
 
+    private func workoutInboxPageObject(
+        accepted: Bool = false,
+        nextCursor: Bool = false
+    ) throws -> [String: Any] {
+        let legacy = workoutInboxObject()
+        var incoming = try XCTUnwrap(legacy["incoming"] as? [[String: Any]])
+        var invite = try XCTUnwrap(incoming.first)
+        invite.removeValue(forKey: "workout")
+        if accepted {
+            invite["status"] = "accepted"
+            invite["inviteRevision"] = 2
+            invite["respondedAt"] = "2026-08-09T19:00:00+00:00"
+        }
+        incoming[0] = invite
+        return [
+            "version": 2,
+            "pendingIncomingCount": accepted ? 0 : 1,
+            "incoming": incoming,
+            "outgoing": try XCTUnwrap(legacy["outgoing"]),
+            "nextCursor": nextCursor
+                ? [
+                    "createdAt": try XCTUnwrap(invite["createdAt"]),
+                    "inviteId": try XCTUnwrap(invite["inviteId"]),
+                    "pending": !accepted
+                ]
+                : NSNull()
+        ]
+    }
+
+    private func pagedWorkoutInboxObject(
+        inviteIndices: [Int],
+        pendingIncomingCount: Int,
+        hasMore: Bool
+    ) throws -> [String: Any] {
+        let legacy = workoutInboxObject()
+        let legacyIncoming = try XCTUnwrap(legacy["incoming"] as? [[String: Any]])
+        let template = try XCTUnwrap(legacyIncoming.first)
+        let incoming: [[String: Any]] = try inviteIndices.map { index in
+            guard (1 ... 59).contains(index) else {
+                throw SocialPayloadError.invalidResponse
+            }
+            var invite = template
+            invite.removeValue(forKey: "workout")
+            invite["inviteId"] = inviteID(index)
+            invite["profileId"] = profileID(100 + index)
+            invite["displayName"] = "Paged Friend \(index)"
+            invite["createdAt"] = String(
+                format: "2026-08-09T18:%02d:00Z",
+                60 - index
+            )
+            return invite
+        }
+        let last = incoming.last
+        return [
+            "version": 2,
+            "pendingIncomingCount": pendingIncomingCount,
+            "incoming": incoming,
+            "outgoing": [],
+            "nextCursor": hasMore
+                ? [
+                    "createdAt": try XCTUnwrap(last?["createdAt"]),
+                    "inviteId": try XCTUnwrap(last?["inviteId"]),
+                    "pending": true
+                ]
+                : NSNull()
+        ]
+    }
+
+    private func workoutInvitePlanObject(revision: Int = 1) throws -> [String: Any] {
+        let legacy = workoutInboxObject()
+        let incoming = try XCTUnwrap(legacy["incoming"] as? [[String: Any]])
+        let invite = try XCTUnwrap(incoming.first)
+        return [
+            "version": 1,
+            "inviteId": inviteID(1),
+            "inviteRevision": revision,
+            "workout": try XCTUnwrap(invite["workout"])
+        ]
+    }
+
     private func aliasPairWorkoutInboxObject(
         accepted: Bool = false
     ) throws -> [String: Any] {
@@ -2231,6 +2945,13 @@ final class SocialContractTests: XCTestCase {
         case ("/rest/v1/profiles", "POST"):
             return try SocialURLProtocolStub.response(for: request, json: "{}")
         case ("/rest/v1/rpc/social_my_friend_code", "POST"):
+            return try SocialURLProtocolStub.response(
+                for: request,
+                statusCode: 404,
+                json: #"{"code":"PGRST202","message":"function unavailable"}"#
+            )
+        case ("/rest/v1/rpc/social_workout_inbox_page", "POST"),
+             ("/rest/v1/rpc/social_workout_invite_plan", "POST"):
             return try SocialURLProtocolStub.response(
                 for: request,
                 statusCode: 404,

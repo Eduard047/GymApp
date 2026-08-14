@@ -10,24 +10,30 @@ const section = (source, start, end) => {
   return source.slice(startIndex, endIndex);
 };
 
-test("Garmin queues account-bound sets durably before FIT save while unbound FIT stays independent", async () => {
+test("Garmin saves FIT before making account-bound sets sendable while unbound FIT stays independent", async () => {
   const [view, session, store] = await Promise.all([
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/source/GymSession.mc", "utf8"),
     readFile("garmin/source/GymStore.mc", "utf8")
   ]);
 
-  const finishWorkout = section(view, "function finishWorkout()", "function saveAndExit()");
+  const finishWorkout = section(
+    view,
+    "function finishWorkoutMessage(message)",
+    "(:richRecovery)\n    function finishWorkout()"
+  );
   assert.match(
     finishWorkout,
     /GymStore\.sets\.size\(\) == 0 \|\| !GymStore\.hasAccountBinding\(\)[\s\S]*return true;/
   );
+  assert.match(view, /finishWorkoutMessage\(GymStore\.preparedWorkoutMessage\(\)\)/);
   assert.ok(
     finishWorkout.indexOf("!GymStore.hasAccountBinding()") <
-      finishWorkout.indexOf("GymStore.workoutMessage()"),
-    "Unbound workouts must never be converted into account-scoped sync messages"
+      finishWorkout.indexOf("GymStore.queueWorkout(message)"),
+    "Unbound workouts must never reach the account-scoped queue boundary"
   );
-  assert.match(finishWorkout, /GymStore\.canQueueWorkout\(message\)/);
+  assert.doesNotMatch(finishWorkout, /GymStore\.canQueueWorkout\(message\)/,
+    "same-id recovery must reach queueWorkout even when the queue is full");
   assert.match(finishWorkout, /GymStore\.queueWorkout\(message\)/);
   assert.match(
     finishWorkout,
@@ -57,11 +63,12 @@ test("Garmin queues account-bound sets durably before FIT save while unbound FIT
   assert.equal(canAppend(), false, "the bounded ninth workout must apply backpressure without eviction");
 
   const saveAndExit = section(view, "function saveAndExit()", "function onUpdate(");
-  assert.match(saveAndExit, /if \(!finishWorkout\(\)\)[\s\S]*return;/);
+  assert.match(saveAndExit, /GymStore\.prepareWorkoutCommit\(\)/);
   assert.match(
     saveAndExit,
-    /if \(!GymSession\.stopAndSave\(\)\)[\s\S]*GymStore\.status = "FIT FAIL";[\s\S]*return;/
+    /if \(!fitAlreadySaved && !GymSession\.stopAndSave\(\)\)[\s\S]*GymStore\.status = "FIT FAIL";[\s\S]*return;/
   );
+  assert.match(saveAndExit, /GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*if \(!finishWorkout\(\)\)/);
   assert.match(
     saveAndExit,
     /if \(!GymStore\.clearActiveWorkout\(\)\)[\s\S]*return;/
@@ -74,6 +81,15 @@ test("Garmin queues account-bound sets durably before FIT save while unbound FIT
   assert.ok(
     saveAndExit.indexOf("GymSession.stopAndSave()") < saveAndExit.indexOf("System.exit()"),
     "The app must not exit before Garmin confirms the FIT save"
+  );
+  assert.ok(
+    saveAndExit.indexOf("GymSession.stopAndSave()") < saveAndExit.indexOf("finishWorkout()"),
+    "GymApp sync must not become sendable until Garmin confirms the FIT save"
+  );
+  assert.ok(
+    saveAndExit.indexOf("GymStore.prepareWorkoutCommit()") <
+      saveAndExit.indexOf("GymSession.stopAndSave()"),
+    "the stable owner/device/request marker must be durable before crossing the FIT boundary"
   );
 
   const stopAndSave = section(session, "static function stopAndSave()", "static function discard()");
@@ -109,7 +125,7 @@ test("Garmin partial workouts declare plan progress and drain one queued workout
 
   const workoutMessage = section(
     store,
-    "static function workoutMessage()",
+    "static function workoutMessage(requestId)",
     "static function applyPhoneSync("
   );
   assert.match(workoutMessage, /if \(plan\.size\(\) > 0\)/);

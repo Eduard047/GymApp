@@ -158,17 +158,138 @@ test("PWA requests only the consented latest five and clears private detail on i
   assert.match(realtime, /parseSocialRealtimeInvalidation\(message\?\.payload\)/);
 });
 
+test("PWA inbox pages metadata and authorizes one exact invite plan at its revision", () => {
+  const inbox = sourceBetween("async function loadSocialWorkoutInbox", "async function refreshSocialData");
+  const inviteRows = sourceBetween("function socialWorkoutInviteRows", "function friendsPanel");
+  const detail = sourceBetween(
+    "async function loadSocialWorkoutInvitePlan",
+    "function currentShareableFriendCode"
+  );
+  const accept = sourceBetween("async function respondWorkoutInvite", "async function openAcceptedWorkoutInvite");
+  const recovery = sourceBetween("async function openAcceptedWorkoutInvite", "function openSocialWorkoutInvitePlan");
+
+  assert.match(inbox, /social_workout_inbox_page/);
+  assert.match(inbox, /p_cursor_created_at/);
+  assert.match(inbox, /p_cursor_invite_id/);
+  assert.match(inbox, /p_cursor_pending/);
+  assert.match(inbox, /p_limit: SOCIAL_WORKOUT_INBOX_PAGE_LIMIT/);
+  assert.match(appSource, /const MAX_SOCIAL_WORKOUT_INBOX_ITEMS = 20;/);
+  assert.match(appSource, /const SOCIAL_WORKOUT_INBOX_PAGE_LIMIT = 10;/);
+  assert.match(appSource, /const SOCIAL_WORKOUT_INBOX_MAX_PAGES = 2;/);
+  assert.match(appSource, /JSON\.stringify\(current\.outgoing\) !== JSON\.stringify\(next\.outgoing\)/);
+  assert.match(appSource, /incoming\.length > MAX_SOCIAL_WORKOUT_INBOX_ITEMS/);
+  assert.match(inbox, /inboxPageCount < SOCIAL_WORKOUT_INBOX_MAX_PAGES/);
+  assert.match(inviteRows, /data-action="load-more-workout-invites"/);
+  assert.match(inviteRows, /tx\("Load more", "Завантажити ще"\)/);
+  assert.match(inbox, /if \(!isMissingSocialRpc\(error\)\) throw error/);
+  assert.match(inbox, /social_workout_inbox/);
+  assert.match(detail, /social_workout_invite_plan/);
+  assert.match(detail, /p_expected_revision: inviteRevision/);
+  assert.match(detail, /socialSessionIsCurrent/);
+  assert.match(detail, /Friends changed\. Current account data was refreshed\./);
+  assert.match(accept, /await loadSocialWorkoutInvitePlan/);
+  assert.match(accept, /parsed\.inviteRevision !== revision \+ 1/);
+  assert.match(recovery, /await loadSocialWorkoutInvitePlan/);
+});
+
 test("active live UI has two nickname tabs, peer actual sets, and no owner start control", () => {
   const tabs = sourceBetween("function activeLiveParticipants", "function activeLiveWorkoutMarkup");
+  const binding = sourceBetween("function bindEvents()", "function activateProfileHubTabFromKeyboard");
+  const keyboardHandler = sourceBetween(
+    "function activateLiveParticipantTabFromKeyboard",
+    "function activateDataActionFromKeyboard"
+  );
   const room = sourceBetween("function liveWorkoutRoomMarkup", "function liveDraftFromSnapshot");
   const accept = sourceBetween("async function respondLiveWorkoutInvite", "async function openLiveWorkoutRoom");
 
   assert.match(tabs, /snapshot\.participants\.length === 2/);
   assert.match(tabs, /role="tablist"/);
   assert.equal((tabs.match(/role="tab"/g) || []).length, 2);
+  assert.match(tabs, /id="active-live-tab-self"[^>]*aria-controls="active-live-panel-self"/);
+  assert.match(tabs, /id="active-live-tab-peer"[^>]*aria-controls="active-live-panel-peer"/);
+  assert.match(tabs, /id="active-live-panel-peer"[^>]*role="tabpanel"[^>]*aria-labelledby="active-live-tab-peer"/);
+  assert.match(appSource, /id="active-live-panel-self" role="tabpanel" aria-labelledby="active-live-tab-self"/);
+  assert.match(binding, /addEventListener\("keydown", activateLiveParticipantTabFromKeyboard\)/);
+  assert.match(keyboardHandler, /\["ArrowLeft", "ArrowRight", "Home", "End"\]/);
   assert.match(tabs, /actual\.weight/);
   assert.match(tabs, /actual\.reps/);
   assert.doesNotMatch(room, /data-action="start-live-room"/);
+  assert.match(room, /tx\("Start together", "Почати разом"\)/);
   assert.match(accept, /refreshAttempts = decision === "accept" \? 3 : 1/);
+  assert.match(accept, /\["ready", "active"\]\.includes\(result\.status\)/);
+  assert.match(accept, /`ready` is a released compatibility response/);
   assert.match(accept, /snapshot\?\.room\?\.status === "active"/);
+  assert.equal((appSource.match(/tx\("Start together", "Почати разом"\)/g) || []).length, 3);
+});
+
+test("active live participant tabs wrap focus and activate with arrow, Home, and End keys", () => {
+  const handlerSource = sourceBetween(
+    "function activateLiveParticipantTabFromKeyboard",
+    "function activateDataActionFromKeyboard"
+  );
+  const context = vm.createContext({});
+  vm.runInContext(`${handlerSource}\nglobalThis.liveTabHandler = activateLiveParticipantTabFromKeyboard;`, context);
+
+  function press(startParticipant, key) {
+    let selectedParticipant = startParticipant;
+    let clickedParticipant = null;
+    let focusedParticipant = null;
+    let prevented = false;
+    let tablist;
+    const tabs = ["self", "peer"].map(participant => ({
+      dataset: { participant },
+      closest: selector => selector === '[role="tablist"]' ? tablist : null,
+      click() {
+        clickedParticipant = participant;
+        selectedParticipant = participant;
+      },
+      focus(options) {
+        if (options?.preventScroll === true) focusedParticipant = participant;
+      },
+      getAttribute(name) {
+        return name === "aria-selected" && selectedParticipant === participant ? "true" : null;
+      }
+    }));
+    tablist = {
+      querySelectorAll(selector) {
+        assert.equal(selector, '[role="tab"][data-action="active-live-participant"]');
+        return tabs;
+      }
+    };
+    context.app = {
+      querySelector(selector) {
+        const participant = selector.match(/data-participant="(self|peer)"/)?.[1];
+        return tabs.find(tab => tab.dataset.participant === participant &&
+          tab.getAttribute("aria-selected") === "true") || null;
+      }
+    };
+    context.requestAnimationFrame = callback => callback();
+    const handled = context.liveTabHandler({
+      key,
+      currentTarget: tabs.find(tab => tab.dataset.participant === startParticipant),
+      preventDefault() { prevented = true; }
+    });
+    return { handled, prevented, clickedParticipant, focusedParticipant };
+  }
+
+  for (const [start, key, destination] of [
+    ["self", "ArrowRight", "peer"],
+    ["peer", "ArrowRight", "self"],
+    ["self", "ArrowLeft", "peer"],
+    ["peer", "Home", "self"],
+    ["self", "End", "peer"]
+  ]) {
+    assert.deepEqual(press(start, key), {
+      handled: true,
+      prevented: true,
+      clickedParticipant: destination,
+      focusedParticipant: destination
+    });
+  }
+  assert.deepEqual(press("self", "Tab"), {
+    handled: false,
+    prevented: false,
+    clickedParticipant: null,
+    focusedParticipant: null
+  });
 });

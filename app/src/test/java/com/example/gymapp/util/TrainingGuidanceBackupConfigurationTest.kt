@@ -20,7 +20,9 @@ class TrainingGuidanceBackupConfigurationTest {
             "gym_local_profile_registry_v1.xml",
             "gym_local_profile_registry_v1.xml.bak",
             "gym_local_profile_deletion_journal_v1.xml",
-            "gym_local_profile_deletion_journal_v1.xml.bak"
+            "gym_local_profile_deletion_journal_v1.xml.bak",
+            "gym_social_workout_invite_requests.xml",
+            "gym_social_workout_invite_requests.xml.bak"
         )
 
         paths.forEach { path ->

@@ -3,6 +3,7 @@ import Toybox.Application.Properties;
 using Toybox.Lang as Lang;
 using Toybox.PersistedContent as PersistedContent;
 
+(:fullLegacyState)
 class GymCloudPlanListener {
     hidden var callback;
     hidden var expectedAccountBinding;
@@ -69,6 +70,7 @@ class GymCloudPlanListener {
     }
 }
 
+(:fullLegacyState)
 class GymCloudAckListener {
     hidden var callback;
 
@@ -146,6 +148,7 @@ class GymComm {
         send(request, callback);
     }
 
+    (:fullLegacyState)
     static function requestCloudPlan(callback) {
         var token = Properties.getValue("CloudDeviceToken");
         if (!GymStore.hasAccountBinding()) {
@@ -194,6 +197,7 @@ class GymComm {
         );
     }
 
+    (:fullLegacyState)
     static function acknowledgeCloudPlan(message, callback) {
         var token = Properties.getValue("CloudDeviceToken");
         var tokenVersion = cloudTokenVersion(token);
@@ -239,6 +243,7 @@ class GymComm {
         );
     }
 
+    (:fullLegacyState)
     static function hasCloudDeviceToken() {
         var token = Properties.getValue("CloudDeviceToken");
         var tokenVersion = cloudTokenVersion(token);
@@ -251,6 +256,15 @@ class GymComm {
             GymStore.accountBinding.toString().equals(tokenAccountBinding.toString());
     }
 
+    (:compactLegacyState)
+    static function hasCloudDeviceToken() {
+        // The compact hardware tier receives the same cloud plan through the
+        // account-bound phone sync path. Keeping a second HTTP parser on-watch
+        // would displace FIT recovery and durable queue safeguards.
+        return false;
+    }
+
+    (:fullLegacyState)
     static function reconcileCloudDeviceToken(nextAccountBinding) {
         if (!GymStore.isValidAccountBinding(nextAccountBinding)) {
             return false;
@@ -281,6 +295,16 @@ class GymComm {
         return clearCloudDeviceToken();
     }
 
+    (:compactLegacyState)
+    static function reconcileCloudDeviceToken(nextAccountBinding) {
+        if (!GymStore.isValidAccountBinding(nextAccountBinding)) {
+            return false;
+        }
+        var token = Properties.getValue("CloudDeviceToken");
+        return token == null || token.toString().length() == 0 ||
+            clearCloudDeviceToken();
+    }
+
     static function clearCloudDeviceToken() {
         try {
             Properties.setValue("CloudDeviceToken", "");
@@ -292,6 +316,7 @@ class GymComm {
         }
     }
 
+    (:fullLegacyState)
     static function rememberLegacyCloudTokenBinding(accountBinding, deviceBinding) {
         if (!GymStore.isValidAccountBinding(accountBinding) ||
             !isValidCloudDeviceId(deviceBinding) ||
@@ -308,16 +333,19 @@ class GymComm {
         }
     }
 
+    (:fullLegacyState)
     static function legacyTokenAccountBinding() {
         var value = Properties.getValue("CloudLegacyTokenOwner");
         return GymStore.isValidAccountBinding(value) ? value.toString() : null;
     }
 
+    (:fullLegacyState)
     static function legacyTokenDeviceBinding() {
         var value = Properties.getValue("CloudLegacyTokenDevice");
         return isValidCloudDeviceId(value) ? value.toString() : null;
     }
 
+    (:fullLegacyState)
     static function cloudTokenVersion(value) {
         if (value instanceof Lang.String &&
             value.toString().length() == legacyCapabilityLength &&
@@ -327,6 +355,7 @@ class GymComm {
         return cloudTokenAccountBinding(value) == null ? null : 3;
     }
 
+    (:fullLegacyState)
     static function cloudTokenAccountBinding(value) {
         if (!(value instanceof Lang.String)) {
             return null;
@@ -352,6 +381,7 @@ class GymComm {
         return account;
     }
 
+    (:fullLegacyState)
     static function cloudTokenDeviceBinding(value) {
         if (cloudTokenAccountBinding(value) == null) {
             return null;
@@ -359,6 +389,7 @@ class GymComm {
         return value.toString().substring(68, 104);
     }
 
+    (:fullLegacyState)
     static function isValidCloudDeviceId(value) {
         if (!(value instanceof Lang.String) || value.toString().length() != 36) {
             return false;
@@ -383,6 +414,7 @@ class GymComm {
         return GymStore.isValidAccountBinding(compact + compact);
     }
 
+    (:fullLegacyState)
     static function syncMessageFromCloudData(data) {
         var bindingVersion = data.get("bindingVersion");
         var accountBinding = data.get("accountBinding");

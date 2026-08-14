@@ -230,6 +230,9 @@ data class AchievementPreviewUiModel(
 data class TodayPlanUiModel(
     val focus: SmartWorkoutFocus,
     val rhythm: WeeklyTrainingRhythm,
+    val exerciseCount: Int,
+    val setCount: Int,
+    val estimatedDurationMinutes: Int,
     val effortAdjustment: SmartWorkoutEffortAdjustment? = null,
     val recommendedLaunchToken: String? = null,
     val trainAnywayLaunchToken: String? = null
@@ -985,6 +988,12 @@ class WorkoutListViewModel(
         return TodayPlanUiModel(
             focus = plan.focus,
             rhythm = rhythm,
+            exerciseCount = plan.exercises.size,
+            setCount = plan.exercises.sumOf { it.recommendation.sets.size },
+            estimatedDurationMinutes = (
+                plan.exercises.size * 3 +
+                    plan.exercises.sumOf { it.recommendation.sets.size } * 2
+                ).coerceIn(10, 120),
             effortAdjustment = plan.effortAdjustment,
             recommendedLaunchToken = recommendedToken,
             trainAnywayLaunchToken = trainAnywayToken

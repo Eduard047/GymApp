@@ -96,6 +96,73 @@ class LiveWorkoutSidecarStoreTest {
         assertEquals(rebound, store.reservation(next, nowMillis = previous.createdAt))
     }
 
+    @Test
+    fun sameAccountNewSessionRebindsOnlyTheExactAuthoritativeBinding() {
+        val first = session("42345678-1234-4123-8123-123456789abc")
+        val next = first.copy(sessionGeneration = "62345678-1234-4123-8123-123456789abc")
+        val other = session("72345678-1234-4123-8123-123456789abc")
+        val previous = binding(first)
+        val otherBinding = binding(other)
+        assertTrue(store.save(first, previous))
+        assertTrue(store.save(other, otherBinding))
+
+        assertEquals(previous, store.sessionMismatchedBinding(next))
+        assertFalse(store.reconcileSessionMismatchedBinding(
+            session = next,
+            expected = previous.copy(roomId = "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            replacement = null
+        ))
+        assertEquals(previous, store.sessionMismatchedBinding(next))
+        assertFalse(store.reconcileSessionMismatchedBinding(
+            session = next,
+            expected = previous.copy(roomRevision = previous.roomRevision + 1),
+            replacement = null
+        ))
+        assertEquals(previous, store.sessionMismatchedBinding(next))
+
+        val rebound = previous.copy(sessionGeneration = next.sessionGeneration)
+        assertTrue(store.reconcileSessionMismatchedBinding(
+            session = next,
+            expected = previous,
+            replacement = rebound
+        ))
+        assertNull(store.load(first))
+        assertEquals(rebound, store.load(next))
+        assertEquals(otherBinding, store.load(other))
+    }
+
+    @Test
+    fun cloudAccountDeletionClearsOnlyTheExactOwnersLiveState() = runBlocking {
+        val deleted = session("42345678-1234-4123-8123-123456789abc")
+        val retained = session("72345678-1234-4123-8123-123456789abc")
+        val deletedReservation = reservation(deleted)
+        val retainedReservation = reservation(retained).copy(
+            operationId = "22345678-1234-4123-8123-123456789abc"
+        )
+        assertTrue(store.save(deleted, binding(deleted)))
+        assertTrue(store.save(retained, binding(retained)))
+        assertTrue(store.reserve(
+            deleted,
+            deletedReservation,
+            nowMillis = deletedReservation.createdAt
+        ) { true })
+        assertTrue(store.reserve(
+            retained,
+            retainedReservation,
+            nowMillis = retainedReservation.createdAt
+        ) { true })
+
+        assertTrue(store.clearCloudAccountLocalState(deleted.userId.uppercase()))
+
+        assertNull(store.load(deleted))
+        assertNull(store.reservation(deleted, nowMillis = deletedReservation.createdAt))
+        assertEquals(binding(retained), store.load(retained))
+        assertEquals(
+            retainedReservation,
+            store.reservation(retained, nowMillis = retainedReservation.createdAt)
+        )
+    }
+
     private fun session(userId: String) = AccountSession.Cloud(
         userId = userId,
         email = "synthetic@example.invalid",
@@ -119,5 +186,16 @@ class LiveWorkoutSidecarStoreTest {
         serverToLocalSetIds = mapOf(
             "s_01_01" to "32345678-1234-4123-8123-123456789abc"
         )
+    )
+
+    private fun reservation(session: AccountSession.Cloud) = LiveWorkoutReservation(
+        userId = session.userId,
+        sessionGeneration = session.sessionGeneration,
+        role = "participant",
+        operationId = "12345678-1234-4123-8123-123456789abc",
+        roomId = "lr_0123456789abcdef0123456789abcdef",
+        phase = LiveWorkoutReservationPhase.Waiting,
+        createdAt = 1_800_000_000_000L,
+        expiresAt = 1_800_086_400_000L
     )
 }

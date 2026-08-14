@@ -24,6 +24,47 @@ class CloudAuthManagerTest {
     }
 
     @Test
+    fun boundedWorkoutInboxFallsBackOnlyWhenThatRpcFunctionIsUnavailable() {
+        assertTrue(isUnavailableSocialWorkoutInboxPageRpc(404, "PGRST202"))
+        assertTrue(isUnavailableSocialWorkoutInboxPageRpc(404, "42883"))
+        assertFalse(isUnavailableSocialWorkoutInboxPageRpc(404, "P0002"))
+        assertFalse(isUnavailableSocialWorkoutInboxPageRpc(400, "42883"))
+        assertFalse(isUnavailableSocialWorkoutInboxPageRpc(500, "PGRST202"))
+    }
+
+    @Test
+    fun boundedWorkoutInboxRequestAlwaysUsesTheFourArgumentDefaultTenContract() {
+        val initial = socialWorkoutInboxPageRequestBody(cursor = null)
+        assertEquals(
+            setOf(
+                "p_cursor_created_at",
+                "p_cursor_invite_id",
+                "p_cursor_pending",
+                "p_limit"
+            ),
+            initial.keys().asSequence().toSet()
+        )
+        assertTrue(initial.isNull("p_cursor_created_at"))
+        assertTrue(initial.isNull("p_cursor_invite_id"))
+        assertTrue(initial.isNull("p_cursor_pending"))
+        assertEquals(10, initial.getInt("p_limit"))
+
+        val cursor = SocialWorkoutInboxCursor(
+            createdAt = "2026-08-13T10:00:00Z",
+            inviteId = "wi_${"a".repeat(32)}",
+            pending = true
+        )
+        val next = socialWorkoutInboxPageRequestBody(cursor, limit = 7)
+        assertEquals(cursor.createdAt, next.getString("p_cursor_created_at"))
+        assertEquals(cursor.inviteId, next.getString("p_cursor_invite_id"))
+        assertTrue(next.getBoolean("p_cursor_pending"))
+        assertEquals(7, next.getInt("p_limit"))
+        assertThrows(IllegalArgumentException::class.java) {
+            socialWorkoutInboxPageRequestBody(cursor, limit = 11)
+        }
+    }
+
+    @Test
     fun localDatabaseIdentityIsCanonicalBoundedAndCollisionResistant() {
         val slash = AccountSession.Local("a/b").databaseName()
         val underscore = AccountSession.Local("a_b").databaseName()

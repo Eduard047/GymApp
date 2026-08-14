@@ -73,7 +73,7 @@ class LiveWorkoutInvitationPreflightTest {
                 LiveRespondInviteResult(
                     result = "joined",
                     roomId = ROOM_ID,
-                    status = "ready",
+                    status = "active",
                     roomRevision = 5,
                     membershipRevision = 2,
                     endedAt = null

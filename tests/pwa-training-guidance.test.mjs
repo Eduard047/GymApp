@@ -4,12 +4,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 
-const [appSource, stateContractSource, progressionSource, russianSource] = await Promise.all([
+const [appSource, stateContractSource, progressionSource, russianSource, productExperienceSource] = await Promise.all([
   readFile("pwa/app.js", "utf8"),
   readFile("pwa/state-contract.js", "utf8"),
   readFile("pwa/progression-rules.js", "utf8"),
-  readFile("pwa/russian-text.js", "utf8")
+  readFile("pwa/russian-text.js", "utf8"),
+  readFile("shared/product-experience-v2.json", "utf8")
 ]);
+const productExperience = JSON.parse(productExperienceSource);
 
 function storage() {
   const values = new Map();
@@ -556,7 +558,10 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
     return { empty, dismissed, rest, recovery, populated, populatedScreen, feedback, standardCoach, recoveryCoach };
   })()`, sandbox));
 
-  const ordered = ["Today", "Goal", "Days / week", "Today’s effort", "Start plan", "Edit plan"];
+  const ordered = [
+    "Today", "Your first plan", "Goal", "Days / week", "Today’s effort",
+    "Start plan", "Edit plan", "Create manually"
+  ];
   let cursor = -1;
   for (const label of ordered) {
     const next = result.empty.indexOf(label);
@@ -565,7 +570,8 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
   }
   assert.doesNotMatch(result.empty, /Solo Progress|heatmap-grid|body-map-svg|Recommendations/);
   assert.match(result.dismissed, /Start plan/);
-  assert.match(result.dismissed, /Weekly rhythm/);
+  assert.match(result.dismissed, /Exercises \/ sets/);
+  assert.match(result.dismissed, /Estimated time/);
   assert.equal(result.rest.kind, "rest");
   assert.equal(result.recovery.kind, "recovery");
   assert.match(result.populated, /Start plan|Train anyway/);
@@ -576,6 +582,286 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
   assert.doesNotMatch(result.feedback, /helpful/i);
   assert.doesNotMatch(result.standardCoach, /smart-rir-guidance|redundant explanation/);
   assert.equal((result.recoveryCoach.match(/smart-rir-guidance/g) || []).length, 1);
+});
+
+test("first-plan preview keeps one exact bounded plan and uses the canonical time estimate", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    activeAccount = { id: "alpha", name: "Alpha" };
+    state = defaultAppState();
+    state.sessions = [];
+    activeWorkout = null;
+    nav = [{ name: "workouts" }];
+    removeTrainingGuidanceStorage();
+    activationDraft = { owner: "local:alpha", goal: "Strength", days: 5, effort: "Hard" };
+    const markup = activationCard();
+    const prepared = pendingActivationPlan;
+    const counts = smartPlanCounts(prepared.plan);
+    return {
+      markup,
+      counts,
+      exactPlanFingerprint: canonicalValueFingerprint(prepared.plan),
+      currentFingerprint: canonicalValueFingerprint(currentFirstActivationPlan().plan)
+    };
+  })()`, sandbox));
+
+  assert.equal(result.counts.estimatedMinutes, Math.max(
+    10,
+    Math.min(90, result.counts.exerciseCount * 3 + result.counts.setCount * 2)
+  ));
+  assert.equal(result.exactPlanFingerprint, result.currentFingerprint);
+  assert.match(result.markup, /data-action="activation-start"/);
+  assert.match(result.markup, /data-action="activation-edit"/);
+  assert.match(result.markup, /data-action="activation-manual"/);
+});
+
+test("first-plan actions use the exact shared EN, UK, and RU terminology", () => {
+  const sandbox = context();
+  const markup = plain(vm.runInContext(`(() => {
+    activeAccount = { id: "alpha", name: "Alpha" };
+    state = defaultAppState();
+    state.sessions = [];
+    activeWorkout = null;
+    activationDraft = { owner: "local:alpha", goal: "Strength", days: 4, effort: "Auto" };
+    const renderLanguage = language => {
+      state.language = language;
+      return activationCard();
+    };
+    return { en: renderLanguage("en"), uk: renderLanguage("uk"), ru: renderLanguage("ru") };
+  })()`, sandbox));
+
+  const expected = {
+    en: ["Start plan", "Edit plan", "Create manually"],
+    uk: ["Почати план", "Редагувати план", "Створити вручну"],
+    ru: ["Начать план", "Редактировать план", "Создать вручную"]
+  };
+  for (const [language, labels] of Object.entries(expected)) {
+    const actions = ["activation-start", "activation-edit", "activation-manual"];
+    actions.forEach((action, index) => {
+      assert.match(markup[language], new RegExp(`data-action="${action}"[^>]*>${labels[index]}</button>`));
+    });
+    assert.doesNotMatch(markup[language], /Start exact plan|Edit exact plan|Почати цей план|Редагувати цей план|Начать этот план|Редактировать этот план/);
+  }
+});
+
+test("onboarding mirrors the exact five-step EN, UK, and RU product contract", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    state = defaultAppState();
+    return ["en", "uk", "ru"].map(language => {
+      state.language = language;
+      return {
+        language,
+        steps: onboardingTourSteps().map(({ id, route, target, title, body }) => ({
+          id, route, target, title, body
+        })),
+        navigation: bottomNav()
+      };
+    });
+  })()`, sandbox));
+  const routes = ["workouts", "workouts", "exercises", "progress", "leaderboard"];
+  const targets = ["today-focus", "today-primary", "exercises-tab", "progress-tab", "profile-tab"];
+
+  for (const languageResult of result) {
+    assert.deepEqual(languageResult.steps, productExperience.tutorial.steps.map((step, index) => ({
+      id: step.id,
+      route: routes[index],
+      target: targets[index],
+      title: step.title[languageResult.language],
+      body: step.body[languageResult.language]
+    })));
+    assert.match(languageResult.navigation, /data-coach-target="exercises-tab"/);
+    assert.match(languageResult.navigation, /data-coach-target="progress-tab"/);
+    assert.match(languageResult.navigation, /data-coach-target="profile-tab"/);
+  }
+});
+
+test("today-primary always marks the enabled Start, Resume, Edit, or Create action", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    activeAccount = { id: "alpha", name: "Alpha" };
+    state = defaultAppState();
+    state.sessions = [];
+    activeWorkout = { id: "active-1", blocks: [{ sets: [{ id: 1, completed: false }] }] };
+    const resume = focusLensCard([]);
+
+    activeWorkout = null;
+    const originalDecision = smartWeeklyDecision;
+    const originalLaunch = prepareSmartWorkoutLaunch;
+    const originalMetrics = smartPlanMetricsMarkup;
+    const originalFocus = smartFocusLabel;
+    const originalFirstPlan = prepareFirstActivationPlan;
+    smartWeeklyDecision = () => ({ kind: "train", recommendedEffort: "Standard", focus: "Upper" });
+    smartPlanMetricsMarkup = () => "";
+    smartFocusLabel = () => "Upper";
+    prepareSmartWorkoutLaunch = () => ({ plan: { focus: "Upper", exercises: [] } });
+    const start = focusLensCard([]);
+    prepareSmartWorkoutLaunch = () => null;
+    const edit = focusLensCard([]);
+    prepareFirstActivationPlan = () => ({ plan: { focus: "Upper", exercises: [] } });
+    const firstStart = activationCard();
+    prepareFirstActivationPlan = () => null;
+    const create = activationCard();
+    smartWeeklyDecision = originalDecision;
+    prepareSmartWorkoutLaunch = originalLaunch;
+    smartPlanMetricsMarkup = originalMetrics;
+    smartFocusLabel = originalFocus;
+    prepareFirstActivationPlan = originalFirstPlan;
+    return { resume, start, edit, firstStart, create };
+  })()`, sandbox));
+
+  const assertOnlyTarget = (markup, action) => {
+    assert.equal((markup.match(/data-coach-target="today-primary"/g) || []).length, 1);
+    assert.match(markup, new RegExp(`<button[^>]*data-action="${action}"[^>]*data-coach-target="today-primary"|<button[^>]*data-coach-target="today-primary"[^>]*data-action="${action}"`));
+  };
+  assertOnlyTarget(result.resume, "continue-active-workout");
+  assertOnlyTarget(result.start, "start-recommended");
+  assertOnlyTarget(result.edit, "open-add");
+  assertOnlyTarget(result.firstStart, "activation-start");
+  assertOnlyTarget(result.create, "activation-manual");
+  assert.doesNotMatch(result.create.match(/<button[^>]*data-action="activation-manual"[^>]*>/)?.[0] || "", /disabled/);
+});
+
+test("onboarding completion is exact, account-bound, local-only, and replayable", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    globalThis.history = window.history;
+    activeAccount = { id: "alpha", name: "Alpha" };
+    state = defaultAppState();
+    const firstDescriptor = onboardingTourAccountDescriptor();
+    const written = writeOnboardingTourRecord("completed");
+    const first = readOnboardingTourRecord();
+    activeAccount = { id: "beta", name: "Beta" };
+    const second = readOnboardingTourRecord();
+    onboardingTour = null;
+    activeWorkout = null;
+    pendingSharedWorkout = null;
+    const replayStarted = initializeOnboardingTour(true);
+    const replayMarkup = onboardingTourMarkup();
+    const replayRoute = route().name;
+    render = () => {};
+    showToast = () => {};
+    focusStableScreenContext = () => {};
+    onboardingTour.stepIndex = onboardingTourSteps().length - 1;
+    setOnboardingTourRoute(onboardingTour.stepIndex);
+    const beforeManualRecord = localStorage.getItem(onboardingTourAccountDescriptor().storageKey);
+    const completed = finishOnboardingTour("completed");
+    const completedRoute = route().name;
+    const afterManualRecord = localStorage.getItem(onboardingTourAccountDescriptor().storageKey);
+    const skipStarted = initializeOnboardingTour(true);
+    onboardingTour.stepIndex = onboardingTourSteps().length - 1;
+    setOnboardingTourRoute(onboardingTour.stepIndex);
+    const skipped = finishOnboardingTour("skipped");
+    const skippedRoute = route().name;
+    return {
+      written,
+      first,
+      second,
+      firstKey: firstDescriptor.storageKey,
+      replayStarted,
+      replayMarkup,
+      replayRoute,
+      completed,
+      completedRoute,
+      beforeManualRecord,
+      afterManualRecord,
+      skipStarted,
+      skipped,
+      skippedRoute
+    };
+  })()`, sandbox));
+
+  assert.equal(result.written, true);
+  assert.equal(result.first.available, true);
+  assert.equal(result.first.record.owner, "local:alpha");
+  assert.equal(result.first.record.status, "completed");
+  assert.equal(result.second.available, true);
+  assert.equal(result.second.record, null);
+  assert.match(result.firstKey, /^gym-pwa-onboarding-v1:/);
+  assert.equal(result.replayStarted, true);
+  assert.equal(result.replayRoute, "workouts");
+  assert.match(result.replayMarkup, /role="dialog" aria-modal="true"/);
+  assert.match(result.replayMarkup, /data-action="onboarding-skip"/);
+  assert.match(result.replayMarkup, /data-action="onboarding-next"/);
+  assert.equal(result.completed, true);
+  assert.equal(result.completedRoute, "leaderboard");
+  assert.equal(result.beforeManualRecord, result.afterManualRecord);
+  assert.equal(result.skipStarted, true);
+  assert.equal(result.skipped, true);
+  assert.equal(result.skippedRoute, "leaderboard");
+});
+
+test("automatic onboarding resumes after temporary startup blockers clear", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    globalThis.history = window.history;
+    activeAccount = { id: "alpha", name: "Alpha" };
+    state = defaultAppState();
+    nav = [{ name: "workouts" }];
+    modal = null;
+    languageMenuOpen = false;
+    onboardingTour = null;
+    onboardingAutoReady = true;
+    activeWorkout = { id: 1 };
+    pendingSharedWorkout = null;
+    const activeBlocked = initializeOnboardingTour(false);
+    activeWorkout = null;
+    pendingSharedWorkout = { version: 1 };
+    const importBlocked = initializeOnboardingTour(false);
+    pendingSharedWorkout = null;
+    liveWorkoutBinding = { roomId: "lr_${"a".repeat(32)}" };
+    const liveBlocked = initializeOnboardingTour(false);
+    liveWorkoutBinding = null;
+    const resumed = initializeOnboardingTour(false);
+    return { activeBlocked, importBlocked, liveBlocked, resumed, route: route().name };
+  })()`, sandbox));
+
+  assert.deepEqual(result, {
+    activeBlocked: false,
+    importBlocked: false,
+    liveBlocked: false,
+    resumed: true,
+    route: "workouts"
+  });
+  assert.doesNotMatch(appSource, /onboardingAutoDeferredForSession/);
+});
+
+test("manual onboarding explains active, import, and live blockers without changing route", async () => {
+  const sandbox = context();
+  const result = plain(await vm.runInContext(`(async () => {
+    globalThis.history = window.history;
+    activeAccount = { id: "alpha", name: "Alpha" };
+    state = defaultAppState();
+    nav = [{ name: "leaderboard" }];
+    modal = null;
+    onboardingTour = null;
+    replayMessages = [];
+    showToast = message => { replayMessages.push(message); };
+    activeWorkout = { id: 1 };
+    const activeBlocked = await handleAction("replay-onboarding", {});
+    activeWorkout = null;
+    pendingSharedWorkout = { version: 1 };
+    const importBlocked = await handleAction("replay-onboarding", {});
+    pendingSharedWorkout = null;
+    liveWorkoutBinding = { roomId: "lr_${"a".repeat(32)}" };
+    const liveBlocked = await handleAction("replay-onboarding", {});
+    return {
+      activeBlocked,
+      importBlocked,
+      liveBlocked,
+      route: route().name,
+      tour: onboardingTour,
+      replayMessages
+    };
+  })()`, sandbox));
+
+  assert.equal(result.activeBlocked, false);
+  assert.equal(result.importBlocked, false);
+  assert.equal(result.liveBlocked, false);
+  assert.equal(result.route, "leaderboard");
+  assert.equal(result.tour, null);
+  assert.equal(result.replayMessages.length, 3);
+  assert.ok(result.replayMessages.every(message => /before showing the tutorial/.test(message)));
 });
 
 test("future sessions cannot extend weekly-rhythm achievements", () => {

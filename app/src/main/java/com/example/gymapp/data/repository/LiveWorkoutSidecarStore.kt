@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.withLock
 internal const val LIVE_SIDECAR_PREFERENCES = "gym_live_workout_sidecar"
 internal const val LIVE_MAX_PENDING_OPERATIONS = 256
 private const val LIVE_SIDECAR_LEGACY_KEY = "binding"
+private const val LIVE_BINDING_KEY_PREFIX = "binding:"
 private const val LIVE_SIDECAR_MAX_BYTES = 96 * 1_024
 private const val LIVE_RESERVATION_KEY_PREFIX = "reservation:"
 private const val LIVE_RESERVATION_MAX_BYTES = 2 * 1_024
@@ -616,6 +617,66 @@ internal class LiveWorkoutSidecarStore(context: Context) {
     }
 
     @Synchronized
+    fun sessionMismatchedBinding(
+        session: AccountSession.Cloud
+    ): LiveWorkoutBinding? {
+        val currentKey = bindingKey(session)
+        val candidates = preferences.all.filterKeys {
+            it.startsWith("$LIVE_BINDING_KEY_PREFIX${session.userId}:") && it != currentKey
+        }
+        check(candidates.size <= 1) { "Multiple stale live workout bindings exist." }
+        if (candidates.isEmpty()) return null
+        val raw = candidates.values.single() as? String
+            ?: error("Live workout binding could not be read safely.")
+        return LiveWorkoutSidecarCodec.decode(raw).also { binding ->
+            check(binding.userId == session.userId &&
+                binding.sessionGeneration != session.sessionGeneration
+            ) { "Live workout binding belongs to an unexpected session." }
+        }
+    }
+
+    @Synchronized
+    fun reconcileSessionMismatchedBinding(
+        session: AccountSession.Cloud,
+        expected: LiveWorkoutBinding,
+        replacement: LiveWorkoutBinding?
+    ): Boolean {
+        val oldKey = "$LIVE_BINDING_KEY_PREFIX${session.userId}:${expected.sessionGeneration}"
+        val currentKey = bindingKey(session)
+        if (preferences.contains(currentKey) ||
+            expected.sessionGeneration == session.sessionGeneration ||
+            expected.userId != session.userId
+        ) {
+            return false
+        }
+        val raw = preferences.getString(oldKey, null) ?: return false
+        val current = runCatching { LiveWorkoutSidecarCodec.decode(raw) }.getOrNull()
+            ?: return false
+        if (current != expected) return false
+
+        val editor = preferences.edit().remove(oldKey)
+        val encoded = replacement?.let { next ->
+            if (next.userId != session.userId ||
+                next.sessionGeneration != session.sessionGeneration ||
+                next.roomId != expected.roomId
+            ) return false
+            runCatching { LiveWorkoutSidecarCodec.encode(next) }.getOrNull() ?: return false
+        }
+        if (encoded != null) editor.putString(currentKey, encoded)
+        if (!editor.commit()) return false
+        val reconciled = !preferences.contains(oldKey) && if (encoded == null) {
+            !preferences.contains(currentKey)
+        } else {
+            preferences.getString(currentKey, null) == encoded
+        }
+        if (reconciled) {
+            durableCache[oldKey] = null
+            durableCache[currentKey] = replacement
+        }
+        return reconciled
+    }
+
+    @Synchronized
     fun save(session: AccountSession.Cloud, binding: LiveWorkoutBinding): Boolean {
         require(binding.userId == session.userId &&
             binding.sessionGeneration == session.sessionGeneration) {
@@ -653,6 +714,35 @@ internal class LiveWorkoutSidecarStore(context: Context) {
         return cleared
     }
 
+    /** Removes only durable live state owned by the deleted cloud account. */
+    @Synchronized
+    fun clearCloudAccountLocalState(userId: String): Boolean {
+        val canonicalUserId = runCatching { UUID.fromString(userId).toString() }.getOrNull()
+            ?: return false
+        val snapshot = preferences.all
+        val targetKeys = snapshot.keys.filterTo(linkedSetOf()) { key ->
+            when {
+                key == LIVE_SIDECAR_LEGACY_KEY -> (snapshot[key] as? String)
+                    ?.let { raw -> runCatching { LiveWorkoutSidecarCodec.decode(raw) }.getOrNull() }
+                    ?.userId
+                    ?.equals(canonicalUserId, ignoreCase = true) == true
+                key.startsWith(LIVE_BINDING_KEY_PREFIX) ||
+                    key.startsWith(LIVE_RESERVATION_KEY_PREFIX) -> {
+                    val parts = key.split(':')
+                    parts.size == 3 && parts[1].equals(canonicalUserId, ignoreCase = true)
+                }
+                else -> false
+            }
+        }
+        if (targetKeys.isEmpty()) return true
+        val editor = preferences.edit()
+        targetKeys.forEach(editor::remove)
+        if (!editor.commit() || targetKeys.any(preferences::contains)) return false
+        targetKeys.filter { it.startsWith(LIVE_BINDING_KEY_PREFIX) }
+            .forEach { durableCache[it] = null }
+        return true
+    }
+
     @Synchronized
     fun clearAll(): Boolean {
         val snapshot = preferences.all.mapValues { (_, value) -> value as? String ?: return false }
@@ -668,7 +758,7 @@ internal class LiveWorkoutSidecarStore(context: Context) {
     }
 
     private fun bindingKey(session: AccountSession.Cloud): String =
-        "binding:${session.userId}:${session.sessionGeneration}"
+        "$LIVE_BINDING_KEY_PREFIX${session.userId}:${session.sessionGeneration}"
 
     private data class ReservationRead(
         val value: LiveWorkoutReservation? = null,

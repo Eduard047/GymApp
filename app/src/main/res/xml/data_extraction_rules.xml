@@ -33,6 +33,8 @@
         <exclude domain="sharedpref" path="gym_active_workout_timer.xml.bak" />
         <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml" />
         <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml.bak" />
+        <exclude domain="sharedpref" path="gym_social_workout_invite_requests.xml" />
+        <exclude domain="sharedpref" path="gym_social_workout_invite_requests.xml.bak" />
         <exclude domain="sharedpref" path="gym_push_installation.xml" />
         <exclude domain="sharedpref" path="gym_push_installation.xml.bak" />
         <exclude domain="sharedpref" path="com.google.android.gms.appid.xml" />
@@ -71,6 +73,8 @@
         <exclude domain="sharedpref" path="gym_active_workout_timer.xml.bak" />
         <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml" />
         <exclude domain="sharedpref" path="gym_live_workout_sidecar.xml.bak" />
+        <exclude domain="sharedpref" path="gym_social_workout_invite_requests.xml" />
+        <exclude domain="sharedpref" path="gym_social_workout_invite_requests.xml.bak" />
         <exclude domain="sharedpref" path="gym_push_installation.xml" />
         <exclude domain="sharedpref" path="gym_push_installation.xml.bak" />
         <exclude domain="sharedpref" path="com.google.android.gms.appid.xml" />

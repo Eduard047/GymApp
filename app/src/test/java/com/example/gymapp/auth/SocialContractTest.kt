@@ -164,7 +164,7 @@ class SocialContractTest {
                 .put("exerciseNames", JSONArray().put(nbspName))
         }
         val parsedInvite = parseSocialWorkoutInbox(inbox.toString()).incoming.single()
-        assertEquals(nbspName, parsedInvite.workout.exercises.single().name)
+        assertEquals(nbspName, requireNotNull(parsedInvite.workout).exercises.single().name)
         assertEquals(nbspName, parsedInvite.summary.exerciseNames.single())
 
         val asciiEdgeDisplayName = validDashboard().apply {
@@ -303,7 +303,7 @@ class SocialContractTest {
         val parsed = parseSocialWorkoutInbox(inbox.toString())
 
         assertEquals(1, parsed.pendingIncomingCount)
-        assertEquals(2, parsed.incoming.single().workout.setCount)
+        assertEquals(2, requireNotNull(parsed.incoming.single().workout).setCount)
         assertFalse(parsed.outgoing.single().let { it.status == "accepted" })
 
         val outgoingLeak = validWorkoutInbox().apply {
@@ -347,6 +347,112 @@ class SocialContractTest {
     }
 
     @Test
+    fun boundedWorkoutInboxPageIsMetadataOnlyAndKeepsItsStableCursor() {
+        val page = validWorkoutInbox().apply {
+            put("version", 2)
+            put("pendingIncomingCount", 3)
+            getJSONArray("incoming").getJSONObject(0).remove("workout")
+            put(
+                "nextCursor",
+                JSONObject()
+                    .put("createdAt", TIMESTAMP)
+                    .put("inviteId", inviteId('1'))
+                    .put("pending", true)
+            )
+        }
+
+        val parsed = parseSocialWorkoutInboxPage(page.toString(), expectedLimit = 1)
+
+        assertNull(parsed.incoming.single().workout)
+        assertEquals(3, parsed.pendingIncomingCount)
+        assertEquals(inviteId('1'), parsed.nextCursor?.inviteId)
+        assertFalse(parsed.usesLegacyFullPayload)
+
+        page.getJSONArray("incoming").getJSONObject(0).put("workout", workoutJson())
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInboxPage(page.toString(), expectedLimit = 1)
+        }
+    }
+
+    @Test
+    fun boundedWorkoutInboxPageRejectsShortCursorPagesAndCursorOrOrderDrift() {
+        val page = validWorkoutInbox().apply {
+            put("version", 2)
+            getJSONArray("incoming").getJSONObject(0).remove("workout")
+            put(
+                "nextCursor",
+                JSONObject()
+                    .put("createdAt", TIMESTAMP)
+                    .put("inviteId", inviteId('1'))
+                    .put("pending", true)
+            )
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInboxPage(page.toString())
+        }
+
+        page.getJSONObject("nextCursor").put("inviteId", inviteId('2'))
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInboxPage(page.toString(), expectedLimit = 1)
+        }
+
+        val first = page.getJSONArray("incoming").getJSONObject(0)
+        val second = JSONObject(first.toString())
+            .put("inviteId", inviteId('3'))
+            .put("profileId", profileId('3'))
+        page.put("incoming", JSONArray().put(first).put(second))
+        page.put("nextCursor", JSONObject.NULL)
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInboxPage(page.toString(), expectedLimit = 2)
+        }
+    }
+
+    @Test
+    fun legacyWorkoutInboxValidatesThenCapsVisibleListsAtTwenty() {
+        val inbox = validWorkoutInbox()
+        val template = inbox.getJSONArray("incoming").getJSONObject(0)
+        val incoming = JSONArray()
+        repeat(21) { index ->
+            val hex = (index + 1).toString(16).padStart(32, '0')
+            incoming.put(
+                JSONObject(template.toString())
+                    .put("inviteId", "wi_$hex")
+                    .put("profileId", "p_$hex")
+            )
+        }
+        inbox.put("incoming", incoming)
+        inbox.put("pendingIncomingCount", 21)
+
+        val parsed = parseSocialWorkoutInbox(inbox.toString())
+
+        assertEquals(20, parsed.incoming.size)
+        assertEquals(21, parsed.pendingIncomingCount)
+        assertTrue(parsed.usesLegacyFullPayload)
+        assertNull(parsed.nextCursor)
+    }
+
+    @Test
+    fun exactWorkoutInvitePlanRequiresExactEnvelopeAndBounds() {
+        val raw = JSONObject()
+            .put("version", 1)
+            .put("inviteId", inviteId('1'))
+            .put("inviteRevision", 4)
+            .put("workout", workoutJson())
+
+        val plan = parseSocialWorkoutInvitePlan(raw.toString())
+
+        assertEquals(inviteId('1'), plan.inviteId)
+        assertEquals(4, plan.inviteRevision)
+        assertEquals(2, plan.workout.setCount)
+
+        raw.put("inviteRevision", 0)
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSocialWorkoutInvitePlan(raw.toString())
+        }
+    }
+
+    @Test
     fun workoutInboxUsesServerPortableIdentityInsteadOfLocalBuiltInAliases() {
         val inbox = validWorkoutInbox().apply {
             val incoming = getJSONArray("incoming").getJSONObject(0)
@@ -368,7 +474,9 @@ class SocialContractTest {
             )
         }
 
-        val workout = parseSocialWorkoutInbox(inbox.toString()).incoming.single().workout
+        val workout = requireNotNull(
+            parseSocialWorkoutInbox(inbox.toString()).incoming.single().workout
+        )
 
         assertEquals(listOf("Bench Press", "Жим штанги лежачи"), workout.exercises.map { it.name })
         assertEquals(listOf("bench_press", "bench_press_uk"), workout.exercises.map { it.catalogKey })

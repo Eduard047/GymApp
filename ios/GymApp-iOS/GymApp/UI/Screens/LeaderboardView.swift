@@ -66,8 +66,10 @@ struct FriendsView: View {
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
+    @AccessibilityFocusState private var focusedNativePushTarget: NativePushProfileFocus?
 
     private let canAcceptWorkoutInvites: Bool
+    private let nativePushAccessibilityTarget: NativePushProfileFocus?
     private let onOpenAccountSettings: () -> Void
     private let onOpenLiveWorkout: () -> Void
 
@@ -87,6 +89,7 @@ struct FriendsView: View {
         auth: AuthService,
         canAcceptWorkoutInvites: Bool,
         liveWorkoutCoordinator: LiveWorkoutCoordinator,
+        nativePushAccessibilityTarget: NativePushProfileFocus? = nil,
         onOpenAccountSettings: @escaping () -> Void,
         onOpenLiveWorkout: @escaping () -> Void
     ) {
@@ -94,6 +97,7 @@ struct FriendsView: View {
         self.auth = auth
         self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.nativePushAccessibilityTarget = nativePushAccessibilityTarget
         self.onOpenAccountSettings = onOpenAccountSettings
         self.onOpenLiveWorkout = onOpenLiveWorkout
     }
@@ -140,6 +144,10 @@ struct FriendsView: View {
             workoutDetailPrivacyDraft = nil
             workoutDetailPrivacyIsDirty = false
             await refreshAll()
+        }
+        .task(id: nativePushAccessibilityTarget) {
+            await Task.yield()
+            focusedNativePushTarget = nativePushAccessibilityTarget
         }
         .onChange(of: appState.socialDashboard?.currentUser.settingsRevision) { _ in
             guard !privacyIsDirty else { return }
@@ -338,6 +346,11 @@ struct FriendsView: View {
             .disabled(activeActionID != nil)
         }
         .padding(.vertical, 4)
+        .id(NativePushProfileFocus.friendRequest(request.friendshipID))
+        .accessibilityFocused(
+            $focusedNativePushTarget,
+            equals: .friendRequest(request.friendshipID)
+        )
     }
 
     @ViewBuilder
@@ -403,6 +416,20 @@ struct FriendsView: View {
                     ForEach(outgoing) { invite in
                         workoutInviteRow(invite, incoming: false)
                     }
+                    if inbox.nextCursor != nil {
+                        Button {
+                            Task { await loadMoreWorkoutInvites() }
+                        } label: {
+                            Text(t(
+                                "Load more invitations",
+                                "Завантажити більше запрошень",
+                                "Загрузить больше приглашений"
+                            ))
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(activeActionID != nil)
+                    }
                 } else if isLoading {
                     ProgressView()
                 } else {
@@ -418,9 +445,9 @@ struct FriendsView: View {
                 GymSectionTitle(
                     title: t("Live workouts", "Живі тренування", "Живые тренировки"),
                     supporting: t(
-                        "The plan is frozen for two people. The owner starts only after the friend accepts; completed sets then update live.",
-                        "План зафіксований для двох. Власник стартує лише після прийняття другом; виконані підходи далі оновлюються наживо.",
-                        "План зафиксирован для двоих. Владелец стартует только после принятия другом; выполненные подходы затем обновляются вживую."
+                        "The plan is frozen for two people. Accepting starts it for both immediately; each person edits only their own sets.",
+                        "План зафіксований для двох. Прийняття одразу запускає його для обох; кожен редагує лише свої підходи.",
+                        "План зафиксирован для двоих. Принятие сразу запускает его для обоих; каждый редактирует только свои подходы."
                     )
                 )
 
@@ -444,11 +471,15 @@ struct FriendsView: View {
                             state: t("Invites you to train live", "Запрошує тренуватися наживо", "Приглашает тренироваться вживую")
                         )
                         HStack(spacing: 8) {
-                            Button(t("Join lobby", "Увійти в лобі", "Войти в лобби")) {
+                            Button(t("Start together", "Почати разом", "Начать вместе")) {
                                 Task { await respondToLiveInvitation(invitation, accept: true) }
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(!canAcceptWorkoutInvites || appState.pendingSharedWorkout != nil)
+                            .disabled(
+                                !canAcceptWorkoutInvites
+                                    || appState.pendingSharedWorkout != nil
+                                    || liveWorkoutCoordinator.isRestoring(roomID: invitation.roomID)
+                            )
 
                             Button(t("Decline", "Відхилити", "Отклонить"), role: .destructive) {
                                 Task { await respondToLiveInvitation(invitation, accept: false) }
@@ -470,6 +501,10 @@ struct FriendsView: View {
                     }
                     .padding(.vertical, 4)
                     .id(NativePushProfileFocus.liveRoom(invitation.roomID))
+                    .accessibilityFocused(
+                        $focusedNativePushTarget,
+                        equals: .liveRoom(invitation.roomID)
+                    )
                 }
 
                 ForEach(rooms) { room in
@@ -480,13 +515,12 @@ struct FriendsView: View {
                             state: liveRoomState(room)
                         )
                         HStack(spacing: 8) {
-                            if room.status == .ready, room.role == .owner {
-                                Button(t("Start together", "Почати разом", "Начать вместе")) {
-                                    Task { await startLiveRoom(room) }
-                                }
-                                .buttonStyle(.borderedProminent)
-                            } else if room.status == .active {
-                                Button(t("Open workout", "Відкрити тренування", "Открыть тренировку")) {
+                            if room.status == .ready || room.status == .active {
+                                Button(
+                                    room.status == .active
+                                        ? t("Open workout", "Відкрити тренування", "Открыть тренировку")
+                                        : t("Restore workout", "Відновити тренування", "Восстановить тренировку")
+                                ) {
                                     Task { await openLiveRoom(room) }
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -508,6 +542,10 @@ struct FriendsView: View {
                     }
                     .padding(.vertical, 4)
                     .id(NativePushProfileFocus.liveRoom(room.roomID))
+                    .accessibilityFocused(
+                        $focusedNativePushTarget,
+                        equals: .liveRoom(room.roomID)
+                    )
                 }
 
                 HStack(spacing: 8) {
@@ -532,6 +570,7 @@ struct FriendsView: View {
             }
         }
         .id(NativePushProfileFocus.liveWorkouts)
+        .accessibilityFocused($focusedNativePushTarget, equals: .liveWorkouts)
     }
 
     private func liveWorkoutSummary(
@@ -565,9 +604,11 @@ struct FriendsView: View {
         case .waiting:
             return t("Waiting for acceptance", "Очікуємо прийняття", "Ожидаем принятия")
         case .ready:
-            return room.role == .owner
-                ? t("Both ready · you start", "Обоє готові · стартуєш ти", "Оба готовы · стартуешь ты")
-                : t("Both ready · owner starts", "Обоє готові · стартує власник", "Оба готовы · стартует владелец")
+            return t(
+                "Confirmed · restoring start",
+                "Підтверджено · відновлюємо старт",
+                "Подтверждено · восстанавливаем старт"
+            )
         case .active:
             return t("Workout is live", "Тренування наживо", "Тренировка вживую")
         default:
@@ -629,6 +670,11 @@ struct FriendsView: View {
             .disabled(activeActionID != nil)
         }
         .padding(.vertical, 4)
+        .id(NativePushProfileFocus.workoutInvite(invite.inviteID))
+        .accessibilityFocused(
+            $focusedNativePushTarget,
+            equals: .workoutInvite(invite.inviteID)
+        )
     }
 
     private func friendsRankingCard(_ dashboard: SocialDashboard) -> some View {
@@ -669,6 +715,11 @@ struct FriendsView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .id(NativePushProfileFocus.friendRequest(friend.friendshipID))
+                    .accessibilityFocused(
+                        $focusedNativePushTarget,
+                        equals: .friendRequest(friend.friendshipID)
+                    )
                 }
             }
         }
@@ -687,6 +738,11 @@ struct FriendsView: View {
                     rankingRowContent(item, place: place)
                 }
                 .buttonStyle(.plain)
+                .id(NativePushProfileFocus.friendRequest(friend.friendshipID))
+                .accessibilityFocused(
+                    $focusedNativePushTarget,
+                    equals: .friendRequest(friend.friendshipID)
+                )
             } else {
                 rankingRowContent(item, place: place)
             }
@@ -948,24 +1004,31 @@ struct FriendsView: View {
         errorMessage = nil
         defer { activeActionID = nil }
         do {
-            try await liveWorkoutCoordinator.respond(to: invitation, accept: accept)
-            statusMessage = accept
-                ? t("Live workout started.", "Спільне тренування почалося.", "Совместная тренировка началась.")
-                : t("Live invitation declined.", "Живе запрошення відхилено.", "Живое приглашение отклонено.")
-            if accept { onOpenLiveWorkout() }
-        } catch {
-            errorMessage = gymSafeEnglishErrorMessage(error)
-        }
-    }
-
-    private func startLiveRoom(_ room: LiveWorkoutOpenRoom) async {
-        guard activeActionID == nil else { return }
-        activeActionID = "live-\(room.roomID)"
-        errorMessage = nil
-        defer { activeActionID = nil }
-        do {
-            try await liveWorkoutCoordinator.startRoom(room)
-            onOpenLiveWorkout()
+            let outcome = try await liveWorkoutCoordinator.respond(
+                to: invitation,
+                accept: accept
+            )
+            switch outcome {
+            case .active:
+                statusMessage = t(
+                    "Live workout started.",
+                    "Спільне тренування почалося.",
+                    "Совместная тренировка началась."
+                )
+                onOpenLiveWorkout()
+            case .confirmedRestoring:
+                statusMessage = t(
+                    "Acceptance confirmed. Restoring the started workout…",
+                    "Прийняття підтверджено. Відновлюємо розпочате тренування…",
+                    "Принятие подтверждено. Восстанавливаем начатую тренировку…"
+                )
+            case .declined:
+                statusMessage = t(
+                    "Live invitation declined.",
+                    "Живе запрошення відхилено.",
+                    "Живое приглашение отклонено."
+                )
+            }
         } catch {
             errorMessage = gymSafeEnglishErrorMessage(error)
         }
@@ -1009,27 +1072,29 @@ struct FriendsView: View {
         await perform(id: "send-friend") {
             try await appState.sendFriendRequest(friendCode: code)
             friendCode = ""
-            statusMessage = t(
+            statusMessage = confirmedSocialStatus(t(
                 "Request submitted if this code can receive requests.",
                 "Запит надіслано, якщо цей код може приймати запити.",
                 "Запрос отправлен, если этот код может принимать запросы."
-            )
+            ))
         }
     }
 
     private func respond(_ request: SocialFriendRequest, accept: Bool) async {
         await perform(id: request.friendshipID) {
             try await appState.respondFriendRequest(request, accept: accept)
-            statusMessage = accept
+            statusMessage = confirmedSocialStatus(accept
                 ? t("Friend added.", "Друга додано.", "Друг добавлен.")
-                : t("Request declined.", "Запит відхилено.", "Запрос отклонён.")
+                : t("Request declined.", "Запит відхилено.", "Запрос отклонён."))
         }
     }
 
     private func cancel(_ request: SocialFriendRequest) async {
         await perform(id: request.friendshipID) {
             try await appState.cancelFriendRequest(request)
-            statusMessage = t("Request cancelled.", "Запит скасовано.", "Запрос отменён.")
+            statusMessage = confirmedSocialStatus(
+                t("Request cancelled.", "Запит скасовано.", "Запрос отменён.")
+            )
         }
     }
 
@@ -1081,7 +1146,7 @@ struct FriendsView: View {
             )
         case .recover:
             await perform(id: preparation.invite.inviteID) {
-                _ = try appState.recoverAcceptedWorkoutInvite(
+                _ = try await appState.recoverAcceptedWorkoutInvite(
                     preparation.invite,
                     replacingPendingSharedWorkoutID: preparation.pendingID
                 )
@@ -1105,27 +1170,35 @@ struct FriendsView: View {
                 accept: accept,
                 replacingPendingSharedWorkoutID: replacingPendingID
             )
-            statusMessage = accept
+            statusMessage = confirmedSocialStatus(accept
                 ? t("Workout copied to a local preview.", "Тренування скопійовано в локальний перегляд.", "Тренировка скопирована в локальный просмотр.")
-                : t("Workout invitation declined.", "Запрошення на тренування відхилено.", "Приглашение на тренировку отклонено.")
+                : t("Workout invitation declined.", "Запрошення на тренування відхилено.", "Приглашение на тренировку отклонено."))
         }
     }
 
     private func cancelWorkoutInvite(_ invite: SocialWorkoutInvite) async {
         await perform(id: invite.inviteID) {
             try await appState.cancelWorkoutInvite(invite)
-            statusMessage = t("Workout invitation cancelled.", "Запрошення на тренування скасовано.", "Приглашение на тренировку отменено.")
+            statusMessage = confirmedSocialStatus(
+                t("Workout invitation cancelled.", "Запрошення на тренування скасовано.", "Приглашение на тренировку отменено.")
+            )
+        }
+    }
+
+    private func loadMoreWorkoutInvites() async {
+        await perform(id: "workout-inbox-more") {
+            _ = try await appState.loadMoreSocialWorkoutInbox()
         }
     }
 
     private func block(_ request: SocialFriendRequest) async {
         await perform(id: request.profileID) {
             try await appState.blockSocialProfile(profileID: request.profileID)
-            statusMessage = t(
+            statusMessage = confirmedSocialStatus(t(
                 "Request sender blocked.",
                 "Відправника запиту заблоковано.",
                 "Отправитель запроса заблокирован."
-            )
+            ))
         }
     }
 
@@ -1187,27 +1260,60 @@ struct FriendsView: View {
         guard let privacyDraft else { return }
         await perform(id: "privacy") {
             let desiredWorkoutDetails = workoutDetailPrivacyDraft
+            var generalPrivacyWasConfirmed = false
             if privacyIsDirty {
                 try await appState.updateSocialPrivacy(privacyDraft)
+                generalPrivacyWasConfirmed = true
+                privacyIsDirty = false
+                self.privacyDraft = privacyDraft
             }
-            if workoutDetailPrivacyIsDirty,
-               let desiredWorkoutDetails {
-                try await appState.updateSocialWorkoutDetailPrivacy(desiredWorkoutDetails)
+            do {
+                if workoutDetailPrivacyIsDirty,
+                   let desiredWorkoutDetails {
+                    try await appState.updateSocialWorkoutDetailPrivacy(desiredWorkoutDetails)
+                    workoutDetailPrivacyIsDirty = false
+                    workoutDetailPrivacyDraft = desiredWorkoutDetails
+                }
+            } catch {
+                if generalPrivacyWasConfirmed {
+                    statusMessage = confirmedSocialStatus(
+                        t(
+                            "Main privacy settings saved. The exact-workout-details setting was not changed; refresh and retry it.",
+                            "Основні налаштування приватності збережено. Налаштування точних деталей тренувань не змінено — онови дані й повтори його.",
+                            "Основные настройки приватности сохранены. Настройка точных деталей тренировок не изменена — обнови данные и повтори её."
+                        )
+                    )
+                    errorMessage = t(
+                        "One privacy setting still needs attention.",
+                        "Одне налаштування приватності ще потребує уваги.",
+                        "Одна настройка приватности ещё требует внимания."
+                    )
+                    return
+                }
+                throw error
             }
-            privacyIsDirty = false
-            workoutDetailPrivacyIsDirty = false
-            self.privacyDraft = appState.socialDashboard?.currentUser.privacy
-            workoutDetailPrivacyDraft =
-                appState.socialWorkoutDetailPrivacy?.shareWorkoutDetails
-            statusMessage = t("Privacy updated.", "Приватність оновлено.", "Приватность обновлена.")
+            statusMessage = confirmedSocialStatus(
+                t("Privacy updated.", "Приватність оновлено.", "Приватность обновлена.")
+            )
         }
     }
 
     private func unblock(_ profile: SocialBlockedProfile) async {
         await perform(id: profile.profileID) {
             try await appState.unblockSocialProfile(profileID: profile.profileID)
-            statusMessage = t("Person unblocked.", "Користувача розблоковано.", "Пользователь разблокирован.")
+            statusMessage = confirmedSocialStatus(
+                t("Person unblocked.", "Користувача розблоковано.", "Пользователь разблокирован.")
+            )
         }
+    }
+
+    private func confirmedSocialStatus(_ confirmedMessage: String) -> String {
+        guard appState.isRestoringConfirmedSocialMutation else { return confirmedMessage }
+        return t(
+            "Change confirmed. Refreshing Friends without repeating the action…",
+            "Зміну підтверджено. Оновлюємо Друзів без повторення дії…",
+            "Изменение подтверждено. Обновляем Друзей без повторения действия…"
+        )
     }
 
     private func perform(id: String, action: () async throws -> Void) async {
