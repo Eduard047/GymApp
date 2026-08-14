@@ -22,7 +22,8 @@
       "nonFriend": "denyWithoutExistenceOracle",
       "blockedOrRemoved": "deny",
       "staleActivityRevision": "denyWithoutPayload",
-      "revokedWhileOpen": "closeAndRefetchSummary"
+      "revokedWhileOpen": "closeAndRefetchSummary",
+      "accountChanged": "closeClearAndRequireFreshAuthorization"
     },
     "page": {
       "maximumWorkouts": 5,

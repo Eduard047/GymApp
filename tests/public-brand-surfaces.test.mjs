@@ -5,6 +5,7 @@ import vm from "node:vm";
 
 const support = await readFile("ios/GymApp-iOS/AppStore/support.html", "utf8");
 const privacy = await readFile("ios/GymApp-iOS/AppStore/privacy-policy.html", "utf8");
+const appPrivacy = await readFile("ios/GymApp-iOS/AppStore/APP_PRIVACY.md", "utf8");
 const legalCSS = await readFile("ios/GymApp-iOS/AppStore/legal.css", "utf8");
 const languageJS = await readFile("ios/GymApp-iOS/AppStore/legal-language.js", "utf8");
 const manifest = JSON.parse(await readFile("pwa/manifest.webmanifest", "utf8"));
@@ -110,6 +111,21 @@ test("privacy policy has localized summaries, contents, responsive source tables
   assert.match(privacy, /Профіль → Обліковий запис, конфіденційність і видалення → Видалити обліковий запис/);
   assert.match(privacy, /Профиль → Аккаунт, конфиденциальность и удаление → Удалить учётную запись/);
   assert.doesNotMatch(privacy, /(?:Exercises|Вправи|Упражнения) → (?:Account|Обліковий запис|Учётная запись)/);
+});
+
+test("privacy sources disclose bounded default-off read-only friend workout details", () => {
+  assert.match(privacy, /separate explicit owner setting that is off by default/);
+  assert.match(privacy, /at most those same five recent workouts/);
+  assert.match(privacy, /changing the active account closes the view and requires fresh authorization/);
+  assert.match(privacy, /окремим явним налаштуванням власника, яке типово вимкнене/);
+  assert.match(privacy, /щонайбільше для тих самих п’яти недавніх тренувань/);
+  assert.match(privacy, /зміна активного акаунта закриває перегляд і вимагає нової авторизації/);
+  assert.match(privacy, /отдельной явной настройке владельца, выключенной по умолчанию/);
+  assert.match(privacy, /максимум для тех же пяти недавних тренировок/);
+  assert.match(privacy, /смена активной учётной записи закрывает просмотр и требует новой авторизации/);
+  assert.match(appPrivacy, /separate explicit owner gesture for `share_workout_details`/);
+  assert.match(appPrivacy, /false by default/);
+  assert.match(appPrivacy, /changing the active account closes and clears any open exact detail/);
 });
 
 function pngSize(buffer) {

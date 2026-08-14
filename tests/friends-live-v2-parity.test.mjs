@@ -72,10 +72,18 @@ test("friends/live v2 contract is the same three-client product", () => {
   assert.equal(contract.friendWorkoutSharing.summaryConsent.mayAuthorizeExactSets, false);
   assert.equal(contract.friendWorkoutSharing.detailConsent.default, false);
   assert.equal(contract.friendWorkoutSharing.detailConsent.requiresSummaryConsent, true);
+  assert.equal(contract.friendWorkoutSharing.detailConsent.explicitOwnerGesture, true);
+  assert.equal(contract.friendWorkoutSharing.authorization.blockedOrRemoved, "deny");
+  assert.equal(contract.friendWorkoutSharing.authorization.revokedWhileOpen, "closeAndRefetchSummary");
+  assert.equal(
+    contract.friendWorkoutSharing.authorization.accountChanged,
+    "closeClearAndRequireFreshAuthorization"
+  );
   assert.equal(contract.friendWorkoutSharing.page.maximumWorkouts, 5);
   assert.equal(contract.friendWorkoutSharing.page.futureSessions, "ignored");
   assert.equal(contract.friendWorkoutSharing.page.maximumRenderedSetsPerWorkout, 100);
   assert.equal(contract.friendWorkoutSharing.page.notesShared, false);
+  assert.equal(contract.friendWorkoutSharing.presentation.detailMode, "readOnlyOwnHistoryComposition");
   assert.equal(contract.friendWorkoutSharing.presentation.boldBlueRecordValues, false);
   assert.deepEqual(contract.friendWorkoutSharing.invalidation.payload, ["version", "kind"]);
   assert.equal(contract.liveWorkout.participants, 2);
