@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.setforge.gymapp",
+      "sha256_cert_fingerprints": [
+        "E6:22:07:94:17:97:9C:65:54:50:25:00:68:80:7E:BD:84:D8:9B:5A:3C:1B:DB:71:E8:10:08:2C:98:DA:4F:87"
+      ]
+    }
+  }
+]
