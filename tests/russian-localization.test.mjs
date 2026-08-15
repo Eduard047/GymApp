@@ -272,6 +272,12 @@ test("runtime language switches invalidate cached labels on every client", async
   assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{ rememberNavController\(\) \}/);
   assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{[\s\S]*GymBackground/);
   assert.match(iosRoot, /@AppStorage\("app-language"\)[\s\S]*\.environment\(\\\.locale/);
+  const introOverlay = iosRoot.match(/if showsIntro \{[\s\S]*?\.zIndex\(20\)/)?.[0];
+  assert.ok(introOverlay, "iOS intro splash overlay must remain present");
+  assert.match(
+    introOverlay,
+    /IntroSplashView\(\)[\s\S]*?\.environment\([\s\S]*?\\\.locale,[\s\S]*?AppLanguage\(rawValue: languageCode\)\?\.locale \?\? Locale\(identifier: "en"\)[\s\S]*?\)/
+  );
   assert.doesNotMatch(iosRoot, /\.id\(languageCode\)/);
   assert.match(iosAuth, /@AppStorage\("app-language"\) private var languageCode/);
   assert.match(iosAuth, /item\.title\(languageCode: languageCode\)/);

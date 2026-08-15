@@ -69,6 +69,10 @@ struct AppRootView: View {
         .overlay {
             if showsIntro {
                 IntroSplashView()
+                    .environment(
+                        \.locale,
+                        AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en")
+                    )
                     .transition(.opacity.combined(with: .scale(scale: 1.015)))
                     .zIndex(20)
             }
