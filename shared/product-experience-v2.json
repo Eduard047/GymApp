@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "productVersion": "3.1.0",
+  "productVersion": "3.1.1",
   "fullClients": ["android", "ios", "pwa"],
   "wearableClient": "garmin",
   "terminology": {
@@ -34,20 +34,33 @@
     "capabilityOrderAndOutcomeMustMatch": true
   },
   "todayFocusLens": {
-    "states": ["recommendedPlan", "activeWorkout", "recovery"],
+    "states": ["recommendedPlan", "activeWorkout", "completedToday", "recovery"],
     "recommendedPlan": {
       "contentOrder": ["focus", "exerciseAndSetCount", "estimatedDuration", "weeklyRhythm"],
       "actionsInOrder": ["startPlan", "editPlan", "createManually"]
+    },
+    "retainedDraftOverride": {
+      "appliesToStates": ["recommendedPlan", "completedToday", "recovery", "firstWorkoutActivation"],
+      "actionsInOrder": ["continuePlan"],
+      "outcome": "openSameAccountRetainedDraftWithoutReplacement"
     },
     "activeWorkout": {
       "contentOrder": ["currentExercise", "currentSet", "completedProgress", "restOrNextAction"],
       "actionsInOrder": ["continueWorkout", "discardWorkout"]
     },
+    "completedToday": {
+      "source": "completedCanonicalHistoryInCurrentLocalCalendarDay",
+      "contentOrder": ["completionConfirmation", "weeklySummary"],
+      "suppresses": ["recovery", "recommendedPlan"],
+      "actionsInOrder": ["createAnotherWorkout"]
+    },
     "recovery": {
       "contentOrder": ["reason", "nextRecommendedDay"],
       "actionsInOrder": ["trainAnyway", "editPlan"]
     },
-    "lifetimeMetricsPlacement": "progress.overview",
+    "weeklySummaryPlacement": "today.belowCurrentState",
+    "weeklySummary": ["sevenDayCircles", "completedTrainingDaysVsTarget", "completedWorkouts", "trainingMinutes", "totalVolume"],
+    "lifetimeMetricsPlacement": "today.heroAndProgress.overview",
     "heatmapPlacement": "progress.overview",
     "muscleLoadPlacement": "progress.overview",
     "recommendationExplanation": "progressiveDisclosureWhyThisPlan"

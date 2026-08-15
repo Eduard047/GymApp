@@ -1318,7 +1318,7 @@ struct WorkoutDetailView: View {
             },
             sendLiveWorkoutInvite: liveWorkoutCoordinator.map { coordinator in
                 { profileID, plan in
-                    try await coordinator.sendInvite(to: profileID, plan: plan)
+                    _ = try await coordinator.sendInvite(to: profileID, plan: plan)
                 }
             }
         )

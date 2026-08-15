@@ -82,9 +82,13 @@ function fakeIndexedDb(initialBinding = null) {
   };
 }
 
-function loadPwaContext({ userAgent = "", push = null, fetchImpl = null } = {}) {
-  const values = new Map();
-  const sessionValues = new Map();
+function loadPwaContext({
+  userAgent = "",
+  push = null,
+  fetchImpl = null,
+  values = new Map(),
+  sessionValues = new Map()
+} = {}) {
   const indexedDB = fakeIndexedDb(push?.binding ?? null);
   const context = {
     console,
@@ -4558,6 +4562,320 @@ test("durable owner live-slot reservation survives reload and blocks ordinary st
     rawBefore
   );
   assert.equal(vm.runInContext("readLiveWorkoutReservation().status", context), "valid");
+});
+
+test("rendering the plan editor cannot overwrite a newer draft from another tab", () => {
+  const values = new Map();
+  const sessionValues = new Map();
+  const tabA = loadPwaContext({ values, sessionValues });
+  vm.runInContext(`
+    activeAccount = {
+      id: "local-v2-0123456789abcdef0123456789abcdef",
+      name: "Owner",
+      localIdVersion: 2
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    state = defaultAppState();
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "older tab A draft",
+      blocks: [{
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        sets: [{ weight: "70", reps: "8" }]
+      }]
+    };
+    persistWorkoutDraft();
+    nav = [{ name: "workouts" }, { name: "add" }];
+    startTimerTicker = () => {};
+  `, tabA);
+  const draftKey = vm.runInContext("workoutDraftAccountDescriptor().storageKey", tabA);
+
+  const tabB = loadPwaContext({ values, sessionValues });
+  vm.runInContext(`
+    workoutDraft.note = "newer tab B draft";
+    persistWorkoutDraft();
+  `, tabB);
+  const newerRaw = values.get(draftKey);
+  assert.equal(JSON.parse(newerRaw).draft.note, "newer tab B draft");
+
+  vm.runInContext("render()", tabA);
+  assert.equal(
+    values.get(draftKey),
+    newerRaw,
+    "rendering stale editor memory must not write storage"
+  );
+  vm.runInContext("workoutDraft = null; addWorkoutScreen()", tabA);
+  assert.equal(
+    values.get(draftKey),
+    newerRaw,
+    "rendering a blank editor seed must not replace a concurrently saved draft"
+  );
+});
+
+test("Discard plan is localized, exact, and distinct from clearing editor content", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const profileId = "p_22222222222222222222222222222222";
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+    };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({
+      access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-discard-plan",
+      user: { id: "${userId}", email: "owner@example.test" }
+    });
+    state = defaultAppState();
+    nav = [{ name: "workouts" }, { name: "add" }];
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "draft to discard",
+      blocks: [{
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        sets: [{ weight: "80", reps: "8" }]
+      }]
+    };
+    workoutDraftLiveRecipient = {
+      profileId: "${profileId}",
+      friendshipId: "f_22222222222222222222222222222222",
+      friendshipRevision: 3
+    };
+    persistWorkoutDraft();
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  const draftKey = vm.runInContext("workoutDraftAccountDescriptor().storageKey", context);
+
+  assert.equal(await vm.runInContext(`handleAction("clear-plan", { dataset: {} })`, context), undefined);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-clear-plan");
+  assert.equal(await vm.runInContext(`handleAction("confirm-clear-plan", { dataset: {} })`, context), true);
+  assert.equal(vm.runInContext("workoutDraft.blocks.length", context), 0);
+  assert.equal(vm.runInContext("workoutDraftLiveRecipient.profileId", context), profileId);
+  assert.equal(vm.runInContext("route().name", context), "add");
+  assert.equal(JSON.parse(context.localStorage.getItem(draftKey)).draft.blocks.length, 0);
+  assert.match(vm.runInContext("addWorkoutScreen()", context), /data-action="discard-plan"/);
+
+  assert.equal(vm.runInContext("requestDiscardWorkoutDraft()", context), true);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-discard-plan");
+  assert.match(vm.runInContext("modalMarkup()", context), /Discard this workout plan\?/);
+  assert.match(vm.runInContext(`state.language = "uk"; modalMarkup()`, context), /Відкинути цей план тренування\?/);
+  assert.match(vm.runInContext(`state.language = "ru"; modalMarkup()`, context), /Удалить этот план тренировки\?/);
+  vm.runInContext(`
+    state.language = "en";
+    newerStoredDraft = JSON.parse(localStorage.getItem(${JSON.stringify(draftKey)}));
+    newerStoredDraft.updatedAt = Date.now();
+    newerStoredDraft.draft.note = "newer draft from another tab";
+    localStorage.setItem(${JSON.stringify(draftKey)}, JSON.stringify(newerStoredDraft));
+  `, context);
+  assert.equal(vm.runInContext("confirmDiscardWorkoutDraft()", context), false);
+  assert.equal(JSON.parse(context.localStorage.getItem(draftKey)).draft.note, "newer draft from another tab");
+  assert.notEqual(vm.runInContext("workoutDraft", context), null);
+
+  vm.runInContext(`
+    restoredDiscardDraft = loadStoredWorkoutDraftRecord();
+    workoutDraft = restoredDiscardDraft.draft;
+    workoutDraftLiveRecipient = restoredDiscardDraft.liveRecipient;
+  `, context);
+  assert.equal(vm.runInContext("requestDiscardWorkoutDraft()", context), true);
+  assert.equal(vm.runInContext("confirmDiscardWorkoutDraft()", context), true);
+  assert.equal(context.localStorage.getItem(draftKey), null);
+  assert.equal(vm.runInContext("workoutDraft", context), null);
+  assert.equal(vm.runInContext("workoutDraftLiveRecipient", context), null);
+  assert.equal(vm.runInContext("route().name", context), "workouts");
+});
+
+test("confirmed direct-LIVE journals reconcile crash residue without losing newer edits", async () => {
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const profileId = "p_22222222222222222222222222222222";
+  const friendshipId = "f_22222222222222222222222222222222";
+  const roomId = "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  async function crashAfterSend({ newerNote = null, outcomeUnknown = false } = {}) {
+    const values = new Map();
+    const sessionValues = new Map();
+    const context = loadPwaContext({ values, sessionValues });
+    vm.runInContext(`
+      activeAccount = {
+        id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner"
+      };
+      localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+      saveRemoteSession({
+        access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+        refresh_token: "refresh-live-crash",
+        user: { id: "${userId}", email: "owner@example.test" }
+      });
+      state = defaultAppState();
+      activeWorkout = null;
+      workoutDraft = {
+        startedAt: Date.now(),
+        note: "sent snapshot",
+        blocks: [{
+          exerciseName: "Bench Press",
+          catalogKey: "bench_press",
+          sets: [{ weight: "80", reps: "8" }]
+        }]
+      };
+      workoutDraftLiveRecipient = {
+        profileId: "${profileId}",
+        friendshipId: "${friendshipId}",
+        friendshipRevision: 3
+      };
+      socialState.dashboard = { friends: [{
+        profileId: "${profileId}",
+        friendshipId: "${friendshipId}",
+        friendshipRevision: 3,
+        displayName: "Friend"
+      }] };
+      persistWorkoutDraft();
+      refreshSocialData = async () => true;
+      withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+        acquired: true,
+        value: await operation()
+      });
+      executeLiveWorkoutMutation = async () => {
+        ${outcomeUnknown
+          ? 'throw new Error("simulated unknown outcome");'
+          : `return { result: "submitted", roomId: "${roomId}" };`}
+      };
+      reconcileLiveWorkoutSlotAfterFailedMutation = async () => false;
+      refreshLiveWorkoutData = async () => {
+        ${newerNote === null
+          ? ""
+          : `workoutDraft.note = ${JSON.stringify(newerNote)}; persistWorkoutDraft();`}
+        throw new Error("simulated process death");
+      };
+      render = () => {};
+      showToast = () => {};
+    `, context);
+    await assert.rejects(
+      vm.runInContext("sendWorkoutDraftLiveInvite()", context),
+      /simulated (?:process death|unknown outcome)/
+    );
+    return { context, sessionValues, values };
+  }
+
+  const exact = await crashAfterSend();
+  const exactReservation = JSON.parse(exact.values.get(`gym-pwa-live-workout-reservation-v1:${userId}`));
+  assert.equal(exactReservation.roomId, roomId);
+  assert.match(exactReservation.sentDraftFingerprint, /^[0-9a-f]+:[0-9a-f]{16}:[0-9a-f]{16}$/);
+  assert.match(exactReservation.sentRecipientFingerprint, /^[0-9a-f]+:[0-9a-f]{16}:[0-9a-f]{16}$/);
+  const exactRestart = loadPwaContext(exact);
+  assert.equal(vm.runInContext("workoutDraft", exactRestart), null);
+  assert.equal(
+    vm.runInContext("localStorage.getItem(workoutDraftAccountDescriptor().storageKey)", exactRestart),
+    null,
+    "a room-bound journal must consume the exact sent draft during startup"
+  );
+
+  const changed = await crashAfterSend({ newerNote: "newer edit after confirmation" });
+  const changedRestart = loadPwaContext(changed);
+  assert.equal(vm.runInContext("workoutDraft.note", changedRestart), "newer edit after confirmation");
+  assert.equal(vm.runInContext("workoutDraftLiveRecipient", changedRestart), null);
+  assert.equal(
+    vm.runInContext("loadStoredWorkoutDraftRecord().liveRecipient", changedRestart),
+    null,
+    "newer edits survive as a separate non-retrying draft"
+  );
+
+  const unknown = await crashAfterSend({ outcomeUnknown: true });
+  const unknownRestart = loadPwaContext(unknown);
+  assert.equal(vm.runInContext("workoutDraft.note", unknownRestart), "sent snapshot");
+  assert.equal(vm.runInContext("workoutDraftLiveRecipient.profileId", unknownRestart), profileId);
+  assert.equal(vm.runInContext("readLiveWorkoutReservation().reservation.roomId", unknownRestart), null);
+  vm.runInContext(`
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({
+      acquired: true,
+      value: await operation()
+    });
+    unrelatedOwnerInbox = window.GymLiveWorkout.inbox({
+      version: 1,
+      invitations: [],
+      rooms: [{
+        roomId: "lr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        status: "waiting",
+        roomRevision: 1,
+        role: "owner",
+        memberState: "joined",
+        membershipRevision: 1,
+        createdAt: new Date(Date.now() - 1000).toISOString(),
+        startedAt: null,
+        activeExpiresAt: null,
+        summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] },
+        peer: { profileId: "p_33333333333333333333333333333333", displayName: "Other friend" }
+      }]
+    });
+    authoritativeOwnerInbox = window.GymLiveWorkout.inbox({
+      version: 1,
+      invitations: [],
+      rooms: [{
+        roomId: "${roomId}",
+        status: "waiting",
+        roomRevision: 1,
+        role: "owner",
+        memberState: "joined",
+        membershipRevision: 1,
+        createdAt: new Date(Date.now() - 1000).toISOString(),
+        startedAt: null,
+        activeExpiresAt: null,
+        summary: { exerciseCount: 1, setCount: 1, exerciseNames: ["Bench Press"] },
+        peer: { profileId: "${profileId}", displayName: "Friend" }
+      }]
+    });
+  `, unknownRestart);
+  const unknownReservationRaw = vm.runInContext(
+    "localStorage.getItem(liveWorkoutReservationKey(activeAccount.userId))",
+    unknownRestart
+  );
+  const unknownDraftRaw = vm.runInContext(
+    "localStorage.getItem(workoutDraftAccountDescriptor().storageKey)",
+    unknownRestart
+  );
+  assert.equal(
+    await vm.runInContext("reconcileLiveWorkoutSlot(unrelatedOwnerInbox)", unknownRestart),
+    true
+  );
+  assert.equal(
+    vm.runInContext("localStorage.getItem(liveWorkoutReservationKey(activeAccount.userId))", unknownRestart),
+    unknownReservationRaw,
+    "an unrelated owner room must leave the preparing journal untouched"
+  );
+  assert.equal(
+    vm.runInContext("localStorage.getItem(workoutDraftAccountDescriptor().storageKey)", unknownRestart),
+    unknownDraftRaw,
+    "an unrelated owner room must not consume or detach the draft"
+  );
+  vm.runInContext(`
+    originalMemoryRecipient = workoutDraftLiveRecipient;
+    workoutDraftLiveRecipient = {
+      ...originalMemoryRecipient,
+      profileId: "p_44444444444444444444444444444444"
+    };
+  `, unknownRestart);
+  assert.equal(
+    await vm.runInContext("reconcileLiveWorkoutSlot(authoritativeOwnerInbox)", unknownRestart),
+    true
+  );
+  assert.equal(
+    vm.runInContext("readLiveWorkoutReservation().reservation.roomId", unknownRestart),
+    null,
+    "a conflicting in-memory target must also prevent room adoption"
+  );
+  vm.runInContext("workoutDraftLiveRecipient = originalMemoryRecipient", unknownRestart);
+  assert.equal(
+    await vm.runInContext("reconcileLiveWorkoutSlot(authoritativeOwnerInbox)", unknownRestart),
+    true
+  );
+  assert.equal(vm.runInContext("workoutDraft", unknownRestart), null);
+  assert.equal(
+    vm.runInContext("readLiveWorkoutReservation().reservation.roomId", unknownRestart),
+    roomId,
+    "authoritative room discovery binds the preparing journal before consuming its draft"
+  );
 });
 
 test("invitee reservation wins accept versus ordinary-start race and exact release restores start", async () => {

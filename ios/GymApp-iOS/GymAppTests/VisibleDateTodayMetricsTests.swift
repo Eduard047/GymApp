@@ -21,6 +21,14 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
                 .lowercased()
                 .contains("четвер")
         )
+        let ukrainianDate = gymFormattedDate(
+            date,
+            date: .long,
+            time: .omitted,
+            languageCode: "uk"
+        ).lowercased()
+        XCTAssertTrue(ukrainianDate.contains("13 серпня 2026"))
+        XCTAssertFalse(ukrainianDate.contains("13 серпень"))
     }
 
     func testStatusTimestampDoesNotGainWeekday() {
@@ -49,14 +57,120 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
         XCTAssertEqual(metrics.totalVolume, 1_000_000_000_000_000)
     }
 
-    private func summary(volume: Double) -> WorkoutSessionSummary {
+    func testWeeklySummaryUsesLocalMondayDistinctDaysAndCanonicalDurations() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "uk_UA")
+        calendar.timeZone = TimeZone(secondsFromGMT: 2 * 60 * 60)!
+        let now = date(2026, 8, 15, hour: 18, calendar: calendar)
+        let sessions = [
+            summary(
+                date: date(2026, 8, 10, hour: 8, calendar: calendar),
+                exerciseCount: 3,
+                setCount: 9,
+                volume: 1_000
+            ),
+            summary(
+                date: date(2026, 8, 15, hour: 9, calendar: calendar),
+                exerciseCount: 20,
+                setCount: 100,
+                volume: 2_000
+            ),
+            summary(
+                date: date(2026, 8, 15, hour: 11, calendar: calendar),
+                note: "Garmin · Duration 1:00:01",
+                exerciseCount: 1,
+                setCount: 1,
+                volume: 500
+            ),
+            summary(
+                date: date(2026, 8, 16, hour: 12, calendar: calendar),
+                exerciseCount: 20,
+                setCount: 100,
+                volume: 9_000
+            ),
+            summary(
+                date: date(2026, 8, 9, hour: 12, calendar: calendar),
+                exerciseCount: 20,
+                setCount: 100,
+                volume: 9_000
+            ),
+            summary(
+                date: date(2026, 8, 17, hour: 12, calendar: calendar),
+                exerciseCount: 20,
+                setCount: 100,
+                volume: 9_000
+            )
+        ]
+
+        let summary = WeeklyTrainingSummary(
+            sessions: sessions,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(summary.weekStart, date(2026, 8, 10, calendar: calendar))
+        XCTAssertEqual(summary.completedSessionCount, 3)
+        XCTAssertEqual(summary.completedTrainingDays.count, 2)
+        XCTAssertEqual(summary.totalMinutes, 27 + 90 + 61)
+        XCTAssertEqual(summary.totalVolume, 3_500)
+        XCTAssertTrue(summary.hasCompletedWorkoutToday(now: now, calendar: calendar))
+        XCTAssertFalse(
+            summary.hasWorkout(
+                on: date(2026, 8, 16, calendar: calendar),
+                calendar: calendar
+            )
+        )
+    }
+
+    func testWeeklyDurationFallsBackWhenMeasuredDurationIsMissingOrZero() {
+        XCTAssertEqual(
+            WeeklyTrainingSummary.durationMinutes(
+                for: summary(exerciseCount: 3, setCount: 9, volume: 0)
+            ),
+            27
+        )
+        XCTAssertEqual(
+            WeeklyTrainingSummary.durationMinutes(
+                for: summary(
+                    note: "Garmin · Duration 0:00",
+                    exerciseCount: 20,
+                    setCount: 100,
+                    volume: 0
+                )
+            ),
+            90
+        )
+    }
+
+    private func summary(
+        date: Date = Date(timeIntervalSince1970: 1_786_588_800),
+        note: String? = nil,
+        exerciseCount: Int = 1,
+        setCount: Int = 1,
+        volume: Double
+    ) -> WorkoutSessionSummary {
         WorkoutSessionSummary(
             workoutID: UUID(),
-            date: Date(timeIntervalSince1970: 1_786_588_800),
-            note: nil,
-            exerciseCount: 1,
-            setCount: 1,
+            date: date,
+            note: note,
+            exerciseCount: exerciseCount,
+            setCount: setCount,
             totalVolume: volume
         )
+    }
+
+    private func date(
+        _ year: Int,
+        _ month: Int,
+        _ day: Int,
+        hour: Int = 0,
+        calendar: Calendar
+    ) -> Date {
+        calendar.date(from: DateComponents(
+            year: year,
+            month: month,
+            day: day,
+            hour: hour
+        ))!
     }
 }

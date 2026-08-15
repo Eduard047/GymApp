@@ -85,6 +85,7 @@ import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAccountDeletionSessionDisposition
 import com.example.gymapp.auth.CloudAuthManager
 import com.example.gymapp.auth.PasswordReauthenticationRequiredException
+import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.auth.activeCloudSessionFor
 import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.auth.databaseName
@@ -95,6 +96,8 @@ import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.canonicalWorkoutPayloadDigest
 import com.example.gymapp.gymApplication
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.LiveWorkoutDraftSendReceipt
+import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.SharedWorkoutInbox
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
@@ -139,8 +142,11 @@ import com.example.gymapp.ui.viewmodel.ExerciseProgressViewModel
 import com.example.gymapp.ui.viewmodel.FriendsViewModel
 import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
+import com.example.gymapp.ui.viewmodel.LiveWorkoutDraftSendRequest
 import com.example.gymapp.ui.viewmodel.LiveWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
+import com.example.gymapp.ui.viewmodel.RetainedWorkoutDraftFingerprint
+import com.example.gymapp.ui.viewmodel.durableDigest
 import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
 import com.example.gymapp.ui.media.ExerciseMediaStore
@@ -178,6 +184,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 
 internal fun shouldEnableCloudAutosave(
     pullSucceeded: Boolean,
@@ -245,19 +252,141 @@ internal data class FriendWorkoutPickerBinding(
     val userId: String,
     val sessionGeneration: String,
     val profileId: String,
+    val friendshipId: String,
     val friendshipRevision: Int
 )
+
+internal data class LiveWorkoutDraftTarget(
+    val binding: FriendWorkoutPickerBinding,
+    val displayName: String,
+    val draftBindingId: String
+)
+
+internal data class LiveWorkoutDraftSendSnapshot(
+    val target: LiveWorkoutDraftTarget,
+    val draftFingerprint: RetainedWorkoutDraftFingerprint
+)
+
+internal fun liveWorkoutDraftSendStillMatches(
+    snapshot: LiveWorkoutDraftSendSnapshot,
+    currentTarget: LiveWorkoutDraftTarget?,
+    currentDraftFingerprint: RetainedWorkoutDraftFingerprint
+): Boolean = shouldClearSuccessfulLiveWorkoutDraftTarget(snapshot, currentTarget) &&
+    snapshot.draftFingerprint == currentDraftFingerprint
+
+internal fun shouldClearSuccessfulLiveWorkoutDraftTarget(
+    snapshot: LiveWorkoutDraftSendSnapshot,
+    currentTarget: LiveWorkoutDraftTarget?
+): Boolean = currentTarget != null &&
+    snapshot.target.binding == currentTarget.binding &&
+    snapshot.target.draftBindingId == currentTarget.draftBindingId
 
 internal fun isFriendWorkoutPickerBindingCurrent(
     binding: FriendWorkoutPickerBinding,
     activeSession: AccountSession?,
     currentProfileId: String?,
+    currentFriendshipId: String?,
     currentFriendshipRevision: Int?
 ): Boolean = activeSession is AccountSession.Cloud &&
     activeSession.userId == binding.userId &&
     activeSession.sessionGeneration == binding.sessionGeneration &&
     currentProfileId == binding.profileId &&
+    currentFriendshipId == binding.friendshipId &&
     currentFriendshipRevision == binding.friendshipRevision
+
+internal fun resolveLiveWorkoutFriendFromFreshDashboard(
+    target: LiveWorkoutDraftTarget,
+    activeSession: AccountSession?,
+    freshFriends: List<SocialFriend>
+): SocialFriend? = freshFriends.singleOrNull { friend ->
+    isFriendWorkoutPickerBindingCurrent(
+        binding = target.binding,
+        activeSession = activeSession,
+        currentProfileId = friend.profileId,
+        currentFriendshipId = friend.friendshipId,
+        currentFriendshipRevision = friend.friendshipRevision
+    )
+}
+
+internal fun shouldResumeRetainedWorkoutDraft(
+    hasEditorDraft: Boolean,
+    hasLiveTarget: Boolean
+): Boolean = hasEditorDraft || hasLiveTarget
+
+internal fun restoreLiveWorkoutDraftTarget(
+    hasTarget: Boolean,
+    draftBindingId: String?,
+    userId: String?,
+    sessionGeneration: String?,
+    profileId: String?,
+    friendshipId: String?,
+    friendshipRevision: Int?,
+    displayName: String?
+): LiveWorkoutDraftTarget? {
+    if (!hasTarget) return null
+    val restoredDraftBindingId = draftBindingId?.takeIf { candidate ->
+        runCatching { UUID.fromString(candidate).toString() == candidate }.getOrDefault(false)
+    } ?: return null
+    val restoredUserId = userId?.takeIf { it.isNotBlank() } ?: return null
+    val restoredSessionGeneration = sessionGeneration?.takeIf { it.isNotBlank() } ?: return null
+    val restoredProfileId = profileId?.takeIf { it.isNotBlank() } ?: return null
+    val restoredFriendshipId = friendshipId?.takeIf { it.isNotBlank() } ?: return null
+    val restoredFriendshipRevision = friendshipRevision?.takeIf { it >= 1 } ?: return null
+    val restoredDisplayName = displayName?.takeIf { it.isNotBlank() } ?: return null
+    return LiveWorkoutDraftTarget(
+        binding = FriendWorkoutPickerBinding(
+            userId = restoredUserId,
+            sessionGeneration = restoredSessionGeneration,
+            profileId = restoredProfileId,
+            friendshipId = restoredFriendshipId,
+            friendshipRevision = restoredFriendshipRevision
+        ),
+        displayName = restoredDisplayName,
+        draftBindingId = restoredDraftBindingId
+    )
+}
+
+internal enum class LiveWorkoutDraftReceiptAction {
+    AwaitAuthoritativeRoom,
+    ConsumeUnchangedDraft,
+    UnbindAndPreserveChangedDraft,
+    ClearReceiptOnly
+}
+
+internal fun confirmedLiveWorkoutDraftReceiptAction(
+    receipt: LiveWorkoutDraftSendReceipt,
+    inbox: com.example.gymapp.auth.LiveWorkoutInbox,
+    hasSavedTarget: Boolean,
+    target: LiveWorkoutDraftTarget?,
+    currentDraftDigest: String
+): LiveWorkoutDraftReceiptAction {
+    val roomId = receipt.roomId
+        ?: return LiveWorkoutDraftReceiptAction.AwaitAuthoritativeRoom
+    val authoritativeRoom = inbox.rooms.singleOrNull { room ->
+        room.roomId == roomId &&
+            room.role == "owner" &&
+            room.status in setOf("waiting", "ready", "active") &&
+            room.memberState in setOf("joined", "finished") &&
+            room.peer.profileId == receipt.recipientProfileId
+    } ?: return LiveWorkoutDraftReceiptAction.AwaitAuthoritativeRoom
+    check(authoritativeRoom.roomId == roomId)
+    if (hasSavedTarget && target == null) {
+        return LiveWorkoutDraftReceiptAction.AwaitAuthoritativeRoom
+    }
+    if (target == null) return LiveWorkoutDraftReceiptAction.ClearReceiptOnly
+    val exactTarget = target.draftBindingId == receipt.draftBindingId &&
+        target.binding.userId == receipt.userId &&
+        target.binding.sessionGeneration == receipt.sessionGeneration &&
+        target.binding.profileId == receipt.recipientProfileId &&
+        target.binding.friendshipId == receipt.recipientFriendshipId &&
+        target.binding.friendshipRevision == receipt.recipientFriendshipRevision
+    if (!exactTarget) return LiveWorkoutDraftReceiptAction.ClearReceiptOnly
+    return if (currentDraftDigest == receipt.draftFingerprint) {
+        LiveWorkoutDraftReceiptAction.ConsumeUnchangedDraft
+    } else {
+        LiveWorkoutDraftReceiptAction.UnbindAndPreserveChangedDraft
+    }
+}
 
 internal fun pushNavigationDestination(target: PushNavigationTarget): AppDestination = when (target) {
     is PushNavigationTarget.Social,
@@ -552,10 +681,6 @@ internal fun GymAppRoot(
     val navController = key(uiIsolationKey, selectedLanguage) { rememberNavController() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    var addWorkoutDraftDirty by rememberSaveable(uiIsolationKey) { mutableStateOf(false) }
-    var addWorkoutCloseRequestVersion by rememberSaveable(uiIsolationKey) {
-        mutableStateOf(0L)
-    }
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
     val activeWorkout by repository.observeActiveWorkout().collectAsState(initial = null)
     val pendingSharedWorkout by sharedWorkoutInbox.pending.collectAsState()
@@ -648,6 +773,68 @@ internal fun GymAppRoot(
     var preferredShareFriendProfileId by key(uiIsolationKey) {
         remember { mutableStateOf<String?>(null) }
     }
+    var addWorkoutEditorInteractionLocked by key(uiIsolationKey) {
+        remember { mutableStateOf(false) }
+    }
+    var hasSavedLiveWorkoutDraftTarget by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf(false) }
+    }
+    var savedLiveWorkoutDraftBindingId by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf<String?>(null) }
+    }
+    var savedLiveWorkoutDraftUserId by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf<String?>(null) }
+    }
+    var savedLiveWorkoutDraftSessionGeneration by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf<String?>(null) }
+    }
+    var savedLiveWorkoutDraftProfileId by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf<String?>(null) }
+    }
+    var savedLiveWorkoutDraftFriendshipId by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf<String?>(null) }
+    }
+    var savedLiveWorkoutDraftFriendshipRevision by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf<Int?>(null) }
+    }
+    var savedLiveWorkoutDraftDisplayName by key(uiIsolationKey) {
+        rememberSaveable { mutableStateOf<String?>(null) }
+    }
+    val liveWorkoutDraftTarget = restoreLiveWorkoutDraftTarget(
+        hasTarget = hasSavedLiveWorkoutDraftTarget,
+        draftBindingId = savedLiveWorkoutDraftBindingId,
+        userId = savedLiveWorkoutDraftUserId,
+        sessionGeneration = savedLiveWorkoutDraftSessionGeneration,
+        profileId = savedLiveWorkoutDraftProfileId,
+        friendshipId = savedLiveWorkoutDraftFriendshipId,
+        friendshipRevision = savedLiveWorkoutDraftFriendshipRevision,
+        displayName = savedLiveWorkoutDraftDisplayName
+    )
+    val setLiveWorkoutDraftTarget: (LiveWorkoutDraftTarget?) -> Unit = { target ->
+        if (target == null) {
+            // Clear the marker first so a partially saved clear can never expose a LIVE draft as
+            // an ordinary solo workout after recreation.
+            hasSavedLiveWorkoutDraftTarget = false
+            savedLiveWorkoutDraftBindingId = null
+            savedLiveWorkoutDraftUserId = null
+            savedLiveWorkoutDraftSessionGeneration = null
+            savedLiveWorkoutDraftProfileId = null
+            savedLiveWorkoutDraftFriendshipId = null
+            savedLiveWorkoutDraftFriendshipRevision = null
+            savedLiveWorkoutDraftDisplayName = null
+        } else {
+            // Populate every exact account/friendship field before publishing the marker. If a
+            // restore is incomplete, the editor remains in disabled LIVE mode and fails closed.
+            savedLiveWorkoutDraftBindingId = target.draftBindingId
+            savedLiveWorkoutDraftUserId = target.binding.userId
+            savedLiveWorkoutDraftSessionGeneration = target.binding.sessionGeneration
+            savedLiveWorkoutDraftProfileId = target.binding.profileId
+            savedLiveWorkoutDraftFriendshipId = target.binding.friendshipId
+            savedLiveWorkoutDraftFriendshipRevision = target.binding.friendshipRevision
+            savedLiveWorkoutDraftDisplayName = target.displayName
+            hasSavedLiveWorkoutDraftTarget = true
+        }
+    }
     val snackbarHostState = key(uiIsolationKey) { remember { SnackbarHostState() } }
 
     LaunchedEffect(Unit) {
@@ -706,8 +893,71 @@ internal fun GymAppRoot(
             )
         )
     }
+    val rootDraftSyncClient = remember(applicationContext) {
+        PhoneSyncClient(applicationContext)
+    }
+    val rootAddWorkoutViewModel = rootGraphEntry?.let { owner ->
+        viewModel<AddWorkoutViewModel>(
+            viewModelStoreOwner = owner,
+            key = "add_workout_draft",
+            factory = AddWorkoutViewModel.factory(
+                repository = repository,
+                syncClient = rootDraftSyncClient,
+                trainingProfileManager = gymApplication.trainingProfileManager
+            )
+        )
+    }
+    val liveWorkoutSidecarStore = remember(applicationContext) {
+        LiveWorkoutSidecarStore(applicationContext)
+    }
     val liveWorkoutState = liveWorkoutViewModel?.liveUiState?.collectAsState()?.value
         ?: LiveWorkoutUiState(isCloudAccount = cloudSession != null)
+
+    LaunchedEffect(
+        uiIsolationKey,
+        cloudSession?.sessionGeneration,
+        liveWorkoutState.inboxRefreshGeneration,
+        hasSavedLiveWorkoutDraftTarget,
+        savedLiveWorkoutDraftBindingId,
+        savedLiveWorkoutDraftUserId,
+        savedLiveWorkoutDraftSessionGeneration,
+        savedLiveWorkoutDraftProfileId,
+        savedLiveWorkoutDraftFriendshipId,
+        savedLiveWorkoutDraftFriendshipRevision,
+        rootAddWorkoutViewModel
+    ) {
+        val session = cloudSession ?: return@LaunchedEffect
+        val draftViewModel = rootAddWorkoutViewModel ?: return@LaunchedEffect
+        if (liveWorkoutState.inboxRefreshGeneration <= 0L) return@LaunchedEffect
+        val inbox = liveWorkoutState.inbox ?: return@LaunchedEffect
+        val receipt = runCatching { liveWorkoutSidecarStore.draftSend(session) }
+            .getOrNull()
+            ?: return@LaunchedEffect
+        when (confirmedLiveWorkoutDraftReceiptAction(
+            receipt = receipt,
+            inbox = inbox,
+            hasSavedTarget = hasSavedLiveWorkoutDraftTarget,
+            target = liveWorkoutDraftTarget,
+            currentDraftDigest = draftViewModel.retainedDraftDurableDigest()
+        )) {
+            LiveWorkoutDraftReceiptAction.AwaitAuthoritativeRoom -> Unit
+            LiveWorkoutDraftReceiptAction.ConsumeUnchangedDraft -> {
+                draftViewModel.discardDraftIfDigestMatches(receipt.draftFingerprint)
+                setLiveWorkoutDraftTarget(null)
+            }
+            LiveWorkoutDraftReceiptAction.UnbindAndPreserveChangedDraft -> {
+                setLiveWorkoutDraftTarget(null)
+            }
+            LiveWorkoutDraftReceiptAction.ClearReceiptOnly -> {
+                liveWorkoutSidecarStore.clearDraftSend(
+                    session = session,
+                    expectedDraftBindingId = receipt.draftBindingId,
+                    expectedOperationId = receipt.operationId,
+                    expectedRoomId = receipt.roomId
+                )
+            }
+        }
+    }
 
     LaunchedEffect(
         uiIsolationKey,
@@ -1005,6 +1255,7 @@ internal fun GymAppRoot(
     }
     LaunchedEffect(friendsState?.acceptedWorkout?.inviteId, activeWorkout != null) {
         if (friendsState?.acceptedWorkout != null && activeWorkout == null) {
+            setLiveWorkoutDraftTarget(null)
             navController.navigate(AppDestination.AddWorkout.route) {
                 launchSingleTop = true
             }
@@ -1686,12 +1937,13 @@ internal fun GymAppRoot(
                         isRootDestination = isBottomTabRoute,
                         showRootTitle = !hasInContentRootHeader,
                         selectedLanguage = selectedLanguage,
+                        interactionsEnabled = currentRoute?.startsWith(
+                            AppDestination.AddWorkout.route
+                        ) != true || !addWorkoutEditorInteractionLocked,
                         onBack = {
-                            if (currentRoute?.startsWith(AppDestination.AddWorkout.route) == true &&
-                                addWorkoutDraftDirty
+                            if (currentRoute?.startsWith(AppDestination.AddWorkout.route) != true ||
+                                !addWorkoutEditorInteractionLocked
                             ) {
-                                addWorkoutCloseRequestVersion += 1L
-                            } else {
                                 navController.navigateUp()
                             }
                         },
@@ -1879,13 +2131,31 @@ internal fun GymAppRoot(
                         route = rootGraphRoute,
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        composable(route = AppDestination.Workouts.route) {
+                        composable(route = AppDestination.Workouts.route) { backStackEntry ->
                             val application = applicationContext.gymApplication
                             val viewModel: WorkoutListViewModel = viewModel(
                                 factory = WorkoutListViewModel.factory(
                                     repository = repository,
                                     trainingProfileManager = application.trainingProfileManager,
                                     trainingGuidanceManager = application.trainingGuidanceManager
+                                )
+                            )
+                            val draftSyncClient = remember(applicationContext) {
+                                PhoneSyncClient(applicationContext)
+                            }
+                            val addWorkoutDraftViewModelOwner = remember(
+                                backStackEntry,
+                                rootGraphRoute
+                            ) {
+                                navController.getBackStackEntry(rootGraphRoute)
+                            }
+                            val addWorkoutDraftViewModel: AddWorkoutViewModel = viewModel(
+                                viewModelStoreOwner = addWorkoutDraftViewModelOwner,
+                                key = "add_workout_draft",
+                                factory = AddWorkoutViewModel.factory(
+                                    repository = repository,
+                                    syncClient = draftSyncClient,
+                                    trainingProfileManager = application.trainingProfileManager
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsState()
@@ -1899,6 +2169,20 @@ internal fun GymAppRoot(
                             val discardActiveWorkoutFailed = stringResource(
                                 R.string.active_workout_discard_failed
                             )
+                            val hasRetainedWorkoutDraft = shouldResumeRetainedWorkoutDraft(
+                                hasEditorDraft = addWorkoutDraftViewModel.hasRetainedDraft(),
+                                hasLiveTarget = hasSavedLiveWorkoutDraftTarget
+                            )
+                            val resumeRetainedWorkoutEditor: () -> Boolean = {
+                                val shouldResume = activeWorkout == null &&
+                                    hasRetainedWorkoutDraft
+                                if (shouldResume) {
+                                    navController.navigate(AppDestination.AddWorkout.route) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                                shouldResume
+                            }
 
                             WorkoutListScreen(
                                 uiState = uiState,
@@ -1920,56 +2204,76 @@ internal fun GymAppRoot(
                                     )
                                 },
                                 onStartPlan = { launchToken ->
-                                    coroutineScope.launch {
-                                        if (viewModel.startRecommendedPlan(launchToken)) {
-                                            navController.navigate(AppDestination.ActiveWorkout.route) {
-                                                launchSingleTop = true
-                                            }
-                                        } else {
-                                            viewModel.refreshTodayPlan()
-                                        }
-                                    }
-                                },
-                                onOpenPlan = { launchToken ->
-                                    coroutineScope.launch {
-                                        val plan = viewModel.resolveLaunchPlan(launchToken)
-                                        if (plan != null) {
-                                            navController.navigate(
-                                                AppDestination.addWorkoutRoute(launchToken)
-                                            )
-                                        } else {
-                                            viewModel.refreshTodayPlan()
-                                        }
-                                    }
-                                },
-                                onStartFirstWorkout = { goal, days, effort ->
-                                    val token = viewModel.buildFirstWorkoutLaunch(goal, days, effort)
-                                    if (token != null) {
+                                    if (!resumeRetainedWorkoutEditor()) {
                                         coroutineScope.launch {
-                                            if (viewModel.startFirstWorkoutPlan(token)) {
+                                            if (viewModel.startRecommendedPlan(launchToken)) {
                                                 navController.navigate(
                                                     AppDestination.ActiveWorkout.route
                                                 ) {
                                                     launchSingleTop = true
                                                 }
                                             } else {
-                                                viewModel.cancelFirstWorkoutLaunch(token)
                                                 viewModel.refreshTodayPlan()
                                             }
                                         }
                                     }
                                 },
+                                onOpenPlan = { launchToken ->
+                                    if (!resumeRetainedWorkoutEditor()) {
+                                        coroutineScope.launch {
+                                            val plan = viewModel.resolveLaunchPlan(launchToken)
+                                            if (plan != null) {
+                                                setLiveWorkoutDraftTarget(null)
+                                                navController.navigate(
+                                                    AppDestination.addWorkoutRoute(launchToken)
+                                                )
+                                            } else {
+                                                viewModel.refreshTodayPlan()
+                                            }
+                                        }
+                                    }
+                                },
+                                onStartFirstWorkout = { goal, days, effort ->
+                                    if (!resumeRetainedWorkoutEditor()) {
+                                        val token = viewModel.buildFirstWorkoutLaunch(
+                                            goal,
+                                            days,
+                                            effort
+                                        )
+                                        if (token != null) {
+                                            coroutineScope.launch {
+                                                if (viewModel.startFirstWorkoutPlan(token)) {
+                                                    navController.navigate(
+                                                        AppDestination.ActiveWorkout.route
+                                                    ) {
+                                                        launchSingleTop = true
+                                                    }
+                                                } else {
+                                                    viewModel.cancelFirstWorkoutLaunch(token)
+                                                    viewModel.refreshTodayPlan()
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
                                 onEditFirstWorkout = { goal, days, effort ->
-                                    val token = viewModel.buildFirstWorkoutLaunch(goal, days, effort)
-                                    handOffFirstWorkoutNavigation(
-                                        token = token,
-                                        open = { launchToken ->
-                                            navController.navigate(
-                                                AppDestination.addWorkoutRoute(launchToken)
-                                            )
-                                        },
-                                        cancel = viewModel::cancelFirstWorkoutLaunch
-                                    )
+                                    if (!resumeRetainedWorkoutEditor()) {
+                                        val token = viewModel.buildFirstWorkoutLaunch(
+                                            goal,
+                                            days,
+                                            effort
+                                        )
+                                        handOffFirstWorkoutNavigation(
+                                            token = token,
+                                            open = { launchToken ->
+                                                setLiveWorkoutDraftTarget(null)
+                                                navController.navigate(
+                                                    AppDestination.addWorkoutRoute(launchToken)
+                                                )
+                                            },
+                                            cancel = viewModel::cancelFirstWorkoutLaunch
+                                        )
+                                    }
                                 },
                                 onSkipFirstWorkout = {
                                     val previousDismissed =
@@ -1986,10 +2290,16 @@ internal fun GymAppRoot(
                                             }
                                         },
                                         open = {
-                                            navController.navigate(AppDestination.AddWorkout.route)
+                                            if (!resumeRetainedWorkoutEditor()) {
+                                                setLiveWorkoutDraftTarget(null)
+                                                navController.navigate(
+                                                    AppDestination.AddWorkout.route
+                                                )
+                                            }
                                         }
                                     )
                                 },
+                                hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
                                 activeWorkoutProgress = activeWorkoutProgress,
                                 onDiscardActiveWorkout = {
                                     activeWorkout?.activeWorkout?.revision?.let { activeRevision ->
@@ -2094,16 +2404,26 @@ internal fun GymAppRoot(
                                         sourceViewModel::handOffLaunchPlan
                                     }
                             }
+                            val addWorkoutViewModelOwner = remember(
+                                backStackEntry,
+                                rootGraphRoute
+                            ) {
+                                navController.getBackStackEntry(rootGraphRoute)
+                            }
                             val viewModel: AddWorkoutViewModel = viewModel(
-                                key = "add_workout_${backStackEntry.id}",
+                                viewModelStoreOwner = addWorkoutViewModelOwner,
+                                key = "add_workout_draft",
                                 factory = AddWorkoutViewModel.factory(
                                     repository = repository,
                                     syncClient = syncClient,
-                                    trainingProfileManager = application.trainingProfileManager,
-                                    launchToken = launchToken,
-                                    launchPlanHandoff = launchPlanHandoff
+                                    trainingProfileManager = application.trainingProfileManager
                                 )
                             )
+                            LaunchedEffect(launchToken) {
+                                launchToken?.let { token ->
+                                    viewModel.openLaunchPlan(token, launchPlanHandoff)
+                                }
+                            }
                             val uiState by viewModel.uiState.collectAsState()
                             val smartCoachPlanNote = stringResource(R.string.smart_coach_plan_note)
                             val sharedWorkoutImported = stringResource(
@@ -2122,6 +2442,9 @@ internal fun GymAppRoot(
                             val workoutInviteSendFailed = stringResource(
                                 R.string.workout_invite_send_failed
                             )
+                            val liveWorkoutInviteSendFailed = stringResource(
+                                R.string.live_workout_send_failed
+                            )
                             var workoutPlanToShare by remember {
                                 mutableStateOf<SharedWorkoutPlan?>(null)
                             }
@@ -2131,12 +2454,32 @@ internal fun GymAppRoot(
                             var liveWorkoutInviteSendProfileId by remember {
                                 mutableStateOf<String?>(null)
                             }
+                            var liveWorkoutDraftSendSnapshot by remember {
+                                mutableStateOf<LiveWorkoutDraftSendSnapshot?>(null)
+                            }
+                            var liveWorkoutInviteValidationProfileId by remember {
+                                mutableStateOf<String?>(null)
+                            }
                             val liveWorkoutNoticeText = liveWorkoutState.notice?.asString()
                             val liveWorkoutErrorText = liveWorkoutState.error?.asString()
                             val approvedSharedWorkout = pendingSharedWorkout?.takeIf {
                                 it.id == approvedSharedWorkoutId
                             }
                             val acceptedSocialWorkout = friendsState?.acceptedWorkout
+                            val selectedLiveWorkoutFriend = liveWorkoutDraftTarget?.let { target ->
+                                friendsState?.dashboard?.friends
+                                    ?.firstOrNull { friend ->
+                                        friend.profileId == target.binding.profileId &&
+                                            isFriendWorkoutPickerBindingCurrent(
+                                                binding = target.binding,
+                                                activeSession = cloudSession,
+                                                currentProfileId = friend.profileId,
+                                                currentFriendshipId = friend.friendshipId,
+                                                currentFriendshipRevision =
+                                                    friend.friendshipRevision
+                                            )
+                                    }
+                            }
 
                             LaunchedEffect(Unit) {
                                 friendsViewModel?.refreshAll()
@@ -2191,11 +2534,48 @@ internal fun GymAppRoot(
                                 }
                                 val message = liveWorkoutNoticeText ?: liveWorkoutErrorText
                                     ?: return@LaunchedEffect
-                                if (liveWorkoutNoticeText != null) {
+                                if (liveWorkoutState.notice?.resourceId ==
+                                    R.string.live_workout_invite_sent
+                                ) {
+                                    val sendSnapshot = liveWorkoutDraftSendSnapshot
+                                    val successfulTargetStillBound = sendSnapshot != null &&
+                                        shouldClearSuccessfulLiveWorkoutDraftTarget(
+                                            snapshot = sendSnapshot,
+                                            currentTarget = liveWorkoutDraftTarget
+                                        )
+                                    if (sendSnapshot != null &&
+                                        liveWorkoutDraftSendStillMatches(
+                                            snapshot = sendSnapshot,
+                                            currentTarget = liveWorkoutDraftTarget,
+                                            currentDraftFingerprint =
+                                                viewModel.retainedDraftFingerprint()
+                                        )
+                                    ) {
+                                        viewModel.discardDraftIfUnchanged(
+                                            sendSnapshot.draftFingerprint
+                                        )
+                                    }
                                     workoutPlanToShare = null
                                     preferredShareFriendProfileId = null
+                                    if (successfulTargetStillBound) {
+                                        setLiveWorkoutDraftTarget(null)
+                                    }
+                                    liveWorkoutDraftSendSnapshot = null
+                                    liveWorkoutInviteSendProfileId = null
+                                    liveWorkoutViewModel?.clearMessages()
+                                    navController.navigate(AppDestination.Profile.route) {
+                                        popUpTo(backStackEntry.destination.id) {
+                                            inclusive = true
+                                        }
+                                        launchSingleTop = true
+                                    }
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(message)
+                                    }
+                                    return@LaunchedEffect
                                 }
                                 liveWorkoutInviteSendProfileId = null
+                                liveWorkoutDraftSendSnapshot = null
                                 snackbarHostState.showSnackbar(message)
                                 liveWorkoutViewModel?.clearMessages()
                             }
@@ -2279,14 +2659,146 @@ internal fun GymAppRoot(
                                         workoutPlanToShare = plan
                                     }
                                 },
-                                onStartWorkout = viewModel::startWorkout,
-                                onDiscardPlan = { navController.navigateUp() },
-                                externalCloseRequestVersion = addWorkoutCloseRequestVersion,
-                                onExternalCloseRequestHandled = {
-                                    addWorkoutCloseRequestVersion = 0L
+                                liveInviteTargetName = liveWorkoutDraftTarget?.displayName,
+                                hasLiveInviteTarget = hasSavedLiveWorkoutDraftTarget,
+                                isLiveInviteAvailable = selectedLiveWorkoutFriend != null &&
+                                    activeWorkout == null &&
+                                    liveWorkoutViewModel != null,
+                                isLiveInviteSending =
+                                    liveWorkoutInviteValidationProfileId != null ||
+                                        liveWorkoutInviteSendProfileId != null ||
+                                        selectedLiveWorkoutFriend?.let { friend ->
+                                            "send-${friend.profileId}" in
+                                                liveWorkoutState.actionsInFlight
+                                        } == true,
+                                onSendLiveInvite = sendLiveInvite@ {
+                                    val target = liveWorkoutDraftTarget
+                                        ?: return@sendLiveInvite
+                                    val liveViewModel = liveWorkoutViewModel
+                                    val expectedSession = cloudSession
+                                    when {
+                                        liveWorkoutInviteValidationProfileId != null ||
+                                            liveWorkoutInviteSendProfileId != null -> Unit
+                                        activeWorkout != null -> coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(
+                                                    R.string.live_workout_active_blocked
+                                                )
+                                            )
+                                        }
+                                        liveViewModel == null || expectedSession == null ->
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    liveWorkoutInviteSendFailed
+                                                )
+                                            }
+                                        else -> {
+                                            liveWorkoutDraftSendSnapshot = null
+                                            liveWorkoutInviteValidationProfileId =
+                                                target.binding.profileId
+                                            addWorkoutEditorInteractionLocked = true
+                                            coroutineScope.launch {
+                                                try {
+                                                    val freshDashboard =
+                                                        authManager.loadSocialDashboard(
+                                                            expectedSession
+                                                        )
+                                                    val currentTarget =
+                                                        restoreLiveWorkoutDraftTarget(
+                                                            hasTarget =
+                                                                hasSavedLiveWorkoutDraftTarget,
+                                                            draftBindingId =
+                                                                savedLiveWorkoutDraftBindingId,
+                                                            userId = savedLiveWorkoutDraftUserId,
+                                                            sessionGeneration =
+                                                                savedLiveWorkoutDraftSessionGeneration,
+                                                            profileId =
+                                                                savedLiveWorkoutDraftProfileId,
+                                                            friendshipId =
+                                                                savedLiveWorkoutDraftFriendshipId,
+                                                            friendshipRevision =
+                                                                savedLiveWorkoutDraftFriendshipRevision,
+                                                            displayName =
+                                                                savedLiveWorkoutDraftDisplayName
+                                                        )
+                                                    val authoritativeFriend =
+                                                        resolveLiveWorkoutFriendFromFreshDashboard(
+                                                            target = target,
+                                                            activeSession = authManager
+                                                                .authState
+                                                                .value
+                                                                .session,
+                                                            freshFriends = freshDashboard.friends
+                                                        )
+                                                    if (currentTarget != target ||
+                                                        activeWorkout != null ||
+                                                        authoritativeFriend == null
+                                                    ) {
+                                                        snackbarHostState.showSnackbar(
+                                                            liveWorkoutInviteSendFailed
+                                                        )
+                                                        return@launch
+                                                    }
+                                                    val plan = viewModel
+                                                        .prepareSharedWorkoutPlan()
+                                                    if (plan == null) {
+                                                        snackbarHostState.showSnackbar(
+                                                            shareWorkoutFailed
+                                                        )
+                                                        return@launch
+                                                    }
+                                                    liveViewModel.clearMessages()
+                                                    val draftFingerprint = viewModel
+                                                        .retainedDraftFingerprint()
+                                                    liveWorkoutDraftSendSnapshot =
+                                                        LiveWorkoutDraftSendSnapshot(
+                                                            target = target,
+                                                            draftFingerprint = draftFingerprint
+                                                        )
+                                                    liveWorkoutInviteSendProfileId =
+                                                        authoritativeFriend.profileId
+                                                    liveViewModel.sendInvite(
+                                                        authoritativeFriend,
+                                                        plan,
+                                                        LiveWorkoutDraftSendRequest(
+                                                            draftBindingId = target.draftBindingId,
+                                                            draftFingerprint = draftFingerprint
+                                                                .durableDigest()
+                                                        )
+                                                    )
+                                                } catch (cancelled: CancellationException) {
+                                                    throw cancelled
+                                                } catch (_: Throwable) {
+                                                    liveWorkoutDraftSendSnapshot = null
+                                                    liveWorkoutInviteSendProfileId = null
+                                                    snackbarHostState.showSnackbar(
+                                                        liveWorkoutInviteSendFailed
+                                                    )
+                                                } finally {
+                                                    if (liveWorkoutInviteValidationProfileId ==
+                                                        target.binding.profileId
+                                                    ) {
+                                                        liveWorkoutInviteValidationProfileId = null
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 },
-                                onDirtyStateChanged = { dirty ->
-                                    addWorkoutDraftDirty = dirty
+                                onStartWorkout = viewModel::startWorkout,
+                                onNavigateToHistory = {
+                                    navController.navigateUp()
+                                },
+                                onDiscardPlan = {
+                                    viewModel.discardDraft()
+                                    setLiveWorkoutDraftTarget(null)
+                                    navController.navigateUp()
+                                },
+                                externalCloseRequestVersion = 0L,
+                                onExternalCloseRequestHandled = {},
+                                onDirtyStateChanged = {},
+                                onInteractionLockChanged = { locked ->
+                                    addWorkoutEditorInteractionLocked = locked
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -3202,6 +3714,7 @@ internal fun GymAppRoot(
                                     userId = cloudSession.userId,
                                     sessionGeneration = cloudSession.sessionGeneration,
                                     profileId = friend.profileId,
+                                    friendshipId = friend.friendshipId,
                                     friendshipRevision = friend.friendshipRevision
                                 )
                             } else {
@@ -3309,6 +3822,7 @@ internal fun GymAppRoot(
                                     val binding = currentFriendShareBinding
                                     if (binding != null &&
                                         target.profileId == binding.profileId &&
+                                        target.friendshipId == binding.friendshipId &&
                                         target.friendshipRevision == binding.friendshipRevision &&
                                         cloudSession != null &&
                                         authManager.isLiveSessionActive(cloudSession)
@@ -3323,9 +3837,29 @@ internal fun GymAppRoot(
                                     }
                                 },
                                 onBuildLiveWorkout = {
-                                    preferredShareFriendProfileId = profileId
-                                    navController.navigate(AppDestination.AddWorkout.route) {
-                                        launchSingleTop = true
+                                    when {
+                                        activeWorkout != null -> coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(
+                                                    R.string.live_workout_active_blocked
+                                                )
+                                            )
+                                        }
+                                        currentFriendShareBinding == null || friend == null ->
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                            }
+                                        else -> {
+                                            setLiveWorkoutDraftTarget(LiveWorkoutDraftTarget(
+                                                binding = currentFriendShareBinding,
+                                                displayName = friend.displayName,
+                                                draftBindingId = UUID.randomUUID().toString()
+                                            ))
+                                            preferredShareFriendProfileId = profileId
+                                            navController.navigate(AppDestination.AddWorkout.route) {
+                                                launchSingleTop = true
+                                            }
+                                        }
                                     }
                                 },
                                 onRemove = { target ->
@@ -3367,6 +3901,8 @@ internal fun GymAppRoot(
                                                     binding = binding,
                                                     activeSession = authManager.authState.value.session,
                                                     currentProfileId = currentFriend?.profileId,
+                                                    currentFriendshipId = currentFriend
+                                                        ?.friendshipId,
                                                     currentFriendshipRevision = currentFriend
                                                         ?.friendshipRevision
                                                 )
@@ -3411,6 +3947,8 @@ internal fun GymAppRoot(
                                                                 .session,
                                                             currentProfileId = latestFriend
                                                                 ?.profileId,
+                                                            currentFriendshipId = latestFriend
+                                                                ?.friendshipId,
                                                             currentFriendshipRevision = latestFriend
                                                                 ?.friendshipRevision
                                                         )
@@ -3487,12 +4025,14 @@ internal fun GymAppRoot(
                                         if (expectedSession == null ||
                                             socialViewModel == null ||
                                             target.profileId != binding.profileId ||
+                                            target.friendshipId != binding.friendshipId ||
                                             target.friendshipRevision != binding.friendshipRevision ||
                                             !authManager.isLiveSessionActive(expectedSession) ||
                                             !isFriendWorkoutPickerBindingCurrent(
                                                 binding,
                                                 authManager.authState.value.session,
                                                 latestFriend?.profileId,
+                                                latestFriend?.friendshipId,
                                                 latestFriend?.friendshipRevision
                                             )
                                         ) {
@@ -3524,12 +4064,14 @@ internal fun GymAppRoot(
                                         if (expectedSession == null ||
                                             liveViewModel == null ||
                                             target.profileId != binding.profileId ||
+                                            target.friendshipId != binding.friendshipId ||
                                             target.friendshipRevision != binding.friendshipRevision ||
                                             !authManager.isLiveSessionActive(expectedSession) ||
                                             !isFriendWorkoutPickerBindingCurrent(
                                                 binding,
                                                 authManager.authState.value.session,
                                                 latestFriend?.profileId,
+                                                latestFriend?.friendshipId,
                                                 latestFriend?.friendshipRevision
                                             )
                                         ) {
@@ -3587,6 +4129,7 @@ internal fun GymAppRoot(
                         setCount = pending.plan.setCount,
                         onOpenInApp = {
                             approvedSharedWorkoutId = pending.id
+                            setLiveWorkoutDraftTarget(null)
                             navController.navigate(AppDestination.AddWorkout.route) {
                                 launchSingleTop = true
                             }
@@ -3696,6 +4239,7 @@ private fun AppTopBar(
     isRootDestination: Boolean,
     showRootTitle: Boolean,
     selectedLanguage: AppLanguage,
+    interactionsEnabled: Boolean,
     onBack: () -> Unit,
     onLanguageSelected: (AppLanguage) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior
@@ -3718,7 +4262,8 @@ private fun AppTopBar(
             actions = {
                 LanguageSelector(
                     selectedLanguage = selectedLanguage,
-                    onLanguageSelected = onLanguageSelected
+                    onLanguageSelected = onLanguageSelected,
+                    enabled = interactionsEnabled
                 )
             },
             scrollBehavior = scrollBehavior
@@ -3746,7 +4291,7 @@ private fun AppTopBar(
                         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
                     )
                 ) {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, enabled = interactionsEnabled) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.cd_back)
@@ -3757,7 +4302,8 @@ private fun AppTopBar(
             actions = {
                 LanguageSelector(
                     selectedLanguage = selectedLanguage,
-                    onLanguageSelected = onLanguageSelected
+                    onLanguageSelected = onLanguageSelected,
+                    enabled = interactionsEnabled
                 )
             },
             scrollBehavior = scrollBehavior
@@ -3768,9 +4314,13 @@ private fun AppTopBar(
 @Composable
 private fun LanguageSelector(
     selectedLanguage: AppLanguage,
-    onLanguageSelected: (AppLanguage) -> Unit
+    onLanguageSelected: (AppLanguage) -> Unit,
+    enabled: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
+    LaunchedEffect(enabled) {
+        if (!enabled) expanded = false
+    }
 
     Box(modifier = Modifier.padding(end = 12.dp)) {
         Surface(
@@ -3781,7 +4331,7 @@ private fun LanguageSelector(
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
             )
         ) {
-            TextButton(onClick = { expanded = true }) {
+            TextButton(onClick = { expanded = true }, enabled = enabled) {
                 Icon(
                     imageVector = Icons.Default.Language,
                     contentDescription = stringResource(R.string.cd_language)

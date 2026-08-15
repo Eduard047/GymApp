@@ -52,6 +52,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.time.DateTimeException
 import java.time.Instant
 import java.time.LocalDate
@@ -277,6 +279,104 @@ data class AddWorkoutUiState(
     val activeWorkoutStarted: Boolean = false
 )
 
+internal data class RetainedWorkoutDraftFingerprint(
+    val workoutDate: Long,
+    val note: String,
+    val exerciseDrafts: List<ExerciseInputState>,
+    val smartWorkoutEffort: SmartWorkoutEffort,
+    val generatedSmartPlan: SmartWorkoutPlanSummaryUiModel?,
+    val isDirty: Boolean
+)
+
+internal fun retainedWorkoutDraftFingerprint(state: AddWorkoutUiState) =
+    RetainedWorkoutDraftFingerprint(
+        workoutDate = state.workoutDate,
+        note = state.note,
+        exerciseDrafts = state.exerciseDrafts,
+        smartWorkoutEffort = state.smartWorkoutEffort,
+        generatedSmartPlan = state.generatedSmartPlan,
+        isDirty = state.isDirty
+    )
+
+internal fun liveSendMayDiscardRetainedWorkoutDraft(
+    expected: RetainedWorkoutDraftFingerprint,
+    current: RetainedWorkoutDraftFingerprint
+): Boolean = expected == current
+
+internal fun RetainedWorkoutDraftFingerprint.durableDigest(): String {
+    val writer = WorkoutDraftDigestWriter(MessageDigest.getInstance("SHA-256"))
+    writer.string("GymAppRetainedWorkoutDraftV1")
+    writer.long(workoutDate)
+    writer.string(note)
+    writer.int(exerciseDrafts.size)
+    exerciseDrafts.forEach { draft ->
+        writer.long(draft.draftId)
+        writer.nullableLong(draft.exerciseId)
+        writer.int(draft.sets.size)
+        draft.sets.forEach { set ->
+            writer.string(set.weight)
+            writer.string(set.reps)
+        }
+    }
+    writer.string(smartWorkoutEffort.name)
+    writer.boolean(generatedSmartPlan != null)
+    generatedSmartPlan?.let { plan ->
+        writer.string(plan.focus.name)
+        writer.string(plan.variant.name)
+        writer.string(plan.requestedEffort.name)
+        writer.string(plan.appliedEffort.name)
+        writer.nullableString(plan.effortAdjustment?.name)
+        writer.int(plan.hardExerciseIds.size)
+        plan.hardExerciseIds.sorted().forEach(writer::long)
+        writer.string(plan.trainingProfileSnapshot.split.name)
+        writer.int(plan.trainingProfileSnapshot.workoutsPerWeek)
+        writer.string(plan.trainingProfileSnapshot.goal.name)
+        writer.string(plan.trainingProfileSnapshot.calorieMode.name)
+    }
+    writer.boolean(isDirty)
+    return writer.finish()
+}
+
+private class WorkoutDraftDigestWriter(
+    private val digest: MessageDigest
+) {
+    fun boolean(value: Boolean) = int(if (value) 1 else 0)
+
+    fun int(value: Int) {
+        digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value).array())
+    }
+
+    fun long(value: Long) {
+        digest.update(ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value).array())
+    }
+
+    fun nullableLong(value: Long?) {
+        boolean(value != null)
+        value?.let(::long)
+    }
+
+    fun nullableString(value: String?) {
+        boolean(value != null)
+        value?.let(::string)
+    }
+
+    fun string(value: String) {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        int(bytes.size)
+        digest.update(bytes)
+    }
+
+    fun finish(): String = digest.digest().joinToString(separator = "") { byte ->
+        "%02x".format(byte)
+    }
+}
+
+internal fun hasRetainedWorkoutDraft(state: AddWorkoutUiState): Boolean =
+    state.isDirty || state.exerciseDrafts.isNotEmpty() || state.note.isNotBlank()
+
+internal fun canHydrateLaunchPlanIntoDraft(state: AddWorkoutUiState): Boolean =
+    !hasRetainedWorkoutDraft(state)
+
 internal fun planSyncErrorText(error: Throwable): LocalizedText {
     val message = error.message.orEmpty()
     val resource = when {
@@ -387,6 +487,8 @@ class AddWorkoutViewModel internal constructor(
 
     private var nextDraftId = 1L
     private var watchPlanSyncGeneration = 0L
+    private var launchHydrationGeneration = 0L
+    private var lastRequestedLaunchToken: String? = null
 
     private val workoutDate = MutableStateFlow(System.currentTimeMillis())
     private val note = MutableStateFlow("")
@@ -464,22 +566,7 @@ class AddWorkoutViewModel internal constructor(
 
     init {
         launchToken?.let { token ->
-            viewModelScope.launch {
-                exerciseCatalogState.first { catalog -> catalog.isLoaded }
-                val accepted = try {
-                    launchPlanHandoff(
-                        token,
-                        ::canApplyLaunchPlan,
-                        ::applyLaunchPlan
-                    )
-                } catch (error: Throwable) {
-                    if (error is CancellationException) throw error
-                    false
-                }
-                if (!accepted) {
-                    hasValidationError.value = true
-                }
-            }
+            openLaunchPlan(token, launchPlanHandoff)
         }
     }
     private val workoutTemplates = repository.observeSessions().map { sessions ->
@@ -705,6 +792,48 @@ class AddWorkoutViewModel internal constructor(
             false
         } finally {
             isTemplateLoading.value = false
+        }
+    }
+
+    internal fun openLaunchPlan(
+        token: String,
+        handoff: suspend (
+            String,
+            (SmartWorkoutLaunchPlan) -> Boolean,
+            (SmartWorkoutLaunchPlan) -> Boolean
+        ) -> Boolean
+    ) {
+        if (hasRetainedDraft()) return
+        if (token == lastRequestedLaunchToken) return
+        lastRequestedLaunchToken = token
+        val generation = ++launchHydrationGeneration
+        viewModelScope.launch {
+            exerciseCatalogState.first { catalog -> catalog.isLoaded }
+            if (generation != launchHydrationGeneration) return@launch
+            val accepted = try {
+                handoff(
+                    token,
+                    { plan ->
+                        generation == launchHydrationGeneration &&
+                            !hasRetainedDraft() &&
+                            canApplyLaunchPlan(plan)
+                    },
+                    { plan ->
+                        generation == launchHydrationGeneration &&
+                            !hasRetainedDraft() &&
+                            applyLaunchPlan(plan)
+                    }
+                )
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                false
+            }
+            if (generation == launchHydrationGeneration &&
+                !accepted &&
+                !hasRetainedDraft()
+            ) {
+                hasValidationError.value = true
+            }
         }
     }
 
@@ -1212,6 +1341,9 @@ class AddWorkoutViewModel internal constructor(
                     workoutExercises = parsedExercises
                 )
             }.onSuccess { result ->
+                if (result == StartActiveWorkoutResult.Started) {
+                    resetDraftState()
+                }
                 if (result == StartActiveWorkoutResult.Started ||
                     result == StartActiveWorkoutResult.AlreadyActive
                 ) {
@@ -1356,6 +1488,62 @@ class AddWorkoutViewModel internal constructor(
     }
 
     fun consumeActiveWorkoutStarted() {
+        activeWorkoutStarted.value = false
+    }
+
+    internal fun hasRetainedDraft(): Boolean =
+        isDirty.value || exerciseDrafts.value.isNotEmpty() || note.value.isNotBlank()
+
+    internal fun retainedDraftFingerprint(): RetainedWorkoutDraftFingerprint =
+        RetainedWorkoutDraftFingerprint(
+            workoutDate = workoutDate.value,
+            note = note.value,
+            exerciseDrafts = exerciseDrafts.value,
+            smartWorkoutEffort = smartWorkoutEffort.value,
+            generatedSmartPlan = generatedSmartPlan.value,
+            isDirty = isDirty.value
+        )
+
+    internal fun retainedDraftDurableDigest(): String =
+        retainedDraftFingerprint().durableDigest()
+
+    internal fun discardDraftIfUnchanged(
+        expected: RetainedWorkoutDraftFingerprint
+    ): Boolean {
+        if (!liveSendMayDiscardRetainedWorkoutDraft(expected, retainedDraftFingerprint())) {
+            return false
+        }
+        resetDraftState()
+        return true
+    }
+
+    internal fun discardDraftIfDigestMatches(expectedDigest: String): Boolean {
+        if (retainedDraftDurableDigest() != expectedDigest) return false
+        resetDraftState()
+        return true
+    }
+
+    fun discardDraft() {
+        resetDraftState()
+    }
+
+    private fun resetDraftState() {
+        launchHydrationGeneration += 1L
+        watchPlanSyncGeneration += 1L
+        workoutDate.value = System.currentTimeMillis()
+        note.value = ""
+        exerciseDrafts.value = emptyList()
+        isTemplatePickerOpen.value = false
+        isTemplateLoading.value = false
+        smartWorkoutEffort.value = SmartWorkoutEffort.Auto
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
+        isSyncingPlanToWatch.value = false
+        didSyncPlanToWatch.value = null
+        watchPlanSyncError.value = null
+        isSaving.value = false
+        hasValidationError.value = false
+        isDirty.value = false
         activeWorkoutStarted.value = false
     }
 

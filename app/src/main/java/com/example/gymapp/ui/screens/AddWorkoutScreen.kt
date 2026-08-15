@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -140,25 +144,30 @@ fun AddWorkoutScreen(
     onCopyWorkoutTemplate: (Long) -> Unit,
     onSyncPlanToWatch: () -> Unit,
     onShareWorkout: () -> Unit,
+    liveInviteTargetName: String? = null,
+    hasLiveInviteTarget: Boolean = !liveInviteTargetName.isNullOrBlank(),
+    isLiveInviteAvailable: Boolean = true,
+    isLiveInviteSending: Boolean = false,
+    onSendLiveInvite: () -> Unit = {},
     onStartWorkout: () -> Unit,
+    onNavigateToHistory: () -> Unit,
     onDiscardPlan: () -> Unit,
     externalCloseRequestVersion: Long,
     onExternalCloseRequestHandled: () -> Unit,
     onDirtyStateChanged: (Boolean) -> Unit,
+    onInteractionLockChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val selectedExerciseCount = uiState.exerciseDrafts.count { it.exerciseId != null }
+    val primaryAction = workoutPlanPrimaryAction(hasLiveInviteTarget)
+    val primaryActionInProgress = uiState.isSaving ||
+        (primaryAction == WorkoutPlanPrimaryAction.SendLiveInvite && isLiveInviteSending)
+    val editorInteractionsLocked = workoutPlanEditorInteractionsLocked(isLiveInviteSending)
     var secondaryOptionsExpanded by rememberSaveable { mutableStateOf(false) }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
-    val requestClose = {
-        if (workoutPlanCloseRequiresConfirmation(uiState.isDirty)) {
-            showDiscardConfirmation = true
-        } else {
-            onDiscardPlan()
-        }
-    }
+    val requestClose = onNavigateToHistory
     val noteTemplates = listOf(
         stringResource(R.string.note_template_push),
         stringResource(R.string.note_template_pull),
@@ -168,8 +177,18 @@ fun AddWorkoutScreen(
         stringResource(R.string.note_template_deload)
     )
 
+    Box(modifier = modifier.fillMaxSize()) {
     LazyColumn(
-        modifier = modifier.fillMaxSize().testTag("workout_plan_editor_list"),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("workout_plan_editor_list")
+            .then(
+                if (editorInteractionsLocked) {
+                    Modifier.clearAndSetSemantics { disabled() }
+                } else {
+                    Modifier
+                }
+            ),
         contentPadding = PaddingValues(
             start = GymSpacing.ScreenHorizontal,
             top = GymSpacing.ScreenTop,
@@ -302,18 +321,42 @@ fun AddWorkoutScreen(
 
         item {
             Button(
-                onClick = onStartWorkout,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isSaving && uiState.exerciseDrafts.isNotEmpty()
+                onClick = when (primaryAction) {
+                    WorkoutPlanPrimaryAction.StartSolo -> onStartWorkout
+                    WorkoutPlanPrimaryAction.SendLiveInvite -> onSendLiveInvite
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("workout_plan_primary_action"),
+                enabled = !primaryActionInProgress &&
+                    !uiState.isTemplateLoading &&
+                    !uiState.isSyncingPlanToWatch &&
+                    uiState.exerciseDrafts.isNotEmpty() &&
+                    (primaryAction != WorkoutPlanPrimaryAction.SendLiveInvite ||
+                        isLiveInviteAvailable)
             ) {
-                if (uiState.isSaving) {
+                if (primaryActionInProgress) {
                     CircularProgressIndicator(
                         modifier = Modifier.padding(end = 8.dp).size(18.dp),
                         strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
-                Text(text = stringResource(R.string.action_start_workout))
+                Text(
+                    text = when (primaryAction) {
+                        WorkoutPlanPrimaryAction.StartSolo ->
+                            stringResource(R.string.action_start_workout)
+                        WorkoutPlanPrimaryAction.SendLiveInvite ->
+                            if (liveInviteTargetName.isNullOrBlank()) {
+                                stringResource(R.string.workout_share_live_friend_title)
+                            } else {
+                                stringResource(
+                                    R.string.workout_share_live_friend_action,
+                                    liveInviteTargetName
+                                )
+                            }
+                    }
+                )
             }
         }
 
@@ -505,26 +548,67 @@ fun AddWorkoutScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedButton(
-                    onClick = onShareWorkout,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedExerciseCount > 0 && !uiState.isSaving
+                if (workoutPlanAllowsGenericShare(hasLiveInviteTarget)) {
+                    OutlinedButton(
+                        onClick = onShareWorkout,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedExerciseCount > 0 && !uiState.isSaving
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(text = stringResource(R.string.action_share_workout))
+                    }
+                }
+                if (uiState.isDirty ||
+                    uiState.exerciseDrafts.isNotEmpty() ||
+                    uiState.note.isNotBlank()
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = null
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text(text = stringResource(R.string.action_share_workout))
+                    TextButton(
+                        onClick = { showDiscardConfirmation = true },
+                        enabled = !uiState.isSaving && !uiState.isTemplateLoading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("workout_plan_discard_draft")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(
+                            text = stringResource(R.string.workout_plan_discard_draft),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
         }
     }
+        if (editorInteractionsLocked) {
+            val lockInteractionSource = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .testTag("workout_plan_editor_locked")
+                    .clickable(
+                        interactionSource = lockInteractionSource,
+                        indication = null,
+                        onClick = {}
+                    )
+                    .semantics { disabled() }
+            )
+        }
+    }
 
-    BackHandler(onBack = requestClose)
-    LaunchedEffect(externalCloseRequestVersion) {
-        if (externalCloseRequestVersion > 0L) {
+    BackHandler(enabled = editorInteractionsLocked) {}
+    BackHandler(enabled = !editorInteractionsLocked, onBack = requestClose)
+    LaunchedEffect(externalCloseRequestVersion, editorInteractionsLocked) {
+        if (externalCloseRequestVersion > 0L && !editorInteractionsLocked) {
             requestClose()
             onExternalCloseRequestHandled()
         }
@@ -532,10 +616,16 @@ fun AddWorkoutScreen(
     LaunchedEffect(uiState.isDirty) {
         onDirtyStateChanged(uiState.isDirty)
     }
-    DisposableEffect(Unit) {
-        onDispose { onDirtyStateChanged(false) }
+    LaunchedEffect(editorInteractionsLocked) {
+        onInteractionLockChanged(editorInteractionsLocked)
     }
-    if (showDiscardConfirmation) {
+    DisposableEffect(Unit) {
+        onDispose {
+            onDirtyStateChanged(false)
+            onInteractionLockChanged(false)
+        }
+    }
+    if (showDiscardConfirmation && !editorInteractionsLocked) {
         AlertDialog(
             onDismissRequest = { showDiscardConfirmation = false },
             title = { Text(stringResource(R.string.workout_plan_discard_title)) },
@@ -552,7 +642,7 @@ fun AddWorkoutScreen(
             }
         )
     }
-    if (showClearConfirmation) {
+    if (showClearConfirmation && !editorInteractionsLocked) {
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
             title = { Text(stringResource(R.string.workout_plan_clear_title)) },
@@ -578,7 +668,7 @@ fun AddWorkoutScreen(
         )
     }
 
-    if (uiState.isTemplatePickerOpen) {
+    if (uiState.isTemplatePickerOpen && !editorInteractionsLocked) {
         ModalBottomSheet(
             onDismissRequest = onCloseTemplatePicker,
             containerColor = MaterialTheme.colorScheme.background,
@@ -592,7 +682,7 @@ fun AddWorkoutScreen(
         }
     }
 
-    uiState.smartAlternativePicker?.let { picker ->
+    uiState.smartAlternativePicker?.takeUnless { editorInteractionsLocked }?.let { picker ->
         ModalBottomSheet(
             onDismissRequest = onCloseSmartAlternatives,
             containerColor = MaterialTheme.colorScheme.background,
@@ -617,7 +707,23 @@ fun AddWorkoutScreen(
     }
 }
 
-internal fun workoutPlanCloseRequiresConfirmation(isDirty: Boolean): Boolean = isDirty
+internal enum class WorkoutPlanPrimaryAction {
+    StartSolo,
+    SendLiveInvite
+}
+
+internal fun workoutPlanAllowsGenericShare(hasLiveInviteTarget: Boolean): Boolean =
+    !hasLiveInviteTarget
+
+internal fun workoutPlanEditorInteractionsLocked(isLiveInviteSending: Boolean): Boolean =
+    isLiveInviteSending
+
+internal fun workoutPlanPrimaryAction(hasLiveInviteTarget: Boolean): WorkoutPlanPrimaryAction =
+    if (hasLiveInviteTarget) {
+        WorkoutPlanPrimaryAction.SendLiveInvite
+    } else {
+        WorkoutPlanPrimaryAction.StartSolo
+    }
 
 private fun showWorkoutDatePicker(
     context: Context,

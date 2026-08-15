@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "productVersion": "3.1.0",
+  "productVersion": "3.1.1",
   "scope": {
     "fullEditors": ["android", "ios", "browser"],
     "browser": "full-workout-client"
@@ -22,6 +22,11 @@
         "en": "Create manually",
         "uk": "Створити вручну",
         "ru": "Создать вручную"
+      },
+      "todayContinuePlan": {
+        "en": "Continue plan",
+        "uk": "Продовжити план",
+        "ru": "Продолжить план"
       },
       "editorTitle": {
         "en": "Workout plan",
@@ -102,6 +107,14 @@
   },
   "todayRecommended": {
     "actionsInOrder": ["startPlan", "editPlan", "createManually"],
+    "retainedDraftPrecedence": {
+      "appliesToStates": ["recommendedPlan", "restOrRecovery", "completedToday", "firstWorkoutActivation"],
+      "actionsInOrder": ["continuePlan"],
+      "opens": "sameAccountRetainedPlanEditorState",
+      "mayReplaceDraft": false,
+      "mayCreateActiveWorkout": false,
+      "requiresExplicitDiscardBeforeAnotherPlan": true
+    },
     "startPlanProminence": "primary",
     "editPlanProminence": "secondary",
     "createManuallyProminence": "tertiary",
@@ -145,10 +158,36 @@
     "copyPreviousWorkoutIntoDraft"
   ],
   "draftRules": {
-    "storageBeforeStart": "editor-memory-only",
+    "storageBeforeStart": "account-bound-local-navigation-draft",
+    "survives": [
+      "openHistoryAndReturn",
+      "switchBetweenAppTabsAndReturn",
+      "browserBackForwardAndReload"
+    ],
+    "clearedBy": [
+      "explicitDiscard",
+      "successfulWorkoutStart",
+      "successfulLivePlanFreeze",
+      "accountSwitchOrLogout"
+    ],
+    "mustNotBeClearedBy": [
+      "openHistory",
+      "ordinaryBackNavigation",
+      "renderOrRouteRefresh",
+      "failedWorkoutStart",
+      "failedLiveInvitation",
+      "privacyPreservingUnavailableLiveResponse"
+    ],
+    "accountAndSessionBound": true,
+    "cloudSync": "none",
+    "bounds": {
+      "sameAsValidatedWorkoutPlanPayload": true,
+      "malformedOrOversizedStoredDraft": "discardDraftOnlyFailClosed"
+    },
     "savePlanActionVisible": false,
     "initialHydrationIsDirty": false,
-    "dirtyCancelRequiresConfirmation": true,
+    "navigationBackPreservesDraft": true,
+    "explicitDiscardRequiresConfirmation": true,
     "dirtyGestureDismissAllowed": false,
     "templateAndPreviousWorkoutAreCopies": true,
     "sourceHistoryMutation": "none",
@@ -245,6 +284,12 @@
   },
   "transitions": [
     {
+      "from": "todayAnyStateWithRetainedDraft",
+      "action": "continuePlan",
+      "to": "samePlanEditorState",
+      "mutations": []
+    },
+    {
       "from": "todayRecommended",
       "action": "startPlan",
       "to": "activeWorkout",
@@ -263,9 +308,15 @@
       "mutations": []
     },
     {
-      "from": "planEditorClean",
-      "action": "cancel",
-      "to": "todayRecommended",
+      "from": "planEditorCleanOrDirty",
+      "action": "navigateToHistory",
+      "to": "historyWithDraftRetained",
+      "mutations": []
+    },
+    {
+      "from": "historyWithDraftRetained",
+      "action": "returnToEditor",
+      "to": "samePlanEditorState",
       "mutations": []
     },
     {
@@ -276,18 +327,18 @@
     },
     {
       "from": "planEditorDirty",
-      "action": "cancel",
-      "to": "dirtyCancelConfirmation",
+      "action": "explicitDiscard",
+      "to": "discardDraftConfirmation",
       "mutations": []
     },
     {
-      "from": "dirtyCancelConfirmation",
-      "action": "keepEditing",
+      "from": "discardDraftConfirmation",
+      "action": "keepDraft",
       "to": "planEditorDirty",
       "mutations": []
     },
     {
-      "from": "dirtyCancelConfirmation",
+      "from": "discardDraftConfirmation",
       "action": "discardChanges",
       "to": "todayRecommended",
       "mutations": ["discardEditorMemory"]

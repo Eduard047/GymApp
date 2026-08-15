@@ -128,6 +128,8 @@ function loadContext({ localStorage = createStorage(), locks = createWebLocks() 
   context.window.GymStateContract = context.GymStateContract;
   vm.runInContext(appSource, context);
   const startupState = JSON.parse(vm.runInContext("JSON.stringify(state)", context));
+  const startupActiveWorkout = JSON.parse(vm.runInContext("JSON.stringify(activeWorkout)", context));
+  const startupWorkoutDraft = JSON.parse(vm.runInContext("JSON.stringify(workoutDraft)", context));
   vm.runInContext(`
     activeAccount = ${JSON.stringify(LOCAL_ACCOUNT)};
     state = defaultAppState();
@@ -139,7 +141,16 @@ function loadContext({ localStorage = createStorage(), locks = createWebLocks() 
     showToast = message => { globalThis.lastToast = message; };
   `, context);
   localStorage.writes.length = 0;
-  return { appNode, context, localStorage, runtimeNodes, startupState, windowListeners };
+  return {
+    appNode,
+    context,
+    localStorage,
+    runtimeNodes,
+    startupActiveWorkout,
+    startupState,
+    startupWorkoutDraft,
+    windowListeners
+  };
 }
 
 async function startTwoSetWorkout(context) {
@@ -215,6 +226,62 @@ test("starting creates one account-scoped local active draft without changing hi
   assert.equal(vm.runInContext("activeWorkout.blocks[0].sets.length", context), 2);
   assert.match(vm.runInContext("focusLensCard([])", context), /continue-active-workout/);
   assert.match(vm.runInContext("focusLensCard([])", context), /discard-active-workout/);
+});
+
+test("startup consumes only a same-account pre-start draft behind a valid active workout", async () => {
+  const sharedStorage = createStorage();
+  const writer = loadContext({ localStorage: sharedStorage, locks: createWebLocks() });
+  await startTwoSetWorkout(writer.context);
+  const activeKey = activeStorageKey(writer.context);
+  const draftKey = vm.runInContext("workoutDraftAccountDescriptor().storageKey", writer.context);
+  vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "stale before-start snapshot",
+      blocks: [{
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        sets: [{ weight: "80", reps: "8" }]
+      }]
+    };
+    workoutDraftLiveRecipient = null;
+    persistWorkoutDraft();
+  `, writer.context);
+  assert.notEqual(sharedStorage.getItem(draftKey), null);
+
+  const restarted = loadContext({ localStorage: sharedStorage, locks: createWebLocks() });
+  assert.notEqual(restarted.startupActiveWorkout, null);
+  assert.equal(restarted.startupWorkoutDraft, null);
+  assert.equal(sharedStorage.getItem(draftKey), null, "the durable draft must be pruned, not just hidden in memory");
+
+  sharedStorage.removeItem(activeKey);
+  const afterActiveCompleted = loadContext({ localStorage: sharedStorage, locks: createWebLocks() });
+  assert.equal(afterActiveCompleted.startupWorkoutDraft, null, "the consumed plan cannot resurrect later");
+});
+
+test("a wrong-owner active envelope cannot consume the current account's valid draft", async () => {
+  const sharedStorage = createStorage();
+  const writer = loadContext({ localStorage: sharedStorage, locks: createWebLocks() });
+  await startTwoSetWorkout(writer.context);
+  const activeKey = activeStorageKey(writer.context);
+  const draftKey = vm.runInContext("workoutDraftAccountDescriptor().storageKey", writer.context);
+  vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "keep after invalid active",
+      blocks: [{ exerciseName: "Bench Press", sets: [{ weight: "60", reps: "10" }] }]
+    };
+    workoutDraftLiveRecipient = null;
+    persistWorkoutDraft();
+  `, writer.context);
+  const wrongOwner = JSON.parse(sharedStorage.getItem(activeKey));
+  wrongOwner.owner = "local:another-account";
+  sharedStorage.setItem(activeKey, JSON.stringify(wrongOwner));
+
+  const restarted = loadContext({ localStorage: sharedStorage, locks: createWebLocks() });
+  assert.equal(restarted.startupActiveWorkout, null);
+  assert.equal(restarted.startupWorkoutDraft.note, "keep after invalid active");
+  assert.notEqual(sharedStorage.getItem(draftKey), null);
 });
 
 test("local state migrates legacy exercise controls without enabling them for UI or import", () => {

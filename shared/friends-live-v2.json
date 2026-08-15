@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "productVersion": "3.1.0",
+  "productVersion": "3.1.1",
   "clients": ["android", "ios", "pwa"],
   "friendWorkoutSharing": {
     "summaryConsent": {
@@ -55,6 +55,25 @@
   },
   "liveWorkout": {
     "participants": 2,
+    "directCreate": {
+      "entry": "friendDetailCreateLiveWorkout",
+      "selectedFriendIsRecipient": true,
+      "primaryAction": "createOrOpenRoomForSelectedFriend",
+      "mustNotCreateStandaloneWorkout": true,
+      "mustNotRequireSecondaryShareAction": true,
+      "privacyPreservingUnavailableResponse": "keepEditorDraftForRetry",
+      "authoritativeRecipientMismatch": "keepLiveBindingFailClosedUntilExplicitCancel",
+      "editorDuringFreshValidationAndSend": "fullyInteractionFrozen",
+      "repeatPrimaryActionWhileSending": "ignored",
+      "confirmedRoomClearsOnlySentUnchangedDraft": true,
+      "unrelatedLocalActiveWorkout": "denyWithoutMutation"
+    },
+    "entryParity": {
+      "notificationAndInAppInvitationUseSameAcceptOperation": true,
+      "bothRequireAuthoritativeSnapshotBeforeLocalActivation": true,
+      "bothOpenActiveRoomAfterBoundLocalCommit": true,
+      "navigationLinkIsNotAuthorization": true
+    },
     "localActiveSlotReservation": {
       "ownerCommitPoint": "durableBeforeInviteRpc",
       "inviteeCommitPoint": "durableBeforeAcceptRpc",

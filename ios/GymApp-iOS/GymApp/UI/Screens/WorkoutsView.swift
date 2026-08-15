@@ -30,6 +30,61 @@ enum TodayFocusPlanMetrics {
     }
 }
 
+struct WeeklyTrainingSummary: Equatable {
+    let weekStart: Date
+    let completedSessionCount: Int
+    let completedTrainingDays: Set<Int64>
+    let totalMinutes: Int
+    let totalVolume: Double
+
+    init(
+        sessions: [WorkoutSessionSummary],
+        now: Date,
+        calendar: Calendar
+    ) {
+        let start = calendar.gymMondayStart(of: now)
+        let end = calendar.date(byAdding: .day, value: 7, to: start)
+            ?? start.addingTimeInterval(7 * 24 * 60 * 60)
+        let weeklySessions = sessions.filter { session in
+            session.date >= start && session.date < end && session.date <= now
+        }
+
+        weekStart = start
+        completedSessionCount = weeklySessions.count
+        completedTrainingDays = Set(
+            weeklySessions.map { calendar.gymEpochDay(for: $0.date) }
+        )
+        totalMinutes = weeklySessions.reduce(0) { running, session in
+            let minutes = Self.durationMinutes(for: session)
+            guard running <= Int.max - minutes else { return Int.max }
+            return running + minutes
+        }
+        totalVolume = weeklySessions.reduce(0.0) { running, session in
+            guard session.totalVolume.isFinite, session.totalVolume >= 0 else { return running }
+            return min(maximumTodayHeroVolume, running + session.totalVolume)
+        }
+    }
+
+    func hasWorkout(on date: Date, calendar: Calendar) -> Bool {
+        completedTrainingDays.contains(calendar.gymEpochDay(for: date))
+    }
+
+    func hasCompletedWorkoutToday(now: Date, calendar: Calendar) -> Bool {
+        hasWorkout(on: now, calendar: calendar)
+    }
+
+    static func durationMinutes(for session: WorkoutSessionSummary) -> Int {
+        if let seconds = GarminWorkoutNoteParser.parse(session.note)?.durationSeconds,
+           seconds > 0 {
+            return Int((seconds + 59) / 60)
+        }
+        return TodayFocusPlanMetrics.estimatedMinutes(
+            exerciseCount: session.exerciseCount,
+            setCount: session.setCount
+        )
+    }
+}
+
 @MainActor
 public struct WorkoutsView: View {
     @Environment(\.calendar) private var calendar
@@ -50,6 +105,7 @@ public struct WorkoutsView: View {
 
     private let onStartPlan: (WorkoutLaunchSeed) -> Bool
     private let onAddWorkout: (WorkoutLaunchSeed?) -> Bool
+    private let hasRetainedWorkoutDraft: Bool
     private let activeWorkoutDraft: ActiveWorkoutDraft?
     private let onContinueWorkout: () -> Void
     private let onDiscardWorkout: () -> Void
@@ -60,6 +116,7 @@ public struct WorkoutsView: View {
     init(
         store: WorkoutStore,
         activeWorkoutDraft: ActiveWorkoutDraft? = nil,
+        hasRetainedWorkoutDraft: Bool = false,
         onStartPlan: @escaping (WorkoutLaunchSeed) -> Bool,
         onAddWorkout: @escaping (WorkoutLaunchSeed?) -> Bool,
         onContinueWorkout: @escaping () -> Void = {},
@@ -70,6 +127,7 @@ public struct WorkoutsView: View {
     ) {
         self.store = store
         self.activeWorkoutDraft = activeWorkoutDraft
+        self.hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
         self.onStartPlan = onStartPlan
         self.onAddWorkout = onAddWorkout
         self.onContinueWorkout = onContinueWorkout
@@ -139,7 +197,31 @@ public struct WorkoutsView: View {
 
     private var activationPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
-            activationGoalChoiceGrid(
+            if hasRetainedWorkoutDraft {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(gymText(
+                        "Saved plan",
+                        "Збережений план",
+                        "Сохранённый план",
+                        languageCode: languageCode
+                    ))
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.white.opacity(0.76))
+                    Text(gymText(
+                        "Continue your plan",
+                        "Продовж свій план",
+                        "Продолжи свой план",
+                        languageCode: languageCode
+                    ))
+                    .font(.title2.bold())
+                    .foregroundStyle(Color.white)
+                }
+                continueRetainedPlanAction
+                    .appTutorialPrimaryActionTarget()
+                    .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+            } else {
+                activationGoalChoiceGrid(
                 title: gymText(
                     "Goal",
                     "Ціль",
@@ -211,18 +293,19 @@ public struct WorkoutsView: View {
             }
             .buttonStyle(.plain)
 
-            Button(action: createActivationManually) {
-                Text(gymText(
-                    "Create manually",
-                    "Створити вручну",
-                    "Создать вручную",
-                    languageCode: languageCode
-                ))
-                .font(.headline)
-                .foregroundStyle(Color.white)
-                .frame(maxWidth: .infinity, minHeight: 48)
+                Button(action: createActivationManually) {
+                    Text(gymText(
+                        "Create manually",
+                        "Створити вручну",
+                        "Создать вручную",
+                        languageCode: languageCode
+                    ))
+                    .font(.headline)
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -484,13 +567,20 @@ public struct WorkoutsView: View {
 
     private var focusLens: some View {
         let guidance = weeklyGuidance(at: referenceDate)
-        let launchSeed = makeTodayLaunchSeed(guidance: guidance, now: referenceDate)
+        let weeklySummary = weeklyTrainingSummary
+        let completedToday = weeklySummary.hasCompletedWorkoutToday(
+            now: referenceDate,
+            calendar: calendar
+        )
+        let launchSeed = completedToday
+            ? nil
+            : makeTodayLaunchSeed(guidance: guidance, now: referenceDate)
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(gymText(
-                    todayTitle(guidance: guidance, plan: launchSeed?.plan),
-                    todayTitle(guidance: guidance, plan: launchSeed?.plan),
-                    todayTitle(guidance: guidance, plan: launchSeed?.plan),
+                    completedToday ? "Workout complete" : todayTitle(guidance: guidance, plan: launchSeed?.plan),
+                    completedToday ? "Тренування завершено" : todayTitle(guidance: guidance, plan: launchSeed?.plan),
+                    completedToday ? "Тренировка завершена" : todayTitle(guidance: guidance, plan: launchSeed?.plan),
                     languageCode: languageCode
                 ))
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
@@ -498,15 +588,29 @@ public struct WorkoutsView: View {
                 .foregroundStyle(Color.white)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-
+                if completedToday {
+                    Text(gymText(
+                        "Today's work is saved in your history.",
+                        "Сьогоднішнє тренування збережено в історії.",
+                        "Сегодняшняя тренировка сохранена в истории.",
+                        languageCode: languageCode
+                    ))
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.86))
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
-            if guidance.decision == .train {
+            if completedToday {
+                weeklyTrainingSummaryView(weeklySummary)
+                todayHeroMetricsRow
+                completedTodayAction
+            } else if guidance.decision == .train {
                 if let plan = launchSeed?.plan {
                     todayPlanMetrics(plan)
                 }
 
-                weeklyRhythmMetric(guidance)
+                weeklyTrainingSummaryView(weeklySummary)
 
                 DisclosureGroup(
                     gymText(
@@ -523,11 +627,15 @@ public struct WorkoutsView: View {
                 }
                 .tint(.white)
                 .foregroundStyle(Color.white)
+
+                todayHeroMetricsRow
+                focusActionButtons(launchSeed: launchSeed, guidance: guidance)
             } else {
                 recoverySummary(guidance)
+                weeklyTrainingSummaryView(weeklySummary)
+                todayHeroMetricsRow
+                focusActionButtons(launchSeed: launchSeed, guidance: guidance)
             }
-
-            focusActionButtons(launchSeed: launchSeed, guidance: guidance)
         }
         .padding(24)
         .frame(maxWidth: .infinity, minHeight: 320, alignment: .leading)
@@ -555,7 +663,6 @@ public struct WorkoutsView: View {
     }
 
     private var activeFocusLens: some View {
-        let guidance = weeklyGuidance(at: referenceDate)
         let draft = activeWorkoutDraft
         let currentExercise = draft?.exercises.first(where: { exercise in
             exercise.sets.contains(where: { !$0.isCompleted })
@@ -596,7 +703,8 @@ public struct WorkoutsView: View {
                 .foregroundStyle(Color.white.opacity(0.88))
             }
 
-            weeklyRhythmMetric(guidance)
+            weeklyTrainingSummaryView(weeklyTrainingSummary)
+            todayHeroMetricsRow
 
             Button(action: onContinueWorkout) {
                 Label(
@@ -724,25 +832,173 @@ public struct WorkoutsView: View {
         }
     }
 
-    private func weeklyRhythmMetric(_ guidance: WeeklyTrainingGuidance) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(gymText(
-                "\(guidance.completedTrainingDays) / \(guidance.targetTrainingDays) days",
-                "\(guidance.completedTrainingDays) / \(guidance.targetTrainingDays) днів",
-                "\(guidance.completedTrainingDays) / \(guidance.targetTrainingDays) дней",
-                languageCode: languageCode
-            ))
-            .font(.title3.bold().monospacedDigit())
-            Text(gymText(
-                "Weekly rhythm",
-                "Ритм тижня",
-                "Ритм недели",
-                languageCode: languageCode
-            ))
-            .font(.caption)
+    private var weeklyTrainingSummary: WeeklyTrainingSummary {
+        WeeklyTrainingSummary(
+            sessions: store.workoutSummaries,
+            now: referenceDate,
+            calendar: calendar
+        )
+    }
+
+    private func weeklyTrainingSummaryView(_ summary: WeeklyTrainingSummary) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(gymText(
+                    "This week",
+                    "Цього тижня",
+                    "На этой неделе",
+                    languageCode: languageCode
+                ))
+                .font(.subheadline.bold())
+                Spacer(minLength: 8)
+                Text(gymText(
+                    "\(summary.completedTrainingDays.count) / \(trainingProfile.workoutsPerWeek) days",
+                    "\(summary.completedTrainingDays.count) / \(trainingProfile.workoutsPerWeek) днів",
+                    "\(summary.completedTrainingDays.count) / \(trainingProfile.workoutsPerWeek) дней",
+                    languageCode: languageCode
+                ))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(Color.white.opacity(0.76))
+            }
+
+            HStack(spacing: 8) {
+                ForEach(0 ..< 7, id: \.self) { offset in
+                    let day = calendar.date(
+                        byAdding: .day,
+                        value: offset,
+                        to: summary.weekStart
+                    ) ?? summary.weekStart
+                    let completed = summary.hasWorkout(on: day, calendar: calendar)
+                    VStack(spacing: 5) {
+                        Text(weeklyDaySymbol(day))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.white.opacity(0.74))
+                        Circle()
+                            .fill(
+                                completed
+                                    ? Color(red: 0.49, green: 0.94, blue: 0.78)
+                                    : Color.white.opacity(0.24)
+                            )
+                            .frame(width: 12, height: 12)
+                            .overlay {
+                                if calendar.isDate(day, inSameDayAs: referenceDate) {
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.72), lineWidth: 2)
+                                        .padding(-4)
+                                }
+                            }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        gymFormattedDate(day, date: .long, time: .omitted, languageCode: languageCode)
+                    )
+                    .accessibilityValue(
+                        completed
+                            ? gymText(
+                                "Workout completed",
+                                "Тренування виконано",
+                                "Тренировка выполнена",
+                                languageCode: languageCode
+                            )
+                            : gymText(
+                                "No completed workout",
+                                "Немає виконаного тренування",
+                                "Нет выполненной тренировки",
+                                languageCode: languageCode
+                            )
+                    )
+                }
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                weeklyTrainingMetric(
+                    value: summary.completedSessionCount.formatted(),
+                    label: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode)
+                )
+                weeklyTrainingMetric(
+                    value: summary.totalMinutes.formatted(),
+                    label: gymText("Minutes", "Хвилини", "Минуты", languageCode: languageCode)
+                )
+                weeklyTrainingMetric(
+                    value: formattedTodayHeroVolume(summary.totalVolume),
+                    label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
+                )
+            }
         }
-        .foregroundStyle(Color.white.opacity(0.88))
+        .foregroundStyle(Color.white)
+        .padding(12)
+        .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func weeklyDaySymbol(_ date: Date) -> String {
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        return date.formatted(.dateTime.weekday(.narrow).locale(locale))
+    }
+
+    private func weeklyTrainingMetric(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.subheadline.bold().monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(Color.white.opacity(0.74))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var completedTodayAction: some View {
+        if hasRetainedWorkoutDraft {
+            continueRetainedPlanAction
+        } else {
+            focusActionButton(
+            title: gymText(
+                "Add another workout",
+                "Додати ще одне тренування",
+                "Добавить ещё одну тренировку",
+                languageCode: languageCode
+            ),
+            systemImage: "plus",
+            primary: false,
+            accessibilityHint: gymText(
+                "Opens a blank workout plan without changing the completed workout",
+                "Відкриває порожній план, не змінюючи завершене тренування",
+                "Открывает пустой план, не изменяя завершённую тренировку",
+                languageCode: languageCode
+            )
+            ) {
+                referenceDate = Date()
+                _ = onAddWorkout(nil)
+            }
+        }
+    }
+
+    private var continueRetainedPlanAction: some View {
+        focusActionButton(
+            title: gymText(
+                "Continue plan",
+                "Продовжити план",
+                "Продолжить план",
+                languageCode: languageCode
+            ),
+            systemImage: "pencil",
+            primary: true,
+            accessibilityHint: gymText(
+                "Opens your saved workout plan",
+                "Відкриває збережений план тренування",
+                "Открывает сохранённый план тренировки",
+                languageCode: languageCode
+            )
+        ) {
+            referenceDate = Date()
+            _ = onAddWorkout(nil)
+        }
     }
 
     private var todayHeroMetrics: TodayHeroMetrics {
@@ -861,7 +1117,11 @@ public struct WorkoutsView: View {
         guidance: WeeklyTrainingGuidance
     ) -> some View {
         VStack(spacing: 10) {
-            if let launchSeed {
+            if hasRetainedWorkoutDraft {
+                continueRetainedPlanAction
+                    .appTutorialPrimaryActionTarget()
+                    .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+            } else if let launchSeed {
                 focusActionButton(
                     title: todayPrimaryActionTitle(
                         guidance: guidance,

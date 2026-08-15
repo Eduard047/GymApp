@@ -1,5 +1,6 @@
 package com.example.gymapp.ui.viewmodel
 
+import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.LiveCanonicalExercise
 import com.example.gymapp.auth.LiveCanonicalPlan
 import com.example.gymapp.auth.LiveCanonicalSet
@@ -11,10 +12,14 @@ import com.example.gymapp.auth.LiveProgress
 import com.example.gymapp.auth.LiveRoomSnapshot
 import com.example.gymapp.auth.LiveWorkoutSnapshot
 import com.example.gymapp.auth.LiveWorkoutSummary
+import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.data.repository.LivePendingOperation
 import com.example.gymapp.data.repository.LivePendingOperationKind
 import com.example.gymapp.data.repository.LiveWorkoutBinding
+import com.example.gymapp.data.repository.LiveWorkoutDraftSendReceipt
 import com.example.gymapp.data.repository.LiveWorkoutLocalRecoveryState
+import com.example.gymapp.data.repository.LiveWorkoutReservation
+import com.example.gymapp.data.repository.LiveWorkoutReservationPhase
 import com.example.gymapp.data.entity.ActiveWorkoutDetails
 import com.example.gymapp.data.entity.ActiveWorkoutEntity
 import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
@@ -31,6 +36,96 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LiveWorkoutQueueReconcileTest {
+    @Test
+    fun `restart receipt requires exact current friendship and sent draft binding`() {
+        val receipt = draftSendReceipt()
+        val session = AccountSession.Cloud(
+            userId = receipt.userId,
+            email = "synthetic@example.test",
+            displayName = "Synthetic",
+            accessToken = "synthetic-access-token",
+            refreshToken = null,
+            sessionGeneration = receipt.sessionGeneration
+        )
+        val friend = SocialFriend(
+            friendshipId = receipt.recipientFriendshipId,
+            profileId = receipt.recipientProfileId,
+            displayName = "Partner",
+            xp = null,
+            level = null,
+            workouts = null,
+            progressShared = false,
+            statsAvailable = false,
+            progressUpdatedAt = null,
+            friendshipRevision = receipt.recipientFriendshipRevision
+        )
+        val request = LiveWorkoutDraftSendRequest(
+            receipt.draftBindingId,
+            receipt.draftFingerprint
+        )
+
+        assertTrue(liveWorkoutDraftSendReceiptMatches(receipt, session, friend, request))
+        assertEquals(
+            false,
+            liveWorkoutDraftSendReceiptMatches(
+                receipt,
+                session,
+                friend.copy(friendshipRevision = friend.friendshipRevision + 1),
+                request
+            )
+        )
+        assertEquals(
+            false,
+            liveWorkoutDraftSendReceiptMatches(
+                receipt,
+                session,
+                friend,
+                request.copy(draftBindingId = "72345678-1234-4123-8123-123456789abc")
+            )
+        )
+    }
+
+    @Test
+    fun `pending restart receipt resolves only the exact recipient owner room`() {
+        val receipt = draftSendReceipt()
+        val reservation = draftSendReservation(receipt)
+        val exact = inboxRoom().copy(
+            status = "waiting",
+            startedAt = null,
+            peer = LiveProfile(receipt.recipientProfileId, "Partner")
+        )
+
+        assertEquals(
+            exact,
+            resolveAuthoritativeLiveWorkoutDraftSendRoom(
+                receipt,
+                reservation,
+                boundRoomId = null,
+                openRooms = listOf(exact)
+            )
+        )
+        assertEquals(
+            null,
+            resolveAuthoritativeLiveWorkoutDraftSendRoom(
+                receipt,
+                reservation,
+                boundRoomId = null,
+                openRooms = listOf(
+                    exact.copy(peer = LiveProfile("p_ffffffffffffffffffffffffffffffff", "Other"))
+                )
+            )
+        )
+        assertEquals(
+            null,
+            resolveAuthoritativeLiveWorkoutDraftSendRoom(
+                receipt,
+                reservation.copy(operationId = "22345678-1234-4123-8123-123456789abc"),
+                boundRoomId = null,
+                openRooms = listOf(exact)
+            )
+        )
+    }
+
     @Test
     fun `unknown successful completion is dropped and unchanged next request keeps its id`() {
         val binding = binding(
@@ -324,6 +419,32 @@ class LiveWorkoutQueueReconcileTest {
         summary = LiveWorkoutSummary(1, 2, listOf("Bench press")),
         peer = LiveProfile("p_0123456789abcdef0123456789abcdef", "Partner")
     )
+
+    private fun draftSendReceipt() = LiveWorkoutDraftSendReceipt(
+        userId = "42345678-1234-4123-8123-123456789abc",
+        sessionGeneration = "52345678-1234-4123-8123-123456789abc",
+        draftBindingId = "62345678-1234-4123-8123-123456789abc",
+        recipientProfileId = "p_0123456789abcdef0123456789abcdef",
+        recipientFriendshipId = "f_0123456789abcdef0123456789abcdef",
+        recipientFriendshipRevision = 7,
+        operationId = "12345678-1234-4123-8123-123456789abc",
+        roomId = null,
+        draftFingerprint = "a".repeat(64),
+        createdAt = 1_786_330_800_000L,
+        expiresAt = 1_786_935_600_000L
+    )
+
+    private fun draftSendReservation(receipt: LiveWorkoutDraftSendReceipt) =
+        LiveWorkoutReservation(
+            userId = receipt.userId,
+            sessionGeneration = receipt.sessionGeneration,
+            role = "owner",
+            operationId = receipt.operationId,
+            roomId = null,
+            phase = LiveWorkoutReservationPhase.Preparing,
+            createdAt = receipt.createdAt,
+            expiresAt = receipt.expiresAt
+        )
 
     private fun activeWorkout(
         firstCompleted: Boolean = false,

@@ -4,6 +4,8 @@ import android.content.Context
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.isValidLiveRoomId
 import com.example.gymapp.auth.isValidSocialClientRequestId
+import com.example.gymapp.auth.isValidSocialFriendshipId
+import com.example.gymapp.auth.isValidSocialProfileId
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -20,7 +22,10 @@ private const val LIVE_BINDING_KEY_PREFIX = "binding:"
 private const val LIVE_SIDECAR_MAX_BYTES = 96 * 1_024
 private const val LIVE_RESERVATION_KEY_PREFIX = "reservation:"
 private const val LIVE_RESERVATION_MAX_BYTES = 2 * 1_024
+private const val LIVE_DRAFT_SEND_KEY_PREFIX = "draft-send:"
+private const val LIVE_DRAFT_SEND_MAX_BYTES = 2 * 1_024
 internal val LIVE_RESERVATION_MAX_DURATION_MILLIS: Long = Duration.ofDays(9).toMillis()
+private val LIVE_DRAFT_FINGERPRINT_PATTERN = Regex("^[0-9a-f]{64}$")
 
 internal enum class LiveWorkoutReservationPhase(val storageValue: String) {
     Preparing("preparing"),
@@ -117,6 +122,107 @@ internal object LiveWorkoutReservationCodec {
                 reservation.roomId != null && isValidLiveRoomId(reservation.roomId)
             }
         ) { "Live workout reservation room is invalid." }
+    }
+}
+
+internal data class LiveWorkoutDraftSendReceipt(
+    val userId: String,
+    val sessionGeneration: String,
+    val draftBindingId: String,
+    val recipientProfileId: String,
+    val recipientFriendshipId: String,
+    val recipientFriendshipRevision: Int,
+    val operationId: String,
+    val roomId: String?,
+    val draftFingerprint: String,
+    val createdAt: Long,
+    val expiresAt: Long
+)
+
+internal object LiveWorkoutDraftSendReceiptCodec {
+    fun encode(receipt: LiveWorkoutDraftSendReceipt): String {
+        validate(receipt)
+        return JSONObject()
+            .put("version", 1)
+            .put("userId", receipt.userId)
+            .put("sessionGeneration", receipt.sessionGeneration)
+            .put("draftBindingId", receipt.draftBindingId)
+            .put("recipientProfileId", receipt.recipientProfileId)
+            .put("recipientFriendshipId", receipt.recipientFriendshipId)
+            .put("recipientFriendshipRevision", receipt.recipientFriendshipRevision)
+            .put("operationId", receipt.operationId)
+            .put("roomId", receipt.roomId ?: JSONObject.NULL)
+            .put("draftFingerprint", receipt.draftFingerprint)
+            .put("createdAt", receipt.createdAt)
+            .put("expiresAt", receipt.expiresAt)
+            .toString()
+            .also { encoded ->
+                require(encoded.toByteArray(Charsets.UTF_8).size <= LIVE_DRAFT_SEND_MAX_BYTES) {
+                    "Live workout draft send receipt is too large."
+                }
+            }
+    }
+
+    fun decode(raw: String): LiveWorkoutDraftSendReceipt {
+        require(raw.toByteArray(Charsets.UTF_8).size <= LIVE_DRAFT_SEND_MAX_BYTES) {
+            "Live workout draft send receipt is too large."
+        }
+        val tokener = JSONTokener(raw)
+        val root = tokener.nextValue() as? JSONObject
+            ?: throw IllegalArgumentException("Live workout draft send receipt is invalid.")
+        require(tokener.nextClean() == 0.toChar() &&
+            root.keys().asSequence().toSet() == setOf(
+                "version", "userId", "sessionGeneration", "draftBindingId",
+                "recipientProfileId", "recipientFriendshipId",
+                "recipientFriendshipRevision", "operationId", "roomId",
+                "draftFingerprint", "createdAt", "expiresAt"
+            ) && root.strictInt("version", 1, 1) == 1
+        ) { "Live workout draft send receipt is invalid." }
+        return LiveWorkoutDraftSendReceipt(
+            userId = root.strictString("userId", 36),
+            sessionGeneration = root.strictString("sessionGeneration", 36),
+            draftBindingId = root.strictString("draftBindingId", 36),
+            recipientProfileId = root.strictString("recipientProfileId", 34),
+            recipientFriendshipId = root.strictString("recipientFriendshipId", 34),
+            recipientFriendshipRevision = root.strictInt(
+                "recipientFriendshipRevision",
+                1,
+                Int.MAX_VALUE
+            ),
+            operationId = root.strictString("operationId", 36),
+            roomId = root.strictNullableString("roomId", 35),
+            draftFingerprint = root.strictString("draftFingerprint", 64),
+            createdAt = root.strictLong(
+                "createdAt",
+                WorkoutDataLimits.MIN_TIMESTAMP_MILLIS,
+                WorkoutDataLimits.MAX_TIMESTAMP_MILLIS
+            ),
+            expiresAt = root.strictLong(
+                "expiresAt",
+                WorkoutDataLimits.MIN_TIMESTAMP_MILLIS,
+                WorkoutDataLimits.MAX_TIMESTAMP_MILLIS
+            )
+        ).also(::validate)
+    }
+
+    fun validate(receipt: LiveWorkoutDraftSendReceipt) {
+        require(runCatching {
+            UUID.fromString(receipt.userId).toString() == receipt.userId &&
+                UUID.fromString(receipt.sessionGeneration).toString() == receipt.sessionGeneration &&
+                UUID.fromString(receipt.draftBindingId).toString() == receipt.draftBindingId
+        }.getOrDefault(false) &&
+            isValidSocialProfileId(receipt.recipientProfileId) &&
+            isValidSocialFriendshipId(receipt.recipientFriendshipId) &&
+            receipt.recipientFriendshipRevision >= 1 &&
+            isValidSocialClientRequestId(receipt.operationId) &&
+            (receipt.roomId == null || isValidLiveRoomId(receipt.roomId)) &&
+            LIVE_DRAFT_FINGERPRINT_PATTERN.matches(receipt.draftFingerprint)
+        ) { "Live workout draft send receipt identity is invalid." }
+        require(WorkoutDataLimits.isValidTimestamp(receipt.createdAt) &&
+            WorkoutDataLimits.isValidTimestamp(receipt.expiresAt) &&
+            receipt.expiresAt > receipt.createdAt &&
+            receipt.expiresAt - receipt.createdAt <= LIVE_RESERVATION_MAX_DURATION_MILLIS
+        ) { "Live workout draft send receipt lifetime is invalid." }
     }
 }
 
@@ -521,6 +627,69 @@ internal class LiveWorkoutSidecarStore(context: Context) {
         preferences.edit().remove(key).commit() && !preferences.contains(key)
     }
 
+    suspend fun prepareDraftSend(
+        session: AccountSession.Cloud,
+        receipt: LiveWorkoutDraftSendReceipt,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean = reservationMutex(session.userId).withLock {
+        if (receipt.userId != session.userId ||
+            receipt.sessionGeneration != session.sessionGeneration ||
+            receipt.roomId != null ||
+            receipt.expiresAt <= nowMillis
+        ) return@withLock false
+        val current = readDraftSendUnlocked(session, nowMillis)
+        if (current.unreadable || current.value != null && current.value != receipt) {
+            return@withLock false
+        }
+        if (current.value == receipt) return@withLock true
+        persistDraftSendUnlocked(session, receipt)
+    }
+
+    suspend fun draftSend(
+        session: AccountSession.Cloud,
+        nowMillis: Long = System.currentTimeMillis()
+    ): LiveWorkoutDraftSendReceipt? = reservationMutex(session.userId).withLock {
+        val current = readDraftSendUnlocked(session, nowMillis)
+        check(!current.unreadable) { "Live workout draft send receipt could not be read safely." }
+        current.value
+    }
+
+    suspend fun confirmDraftSend(
+        session: AccountSession.Cloud,
+        expectedOperationId: String,
+        roomId: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean = reservationMutex(session.userId).withLock {
+        if (!isValidLiveRoomId(roomId)) return@withLock false
+        val current = readDraftSendUnlocked(session, nowMillis)
+        val receipt = current.value
+        if (current.unreadable || receipt == null ||
+            receipt.operationId != expectedOperationId ||
+            receipt.roomId != null && receipt.roomId != roomId
+        ) return@withLock false
+        if (receipt.roomId == roomId) return@withLock true
+        persistDraftSendUnlocked(session, receipt.copy(roomId = roomId))
+    }
+
+    suspend fun clearDraftSend(
+        session: AccountSession.Cloud,
+        expectedDraftBindingId: String,
+        expectedOperationId: String,
+        expectedRoomId: String? = null
+    ): Boolean = reservationMutex(session.userId).withLock {
+        val key = draftSendKey(session)
+        val raw = preferences.getString(key, null) ?: return@withLock true
+        val current = runCatching { LiveWorkoutDraftSendReceiptCodec.decode(raw) }.getOrNull()
+            ?: return@withLock false
+        if (current.userId != session.userId ||
+            current.sessionGeneration != session.sessionGeneration ||
+            current.draftBindingId != expectedDraftBindingId ||
+            current.operationId != expectedOperationId ||
+            expectedRoomId != null && current.roomId != expectedRoomId
+        ) return@withLock false
+        preferences.edit().remove(key).commit() && !preferences.contains(key)
+    }
+
     suspend fun sessionMismatchedReservation(
         session: AccountSession.Cloud
     ): LiveWorkoutReservation? = reservationMutex(session.userId).withLock {
@@ -727,7 +896,8 @@ internal class LiveWorkoutSidecarStore(context: Context) {
                     ?.userId
                     ?.equals(canonicalUserId, ignoreCase = true) == true
                 key.startsWith(LIVE_BINDING_KEY_PREFIX) ||
-                    key.startsWith(LIVE_RESERVATION_KEY_PREFIX) -> {
+                    key.startsWith(LIVE_RESERVATION_KEY_PREFIX) ||
+                    key.startsWith(LIVE_DRAFT_SEND_KEY_PREFIX) -> {
                     val parts = key.split(':')
                     parts.size == 3 && parts[1].equals(canonicalUserId, ignoreCase = true)
                 }
@@ -765,6 +935,11 @@ internal class LiveWorkoutSidecarStore(context: Context) {
         val unreadable: Boolean = false
     )
 
+    private data class DraftSendRead(
+        val value: LiveWorkoutDraftSendReceipt? = null,
+        val unreadable: Boolean = false
+    )
+
     private fun readReservationUnlocked(
         session: AccountSession.Cloud,
         nowMillis: Long
@@ -797,6 +972,24 @@ internal class LiveWorkoutSidecarStore(context: Context) {
         return false
     }
 
+    private fun readDraftSendUnlocked(
+        session: AccountSession.Cloud,
+        nowMillis: Long
+    ): DraftSendRead {
+        val key = draftSendKey(session)
+        val raw = preferences.getString(key, null) ?: return DraftSendRead()
+        val receipt = runCatching { LiveWorkoutDraftSendReceiptCodec.decode(raw) }.getOrNull()
+            ?: return DraftSendRead(unreadable = true)
+        if (receipt.userId != session.userId ||
+            receipt.sessionGeneration != session.sessionGeneration
+        ) return DraftSendRead(unreadable = true)
+        if (receipt.expiresAt <= nowMillis) {
+            val cleared = preferences.edit().remove(key).commit() && !preferences.contains(key)
+            return if (cleared) DraftSendRead() else DraftSendRead(unreadable = true)
+        }
+        return DraftSendRead(receipt)
+    }
+
     private fun persistReservationUnlocked(
         session: AccountSession.Cloud,
         reservation: LiveWorkoutReservation
@@ -810,6 +1003,20 @@ internal class LiveWorkoutSidecarStore(context: Context) {
 
     private fun reservationKey(session: AccountSession.Cloud): String =
         "$LIVE_RESERVATION_KEY_PREFIX${session.userId}:${session.sessionGeneration}"
+
+    private fun persistDraftSendUnlocked(
+        session: AccountSession.Cloud,
+        receipt: LiveWorkoutDraftSendReceipt
+    ): Boolean {
+        val encoded = runCatching { LiveWorkoutDraftSendReceiptCodec.encode(receipt) }.getOrNull()
+            ?: return false
+        val key = draftSendKey(session)
+        return preferences.edit().putString(key, encoded).commit() &&
+            preferences.getString(key, null) == encoded
+    }
+
+    private fun draftSendKey(session: AccountSession.Cloud): String =
+        "$LIVE_DRAFT_SEND_KEY_PREFIX${session.userId}:${session.sessionGeneration}"
 
     private companion object {
         val reservationMutexes = ConcurrentHashMap<String, Mutex>()

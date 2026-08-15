@@ -105,7 +105,7 @@ function iosTranslation(key, locale) {
 
 test("workout-plan editing v1 defines one exact three-client flow", () => {
   assert.equal(contract.schemaVersion, 1);
-  assert.equal(contract.productVersion, "3.1.0");
+  assert.equal(contract.productVersion, "3.1.1");
   assert.deepEqual(contract.scope, {
     fullEditors: ["android", "ios", "browser"],
     browser: "full-workout-client"
@@ -125,6 +125,11 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
     en: "Create manually",
     uk: "Створити вручну",
     ru: "Создать вручную"
+  });
+  assert.deepEqual(contract.locales.copy.todayContinuePlan, {
+    en: "Continue plan",
+    uk: "Продовжити план",
+    ru: "Продолжить план"
   });
   assert.deepEqual(contract.locales.copy.editorTitle, {
     en: "Workout plan",
@@ -183,6 +188,16 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
   });
   assert.deepEqual(contract.todayRecommended, {
     actionsInOrder: ["startPlan", "editPlan", "createManually"],
+    retainedDraftPrecedence: {
+      appliesToStates: [
+        "recommendedPlan", "restOrRecovery", "completedToday", "firstWorkoutActivation"
+      ],
+      actionsInOrder: ["continuePlan"],
+      opens: "sameAccountRetainedPlanEditorState",
+      mayReplaceDraft: false,
+      mayCreateActiveWorkout: false,
+      requiresExplicitDiscardBeforeAnotherPlan: true
+    },
     startPlanProminence: "primary",
     editPlanProminence: "secondary",
     createManuallyProminence: "tertiary",
@@ -225,9 +240,33 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
     "regenerateSmartTargets",
     "copyPreviousWorkoutIntoDraft"
   ]);
+  assert.equal(contract.draftRules.storageBeforeStart, "account-bound-local-navigation-draft");
+  assert.deepEqual(contract.draftRules.survives, [
+    "openHistoryAndReturn",
+    "switchBetweenAppTabsAndReturn",
+    "browserBackForwardAndReload"
+  ]);
+  assert.deepEqual(contract.draftRules.clearedBy, [
+    "explicitDiscard",
+    "successfulWorkoutStart",
+    "successfulLivePlanFreeze",
+    "accountSwitchOrLogout"
+  ]);
+  assert.deepEqual(contract.draftRules.mustNotBeClearedBy, [
+    "openHistory",
+    "ordinaryBackNavigation",
+    "renderOrRouteRefresh",
+    "failedWorkoutStart",
+    "failedLiveInvitation",
+    "privacyPreservingUnavailableLiveResponse"
+  ]);
+  assert.equal(contract.draftRules.accountAndSessionBound, true);
+  assert.equal(contract.draftRules.cloudSync, "none");
+  assert.equal(contract.draftRules.bounds.malformedOrOversizedStoredDraft, "discardDraftOnlyFailClosed");
   assert.equal(contract.draftRules.savePlanActionVisible, false);
   assert.equal(contract.draftRules.initialHydrationIsDirty, false);
-  assert.equal(contract.draftRules.dirtyCancelRequiresConfirmation, true);
+  assert.equal(contract.draftRules.navigationBackPreservesDraft, true);
+  assert.equal(contract.draftRules.explicitDiscardRequiresConfirmation, true);
   assert.equal(contract.draftRules.dirtyGestureDismissAllowed, false);
   assert.equal(contract.draftRules.sourceHistoryMutation, "none");
   assert.deepEqual(contract.clearPlan, {
@@ -316,14 +355,16 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
   assert.deepEqual(
     contract.transitions.map(({ from, action, to }) => [from, action, to]),
     [
+      ["todayAnyStateWithRetainedDraft", "continuePlan", "samePlanEditorState"],
       ["todayRecommended", "startPlan", "activeWorkout"],
       ["todayRecommended", "editPlan", "planEditorClean"],
       ["todayRecommended", "createManually", "planEditorEmptyClean"],
-      ["planEditorClean", "cancel", "todayRecommended"],
+      ["planEditorCleanOrDirty", "navigateToHistory", "historyWithDraftRetained"],
+      ["historyWithDraftRetained", "returnToEditor", "samePlanEditorState"],
       ["planEditorClean", "editDraft", "planEditorDirty"],
-      ["planEditorDirty", "cancel", "dirtyCancelConfirmation"],
-      ["dirtyCancelConfirmation", "keepEditing", "planEditorDirty"],
-      ["dirtyCancelConfirmation", "discardChanges", "todayRecommended"],
+      ["planEditorDirty", "explicitDiscard", "discardDraftConfirmation"],
+      ["discardDraftConfirmation", "keepDraft", "planEditorDirty"],
+      ["discardDraftConfirmation", "discardChanges", "todayRecommended"],
       ["planEditorCleanOrDirty", "startWorkout", "activeWorkout"],
       ["planEditorCleanOrDirty", "syncPlanToGarmin", "samePlanEditorState"],
       ["planEditorNonempty", "clearPlan", "clearPlanConfirmation"],
@@ -386,7 +427,7 @@ test("Android exposes direct Start plan plus Edit plan and the canonical editor 
     "TrainingProfilePanel(",
     "SmartCoachPanel(",
     "itemsIndexed(",
-    "onClick = onStartWorkout",
+    "onClick = when (primaryAction)",
     "add_workout_plan_templates"
   ], "Android workout-plan editor");
 
@@ -440,7 +481,7 @@ test("iOS exposes the same direct Start plan, Edit plan, and editor order", () =
     "profilePanel",
     "smartCoachPanel",
     "editorSection",
-    "startWorkoutButton",
+    "primaryWorkoutAction",
     "secondaryOptions"
   ], "iOS workout-plan editor");
 
@@ -691,7 +732,7 @@ test("unknown recommended weight becomes explicit zero across every plan boundar
   );
 });
 
-test("dirty Back or Cancel requires the exact discard confirmation on both native platforms", () => {
+test("ordinary Back preserves the draft while explicit Discard confirms on both native platforms", () => {
   for (const [source, expected] of [
     [androidEnglish, ["Discard plan changes?", "Your edits will be lost.", "Keep editing", "Discard changes"]],
     [androidUkrainian, ["Відкинути зміни плану?", "Зміни буде втрачено.", "Продовжити редагування", "Відкинути зміни"]],
@@ -702,17 +743,24 @@ test("dirty Back or Cancel requires the exact discard confirmation on both nativ
   assert.match(androidEditor, /workout_plan_discard_title/);
   assert.match(androidEditor, /workout_plan_keep_editing/);
   assert.match(androidEditor, /workout_plan_discard_changes/);
+  assert.match(androidEditor, /val requestClose = onNavigateToHistory/);
+  assert.match(androidEditor, /BackHandler\(enabled = editorInteractionsLocked\) \{\}/);
   assert.match(
     androidEditor,
-    /if \(workoutPlanCloseRequiresConfirmation\(uiState\.isDirty\)\) \{\s*showDiscardConfirmation = true\s*\} else \{\s*onDiscardPlan\(\)\s*\}/
+    /BackHandler\(enabled = !editorInteractionsLocked, onBack = requestClose\)/
   );
-  assert.match(androidEditor, /workoutPlanCloseRequiresConfirmation\(isDirty: Boolean\): Boolean = isDirty/);
-  assert.match(androidEditor, /BackHandler\(onBack = requestClose\)/);
   assert.match(androidEditor, /onDirtyStateChanged\(uiState\.isDirty\)/);
-  assert.match(androidEditor, /AlertDialog\(/);
+  assert.match(
+    androidEditor,
+    /onClick = \{ showDiscardConfirmation = true \}[\s\S]*workout_plan_discard_draft/
+  );
+  assert.match(
+    androidEditor,
+    /if \(showDiscardConfirmation && !editorInteractionsLocked\) \{[\s\S]*AlertDialog\([\s\S]*onClick = onDiscardPlan/
+  );
   assert.match(
     androidNavigation,
-    /startsWith\(AppDestination\.AddWorkout\.route\)[\s\S]*addWorkoutDraftDirty[\s\S]*addWorkoutCloseRequestVersion \+= 1L/
+    /onNavigateToHistory = \{\s*navController\.navigateUp\(\)\s*\}[\s\S]*onDiscardPlan = \{[\s\S]*viewModel\.discardDraft\(\)[\s\S]*navController\.navigateUp\(\)/
   );
 
   for (const copy of [
@@ -731,13 +779,20 @@ test("dirty Back or Cancel requires the exact discard confirmation on both nativ
   ]) {
     assert.ok(iosEditor.includes(copy), `Missing iOS copy: ${copy}`);
   }
-  assert.match(iosEditor, /confirmationDialog|\.alert\(/);
-  assert.match(iosEditor, /isDirty|hasUnsaved|draft.*changed/i);
-  assert.match(iosEditor, /interactiveDismissDisabled/);
+  assert.match(iosEditor, /\.confirmationDialog\(/);
+  assert.match(iosEditor, /interactiveDismissDisabled\(isSaving \|\| hasUnsavedPlanChanges\)/);
+  assert.match(iosEditor, /\.allowsHitTesting\(!isSaving\)/);
+  assert.match(iosEditor, /action: onClose\s*\)\s*\.disabled\(isSaving\)/);
+  assert.match(iosEditor, /let sentDraftState = currentEditorDraftState[\s\S]*guard currentEditorDraftState == sentDraftState else/);
   assert.match(
     iosEditor,
-    /private func requestCancel\(\)[\s\S]*if hasUnsavedPlanChanges[\s\S]*showingDiscardConfirmation = true[\s\S]*else \{[\s\S]*onCancel\(\)/
+    /ToolbarItem\(placement: \.cancellationAction\)[\s\S]*action: onClose/
   );
+  assert.match(
+    iosEditor,
+    /Button\(role: \.destructive\) \{\s*showingDiscardConfirmation = true/
+  );
+  assert.match(iosEditor, /role: \.destructive,\s*action: onDiscard/);
 });
 
 test("Clear plan is editor-only, confirmed, local, and leaves an actionable empty editor", () => {
@@ -775,7 +830,7 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   );
   assert.match(
     androidEditor,
-    /if \(showClearConfirmation\) \{[\s\S]*AlertDialog\([\s\S]*workout_plan_clear_title[\s\S]*workout_plan_clear_message[\s\S]*onClearPlan\(\)/
+    /if \(showClearConfirmation && !editorInteractionsLocked\) \{[\s\S]*AlertDialog\([\s\S]*workout_plan_clear_title[\s\S]*workout_plan_clear_message[\s\S]*onClearPlan\(\)/
   );
   const androidClearStart = androidEditorViewModel.indexOf("fun clearWorkoutPlan(): Boolean");
   const androidClearEnd = androidEditorViewModel.indexOf(
@@ -818,7 +873,7 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   );
   assert.match(
     androidEditor,
-    /onClick = onStartWorkout[\s\S]*enabled = !uiState\.isSaving && uiState\.exerciseDrafts\.isNotEmpty\(\)/
+    /onClick = when \(primaryAction\) \{[\s\S]*StartSolo -> onStartWorkout[\s\S]*enabled = !primaryActionInProgress &&[\s\S]{0,240}uiState\.exerciseDrafts\.isNotEmpty\(\)/
   );
   assert.match(
     androidEditor,

@@ -166,6 +166,11 @@ test("first-workout activation derives the exact profile matrix and skip stays a
     activeAccount = { id: "beta", name: "Beta" };
     state = defaultAppState();
     state.sessions = [];
+    const restoredBetaDraft = loadStoredWorkoutDraftRecord();
+    workoutDraft = restoredBetaDraft?.draft ?? null;
+    workoutDraftLiveRecipient = restoredBetaDraft?.liveRecipient ?? null;
+    smartGeneratedPlan = null;
+    smartPlanStale = false;
     nav = [{ name: "workouts" }];
     return {
       firstAccount,
@@ -500,6 +505,7 @@ test("Smart launch registry fails closed at 64 live IDs without making the oldes
       const launch = prepareSmartWorkoutLaunch("Standard", "dashboard");
       launches.push(launch);
       if (!launchPreparedSmartWorkout(launch)) throw new Error("launch rejected");
+      workoutDraft = null;
     }
     const overflow = prepareSmartWorkoutLaunch("Standard", "dashboard");
     return {

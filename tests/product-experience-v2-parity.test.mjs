@@ -24,7 +24,7 @@ const contract = JSON.parse(contractSource);
 
 test("product experience v2 defines one full-client navigation and tutorial", () => {
   assert.equal(contract.schemaVersion, 2);
-  assert.equal(contract.productVersion, "3.1.0");
+  assert.equal(contract.productVersion, "3.1.1");
   assert.deepEqual(contract.fullClients, ["android", "ios", "pwa"]);
   assert.deepEqual(contract.navigation.fullClientTabOrder, [
     "today",
@@ -58,9 +58,22 @@ test("today, first workout, and progress use the same information architecture",
   assert.deepEqual(contract.todayFocusLens.states, [
     "recommendedPlan",
     "activeWorkout",
+    "completedToday",
     "recovery"
   ]);
-  assert.equal(contract.todayFocusLens.lifetimeMetricsPlacement, "progress.overview");
+  assert.equal(contract.todayFocusLens.weeklySummaryPlacement, "today.belowCurrentState");
+  assert.deepEqual(contract.todayFocusLens.weeklySummary, [
+    "sevenDayCircles", "completedTrainingDaysVsTarget", "completedWorkouts",
+    "trainingMinutes", "totalVolume"
+  ]);
+  assert.equal(contract.todayFocusLens.completedToday.suppresses.includes("recovery"), true);
+  assert.deepEqual(contract.todayFocusLens.completedToday.actionsInOrder, ["createAnotherWorkout"]);
+  assert.deepEqual(contract.todayFocusLens.retainedDraftOverride, {
+    appliesToStates: ["recommendedPlan", "completedToday", "recovery", "firstWorkoutActivation"],
+    actionsInOrder: ["continuePlan"],
+    outcome: "openSameAccountRetainedDraftWithoutReplacement"
+  });
+  assert.equal(contract.todayFocusLens.lifetimeMetricsPlacement, "today.heroAndProgress.overview");
   assert.equal(contract.todayFocusLens.heatmapPlacement, "progress.overview");
   assert.equal(contract.todayFocusLens.muscleLoadPlacement, "progress.overview");
   assert.equal(contract.terminology.missionsPlacement, "progress.goals");

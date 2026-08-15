@@ -56,6 +56,7 @@ struct ProfileView: View {
     private let canAcceptWorkoutInvites: Bool
     private let nativePushRequest: NativePushProfileRequest?
     private let onShowTutorial: () -> Void
+    private let onCreateLiveWorkout: (SocialFriendSummary) -> Void
     private let onOpenLiveWorkout: () -> Void
 
     init(
@@ -66,6 +67,7 @@ struct ProfileView: View {
         liveWorkoutCoordinator: LiveWorkoutCoordinator,
         nativePushRequest: NativePushProfileRequest? = nil,
         onShowTutorial: @escaping () -> Void = {},
+        onCreateLiveWorkout: @escaping (SocialFriendSummary) -> Void = { _ in },
         onOpenLiveWorkout: @escaping () -> Void
     ) {
         self.appState = appState
@@ -77,6 +79,7 @@ struct ProfileView: View {
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
         self.nativePushRequest = nativePushRequest
         self.onShowTutorial = onShowTutorial
+        self.onCreateLiveWorkout = onCreateLiveWorkout
         self.onOpenLiveWorkout = onOpenLiveWorkout
     }
 
@@ -102,6 +105,7 @@ struct ProfileView: View {
                                 onOpenAccountSettings: {
                                     showsAccountSettings = true
                                 },
+                                onCreateLiveWorkout: onCreateLiveWorkout,
                                 onOpenLiveWorkout: onOpenLiveWorkout
                             )
                             .id(NativePushProfileFocus.friends)

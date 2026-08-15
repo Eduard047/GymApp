@@ -17,8 +17,10 @@ final class LiveWorkoutCoordinator: ObservableObject {
     @Published private(set) var lastStatus: String?
     @Published private(set) var realtimeConnected = false
     @Published private(set) var restoringRoomIDs: Set<String> = []
+    @Published private(set) var confirmedDraftConsumption: LiveWorkoutDraftConsumption?
 
     let sidecar: LiveWorkoutSidecarStore
+    let draftConsumptionStore: LiveWorkoutDraftConsumptionStore
     private var slotReservation: LiveWorkoutSlotReservationStore {
         activeWorkoutStore.liveSlotReservationStore
     }
@@ -49,6 +51,10 @@ final class LiveWorkoutCoordinator: ObservableObject {
         self.gateway = LiveWorkoutGatewayService(auth: auth, urlSession: urlSession)
         self.expectedUserID = auth.session?.cloud?.userID ?? ""
         self.sidecar = LiveWorkoutSidecarStore(
+            accountStorageKey: workoutStore.accountStorageKey,
+            workoutStorageURL: workoutStore.storageURL
+        )
+        self.draftConsumptionStore = LiveWorkoutDraftConsumptionStore(
             accountStorageKey: workoutStore.accountStorageKey,
             workoutStorageURL: workoutStore.storageURL
         )
@@ -126,6 +132,7 @@ final class LiveWorkoutCoordinator: ObservableObject {
         lastStatus = nil
         realtimeConnected = false
         restoringRoomIDs = []
+        confirmedDraftConsumption = nil
     }
 
     func refreshAll(showErrors: Bool = true) async {
@@ -160,8 +167,29 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 snapshot = nil
                 sessionMismatchedReservation = nil
             }
+            var sessionMismatchedConsumption: LiveWorkoutDraftConsumption?
+            do {
+                try draftConsumptionStore.bind(to: context)
+                sessionMismatchedConsumption = nil
+                if let current = try draftConsumptionStore.current(context: context),
+                   current.phase == .confirmed {
+                    confirmedDraftConsumption = current
+                }
+            } catch LiveWorkoutDraftConsumptionError.sessionMismatch {
+                confirmedDraftConsumption = nil
+                sessionMismatchedConsumption = draftConsumptionStore.consumption
+            } catch LiveWorkoutDraftConsumptionError.accountMismatch {
+                confirmedDraftConsumption = nil
+                throw LiveWorkoutDraftConsumptionError.accountMismatch
+            }
             let freshInbox = try await gateway.inbox(expectedUserID: expectedUserID)
             try ensureCurrent(context)
+            if let sessionMismatchedConsumption {
+                try draftConsumptionStore.clearAfterSessionChange(
+                    sessionMismatchedConsumption,
+                    context: context
+                )
+            }
             if let sessionMismatchedReservation {
                 try reconcileSessionMismatchedReservation(
                     sessionMismatchedReservation,
@@ -169,7 +197,9 @@ final class LiveWorkoutCoordinator: ObservableObject {
                     context: context
                 )
             }
+            try promoteRoomBoundDraftConsumption(context: context)
             try reconcileSlotReservation(with: freshInbox, context: context)
+            try reconcileDraftConsumption(with: freshInbox, context: context)
             inbox = freshInbox
 
             if let sessionMismatchedAttachment {
@@ -216,11 +246,22 @@ final class LiveWorkoutCoordinator: ObservableObject {
         }
     }
 
-    func sendInvite(to profileID: String, plan: SharedWorkoutPlan) async throws {
+    @discardableResult
+    func sendInvite(
+        to profileID: String,
+        plan: SharedWorkoutPlan,
+        draftRequest: LiveWorkoutDraftSendRequest? = nil
+    ) async throws -> Bool {
         try beginMutation()
         defer { endMutation() }
         let context = try await gateway.currentContext(expectedUserID: expectedUserID)
         try sidecar.bind(to: context)
+        try draftConsumptionStore.bind(to: context)
+        if let draftRequest {
+            guard draftRequest.recipientProfileID == profileID else {
+                throw LiveWorkoutGatewayError.invalidRequest
+            }
+        }
         let canonical = try JSONSerialization.data(
             withJSONObject: LiveWorkoutPayloadParser.workoutObject(for: plan),
             options: [.sortedKeys]
@@ -243,6 +284,30 @@ final class LiveWorkoutCoordinator: ObservableObject {
         try slotReservation.reserve(reservation, context: context) {
             activeWorkoutStore.draft == nil
         }
+        if let draftRequest {
+            do {
+                try draftConsumptionStore.prepare(
+                    LiveWorkoutDraftConsumption(
+                        version: 1,
+                        userID: context.userID,
+                        sessionID: context.sessionID,
+                        operationID: requestID,
+                        roomID: nil,
+                        phase: .preparing,
+                        recipientProfileID: draftRequest.recipientProfileID,
+                        friendshipID: draftRequest.friendshipID,
+                        friendshipRevision: draftRequest.friendshipRevision,
+                        draftFingerprint: draftRequest.draftFingerprint,
+                        createdAt: createdAt,
+                        expiresAt: reservation.expiresAt
+                    ),
+                    context: context
+                )
+            } catch {
+                try? slotReservation.clear(operationID: requestID, context: context)
+                throw error
+            }
+        }
         let result: LiveWorkoutSendResult
         do {
             result = try await gateway.sendInvite(
@@ -252,7 +317,10 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 expectedUserID: expectedUserID
             )
         } catch {
-            await reconcileReservationAfterFailedMutation(context: context)
+            await reconcileReservationAfterFailedMutation(
+                context: context,
+                preservePreparingOnNoRoom: draftRequest != nil
+            )
             throw error
         }
         try ensureCurrent(context)
@@ -272,14 +340,57 @@ final class LiveWorkoutCoordinator: ObservableObject {
                 ),
                 context: context
             )
+            if draftRequest != nil {
+                confirmedDraftConsumption = try draftConsumptionStore.confirm(
+                    operationID: requestID,
+                    roomID: roomID,
+                    context: context
+                )
+            }
         } else {
             try slotReservation.clear(operationID: requestID, context: context)
+            if draftRequest != nil {
+                try draftConsumptionStore.clear(
+                    operationID: requestID,
+                    context: context
+                )
+            }
         }
         pendingInviteRequestIDs.removeValue(forKey: digest)
         lastStatus = result.submitted
             ? "Live workout invitation sent. The plan is frozen for this room."
             : "Invitation submitted. The recipient may be unavailable."
-        inbox = try? await gateway.inbox(expectedUserID: expectedUserID)
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            await self?.refreshAll(showErrors: false)
+        }
+        return result.roomID != nil
+    }
+
+    func acknowledgeConfirmedDraftConsumption(
+        _ consumption: LiveWorkoutDraftConsumption
+    ) throws {
+        guard confirmedDraftConsumption == consumption,
+              consumption.phase == .confirmed,
+              let roomID = consumption.roomID,
+              let cloud = auth.session?.cloud,
+              cloud.userID.lowercased() == consumption.userID,
+              NativePushAuthSessionIdentity.sessionID(from: cloud) == consumption.sessionID,
+              workoutStore.accountStorageKey == auth.session?.storageKey,
+              activeWorkoutStore.accountStorageKey == workoutStore.accountStorageKey else {
+            throw AuthServiceError.sessionChanged
+        }
+        let context = LiveWorkoutSessionContext(
+            userID: consumption.userID,
+            sessionID: consumption.sessionID,
+            accessToken: cloud.accessToken
+        )
+        try draftConsumptionStore.clear(
+            operationID: consumption.operationID,
+            roomID: roomID,
+            context: context
+        )
+        confirmedDraftConsumption = nil
     }
 
     func respond(
@@ -814,21 +925,91 @@ final class LiveWorkoutCoordinator: ObservableObject {
     }
 
     private func reconcileReservationAfterFailedMutation(
-        context: LiveWorkoutSessionContext
+        context: LiveWorkoutSessionContext,
+        preservePreparingOnNoRoom: Bool = false
     ) async {
         guard auth.session?.cloud?.userID == expectedUserID else { return }
         do {
             let freshInbox = try await gateway.inbox(expectedUserID: expectedUserID)
             try ensureCurrent(context)
+            try promoteRoomBoundDraftConsumption(context: context)
             try reconcileSlotReservation(
                 with: freshInbox,
                 context: context,
-                ignoreInFlight: true
+                ignoreInFlight: !preservePreparingOnNoRoom
+            )
+            try reconcileDraftConsumption(
+                with: freshInbox,
+                context: context,
+                ignoreInFlight: !preservePreparingOnNoRoom
             )
         } catch {
             // An unknown RPC outcome keeps the durable reservation fail-closed until
             // a later authenticated inbox can prove whether it should be bound or released.
         }
+    }
+
+    private func promoteRoomBoundDraftConsumption(
+        context: LiveWorkoutSessionContext
+    ) throws {
+        guard let current = try draftConsumptionStore.current(context: context) else {
+            confirmedDraftConsumption = nil
+            return
+        }
+        if current.phase == .confirmed {
+            confirmedDraftConsumption = current
+            return
+        }
+        guard let reservation = try slotReservation.current(context: context),
+              reservation.operationID == current.operationID,
+              reservation.role == .owner,
+              let roomID = reservation.roomID else { return }
+        confirmedDraftConsumption = try draftConsumptionStore.confirm(
+            operationID: current.operationID,
+            roomID: roomID,
+            context: context
+        )
+    }
+
+    private func reconcileDraftConsumption(
+        with freshInbox: LiveWorkoutInbox,
+        context: LiveWorkoutSessionContext,
+        ignoreInFlight: Bool = false
+    ) throws {
+        guard let current = try draftConsumptionStore.current(context: context) else {
+            confirmedDraftConsumption = nil
+            return
+        }
+        if current.phase == .confirmed {
+            confirmedDraftConsumption = current
+            return
+        }
+        if let reservation = try slotReservation.current(context: context),
+           reservation.operationID == current.operationID,
+           reservation.role == .owner {
+            if let roomID = reservation.roomID,
+               freshInbox.rooms.contains(where: {
+                   $0.roomID == roomID
+                       && $0.role == .owner
+                       && [.waiting, .ready, .active].contains($0.status)
+                       && [.joined, .finished].contains($0.memberState)
+                       && $0.peer.profileID == current.recipientProfileID
+               }) {
+                confirmedDraftConsumption = try draftConsumptionStore.confirm(
+                    operationID: current.operationID,
+                    roomID: roomID,
+                    context: context
+                )
+                return
+            }
+            if !ignoreInFlight && isMutating { return }
+        }
+        guard ignoreInFlight || !isMutating else { return }
+        try draftConsumptionStore.clear(
+            operationID: current.operationID,
+            context: context
+        )
+        confirmedDraftConsumption = nil
     }
 
     private func reconcileSlotReservation(
@@ -869,7 +1050,14 @@ final class LiveWorkoutCoordinator: ObservableObject {
         }
 
         if current.phase == .preparing {
-            let ownerRooms = openRooms.filter { $0.role == .owner }
+            let pendingConsumption = try draftConsumptionStore.current(context: context)
+            let ownerRooms = openRooms.filter { room in
+                guard room.role == .owner else { return false }
+                guard pendingConsumption?.operationID == current.operationID else {
+                    return true
+                }
+                return room.peer.profileID == pendingConsumption?.recipientProfileID
+            }
             if ownerRooms.count == 1, let room = ownerRooms.first {
                 let expiresAt = try room.activeExpiresAt.map {
                     try LiveWorkoutPayloadParser.validatedDate(from: $0)
@@ -1268,7 +1456,9 @@ final class LiveWorkoutCoordinator: ObservableObject {
     }
 
     private func ensureCurrent(_ context: LiveWorkoutSessionContext) throws {
-        guard auth.session?.cloud?.userID == expectedUserID,
+        guard let cloud = auth.session?.cloud,
+              cloud.userID == expectedUserID,
+              NativePushAuthSessionIdentity.sessionID(from: cloud) == context.sessionID,
               context.userID == expectedUserID,
               workoutStore.accountStorageKey == auth.session?.storageKey,
               activeWorkoutStore.accountStorageKey == workoutStore.accountStorageKey else {

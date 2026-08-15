@@ -13,7 +13,7 @@ const VERSIONED_ASSET_PAIRS = [
   ["confirmed.js", "confirmed.v56.js"],
   ["frame-guard.js", "frame-guard.v56.js"],
   ["theme.js", "theme.v56.js"],
-  ["styles.css", "styles.v75.css"],
+  ["styles.css", "styles.v76.css"],
   ["muscle-regions.js", "muscle-regions.v56.js"],
   ["supabase-config.js", "supabase-config.v58.js"],
   ["state-contract.js", "state-contract.v70.js"],
@@ -26,7 +26,7 @@ const VERSIONED_ASSET_PAIRS = [
   ["supabase-realtime.js", "supabase-realtime.v1.js"],
   ["live-workout.js", "live-workout.v3.js"],
   ["live-workout-state.js", "live-workout-state.v1.js"],
-  ["app.js", "app.v93.js"],
+  ["app.js", "app.v94.js"],
   ["workout/landing.css", "workout/landing.v2.css"],
   ["workout/landing.js", "workout/landing.v3.js"]
 ];
@@ -266,7 +266,7 @@ test("service worker caches only exact immutable current same-origin assets", ()
   for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
     const handler = loadWorker(scope).listeners.get("fetch");
 
-    assert.equal(isIntercepted(handler, new URL("./app.v93.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./app.v94.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./shared-workout.v65.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./shared-workout-flow.v71.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./workout/", scope)), true);
@@ -539,11 +539,11 @@ test("current versioned pathname assets cannot be mistaken for predecessor asset
     "russian-text.js", "app.js", "workout/landing.css", "workout/landing.js"
   ]);
   const currentPaths = [
-    "confirmed.v56.css", "confirmed.v56.js", "frame-guard.v56.js", "theme.v56.js", "styles.v75.css",
+    "confirmed.v56.css", "confirmed.v56.js", "frame-guard.v56.js", "theme.v56.js", "styles.v76.css",
     "muscle-regions.v56.js", "supabase-config.v58.js", "state-contract.v70.js",
     "garmin-cloud-sync.v57.js", "progression-rules.v57.js", "shared-workout.v65.js",
     "shared-workout-flow.v71.js", "supabase-realtime.v1.js", "live-workout.v3.js",
-    "live-workout-state.v1.js", "russian-text.v83.js", "exercise-search-vocabulary.v1.js", "app.v93.js",
+    "live-workout-state.v1.js", "russian-text.v83.js", "exercise-search-vocabulary.v1.js", "app.v94.js",
     "workout/landing.v2.css", "workout/landing.v3.js"
   ];
 
@@ -590,19 +590,19 @@ test("install surfaces use dedicated any, maskable, favicon, and Apple icons", (
 test("service worker ignores credential-bearing, partial-content, and non-GET requests", () => {
   const handler = loadWorker().listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v93.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js", {
     headers: { Authorization: "Bearer test-token" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { apikey: "test-key" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v93.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js", {
     headers: { Range: "bytes=0-10" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { "If-Range": "etag" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v93.js", { method: "POST" }), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js", { method: "POST" }), false);
 });
 
 test("searched auth callbacks are network-only but receive enforceable anti-framing headers", async () => {
@@ -661,7 +661,7 @@ test("sensitive callback network failures never fall back to cached HTML", async
 
 test("token-like asset queries are neither intercepted nor cached", () => {
   const handler = loadWorker().listeners.get("fetch");
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v93.js?provider_token=secret"), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js?provider_token=secret"), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/icon-512.png?access_token=secret"), false);
 });
 
@@ -671,7 +671,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v130"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -687,7 +687,7 @@ test("shared workout documents use the stricter offline chooser policy", async (
     const policy = response.headers.get("Content-Security-Policy");
 
     assert.equal(await response.text(), "cached");
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v130"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
     assert.match(policy, /default-src 'none'/);
     assert.match(policy, /connect-src 'none'/);
     assert.match(policy, /worker-src 'none'/);
@@ -706,15 +706,15 @@ test("install reloads one internally consistent version before promptly replacin
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v130"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/exercise-search-vocabulary.v1.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v93.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v94.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout.v65.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout-flow.v71.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/workout/")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/workout/landing.v3.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/theme.v56.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v75.css")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v76.css")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/russian-text.v83.js")));
   assert.equal(worker.addedAssets.some(asset => /retirement(?:\.v1)?\.(?:js|css)$/.test(asset.url)), false);
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);
@@ -827,7 +827,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 1);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v130"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });

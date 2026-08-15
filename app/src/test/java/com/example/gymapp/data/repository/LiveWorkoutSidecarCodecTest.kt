@@ -7,6 +7,44 @@ import org.junit.Test
 
 class LiveWorkoutSidecarCodecTest {
     @Test
+    fun `draft send receipt survives process restart with exact security binding`() {
+        val receipt = draftSendReceipt()
+        val persisted = LiveWorkoutDraftSendReceiptCodec.encode(receipt)
+
+        assertEquals(receipt, LiveWorkoutDraftSendReceiptCodec.decode(persisted))
+        assertEquals(
+            receipt.copy(roomId = "lr_1123456789abcdef0123456789abcdef"),
+            LiveWorkoutDraftSendReceiptCodec.decode(
+                LiveWorkoutDraftSendReceiptCodec.encode(
+                    receipt.copy(roomId = "lr_1123456789abcdef0123456789abcdef")
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `draft send receipt rejects partial or substituted restart identity`() {
+        val receipt = draftSendReceipt()
+        assertThrows(IllegalArgumentException::class.java) {
+            LiveWorkoutDraftSendReceiptCodec.encode(receipt.copy(draftBindingId = "not-a-uuid"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            LiveWorkoutDraftSendReceiptCodec.encode(receipt.copy(draftFingerprint = "b".repeat(63)))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            LiveWorkoutDraftSendReceiptCodec.encode(
+                receipt.copy(recipientFriendshipId = "f_ffffffffffffffffffffffffffffffff")
+                    .copy(recipientFriendshipRevision = 0)
+            )
+        }
+        val unknownField = JSONObject(LiveWorkoutDraftSendReceiptCodec.encode(receipt))
+            .put("accessToken", "must-never-be-stored")
+        assertThrows(IllegalArgumentException::class.java) {
+            LiveWorkoutDraftSendReceiptCodec.decode(unknownField.toString())
+        }
+    }
+
+    @Test
     fun `reservation codec is account session room and expiry bound`() {
         val reservation = LiveWorkoutReservation(
             userId = "42345678-1234-4123-8123-123456789abc",
@@ -177,5 +215,19 @@ class LiveWorkoutSidecarCodecTest {
         localFinished = localFinished,
         pendingOperations = pendingOperations,
         preparedMutation = preparedMutation
+    )
+
+    private fun draftSendReceipt() = LiveWorkoutDraftSendReceipt(
+        userId = "42345678-1234-4123-8123-123456789abc",
+        sessionGeneration = "52345678-1234-4123-8123-123456789abc",
+        draftBindingId = "62345678-1234-4123-8123-123456789abc",
+        recipientProfileId = "p_0123456789abcdef0123456789abcdef",
+        recipientFriendshipId = "f_0123456789abcdef0123456789abcdef",
+        recipientFriendshipRevision = 7,
+        operationId = "12345678-1234-4123-8123-123456789abc",
+        roomId = null,
+        draftFingerprint = "a".repeat(64),
+        createdAt = 1_786_330_800_000L,
+        expiresAt = 1_786_417_200_000L
     )
 }

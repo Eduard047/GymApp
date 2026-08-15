@@ -715,6 +715,18 @@
     <string name="smart_focus_legs">Ноги</string>
     <string name="smart_focus_full_body">Всё тело</string>
     <string name="today_title">Сегодня</string>
+    <string name="today_workout_completed">Тренировка завершена</string>
+    <string name="today_workout_completed_supporting">Сегодняшняя тренировка сохранена в истории.</string>
+    <string name="today_add_another_workout">Добавить ещё одну тренировку</string>
+    <string name="today_continue_plan">Продолжить план</string>
+    <string name="weekly_training_summary_title">На этой неделе</string>
+    <string name="weekly_training_day_completed">тренировка выполнена</string>
+    <string name="weekly_training_day_not_completed">без тренировки</string>
+    <string name="weekly_training_day_today">сегодня</string>
+    <string name="weekly_training_workouts_label">Тренировки</string>
+    <string name="weekly_training_minutes_value">%1$d</string>
+    <string name="weekly_training_minutes_label">Минуты</string>
+    <string name="weekly_training_volume_label">Объём</string>
     <string name="activation_goal">Цель</string>
     <string name="activation_days">Дней / неделю</string>
     <string name="activation_effort">Нагрузка сегодня</string>
@@ -730,6 +742,7 @@
     <string name="workout_plan_discard_message">Изменения будут потеряны.</string>
     <string name="workout_plan_keep_editing">Продолжить редактирование</string>
     <string name="workout_plan_discard_changes">Отменить изменения</string>
+    <string name="workout_plan_discard_draft">Удалить черновик</string>
     <string name="workout_plan_clear_action">Очистить план</string>
     <string name="workout_plan_clear_title">Очистить план тренировки?</string>
     <string name="workout_plan_clear_message">Все упражнения и подходы будут удалены.</string>

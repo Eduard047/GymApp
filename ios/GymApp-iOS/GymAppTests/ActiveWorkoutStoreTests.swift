@@ -5,6 +5,85 @@ import XCTest
 
 @MainActor
 final class ActiveWorkoutStoreTests: XCTestCase {
+    func testLiveDraftConsumptionJournalRestoresAndClearsOnlyExactConfirmedOperation() throws {
+        let context = try makeContext(account: "active-live-draft-consumption")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let liveContext = LiveWorkoutSessionContext(
+            userID: "11111111-1111-4111-8111-111111111111",
+            sessionID: "22222222-2222-4222-8222-222222222222",
+            accessToken: "synthetic-live-token"
+        )
+        let operationID = UUID()
+        let preparing = LiveWorkoutDraftConsumption(
+            version: 1,
+            userID: liveContext.userID,
+            sessionID: liveContext.sessionID,
+            operationID: operationID,
+            roomID: nil,
+            phase: .preparing,
+            recipientProfileID: "p_22222222222222222222222222222222",
+            friendshipID: "f_33333333333333333333333333333333",
+            friendshipRevision: 7,
+            draftFingerprint: String(repeating: "a", count: 64),
+            createdAt: now,
+            expiresAt: now.addingTimeInterval(24 * 60 * 60)
+        )
+        let store = LiveWorkoutDraftConsumptionStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        try store.prepare(preparing, context: liveContext, now: now)
+
+        let reopenedPreparing = LiveWorkoutDraftConsumptionStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(
+            try reopenedPreparing.current(context: liveContext, now: now),
+            preparing
+        )
+        let wrongSession = LiveWorkoutSessionContext(
+            userID: liveContext.userID,
+            sessionID: "44444444-4444-4444-8444-444444444444",
+            accessToken: "replacement-token"
+        )
+        XCTAssertThrowsError(try reopenedPreparing.bind(to: wrongSession)) {
+            XCTAssertEqual($0 as? LiveWorkoutDraftConsumptionError, .sessionMismatch)
+        }
+        XCTAssertEqual(reopenedPreparing.consumption, preparing)
+
+        let roomID = "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let confirmed = try reopenedPreparing.confirm(
+            operationID: operationID,
+            roomID: roomID,
+            context: liveContext,
+            now: now
+        )
+        XCTAssertEqual(confirmed.phase, .confirmed)
+        XCTAssertEqual(confirmed.roomID, roomID)
+        XCTAssertThrowsError(try reopenedPreparing.clear(
+            operationID: operationID,
+            roomID: "lr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            context: liveContext
+        ))
+        XCTAssertEqual(reopenedPreparing.consumption, confirmed)
+
+        let reopenedConfirmed = LiveWorkoutDraftConsumptionStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(
+            try reopenedConfirmed.current(context: liveContext, now: now),
+            confirmed
+        )
+        try reopenedConfirmed.clear(
+            operationID: operationID,
+            roomID: roomID,
+            context: liveContext
+        )
+        XCTAssertNil(reopenedConfirmed.consumption)
+    }
+
     func testOwnerReservationBlocksOrdinaryStartAcrossRelaunchWithoutMutation() throws {
         let context = try makeContext(account: "active-live-slot-restart")
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -1266,10 +1345,17 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         let liveSlotURL = LiveWorkoutSlotReservationStore.storageURL(
             forWorkoutStorageURL: context.history.storageURL
         )
+        let liveDraftConsumptionURL = LiveWorkoutDraftConsumptionStore.storageURL(
+            forWorkoutStorageURL: context.history.storageURL
+        )
         let workoutInviteJournalURL = WorkoutInviteRequestStore.storageURL(
             forWorkoutStorageURL: context.history.storageURL
         )
         try Data("private live slot".utf8).write(to: liveSlotURL, options: .atomic)
+        try Data("private live draft consumption".utf8).write(
+            to: liveDraftConsumptionURL,
+            options: .atomic
+        )
         try Data("private invite retry state".utf8).write(
             to: workoutInviteJournalURL,
             options: .atomic
@@ -1278,6 +1364,7 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: liveSlotURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveDraftConsumptionURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: workoutInviteJournalURL.path))
 
         try WorkoutStore.destroyAccountFiles(
@@ -1290,6 +1377,7 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveRecoveryURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveSlotURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: liveDraftConsumptionURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: workoutInviteJournalURL.path))
     }
 

@@ -11424,9 +11424,13 @@ final class CoreParityTests: XCTestCase {
         }
         XCTAssertFalse(source.contains("\"Start recommended\""))
         XCTAssertFalse(source.contains("\"Начать рекомендованное\""))
-        XCTAssertTrue(source.contains("\"Weekly rhythm\""))
-        XCTAssertTrue(source.contains("\"Ритм тижня\""))
-        XCTAssertTrue(source.contains("\"Ритм недели\""))
+        XCTAssertTrue(source.contains("\"This week\""))
+        XCTAssertTrue(source.contains("\"Цього тижня\""))
+        XCTAssertTrue(source.contains("\"На этой неделе\""))
+        XCTAssertTrue(source.contains("completedToday ? \"Workout complete\""))
+        XCTAssertTrue(source.contains("\"Today's work is saved in your history.\""))
+        XCTAssertTrue(source.contains("weeklyTrainingSummaryView(weeklySummary)"))
+        XCTAssertTrue(source.contains("todayHeroMetricsRow"))
         XCTAssertTrue(source.contains("_ = onStartPlan(launchSeed)"))
         XCTAssertTrue(source.contains("_ = onAddWorkout(launchSeed)"))
         XCTAssertTrue(source.contains("_ = onAddWorkout(nil)"))
@@ -11481,7 +11485,7 @@ final class CoreParityTests: XCTestCase {
             editorSource.range(of: "                    editorSection\n")?.lowerBound
         )
         let startPosition = try XCTUnwrap(
-            editorSource.range(of: "                    startWorkoutButton\n")?.lowerBound
+            editorSource.range(of: "                    primaryWorkoutAction\n")?.lowerBound
         )
         let morePosition = try XCTUnwrap(
             editorSource.range(of: "                    secondaryOptions\n")?.lowerBound
@@ -11506,6 +11510,9 @@ final class CoreParityTests: XCTestCase {
             "Sync plan to Garmin",
             "Синхронізувати план із Garmin",
             "Синхронизировать план с Garmin",
+            "Back to history",
+            "До історії",
+            "К истории",
             "Discard plan changes?",
             "Відкинути зміни плану?",
             "Отменить изменения плана?",
@@ -11515,14 +11522,34 @@ final class CoreParityTests: XCTestCase {
             "Keep editing",
             "Продовжити редагування",
             "Продолжить редактирование",
-            "Discard changes",
-            "Відкинути зміни",
-            "Отменить изменения"
+            "Discard draft",
+            "Відкинути чернетку",
+            "Удалить черновик"
         ] {
             XCTAssertTrue(editorSource.contains("\"\(copy)\""))
         }
-        XCTAssertTrue(editorSource.contains("hasUnsavedPlanChanges"))
-        XCTAssertTrue(editorSource.contains("interactiveDismissDisabled(hasUnsavedPlanChanges)"))
+        XCTAssertTrue(editorSource.contains("onDraftChange(currentEditorDraftState)"))
+        XCTAssertTrue(editorSource.contains("draft.belongs(to: store.accountStorageKey)"))
+        XCTAssertTrue(editorSource.contains("Button(action: sendDirectLiveInvite)"))
+        XCTAssertTrue(editorSource.contains("liveInviteRecipient: liveInviteRecipient"))
+        XCTAssertTrue(editorSource.contains("self.liveInviteRecipient = liveInviteRecipient ?? restoredDraft?.liveInviteRecipient"))
+        XCTAssertTrue(editorSource.contains("let dashboard = try await loadSocialDashboard()"))
+        XCTAssertTrue(editorSource.contains("liveInviteRecipientIsCurrent(friend, in: dashboard)"))
+        XCTAssertTrue(editorSource.contains("guard confirmedLiveRoom else"))
+        XCTAssertTrue(editorSource.contains("Your draft is kept for retry."))
+        XCTAssertTrue(editorSource.contains("onLiveInviteSent()"))
+        XCTAssertTrue(editorSource.contains("interactiveDismissDisabled(isSaving || hasUnsavedPlanChanges)"))
+        let friendsSource = try iosSource("GymApp/UI/Screens/LeaderboardView.swift")
+        XCTAssertTrue(friendsSource.contains("onCreateLiveWorkout(friend)"))
+        XCTAssertTrue(friendsSource.contains(".disabled(isMutating)"))
+        XCTAssertFalse(friendsSource.contains("workoutShareMode = .live"))
+        let rootSource = try iosSource("GymApp/App/AppRootView.swift")
+        XCTAssertTrue(rootSource.contains("workoutEditorDraft?.belongs(to: store.accountStorageKey) == true"))
+        XCTAssertTrue(rootSource.contains("!liveWorkoutCoordinator.hasBlockingLiveWorkout"))
+        XCTAssertTrue(rootSource.contains("workoutEditorLiveRecipient = friend"))
+        let liveCoordinatorSource = try iosSource("GymApp/Services/LiveWorkoutCoordinator.swift")
+        XCTAssertTrue(liveCoordinatorSource.contains("async throws -> Bool"))
+        XCTAssertTrue(liveCoordinatorSource.contains("return result.roomID != nil"))
         XCTAssertTrue(editorSource.contains("action: syncPlanToGarmin"))
         XCTAssertTrue(editorSource.contains("prepareGarminDraftSubmission("))
         XCTAssertFalse(editorSource.contains("queueForGarmin"))
@@ -11620,7 +11647,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(editorHeaderSource.contains("if drafts.isEmpty"))
         let clearSource = try XCTUnwrap(
             editorSource.split(separator: "private func clearPlan()", maxSplits: 1).last?
-                .split(separator: "private func requestCancel()", maxSplits: 1).first
+                .split(separator: "private func syncPlanToGarmin()", maxSplits: 1).first
         )
         for clearedState in [
             "drafts.removeAll()", "latestSmartPlan = nil",
@@ -12329,9 +12356,15 @@ final class CoreParityTests: XCTestCase {
             rootSource.split(separator: "onStartPlan: { launchSeed in", maxSplits: 1).last?
                 .split(separator: "onAddWorkout: { launchSeed in", maxSplits: 1).first
         )
-        XCTAssertTrue(directBlock.contains("DirectWorkoutPlanStarter.start("))
+        let retainedDraftGuard = try XCTUnwrap(
+            directBlock.range(of: "workoutEditorDraft?.belongs(to: store.accountStorageKey) == true")
+        )
+        let directStarter = try XCTUnwrap(
+            directBlock.range(of: "DirectWorkoutPlanStarter.start(")
+        )
+        XCTAssertLessThan(retainedDraftGuard.lowerBound, directStarter.lowerBound)
+        XCTAssertTrue(directBlock.contains("showsAddWorkout = true"))
         XCTAssertTrue(directBlock.contains("showsActiveWorkout = true"))
-        XCTAssertFalse(directBlock.contains("showsAddWorkout = true"))
         XCTAssertFalse(directBlock.contains("createWorkout("))
         XCTAssertFalse(directBlock.lowercased().contains("garmin"))
 

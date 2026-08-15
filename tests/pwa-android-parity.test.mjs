@@ -128,7 +128,15 @@ test("PWA distinguishes planned rows from durable active and history sets", () =
   assert.match(appSources[0].source, /data-action="add-set"[^>]*>\$\{t\("addPlannedSet"\)\}<\/button>/);
   assert.doesNotMatch(appSources[0].source, /data-action="detail-add-set"|function detailAddSet\(/);
   assert.match(appSources[0].source, /data-action="add-saved-workout-set"/);
-  assert.match(appSources[0].source, /data-action="start-workout"[^>]*>[\s\S]*?tx\("Start workout"/);
+  assert.match(
+    appSources[0].source,
+    /const primaryAction = liveRecipient \? "send-draft-live-invite" : "start-workout"/
+  );
+  assert.match(appSources[0].source, /: tx\("Start workout", "Почати тренування"\)/);
+  assert.match(
+    appSources[0].source,
+    /data-action="\$\{primaryAction\}"[^>]*>[\s\S]*?escapeHtml\(primaryLabel\)/
+  );
   assert.match(appSources[0].source, /data-action="record-active-set"/);
   assert.match(appSources[0].source, /data-action="finish-active-workout"/);
   assert.match(appSources[0].source, /data-action="save-workout"[^>]*>[\s\S]*?t\("saveCompletedWorkout"\)/);

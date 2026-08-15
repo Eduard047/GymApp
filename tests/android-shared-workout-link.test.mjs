@@ -27,7 +27,7 @@ test("Android App Link claims only the canonical shared-workout landing path", (
 
 test("shared-workout consent cannot survive process-local inbox generations", () => {
   const consentStart = navigation.indexOf("var approvedSharedWorkoutId");
-  const consentEnd = navigation.indexOf("val snackbarHostState", consentStart);
+  const consentEnd = navigation.indexOf("var preferredShareFriendProfileId", consentStart);
   const consentState = navigation.slice(consentStart, consentEnd);
 
   assert.ok(

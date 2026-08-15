@@ -26,5 +26,13 @@ class VisibleDateFormatterTest {
             "четверг, 13 августа 2026",
             DateTimeUtils.formatLongDate(timestamp, Locale("ru"), zoneId)
         )
+        val saturday = LocalDate.of(2026, 8, 15)
+            .atStartOfDay(zoneId)
+            .toInstant()
+            .toEpochMilli()
+        assertEquals(
+            "субота, 15 серпня 2026",
+            DateTimeUtils.formatLongDate(saturday, Locale("uk"), zoneId)
+        )
     }
 }

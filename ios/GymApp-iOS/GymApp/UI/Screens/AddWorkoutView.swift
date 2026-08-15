@@ -1,3 +1,5 @@
+import CryptoKit
+import Foundation
 import SwiftUI
 
 func makeWorkoutEditorDrafts(from plan: SmartWorkoutPlan) -> [WorkoutEditorExerciseDraft] {
@@ -179,13 +181,18 @@ struct AddWorkoutView: View {
     private let isCloudAccount: Bool
     private let onStarted: (UUID) -> Void
     private let onSaved: (UUID) -> Void
-    private let onCancel: () -> Void
+    private let onClose: () -> Void
+    private let onDiscard: () -> Void
+    private let onDraftChange: (WorkoutPlanEditorDraftState) -> Void
+    private let onLiveInviteSent: () -> Void
     private let reportStatus: (String, Bool) -> Void
     private let loadSocialDashboard: (() async throws -> SocialDashboard)?
     private let sendSocialWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
-    private let sendLiveWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)?
+    private let sendLiveWorkoutInvite:
+        ((String, SharedWorkoutPlan, LiveWorkoutDraftSendRequest?) async throws -> Bool)?
     private let refreshSocialWorkoutInbox: (() async throws -> Void)?
-    private let rejectsLaunchSeed: Bool
+    private let rejectsInitialState: Bool
+    private let liveInviteRecipient: SocialFriendSummary?
 
     init(
         appState: AppState,
@@ -195,9 +202,14 @@ struct AddWorkoutView: View {
         launchSeed: WorkoutLaunchSeed? = nil,
         launchSeedConsumerID: UUID? = nil,
         launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
+        restoredDraft: WorkoutPlanEditorDraftState? = nil,
+        liveInviteRecipient: SocialFriendSummary? = nil,
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
-        onCancel: @escaping () -> Void = {}
+        onClose: @escaping () -> Void = {},
+        onDiscard: @escaping () -> Void = {},
+        onDraftChange: @escaping (WorkoutPlanEditorDraftState) -> Void = { _ in },
+        onLiveInviteSent: @escaping () -> Void = {}
     ) {
         self.init(
             store: appState.workoutStore,
@@ -208,9 +220,14 @@ struct AddWorkoutView: View {
             launchSeed: launchSeed,
             launchSeedConsumerID: launchSeedConsumerID,
             launchSeedDrafts: launchSeedDrafts,
+            restoredDraft: restoredDraft,
+            liveInviteRecipient: liveInviteRecipient,
             onStarted: onStarted,
             onSaved: onSaved,
-            onCancel: onCancel,
+            onClose: onClose,
+            onDiscard: onDiscard,
+            onDraftChange: onDraftChange,
+            onLiveInviteSent: onLiveInviteSent,
             onStatus: { [weak appState] message, isError in
                 appState?.show(message: message, isError: isError)
             },
@@ -219,8 +236,12 @@ struct AddWorkoutView: View {
                 try await appState.sendWorkoutInvite(to: profileID, plan: plan)
             },
             sendLiveWorkoutInvite: liveWorkoutCoordinator.map { coordinator in
-                { profileID, plan in
-                    try await coordinator.sendInvite(to: profileID, plan: plan)
+                { profileID, plan, draftRequest in
+                    try await coordinator.sendInvite(
+                        to: profileID,
+                        plan: plan,
+                        draftRequest: draftRequest
+                    )
                 }
             },
             refreshSocialWorkoutInbox: {
@@ -238,13 +259,19 @@ struct AddWorkoutView: View {
         launchSeed: WorkoutLaunchSeed? = nil,
         launchSeedConsumerID: UUID? = nil,
         launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
+        restoredDraft: WorkoutPlanEditorDraftState? = nil,
+        liveInviteRecipient: SocialFriendSummary? = nil,
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
-        onCancel: @escaping () -> Void = {},
+        onClose: @escaping () -> Void = {},
+        onDiscard: @escaping () -> Void = {},
+        onDraftChange: @escaping (WorkoutPlanEditorDraftState) -> Void = { _ in },
+        onLiveInviteSent: @escaping () -> Void = {},
         onStatus: @escaping (String, Bool) -> Void = { _, _ in },
         loadSocialDashboard: (() async throws -> SocialDashboard)? = nil,
         sendSocialWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)? = nil,
-        sendLiveWorkoutInvite: ((String, SharedWorkoutPlan) async throws -> Void)? = nil,
+        sendLiveWorkoutInvite:
+            ((String, SharedWorkoutPlan, LiveWorkoutDraftSendRequest?) async throws -> Bool)? = nil,
         refreshSocialWorkoutInbox: (() async throws -> Void)? = nil
     ) {
         _store = ObservedObject(wrappedValue: store)
@@ -253,7 +280,11 @@ struct AddWorkoutView: View {
         let storedProfile = TrainingProfileStore().load(
             accountStorageKey: store.accountStorageKey
         )
-        let requestedLaunchSeed = launchSeed
+        let requestedRestoredDraft = restoredDraft
+        let restoredDraft = requestedRestoredDraft.flatMap { draft in
+            draft.belongs(to: store.accountStorageKey) ? draft : nil
+        }
+        let requestedLaunchSeed = restoredDraft == nil ? launchSeed : nil
         let launchSeed: WorkoutLaunchSeed? = requestedLaunchSeed.flatMap { seed -> WorkoutLaunchSeed? in
             guard WorkoutLaunchSeedUseGate.accepts(
                 seed,
@@ -265,41 +296,51 @@ struct AddWorkoutView: View {
             }
             return seed
         }
-        let profile = launchSeed?.profile ?? storedProfile
+        let profile = restoredDraft?.profile ?? launchSeed?.profile ?? storedProfile
         let seededDrafts = launchSeed.map { _ in launchSeedDrafts ?? [] }
-        let initialDate = Date()
-        let initialEffort = launchSeed?.requestedEffort ?? .auto
-        let initialEditorDrafts = seededDrafts ?? initialDrafts.map { exercise in
-            WorkoutEditorExerciseDraft(
-                exerciseID: exercise.exerciseID,
-                sets: exercise.sets.map {
-                    WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps)
-                }
-            )
+        let initialDate = restoredDraft?.date ?? Date()
+        let initialNote = restoredDraft?.note ?? ""
+        let initialEffort = restoredDraft?.selectedEffort ?? launchSeed?.requestedEffort ?? .auto
+        let initialEditorDrafts = restoredDraft?.drafts ?? seededDrafts ?? initialDrafts.map {
+            exercise in
+                WorkoutEditorExerciseDraft(
+                    exerciseID: exercise.exerciseID,
+                    sets: exercise.sets.map {
+                        WorkoutEditorSetDraft(weight: $0.weight, reps: $0.reps)
+                    }
+                )
         }
         _date = State(initialValue: initialDate)
+        _note = State(initialValue: initialNote)
         _profile = State(initialValue: profile)
         _selectedEffort = State(initialValue: initialEffort)
-        _latestSmartPlan = State(initialValue: launchSeed?.plan)
+        _latestSmartPlan = State(initialValue: restoredDraft?.latestSmartPlan ?? launchSeed?.plan)
         _drafts = State(initialValue: initialEditorDrafts)
         _garminDraftSubmission = State(initialValue: nil)
         _smartGeneratedDraftIDs = State(
-            initialValue: Set((seededDrafts ?? []).map(\.id))
+            initialValue: restoredDraft?.smartGeneratedDraftIDs
+                ?? Set((seededDrafts ?? []).map(\.id))
         )
+        _smartPlanIsStale = State(initialValue: restoredDraft?.smartPlanIsStale ?? false)
         self.isCloudAccount = isCloudAccount
         self.onStarted = onStarted
         self.onSaved = onSaved
-        self.onCancel = onCancel
+        self.onClose = onClose
+        self.onDiscard = onDiscard
+        self.onDraftChange = onDraftChange
+        self.onLiveInviteSent = onLiveInviteSent
         self.reportStatus = onStatus
         self.loadSocialDashboard = loadSocialDashboard
         self.sendSocialWorkoutInvite = sendSocialWorkoutInvite
         self.sendLiveWorkoutInvite = sendLiveWorkoutInvite
         self.refreshSocialWorkoutInbox = refreshSocialWorkoutInbox
-        rejectsLaunchSeed = requestedLaunchSeed != nil && launchSeed == nil
+        self.liveInviteRecipient = liveInviteRecipient ?? restoredDraft?.liveInviteRecipient
+        rejectsInitialState = (requestedRestoredDraft != nil && restoredDraft == nil)
+            || (restoredDraft == nil && requestedLaunchSeed != nil && launchSeed == nil)
         _baselinePlanSnapshot = State(
-            initialValue: PlanEditorSnapshot(
+            initialValue: restoredDraft?.baselinePlanSnapshot ?? PlanEditorSnapshot(
                 date: initialDate,
-                note: "",
+                note: initialNote,
                 effort: initialEffort,
                 drafts: initialEditorDrafts
             )
@@ -319,10 +360,13 @@ struct AddWorkoutView: View {
                             GymStatusBanner(message: statusMessage, isError: statusIsError)
                         }
 
+                        if let liveInviteRecipient {
+                            directLiveRecipientPanel(liveInviteRecipient)
+                        }
                         profilePanel
                         smartCoachPanel
                         editorSection
-                        startWorkoutButton
+                        primaryWorkoutAction
                         secondaryOptions
                     }
                     .padding(.horizontal, 14)
@@ -340,11 +384,12 @@ struct AddWorkoutView: View {
                 }
             }
         }
+        .allowsHitTesting(!isSaving)
         .navigationTitle(
             gymText(
-                "Workout plan",
-                "План тренування",
-                "План тренировки",
+                liveInviteRecipient == nil ? "Workout plan" : "Live workout",
+                liveInviteRecipient == nil ? "План тренування" : "Живе тренування",
+                liveInviteRecipient == nil ? "План тренировки" : "Живая тренировка",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -353,16 +398,17 @@ struct AddWorkoutView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
                     gymText(
-                        "Cancel",
-                        "Скасувати",
-                        "Отмена",
+                        "Back to history",
+                        "До історії",
+                        "К истории",
                         languageCode: gymCurrentLanguageCode()
                     ),
-                    action: requestCancel
+                    action: onClose
                 )
+                .disabled(isSaving)
             }
         }
-        .interactiveDismissDisabled(hasUnsavedPlanChanges)
+        .interactiveDismissDisabled(isSaving || hasUnsavedPlanChanges)
         .confirmationDialog(
             gymText(
                 "Discard plan changes?",
@@ -381,7 +427,7 @@ struct AddWorkoutView: View {
                     languageCode: gymCurrentLanguageCode()
                 ),
                 role: .destructive,
-                action: onCancel
+                action: onDiscard
             )
             Button(
                 gymText(
@@ -476,12 +522,36 @@ struct AddWorkoutView: View {
         .onChange(of: selectedEffort) { _ in
             smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty
         }
+        .onChange(of: currentEditorDraftState) { draft in
+            onDraftChange(draft)
+        }
+        .onAppear {
+            onDraftChange(currentEditorDraftState)
+        }
         .task {
-            guard !rejectsLaunchSeed else {
-                onCancel()
+            guard !rejectsInitialState else {
+                onDiscard()
                 return
             }
             try? await refreshSocialWorkoutInbox?()
+        }
+    }
+
+    private func directLiveRecipientPanel(_ friend: SocialFriendSummary) -> some View {
+        GymPanel(highlighted: true) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(friend.displayName, systemImage: "person.2.wave.2.fill")
+                    .font(.headline)
+                Text(gymText(
+                    "Build the plan here. The primary action sends it only as a frozen live invitation; it does not save or start a solo workout.",
+                    "Склади план тут. Основна дія надішле його лише як зафіксоване живе запрошення — без збереження чи запуску одиночного тренування.",
+                    "Составь план здесь. Основное действие отправит его только как зафиксированное live-приглашение — без сохранения или запуска одиночной тренировки.",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -957,28 +1027,63 @@ struct AddWorkoutView: View {
         }
     }
 
-    private var startWorkoutButton: some View {
-        Button(action: startWorkout) {
-            Label(
+    @ViewBuilder
+    private var primaryWorkoutAction: some View {
+        if let liveInviteRecipient {
+            Button(action: sendDirectLiveInvite) {
+                if isSaving {
+                    HStack(spacing: 10) {
+                        ProgressView().tint(.white)
+                        Text(gymText(
+                            "Sending invitation…",
+                            "Надсилаємо запрошення…",
+                            "Отправляем приглашение…",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                    }
+                } else {
+                    Label(
+                        gymText(
+                            "Invite \(liveInviteRecipient.displayName) live",
+                            "Запросити \(liveInviteRecipient.displayName) наживо",
+                            "Пригласить \(liveInviteRecipient.displayName) в live",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "person.2.wave.2.fill"
+                    )
+                }
+            }
+            .buttonStyle(GymPrimaryButtonStyle())
+            .disabled(isSaving || drafts.isEmpty || activeWorkoutStore.draft != nil)
+            .accessibilityHint(gymText(
+                "Freezes this plan and sends a live invitation without saving or starting a solo workout",
+                "Фіксує цей план і надсилає живе запрошення без збереження чи запуску одиночного тренування",
+                "Фиксирует этот план и отправляет live-приглашение без сохранения или запуска одиночной тренировки",
+                languageCode: gymCurrentLanguageCode()
+            ))
+        } else {
+            Button(action: startWorkout) {
+                Label(
+                    gymText(
+                        "Start workout",
+                        "Почати тренування",
+                        "Начать тренировку",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    systemImage: "play.circle.fill"
+                )
+            }
+            .buttonStyle(GymPrimaryButtonStyle())
+            .disabled(isSaving || drafts.isEmpty || activeWorkoutStore.draft != nil)
+            .accessibilityHint(
                 gymText(
-                    "Start workout",
-                    "Почати тренування",
-                    "Начать тренировку",
+                    "Saves this plan locally so sets can be recorded one by one",
+                    "Зберігає цей план локально, щоб записувати підходи по одному",
+                    "Сохраняет этот план локально, чтобы записывать подходы по одному",
                     languageCode: gymCurrentLanguageCode()
-                ),
-                systemImage: "play.circle.fill"
+                )
             )
         }
-        .buttonStyle(GymPrimaryButtonStyle())
-        .disabled(isSaving || drafts.isEmpty || activeWorkoutStore.draft != nil)
-        .accessibilityHint(
-            gymText(
-                "Saves this plan locally so sets can be recorded one by one",
-                "Зберігає цей план локально, щоб записувати підходи по одному",
-                "Сохраняет этот план локально, чтобы записывать подходы по одному",
-                languageCode: gymCurrentLanguageCode()
-            )
-        )
     }
 
     private var secondaryOptions: some View {
@@ -988,25 +1093,43 @@ struct AddWorkoutView: View {
                     sessionDetails
                     templatePanel
 
-                    if isCloudAccount {
+                    if isCloudAccount, liveInviteRecipient == nil {
                         garminPanel
                     }
 
-                    shareDraftButton
+                    if liveInviteRecipient == nil {
+                        shareDraftButton
 
-                    Button(action: saveCompletedWorkout) {
-                        if isSaving {
-                            HStack(spacing: 10) {
-                                ProgressView().tint(.white)
-                                Text("Saving…")
+                        Button(action: saveCompletedWorkout) {
+                            if isSaving {
+                                HStack(spacing: 10) {
+                                    ProgressView().tint(.white)
+                                    Text("Saving…")
+                                }
+                            } else {
+                                Label("Save as completed workout", systemImage: "checkmark.circle.fill")
                             }
-                        } else {
-                            Label("Save as completed workout", systemImage: "checkmark.circle.fill")
                         }
+                        .buttonStyle(GymSecondaryButtonStyle())
+                        .disabled(isSaving || drafts.isEmpty)
+                        .accessibilityHint("Adds every planned row to history and summaries as completed")
+                    }
+
+                    Button(role: .destructive) {
+                        showingDiscardConfirmation = true
+                    } label: {
+                        Label(
+                            gymText(
+                                "Discard draft",
+                                "Відкинути чернетку",
+                                "Удалить черновик",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            systemImage: "trash"
+                        )
                     }
                     .buttonStyle(GymSecondaryButtonStyle())
-                    .disabled(isSaving || drafts.isEmpty)
-                    .accessibilityHint("Adds every planned row to history and summaries as completed")
+                    .disabled(isSaving)
                 }
                 .padding(.top, 12)
             } label: {
@@ -1324,25 +1447,40 @@ struct AddWorkoutView: View {
 
     private func sendWorkoutInvite(to friend: SocialFriendSummary, live: Bool) async {
         guard sharingFriendID == nil,
-              let plan = sharingPlan,
-              let sender = live ? sendLiveWorkoutInvite : sendSocialWorkoutInvite else { return }
+              let plan = sharingPlan else { return }
+        if live && sendLiveWorkoutInvite == nil { return }
+        if !live && sendSocialWorkoutInvite == nil { return }
         sharingFriendID = friend.profileID
         shareChooserMessage = nil
         shareChooserMessageIsError = false
         defer { sharingFriendID = nil }
         do {
-            try await sender(friend.profileID, plan)
-            shareChooserMessage = live
-                ? t(
+            let confirmedLiveRoom: Bool?
+            if live {
+                confirmedLiveRoom = try await sendLiveWorkoutInvite?(friend.profileID, plan, nil)
+            } else {
+                try await sendSocialWorkoutInvite?(friend.profileID, plan)
+                confirmedLiveRoom = nil
+            }
+            if confirmedLiveRoom == true {
+                shareChooserMessage = t(
                     "Live invitation sent. The plan is frozen; your friend joins the lobby before you start.",
                     "Живе запрошення надіслано. План зафіксовано; друг приєднається до лобі до твого старту.",
                     "Живое приглашение отправлено. План зафиксирован; друг присоединится к лобби до твоего старта."
                 )
-                : t(
+            } else if live {
+                shareChooserMessage = t(
+                    "Invitation submitted or unavailable. The current draft was kept.",
+                    "Запрошення надіслано або недоступне. Поточну чернетку збережено.",
+                    "Приглашение отправлено или недоступно. Текущий черновик сохранён."
+                )
+            } else {
+                shareChooserMessage = t(
                     "Copy invitation submitted. If this friend is available, it will appear in their workout inbox.",
                     "Запрошення з копією надіслано. Якщо друг доступний, воно з’явиться у вхідних тренуваннях.",
                     "Приглашение с копией отправлено. Если друг доступен, оно появится во входящих тренировках."
                 )
+            }
         } catch {
             shareChooserMessage = t(
                 "The invitation could not be submitted safely. Refresh friends and try again.",
@@ -1350,6 +1488,142 @@ struct AddWorkoutView: View {
                 "Не удалось безопасно отправить приглашение. Обнови друзей и попробуй ещё раз."
             )
             shareChooserMessageIsError = true
+        }
+    }
+
+    private func sendDirectLiveInvite() {
+        guard let friend = liveInviteRecipient,
+              let sendLiveWorkoutInvite,
+              let loadSocialDashboard else {
+            show(
+                gymText(
+                    "The live invitation cannot be prepared safely. Your draft is kept.",
+                    "Не вдалося безпечно підготувати живе запрошення. Чернетку збережено.",
+                    "Не удалось безопасно подготовить live-приглашение. Черновик сохранён.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                error: true
+            )
+            return
+        }
+        guard activeWorkoutStore.draft == nil, !isSaving else {
+            show(
+                gymText(
+                    "Finish the current workout before sending this live invitation.",
+                    "Заверши поточне тренування перед надсиланням цього живого запрошення.",
+                    "Заверши текущую тренировку перед отправкой этого live-приглашения.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                error: true
+            )
+            return
+        }
+
+        let plan: SharedWorkoutPlan
+        do {
+            plan = try makeSharedWorkoutDraftPlan(
+                drafts: drafts,
+                exercises: sharedWorkoutExercisesByID
+            )
+        } catch {
+            showDraftShareError()
+            return
+        }
+
+        let sentDraftState = currentEditorDraftState
+        let sendRequest: LiveWorkoutDraftSendRequest
+        do {
+            sendRequest = LiveWorkoutDraftSendRequest(
+                recipientProfileID: friend.profileID,
+                friendshipID: friend.friendshipID,
+                friendshipRevision: friend.friendshipRevision,
+                draftFingerprint: try sentDraftState.liveSendFingerprint()
+            )
+        } catch {
+            show(
+                gymText(
+                    "The live invitation cannot be prepared safely. Your draft is kept.",
+                    "Не вдалося безпечно підготувати живе запрошення. Чернетку збережено.",
+                    "Не удалось безопасно подготовить live-приглашение. Черновик сохранён.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                error: true
+            )
+            return
+        }
+        isSaving = true
+        statusMessage = nil
+        Task { @MainActor in
+            do {
+                let dashboard = try await loadSocialDashboard()
+                guard liveInviteRecipientIsCurrent(friend, in: dashboard) else {
+                    isSaving = false
+                    show(
+                        gymText(
+                            "This friendship changed before the invitation was sent. Your draft is kept; return to Friends and try again.",
+                            "Дружба змінилася до надсилання запрошення. Чернетку збережено — повернися до Друзів і спробуй ще раз.",
+                            "Дружба изменилась до отправки приглашения. Черновик сохранён — вернись в Друзья и попробуй ещё раз.",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        error: true
+                    )
+                    return
+                }
+                let confirmedLiveRoom = try await sendLiveWorkoutInvite(
+                    friend.profileID,
+                    plan,
+                    sendRequest
+                )
+                guard confirmedLiveRoom else {
+                    isSaving = false
+                    show(
+                        gymText(
+                            "Invitation submitted or unavailable. Your draft is kept for retry.",
+                            "Запрошення надіслано або недоступне. Чернетку збережено для повторної спроби.",
+                            "Приглашение отправлено или недоступно. Черновик сохранён для повторной попытки.",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        error: false
+                    )
+                    return
+                }
+                guard currentEditorDraftState == sentDraftState else {
+                    isSaving = false
+                    reportStatus(
+                        gymText(
+                            "The live room was created from the sent plan. Your newer edits were kept; open Friends to enter the room.",
+                            "Live-кімнату створено з надісланого плану. Новіші зміни збережено; відкрий Друзів, щоб увійти до кімнати.",
+                            "Live-комната создана из отправленного плана. Новые изменения сохранены; открой Друзей, чтобы войти в комнату.",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        false
+                    )
+                    onLiveInviteSent()
+                    return
+                }
+                reportStatus(
+                    gymText(
+                        "Live invitation sent to \(friend.displayName).",
+                        "Живе запрошення надіслано користувачу \(friend.displayName).",
+                        "Live-приглашение отправлено пользователю \(friend.displayName).",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    false
+                )
+                isSaving = false
+                onLiveInviteSent()
+            } catch {
+                isSaving = false
+                show(
+                    gymText(
+                        "The live invitation could not be sent safely. Your draft is kept for retry.",
+                        "Не вдалося безпечно надіслати живе запрошення. Чернетку збережено для повторної спроби.",
+                        "Не удалось безопасно отправить live-приглашение. Черновик сохранён для повторной попытки.",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    error: true
+                )
+            }
         }
     }
 
@@ -1752,6 +2026,22 @@ struct AddWorkoutView: View {
         ) != baselinePlanSnapshot
     }
 
+    private var currentEditorDraftState: WorkoutPlanEditorDraftState {
+        WorkoutPlanEditorDraftState(
+            accountStorageKey: store.accountStorageKey,
+            date: date,
+            note: note,
+            profile: profile,
+            selectedEffort: selectedEffort,
+            latestSmartPlan: latestSmartPlan,
+            smartGeneratedDraftIDs: smartGeneratedDraftIDs,
+            smartPlanIsStale: smartPlanIsStale,
+            drafts: drafts,
+            baselinePlanSnapshot: baselinePlanSnapshot,
+            liveInviteRecipient: liveInviteRecipient
+        )
+    }
+
     private func clearPlan() {
         guard !drafts.isEmpty else { return }
         drafts.removeAll()
@@ -1766,14 +2056,6 @@ struct AddWorkoutView: View {
         shareChooserMessageIsError = false
         statusMessage = nil
         statusIsError = false
-    }
-
-    private func requestCancel() {
-        if hasUnsavedPlanChanges {
-            showingDiscardConfirmation = true
-        } else {
-            onCancel()
-        }
     }
 
     private var exercisesByID: [UUID: Exercise] {
@@ -1849,14 +2131,14 @@ struct AddWorkoutView: View {
 
 }
 
-struct PlanEditorSnapshot: Equatable {
-    private struct ExerciseSnapshot: Equatable {
+struct PlanEditorSnapshot: Encodable, Equatable {
+    private struct ExerciseSnapshot: Encodable, Equatable {
         let exerciseID: UUID
         let sets: [SetSnapshot]
         let coachRecommendation: WorkoutRecommendation?
     }
 
-    private struct SetSnapshot: Equatable {
+    private struct SetSnapshot: Encodable, Equatable {
         let weight: Double
         let reps: Int
     }
@@ -1884,6 +2166,176 @@ struct PlanEditorSnapshot: Equatable {
                 coachRecommendation: draft.coachRecommendation
             )
         }
+    }
+}
+
+struct WorkoutPlanEditorDraftState: Equatable {
+    let accountStorageKey: String
+    let date: Date
+    let note: String
+    let profile: TrainingProfile
+    let selectedEffort: SmartWorkoutEffort
+    let latestSmartPlan: SmartWorkoutPlan?
+    let smartGeneratedDraftIDs: Set<UUID>
+    let smartPlanIsStale: Bool
+    let drafts: [WorkoutEditorExerciseDraft]
+    let baselinePlanSnapshot: PlanEditorSnapshot
+    let liveInviteRecipient: SocialFriendSummary?
+
+    func belongs(to accountStorageKey: String) -> Bool {
+        !accountStorageKey.isEmpty && self.accountStorageKey == accountStorageKey
+    }
+
+    func liveSendFingerprint() throws -> String {
+        struct SetPayload: Encodable {
+            let id: UUID
+            let weight: Double
+            let reps: Int
+        }
+        struct ExercisePayload: Encodable {
+            let id: UUID
+            let exerciseID: UUID
+            let sets: [SetPayload]
+            let coachRecommendation: WorkoutRecommendation?
+        }
+        struct RecipientPayload: Encodable {
+            let friendshipID: String
+            let profileID: String
+            let displayName: String
+            let xp: Int?
+            let level: Int?
+            let workouts: Int?
+            let progressShared: Bool
+            let statsAvailable: Bool
+            let progressUpdatedAt: String?
+            let friendshipRevision: Int
+        }
+        struct Payload: Encodable {
+            let accountStorageKey: String
+            let date: Date
+            let note: String
+            let profile: TrainingProfile
+            let selectedEffort: SmartWorkoutEffort
+            let latestSmartPlan: SmartWorkoutPlan?
+            let smartGeneratedDraftIDs: [UUID]
+            let smartPlanIsStale: Bool
+            let drafts: [ExercisePayload]
+            let baselinePlanSnapshot: PlanEditorSnapshot
+            let liveInviteRecipient: RecipientPayload?
+        }
+
+        let payload = Payload(
+            accountStorageKey: accountStorageKey,
+            date: date,
+            note: note,
+            profile: profile,
+            selectedEffort: selectedEffort,
+            latestSmartPlan: latestSmartPlan,
+            smartGeneratedDraftIDs: smartGeneratedDraftIDs.sorted {
+                $0.uuidString < $1.uuidString
+            },
+            smartPlanIsStale: smartPlanIsStale,
+            drafts: drafts.map { draft in
+                ExercisePayload(
+                    id: draft.id,
+                    exerciseID: draft.exerciseID,
+                    sets: draft.sets.map {
+                        SetPayload(id: $0.id, weight: $0.weight, reps: $0.reps)
+                    },
+                    coachRecommendation: draft.coachRecommendation
+                )
+            },
+            baselinePlanSnapshot: baselinePlanSnapshot,
+            liveInviteRecipient: liveInviteRecipient.map {
+                RecipientPayload(
+                    friendshipID: $0.friendshipID,
+                    profileID: $0.profileID,
+                    displayName: $0.displayName,
+                    xp: $0.xp,
+                    level: $0.level,
+                    workouts: $0.workouts,
+                    progressShared: $0.progressShared,
+                    statsAvailable: $0.statsAvailable,
+                    progressUpdatedAt: $0.progressUpdatedAt,
+                    friendshipRevision: $0.friendshipRevision
+                )
+            }
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(date.timeIntervalSinceReferenceDate.bitPattern)
+        }
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(payload)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func unbindingLiveInviteRecipient() -> WorkoutPlanEditorDraftState {
+        WorkoutPlanEditorDraftState(
+            accountStorageKey: accountStorageKey,
+            date: date,
+            note: note,
+            profile: profile,
+            selectedEffort: selectedEffort,
+            latestSmartPlan: latestSmartPlan,
+            smartGeneratedDraftIDs: smartGeneratedDraftIDs,
+            smartPlanIsStale: smartPlanIsStale,
+            drafts: drafts,
+            baselinePlanSnapshot: baselinePlanSnapshot,
+            liveInviteRecipient: nil
+        )
+    }
+}
+
+enum ConfirmedLiveWorkoutDraftResolution: Equatable {
+    case consume
+    case preserveUnbound(WorkoutPlanEditorDraftState)
+    case unrelated
+
+    var shouldAcknowledge: Bool {
+        switch self {
+        case .consume, .preserveUnbound:
+            true
+        case .unrelated:
+            false
+        }
+    }
+}
+
+func resolveConfirmedLiveWorkoutDraft(
+    _ consumption: LiveWorkoutDraftConsumption,
+    draft: WorkoutPlanEditorDraftState?,
+    accountStorageKey: String,
+    userID: String,
+    sessionID: String
+) -> ConfirmedLiveWorkoutDraftResolution {
+    guard consumption.phase == .confirmed,
+          consumption.roomID != nil,
+          consumption.userID == userID,
+          consumption.sessionID == sessionID,
+          let draft,
+          draft.belongs(to: accountStorageKey),
+          let recipient = draft.liveInviteRecipient,
+          recipient.profileID == consumption.recipientProfileID,
+          recipient.friendshipID == consumption.friendshipID,
+          recipient.friendshipRevision == consumption.friendshipRevision else {
+        return .unrelated
+    }
+    guard (try? draft.liveSendFingerprint()) == consumption.draftFingerprint else {
+        return .preserveUnbound(draft.unbindingLiveInviteRecipient())
+    }
+    return .consume
+}
+
+func liveInviteRecipientIsCurrent(
+    _ recipient: SocialFriendSummary,
+    in dashboard: SocialDashboard
+) -> Bool {
+    dashboard.friends.contains { friend in
+        friend.profileID == recipient.profileID
+            && friend.friendshipID == recipient.friendshipID
+            && friend.friendshipRevision == recipient.friendshipRevision
     }
 }
 

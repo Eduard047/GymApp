@@ -24,8 +24,8 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/live-workout.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v93.js", "utf8"),
-    readFile("pwa/styles.v75.css", "utf8"),
+    readFile("pwa/app.v94.js", "utf8"),
+    readFile("pwa/styles.v76.css", "utf8"),
     readFile("pwa/russian-text.v83.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
   ]);
@@ -56,7 +56,7 @@ const nativeDateSurfaces = Object.fromEntries(await Promise.all([
 ].map(async path => [path, await readFile(path, "utf8")])));
 
 test("visible date contract requires weekday without changing relative or timestamp labels", () => {
-  assert.equal(contract.productVersion, "3.1.0");
+  assert.equal(contract.productVersion, "3.1.1");
   assert.deepEqual(contract.clients, ["android", "ios", "pwa"]);
   assert.equal(contract.visibleCalendarDate.includeLocalizedWeekday, true);
   assert.deepEqual(contract.visibleCalendarDate.supportedLanguages, ["en", "uk", "ru"]);
@@ -145,6 +145,62 @@ test("Today hero has the same ordered concise metrics on both native clients", (
   assert.match(iosToday, /maximumTodayHeroVolume = 1_000_000_000_000_000\.0/);
 });
 
+test("Today completion and weekly summary have one local-calendar contract", () => {
+  assert.deepEqual(contract.todayState.precedence, [
+    "activeWorkout", "completedToday", "restOrRecovery", "recommendedPlan"
+  ]);
+  assert.equal(
+    contract.todayState.completedTodaySource,
+    "completedCanonicalHistoryInCurrentLocalCalendarDay"
+  );
+  assert.deepEqual(contract.todayState.completedTodaySuppresses, [
+    "recoveryCard", "trainAnyway", "recommendedPlanActions"
+  ]);
+  assert.deepEqual(contract.todayState.completedTodayActionsInOrder, ["createAnotherWorkout"]);
+  assert.deepEqual(contract.todayState.retainedDraftActionOverride, {
+    actionsInOrder: ["continuePlan"],
+    createAnotherWorkoutSuppressed: true,
+    opensSameAccountRetainedDraft: true
+  });
+  assert.equal(contract.weeklySummary.calendar, "localMondayStartSevenDayWeek");
+  assert.equal(contract.weeklySummary.dayMarkers, 7);
+  assert.equal(
+    contract.weeklySummary.headerMetric,
+    "completedTrainingDaysVsProfileTarget"
+  );
+  assert.deepEqual(contract.weeklySummary.metricsInOrder, [
+    "completedWorkouts", "trainingMinutes", "totalVolume"
+  ]);
+  assert.equal(
+    contract.weeklySummary.metricValueStyle,
+    "localizedWholeNumberWithoutRepeatedUnitSuffix"
+  );
+  for (const copy of [
+    contract.todayState.completedTodayCopy.title,
+    contract.todayState.completedTodayCopy.body,
+    ...Object.values(contract.weeklySummary.labels)
+  ]) {
+    assert.ok(
+      androidEnglish.includes(copy.en) || androidEnglish.includes(copy.en.replaceAll("'", "\\'")),
+      `Android EN is missing ${copy.en}`
+    );
+    assert.ok(androidUkrainian.includes(copy.uk), `Android UK is missing ${copy.uk}`);
+    assert.ok(androidRussian.includes(copy.ru), `Android RU is missing ${copy.ru}`);
+    assert.ok(iosToday.includes(copy.en), `iOS EN is missing ${copy.en}`);
+    assert.ok(iosToday.includes(copy.uk), `iOS UK is missing ${copy.uk}`);
+    assert.ok(iosToday.includes(copy.ru), `iOS RU is missing ${copy.ru}`);
+    assert.ok(pwaApp.includes(copy.en), `PWA EN is missing ${copy.en}`);
+    assert.ok(pwaApp.includes(copy.uk), `PWA UK is missing ${copy.uk}`);
+    assert.ok(pwaApp.includes(copy.ru), `PWA RU is missing ${copy.ru}`);
+  }
+  assert.equal(
+    contract.weeklySummary.trainingMinutes.fallbackEstimatePerSession,
+    "min(90,max(10,exerciseCount*3+setCount*2))"
+  );
+  assert.equal(contract.weeklySummary.trainingMinutes.minimumPerSession, 10);
+  assert.equal(contract.weeklySummary.trainingMinutes.maximumPerSession, 90);
+});
+
 test("PWA date and Today helpers implement the shared localized, history-only contract", () => {
   assert.match(pwaApp, /const DEFAULT_CALENDAR_DATE_OPTIONS = Object\.freeze\(\{[\s\S]*weekday: "short"/);
   assert.match(pwaApp, /function socialDayLabel\(day\)[\s\S]*weekday: "short"[\s\S]*timeZone: "UTC"/);
@@ -169,19 +225,19 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v93.js",
-    styleBundle: "styles.v75.css",
+    appBundle: "app.v94.js",
+    styleBundle: "styles.v76.css",
     russianBundle: "russian-text.v83.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v130"
+    serviceWorkerCache: "gym-pwa-v131"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v93\.js"/);
-  assert.match(pwaIndex, /href="\.\/styles\.v75\.css"/);
+  assert.match(pwaIndex, /src="\.\/app\.v94\.js"/);
+  assert.match(pwaIndex, /href="\.\/styles\.v76\.css"/);
   assert.match(pwaIndex, /src="\.\/russian-text\.v83\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v130"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v93\.js"/);
-  assert.match(pwaServiceWorker, /"\.\/styles\.v75\.css"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v131"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v94\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/styles\.v76\.css"/);
   assert.match(pwaServiceWorker, /"\.\/russian-text\.v83\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
   assert.equal(pwaAppBundle, pwaApp);

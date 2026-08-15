@@ -40,6 +40,7 @@ import com.example.gymapp.data.repository.WeeklyTrainingRhythm
 import com.example.gymapp.data.repository.WeeklyTrainingRhythmCalculator
 import com.example.gymapp.data.repository.WeeklyStreakCalculator
 import com.example.gymapp.data.repository.WorkoutFeedbackRecord
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.estimatedLoad
 import com.example.gymapp.data.repository.muscleContributionsForExercise
@@ -74,11 +75,14 @@ import java.util.Locale
 import com.example.gymapp.util.RussianText
 import com.example.gymapp.data.repository.toSmartWorkoutEffort
 import com.example.gymapp.data.repository.trainingProfileForActivation
+import com.example.gymapp.garmin.MAX_GARMIN_DURATION_SECONDS
+import com.example.gymapp.garmin.parseGarminWorkoutMetrics
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
 private const val MAX_TODAY_HERO_VOLUME = 1_000_000_000_000_000.0
+internal const val MAX_ESTIMATED_WORKOUT_MINUTES = 90
 
 data class SoloProgressUiModel(
     val totalXp: Int = 0,
@@ -244,6 +248,21 @@ data class TodayHeroMetricsUiModel(
     val totalVolume: Double = 0.0
 )
 
+data class WeeklyTrainingDayUiModel(
+    val date: LocalDate,
+    val isCompleted: Boolean,
+    val isToday: Boolean
+)
+
+data class WeeklyTrainingSummaryUiModel(
+    val days: List<WeeklyTrainingDayUiModel> = emptyList(),
+    val completedWorkoutCount: Int = 0,
+    val completedTrainingDays: Int = 0,
+    val targetTrainingDays: Int = 0,
+    val estimatedMinutes: Int = 0,
+    val totalVolume: Double = 0.0
+)
+
 data class WorkoutListUiState(
     val monthOffset: Int = 0,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
@@ -251,6 +270,8 @@ data class WorkoutListUiState(
     val hasAnyWorkout: Boolean = false,
     val showFirstWorkoutActivation: Boolean = false,
     val todayPlan: TodayPlanUiModel? = null,
+    val hasCompletedWorkoutToday: Boolean = false,
+    val weeklyTrainingSummary: WeeklyTrainingSummaryUiModel = WeeklyTrainingSummaryUiModel(),
     val todayHeroMetrics: TodayHeroMetricsUiModel = TodayHeroMetricsUiModel(),
     val dashboardStats: DashboardStats = DashboardStats(
         workoutCount = 0,
@@ -403,6 +424,13 @@ class WorkoutListViewModel(
                 zoneId = zoneId
             )
         )
+        val nowMillis = System.currentTimeMillis()
+        val weeklyTrainingSummary = buildWeeklyTrainingSummary(
+            sessions = allSessions,
+            targetTrainingDays = experience.profile.workoutsPerWeek,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
         WorkoutListUiState(
             monthOffset = offset,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
@@ -410,6 +438,12 @@ class WorkoutListViewModel(
             hasAnyWorkout = allSessions.isNotEmpty(),
             showFirstWorkoutActivation = allSessions.isEmpty() && !experience.activationDismissed,
             todayPlan = todayPlan,
+            hasCompletedWorkoutToday = hasCompletedWorkoutToday(
+                sessions = allSessions,
+                nowMillis = nowMillis,
+                zoneId = zoneId
+            ),
+            weeklyTrainingSummary = weeklyTrainingSummary,
             todayHeroMetrics = todayHeroMetrics,
             dashboardStats = dashboardStats,
             soloProgress = soloProgress,
@@ -990,10 +1024,10 @@ class WorkoutListViewModel(
             rhythm = rhythm,
             exerciseCount = plan.exercises.size,
             setCount = plan.exercises.sumOf { it.recommendation.sets.size },
-            estimatedDurationMinutes = (
-                plan.exercises.size * 3 +
-                    plan.exercises.sumOf { it.recommendation.sets.size } * 2
-                ).coerceIn(10, 120),
+            estimatedDurationMinutes = estimateWorkoutMinutes(
+                exerciseCount = plan.exercises.size,
+                setCount = plan.exercises.sumOf { it.recommendation.sets.size }
+            ),
             effortAdjustment = plan.effortAdjustment,
             recommendedLaunchToken = recommendedToken,
             trainAnywayLaunchToken = trainAnywayToken
@@ -1721,6 +1755,94 @@ internal fun buildTodayHeroMetrics(
     return TodayHeroMetricsUiModel(
         totalWorkouts = sessions.size,
         weeklyStreakWeeks = weeklyStreakWeeks.coerceAtLeast(0),
+        totalVolume = totalVolume
+    )
+}
+
+/**
+ * Prefer a positive, parser-bounded Garmin duration and round it up to a whole minute. Historical
+ * rows without measured time use the shared fallback: three minutes per exercise plus two minutes
+ * per set, clamped to 10...90 minutes.
+ */
+internal fun estimateWorkoutMinutes(
+    exerciseCount: Int,
+    setCount: Int,
+    measuredDurationSeconds: Long? = null
+): Int {
+    measuredDurationSeconds
+        ?.takeIf { it in 1L..MAX_GARMIN_DURATION_SECONDS }
+        ?.let { duration -> return ((duration + 59L) / 60L).toInt() }
+    val estimated = exerciseCount.coerceAtLeast(0).toLong() * 3L +
+        setCount.coerceAtLeast(0).toLong() * 2L
+    return estimated.coerceIn(10L, MAX_ESTIMATED_WORKOUT_MINUTES.toLong()).toInt()
+}
+
+internal fun hasCompletedWorkoutToday(
+    sessions: List<WorkoutSessionSummary>,
+    nowMillis: Long,
+    zoneId: ZoneId
+): Boolean {
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    return sessions.asSequence()
+        .take(WorkoutDataLimits.MAX_SESSIONS)
+        .filter {
+            WorkoutDataLimits.isValidTimestamp(it.session.date) &&
+                it.session.date <= nowMillis
+        }
+        .any { Instant.ofEpochMilli(it.session.date).atZone(zoneId).toLocalDate() == today }
+}
+
+internal fun buildWeeklyTrainingSummary(
+    sessions: List<WorkoutSessionSummary>,
+    targetTrainingDays: Int,
+    nowMillis: Long,
+    zoneId: ZoneId
+): WeeklyTrainingSummaryUiModel {
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val weekEndExclusive = weekStart.plusDays(7)
+    val currentWeekSessions = sessions.asSequence()
+        .take(WorkoutDataLimits.MAX_SESSIONS)
+        .filter {
+            WorkoutDataLimits.isValidTimestamp(it.session.date) &&
+                it.session.date <= nowMillis
+        }
+        .mapNotNull { session ->
+            val date = runCatching {
+                Instant.ofEpochMilli(session.session.date).atZone(zoneId).toLocalDate()
+            }.getOrNull() ?: return@mapNotNull null
+            session.takeIf { date >= weekStart && date < weekEndExclusive }?.let { date to it }
+        }
+        .toList()
+    val completedDates = currentWeekSessions.mapTo(linkedSetOf()) { it.first }
+    val estimatedMinutes = currentWeekSessions.fold(0L) { total, (_, session) ->
+        val measuredDurationSeconds = session.session.note
+            ?.let(::parseGarminWorkoutMetrics)
+            ?.durationSeconds
+        (total + estimateWorkoutMinutes(
+            exerciseCount = session.exerciseCount,
+            setCount = session.setCount,
+            measuredDurationSeconds = measuredDurationSeconds
+        ))
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+    }.toInt()
+    val totalVolume = currentWeekSessions.fold(0.0) { total, (_, session) ->
+        val volume = session.totalVolume.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        (total + volume).coerceAtMost(MAX_TODAY_HERO_VOLUME)
+    }
+    return WeeklyTrainingSummaryUiModel(
+        days = (0L..6L).map { offset ->
+            val date = weekStart.plusDays(offset)
+            WeeklyTrainingDayUiModel(
+                date = date,
+                isCompleted = date in completedDates,
+                isToday = date == today
+            )
+        },
+        completedWorkoutCount = currentWeekSessions.size,
+        completedTrainingDays = completedDates.size,
+        targetTrainingDays = targetTrainingDays.coerceIn(2, 6),
+        estimatedMinutes = estimatedMinutes,
         totalVolume = totalVolume
     )
 }

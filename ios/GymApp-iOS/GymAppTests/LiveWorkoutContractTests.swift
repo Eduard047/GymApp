@@ -204,6 +204,149 @@ final class LiveWorkoutContractTests: XCTestCase {
         XCTAssertThrowsError(try LiveWorkoutPayloadParser.snapshot(from: oversized))
     }
 
+    func testDirectEditorInviteConsumesOnlyAfterDurableRoomConfirmationWithoutAwaitingInbox() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymApp-LiveDraftConsumptionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suiteName = "LiveWorkoutDraftConsumptionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let recorder = LiveGatewayActionRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        defer {
+            LiveGatewayURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let auth = AuthService(
+            keychain: LiveWorkoutTestKeychain(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        try auth.installSessionForTesting(.cloud(CloudAccountSession(
+            userID: liveUserID,
+            email: "draft-consumption@example.invalid",
+            displayName: "Draft Consumption Tester",
+            accessToken: try liveSyntheticJWT(sessionID: liveSessionID),
+            refreshToken: "synthetic-refresh-token",
+            expiresAt: Date().addingTimeInterval(3_600)
+        )))
+        let storageKey = try XCTUnwrap(auth.session?.storageKey)
+        let workoutStore = try WorkoutStore(accountStorageKey: storageKey, directoryURL: root)
+        let activeWorkoutStore = ActiveWorkoutStore(
+            accountStorageKey: storageKey,
+            workoutStorageURL: workoutStore.storageURL
+        )
+        let coordinator = LiveWorkoutCoordinator(
+            auth: auth,
+            workoutStore: workoutStore,
+            activeWorkoutStore: activeWorkoutStore,
+            urlSession: urlSession
+        )
+        let recipientProfileID = "p_22222222222222222222222222222222"
+        let request = LiveWorkoutDraftSendRequest(
+            recipientProfileID: recipientProfileID,
+            friendshipID: "f_33333333333333333333333333333333",
+            friendshipRevision: 7,
+            draftFingerprint: String(repeating: "a", count: 64)
+        )
+        let plan = SharedWorkoutPlan(exercises: [
+            SharedWorkoutPlanExercise(
+                catalogKey: "bench_press",
+                name: "Bench Press",
+                sets: [SharedWorkoutPlanSet(weight: 80, repetitions: 8)]
+            )
+        ])
+        let sendCount = LiveGatewayCounter()
+        LiveGatewayURLProtocolStub.handler = { request in
+            let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
+            let action = try XCTUnwrap(requestObject["action"] as? String)
+            recorder.append(action)
+            switch action {
+            case "live_send_invite":
+                let count = sendCount.increment()
+                let result: [String: Any] = count == 1
+                    ? [
+                        "version": 1,
+                        "result": "submitted_or_unavailable",
+                        "roomId": NSNull(),
+                        "status": NSNull(),
+                        "roomRevision": NSNull()
+                    ]
+                    : [
+                        "version": 1,
+                        "result": "submitted",
+                        "roomId": liveRoomID,
+                        "status": "waiting",
+                        "roomRevision": 1
+                    ]
+                return try LiveGatewayURLProtocolStub.response(
+                    for: request,
+                    jsonData: liveJSONData(["version": 1, "result": result])
+                )
+            case "live_inbox":
+                // A confirmed send must return and publish its durable marker even when
+                // the opportunistic post-confirmation refresh is cancelled or unavailable.
+                throw URLError(.notConnectedToInternet)
+            default:
+                throw URLError(.unsupportedURL)
+            }
+        }
+
+        let unavailable = try await coordinator.sendInvite(
+            to: recipientProfileID,
+            plan: plan,
+            draftRequest: request
+        )
+        XCTAssertFalse(unavailable)
+        XCTAssertNil(coordinator.confirmedDraftConsumption)
+        XCTAssertNil(coordinator.draftConsumptionStore.consumption)
+        XCTAssertNil(activeWorkoutStore.liveSlotReservationStore.reservation)
+
+        let confirmedRoom = try await coordinator.sendInvite(
+            to: recipientProfileID,
+            plan: plan,
+            draftRequest: request
+        )
+        XCTAssertTrue(confirmedRoom)
+        let confirmed = try XCTUnwrap(coordinator.confirmedDraftConsumption)
+        XCTAssertEqual(confirmed.phase, .confirmed)
+        XCTAssertEqual(confirmed.roomID, liveRoomID)
+        XCTAssertEqual(confirmed.recipientProfileID, recipientProfileID)
+        XCTAssertEqual(confirmed.friendshipID, request.friendshipID)
+        XCTAssertEqual(confirmed.friendshipRevision, request.friendshipRevision)
+        XCTAssertEqual(confirmed.draftFingerprint, request.draftFingerprint)
+        XCTAssertEqual(
+            activeWorkoutStore.liveSlotReservationStore.reservation?.operationID,
+            confirmed.operationID
+        )
+        let reopened = LiveWorkoutDraftConsumptionStore(
+            accountStorageKey: storageKey,
+            workoutStorageURL: workoutStore.storageURL
+        )
+        XCTAssertEqual(reopened.consumption, confirmed)
+        XCTAssertEqual(recorder.actions.filter { $0 == "live_send_invite" }.count, 2)
+
+        coordinator.stopMonitoring()
+        let restartedCoordinator = LiveWorkoutCoordinator(
+            auth: auth,
+            workoutStore: workoutStore,
+            activeWorkoutStore: activeWorkoutStore,
+            urlSession: urlSession
+        )
+        await restartedCoordinator.refreshAll(showErrors: false)
+        XCTAssertEqual(restartedCoordinator.confirmedDraftConsumption, confirmed)
+
+        try restartedCoordinator.acknowledgeConfirmedDraftConsumption(confirmed)
+        XCTAssertNil(restartedCoordinator.confirmedDraftConsumption)
+        XCTAssertNil(restartedCoordinator.draftConsumptionStore.consumption)
+    }
+
     func testAcceptPreflightsFrozenAliasPairBeforeRespondMutation() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("GymApp-LiveAcceptPreflightTests", isDirectory: true)
@@ -1475,6 +1618,18 @@ private final class LiveGatewayActionRecorder: @unchecked Sendable {
 
     func append(_ action: String) {
         lock.withLock { stored.append(action) }
+    }
+}
+
+private final class LiveGatewayCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() -> Int {
+        lock.withLock {
+            value += 1
+            return value
+        }
     }
 }
 

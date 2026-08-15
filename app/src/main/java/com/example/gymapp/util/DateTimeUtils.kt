@@ -7,6 +7,21 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 object DateTimeUtils {
+    private val ukrainianGenitiveMonths = listOf(
+        "січня",
+        "лютого",
+        "березня",
+        "квітня",
+        "травня",
+        "червня",
+        "липня",
+        "серпня",
+        "вересня",
+        "жовтня",
+        "листопада",
+        "грудня"
+    )
+
     fun monthBounds(
         monthOffset: Int,
         zoneId: ZoneId = ZoneId.systemDefault()
@@ -49,7 +64,12 @@ object DateTimeUtils {
         locale: Locale = Locale.getDefault(),
         zoneId: ZoneId = ZoneId.systemDefault()
     ): String {
-        val formatter = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale)
-        return Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().format(formatter)
+        val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+        if (locale.language.equals("uk", ignoreCase = true)) {
+            val weekday = date.format(DateTimeFormatter.ofPattern("EEEE", locale))
+            return "$weekday, ${date.dayOfMonth} " +
+                "${ukrainianGenitiveMonths[date.monthValue - 1]} ${date.year}"
+        }
+        return date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale))
     }
 }

@@ -67,7 +67,7 @@ function jsFunction(name) {
 
 test("friends/live v2 contract is the same three-client product", () => {
   assert.equal(contract.schemaVersion, 2);
-  assert.equal(contract.productVersion, "3.1.0");
+  assert.equal(contract.productVersion, "3.1.1");
   assert.deepEqual(contract.clients, ["android", "ios", "pwa"]);
   assert.equal(contract.friendWorkoutSharing.summaryConsent.mayAuthorizeExactSets, false);
   assert.equal(contract.friendWorkoutSharing.detailConsent.default, false);
@@ -87,6 +87,32 @@ test("friends/live v2 contract is the same three-client product", () => {
   assert.equal(contract.friendWorkoutSharing.presentation.boldBlueRecordValues, false);
   assert.deepEqual(contract.friendWorkoutSharing.invalidation.payload, ["version", "kind"]);
   assert.equal(contract.liveWorkout.participants, 2);
+  assert.equal(contract.liveWorkout.directCreate.selectedFriendIsRecipient, true);
+  assert.equal(contract.liveWorkout.directCreate.mustNotCreateStandaloneWorkout, true);
+  assert.equal(contract.liveWorkout.directCreate.mustNotRequireSecondaryShareAction, true);
+  assert.equal(
+    contract.liveWorkout.directCreate.privacyPreservingUnavailableResponse,
+    "keepEditorDraftForRetry"
+  );
+  assert.equal(
+    contract.liveWorkout.directCreate.authoritativeRecipientMismatch,
+    "keepLiveBindingFailClosedUntilExplicitCancel"
+  );
+  assert.equal(
+    contract.liveWorkout.directCreate.editorDuringFreshValidationAndSend,
+    "fullyInteractionFrozen"
+  );
+  assert.equal(contract.liveWorkout.directCreate.repeatPrimaryActionWhileSending, "ignored");
+  assert.equal(contract.liveWorkout.directCreate.confirmedRoomClearsOnlySentUnchangedDraft, true);
+  assert.equal(
+    contract.liveWorkout.directCreate.unrelatedLocalActiveWorkout,
+    "denyWithoutMutation"
+  );
+  assert.equal(
+    contract.liveWorkout.entryParity.notificationAndInAppInvitationUseSameAcceptOperation,
+    true
+  );
+  assert.equal(contract.liveWorkout.entryParity.navigationLinkIsNotAuthorization, true);
   assert.equal(contract.liveWorkout.activeScreen.participantTabs, 2);
   assert.equal(contract.liveWorkout.activeScreen.selfTab, "editableLocalInputs");
   assert.equal(contract.liveWorkout.activeScreen.peerTab, "readOnlyCommittedWeightAndReps");
@@ -123,7 +149,7 @@ test("all clients durably reserve the local active slot before live publication 
   assert.match(iosReservation, /sessionID/);
   assert.match(iosReservation, /writeEnvelopeAtomically/);
 
-  const webSend = jsFunction("sendLiveWorkoutInvite");
+  const webSend = jsFunction("sendLiveWorkoutPlan");
   const webAccept = jsFunction("respondLiveWorkoutInvite");
   const webStart = jsFunction("startWorkout");
   assert.ok(webSend.indexOf("reserveLiveWorkoutSlot") < webSend.indexOf("live_send_invite"));

@@ -8,16 +8,137 @@ import com.example.gymapp.data.repository.SharedWorkoutExercise
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.SharedWorkoutSet
+import com.example.gymapp.data.repository.SmartWorkoutEffort
+import com.example.gymapp.data.repository.SmartWorkoutFocus
+import com.example.gymapp.data.repository.SmartWorkoutVariant
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.navigation.shouldConsumeAcceptedSocialWorkout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AddWorkoutDraftShareTest {
+    @Test
+    fun durableLiveSendFingerprintCoversFullOrderedEditorState() {
+        val generatedPlan = SmartWorkoutPlanSummaryUiModel(
+            focus = SmartWorkoutFocus.FullBody,
+            variant = SmartWorkoutVariant.A,
+            requestedEffort = SmartWorkoutEffort.Hard,
+            appliedEffort = SmartWorkoutEffort.Hard,
+            effortAdjustment = null,
+            hardExerciseIds = setOf(2L, 1L)
+        )
+        val original = retainedWorkoutDraftFingerprint(
+            AddWorkoutUiState(
+                workoutDate = 1_786_742_400_000L,
+                note = "Original",
+                exerciseDrafts = listOf(
+                    ExerciseInputState(
+                        draftId = 1L,
+                        exerciseId = 2L,
+                        sets = listOf(SetInputState(weight = "80", reps = "8"))
+                    )
+                ),
+                smartWorkoutEffort = SmartWorkoutEffort.Hard,
+                generatedSmartPlan = generatedPlan,
+                isDirty = true
+            )
+        )
+        val digest = original.durableDigest()
+
+        assertTrue(digest.matches(Regex("^[0-9a-f]{64}$")))
+        assertEquals(digest, original.copy().durableDigest())
+        assertNotEquals(digest, original.copy(note = "Late edit").durableDigest())
+        assertNotEquals(
+            digest,
+            original.copy(
+                exerciseDrafts = original.exerciseDrafts.map { draft ->
+                    draft.copy(sets = listOf(SetInputState(weight = "82.5", reps = "8")))
+                }
+            ).durableDigest()
+        )
+        assertNotEquals(
+            digest,
+            original.copy(
+                generatedSmartPlan = generatedPlan.copy(hardExerciseIds = setOf(1L))
+            ).durableDigest()
+        )
+    }
+
+    @Test
+    fun successfulLiveSendCannotDiscardAPlanEditedAfterItsSnapshot() {
+        val original = AddWorkoutUiState(
+            workoutDate = 1_786_742_400_000L,
+            note = "Original",
+            exerciseDrafts = listOf(
+                ExerciseInputState(
+                    draftId = 1L,
+                    exerciseId = 2L,
+                    sets = listOf(SetInputState(weight = "80", reps = "8"))
+                )
+            ),
+            isDirty = true
+        )
+        val sentSnapshot = retainedWorkoutDraftFingerprint(original)
+
+        assertTrue(
+            liveSendMayDiscardRetainedWorkoutDraft(
+                expected = sentSnapshot,
+                current = retainedWorkoutDraftFingerprint(original)
+            )
+        )
+        assertFalse(
+            liveSendMayDiscardRetainedWorkoutDraft(
+                expected = sentSnapshot,
+                current = retainedWorkoutDraftFingerprint(
+                    original.copy(note = "Late edit")
+                )
+            )
+        )
+        assertFalse(
+            liveSendMayDiscardRetainedWorkoutDraft(
+                expected = sentSnapshot,
+                current = retainedWorkoutDraftFingerprint(
+                    original.copy(
+                        exerciseDrafts = original.exerciseDrafts.map { draft ->
+                            draft.copy(
+                                sets = draft.sets.map { set -> set.copy(weight = "82.5") }
+                            )
+                        }
+                    )
+                )
+            )
+        )
+    }
+
+    @Test
+    fun retainedDraftDetectionIncludesHydratedAndUserEditedEditorState() {
+        assertFalse(hasRetainedWorkoutDraft(AddWorkoutUiState()))
+        assertTrue(canHydrateLaunchPlanIntoDraft(AddWorkoutUiState()))
+        assertTrue(
+            hasRetainedWorkoutDraft(
+                AddWorkoutUiState(
+                    exerciseDrafts = listOf(ExerciseInputState(draftId = 1L)),
+                    isDirty = false
+                )
+            )
+        )
+        assertFalse(
+            canHydrateLaunchPlanIntoDraft(
+                AddWorkoutUiState(
+                    exerciseDrafts = listOf(ExerciseInputState(draftId = 1L)),
+                    isDirty = false
+                )
+            )
+        )
+        assertTrue(hasRetainedWorkoutDraft(AddWorkoutUiState(note = "Retained note")))
+        assertTrue(hasRetainedWorkoutDraft(AddWorkoutUiState(isDirty = true)))
+    }
+
     @Test
     fun lateGarminResultCannotAcknowledgeAnEditedOrClearedDraft() {
         assertTrue(watchPlanSyncResultIsCurrent(capturedGeneration = 7L, currentGeneration = 7L))

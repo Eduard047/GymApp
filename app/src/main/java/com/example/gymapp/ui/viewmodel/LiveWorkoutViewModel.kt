@@ -32,6 +32,7 @@ import com.example.gymapp.data.repository.LivePreparedMutationKind
 import com.example.gymapp.data.repository.LiveWorkoutReservation
 import com.example.gymapp.data.repository.LiveWorkoutReservationPhase
 import com.example.gymapp.data.repository.LiveWorkoutBinding
+import com.example.gymapp.data.repository.LiveWorkoutDraftSendReceipt
 import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.SharedWorkoutLink
@@ -108,6 +109,44 @@ internal fun isConfirmedLiveAcceptAuthoritativelyRestored(
     snapshotStatus == "active" &&
     boundRoomId == expectedRoomId &&
     hasLocalActiveWorkout
+
+internal data class LiveWorkoutDraftSendRequest(
+    val draftBindingId: String,
+    val draftFingerprint: String
+)
+
+internal fun liveWorkoutDraftSendReceiptMatches(
+    receipt: LiveWorkoutDraftSendReceipt,
+    session: AccountSession.Cloud,
+    friend: SocialFriend,
+    request: LiveWorkoutDraftSendRequest
+): Boolean = receipt.userId == session.userId &&
+    receipt.sessionGeneration == session.sessionGeneration &&
+    receipt.draftBindingId == request.draftBindingId &&
+    receipt.recipientProfileId == friend.profileId &&
+    receipt.recipientFriendshipId == friend.friendshipId &&
+    receipt.recipientFriendshipRevision == friend.friendshipRevision &&
+    receipt.draftFingerprint == request.draftFingerprint
+
+internal fun resolveAuthoritativeLiveWorkoutDraftSendRoom(
+    receipt: LiveWorkoutDraftSendReceipt,
+    reservation: LiveWorkoutReservation?,
+    boundRoomId: String?,
+    openRooms: List<LiveInboxRoom>
+): LiveInboxRoom? {
+    if (reservation != null && reservation.operationId != receipt.operationId) return null
+    val exactRecipientRooms = openRooms.filter { room ->
+        room.role == "owner" && room.peer.profileId == receipt.recipientProfileId
+    }
+    val requiredRoomId = receipt.roomId
+        ?: reservation?.roomId
+        ?: boundRoomId
+    return if (requiredRoomId != null) {
+        exactRecipientRooms.singleOrNull { it.roomId == requiredRoomId }
+    } else {
+        exactRecipientRooms.singleOrNull()
+    }
+}
 
 data class ActiveLiveWorkoutUiState(
     val activeRoomId: String? = null,
@@ -832,10 +871,26 @@ internal class LiveWorkoutViewModel(
         }
     }
 
-    fun sendInvite(friend: SocialFriend, workout: SharedWorkoutPlan) {
+    fun sendInvite(
+        friend: SocialFriend,
+        workout: SharedWorkoutPlan,
+        draftSendRequest: LiveWorkoutDraftSendRequest? = null
+    ) {
         launchAction("send-${friend.profileId}", R.string.live_workout_send_failed) { cloudSession ->
-            val clientRequestId = UUID.randomUUID().toString()
-            val createdAt = System.currentTimeMillis()
+            val nowMillis = System.currentTimeMillis()
+            val existingReceipt = draftSendRequest?.let { sidecarStore.draftSend(cloudSession) }
+            if (existingReceipt != null) {
+                check(liveWorkoutDraftSendReceiptMatches(
+                    receipt = existingReceipt,
+                    session = cloudSession,
+                    friend = friend,
+                    request = checkNotNull(draftSendRequest)
+                )) { "Another LIVE workout draft send is unresolved." }
+            }
+            val clientRequestId = existingReceipt?.operationId ?: UUID.randomUUID().toString()
+            val createdAt = existingReceipt?.createdAt ?: nowMillis
+            val expiresAt = existingReceipt?.expiresAt
+                ?: (createdAt + LIVE_INVITATION_RESERVATION_MILLIS)
             val reservation = LiveWorkoutReservation(
                 userId = cloudSession.userId,
                 sessionGeneration = cloudSession.sessionGeneration,
@@ -844,11 +899,84 @@ internal class LiveWorkoutViewModel(
                 roomId = null,
                 phase = LiveWorkoutReservationPhase.Preparing,
                 createdAt = createdAt,
-                expiresAt = createdAt + LIVE_INVITATION_RESERVATION_MILLIS
+                expiresAt = expiresAt
             )
-            check(sidecarStore.reserve(cloudSession, reservation) {
-                repository.getActiveWorkoutSnapshot() == null
-            }) { applicationContext.getString(R.string.live_workout_active_blocked) }
+            val currentReservation = sidecarStore.reservation(cloudSession)
+            if (currentReservation != null) {
+                check(currentReservation.operationId == clientRequestId &&
+                    currentReservation.role == "owner" &&
+                    (existingReceipt?.roomId == null ||
+                        currentReservation.roomId == null ||
+                        currentReservation.roomId == existingReceipt.roomId)
+                ) { applicationContext.getString(R.string.live_workout_active_blocked) }
+            }
+            val reservationCreated = currentReservation == null
+            if (reservationCreated) {
+                check(sidecarStore.reserve(cloudSession, reservation) {
+                    repository.getActiveWorkoutSnapshot() == null
+                }) { applicationContext.getString(R.string.live_workout_active_blocked) }
+            }
+            if (draftSendRequest != null && existingReceipt == null) {
+                val prepared = sidecarStore.prepareDraftSend(
+                    session = cloudSession,
+                    receipt = LiveWorkoutDraftSendReceipt(
+                        userId = cloudSession.userId,
+                        sessionGeneration = cloudSession.sessionGeneration,
+                        draftBindingId = draftSendRequest.draftBindingId,
+                        recipientProfileId = friend.profileId,
+                        recipientFriendshipId = friend.friendshipId,
+                        recipientFriendshipRevision = friend.friendshipRevision,
+                        operationId = clientRequestId,
+                        roomId = null,
+                        draftFingerprint = draftSendRequest.draftFingerprint,
+                        createdAt = createdAt,
+                        expiresAt = expiresAt
+                    ),
+                    nowMillis = nowMillis
+                )
+                if (!prepared) {
+                    if (reservationCreated) {
+                        sidecarStore.clearReservation(cloudSession, clientRequestId)
+                    }
+                    error("LIVE workout draft send could not be recorded safely.")
+                }
+            }
+            val alreadyBoundRoomId = currentReservation
+                ?.takeIf { it.operationId == clientRequestId }
+                ?.roomId
+                ?: existingReceipt?.roomId
+            if (alreadyBoundRoomId != null) {
+                val reservationForConfirmedRoom = sidecarStore.reservation(cloudSession)
+                check(reservationForConfirmedRoom != null &&
+                    reservationForConfirmedRoom.operationId == clientRequestId
+                ) { "Confirmed LIVE workout room has no matching local reservation." }
+                if (reservationForConfirmedRoom.roomId == null) {
+                    check(sidecarStore.replaceReservation(
+                        session = cloudSession,
+                        expectedOperationId = clientRequestId,
+                        replacement = reservationForConfirmedRoom.copy(
+                            roomId = alreadyBoundRoomId,
+                            phase = LiveWorkoutReservationPhase.Waiting
+                        )
+                    )) { "Confirmed LIVE workout reservation could not be rebound safely." }
+                } else {
+                    check(reservationForConfirmedRoom.roomId == alreadyBoundRoomId) {
+                        "Confirmed LIVE workout room conflicts with its local reservation."
+                    }
+                }
+                if (draftSendRequest != null) {
+                    check(sidecarStore.confirmDraftSend(
+                        session = cloudSession,
+                        expectedOperationId = clientRequestId,
+                        roomId = alreadyBoundRoomId
+                    )) { "LIVE workout draft send could not be confirmed safely." }
+                }
+                _uiState.update {
+                    it.copy(notice = LocalizedText(R.string.live_workout_invite_sent))
+                }
+                refresh()
+                return@launchAction
+            }
             val result = try {
                 authManager.sendLiveWorkoutInvite(
                     session = cloudSession,
@@ -864,6 +992,13 @@ internal class LiveWorkoutViewModel(
                 check(sidecarStore.clearReservation(cloudSession, clientRequestId)) {
                     "Live workout reservation could not be released."
                 }
+                if (draftSendRequest != null) {
+                    check(sidecarStore.clearDraftSend(
+                        session = cloudSession,
+                        expectedDraftBindingId = draftSendRequest.draftBindingId,
+                        expectedOperationId = clientRequestId
+                    )) { "LIVE workout draft send could not be released safely." }
+                }
             } else {
                 check(sidecarStore.replaceReservation(
                     session = cloudSession,
@@ -873,6 +1008,13 @@ internal class LiveWorkoutViewModel(
                         phase = LiveWorkoutReservationPhase.Waiting
                     )
                 )) { "Live workout reservation could not be bound to its room." }
+                if (draftSendRequest != null) {
+                    check(sidecarStore.confirmDraftSend(
+                        session = cloudSession,
+                        expectedOperationId = clientRequestId,
+                        roomId = result.roomId
+                    )) { "LIVE workout draft send could not be confirmed safely." }
+                }
             }
             _uiState.update {
                 it.copy(
@@ -1752,7 +1894,73 @@ internal class LiveWorkoutViewModel(
                 replacement = replacement
             )) { "Live workout reservation could not be reconciled after sign-in." }
         }
-        val current = sidecarStore.reservation(cloudSession)
+        val draftSendReceipt = sidecarStore.draftSend(cloudSession)
+        var current = sidecarStore.reservation(cloudSession)
+        val boundRoomId = sidecarStore.load(cloudSession)?.roomId
+        if (draftSendReceipt != null) {
+            val authoritativeRoom = resolveAuthoritativeLiveWorkoutDraftSendRoom(
+                receipt = draftSendReceipt,
+                reservation = current,
+                boundRoomId = boundRoomId,
+                openRooms = openRooms
+            )
+            if (authoritativeRoom == null) {
+                // A missing room is an unavailable/unknown outcome, never proof that the durable
+                // send failed. Keep both the receipt and any reservation so a later canonical inbox
+                // refresh or idempotent retry can settle the exact operation.
+                return blockedStaleRoomId
+            }
+            val phase = if (authoritativeRoom.status == "active") {
+                LiveWorkoutReservationPhase.Active
+            } else {
+                LiveWorkoutReservationPhase.Waiting
+            }
+            val expiresAt = authoritativeRoom.activeExpiresAt?.let(::liveTimestampMillis)
+                ?: draftSendReceipt.expiresAt
+            val reservationBeforeReconcile = current
+            val continuityEstablished = when {
+                boundRoomId == authoritativeRoom.roomId -> true
+                reservationBeforeReconcile == null -> sidecarStore.reserve(
+                    cloudSession,
+                    LiveWorkoutReservation(
+                        userId = cloudSession.userId,
+                        sessionGeneration = cloudSession.sessionGeneration,
+                        role = "owner",
+                        operationId = draftSendReceipt.operationId,
+                        roomId = authoritativeRoom.roomId,
+                        phase = phase,
+                        createdAt = liveTimestampMillis(authoritativeRoom.createdAt),
+                        expiresAt = expiresAt
+                    )
+                ) { repository.getActiveWorkoutSnapshot() == null }
+                reservationBeforeReconcile.operationId != draftSendReceipt.operationId -> false
+                reservationBeforeReconcile.roomId == null ||
+                    reservationBeforeReconcile.roomId == authoritativeRoom.roomId ->
+                    sidecarStore.replaceReservation(
+                        session = cloudSession,
+                        expectedOperationId = draftSendReceipt.operationId,
+                        replacement = reservationBeforeReconcile.copy(
+                            role = "owner",
+                            roomId = authoritativeRoom.roomId,
+                            phase = phase,
+                            expiresAt = expiresAt
+                        )
+                    )
+                else -> false
+            }
+            check(continuityEstablished) {
+                "Confirmed LIVE workout draft send conflicts with another active workout."
+            }
+            check(sidecarStore.confirmDraftSend(
+                session = cloudSession,
+                expectedOperationId = draftSendReceipt.operationId,
+                roomId = authoritativeRoom.roomId
+            )) { "Confirmed LIVE workout draft send could not be reconciled safely." }
+            current = sidecarStore.reservation(cloudSession)
+            if (boundRoomId == authoritativeRoom.roomId && current == null) {
+                return blockedStaleRoomId
+            }
+        }
         if (current == null) {
             val room = openRooms.singleOrNull() ?: return blockedStaleRoomId
             val createdAt = liveTimestampMillis(room.createdAt)

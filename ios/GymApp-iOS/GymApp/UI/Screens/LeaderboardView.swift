@@ -71,6 +71,7 @@ struct FriendsView: View {
     private let canAcceptWorkoutInvites: Bool
     private let nativePushAccessibilityTarget: NativePushProfileFocus?
     private let onOpenAccountSettings: () -> Void
+    private let onCreateLiveWorkout: (SocialFriendSummary) -> Void
     private let onOpenLiveWorkout: () -> Void
 
     @State private var friendCode = ""
@@ -91,6 +92,7 @@ struct FriendsView: View {
         liveWorkoutCoordinator: LiveWorkoutCoordinator,
         nativePushAccessibilityTarget: NativePushProfileFocus? = nil,
         onOpenAccountSettings: @escaping () -> Void,
+        onCreateLiveWorkout: @escaping (SocialFriendSummary) -> Void,
         onOpenLiveWorkout: @escaping () -> Void
     ) {
         self.appState = appState
@@ -99,6 +101,7 @@ struct FriendsView: View {
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
         self.nativePushAccessibilityTarget = nativePushAccessibilityTarget
         self.onOpenAccountSettings = onOpenAccountSettings
+        self.onCreateLiveWorkout = onCreateLiveWorkout
         self.onOpenLiveWorkout = onOpenLiveWorkout
     }
 
@@ -696,7 +699,8 @@ struct FriendsView: View {
                         FriendDetailView(
                             friend: friend,
                             appState: appState,
-                            liveWorkoutCoordinator: liveWorkoutCoordinator
+                            liveWorkoutCoordinator: liveWorkoutCoordinator,
+                            onCreateLiveWorkout: onCreateLiveWorkout
                         )
                     } label: {
                         HStack(spacing: 10) {
@@ -732,7 +736,8 @@ struct FriendsView: View {
                     FriendDetailView(
                         friend: friend,
                         appState: appState,
-                        liveWorkoutCoordinator: liveWorkoutCoordinator
+                        liveWorkoutCoordinator: liveWorkoutCoordinator,
+                        onCreateLiveWorkout: onCreateLiveWorkout
                     )
                 } label: {
                     rankingRowContent(item, place: place)
@@ -1408,6 +1413,7 @@ private struct FriendDetailView: View {
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
 
     let friend: SocialFriendSummary
+    let onCreateLiveWorkout: (SocialFriendSummary) -> Void
 
     @State private var details: SocialFriendDetails?
     @State private var friendWorkouts: [SocialFriendWorkout] = []
@@ -1426,11 +1432,13 @@ private struct FriendDetailView: View {
     init(
         friend: SocialFriendSummary,
         appState: AppState,
-        liveWorkoutCoordinator: LiveWorkoutCoordinator
+        liveWorkoutCoordinator: LiveWorkoutCoordinator,
+        onCreateLiveWorkout: @escaping (SocialFriendSummary) -> Void
     ) {
         self.friend = friend
         self.appState = appState
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.onCreateLiveWorkout = onCreateLiveWorkout
     }
 
     var body: some View {
@@ -1558,9 +1566,9 @@ private struct FriendDetailView: View {
                 GymSectionTitle(
                     title: t("Train with this friend", "Тренуйся з цим другом", "Тренируйся с этим другом"),
                     supporting: t(
-                        "Choose one saved workout, then send an editable copy or open a synchronized live room.",
-                        "Вибери одне збережене тренування, а потім надішли редаговану копію або відкрий синхронізовану live-кімнату.",
-                        "Выбери одну сохранённую тренировку, затем отправь редактируемую копию или открой синхронизированную live-комнату."
+                        "Create a new plan for a synchronized live room, or send one saved workout as an editable copy.",
+                        "Створи новий план для синхронізованої live-кімнати або надішли збережене тренування як редаговану копію.",
+                        "Создай новый план для синхронизированной live-комнаты или отправь сохранённую тренировку как редактируемую копию."
                     )
                 )
                 ViewThatFits(in: .horizontal) {
@@ -1570,9 +1578,9 @@ private struct FriendDetailView: View {
                 if appState.workoutStore.workouts.isEmpty {
                     Text(
                         t(
-                            "Save a workout first; it will then appear here.",
-                            "Спочатку збережи тренування — після цього воно з’явиться тут.",
-                            "Сначала сохрани тренировку — после этого она появится здесь."
+                            "Saved workouts are needed only for sending a copy. A live plan can be created now.",
+                            "Збережені тренування потрібні лише для надсилання копії. Живий план можна створити зараз.",
+                            "Сохранённые тренировки нужны только для отправки копии. Live-план можно создать сейчас."
                         )
                     )
                     .font(.caption)
@@ -1594,13 +1602,13 @@ private struct FriendDetailView: View {
         .disabled(isMutating || appState.workoutStore.workouts.isEmpty)
 
         Button {
-            workoutShareMode = .live
+            onCreateLiveWorkout(friend)
         } label: {
             Label(t("Train live", "Тренуватися live", "Тренироваться live"), systemImage: "figure.strengthtraining.traditional")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(GymPrimaryButtonStyle())
-        .disabled(isMutating || appState.workoutStore.workouts.isEmpty)
+        .disabled(isMutating)
     }
 
     private func progressCard(_ details: SocialFriendDetails) -> some View {

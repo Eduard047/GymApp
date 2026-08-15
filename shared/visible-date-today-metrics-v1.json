@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "productVersion": "3.1.0",
+  "productVersion": "3.1.1",
   "clients": ["android", "ios", "pwa"],
   "visibleCalendarDate": {
     "includeLocalizedWeekday": true,
@@ -55,11 +55,71 @@
       "maximumLabelLines": 2
     }
   },
+  "todayState": {
+    "precedence": ["activeWorkout", "completedToday", "restOrRecovery", "recommendedPlan"],
+    "completedTodaySource": "completedCanonicalHistoryInCurrentLocalCalendarDay",
+    "completedTodaySuppresses": ["recoveryCard", "trainAnyway", "recommendedPlanActions"],
+    "completedTodayActionsInOrder": ["createAnotherWorkout"],
+    "retainedDraftActionOverride": {
+      "actionsInOrder": ["continuePlan"],
+      "createAnotherWorkoutSuppressed": true,
+      "opensSameAccountRetainedDraft": true
+    },
+    "completedTodayCopy": {
+      "title": {
+        "en": "Workout complete",
+        "uk": "Тренування завершено",
+        "ru": "Тренировка завершена"
+      },
+      "body": {
+        "en": "Today's work is saved in your history.",
+        "uk": "Сьогоднішнє тренування збережено в історії.",
+        "ru": "Сегодняшняя тренировка сохранена в истории."
+      }
+    }
+  },
+  "weeklySummary": {
+    "calendar": "localMondayStartSevenDayWeek",
+    "dayMarkers": 7,
+    "trainedDayMarker": "filledCircleWhenAtLeastOneCompletedSessionExists",
+    "headerMetric": "completedTrainingDaysVsProfileTarget",
+    "metricsInOrder": ["completedWorkouts", "trainingMinutes", "totalVolume"],
+    "metricValueStyle": "localizedWholeNumberWithoutRepeatedUnitSuffix",
+    "labels": {
+      "completedWorkouts": {
+        "en": "Workouts",
+        "uk": "Тренування",
+        "ru": "Тренировки"
+      },
+      "trainingMinutes": {
+        "en": "Minutes",
+        "uk": "Хвилини",
+        "ru": "Минуты"
+      },
+      "totalVolume": {
+        "en": "Volume",
+        "uk": "Обсяг",
+        "ru": "Объём"
+      }
+    },
+    "completedHistoryOnly": true,
+    "activeDraftCounted": false,
+    "trainingMinutes": {
+      "measuredDurationPreferredWhenCanonicalHistoryProvidesIt": true,
+      "fallbackEstimatePerSession": "min(90,max(10,exerciseCount*3+setCount*2))",
+      "minimumPerSession": 10,
+      "maximumPerSession": 90,
+      "rounding": "wholeMinutes"
+    },
+    "totalVolume": {
+      "acceptFiniteNonNegativeValuesOnly": true
+    }
+  },
   "pwaReleaseCoupling": {
-    "appBundle": "app.v93.js",
-    "styleBundle": "styles.v75.css",
+    "appBundle": "app.v94.js",
+    "styleBundle": "styles.v76.css",
     "russianBundle": "russian-text.v83.js",
     "liveWorkoutBundle": "live-workout.v3.js",
-    "serviceWorkerCache": "gym-pwa-v130"
+    "serviceWorkerCache": "gym-pwa-v131"
   }
 }

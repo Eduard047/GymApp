@@ -157,7 +157,9 @@ test("friend workout preference is explicit, account-fenced, escaped, and cleare
   assert.match(picker, /escapeAttr\(session\.id\)/);
   assert.match(reset, /modal = null;/);
   assert.match(appSource, /function closeModal\(\) \{[\s\S]*modal = null;/);
-  assert.match(appSource, /data-action="open-friend-workout-picker" data-share-mode="live"/);
+  assert.match(appSource, /data-action="create-live-workout-for-friend"/);
+  assert.match(appSource, /function createLiveWorkoutForFriend\([\s\S]*friendshipId: friend\.friendshipId[\s\S]*friendshipRevision: friend\.friendshipRevision/);
+  assert.doesNotMatch(appSource, /data-action="open-friend-workout-picker" data-share-mode="live"/);
   assert.match(appSource, /data-action="open-friend-workout-picker" data-share-mode="copy"/);
   assert.match(appSource, /social-share-friend-card \$\{isPreferred \? "preferred" : ""\}/);
 });
