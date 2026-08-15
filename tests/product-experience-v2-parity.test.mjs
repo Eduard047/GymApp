@@ -217,3 +217,26 @@ test("iOS tutorial stays compact while accessibility copy scrolls above pinned a
   );
   assert.match(iosTutorialSource, /ViewThatFits\(in: \.horizontal\)/);
 });
+
+test("iOS tutorial measures the selected native tab instead of guessing its geometry", () => {
+  assert.match(iosTutorialSource, /selectedItem\.accessibilityFrame/);
+  assert.match(
+    iosTutorialSource,
+    /window\.coordinateSpace\.convert\([\s\S]{0,120}from: window\.screen\.coordinateSpace/
+  );
+  assert.match(
+    iosTutorialSource,
+    /measurement\.target == expectedTarget/
+  );
+  assert.match(iosTutorialSource, /tabBar\.hitTest\(/);
+  assert.match(iosTutorialSource, /candidate as\? UIControl/);
+  assert.match(iosTutorialSource, /control\.convert\(control\.bounds, to: window\)/);
+  assert.match(iosTutorialSource, /appTutorialOrderedTabFrames\(/);
+  assert.doesNotMatch(iosTutorialSource, /proxy\.size\.width\s*\/\s*4/);
+  assert.doesNotMatch(iosTutorialSource, /proxy\.size\.height\s*-\s*64/);
+  assert.doesNotMatch(iosTutorialSource, /height:\s*58/);
+  assert.doesNotMatch(iosTutorialSource, /\.subviews\b/);
+  assert.doesNotMatch(iosTutorialSource, /value\(forKey:/);
+  assert.doesNotMatch(iosTutorialSource, /NSClassFromString/);
+  assert.doesNotMatch(iosTutorialSource, /TUTORIAL_PROBE_DEBUG/);
+});

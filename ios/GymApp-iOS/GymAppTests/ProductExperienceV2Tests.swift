@@ -161,10 +161,146 @@ final class ProductExperienceV2Tests: XCTestCase {
         let card = CGRect(x: 0, y: center - 150, width: size.width, height: 300)
         XCTAssertFalse(card.intersects(primaryAction.insetBy(dx: -8, dy: -8)))
 
-        let bottomTab = CGRect(x: 294, y: 695, width: 98, height: 58)
+        let bottomTab = CGRect(x: 220, y: 704, width: 104, height: 62)
         let topCenter = appTutorialCardCenterY(in: size, targetRect: bottomTab)
         let topCard = CGRect(x: 0, y: topCenter - 150, width: size.width, height: 300)
         XCTAssertFalse(topCard.intersects(bottomTab.insetBy(dx: -8, dy: -8)))
+    }
+
+    func testTutorialTabMeasurementMapsOnlyValidSelectedBottomTabs() throws {
+        let windowBounds = CGRect(x: 0, y: 0, width: 414, height: 896)
+        let exercisesFrame = CGRect(x: 112, y: 814, width: 100, height: 62)
+        let exercises = try XCTUnwrap(appTutorialTabMeasurement(
+            itemCount: 4,
+            selectedIndex: 1,
+            windowFrame: exercisesFrame,
+            windowBounds: windowBounds
+        ))
+        XCTAssertEqual(exercises.target, .exercises)
+        XCTAssertEqual(exercises.windowFrame, exercisesFrame)
+
+        XCTAssertEqual(
+            appTutorialTabMeasurement(
+                itemCount: 4,
+                selectedIndex: 2,
+                windowFrame: CGRect(x: 212, y: 814, width: 100, height: 62),
+                windowBounds: windowBounds
+            )?.target,
+            .progress
+        )
+        XCTAssertEqual(
+            appTutorialTabMeasurement(
+                itemCount: 4,
+                selectedIndex: 3,
+                windowFrame: CGRect(x: 312, y: 814, width: 100, height: 62),
+                windowBounds: windowBounds
+            )?.target,
+            .profile
+        )
+
+        XCTAssertNil(appTutorialTabMeasurement(
+            itemCount: 3,
+            selectedIndex: 1,
+            windowFrame: exercisesFrame,
+            windowBounds: windowBounds
+        ))
+        XCTAssertNil(appTutorialTabMeasurement(
+            itemCount: 4,
+            selectedIndex: 0,
+            windowFrame: exercisesFrame,
+            windowBounds: windowBounds
+        ))
+        XCTAssertNil(appTutorialTabMeasurement(
+            itemCount: 4,
+            selectedIndex: 1,
+            windowFrame: .zero,
+            windowBounds: windowBounds
+        ))
+        XCTAssertNil(appTutorialTabMeasurement(
+            itemCount: 4,
+            selectedIndex: 1,
+            windowFrame: CGRect(x: CGFloat.nan, y: 814, width: 100, height: 62),
+            windowBounds: windowBounds
+        ))
+        XCTAssertNil(appTutorialTabMeasurement(
+            itemCount: 4,
+            selectedIndex: 1,
+            windowFrame: CGRect(x: 0, y: 800, width: 500, height: 62),
+            windowBounds: windowBounds
+        ))
+    }
+
+    func testTutorialTabMeasurementConvertsWindowCoordinatesAndRejectsStaleTarget() throws {
+        let portraitMeasurement = AppTutorialTabMeasurement(
+            target: .exercises,
+            windowFrame: CGRect(x: 112, y: 814, width: 100, height: 62)
+        )
+        XCTAssertEqual(
+            appTutorialLocalTabTargetRect(
+                measurement: portraitMeasurement,
+                expectedTarget: .exercises,
+                overlayGlobalFrame: CGRect(x: 0, y: 59, width: 414, height: 802)
+            ),
+            CGRect(x: 112, y: 755, width: 100, height: 62)
+        )
+        XCTAssertNil(appTutorialLocalTabTargetRect(
+            measurement: portraitMeasurement,
+            expectedTarget: .progress,
+            overlayGlobalFrame: CGRect(x: 0, y: 59, width: 414, height: 802)
+        ))
+
+        let landscape = try XCTUnwrap(appTutorialTabMeasurement(
+            itemCount: 4,
+            selectedIndex: 3,
+            windowFrame: CGRect(x: 720, y: 350, width: 110, height: 40),
+            windowBounds: CGRect(x: 0, y: 0, width: 896, height: 414)
+        ))
+        XCTAssertEqual(
+            appTutorialLocalTabTargetRect(
+                measurement: landscape,
+                expectedTarget: .profile,
+                overlayGlobalFrame: CGRect(x: 44, y: 0, width: 808, height: 393)
+            ),
+            CGRect(x: 676, y: 350, width: 110, height: 40)
+        )
+    }
+
+    func testTutorialTabFramesRequireExactCountAndFollowLayoutDirection() throws {
+        let frames = [
+            CGRect(x: 312, y: 814, width: 80, height: 54),
+            CGRect(x: 22, y: 814, width: 80, height: 54),
+            CGRect(x: 216, y: 814, width: 80, height: 54),
+            CGRect(x: 119, y: 814, width: 80, height: 54)
+        ]
+        let leftToRight = try XCTUnwrap(appTutorialOrderedTabFrames(
+            frames,
+            itemCount: 4,
+            isRightToLeft: false
+        ))
+        XCTAssertEqual(leftToRight.map(\.minX), [22, 119, 216, 312])
+
+        let rightToLeft = try XCTUnwrap(appTutorialOrderedTabFrames(
+            frames,
+            itemCount: 4,
+            isRightToLeft: true
+        ))
+        XCTAssertEqual(rightToLeft.map(\.minX), [312, 216, 119, 22])
+
+        XCTAssertNil(appTutorialOrderedTabFrames(
+            Array(frames.dropLast()),
+            itemCount: 4,
+            isRightToLeft: false
+        ))
+        XCTAssertNil(appTutorialOrderedTabFrames(
+            frames + [CGRect(x: 0, y: 0, width: 80, height: 54)],
+            itemCount: 4,
+            isRightToLeft: false
+        ))
+        XCTAssertNil(appTutorialOrderedTabFrames(
+            Array(frames.dropLast()) + [.zero],
+            itemCount: 4,
+            isRightToLeft: false
+        ))
     }
 
     func testTutorialCardHeightStaysInsideShortAccessibilityViewport() {

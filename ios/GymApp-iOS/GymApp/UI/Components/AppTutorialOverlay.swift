@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum AppTutorialTarget: String, Hashable, Sendable {
     case todayFocus
@@ -98,6 +99,294 @@ struct AppTutorialExternalInterruption: Equatable, Sendable {
     let stepIndex: Int?
     let isManualReplay: Bool
     let suppressAutomaticPresentationForSession: Bool
+}
+
+struct AppTutorialTabMeasurement: Equatable {
+    let target: AppTutorialTarget
+    let windowFrame: CGRect
+}
+
+func appTutorialTabMeasurement(
+    itemCount: Int,
+    selectedIndex: Int,
+    windowFrame: CGRect,
+    windowBounds: CGRect
+) -> AppTutorialTabMeasurement? {
+    guard itemCount == 4,
+          appTutorialIsUsableRect(windowBounds),
+          appTutorialIsUsableRect(windowFrame),
+          windowFrame.width >= 24,
+          windowFrame.height >= 24,
+          windowBounds.insetBy(dx: -1, dy: -1).contains(windowFrame) else {
+        return nil
+    }
+
+    let target: AppTutorialTarget
+    switch selectedIndex {
+    case 1: target = .exercises
+    case 2: target = .progress
+    case 3: target = .profile
+    default: return nil
+    }
+    return AppTutorialTabMeasurement(target: target, windowFrame: windowFrame)
+}
+
+func appTutorialLocalTabTargetRect(
+    measurement: AppTutorialTabMeasurement?,
+    expectedTarget: AppTutorialTarget,
+    overlayGlobalFrame: CGRect
+) -> CGRect? {
+    guard let measurement,
+          measurement.target == expectedTarget,
+          appTutorialIsUsableRect(measurement.windowFrame),
+          appTutorialIsUsableRect(overlayGlobalFrame) else {
+        return nil
+    }
+    return measurement.windowFrame.offsetBy(
+        dx: -overlayGlobalFrame.minX,
+        dy: -overlayGlobalFrame.minY
+    )
+}
+
+func appTutorialOrderedTabFrames(
+    _ frames: [CGRect],
+    itemCount: Int,
+    isRightToLeft: Bool
+) -> [CGRect]? {
+    guard itemCount > 0,
+          frames.count == itemCount,
+          frames.allSatisfy({
+              appTutorialIsUsableRect($0) && $0.width >= 24 && $0.height >= 24
+          }) else {
+        return nil
+    }
+
+    let ordered = frames.sorted { $0.midX < $1.midX }
+    return isRightToLeft ? ordered.reversed() : ordered
+}
+
+private func appTutorialIsUsableRect(_ rect: CGRect) -> Bool {
+    !rect.isNull
+        && !rect.isInfinite
+        && rect.minX.isFinite
+        && rect.minY.isFinite
+        && rect.width.isFinite
+        && rect.height.isFinite
+        && rect.width > 0
+        && rect.height > 0
+}
+
+private struct AppTutorialTabFrameProbe: UIViewRepresentable {
+    let onMeasurement: (AppTutorialTabMeasurement?) -> Void
+
+    func makeUIView(context: Context) -> AppTutorialTabFrameProbeView {
+        let view = AppTutorialTabFrameProbeView()
+        view.onMeasurement = onMeasurement
+        return view
+    }
+
+    func updateUIView(_ uiView: AppTutorialTabFrameProbeView, context: Context) {
+        uiView.onMeasurement = onMeasurement
+        uiView.scheduleMeasurement()
+    }
+}
+
+private final class AppTutorialTabFrameProbeView: UIView {
+    var onMeasurement: ((AppTutorialTabMeasurement?) -> Void)?
+
+    private var immediateMeasurement: DispatchWorkItem?
+    private var settledMeasurement: DispatchWorkItem?
+    private var lastMeasurement: AppTutorialTabMeasurement?
+    private var hasPublishedMeasurement = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        backgroundColor = .clear
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        immediateMeasurement?.cancel()
+        settledMeasurement?.cancel()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        scheduleMeasurement()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        scheduleMeasurement()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        scheduleMeasurement()
+    }
+
+    func scheduleMeasurement() {
+        immediateMeasurement?.cancel()
+        let immediate = DispatchWorkItem { [weak self] in
+            self?.publishMeasurement()
+        }
+        immediateMeasurement = immediate
+        DispatchQueue.main.async(execute: immediate)
+
+        // The selected Liquid Glass pill finishes moving after the SwiftUI tab
+        // selection changes. Re-read once settled so the spotlight follows the
+        // final public accessibility geometry instead of an animation frame.
+        settledMeasurement?.cancel()
+        let settled = DispatchWorkItem { [weak self] in
+            self?.publishMeasurement()
+        }
+        settledMeasurement = settled
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: settled)
+    }
+
+    private func publishMeasurement() {
+        let measurement = currentMeasurement()
+        guard !hasPublishedMeasurement || measurement != lastMeasurement else { return }
+        hasPublishedMeasurement = true
+        lastMeasurement = measurement
+        onMeasurement?(measurement)
+    }
+
+    private func currentMeasurement() -> AppTutorialTabMeasurement? {
+        guard let window,
+              let controller = owningTabBarController(in: window),
+              let items = controller.tabBar.items,
+              let selectedItem = controller.tabBar.selectedItem,
+              let selectedIndex = items.firstIndex(where: { $0 === selectedItem }),
+              (1 ... 3).contains(selectedIndex) else {
+            return nil
+        }
+
+        let windowFrame: CGRect
+        if let measuredFrame = selectedTabControlWindowFrame(
+            in: controller.tabBar,
+            selectedIndex: selectedIndex,
+            itemCount: items.count,
+            window: window
+        ) {
+            windowFrame = measuredFrame
+        } else if appTutorialIsUsableRect(selectedItem.accessibilityFrame) {
+            windowFrame = window.coordinateSpace.convert(
+                selectedItem.accessibilityFrame,
+                from: window.screen.coordinateSpace
+            )
+        } else {
+            return nil
+        }
+        return appTutorialTabMeasurement(
+            itemCount: items.count,
+            selectedIndex: selectedIndex,
+            windowFrame: windowFrame,
+            windowBounds: window.bounds
+        )
+    }
+
+    private func selectedTabControlWindowFrame(
+        in tabBar: UITabBar,
+        selectedIndex: Int,
+        itemCount: Int,
+        window: UIWindow
+    ) -> CGRect? {
+        guard itemCount > 0,
+              tabBar.bounds.width > 0,
+              tabBar.bounds.height > tabBar.safeAreaInsets.bottom else {
+            return nil
+        }
+
+        let visibleHeight = tabBar.bounds.height - tabBar.safeAreaInsets.bottom
+        let sampleRows = [visibleHeight * 0.25, visibleHeight * 0.5, visibleHeight * 0.75]
+        let sampleSpacing: CGFloat = 4
+        let horizontalSamples = max(1, Int(ceil(tabBar.bounds.width / sampleSpacing)))
+        let tabBarWindowFrame = tabBar.convert(tabBar.bounds, to: window)
+        var framesByControl: [ObjectIdentifier: CGRect] = [:]
+
+        for y in sampleRows {
+            for sample in 0 ... horizontalSamples {
+                let x = min(
+                    tabBar.bounds.maxX - 1,
+                    tabBar.bounds.minX + CGFloat(sample) * sampleSpacing + 1
+                )
+                guard let hitView = tabBar.hitTest(CGPoint(x: x, y: y), with: nil),
+                      let control = nearestControl(from: hitView, within: tabBar) else {
+                    continue
+                }
+                let frame = control.convert(control.bounds, to: window)
+                guard appTutorialIsUsableRect(frame),
+                      frame.width >= 24,
+                      frame.height >= 24,
+                      tabBarWindowFrame.intersects(frame) else {
+                    continue
+                }
+                framesByControl[ObjectIdentifier(control)] = frame
+            }
+        }
+
+        guard let frames = appTutorialOrderedTabFrames(
+            Array(framesByControl.values),
+            itemCount: itemCount,
+            isRightToLeft: tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        ) else { return nil }
+        guard frames.indices.contains(selectedIndex) else { return nil }
+        return frames[selectedIndex]
+    }
+
+    private func nearestControl(from view: UIView, within tabBar: UITabBar) -> UIControl? {
+        var current: UIView? = view
+        while let candidate = current, candidate !== tabBar {
+            if let control = candidate as? UIControl { return control }
+            current = candidate.superview
+        }
+        return nil
+    }
+
+    private func owningTabBarController(in window: UIWindow) -> UITabBarController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UITabBarController {
+                return controller
+            }
+            if let controller = current as? UIViewController,
+               let tabBarController = controller.tabBarController {
+                return tabBarController
+            }
+            responder = current.next
+        }
+
+        guard let rootViewController = window.rootViewController else { return nil }
+        return visibleTabBarController(from: rootViewController, in: window)
+    }
+
+    private func visibleTabBarController(
+        from controller: UIViewController,
+        in window: UIWindow
+    ) -> UITabBarController? {
+        if let presented = controller.presentedViewController,
+           let found = visibleTabBarController(from: presented, in: window) {
+            return found
+        }
+        if let tabBarController = controller as? UITabBarController,
+           tabBarController.viewIfLoaded?.window === window,
+           !tabBarController.tabBar.isHidden {
+            return tabBarController
+        }
+        for child in controller.children.reversed() {
+            if let found = visibleTabBarController(from: child, in: window) {
+                return found
+            }
+        }
+        return nil
+    }
 }
 
 enum AppTutorialPinnedAction: String, Hashable, Sendable {
@@ -255,6 +544,7 @@ struct AppTutorialOverlay: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var dialogFocused: Bool
     @State private var measuredCardHeight: CGFloat = 0
+    @State private var measuredTabTarget: AppTutorialTabMeasurement?
 
     var body: some View {
         GeometryReader { proxy in
@@ -273,6 +563,15 @@ struct AppTutorialOverlay: View {
                 }
 
                 tutorialCard(in: proxy.size, targetRect: targetRect)
+            }
+            .background(alignment: .topLeading) {
+                AppTutorialTabFrameProbe { measurement in
+                    guard measurement != measuredTabTarget else { return }
+                    measuredTabTarget = measurement
+                }
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
         }
@@ -315,19 +614,10 @@ struct AppTutorialOverlay: View {
             )
         }
         if let anchor = anchors[step.target] { return proxy[anchor] }
-        let tabIndex: CGFloat
-        switch step.target {
-        case .exercises: tabIndex = 1
-        case .progress: tabIndex = 2
-        case .profile: tabIndex = 3
-        case .todayFocus, .todayPrimaryAction: return nil
-        }
-        let width = proxy.size.width / 4
-        return CGRect(
-            x: width * tabIndex,
-            y: max(0, proxy.size.height - 64),
-            width: width,
-            height: 58
+        return appTutorialLocalTabTargetRect(
+            measurement: measuredTabTarget,
+            expectedTarget: step.target,
+            overlayGlobalFrame: proxy.frame(in: .global)
         )
     }
 
