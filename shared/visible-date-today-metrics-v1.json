@@ -56,10 +56,10 @@
     }
   },
   "pwaReleaseCoupling": {
-    "appBundle": "app.v92.js",
-    "styleBundle": "styles.v74.css",
-    "russianBundle": "russian-text.v82.js",
+    "appBundle": "app.v93.js",
+    "styleBundle": "styles.v75.css",
+    "russianBundle": "russian-text.v83.js",
     "liveWorkoutBundle": "live-workout.v3.js",
-    "serviceWorkerCache": "gym-pwa-v128"
+    "serviceWorkerCache": "gym-pwa-v130"
   }
 }

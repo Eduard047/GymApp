@@ -1225,7 +1225,7 @@
     <string name="tutorial_progress_title">Прогресс и цели</string>
     <string name="tutorial_progress_body">Смотри динамику, нагрузку мышц, рекорды и миссии.</string>
     <string name="tutorial_profile_title">Профиль и помощь</string>
-    <string name="tutorial_profile_body">Управляй профилями, тренировочными предпочтениями, друзьями, настройками и повторяй это обучение.</string>
+    <string name="tutorial_profile_body">Здесь находятся друзья, совместные тренировки, аккаунт, устройства и помощь.</string>
     <string name="live_workout_accept_action">Начать вместе</string>
     <string name="live_workout_confirmed_restoring">Совместная тренировка началась. Восстанавливаем её состояние…</string>
     <string name="workout_invites_load_more">Показать предыдущие приглашения</string>

@@ -1219,7 +1219,7 @@
     <string name="tutorial_progress_title">Progress and goals</string>
     <string name="tutorial_progress_body">Review your trend, muscle load, records, and missions.</string>
     <string name="tutorial_profile_title">Profile and help</string>
-    <string name="tutorial_profile_body">Manage profiles, training preferences, friends, settings, and replay this tutorial.</string>
+    <string name="tutorial_profile_body">Friends, live workouts, account, devices, and help are here.</string>
     <string name="live_workout_accept_action">Start together</string>
     <string name="live_workout_confirmed_restoring">Started together. Restoring the shared workout…</string>
     <string name="workout_invites_load_more">Show earlier invitations</string>

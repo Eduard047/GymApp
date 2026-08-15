@@ -24,9 +24,9 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/live-workout.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v92.js", "utf8"),
-    readFile("pwa/styles.v74.css", "utf8"),
-    readFile("pwa/russian-text.v82.js", "utf8"),
+    readFile("pwa/app.v93.js", "utf8"),
+    readFile("pwa/styles.v75.css", "utf8"),
+    readFile("pwa/russian-text.v83.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
   ]);
 
@@ -169,20 +169,20 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v92.js",
-    styleBundle: "styles.v74.css",
-    russianBundle: "russian-text.v82.js",
+    appBundle: "app.v93.js",
+    styleBundle: "styles.v75.css",
+    russianBundle: "russian-text.v83.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v128"
+    serviceWorkerCache: "gym-pwa-v130"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v92\.js"/);
-  assert.match(pwaIndex, /href="\.\/styles\.v74\.css"/);
-  assert.match(pwaIndex, /src="\.\/russian-text\.v82\.js"/);
+  assert.match(pwaIndex, /src="\.\/app\.v93\.js"/);
+  assert.match(pwaIndex, /href="\.\/styles\.v75\.css"/);
+  assert.match(pwaIndex, /src="\.\/russian-text\.v83\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v128"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v92\.js"/);
-  assert.match(pwaServiceWorker, /"\.\/styles\.v74\.css"/);
-  assert.match(pwaServiceWorker, /"\.\/russian-text\.v82\.js"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v130"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v93\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/styles\.v75\.css"/);
+  assert.match(pwaServiceWorker, /"\.\/russian-text\.v83\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
   assert.equal(pwaAppBundle, pwaApp);
   assert.equal(pwaStyleBundle, pwaStyles);

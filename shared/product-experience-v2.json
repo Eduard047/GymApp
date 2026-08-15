@@ -29,7 +29,7 @@
     "today": "oneCurrentActionFirst",
     "exercises": "catalogAndMovementGuides",
     "progress": "overviewExerciseProgressAndGoals",
-    "profile": "accountProfilesPreferencesFriendsSettingsAndHelp",
+    "profile": "friendsLiveWorkoutsAccountProfilesDevicesSettingsAndHelp",
     "nativePresentationMayDiffer": true,
     "capabilityOrderAndOutcomeMustMatch": true
   },
@@ -145,9 +145,9 @@
           "ru": "Профиль и помощь"
         },
         "body": {
-          "en": "Manage profiles, training preferences, friends, settings, and replay this tutorial.",
-          "uk": "Керуй профілями, тренувальними вподобаннями, друзями, налаштуваннями та повторюй це навчання.",
-          "ru": "Управляй профилями, тренировочными предпочтениями, друзьями, настройками и повторяй это обучение."
+          "en": "Friends, live workouts, account, devices, and help are here.",
+          "uk": "Тут є друзі, спільні тренування, акаунт, пристрої та допомога.",
+          "ru": "Здесь находятся друзья, совместные тренировки, аккаунт, устройства и помощь."
         }
       }
     ],

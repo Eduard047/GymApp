@@ -5,12 +5,12 @@ import test from "node:test";
 const expected = Object.freeze({
   marketingVersion: "3.1.0",
   androidVersionCode: "2000320891",
-  iosBuildNumber: "29",
-  pwaBundle: "app.v92.js",
-  pwaStyleBundle: "styles.v74.css",
-  pwaRussianBundle: "russian-text.v82.js",
+  iosBuildNumber: "30",
+  pwaBundle: "app.v93.js",
+  pwaStyleBundle: "styles.v75.css",
+  pwaRussianBundle: "russian-text.v83.js",
   pwaLiveWorkoutBundle: "live-workout.v3.js",
-  pwaCache: "gym-pwa-v128",
+  pwaCache: "gym-pwa-v130",
 });
 
 const [

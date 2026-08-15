@@ -59,7 +59,7 @@ final class ProductExperienceV2Tests: XCTestCase {
             "GymApp keeps the current workout action within easy reach.",
             "Find movements and open their technique guide.",
             "Review your trend, muscle load, records, and missions.",
-            "Manage profiles, training preferences, friends, settings, and replay this tutorial."
+            "Friends, live workouts, account, devices, and help are here."
         ])
 
         XCTAssertEqual(
@@ -176,6 +176,54 @@ final class ProductExperienceV2Tests: XCTestCase {
             appTutorialMaximumCardHeight(in: CGSize(width: 320, height: 180)),
             180
         )
+        XCTAssertFalse(appTutorialUsesBoundedScroll(
+            dynamicTypeSizeIsAccessibility: false,
+            maximumCardHeight: 727
+        ))
+        XCTAssertTrue(appTutorialUsesBoundedScroll(
+            dynamicTypeSizeIsAccessibility: true,
+            maximumCardHeight: 727
+        ))
+        XCTAssertTrue(appTutorialUsesBoundedScroll(
+            dynamicTypeSizeIsAccessibility: false,
+            maximumCardHeight: 288
+        ))
+        XCTAssertEqual(
+            appTutorialPinnedActions(canGoBack: false),
+            [.skip, .advance]
+        )
+        XCTAssertEqual(
+            appTutorialPinnedActions(canGoBack: true),
+            [.skip, .back, .advance]
+        )
+    }
+
+    func testTutorialInitialPlacementUsesCompactCoachCardEstimate() {
+        XCTAssertEqual(
+            appTutorialInitialCardHalfHeight(maximumCardHeight: 727),
+            108
+        )
+        XCTAssertEqual(
+            appTutorialInitialCardHalfHeight(maximumCardHeight: 180),
+            90
+        )
+
+        let size = CGSize(width: 393, height: 759)
+        let todayFocus = CGRect(x: 16, y: 92, width: 361, height: 410)
+        let halfHeight = appTutorialInitialCardHalfHeight(maximumCardHeight: 727)
+        let center = appTutorialCardCenterY(
+            in: size,
+            targetRect: todayFocus,
+            estimatedHalfHeight: halfHeight
+        )
+        let card = CGRect(
+            x: 16,
+            y: center - halfHeight,
+            width: 361,
+            height: halfHeight * 2
+        )
+        XCTAssertFalse(card.intersects(todayFocus.insetBy(dx: -8, dy: -8)))
+        XCTAssertLessThanOrEqual(card.maxY, size.height - 16)
     }
 
     func testTutorialScreenshotStepArgumentIsStrictAndOneBased() {

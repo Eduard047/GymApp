@@ -3,10 +3,22 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
-const [contractSource, pwaSource, pwaRussianSource] = await Promise.all([
+const [
+  contractSource,
+  pwaSource,
+  pwaRussianSource,
+  iosTutorialSource,
+  androidEnglish,
+  androidUkrainian,
+  androidRussian
+] = await Promise.all([
   readFile(new URL("shared/product-experience-v2.json", root), "utf8"),
   readFile(new URL("pwa/app.js", root), "utf8"),
-  readFile(new URL("pwa/russian-text.js", root), "utf8")
+  readFile(new URL("pwa/russian-text.js", root), "utf8"),
+  readFile(new URL("ios/GymApp-iOS/GymApp/UI/Components/AppTutorialOverlay.swift", root), "utf8"),
+  readFile(new URL("app/src/main/res/values/strings.xml", root), "utf8"),
+  readFile(new URL("app/src/main/res/values-uk/strings.xml", root), "utf8"),
+  readFile(new URL("app/src/main/res/values-ru/strings.xml", root), "utf8")
 ]);
 const contract = JSON.parse(contractSource);
 
@@ -20,6 +32,10 @@ test("product experience v2 defines one full-client navigation and tutorial", ()
     "progress",
     "profile"
   ]);
+  assert.equal(
+    contract.navigation.profile,
+    "friendsLiveWorkoutsAccountProfilesDevicesSettingsAndHelp"
+  );
   assert.deepEqual(
     contract.tutorial.steps.map(step => step.id),
     ["todayFocus", "todayPrimaryAction", "exercises", "progress", "profile"]
@@ -147,4 +163,44 @@ test("PWA visible terminology implements the shared product experience", () => {
   assert.match(pwaRussianSource, /\["Start together", "Начать вместе"\]/);
   assert.match(pwaRussianSource, /\["Goals", "Цели"\]/);
   assert.match(pwaRussianSource, /\["Create manually", "Создать вручную"\]/);
+});
+
+test("Profile tutorial copy matches the shared concise destination on every client", () => {
+  const profileStep = contract.tutorial.steps.find(step => step.id === "profile");
+  assert.ok(profileStep);
+  assert.deepEqual(profileStep.body, {
+    en: "Friends, live workouts, account, devices, and help are here.",
+    uk: "Тут є друзі, спільні тренування, акаунт, пристрої та допомога.",
+    ru: "Здесь находятся друзья, совместные тренировки, аккаунт, устройства и помощь."
+  });
+
+  assert.ok(pwaSource.includes(profileStep.body.en));
+  assert.ok(pwaSource.includes(profileStep.body.uk));
+  assert.ok(pwaRussianSource.includes(profileStep.body.ru));
+  for (const copy of Object.values(profileStep.body)) {
+    assert.ok(iosTutorialSource.includes(copy));
+  }
+  assert.ok(androidEnglish.includes(`>${profileStep.body.en}</string>`));
+  assert.ok(androidUkrainian.includes(`>${profileStep.body.uk}</string>`));
+  assert.ok(androidRussian.includes(`>${profileStep.body.ru}</string>`));
+});
+
+test("iOS tutorial stays compact while accessibility copy scrolls above pinned actions", () => {
+  assert.match(
+    iosTutorialSource,
+    /height: usesBoundedScroll \? maximumCardHeight : nil/
+  );
+  assert.match(
+    iosTutorialSource,
+    /usesBoundedScroll \? size\.height \/ 2 : appTutorialCardCenterY/
+  );
+  assert.match(
+    iosTutorialSource,
+    /ScrollView\(\.vertical\) \{\s*tutorialCopy[\s\S]{0,180}\.frame\(maxHeight: \.infinity\)\s*\n\s*Divider\(\)\s*\n[\s\S]{0,500}tutorialActionsVertical\s*\.fixedSize\(horizontal: false, vertical: true\)/
+  );
+  assert.match(
+    iosTutorialSource,
+    /else \{\s*VStack\(alignment: \.leading, spacing: 14\) \{\s*tutorialCopy\s*tutorialActions\s*\}\s*\.fixedSize\(horizontal: false, vertical: true\)/
+  );
+  assert.match(iosTutorialSource, /ViewThatFits\(in: \.horizontal\)/);
 });

@@ -6,6 +6,7 @@ const [
   contractSource,
   androidWorkouts,
   androidEditor,
+  androidProfile,
   androidEditorViewModel,
   androidWorkoutListViewModel,
   androidTrainingExperience,
@@ -23,6 +24,7 @@ const [
   androidRussian,
   iosWorkouts,
   iosEditor,
+  iosProfile,
   iosEditorComponents,
   iosRoot,
   iosActive,
@@ -32,6 +34,7 @@ const [
   iosActiveStore,
   iosLocalizationSource,
   iosCoreParityTests,
+  pwaSource,
   rootHtml,
   sharedWorkoutHtml,
   sharedWorkoutScript
@@ -39,6 +42,7 @@ const [
   readFile("shared/workout-plan-editing-v1.json", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutListScreen.kt", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/ui/screens/AddWorkoutScreen.kt", "utf8"),
+  readFile("app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/ui/viewmodel/AddWorkoutViewModel.kt", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/ui/viewmodel/WorkoutListViewModel.kt", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/data/repository/TrainingExperience.kt", "utf8"),
@@ -56,6 +60,7 @@ const [
   readFile("app/src/main/res/values-ru/strings.xml", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/UI/Screens/WorkoutsView.swift", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/UI/Screens/AddWorkoutView.swift", "utf8"),
+  readFile("ios/GymApp-iOS/GymApp/UI/Screens/ProfileView.swift", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/UI/Components/WorkoutEditorComponents.swift", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/App/AppRootView.swift", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/UI/Screens/ActiveWorkoutView.swift", "utf8"),
@@ -65,6 +70,7 @@ const [
   readFile("ios/GymApp-iOS/GymApp/Data/ActiveWorkoutStore.swift", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Resources/Localizable.xcstrings", "utf8"),
   readFile("ios/GymApp-iOS/GymAppTests/CoreParityTests.swift", "utf8"),
+  readFile("pwa/app.js", "utf8"),
   readFile("pwa/index.html", "utf8"),
   readFile("pwa/workout/index.html", "utf8"),
   readFile("pwa/workout/landing.v3.js", "utf8")
@@ -202,6 +208,9 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
   assert.deepEqual(contract.coachSettings, {
     storage: "accountProfile",
     persistence: "immediate",
+    editingSurface: "workoutPlan.coachSettings",
+    profileSurfaceEditable: false,
+    sameSingleSurfaceAcrossFullClients: true,
     countsAsPlanDraftMutation: false,
     discardPlanChangesEffect: "preserved"
   });
@@ -323,6 +332,26 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
       ["todayWithActiveWorkout", "continueWorkout", "activeWorkout"]
     ]
   );
+});
+
+test("Coach settings use one account-profile editor and are not duplicated in Profile", () => {
+  assert.equal(contract.coachSettings.editingSurface, "workoutPlan.coachSettings");
+  assert.equal(contract.coachSettings.profileSurfaceEditable, false);
+  assert.equal(contract.coachSettings.sameSingleSurfaceAcrossFullClients, true);
+
+  assert.match(androidEditor, /TrainingProfilePanel\(/);
+  assert.match(iosEditor, /private var profilePanel: some View/);
+  assert.match(iosEditor, /TrainingProfileStore\(\)/);
+  assert.match(pwaSource, /\$\{trainingProfilePanel\(\)\}/);
+
+  assert.doesNotMatch(androidProfile, /TrainingProfilePanel|TrainingProfileManager|training_profile/);
+  assert.doesNotMatch(iosProfile, /trainingPreferencesCard|TrainingProfileStore/);
+
+  const pwaProfileStart = pwaSource.indexOf("function friendsProfileScreen()");
+  const pwaProfileEnd = pwaSource.indexOf("\nfunction ", pwaProfileStart + 1);
+  assert.ok(pwaProfileStart >= 0 && pwaProfileEnd > pwaProfileStart);
+  const pwaProfile = pwaSource.slice(pwaProfileStart, pwaProfileEnd);
+  assert.doesNotMatch(pwaProfile, /trainingProfilePanel|data-profile-field/);
 });
 
 test("Android exposes direct Start plan plus Edit plan and the canonical editor order", () => {

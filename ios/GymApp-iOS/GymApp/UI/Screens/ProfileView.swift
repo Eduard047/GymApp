@@ -13,7 +13,7 @@ func nativePushScrollBehavior(reduceMotion: Bool) -> NativePushScrollBehavior {
 @MainActor
 struct ProfileView: View {
     private enum ProfileSection: String, CaseIterable, Identifiable {
-        case training
+        case friends
         case settings
 
         var id: String { rawValue }
@@ -52,8 +52,7 @@ struct ProfileView: View {
     @State private var resultMessage: String?
     @State private var fulfilledNativePushRequestID: UUID?
     @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
-    @State private var selectedSection: ProfileSection = .training
-    @State private var trainingProfile = TrainingProfile()
+    @State private var selectedSection: ProfileSection = .friends
     private let canAcceptWorkoutInvites: Bool
     private let nativePushRequest: NativePushProfileRequest?
     private let onShowTutorial: () -> Void
@@ -93,7 +92,7 @@ struct ProfileView: View {
                             GymStatusBanner(message: resultMessage, isError: false)
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
-                        if selectedSection == .training {
+                        if selectedSection == .friends {
                             FriendsView(
                                 appState: appState,
                                 auth: auth,
@@ -111,7 +110,6 @@ struct ProfileView: View {
                                 equals: .friends
                             )
                         } else {
-                            trainingPreferencesCard
                             accountCard
                             garminCard
                             backupCard
@@ -166,23 +164,8 @@ struct ProfileView: View {
             onCompletion: handleExportCompletion
         )
         .task(id: auth.session?.storageKey) {
-            trainingProfile = TrainingProfileStore().load(
-                accountStorageKey: store.accountStorageKey
-            )
             guard isCloudAccount, !garminCloud.isWorking else { return }
             try? await garminCloud.refreshDevices()
-        }
-        .onChange(of: trainingProfile) { profile in
-            guard !TrainingProfileStore().save(
-                profile,
-                accountStorageKey: store.accountStorageKey
-            ) else { return }
-            resultMessage = gymText(
-                "Training preferences could not be saved.",
-                "Не вдалося зберегти тренувальні вподобання.",
-                "Не удалось сохранить тренировочные предпочтения.",
-                languageCode: languageCode
-            )
         }
     }
 
@@ -212,7 +195,7 @@ struct ProfileView: View {
               fulfilledNativePushRequestID != request.id else {
             return
         }
-        selectedSection = .training
+        selectedSection = .friends
         await Task.yield()
 
         let exactAnchor: NativePushProfileFocus?
@@ -299,7 +282,7 @@ struct ProfileView: View {
                 selection: $selectedSection
             ) {
                 Text(gymText("Friends", "Друзі", "Друзья", languageCode: languageCode))
-                    .tag(ProfileSection.training)
+                    .tag(ProfileSection.friends)
                 Text(gymText("Settings", "Налаштування", "Настройки", languageCode: languageCode))
                     .tag(ProfileSection.settings)
             }
@@ -346,51 +329,6 @@ struct ProfileView: View {
         }
     }
 
-    private var trainingPreferencesCard: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText(
-                        "Training preferences",
-                        "Тренувальні вподобання",
-                        "Тренировочные предпочтения",
-                        languageCode: languageCode
-                    )
-                )
-
-                profilePicker(
-                    gymText("Split", "Спліт", "Сплит", languageCode: languageCode),
-                    selection: $trainingProfile.split,
-                    label: trainingSplitLabel
-                )
-                profilePicker(
-                    gymText("Goal", "Ціль", "Цель", languageCode: languageCode),
-                    selection: $trainingProfile.goal,
-                    label: trainingGoalLabel
-                )
-                profilePicker(
-                    gymText("Calories", "Калорії", "Калории", languageCode: languageCode),
-                    selection: $trainingProfile.calorieMode,
-                    label: calorieModeLabel
-                )
-                Stepper(value: $trainingProfile.workoutsPerWeek, in: 2 ... 6) {
-                    HStack {
-                        Text(gymText(
-                            "Training days",
-                            "Тренувальні дні",
-                            "Тренировочные дни",
-                            languageCode: languageCode
-                        ))
-                        Spacer()
-                        Text(trainingProfile.workoutsPerWeek.formatted())
-                            .font(.body.monospacedDigit().weight(.bold))
-                            .foregroundStyle(GymTheme.primary)
-                    }
-                }
-            }
-        }
-    }
-
     private var helpCard: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
@@ -411,49 +349,6 @@ struct ProfileView: View {
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
             }
-        }
-    }
-
-    private func profilePicker<Value: Hashable & CaseIterable>(
-        _ title: String,
-        selection: Binding<Value>,
-        label: @escaping (Value) -> String
-    ) -> some View where Value.AllCases: RandomAccessCollection {
-        HStack {
-            Text(title)
-            Spacer()
-            Picker(title, selection: selection) {
-                ForEach(Array(Value.allCases), id: \.self) { value in
-                    Text(label(value)).tag(value)
-                }
-            }
-            .pickerStyle(.menu)
-        }
-    }
-
-    private func trainingSplitLabel(_ split: TrainingSplit) -> String {
-        switch split {
-        case .upperLower: gymText("Upper / Lower", "Верх / низ", "Верх/низ", languageCode: languageCode)
-        case .fullBody: gymText("Full Body", "Все тіло", "Все тело", languageCode: languageCode)
-        case .pushPullLegs: gymText("Push Pull Legs", "Жим / тяга / ноги", "Жим/тяга/ноги", languageCode: languageCode)
-        case .custom: gymText("Custom", "Своя", "Своя", languageCode: languageCode)
-        }
-    }
-
-    private func trainingGoalLabel(_ goal: TrainingGoal) -> String {
-        switch goal {
-        case .aestheticFatLoss: gymText("Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка", languageCode: languageCode)
-        case .muscleGain: gymText("Muscle Gain", "Набір мʼязів", "Набор мышц", languageCode: languageCode)
-        case .strength: gymText("Strength", "Сила", "Сила", languageCode: languageCode)
-        case .balanced: gymText("Balanced", "Баланс", "Баланс", languageCode: languageCode)
-        }
-    }
-
-    private func calorieModeLabel(_ mode: CalorieMode) -> String {
-        switch mode {
-        case .deficit: gymText("Deficit", "Дефіцит", "Дефицит", languageCode: languageCode)
-        case .maintenance: gymText("Maintenance", "Підтримка", "Поддержание", languageCode: languageCode)
-        case .surplus: gymText("Surplus", "Профіцит", "Профицит", languageCode: languageCode)
         }
     }
 

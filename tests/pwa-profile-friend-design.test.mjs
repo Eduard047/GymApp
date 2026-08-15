@@ -41,6 +41,7 @@ test("profile hub defaults to social training and keeps account controls in a co
   assert.ok(screen.indexOf("friendsPanel()") < screen.indexOf("themePreferencePanel()"));
   assert.match(stylesSource, /\.profile-hub-passport\s*\{/);
   assert.match(stylesSource, /\.profile-spotter-rail\s*\{/);
+  assert.match(stylesSource, /\.profile-hub-panel\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
   assert.match(stylesSource, /@media \(max-width: 460px\)[\s\S]*\.profile-hub-passport/);
 });
 

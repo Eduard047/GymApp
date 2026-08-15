@@ -127,6 +127,9 @@
   "coachSettings": {
     "storage": "accountProfile",
     "persistence": "immediate",
+    "editingSurface": "workoutPlan.coachSettings",
+    "profileSurfaceEditable": false,
+    "sameSingleSurfaceAcrossFullClients": true,
     "countsAsPlanDraftMutation": false,
     "discardPlanChangesEffect": "preserved"
   },
