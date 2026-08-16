@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationPath =
-  "supabase/migrations/20260816225557_canonical_finished_live_progress.sql";
+  "supabase/migrations/20260816233818_canonical_finished_live_progress.sql";
 const fixturePath = "supabase/tests/canonical_finished_live_progress.sql";
 
 const [migration, fixture, android, androidTests, ios, pwa] = await Promise.all([
