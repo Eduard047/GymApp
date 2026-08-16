@@ -6,6 +6,8 @@ const [
   androidSource,
   iosSource,
   pwaSource,
+  androidCloudStateSource,
+  iosCloudStateSource,
   searchVocabularySource,
   baseMigrationSource,
   hipAbductionMigrationSource,
@@ -14,6 +16,8 @@ const [
   readFile("app/src/main/java/com/example/gymapp/data/catalog/BuiltInExerciseCatalog.kt", "utf8"),
   readFile("ios/GymApp-iOS/GymApp/Domain/BuiltInExerciseCatalog.swift", "utf8"),
   readFile("pwa/app.js", "utf8"),
+  readFile("app/src/main/java/com/example/gymapp/sync/CloudStateContract.kt", "utf8"),
+  readFile("ios/GymApp-iOS/GymApp/Data/WorkoutStore.swift", "utf8"),
   readFile("shared/exercise-search-vocabulary.json", "utf8"),
   readFile("supabase/migrations/20260721143010_create_exercise_catalog.sql", "utf8"),
   readFile("supabase/migrations/20260721201016_add_hip_abduction_to_exercise_catalog.sql", "utf8"),
@@ -21,6 +25,14 @@ const [
 ]);
 const migrationSource = `${baseMigrationSource}\n${hipAbductionMigrationSource}\n${assistedDipMigrationSource}`;
 const searchVocabulary = JSON.parse(searchVocabularySource);
+
+function sourceSection(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  assert.notEqual(start, -1, `missing source marker: ${startMarker}`);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(end, -1, `missing source marker: ${endMarker}`);
+  return source.slice(start, end);
+}
 
 const expectedCatalog = [...pwaSource.matchAll(
   /\{ key: "([a-z0-9_]+)", names: \{ en: "([^"]+)", uk: "([^"]+)" \}/g
@@ -40,6 +52,77 @@ test("Android, iOS, and PWA expose the same built-in exercise contract", () => {
     }
     assert.ok(migrationSource.includes(`('${key}', '${english.replaceAll("'", "''")}', '${ukrainian.replaceAll("'", "''")}'`));
   }
+});
+
+test("Android, iOS, and PWA infer only absent built-in cloud catalog keys", () => {
+  const androidPullEntryPoint = sourceSection(
+    androidCloudStateSource,
+    "internal fun prepareSharedCloudState(",
+    "internal fun isSharedCloudStateCandidate("
+  );
+  const androidWriteEntryPoint = sourceSection(
+    androidCloudStateSource,
+    "internal fun attachSharedCloudExtensions(",
+    "private fun prepareCanonicalV2("
+  );
+  const androidCanonicalReader = sourceSection(
+    androidCloudStateSource,
+    "private fun prepareCanonicalV2(",
+    "private fun prepareLegacyPwaV2("
+  );
+  const androidCatalogKeyNormalizer = sourceSection(
+    androidCloudStateSource,
+    "private fun validateAndNormalizePortableCatalogKeys(",
+    "private fun validateLegacyPortableCatalogKeys("
+  );
+  const iosNativeExerciseWire = sourceSection(
+    iosCloudStateSource,
+    "private static func canonicalNativeExerciseWire(",
+    "private static func isCanonicalMachineLoadProfile("
+  );
+  const pwaNativeExerciseWire = sourceSection(
+    pwaSource,
+    "function nativeCloudExerciseWire(",
+    "function nativeCloudCompareBytes("
+  );
+
+  assert.match(
+    androidPullEntryPoint,
+    /prepareCanonicalV2\(\s*root,\s*activeUserId,\s*allowMissingPortableCatalogKeys = true\s*\)/
+  );
+  assert.match(
+    androidWriteEntryPoint,
+    /prepareCanonicalV2\(\s*result,\s*userId,\s*allowMissingPortableCatalogKeys = false\s*\)/
+  );
+  assert.match(
+    androidCanonicalReader,
+    /validateAndNormalizePortableCatalogKeys\(\s*root = root,\s*backup = BackupImportValidator\.validate\(root\)/
+  );
+  assert.match(androidCatalogKeyNormalizer, /!rawExercise\.has\("catalogKey"\)/);
+  assert.match(androidCatalogKeyNormalizer, /rawExercise\.isNull\("catalogKey"\)/);
+  assert.match(
+    androidCatalogKeyNormalizer,
+    /rawCatalogKey == rawCatalogKey\.trim\(\) &&\s*rawCatalogKey == inferred/
+  );
+  assert.match(
+    androidCatalogKeyNormalizer,
+    /return exercise\.copy\(catalogKey = inferred\)/
+  );
+
+  assert.match(
+    iosNativeExerciseWire,
+    /!hasExplicitCatalogKey \|\| canonical\.catalogKey == rawCatalogKey/
+  );
+  assert.match(
+    iosNativeExerciseWire,
+    /backupExerciseIdentity\(name: canonical\.name, catalogKey: canonical\.catalogKey\)/
+  );
+
+  assert.match(
+    pwaNativeExerciseWire,
+    /hasExplicitCatalogKey && \(recognizedCatalogKey \|\| null\) !== catalogKey/
+  );
+  assert.match(pwaNativeExerciseWire, /catalogKey = recognizedCatalogKey \|\| null/);
 });
 
 test("Android, iOS, and PWA consume the shared search-only exercise vocabulary", () => {

@@ -391,6 +391,69 @@ test("native cloud identity is catalog-order-insensitive but preserves workout o
   assert.notEqual(fingerprints[0], fingerprints[4], "duplicate set multiplicity remains semantic");
 });
 
+test("native cloud rows infer absent built-in catalog keys while canonical writes restore them", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const canonical = validNativeCloudEnvelope();
+  const missing = JSON.parse(JSON.stringify(canonical));
+  delete missing.exercises[0].catalogKey;
+  delete missing.sessions[0].exercises[0].catalogKey;
+  const explicitNull = JSON.parse(JSON.stringify(canonical));
+  explicitNull.exercises[0].catalogKey = null;
+  explicitNull.sessions[0].exercises[0].catalogKey = null;
+  context.__canonicalCatalogKeyState = canonical;
+  context.__compatibleCatalogKeyStates = [missing, explicitNull];
+
+  const results = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const canonicalFingerprint = prepareNativeCloudEnvelope(
+      globalThis.__canonicalCatalogKeyState,
+      activeAccount.userId
+    ).fingerprint;
+    return globalThis.__compatibleCatalogKeyStates.map(value => {
+      const prepared = prepareNativeCloudEnvelope(value, activeAccount.userId);
+      const imported = normalizeImportedState(prepared.appStateInput, defaultAppState());
+      const written = remoteStatePayload(activeAccount.userId, imported);
+      const catalogBuiltIn = written.exercises.find(exercise => exercise.name === "Lat Pulldown");
+      const catalogCustom = written.exercises.find(exercise => exercise.name === "Custom Core Move");
+      const workoutBuiltIn = written.sessions[0].exercises.find(
+        exercise => exercise.name === "Lat Pulldown"
+      );
+      return {
+        sameFingerprint: prepared.fingerprint === canonicalFingerprint,
+        preparedCatalogKey: prepared.identityProjection.exercises.find(
+          exercise => exercise.name === "Lat Pulldown"
+        )?.catalogKey,
+        preparedBlockKey: prepared.identityProjection.sessions[0].exercises.find(
+          exercise => exercise.name === "Lat Pulldown"
+        )?.catalogKey,
+        writtenCatalogKey: catalogBuiltIn?.catalogKey,
+        writtenBlockKey: workoutBuiltIn?.catalogKey,
+        customHasCatalogKey: Object.hasOwn(catalogCustom, "catalogKey")
+      };
+    });
+  })())`, context));
+
+  assert.deepEqual(results, [
+    {
+      sameFingerprint: true,
+      preparedCatalogKey: "lat_pulldown",
+      preparedBlockKey: "lat_pulldown",
+      writtenCatalogKey: "lat_pulldown",
+      writtenBlockKey: "lat_pulldown",
+      customHasCatalogKey: false
+    },
+    {
+      sameFingerprint: true,
+      preparedCatalogKey: "lat_pulldown",
+      preparedBlockKey: "lat_pulldown",
+      writtenCatalogKey: "lat_pulldown",
+      writtenBlockKey: "lat_pulldown",
+      customHasCatalogKey: false
+    }
+  ]);
+});
+
 test("native repeated portable identity blocks enter recovery without a cloud rewrite", async () => {
   const requests = [];
   const context = loadContext(async (url, options) => {
@@ -712,6 +775,14 @@ test("malformed, duplicate, orphaned, and profile-mismatched native rows fail cl
   const mismatchedCatalogKey = validNativeCloudEnvelope();
   mismatchedCatalogKey.exercises[0].catalogKey = "bench_press";
   cases.push(mismatchedCatalogKey);
+
+  const mismatchedBlockCatalogKey = validNativeCloudEnvelope();
+  mismatchedBlockCatalogKey.sessions[0].exercises[0].catalogKey = "bench_press";
+  cases.push(mismatchedBlockCatalogKey);
+
+  const customWithCatalogKey = validNativeCloudEnvelope();
+  customWithCatalogKey.exercises[1].catalogKey = "bench_press";
+  cases.push(customWithCatalogKey);
 
   const duplicate = validNativeCloudEnvelope();
   duplicate.exercises.push({ name: "Custom\u00a0Core Move" });

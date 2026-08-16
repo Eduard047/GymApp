@@ -2353,20 +2353,27 @@ public final class WorkoutStore: ObservableObject {
               name.utf8.count <= limits.maximumExerciseNameBytes else {
             return nil
         }
+        let hasExplicitCatalogKey: Bool
         let rawCatalogKey: String?
-        if exercise.keys.contains("catalogKey") {
-            guard let value = exercise["catalogKey"] as? String,
+        if let value = exercise["catalogKey"], !(value is NSNull) {
+            guard let value = value as? String,
                   value.utf8.count <= maximumCatalogKeyBytes else {
                 return nil
             }
+            hasExplicitCatalogKey = true
             rawCatalogKey = value
         } else {
+            // Historical cloud rows may omit or explicitly null this redundant key. The
+            // bounded name remains authoritative, so inferring only a recognized built-in
+            // cannot relabel custom data.
+            hasExplicitCatalogKey = false
             rawCatalogKey = nil
         }
         guard let canonical = try? canonicalBackupExerciseWire(
             name: name,
             catalogKey: rawCatalogKey
-        ), canonical.name == name, canonical.catalogKey == rawCatalogKey else {
+        ), canonical.name == name,
+              !hasExplicitCatalogKey || canonical.catalogKey == rawCatalogKey else {
             return nil
         }
         if allowLoadProfile,

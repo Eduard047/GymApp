@@ -143,6 +143,186 @@ class CloudStateContractTest {
     }
 
     @Test
+    fun `canonical v2 normalizes missing built-in catalog keys in catalog and blocks`() {
+        val expectedDigest = canonicalWorkoutPayloadDigest(canonicalState())
+        val compatibleRows = listOf(
+            canonicalState().apply {
+                getJSONArray("exercises").getJSONObject(0).remove("catalogKey")
+                getJSONArray("sessions").getJSONObject(0)
+                    .getJSONArray("exercises").getJSONObject(0).remove("catalogKey")
+            },
+            canonicalState().apply {
+                getJSONArray("exercises").getJSONObject(0)
+                    .put("catalogKey", JSONObject.NULL)
+                getJSONArray("sessions").getJSONObject(0)
+                    .getJSONArray("exercises").getJSONObject(0)
+                    .put("catalogKey", JSONObject.NULL)
+            }
+        )
+
+        compatibleRows.forEach { row ->
+            val prepared = prepareSharedCloudState(row, userId)
+
+            assertEquals(SharedCloudStateSource.CanonicalV2, prepared.source)
+            assertEquals(expectedDigest, prepared.workoutDigest)
+            assertTrue(isCanonicalSharedCloudEnvelope(row, userId))
+        }
+    }
+
+    @Test
+    fun `canonical v2 read rejects explicit blank whitespace and padded catalog keys`() {
+        val invalidRows = malformedPortableCatalogKeyRows()
+
+        invalidRows.forEach { row ->
+            assertThrows(IllegalArgumentException::class.java) {
+                prepareSharedCloudState(row, userId)
+            }
+        }
+    }
+
+    @Test
+    fun `Android cloud write rejects explicit blank whitespace and padded catalog keys`() {
+        val invalidRows = malformedPortableCatalogKeyRows()
+
+        invalidRows.forEach { row ->
+            assertThrows(IllegalArgumentException::class.java) {
+                attachSharedCloudExtensions(row, extensions = null)
+            }
+        }
+    }
+
+    @Test
+    fun `canonical v2 keeps custom exercises without catalog keys`() {
+        val custom = canonicalState().apply {
+            getJSONArray("exercises").getJSONObject(0).apply {
+                put("name", "Reviewer Custom Carry")
+                remove("catalogKey")
+            }
+            getJSONArray("sessions").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0).apply {
+                    put("name", "Reviewer Custom Carry")
+                    remove("catalogKey")
+                }
+        }
+
+        val prepared = prepareSharedCloudState(custom, userId)
+        val written = attachSharedCloudExtensions(custom, extensions = null)
+
+        assertEquals(SharedCloudStateSource.CanonicalV2, prepared.source)
+        assertEquals(canonicalWorkoutPayloadDigest(custom), prepared.workoutDigest)
+        assertFalse(written.getJSONArray("exercises").getJSONObject(0).has("catalogKey"))
+        assertFalse(
+            written.getJSONArray("sessions").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0).has("catalogKey")
+        )
+    }
+
+    @Test
+    fun `Android cloud writes still require explicit built-in catalog keys`() {
+        val incompleteRows = listOf(
+            canonicalState().apply {
+                getJSONArray("exercises").getJSONObject(0).remove("catalogKey")
+            },
+            canonicalState().apply {
+                getJSONArray("sessions").getJSONObject(0)
+                    .getJSONArray("exercises").getJSONObject(0)
+                    .put("catalogKey", JSONObject.NULL)
+            },
+            canonicalState().apply {
+                getJSONArray("exercises").getJSONObject(0).apply {
+                    put("name", "Reviewer Custom Carry")
+                    put("catalogKey", JSONObject.NULL)
+                }
+                getJSONArray("sessions").getJSONObject(0)
+                    .getJSONArray("exercises").getJSONObject(0).apply {
+                        put("name", "Reviewer Custom Carry")
+                        remove("catalogKey")
+                    }
+            }
+        )
+
+        incompleteRows.forEach { row ->
+            assertThrows(IllegalArgumentException::class.java) {
+                attachSharedCloudExtensions(row, extensions = null)
+            }
+        }
+    }
+
+    @Test
+    fun `canonical v2 rejects mismatched and custom catalog keys in catalog and blocks`() {
+        val invalidRows = listOf(
+            canonicalState().apply {
+                getJSONArray("exercises").getJSONObject(0).put("catalogKey", "squat")
+            },
+            canonicalState().apply {
+                getJSONArray("sessions").getJSONObject(0)
+                    .getJSONArray("exercises").getJSONObject(0)
+                    .put("catalogKey", "squat")
+            },
+            canonicalState().apply {
+                getJSONArray("exercises").getJSONObject(0).apply {
+                    put("name", "Reviewer Custom Carry")
+                    put("catalogKey", "bench_press")
+                }
+                getJSONArray("sessions").getJSONObject(0)
+                    .getJSONArray("exercises").getJSONObject(0).apply {
+                        put("name", "Reviewer Custom Carry")
+                        remove("catalogKey")
+                    }
+            },
+            canonicalState().apply {
+                getJSONArray("exercises").getJSONObject(0).apply {
+                    put("name", "Reviewer Custom Carry")
+                    remove("catalogKey")
+                }
+                getJSONArray("sessions").getJSONObject(0)
+                    .getJSONArray("exercises").getJSONObject(0).apply {
+                        put("name", "Reviewer Custom Carry")
+                        put("catalogKey", "bench_press")
+                    }
+            }
+        )
+
+        invalidRows.forEach { row ->
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                prepareSharedCloudState(row, userId)
+            }
+            assertEquals(
+                "Cloud exercise catalog key does not match its canonical name.",
+                error.message
+            )
+        }
+    }
+
+    private fun malformedPortableCatalogKeyRows(): List<JSONObject> = listOf(
+        canonicalState().apply {
+            getJSONArray("exercises").getJSONObject(0).put("catalogKey", "")
+        },
+        canonicalState().apply {
+            getJSONArray("exercises").getJSONObject(0).put("catalogKey", " \t ")
+        },
+        canonicalState().apply {
+            getJSONArray("exercises").getJSONObject(0)
+                .put("catalogKey", " bench_press ")
+        },
+        canonicalState().apply {
+            getJSONArray("sessions").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0)
+                .put("catalogKey", "")
+        },
+        canonicalState().apply {
+            getJSONArray("sessions").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0)
+                .put("catalogKey", " \t ")
+        },
+        canonicalState().apply {
+            getJSONArray("sessions").getJSONObject(0)
+                .getJSONArray("exercises").getJSONObject(0)
+                .put("catalogKey", "bench_press ")
+        }
+    )
+
+    @Test
     fun `foreign and unbound legacy PWA rows fail before becoming authoritative`() {
         val foreign = legacyPwaState().apply {
             getJSONObject("owner")

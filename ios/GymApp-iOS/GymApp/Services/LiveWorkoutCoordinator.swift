@@ -269,7 +269,7 @@ final class LiveWorkoutCoordinator: ObservableObject {
         let digest = canonical.base64EncodedString() + ":" + profileID
         let requestID = pendingInviteRequestIDs[digest] ?? UUID()
         pendingInviteRequestIDs[digest] = requestID
-        let createdAt = Date()
+        let createdAt = Date(gymEpochMilliseconds: Date().gymEpochMilliseconds)
         let reservation = LiveWorkoutSlotReservation(
             version: 1,
             userID: context.userID,

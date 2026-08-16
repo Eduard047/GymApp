@@ -3626,6 +3626,137 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testNativeCloudNormalizesMissingBuiltInCatalogKeysAndKeepsMismatchGate() throws {
+        let userID = "00000000-0000-4000-8000-000000000109"
+        let owner = BackupOwner(
+            accountID: "cloud_\(userID)",
+            userID: userID,
+            email: "catalog-compatibility@example.com",
+            remote: true
+        )
+        let canonicalData = try remoteBackupData(
+            exerciseName: "Lat Pulldown",
+            owner: owner
+        )
+        let canonicalRoot = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: canonicalData) as? [String: Any]
+        )
+
+        func encoded(_ root: [String: Any]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        }
+
+        func root(withCatalogKey value: Any?) throws -> [String: Any] {
+            var root = canonicalRoot
+            var exercises = try XCTUnwrap(root["exercises"] as? [[String: Any]])
+            if let value {
+                exercises[0]["catalogKey"] = value
+            } else {
+                exercises[0].removeValue(forKey: "catalogKey")
+            }
+            root["exercises"] = exercises
+
+            var sessions = try XCTUnwrap(root["sessions"] as? [[String: Any]])
+            var blocks = try XCTUnwrap(sessions[0]["exercises"] as? [[String: Any]])
+            if let value {
+                blocks[0]["catalogKey"] = value
+            } else {
+                blocks[0].removeValue(forKey: "catalogKey")
+            }
+            sessions[0]["exercises"] = blocks
+            root["sessions"] = sessions
+            return root
+        }
+
+        let compatibleRoots = [
+            try root(withCatalogKey: nil),
+            try root(withCatalogKey: NSNull())
+        ]
+        for (index, compatibleRoot) in compatibleRoots.enumerated() {
+            let prepared = try WorkoutStore.prepareCloudBackup(
+                encoded(compatibleRoot),
+                activeOwner: owner
+            )
+            XCTAssertTrue(prepared.roundTripSafe)
+            XCTAssertFalse(prepared.requiresCanonicalUpload)
+
+            let store = try WorkoutStore(
+                accountStorageKey: owner.accountID!,
+                directoryURL: try temporaryDirectory(
+                    named: "native-catalog-key-compatibility-\(index)"
+                )
+            )
+            _ = try store.restoreBackup(data: prepared.data, activeOwner: owner)
+            XCTAssertEqual(store.exercises.first?.catalogKey, "lat_pulldown")
+
+            let written = try store.exportCloudBackupData(owner: owner)
+            let writtenRoot = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: written) as? [String: Any]
+            )
+            let writtenExercises = try XCTUnwrap(
+                writtenRoot["exercises"] as? [[String: Any]]
+            )
+            XCTAssertEqual(writtenExercises.first?["catalogKey"] as? String, "lat_pulldown")
+            let writtenSessions = try XCTUnwrap(
+                writtenRoot["sessions"] as? [[String: Any]]
+            )
+            let writtenBlocks = try XCTUnwrap(
+                writtenSessions.first?["exercises"] as? [[String: Any]]
+            )
+            XCTAssertEqual(writtenBlocks.first?["catalogKey"] as? String, "lat_pulldown")
+            XCTAssertTrue(
+                try WorkoutStore.prepareCloudBackup(
+                    written,
+                    activeOwner: owner
+                ).roundTripSafe
+            )
+        }
+
+        func assertMismatchRejected(
+            _ root: [String: Any],
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) throws {
+            XCTAssertFalse(
+                try WorkoutStore.prepareCloudBackup(
+                    encoded(root),
+                    activeOwner: owner
+                ).roundTripSafe,
+                file: file,
+                line: line
+            )
+        }
+
+        var mismatchedCatalog = canonicalRoot
+        var mismatchedExercises = try XCTUnwrap(
+            mismatchedCatalog["exercises"] as? [[String: Any]]
+        )
+        mismatchedExercises[0]["catalogKey"] = "bench_press"
+        mismatchedCatalog["exercises"] = mismatchedExercises
+        try assertMismatchRejected(mismatchedCatalog)
+
+        var mismatchedBlock = canonicalRoot
+        var mismatchedSessions = try XCTUnwrap(
+            mismatchedBlock["sessions"] as? [[String: Any]]
+        )
+        var mismatchedBlocks = try XCTUnwrap(
+            mismatchedSessions[0]["exercises"] as? [[String: Any]]
+        )
+        mismatchedBlocks[0]["catalogKey"] = "bench_press"
+        mismatchedSessions[0]["exercises"] = mismatchedBlocks
+        mismatchedBlock["sessions"] = mismatchedSessions
+        try assertMismatchRejected(mismatchedBlock)
+
+        var customWithCatalogKey = canonicalRoot
+        var customExercises = try XCTUnwrap(
+            customWithCatalogKey["exercises"] as? [[String: Any]]
+        )
+        customExercises[0]["name"] = "Reviewer Custom Carry"
+        customExercises[0]["catalogKey"] = "bench_press"
+        customWithCatalogKey["exercises"] = customExercises
+        try assertMismatchRejected(customWithCatalogKey)
+    }
+
     func testSharedCloudExtensionsRejectMalformedKnownAndForbiddenPayloads() throws {
         let owner = BackupOwner(
             accountID: "cloud_extension-validation",

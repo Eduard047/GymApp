@@ -41,7 +41,11 @@ internal fun prepareSharedCloudState(
     WorkoutDataLimits.requireSafeJsonEnvelope(root.toString())
 
     return when {
-        looksLikeCanonicalV2(root) -> prepareCanonicalV2(root, activeUserId)
+        looksLikeCanonicalV2(root) -> prepareCanonicalV2(
+            root,
+            activeUserId,
+            allowMissingPortableCatalogKeys = true
+        )
         looksLikeLegacyPwaV2(root) -> prepareLegacyPwaV2(root, activeUserId)
         else -> throw IllegalArgumentException("Cloud state uses an unsupported shared format.")
     }
@@ -103,14 +107,19 @@ internal fun attachSharedCloudExtensions(
     require(owner.opt("accountId") == userId) {
         "Cloud owner account ID is not compatible with v2.2.9."
     }
-    prepareCanonicalV2(result, userId)
+    prepareCanonicalV2(
+        result,
+        userId,
+        allowMissingPortableCatalogKeys = false
+    )
     WorkoutDataLimits.requireSafeJsonEnvelope(result.toString())
     return result
 }
 
 private fun prepareCanonicalV2(
     root: JSONObject,
-    activeUserId: String
+    activeUserId: String,
+    allowMissingPortableCatalogKeys: Boolean
 ): PreparedSharedCloudState {
     val requiredRootKeys = setOf(
         "schemaVersion",
@@ -145,8 +154,11 @@ private fun prepareCanonicalV2(
     }
     validateBoundOwner(root, activeUserId, allowLegacyRemoteMarker = false)
 
-    val backup = BackupImportValidator.validate(root)
-    validatePortableCatalogKeys(backup)
+    val backup = validateAndNormalizePortableCatalogKeys(
+        root = root,
+        backup = BackupImportValidator.validate(root),
+        allowMissingPortableCatalogKeys = allowMissingPortableCatalogKeys
+    )
     val catalogByIdentity = backup.exercises.associateBy { it.identityKey }
     require(catalogByIdentity.size == backup.exercises.size) {
         "Cloud exercise catalog contains a duplicate identity."
@@ -336,20 +348,76 @@ private fun validateSummary(
     }
 }
 
-private fun validatePortableCatalogKeys(
-    backup: com.example.gymapp.data.repository.ValidatedBackup
-) {
-    fun requirePortableIdentity(
-        exercise: com.example.gymapp.data.repository.ValidatedBackupExercise
-    ) {
-        require(BuiltInExerciseCatalog.inferKey(exercise.name) == exercise.catalogKey) {
-            "Cloud exercise catalog key does not match its canonical name."
+private fun validateAndNormalizePortableCatalogKeys(
+    root: JSONObject,
+    backup: com.example.gymapp.data.repository.ValidatedBackup,
+    allowMissingPortableCatalogKeys: Boolean
+): com.example.gymapp.data.repository.ValidatedBackup {
+    fun normalizedPortableIdentity(
+        exercise: com.example.gymapp.data.repository.ValidatedBackupExercise,
+        rawExercise: JSONObject
+    ): com.example.gymapp.data.repository.ValidatedBackupExercise {
+        val inferred = BuiltInExerciseCatalog.inferKey(exercise.name)
+        when {
+            !rawExercise.has("catalogKey") -> require(
+                allowMissingPortableCatalogKeys || inferred == null
+            ) {
+                "Cloud exercise catalog key is missing."
+            }
+            rawExercise.isNull("catalogKey") -> require(allowMissingPortableCatalogKeys) {
+                "Cloud exercise catalog key must be omitted or canonical on write."
+            }
+            else -> {
+                val rawCatalogKey = rawExercise.opt("catalogKey") as? String
+                    ?: throw IllegalArgumentException(
+                        "Cloud exercise catalog key must be a string."
+                    )
+                require(
+                    rawCatalogKey.isNotBlank() &&
+                        rawCatalogKey == rawCatalogKey.trim() &&
+                        rawCatalogKey == inferred
+                ) {
+                    "Cloud exercise catalog key does not match its canonical name."
+                }
+            }
         }
+        // Historical rows may omit or explicitly null this redundant key. The bounded name is
+        // authoritative, so restoring only its unambiguous built-in key cannot relabel custom data.
+        return exercise.copy(catalogKey = inferred)
     }
-    backup.exercises.forEach(::requirePortableIdentity)
-    backup.sessions.forEach { session ->
-        session.blocks.forEach { block -> requirePortableIdentity(block.exercise) }
-    }
+    val rawExercises = root.optJSONArray("exercises")
+        ?: throw IllegalArgumentException("Cloud exercise catalog is missing.")
+    val rawSessions = root.optJSONArray("sessions")
+        ?: throw IllegalArgumentException("Cloud workout history is missing.")
+    return backup.copy(
+        exercises = backup.exercises.mapIndexed { index, exercise ->
+            normalizedPortableIdentity(
+                exercise,
+                rawExercises.optJSONObject(index)
+                    ?: throw IllegalArgumentException(
+                        "Cloud exercise entry must be an object."
+                    )
+            )
+        },
+        sessions = backup.sessions.mapIndexed { sessionIndex, session ->
+            val rawBlocks = rawSessions.optJSONObject(sessionIndex)
+                ?.optJSONArray("exercises")
+                ?: throw IllegalArgumentException("Cloud workout exercises are missing.")
+            session.copy(
+                blocks = session.blocks.mapIndexed { blockIndex, block ->
+                    block.copy(
+                        exercise = normalizedPortableIdentity(
+                            block.exercise,
+                            rawBlocks.optJSONObject(blockIndex)
+                                ?: throw IllegalArgumentException(
+                                    "Cloud workout exercise must be an object."
+                                )
+                        )
+                    )
+                }
+            )
+        }
+    )
 }
 
 private fun validateLegacyPortableCatalogKeys(

@@ -26,7 +26,7 @@ const VERSIONED_ASSET_PAIRS = [
   ["supabase-realtime.js", "supabase-realtime.v1.js"],
   ["live-workout.js", "live-workout.v3.js"],
   ["live-workout-state.js", "live-workout-state.v1.js"],
-  ["app.js", "app.v94.js"],
+  ["app.js", "app.v95.js"],
   ["workout/landing.css", "workout/landing.v2.css"],
   ["workout/landing.js", "workout/landing.v3.js"]
 ];
@@ -163,7 +163,7 @@ function loadWorker(scope = "https://example.test/GymApp/", options = {}) {
   };
   const caches = {
     async keys() {
-      return ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64", "gym-pwa-v65", "gym-pwa-v74", "gym-pwa-v75", "gym-pwa-v76", "gym-pwa-v77", "gym-pwa-v78", "gym-pwa-v85", "gym-pwa-v86", "gym-pwa-v92", "gym-pwa-v97", "gym-pwa-v98", "gym-pwa-v101", "gym-pwa-v102", "gym-pwa-v107", "gym-pwa-v108", "gym-pwa-v109", "gym-pwa-v122", "gym-pwa-v123", "another-app-v4"];
+      return ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64", "gym-pwa-v65", "gym-pwa-v74", "gym-pwa-v75", "gym-pwa-v76", "gym-pwa-v77", "gym-pwa-v78", "gym-pwa-v85", "gym-pwa-v86", "gym-pwa-v92", "gym-pwa-v97", "gym-pwa-v98", "gym-pwa-v101", "gym-pwa-v102", "gym-pwa-v107", "gym-pwa-v108", "gym-pwa-v109", "gym-pwa-v122", "gym-pwa-v123", "gym-pwa-v131", "another-app-v4"];
     },
     async open(name) {
       openedCaches.push(name);
@@ -266,7 +266,7 @@ test("service worker caches only exact immutable current same-origin assets", ()
   for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
     const handler = loadWorker(scope).listeners.get("fetch");
 
-    assert.equal(isIntercepted(handler, new URL("./app.v94.js", scope)), true);
+    assert.equal(isIntercepted(handler, new URL("./app.v95.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./shared-workout.v65.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./shared-workout-flow.v71.js", scope)), true);
     assert.equal(isIntercepted(handler, new URL("./workout/", scope)), true);
@@ -543,7 +543,7 @@ test("current versioned pathname assets cannot be mistaken for predecessor asset
     "muscle-regions.v56.js", "supabase-config.v58.js", "state-contract.v70.js",
     "garmin-cloud-sync.v57.js", "progression-rules.v57.js", "shared-workout.v65.js",
     "shared-workout-flow.v71.js", "supabase-realtime.v1.js", "live-workout.v3.js",
-    "live-workout-state.v1.js", "russian-text.v83.js", "exercise-search-vocabulary.v1.js", "app.v94.js",
+    "live-workout-state.v1.js", "russian-text.v83.js", "exercise-search-vocabulary.v1.js", "app.v95.js",
     "workout/landing.v2.css", "workout/landing.v3.js"
   ];
 
@@ -590,19 +590,19 @@ test("install surfaces use dedicated any, maskable, favicon, and Apple icons", (
 test("service worker ignores credential-bearing, partial-content, and non-GET requests", () => {
   const handler = loadWorker().listeners.get("fetch");
 
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v95.js", {
     headers: { Authorization: "Bearer test-token" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { apikey: "test-key" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js", {
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v95.js", {
     headers: { Range: "bytes=0-10" }
   }), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/index.html", {
     headers: { "If-Range": "etag" }
   }), false);
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js", { method: "POST" }), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v95.js", { method: "POST" }), false);
 });
 
 test("searched auth callbacks are network-only but receive enforceable anti-framing headers", async () => {
@@ -661,7 +661,7 @@ test("sensitive callback network failures never fall back to cached HTML", async
 
 test("token-like asset queries are neither intercepted nor cached", () => {
   const handler = loadWorker().listeners.get("fetch");
-  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v94.js?provider_token=secret"), false);
+  assert.equal(isIntercepted(handler, "https://example.test/GymApp/app.v95.js?provider_token=secret"), false);
   assert.equal(isIntercepted(handler, "https://example.test/GymApp/icon-512.png?access_token=secret"), false);
 });
 
@@ -671,7 +671,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v132"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -687,7 +687,7 @@ test("shared workout documents use the stricter offline chooser policy", async (
     const policy = response.headers.get("Content-Security-Policy");
 
     assert.equal(await response.text(), "cached");
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v132"]);
     assert.match(policy, /default-src 'none'/);
     assert.match(policy, /connect-src 'none'/);
     assert.match(policy, /worker-src 'none'/);
@@ -706,9 +706,9 @@ test("install reloads one internally consistent version before promptly replacin
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v132"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/exercise-search-vocabulary.v1.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v94.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v95.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout.v65.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout-flow.v71.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/workout/")));
@@ -746,7 +746,7 @@ test("activation deletes the entire retirement cache, claims clients, and preser
 
   assert.deepEqual(
     worker.deletedCaches,
-    ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64", "gym-pwa-v65", "gym-pwa-v74", "gym-pwa-v75", "gym-pwa-v76", "gym-pwa-v77", "gym-pwa-v78", "gym-pwa-v85", "gym-pwa-v86", "gym-pwa-v92", "gym-pwa-v97", "gym-pwa-v98", "gym-pwa-v101", "gym-pwa-v102", "gym-pwa-v107", "gym-pwa-v108", "gym-pwa-v109", "gym-pwa-v122", "gym-pwa-v123"]
+    ["gym-pwa-v39", "gym-pwa-v44", "gym-pwa-v59", "gym-pwa-v60", "gym-pwa-v61", "gym-pwa-v62", "gym-pwa-v64", "gym-pwa-v65", "gym-pwa-v74", "gym-pwa-v75", "gym-pwa-v76", "gym-pwa-v77", "gym-pwa-v78", "gym-pwa-v85", "gym-pwa-v86", "gym-pwa-v92", "gym-pwa-v97", "gym-pwa-v98", "gym-pwa-v101", "gym-pwa-v102", "gym-pwa-v107", "gym-pwa-v108", "gym-pwa-v109", "gym-pwa-v122", "gym-pwa-v123", "gym-pwa-v131"]
   );
   assert.equal(worker.claimCount(), 1);
   assert.equal(worker.matchAllCount(), 1);
@@ -827,7 +827,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 1);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v131"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v132"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });
