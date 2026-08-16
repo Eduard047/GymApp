@@ -698,10 +698,13 @@ private fun parseLiveProgress(raw: JSONObject): LiveProgress {
             "Live workout response is invalid."
         }
     }
-    require((undoableSetId == null) == completedSets.isEmpty()) {
+    val finishedAt = raw.liveNullableTimestamp("finishedAt")
+    require(
+        (completedSets.isNotEmpty() || undoableSetId == null) &&
+            (finishedAt == null || undoableSetId == null)
+    ) {
         "Live workout response is invalid."
     }
-    val finishedAt = raw.liveNullableTimestamp("finishedAt")
     return LiveProgress(
         revision = raw.liveRevision("revision"),
         completedSets = completedSets,

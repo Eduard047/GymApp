@@ -189,12 +189,59 @@ class LiveWorkoutContractTest {
     }
 
     @Test
-    fun `snapshot parser rejects an undo marker that is not the latest completed set`() {
+    fun `snapshot parser accepts reconciled nonempty progress without an undo marker`() {
         val response = snapshotJson()
         val progress = response.getJSONArray("participants")
             .getJSONObject(0)
             .getJSONObject("progress")
         progress.put("undoableSetId", JSONObject.NULL)
+
+        val parsed = parseLiveWorkoutSnapshot(response.toString())
+
+        assertEquals(1, parsed.self.progress?.completedSets?.size)
+        assertNull(parsed.self.progress?.undoableSetId)
+        assertNull(parsed.self.progress?.finishedAt)
+    }
+
+    @Test
+    fun `snapshot parser accepts production finished progress without an undo marker`() {
+        val response = snapshotJson()
+        val participant = response.getJSONArray("participants").getJSONObject(0)
+        participant.put("state", "finished")
+        participant.put("finishedAt", LATER)
+        participant.getJSONObject("progress")
+            .put("undoableSetId", JSONObject.NULL)
+            .put("finishedAt", LATER)
+
+        val parsed = parseLiveWorkoutSnapshot(response.toString())
+
+        assertEquals("finished", parsed.self.state)
+        assertEquals(LATER, parsed.self.finishedAt)
+        assertEquals(1, parsed.self.progress?.completedSets?.size)
+        assertNull(parsed.self.progress?.undoableSetId)
+        assertEquals(LATER, parsed.self.progress?.finishedAt)
+    }
+
+    @Test
+    fun `snapshot parser rejects finished progress that retains an undo marker`() {
+        val response = snapshotJson()
+        val participant = response.getJSONArray("participants").getJSONObject(0)
+        participant.put("state", "finished")
+        participant.put("finishedAt", LATER)
+        participant.getJSONObject("progress").put("finishedAt", LATER)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            parseLiveWorkoutSnapshot(response.toString())
+        }
+    }
+
+    @Test
+    fun `snapshot parser rejects an undo marker when completed progress is empty`() {
+        val response = snapshotJson()
+        response.getJSONArray("participants")
+            .getJSONObject(1)
+            .getJSONObject("progress")
+            .put("undoableSetId", "s_01_01")
 
         assertThrows(IllegalArgumentException::class.java) {
             parseLiveWorkoutSnapshot(response.toString())
