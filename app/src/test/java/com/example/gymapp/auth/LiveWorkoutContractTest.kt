@@ -144,6 +144,36 @@ class LiveWorkoutContractTest {
     }
 
     @Test
+    fun `snapshot parser requires canonical progress version`() {
+        val malformedProgressRows = listOf(
+            snapshotJson().also { response ->
+                response.getJSONArray("participants")
+                    .getJSONObject(0)
+                    .getJSONObject("progress")
+                    .remove("version")
+            },
+            snapshotJson().also { response ->
+                response.getJSONArray("participants")
+                    .getJSONObject(0)
+                    .getJSONObject("progress")
+                    .put("version", 2)
+            },
+            snapshotJson().also { response ->
+                response.getJSONArray("participants")
+                    .getJSONObject(0)
+                    .getJSONObject("progress")
+                    .put("debug", true)
+            }
+        )
+
+        malformedProgressRows.forEach { response ->
+            assertThrows(IllegalArgumentException::class.java) {
+                parseLiveWorkoutSnapshot(response.toString())
+            }
+        }
+    }
+
+    @Test
     fun `snapshot parser rejects progress for a set outside canonical plan`() {
         val response = snapshotJson()
         response.getJSONArray("participants")
@@ -279,11 +309,13 @@ class LiveWorkoutContractTest {
             .put("reps", 8)
             .put("completedAt", NOW)
         val selfProgress = JSONObject()
+            .put("version", 1)
             .put("revision", 2)
             .put("completedSets", JSONArray().put(complete))
             .put("undoableSetId", "s_01_01")
             .put("finishedAt", JSONObject.NULL)
         val peerProgress = JSONObject()
+            .put("version", 1)
             .put("revision", 1)
             .put("completedSets", JSONArray())
             .put("undoableSetId", JSONObject.NULL)

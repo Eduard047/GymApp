@@ -668,7 +668,18 @@ private fun parseLiveParticipant(raw: JSONObject): LiveParticipant {
 }
 
 private fun parseLiveProgress(raw: JSONObject): LiveProgress {
-    raw.liveExactKeys(setOf("revision", "completedSets", "undoableSetId", "finishedAt"))
+    raw.liveExactKeys(
+        setOf("version", "revision", "completedSets", "undoableSetId", "finishedAt")
+    )
+    require(
+        raw.liveInt(
+            "version",
+            LIVE_WORKOUT_CONTRACT_VERSION,
+            LIVE_WORKOUT_CONTRACT_VERSION
+        ) == LIVE_WORKOUT_CONTRACT_VERSION
+    ) {
+        "Live workout response is invalid."
+    }
     val completedSets = raw.liveArray("completedSets", SharedWorkoutLink.MAX_TOTAL_SETS)
         .liveObjects { set ->
             set.liveExactKeys(setOf("setId", "weight", "reps", "completedAt"))
