@@ -180,12 +180,23 @@ test("IQ readback rejects directory lookalikes and unsafe path segments", async 
             `      String programName = scenario.equals("nondeterministic-program")\n` +
             `        ? "device/.gymapp-garmin-connect-iq.12345.prg"\n` +
             `        : "device/gymapp-garmin-connect-iq.prg";\n` +
-            `      add(out, programName, lookalikes, new byte[] { 2, 3, 4 });\n` +
+            `      byte[] programBytes;\n` +
+            `      if (scenario.equals("binary-drive-lookalike")) {\n` +
+            `        programBytes = new byte[] { 2, 3, 4, 0x63, (byte) 0xef, 0x50, 0x3a, 0x2f, 0x3a, 0x49, (byte) 0xa3, 5 };\n` +
+            `      } else if (scenario.equals("prg-user-root-boundary")) {\n` +
+            `        programBytes = new byte[65600];\n` +
+            `        programBytes[0] = 2;\n` +
+            `        byte[] leak = "/Users/private/GymStore.mc".getBytes(StandardCharsets.UTF_8);\n` +
+            `        System.arraycopy(leak, 0, programBytes, 65533, leak.length);\n` +
+            `      } else {\n` +
+            `        programBytes = new byte[] { 2, 3, 4 };\n` +
+            `      }\n` +
+            `      add(out, programName, lookalikes, programBytes);\n` +
             `      if (scenario.equals("debug")) {\n` +
             `        add(out, "device/debug.xml", false, args[2].getBytes(StandardCharsets.UTF_8));\n` +
             `      } else if (scenario.equals("nondebug")) {\n` +
             `        add(out, "device/settings.json", false, args[2].getBytes(StandardCharsets.UTF_8));\n` +
-            `      } else if (!lookalikes && !scenario.equals("valid") && !scenario.equals("nondeterministic-program")) {\n` +
+            `      } else if (!lookalikes && !scenario.equals("valid") && !scenario.equals("nondeterministic-program") && !scenario.equals("binary-drive-lookalike") && !scenario.equals("prg-user-root-boundary")) {\n` +
             `        add(out, scenario, false, new byte[] { 5 });\n` +
             `      }\n` +
             `    }\n` +
@@ -263,6 +274,66 @@ test("IQ readback rejects directory lookalikes and unsafe path segments", async 
 
     const valid = verify(createFixture("valid.iq", "valid"));
     assert.equal(valid.status, 0, valid.stdout + valid.stderr);
+
+    const binaryDriveLookalike = createFixture(
+      "binary-drive-lookalike.iq",
+      "binary-drive-lookalike",
+    );
+    const binaryDriveVerification = verify(binaryDriveLookalike);
+    assert.equal(
+      binaryDriveVerification.status,
+      0,
+      binaryDriveVerification.stdout + binaryDriveVerification.stderr,
+    );
+    const binaryDriveSanitized = join(root, "binary-drive-lookalike-sanitized.iq");
+    const binaryDriveSanitization = run(java, [
+      "-cp",
+      monkeybrains,
+      "scripts/VerifyGarminIq.java",
+      "--sanitize-debug-paths",
+      binaryDriveLookalike,
+      binaryDriveSanitized,
+      "/private/tmp/gymapp-binary-lookalike.fixture",
+    ]);
+    assert.equal(
+      binaryDriveSanitization.status,
+      0,
+      binaryDriveSanitization.stdout + binaryDriveSanitization.stderr,
+    );
+    assert.deepEqual(
+      inspect(binaryDriveSanitized).hashes,
+      inspect(binaryDriveLookalike).hashes,
+    );
+
+    const boundaryUserRootIq = createFixture(
+      "prg-user-root-boundary.iq",
+      "prg-user-root-boundary",
+    );
+    const boundaryUserRootLeak = verify(boundaryUserRootIq);
+    assert.notEqual(boundaryUserRootLeak.status, 0);
+    assert.match(
+      boundaryUserRootLeak.stdout + boundaryUserRootLeak.stderr,
+      /unsafe local source path/,
+    );
+    const boundaryUserRootDestination = join(
+      root,
+      "prg-user-root-boundary-sanitized.iq",
+    );
+    const boundaryUserRootSanitization = run(java, [
+      "-cp",
+      monkeybrains,
+      "scripts/VerifyGarminIq.java",
+      "--sanitize-debug-paths",
+      boundaryUserRootIq,
+      boundaryUserRootDestination,
+      "/private/tmp/gymapp-prg-boundary.fixture",
+    ]);
+    assert.notEqual(boundaryUserRootSanitization.status, 0);
+    assert.match(
+      boundaryUserRootSanitization.stdout + boundaryUserRootSanitization.stderr,
+      /outside debug metadata/,
+    );
+    assert.equal(existsSync(boundaryUserRootDestination), false);
 
     const nondeterministicProgram = verify(
       createFixture("nondeterministic-program.iq", "nondeterministic-program"),
@@ -372,6 +443,9 @@ test("IQ readback rejects directory lookalikes and unsafe path segments", async 
       String.raw`\Users/sensitive-user/private/settings.json`,
       String.raw`C:\private\settings.json`,
       "D:/private/settings.json",
+      "C:/x",
+      "C:/é/private",
+      "C:/#private",
     ].entries()) {
       const unsafeNonDebug = createFixture(
         `unsafe-nondebug-${index}.iq`,

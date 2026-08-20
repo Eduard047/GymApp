@@ -144,7 +144,9 @@ public final class VerifyGarminIq {
 
                 regularEntryCount++;
                 totalUncompressedBytes = validateEntrySize(entry, totalUncompressedBytes);
-                UnsafePathScanner pathScanner = new UnsafePathScanner();
+                UnsafePathScanner pathScanner = new UnsafePathScanner(
+                    !entry.getName().endsWith(".prg")
+                );
                 MessageDigest digest = isDebugXml(entry.getName()) ? null : sha256();
                 long bytesRead = 0;
                 int count;
@@ -225,7 +227,9 @@ public final class VerifyGarminIq {
                     output.write(sanitized);
                 } else {
                     MessageDigest digest = sha256();
-                    UnsafePathScanner pathScanner = new UnsafePathScanner();
+                    UnsafePathScanner pathScanner = new UnsafePathScanner(
+                        !entry.getName().endsWith(".prg")
+                    );
                     long bytesRead = 0;
                     int count;
                     while ((count = archive.read(buffer)) != -1) {
@@ -518,9 +522,22 @@ public final class VerifyGarminIq {
     private static final class UnsafePathScanner {
         private static final int WINDOW_SIZE = 16;
         private final byte[] recent = new byte[WINDOW_SIZE];
+        // Compiled PRGs are opaque binary and can contain coincidental `X:/`
+        // bytes. Their high-confidence user/temp roots are still scanned; the
+        // generic drive-prefix rule remains strict for every textual/non-PRG
+        // entry and for sanitized debug metadata.
+        private final boolean scanGenericDrivePrefix;
         private int recentLength = 0;
         private long bytesSeen = 0;
         private boolean unsafePath = false;
+
+        private UnsafePathScanner() {
+            this(true);
+        }
+
+        private UnsafePathScanner(boolean scanGenericDrivePrefix) {
+            this.scanGenericDrivePrefix = scanGenericDrivePrefix;
+        }
 
         private void accept(byte[] bytes, int offset, int length) {
             for (int index = offset; index < offset + length && !unsafePath; index++) {
@@ -541,7 +558,7 @@ public final class VerifyGarminIq {
                 unsafePath = true;
                 return;
             }
-            if (recentLength >= 3) {
+            if (scanGenericDrivePrefix && recentLength >= 3) {
                 int driveIndex = recentLength - 3;
                 byte drive = recent[driveIndex];
                 byte colon = recent[driveIndex + 1];
