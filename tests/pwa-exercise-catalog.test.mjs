@@ -5029,6 +5029,9 @@ test("deferred authoritative refresh cannot release invitee slot between reserve
   const sessionId = "22222222-2222-4222-8222-222222222222";
   const roomId = "lr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const waitingRaw = activeLiveSnapshotFixture(roomId);
+  const now = Date.now();
+  waitingRaw.room.createdAt = new Date(now - 60_000).toISOString();
+  waitingRaw.room.inviteExpiresAt = new Date(now + 86_400_000).toISOString();
   waitingRaw.room.status = "waiting";
   waitingRaw.room.roomRevision = 1;
   waitingRaw.room.startedAt = null;
