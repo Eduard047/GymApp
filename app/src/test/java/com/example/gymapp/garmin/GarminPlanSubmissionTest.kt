@@ -1,6 +1,7 @@
 package com.example.gymapp.garmin
 
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
+import com.example.gymapp.data.repository.WorkoutDataLimits
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ class GarminPlanSubmissionTest {
         NamedWorkoutSetDraft("Bench Press", 0.0, 8),
         NamedWorkoutSetDraft("Bench Press", 20.0, 5)
     )
+    private val exerciseCatalog = listOf("Squat", "Bench Press", "Deadlift")
 
     @Test
     fun unchangedExactDraftReusesRequestIdRevisionAndZeroWeight() {
@@ -65,7 +67,10 @@ class GarminPlanSubmissionTest {
         assertEquals(listOf(8, 5), firstPayload?.get("planReps"))
         assertEquals(first.envelope.requestId, firstPayload?.get("requestId"))
         assertEquals(first.envelope.revision, firstPayload?.get("syncRevision"))
-        assertFalse(firstPayload.orEmpty().containsKey("exercises"))
+        assertEquals(
+            listOf("Bench Press", "Squat", "Deadlift"),
+            firstPayload?.get("exercises")
+        )
         assertEquals(
             garminPlanSubmissionFingerprint(key),
             garminPlanSubmissionFingerprint(key.copy(orderedPlan = zeroPlan))
@@ -92,7 +97,8 @@ class GarminPlanSubmissionTest {
             key().copy(deviceBinding = "987654321"),
             key().copy(pairingGeneration = "f".repeat(64)),
             key().copy(includePairingGeneration = false),
-            key().copy(languageTag = "ru")
+            key().copy(languageTag = "ru"),
+            key().copy(exerciseCatalog = exerciseCatalog + "Pull Up")
         )
 
         variants.forEachIndexed { index, changed ->
@@ -146,6 +152,15 @@ class GarminPlanSubmissionTest {
         assertNull(garminPlanSubmissionFingerprint(key().copy(accountBinding = "wrong")))
         assertNull(garminPlanSubmissionFingerprint(key().copy(deviceBinding = "watch")))
         assertNull(
+            garminPlanSubmissionFingerprint(
+                key().copy(
+                    exerciseCatalog = List(WorkoutDataLimits.MAX_EXERCISES + 1) {
+                        "Exercise $it"
+                    }
+                )
+            )
+        )
+        assertNull(
             prepareGarminPlanSubmission(
                 key = key().copy(orderedPlan = listOf(zeroPlan.first().copy(weight = -1.0))),
                 encodedExisting = null,
@@ -179,13 +194,104 @@ class GarminPlanSubmissionTest {
     }
 
     @Test
+    fun indexedV4AcceptsSixtyByEightyAndRejectsLargerPlanBeforeEnvelopeAllocation() {
+        val names = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            val prefix = "Exercise ${index.toString().padStart(2, '0')} "
+            prefix + "x".repeat(80 - prefix.length)
+        }
+        val longPlan = names.map { name -> NamedWorkoutSetDraft(name, 50.0, 10) }
+        val acceptedKey = key().copy(
+            deviceBinding = "123456789",
+            orderedPlan = longPlan,
+            exerciseCatalog = names
+        )
+
+        assertNotNull(
+            garminPlanRequestFingerprint(
+                accountBinding = account,
+                authTransitionKey = authTransition,
+                trustedDeviceBinding = "123456789",
+                languageTag = "en",
+                orderedPlan = longPlan,
+                exerciseCatalog = names
+            )
+        )
+        assertNotNull(
+            garminPlanRequestFingerprint(
+                accountBinding = account,
+                authTransitionKey = authTransition,
+                trustedDeviceBinding = null,
+                languageTag = "en",
+                orderedPlan = longPlan,
+                exerciseCatalog = names
+            ),
+            "a first unpaired submission must use a transport-valid worst-case binding"
+        )
+        assertNotNull(garminPlanSubmissionFingerprint(acceptedKey))
+        var requestIdAllocations = 0
+        val accepted = prepareGarminPlanSubmission(
+            key = acceptedKey,
+            encodedExisting = null,
+            lastGlobalRevision = null,
+            nowMillis = 1_800_000_000_000L,
+            newRequestId = {
+                requestIdAllocations += 1
+                "request-sixty-by-eighty"
+            }
+        )
+        assertNotNull(accepted)
+        assertEquals(1, requestIdAllocations)
+        assertNotNull(
+            materializeGarminPlanSubmissionPayload(
+                key = acceptedKey,
+                envelope = checkNotNull(accepted).envelope
+            )
+        )
+
+        val oversizedNames = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            val prefix = "Oversized ${index.toString().padStart(2, '0')} "
+            prefix + "y".repeat(120 - prefix.length)
+        }
+        val oversizedKey = acceptedKey.copy(
+            orderedPlan = oversizedNames.map { name -> NamedWorkoutSetDraft(name, 50.0, 10) },
+            exerciseCatalog = oversizedNames
+        )
+        assertNull(garminPlanSubmissionFingerprint(oversizedKey))
+        requestIdAllocations = 0
+        assertNull(
+            prepareGarminPlanSubmission(
+                key = oversizedKey,
+                encodedExisting = null,
+                lastGlobalRevision = null,
+                nowMillis = 1_800_000_000_000L,
+                newRequestId = {
+                    requestIdAllocations += 1
+                    "request-must-not-be-allocated"
+                }
+            )
+        )
+        assertEquals(0, requestIdAllocations)
+        assertNull(
+            materializeGarminPlanSubmissionPayload(
+                key = oversizedKey,
+                envelope = GarminPlanSubmissionEnvelope(
+                    fingerprint = "d".repeat(64),
+                    requestId = "request-not-materialized",
+                    revision = 1_800_000_000_001L
+                )
+            )
+        )
+    }
+
+    @Test
     fun concurrentIdenticalSubmissionsCoalesceToOneTransportOperation() = runBlocking {
         val fingerprint = garminPlanRequestFingerprint(
             accountBinding = account,
             authTransitionKey = authTransition,
             trustedDeviceBinding = device,
             languageTag = "en",
-            orderedPlan = zeroPlan
+            orderedPlan = zeroPlan,
+            exerciseCatalog = exerciseCatalog
         )!!
         val coordinator = GarminPlanSubmissionCoalescer(this)
         val entered = CompletableDeferred<Unit>()
@@ -217,14 +323,16 @@ class GarminPlanSubmissionTest {
             authTransition,
             device,
             "en",
-            zeroPlan
+            zeroPlan,
+            exerciseCatalog
         )!!
         val secondFingerprint = garminPlanRequestFingerprint(
             account,
             authTransition,
             device,
             "en",
-            zeroPlan.reversed()
+            zeroPlan.reversed(),
+            exerciseCatalog
         )!!
         val coordinator = GarminPlanSubmissionCoalescer(this)
         val sends = AtomicInteger(0)
@@ -311,7 +419,8 @@ class GarminPlanSubmissionTest {
         pairingGeneration = generation,
         includePairingGeneration = true,
         languageTag = "en",
-        orderedPlan = zeroPlan
+        orderedPlan = zeroPlan,
+        exerciseCatalog = exerciseCatalog
     )
 
     private fun requestFingerprint(): String = garminPlanRequestFingerprint(
@@ -319,6 +428,7 @@ class GarminPlanSubmissionTest {
         authTransitionKey = authTransition,
         trustedDeviceBinding = device,
         languageTag = "en",
-        orderedPlan = zeroPlan
+        orderedPlan = zeroPlan,
+        exerciseCatalog = exerciseCatalog
     )!!
 }

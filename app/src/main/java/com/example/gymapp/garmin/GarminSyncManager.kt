@@ -566,7 +566,6 @@ class GarminSyncManager(
 
     suspend fun cacheAndPushPlan(
         sets: List<NamedWorkoutSetDraft>,
-        @Suppress("UNUSED_PARAMETER")
         exerciseCatalog: List<String>
     ): Boolean {
         val account = rawActiveAccountContext() ?: run {
@@ -586,13 +585,22 @@ class GarminSyncManager(
             lastPlanSyncStatus = "Workout plan is empty"
             return false
         }
+        val freeOrderCatalog = mergedGarminExerciseCatalogForFreeOrder(
+            plan = plan,
+            exercises = exerciseCatalog,
+            maximumCount = MAX_WATCH_EXERCISES
+        ) ?: run {
+            lastPlanSyncStatus = "Exercise catalog is outside Garmin limits"
+            return false
+        }
         val language = application.languageManager.currentLanguage()
         val requestFingerprint = garminPlanRequestFingerprint(
             accountBinding = account.binding,
             authTransitionKey = account.authTransitionKey,
             trustedDeviceBinding = trustedDeviceBinding(account),
             languageTag = language.tag,
-            orderedPlan = plan
+            orderedPlan = plan,
+            exerciseCatalog = freeOrderCatalog
         ) ?: run {
             lastPlanSyncStatus = "Workout plan identity is invalid"
             return false
@@ -618,6 +626,7 @@ class GarminSyncManager(
             sendToConnectedDevices(
                 account = account,
                 planToCache = plan,
+                exerciseCatalog = freeOrderCatalog,
                 language = language
             )
         }
@@ -1134,6 +1143,19 @@ class GarminSyncManager(
             return@withLock null
         }
         val plan = cachedPlan(account, exhaustedBinding.device)
+        val safeCatalog = mergedGarminExerciseCatalogWithinDurableBudget(
+            plan = plan,
+            exercises = exercises,
+            accountBinding = account.binding,
+            deviceBinding = exhaustedBinding.device,
+            // The pending generation is a bounded 64-character token. Gate the
+            // payload before allocating/persisting it with the same-width owner.
+            pairingGeneration = account.binding,
+            maximumCount = MAX_WATCH_EXERCISES
+        ) ?: run {
+            lastPlanSyncStatus = "Garmin plan exceeds the durable watch budget"
+            return@withLock null
+        }
         val pendingGeneration = beginPairingGenerationReset(
             account = account,
             deviceBinding = exhaustedBinding.device,
@@ -1152,7 +1174,7 @@ class GarminSyncManager(
         }
         val payload = boundGarminPairingRolloverPayload(
             payload = syncPayload(
-                exercises = exercises,
+                exercises = safeCatalog,
                 plan = plan,
                 syncId = syncId,
                 resetWorkout = false,
@@ -1218,16 +1240,18 @@ class GarminSyncManager(
             if (!isStillActive(account)) return@withLock
             val deviceBinding = deviceBinding(device)
             val plan = cachedPlan(account, deviceBinding)
-            val syncId = newGarminMessageId()
-            val basePayload = syncPayload(
-                exercises = exercises,
+            val safeCatalog = mergedGarminExerciseCatalogWithinDurableBudget(
                 plan = plan,
-                syncId = syncId,
-                resetWorkout = false,
-                repairPairing = repairPairing
-            )
-            if (!cachePlan(plan, account, deviceBinding)) return@withLock
-            if (!isStillActive(account)) return@withLock
+                exercises = exercises,
+                accountBinding = account.binding,
+                deviceBinding = deviceBinding,
+                // Gate before activePairingGeneration can allocate local state.
+                pairingGeneration = account.binding,
+                maximumCount = MAX_WATCH_EXERCISES
+            ) ?: run {
+                lastPlanSyncStatus = "Garmin plan exceeds the durable watch budget"
+                return@withLock
+            }
             val supportsGeneration = generationSupportOverride
                 ?: pairingGenerationSupported(account, deviceBinding)
             val pairingGeneration = if (supportsGeneration) {
@@ -1240,6 +1264,16 @@ class GarminSyncManager(
                 device = deviceBinding,
                 pairingGeneration = pairingGeneration
             )
+            val syncId = newGarminMessageId()
+            val basePayload = syncPayload(
+                exercises = safeCatalog,
+                plan = plan,
+                syncId = syncId,
+                resetWorkout = false,
+                repairPairing = repairPairing
+            )
+            if (!cachePlan(plan, account, deviceBinding)) return@withLock
+            if (!isStillActive(account)) return@withLock
             val revision = allocateSyncRevision(binding) ?: run {
                 lastPlanSyncStatus = "Cannot persist Garmin sync revision"
                 return@withLock
@@ -1289,15 +1323,10 @@ class GarminSyncManager(
         val compactPlan = checkNotNull(validatedGarminPlanOrNull(plan)) {
             "Garmin plan is outside supported limits."
         }
-        val planExerciseNames = compactPlan.map { it.exerciseName }
-        val exerciseSource = if (planExerciseNames.isNotEmpty()) {
-            planExerciseNames
-        } else {
-            exercises
-        }
         val compactExercises = checkNotNull(
-            validatedGarminExerciseCatalog(
-                exercises = exerciseSource,
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = compactPlan,
+                exercises = exercises,
                 maximumCount = MAX_WATCH_EXERCISES
             )
         ) { "Garmin exercise catalog exceeds the message budget." }
@@ -1310,9 +1339,7 @@ class GarminSyncManager(
             "planWeights" to compactPlan.map { it.weight },
             "planReps" to compactPlan.map { it.reps }
         )
-        if (compactPlan.isEmpty()) {
-            payload["exercises"] = compactExercises
-        }
+        payload["exercises"] = compactExercises
         if (!syncId.isNullOrBlank()) {
             payload["syncId"] = syncId
             payload["requestId"] = syncId
@@ -1326,11 +1353,13 @@ class GarminSyncManager(
     private suspend fun sendToConnectedDevices(
         account: GarminAccountContext,
         planToCache: List<NamedWorkoutSetDraft>,
+        exerciseCatalog: List<String>,
         language: AppLanguage
     ): Boolean = outboundSyncMutex.withLock {
         sendToConnectedDevicesLocked(
             account = account,
             planToCache = planToCache,
+            exerciseCatalog = exerciseCatalog,
             language = language
         )
     }
@@ -1338,6 +1367,7 @@ class GarminSyncManager(
     private suspend fun sendToConnectedDevicesLocked(
         account: GarminAccountContext,
         planToCache: List<NamedWorkoutSetDraft>,
+        exerciseCatalog: List<String>,
         language: AppLanguage
     ): Boolean {
         if (!sdkReady) return false
@@ -1454,7 +1484,8 @@ class GarminSyncManager(
                 pairingGeneration = binding.pairingGeneration,
                 includePairingGeneration = supportsGeneration,
                 languageTag = language.tag,
-                orderedPlan = planToCache
+                orderedPlan = planToCache,
+                exerciseCatalog = exerciseCatalog
             )
             val prepared = prepareExactPlanSubmission(submissionKey) ?: run {
                 lastPlanSyncStatus = "Cannot persist Garmin plan submission"

@@ -5,6 +5,7 @@ import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.GARMIN_WATCH_PENDING_WORKOUT_CAPACITY
 import com.example.gymapp.data.repository.MAX_GARMIN_WORKOUTS_PER_ROLLING_DAY
 import com.example.gymapp.util.AppLanguage
+import com.garmin.monkeybrains.serialization.Serializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -268,6 +269,89 @@ class GarminSyncSecurityTest {
         assertEquals(syncId, retryAttempt["requestId"])
         assertNotEquals(syncId, retryAttempt["syncRevision"].toString())
         assertNull(boundGarminSyncPayload(base, binding, 0L))
+    }
+
+    @Test
+    fun finalSyncPayloadBoundsCombinedPlanAndFreeOrderCatalog() {
+        val binding = GarminBinding(
+            account = "a".repeat(64),
+            device = "123456789",
+            pairingGeneration = "1".repeat(64)
+        )
+        val names = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            "Exercise ${index.toString().padStart(2, '0')} " + "x".repeat(148)
+        }
+        val catalogNames = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            "Catalog ${index.toString().padStart(2, '0')} " + "y".repeat(149)
+        }
+        assertTrue(names.sumOf { it.toByteArray(Charsets.UTF_8).size } <= MAX_GARMIN_TOTAL_NAME_BYTES)
+        assertTrue(
+            catalogNames.sumOf { it.toByteArray(Charsets.UTF_8).size } <=
+                MAX_GARMIN_TOTAL_NAME_BYTES
+        )
+        val individuallyBoundedButCombinedOversized = mapOf<String, Any>(
+            "type" to "sync",
+            "resetWorkout" to false,
+            "language" to "en",
+            "planNames" to names,
+            "planWeights" to List(names.size) { 50.0 },
+            "planReps" to List(names.size) { 10 },
+            "exercises" to catalogNames,
+            "syncId" to "combined-budget",
+            "requestId" to "combined-budget"
+        )
+
+        assertFalse(isWithinGarminSyncPayloadBudget(individuallyBoundedButCombinedOversized))
+        assertNull(
+            boundGarminSyncPayload(
+                individuallyBoundedButCombinedOversized,
+                binding,
+                1_800_000_000_125L
+            )
+        )
+
+        val ordinary = individuallyBoundedButCombinedOversized.toMutableMap().apply {
+            put("planNames", listOf("Squat", "Bench Press"))
+            put("planWeights", listOf(100.0, 80.0))
+            put("planReps", listOf(5, 8))
+            put("exercises", listOf("Squat", "Bench Press", "Deadlift"))
+        }
+        assertTrue(isWithinGarminSyncPayloadBudget(ordinary))
+        assertEquals(
+            Serializer.serialize(ordinary).size,
+            estimatedGarminConnectIqWireBytes(ordinary)
+        )
+        val boundOrdinary = boundGarminSyncPayload(ordinary, binding, 1_800_000_000_126L)
+        assertNotNull(boundOrdinary)
+        assertEquals(
+            Serializer.serialize(checkNotNull(boundOrdinary)).size,
+            estimatedGarminConnectIqWireBytes(boundOrdinary)
+        )
+    }
+
+    @Test
+    fun connectIqWireEstimatorFailsClosedOnUnsupportedOrUnboundedGraphs() {
+        val supported = mapOf<String, Any>(
+            "type" to "sync",
+            "smallLong" to 123L,
+            "largeLong" to 1_800_000_000_001L,
+            "compactDouble" to 50.0,
+            "preciseDouble" to Math.PI,
+            "enabled" to true,
+            "duplicates" to listOf("same", "same"),
+            "nested" to mapOf("empty" to emptyList<Any>())
+        )
+        assertEquals(
+            Serializer.serialize(supported).size,
+            estimatedGarminConnectIqWireBytes(supported)
+        )
+        assertNull(estimatedGarminConnectIqWireBytes(mapOf("type" to Double.NaN)))
+        assertNull(estimatedGarminConnectIqWireBytes(mapOf("type" to Any())))
+        assertNull(
+            estimatedGarminConnectIqWireBytes(
+                mapOf("type" to List(513) { "x" })
+            )
+        )
     }
 
     @Test
@@ -1262,6 +1346,118 @@ class GarminSyncSecurityTest {
     }
 
     @Test
+    fun indexedV4ProjectionAcceptsSixtyByEightyAndRejectsActuallyUnsafeCatalogs() {
+        val names = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            val prefix = "Exercise ${index.toString().padStart(2, '0')} "
+            prefix + "x".repeat(80 - prefix.length)
+        }
+        assertTrue(names.all { it.toByteArray(Charsets.UTF_8).size == 80 })
+        val plan = names.map { name -> NamedWorkoutSetDraft(name, 50.0, 10) }
+        val account = "a".repeat(64)
+        val generation = "b".repeat(64)
+        val device = "123456789"
+        val binding = GarminBinding(account, device, generation)
+        val wirePayload = mapOf<String, Any>(
+            "type" to "sync",
+            "resetWorkout" to false,
+            "language" to "en",
+            "planNames" to names,
+            "planWeights" to List(names.size) { 50.0 },
+            "planReps" to List(names.size) { 10 },
+            "exercises" to names,
+            "syncId" to "durable-projection-regression",
+            "requestId" to "durable-projection-regression"
+        )
+        // This exact prior late-failure fixture fits the transport; the indexed v4 projection
+        // must now also prove that all sixty durable commits fit before accepting the sync.
+        assertNotNull(boundGarminSyncPayload(wirePayload, binding, 1_800_000_000_127L))
+
+        val projected = projectedGarminDurableWorkoutBytes(
+            plan = plan,
+            exerciseCatalog = names,
+            accountBinding = account,
+            deviceBinding = device,
+            pairingGeneration = generation
+        )
+        assertNotNull(projected)
+        assertTrue(checkNotNull(projected) <= MAX_GARMIN_PROJECTED_STORE_BYTES)
+        assertTrue(
+            isWithinProjectedGarminDurableWorkoutBudget(
+                plan = plan,
+                exerciseCatalog = names,
+                accountBinding = account,
+                deviceBinding = device,
+                pairingGeneration = generation
+            )
+        )
+        assertNotNull(
+            mergedGarminExerciseCatalogWithinDurableBudget(
+                plan = plan,
+                exercises = names,
+                accountBinding = account,
+                deviceBinding = device,
+                pairingGeneration = generation
+            )
+        )
+        assertNotNull(
+            mergedGarminExerciseCatalogWithinDurableBudget(
+                plan = emptyList(),
+                exercises = names,
+                accountBinding = account,
+                deviceBinding = device,
+                pairingGeneration = generation
+            )
+        )
+
+        val oversizedNames = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            val prefix = "Oversized ${index.toString().padStart(2, '0')} "
+            prefix + "y".repeat(120 - prefix.length)
+        }
+        val oversizedPlan = oversizedNames.map { name -> NamedWorkoutSetDraft(name, 50.0, 10) }
+        val oversizedProjection = projectedGarminDurableWorkoutBytes(
+            plan = oversizedPlan,
+            exerciseCatalog = oversizedNames,
+            accountBinding = account,
+            deviceBinding = device,
+            pairingGeneration = generation
+        )
+        assertNotNull(oversizedProjection)
+        assertTrue(checkNotNull(oversizedProjection) > MAX_GARMIN_PROJECTED_STORE_BYTES)
+        assertFalse(
+            isWithinProjectedGarminDurableWorkoutBudget(
+                plan = oversizedPlan,
+                exerciseCatalog = oversizedNames,
+                accountBinding = account,
+                deviceBinding = device,
+                pairingGeneration = generation
+            )
+        )
+        assertNull(
+            mergedGarminExerciseCatalogWithinDurableBudget(
+                plan = oversizedPlan,
+                exercises = oversizedNames,
+                accountBinding = account,
+                deviceBinding = device,
+                pairingGeneration = generation
+            )
+        )
+
+        val ordinaryPlan = listOf(
+            NamedWorkoutSetDraft("Squat", 100.0, 5),
+            NamedWorkoutSetDraft("Bench Press", 80.0, 8)
+        )
+        assertTrue(
+            isWithinProjectedGarminDurableWorkoutBudget(
+                plan = ordinaryPlan,
+                exerciseCatalog = listOf("Squat", "Bench Press", "Deadlift"),
+                accountBinding = account,
+                deviceBinding = device,
+                pairingGeneration = generation
+            )
+        )
+    }
+
+    @Test
     fun exerciseCatalogBoundsLegacyUnicodeBeforeWatchPayloadConstruction() {
         val oversizedRaw = "\u0301".repeat(10_000)
 
@@ -1296,6 +1492,57 @@ class GarminSyncSecurityTest {
         assertNull(
             validatedGarminExerciseCatalog(
                 exercises = maximumByteNames,
+                maximumCount = 60
+            )
+        )
+    }
+
+    @Test
+    fun freeOrderCatalogKeepsPlanTargetsThenBoundedPickerExtras() {
+        val plan = listOf(
+            NamedWorkoutSetDraft("Squat", 100.0, 5),
+            NamedWorkoutSetDraft("Bench Press", 80.0, 8),
+            NamedWorkoutSetDraft("Squat", 105.0, 3)
+        )
+
+        assertEquals(
+            listOf("Squat", "Bench Press", "Deadlift", "Pull Up"),
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = plan,
+                exercises = listOf("Deadlift", "Squat", "Pull Up"),
+                maximumCount = 60
+            )
+        )
+        val fullPlan = List(MAX_GARMIN_WORKOUT_SETS) { index ->
+            NamedWorkoutSetDraft("Planned $index", 20.0, 8)
+        }
+        assertEquals(
+            fullPlan.map { it.exerciseName },
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = fullPlan,
+                exercises = listOf("Catalog extra"),
+                maximumCount = 60
+            )
+        )
+        assertEquals(
+            listOf("Squat", "Bench Press") + List(58) { "Exercise $it" },
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = plan,
+                exercises = List(61) { "Exercise $it" },
+                maximumCount = 60
+            )
+        )
+        assertNull(
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = plan,
+                exercises = List(WorkoutDataLimits.MAX_EXERCISES + 1) { "Exercise $it" },
+                maximumCount = 60
+            )
+        )
+        assertNull(
+            mergedGarminExerciseCatalogForFreeOrder(
+                plan = listOf(plan.first().copy(weight = Double.NaN)),
+                exercises = listOf("Deadlift"),
                 maximumCount = 60
             )
         )

@@ -20,6 +20,8 @@ class WorkoutView extends Ui.View {
     var savedSetFlashStartedAt = null;
     var savedSetNumber = 0;
     var lastSyncRequestAt = null;
+    var syncRequestInFlight = false;
+    var syncRequestTimedOut = false;
     var pendingRetryStartedAt = null;
     var pendingRetryDelayMs = 5000;
     var pendingSendInFlight = false;
@@ -64,6 +66,9 @@ class WorkoutView extends Ui.View {
     function onHide() {
         ticker.stop();
         if (GymSession.recording) {
+            if (!GymStore.checkpointLiveWorkout(true)) {
+                GymStore.status = "RECOVERY FAIL";
+            }
             GymSession.stopSensors();
         }
         GymStore.save();
@@ -72,6 +77,15 @@ class WorkoutView extends Ui.View {
     function tick() {
         getApp().pollMailbox();
         maybeRetryPending();
+        if (syncRequestInFlight && lastSyncRequestAt != null &&
+            GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
+            // Connect IQ offers no safe cancellation for an outstanding
+            // listener. Lock sync until the app is reopened so a missing or
+            // late callback can never create overlapping listeners.
+            syncRequestInFlight = false;
+            syncRequestTimedOut = true;
+            GymStore.status = "REOPEN";
+        }
         if (page == 7 || !GymSession.recording) {
             Ui.requestUpdate();
             return;
@@ -111,8 +125,9 @@ class WorkoutView extends Ui.View {
             notifyAutoPrompt();
         }
         autoPromptWasActive = GymSession.autoLogPrompt;
-        if (lastSyncRequestAt == null ||
-            GymStore.timerElapsedMs(lastSyncRequestAt) > 20000l) {
+        if (!syncRequestInFlight && !syncRequestTimedOut &&
+            (lastSyncRequestAt == null ||
+            GymStore.timerElapsedMs(lastSyncRequestAt) > 20000l)) {
             requestSyncNow();
         }
         GymStore.checkpointLiveWorkout(false);
@@ -138,6 +153,10 @@ class WorkoutView extends Ui.View {
     }
 
     function requestSyncNow() {
+        if (syncRequestInFlight || syncRequestTimedOut) {
+            return;
+        }
+        syncRequestInFlight = true;
         lastSyncRequestAt = System.getTimer();
         GymComm.requestSync(method(:onSyncSent));
     }
@@ -151,6 +170,10 @@ class WorkoutView extends Ui.View {
     }
 
     function onSyncSent(ok) {
+        if (syncRequestTimedOut) {
+            return;
+        }
+        syncRequestInFlight = false;
         GymStore.status = ok ? "SYNC REQ" : "NO PHONE";
         Ui.requestUpdate();
     }
@@ -306,10 +329,8 @@ class WorkoutView extends Ui.View {
         } else {
             GymStore.status = "READY";
         }
-        // Commit the compact zero-set origin immediately as well as the richer
-        // runtime journal on larger devices. A termination before the first set
-        // can then return to an explicit Resume instead of looking like a fresh
-        // workout. Later one-second ticks keep this bounded checkpoint current.
+        // Commit the zero-set origin immediately. A termination before the first
+        // set can then return to an explicit Resume instead of looking fresh.
         if (!GymStore.checkpointLiveWorkout(true)) {
             GymStore.status = "RECOVERY FAIL";
         }
@@ -347,6 +368,11 @@ class WorkoutView extends Ui.View {
             GymStore.status = "RESUMED";
         } else {
             GymStore.status = "READY";
+        }
+        // A restored workout is already durable; do not rebuild its entire set
+        // history at the memory-sensitive Resume boundary.
+        if (!resuming && !GymStore.checkpointLiveWorkout(true)) {
+            GymStore.status = "RECOVERY FAIL";
         }
         page = 0;
         autoPromptWasActive = GymSession.autoLogPrompt;
@@ -684,7 +710,7 @@ class WorkoutView extends Ui.View {
     (:fullLegacyState)
     function readyPlanText() {
         if (GymStore.plan.size() == 0) {
-            return GymStore.tr("NO PLAN", "НЕМА ПЛАНУ", "НЕТ ПЛАНА");
+            return GymStore.tr("FREE MODE", "ВІЛЬНИЙ РЕЖИМ", "СВОБ. РЕЖИМ");
         }
         return GymStore.tr("PLAN ", "ПЛАН ", "ПЛАН ") +
             GymStore.plan.size().toString();
@@ -710,6 +736,8 @@ class WorkoutView extends Ui.View {
             return GymStore.tr("DATA KEPT · RETRY", "ДАНІ Є · ПОВТОР", "ДАННЫЕ ЕСТЬ · ПОВТОР");
         } else if (current.equals("SYNC FULL")) {
             return waiting.toString() + GymStore.tr(" WAITING · FIT SAVED", " ЧЕКАЄ · FIT Є", " ЖДУТ · FIT ЕСТЬ");
+        } else if (current.equals("REOPEN")) {
+            return GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК");
         } else if (current.equals("OFFLINE") || current.equals("NO PHONE")) {
             return GymStore.tr("OFFLINE", "ОФЛАЙН", "ОФЛАЙН") +
                 (waiting > 0 ? " · " + waiting.toString() : "");
@@ -732,6 +760,8 @@ class WorkoutView extends Ui.View {
             current.equals("SAVE FAIL") || current.equals("START FAIL") ||
             current.equals("REC FAIL") || current.equals("FIT RETRY")) {
             return GymStore.tr("DATA KEPT", "ДАНІ Є", "ДАННЫЕ ЕСТЬ");
+        } else if (current.equals("REOPEN")) {
+            return GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК");
         }
         if (!GymStore.hasAccountBinding()) {
             return GymStore.tr("NOT PAIRED", "НЕ ПРИВ'ЯЗ.", "НЕ СОПРЯЖ.");
@@ -745,8 +775,11 @@ class WorkoutView extends Ui.View {
     }
 
     function readyPrimaryText() {
-        return hasWorkoutToResume() ?
-            GymStore.tr("RESUME WORKOUT", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ") :
+        if (hasWorkoutToResume()) {
+            return GymStore.tr("RESUME WORKOUT", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ");
+        }
+        return GymStore.plan.size() == 0 ?
+            GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.") :
             GymStore.tr("START WORKOUT", "ПОЧАТИ ТРЕН.", "НАЧАТЬ ТРЕН.");
     }
 
@@ -1182,13 +1215,6 @@ class WorkoutView extends Ui.View {
             current = GymStore.maxWorkoutSets;
         }
         var label = GymStore.tr("SET ", "ПІДХІД ", "ПОДХОД ") + current.toString();
-        if (GymStore.plan.size() > 0) {
-            var total = GymStore.plan.size();
-            if (total < current) {
-                total = current;
-            }
-            label += GymStore.tr(" OF ", " З ", " ИЗ ") + total.toString();
-        }
         return label;
     }
 
@@ -1199,11 +1225,8 @@ class WorkoutView extends Ui.View {
             current = GymStore.maxWorkoutSets;
         }
         if (GymStore.plan.size() > 0) {
-            var total = GymStore.plan.size();
-            if (total < current) {
-                total = current;
-            }
-            return current.toString() + "/" + total.toString();
+            return GymStore.completedPlannedSetCount().toString() + "/" +
+                GymStore.plan.size().toString();
         }
         return "SET " + current.toString();
     }
@@ -1443,7 +1466,7 @@ class WorkoutView extends Ui.View {
         return null;
     }
 
-    (:fullLegacyState)
+    (:fullDebugState)
     function motionDebugText() {
         if (!GymSession.motionAvailable) {
             return "--";
@@ -1646,7 +1669,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(sx(w, baseX), sy(h, baseY + 16), Gfx.FONT_XTINY, value, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    (:fullLegacyState)
+    (:fullDebugState)
     function drawDebug(dc, w, h) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, h, GymStore.tr("DEBUG", "ДЕБАГ", "ОТЛАДКА"));
@@ -1680,7 +1703,15 @@ class WorkoutView extends Ui.View {
             fitText(GymStore.status, 10), Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    (:fullLegacyState)
+    (:tightFullDebugState)
+    function drawDebug(dc, w, h) {
+        drawHeader(dc, w, h, GymStore.tr("STATUS", "СТАН", "СТАТУС"));
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h / 2, Gfx.FONT_XTINY,
+            fitText(GymStore.status, 12), Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    (:fullDebugState)
     function drawDebugLine(dc, w, y, label, value) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(sx(w, 72), y, Gfx.FONT_XTINY, label, Gfx.TEXT_JUSTIFY_LEFT);
@@ -1746,7 +1777,7 @@ class WorkoutView extends Ui.View {
             GymStore.tr("kg x ", " кг × ", " кг × ") + GymStore.reps.toString();
     }
 
-    (:fullLegacyState)
+    (:fullDebugState)
     function statusLabel(value) {
         var text = value == null ? "" : value.toString();
         if (!GymStore.isUk() && !GymStore.isRu()) {
@@ -2751,6 +2782,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             Ui.requestUpdate();
             return;
         }
+        if (!GymStore.checkpointLiveWorkout(true)) {
+            GymStore.status = "RECOVERY FAIL";
+        }
         view.pauseSelected = 0;
         view.page = 2;
     }
@@ -2876,8 +2910,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             } else {
                 recordSet();
             }
+            // addSet()/undoLastSet() own their atomic commit and compatibility
+            // save. A second save here used to serialize the full workout again.
+            return;
         }
-        GymStore.save();
+        GymStore.saveCurrentEntry();
     }
 
     function recordSet() {

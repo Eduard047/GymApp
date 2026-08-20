@@ -145,6 +145,8 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   assert.ok(compactReady.indexOf("readyPrimaryText()") < compactReady.indexOf('"SYNC"'));
   assert.ok(compactReady.indexOf('"SYNC"') < compactReady.indexOf('"SETTINGS"'));
   assert.match(view, /"START WORKOUT", "ПОЧАТИ ТРЕН\.", "НАЧАТЬ ТРЕН\."/);
+  assert.match(view, /"FREE WORKOUT", "ВІЛЬНЕ ТРЕН\.", "СВОБ\. ТРЕН\."/);
+  assert.match(view, /"FREE MODE", "ВІЛЬНИЙ РЕЖИМ", "СВОБ\. РЕЖИМ"/);
   assert.match(view, /"SYNC PLAN", "СИНХ\. ПЛАН", "СИНХ\. ПЛАН"/);
   assert.match(view, /"NOT PAIRED", "НЕ ПРИВ'ЯЗАНО", "НЕ СОПРЯЖЕНО"/);
   assert.match(view, /"SYNC ", "СИНХ ", "СИНХ "/);

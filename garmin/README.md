@@ -13,8 +13,9 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 - On one- and two-button watches, next/previous moves between rows and select/start activates the highlighted row, so every action remains reachable without touch.
 - On multi-button watches, up/down moves focus, left/right decreases/increases the selected value, and select/start performs the primary action.
 - Set entry lets you pick exercise, adjust weight by the configured step, adjust reps, and save a set.
+- Exercise choice is free-order: saving a set keeps the selected exercise and loads only that exercise's next optional plan target. Moving to another exercise is always an explicit athlete action, and the picker retains bounded catalog exercises outside the current plan.
 - On touch watches, swipe up/down to move focus, left to move to the next content screen, and right to go back.
-- Debug screen shows the authoritative activity HR (`ACT`), direct sensor HR (`SNS`), movement score (`MOV`), confidence, effort state, kcal/min, and sync status.
+- Debug screen shows the authoritative activity HR (`ACT`), direct sensor HR (`SNS`), movement score (`MOV`), confidence, effort state, kcal/min, and sync status where the device memory ceiling permits it.
 - Settings screen lets you change auto-log on/off, auto-detect sensitivity, weight step, default rest time, and default reps.
 - `SELECT` / `START`: perform the highlighted action.
 - `BACK` or `MENU` from dashboard: pause the workout and open the pause menu.
@@ -29,6 +30,8 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 - GymApp calculates its own strength-focused kcal estimate and also shows Garmin's reported kcal for comparison.
 - The phone app receives workout duration, Gym kcal, Garmin kcal, average/max HR, HR zones, and per-set duration, rest-before, start/peak/end HR, recovery drop, and detector confidence.
 - Exercise name, weight, and reps still require the selected values on the watch; heart rate cannot reliably infer exercise/kg/reps by itself.
+- Completed sets are committed once to the atomic active-workout snapshot. Low-memory profiles avoid periodic full-history serialization, so long mixed-order workouts do not repeatedly duplicate the complete set graph on the constrained Connect IQ heap.
+- Active snapshot v4 stores bounded exercise-catalog indices instead of repeating every exercise name. Legacy v2/v3 snapshots remain readable, while every catalog accepted by the phone's projected 60-set budget can no longer cross that budget around set 16.
 
 ## Auto set detection
 
@@ -87,11 +90,12 @@ the preserved sets with the same request ID, without claiming that the unknown
 FIT activity was saved and without calling Garmin's recording API again. Use a
 larger-memory target when source-level simulator debugging is required.
 
-Enduro, Fenix 6, Fenix 6S, Forerunner 245, and Venu Sq retain the full workout,
-FIT, queue, recovery, sync, and tutorial profile. Their 128 KiB development
-build strips debug metadata and omits only the decorative page-dot indicator so
-the executable remains within the device loader limit; hardware-key navigation
-and every action remain unchanged.
+Enduro, Fenix 6, Fenix 6S, Forerunner 245, and Venu Sq also have a real 128 KiB
+watch-app ceiling. Their enhanced compact state profile retains indexed atomic
+workouts, FIT, phone sync, queueing, the tutorial, rich recovery, and the same
+hardware-key workout actions while omitting the full legacy quarantine and
+direct-cloud parser that do not fit the compiler limit. Cloud plans still reach
+these products through the paired GymApp phone flow.
 
 Store export:
 

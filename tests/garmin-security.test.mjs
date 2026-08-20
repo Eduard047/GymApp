@@ -67,7 +67,9 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(store, /key\.equals\("repairPairing"\)/);
   assert.match(store, /repairPairing &&[\s\S]*accountChanged[\s\S]*status = "BAD BIND"/);
   assert.match(store, /rotatePairingGenerationForPending/);
-  assert.match(store, /applyValidatedLanguage\(safeMessage\)[\s\S]*if \(sets\.size\(\) > 0\)/);
+  assert.match(store, /applyValidatedLanguage\(safeMessage\)[\s\S]*sets\.size\(\) > 0 \|\| GymSession\.recording \|\| hasUnfinishedWorkout\(\)/);
+  assert.doesNotMatch(store, /stageSync\(message, source\)[\s\S]*normalizedSyncMessage\(message, source\)/);
+  assert.match(store, /sameTextArray\(incomingExercises, exercises\)[\s\S]*safeMessage\.put\("exercises", null\)/);
   assert.match(comm, /"pairingGenerationSupported" => true/);
   assert.match(store, /var safeMessage = normalizedSyncMessage\(message, bindingSource\)/);
   assert.match(store, /"planNames" => copySyncArray\(message\.get\("planNames"\)\)/);
@@ -92,7 +94,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(store, /var revisionStatus = syncRevisionStatus\(safeMessage, bindingSource\)[\s\S]*stageSync\(safeMessage, bindingSource\)[\s\S]*if \(accountChanged \|\| resetWorkout\)/);
   assert.match(store, /revisionStatus == 0[\s\S]*isExactStagedSync\(safeMessage, bindingSource\)[\s\S]*!syncBindingsMatch\(safeMessage\)[\s\S]*revisionStatus = 1/);
   assert.match(store, /resetWorkout &&[\s\S]*!trustedSource\.equals\("phone"\)[\s\S]*flatNames\.size\(\) != 0[\s\S]*syncedExercises\.size\(\) != 0/);
-  assert.match(store, /if \(accountChanged \|\| resetWorkout\)[\s\S]*clearAccountScopedState\(\)[\s\S]*GymSession\.resetForAccountTransition\(\)[\s\S]*if \(sets\.size\(\) > 0\)/);
+  assert.match(store, /if \(accountChanged \|\| resetWorkout\)[\s\S]*clearAccountScopedState\(\)[\s\S]*GymSession\.resetForAccountTransition\(\)[\s\S]*sets\.size\(\) > 0 \|\| GymSession\.recording \|\| hasUnfinishedWorkout\(\)/);
   assert.match(store, /bindingSource\.equals\("phone"\) &&[\s\S]*!clearCloudSyncStageForAccountTransition\(\)[\s\S]*clearAccountScopedState\(\)[\s\S]*return false/);
   assert.match(store, /static function clearCloudSyncStageForAccountTransition\(\)[\s\S]*Storage\.deleteValue\("cloudSyncStage"\)[\s\S]*stagedCloudPlanRevision = 0/);
   const saveBody = store.match(/static function save\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
@@ -102,10 +104,10 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
         saveBody.indexOf('Storage.setValue("stateOwnerBinding", accountBinding)'),
     "the replay fence must precede the owner commit point"
   );
-  assert.match(store, /"message" => stagedMessage/);
+  assert.match(store, /"message" => message/);
   assert.match(store, /isValidSyncStage\(stage, maximum, source\)/);
-  assert.match(store, /stagedCloudSyncMessage = stagedMessage/);
-  assert.match(store, /stagedPhoneSyncMessage = stagedMessage/);
+  assert.match(store, /stagedCloudSyncMessage = message/);
+  assert.match(store, /stagedPhoneSyncMessage = message/);
   assert.match(store, /static function isExactStagedSync\(message, source\)[\s\S]*stagedCloudAccountBinding[\s\S]*syncMessagesEqual\(stagedCloudSyncMessage, message, source\)[\s\S]*stagedPhoneAccountBinding[\s\S]*syncMessagesEqual\(stagedPhoneSyncMessage, message, source\)/);
   const stagedEquality = store.match(/static function syncMessagesEqual\(left, right, source\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(stagedEquality, /left\.get\("deviceBinding"\), right\.get\("deviceBinding"\)/);
@@ -114,7 +116,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(stagedEquality, /left\.get\("planNames"\), right\.get\("planNames"\)/);
   assert.match(stagedEquality, /left\.get\("planWeights"\), right\.get\("planWeights"\)/);
   assert.match(stagedEquality, /left\.get\("planReps"\), right\.get\("planReps"\)/);
-  assert.match(store, /static function sameNumericArray\(left, right, compareAsFloat\)[\s\S]*if \(compareAsFloat\)[\s\S]*!isNumeric\(left\[i\]\) \|\| !isNumeric\(right\[i\]\)[\s\S]*left\[i\]\.toFloat\(\) != right\[i\]\.toFloat\(\)/);
+  assert.match(store, /static function sameNumericArray\(left, right, compareAsFloat\)[\s\S]*if \(compareAsFloat\)[\s\S]*!isNumeric\(left\[i\]\) \|\| !isNumeric\(right\[i\]\)[\s\S]*left\[i\] as Lang\.Numeric\)\.toDouble\(\)[\s\S]*right\[i\] as Lang\.Numeric\)\.toDouble\(\)/);
   assert.match(store, /static function isNumeric\(value\)[\s\S]*value instanceof Lang\.Float[\s\S]*value instanceof Lang\.Double/);
   assert.match(store, /static function isValidSyncStage\(value, maximum, source\)[\s\S]*value\.size\(\) != 4[\s\S]*isValidSyncMessage\(value\.get\("message"\), source\)[\s\S]*estimatedValueBytes\(value\) > maxLegacyStoredValueBytes/);
   const revisionStatus = store.match(/static function syncRevisionStatus\(message, source\) \{[\s\S]*?\n    \}/)?.[0] || "";

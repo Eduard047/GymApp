@@ -102,12 +102,17 @@ test("Forerunner 55 compact summary keeps the action below workout metrics", asy
   assert.doesNotMatch(compactSummary, /drawMenuRow\(/);
 });
 
-test("Forerunner 55 upgrade preserves an owner-bound full-v3 active workout", async () => {
+test("Forerunner 55 upgrade bridges full-v3 into indexed v4 and merges its runtime journal", async () => {
   const store = await read("garmin/source/GymStore.mc");
+  const runtimeBridge = section(
+    store,
+    "static function fullRuntimeForCompactMigration(active)",
+    "static function compactActiveSnapshotFromFullV3(value)"
+  );
   const converter = section(
     store,
     "static function compactActiveSnapshotFromFullV3(value)",
-    "// Version 3 stores set fields in parallel arrays"
+    "(:noFr55UpgradeBridge)\n    static function compactActiveSnapshotFromFullV3(value)"
   );
   const compactLoad = section(
     store,
@@ -137,8 +142,23 @@ test("Forerunner 55 upgrade preserves an owner-bound full-v3 active workout", as
   assert.match(converter, /isValidTimelineCheckpoint\(checkpoint\)/);
   assert.match(converter, /isValidSetIntervalsList\(intervals, names\)/);
   assert.match(converter, /areSetIntervalsConsistent\([\s\S]*checkpoint\[0\][\s\S]*checkpoint\[1\][\s\S]*checkpoint\[2\]/);
-  assert.match(converter, /safe\.put\("setInterval", copySetInterval\(intervals\[j\]\)\)/);
+  assert.match(runtimeBridge, /Storage\.getValue\("activeRuntimeV1"\)/);
+  assert.match(runtimeBridge, /runtime\[4\] != active\[5\]\.size\(\)/);
+  assert.match(runtimeBridge, /active\[1\][\s\S]*runtime\[1\][\s\S]*active\[2\][\s\S]*runtime\[2\]/);
+  assert.match(runtimeBridge, /sameOptionalText\(active\[3\], runtime\[3\]\)/);
+  assert.match(runtimeBridge, /active\[5\]\.size\(\) > 0[\s\S]*active\[4\] != runtime\[6\]/);
+  assert.match(converter, /var runtime = fullRuntimeForCompactMigration\(value\)/);
+  assert.match(converter, /startedAt = runtime\[6\][\s\S]*checkpoint = runtime\[7\]/);
+  assert.ok(
+    converter.indexOf("fullRuntimeForCompactMigration(value)") <
+      converter.indexOf("var indices = []"),
+    "the current runtime must be merged before the indexed transaction is built"
+  );
+  assert.match(converter, /var catalogIndex = exerciseIndexForName\(names\[j\]\)/);
+  assert.match(converter, /indices\.add\(catalogIndex\)/);
+  assert.match(converter, /safeIntervals\.add\(copySetInterval\(intervals\[j\]\)\)/);
   assert.match(converter, /safeCheckpoint = checkpoint == null \? null : copySetInterval\(checkpoint\)/);
+  assert.match(converter, /var candidate = \[[\s\S]*4,[\s\S]*indices,[\s\S]*safeWeights,[\s\S]*safeReps,[\s\S]*safeIntervals,[\s\S]*safeCheckpoint/);
   assert.match(converter, /isValidActiveWorkoutSnapshot\(candidate\)[\s\S]*isWithinStorageBudgetForActiveSnapshot\(candidate\)/);
 
   const restoreAt = migration.indexOf("restoreActiveWorkoutSnapshot(migratedActive)");
@@ -152,6 +172,7 @@ test("Forerunner 55 upgrade preserves an owner-bound full-v3 active workout", as
   const DEVICE = "fr55-device";
   const GENERATION = "b".repeat(64);
   const ORIGIN = 1_800_000_000;
+  const CATALOG = ["Bench Press", "Squat", "Deadlift"];
   const checkpoint = [120, 4.0, 3, 13_000, 100, 160, 138, 3];
   const intervalA = [0, 35, 1.5, 1, 0, 5, 15, 10, 5, 0];
   const intervalB = [60, 95, 1.7, 1, 0, 5, 15, 10, 5, 0];
@@ -169,7 +190,23 @@ test("Forerunner 55 upgrade preserves an owner-bound full-v3 active workout", as
     checkpoint
   ];
 
-  const migrateModel = (value, binding = [OWNER, DEVICE, GENERATION]) => {
+  const runtimeForActive = (active, runtime) => {
+    if (runtime == null) return null;
+    if (!Array.isArray(runtime) || runtime.length !== 11 || runtime[0] !== 1 ||
+        runtime[1] !== active[1] || runtime[2] !== active[2] || runtime[3] !== active[3] ||
+        runtime[4] !== active[5].length || !Number.isInteger(runtime[5]) ||
+        !Number.isInteger(runtime[6]) || runtime[6] > runtime[5] ||
+        runtime[5] - runtime[6] > 604_800 || !Array.isArray(runtime[7]) ||
+        runtime[7].length !== 8 || typeof runtime[8] !== "boolean" ||
+        !Number.isInteger(runtime[9]) || runtime[9] < 0 || runtime[9] > 2) return null;
+    if (active[5].length > 0 && active[4] !== runtime[6]) return null;
+    return runtime;
+  };
+
+  const migrateModel = (
+    value,
+    { binding = [OWNER, DEVICE, GENERATION], catalog = CATALOG, runtime = null } = {}
+  ) => {
     if (!Array.isArray(value) || value.length !== 11 || value[0] !== 3 ||
         value[1] !== binding[0] || value[2] !== binding[1] || value[3] !== binding[2]) return null;
     const [names, weights, reps, metrics, intervals, timeline] =
@@ -182,7 +219,9 @@ test("Forerunner 55 upgrade preserves an owner-bound full-v3 active workout", as
         weights.some((weight) => !Number.isFinite(weight) || weight < 0 || weight > 1000) ||
         reps.some((count) => !Number.isInteger(count) || count < 1 || count > 999) ||
         metrics.some((item) => !Array.isArray(item) || item.length !== 7)) return null;
-    const started = value[4];
+    let started = value[4];
+    let safeIntervals = intervals;
+    let safeTimeline = timeline;
     if ((names.length === 0 && started !== null) ||
         (names.length > 0 && started !== null &&
           (!Number.isInteger(started) || started < 946684800 || started > 2147483647)) ||
@@ -202,43 +241,74 @@ test("Forerunner 55 upgrade preserves an owner-bound full-v3 active workout", as
       }
       if (gymTotal > timeline[1] + 0.1) return null;
     }
-    return [3, value[1], value[2], value[3], started, names.map((name, index) => ({
-      exerciseName: name,
-      weight: weights[index],
-      reps: reps[index],
-      ...(timeline === null ? {} : { setInterval: [...intervals[index]] })
-    })), timeline === null ? null : [...timeline]];
+    const currentRuntime = runtimeForActive(value, runtime);
+    if (currentRuntime != null) {
+      started = currentRuntime[6];
+      safeTimeline = currentRuntime[7];
+      if (names.length === 0) safeIntervals = [];
+    }
+    const indices = names.map((name) => catalog.indexOf(name));
+    if (indices.some((index) => index < 0)) return null;
+    return [
+      4,
+      value[1],
+      value[2],
+      value[3],
+      started,
+      indices,
+      [...weights],
+      [...reps],
+      safeTimeline === null ? null : safeIntervals.map((item) => [...item]),
+      safeTimeline === null ? null : [...safeTimeline]
+    ];
   };
 
   const migrated = migrateModel(full);
-  assert.deepEqual(migrated.slice(0, 5), full.slice(0, 5));
-  assert.deepEqual(migrated[5].map(({ exerciseName, weight, reps }) =>
-    [exerciseName, weight, reps]), [["Bench Press", 60, 10], ["Squat", 80, 8]]);
-  assert.deepEqual(migrated[6], checkpoint);
-  assert.notEqual(migrated[5][0].setInterval, intervalA);
-  assert.notEqual(migrated[6], checkpoint);
-  assert.equal("activeSeconds" in migrated[5][0], false);
+  assert.deepEqual(migrated.slice(0, 5), [4, OWNER, DEVICE, GENERATION, ORIGIN]);
+  assert.deepEqual(migrated[5], [0, 1]);
+  assert.deepEqual(migrated[6], [60, 80]);
+  assert.deepEqual(migrated[7], [10, 8]);
+  assert.deepEqual(migrated[8], [intervalA, intervalB]);
+  assert.deepEqual(migrated[9], checkpoint);
+  assert.notEqual(migrated[8][0], intervalA);
+  assert.notEqual(migrated[9], checkpoint);
+  assert.equal(migrated.length, 10, "compact v4 deliberately drops the full-only metrics column");
 
   const withoutTimeline = structuredClone(full);
   withoutTimeline[9] = null;
   withoutTimeline[10] = null;
-  assert.equal("setInterval" in migrateModel(withoutTimeline)[5][0], false);
+  assert.equal(migrateModel(withoutTimeline)[8], null);
 
-  const tombstone = [3, OWNER, DEVICE, GENERATION, null, [], [], [], [], [],
-    [0, 0, null, 0, 0, 0, null, 0]];
-  assert.deepEqual(migrateModel(tombstone)[5], []);
-  const preSetRuntime = structuredClone(tombstone);
-  preSetRuntime[10] = [12, 1.5, null, 1300, 10, 145, 140, 2];
-  assert.deepEqual(migrateModel(preSetRuntime)[6], preSetRuntime[10]);
+  const tombstone = [3, OWNER, DEVICE, GENERATION, null, [], [], [], [], null, null];
+  assert.deepEqual(migrateModel(tombstone),
+    [4, OWNER, DEVICE, GENERATION, null, [], [], [], null, null]);
+  const runtimeCheckpoint = [12, 1.5, null, 1300, 10, 145, 140, 2];
+  const activeRuntimeV1 = [
+    1, OWNER, DEVICE, GENERATION, 0, ORIGIN + 120, ORIGIN,
+    runtimeCheckpoint, false, 0, 0
+  ];
+  const preSetRuntime = migrateModel(tombstone, { runtime: activeRuntimeV1 });
+  assert.equal(preSetRuntime[4], ORIGIN);
+  assert.deepEqual(preSetRuntime[8], []);
+  assert.deepEqual(preSetRuntime[9], runtimeCheckpoint);
+  assert.notEqual(preSetRuntime[9], runtimeCheckpoint);
   const isUnfinished = (candidate) => candidate[5].length > 0 || candidate[4] !== null ||
-    candidate[6][0] > 0 || candidate[6][1] > 0 || candidate[6][2] !== null ||
-    candidate[6][4] > 0 || candidate[6][5] > 0 || candidate[6][6] !== null;
+    (candidate[9] != null &&
+      (candidate[9][0] > 0 || candidate[9][1] > 0 || candidate[9][2] !== null ||
+        candidate[9][4] > 0 || candidate[9][5] > 0 || candidate[9][6] !== null));
   assert.equal(isUnfinished(migrateModel(tombstone)), false);
-  assert.equal(isUnfinished(migrateModel(preSetRuntime)), true);
+  assert.equal(isUnfinished(preSetRuntime), true);
 
-  assert.equal(migrateModel(full, ["c".repeat(64), DEVICE, GENERATION]), null);
-  assert.equal(migrateModel(full, [OWNER, "wrong-device", GENERATION]), null);
-  assert.equal(migrateModel(full, [OWNER, DEVICE, "d".repeat(64)]), null);
+  const foreignRuntime = structuredClone(activeRuntimeV1);
+  foreignRuntime[1] = "c".repeat(64);
+  assert.equal(migrateModel(tombstone, { runtime: foreignRuntime })[4], null,
+    "a foreign runtime is ignored instead of authorizing a started workout");
+
+  assert.equal(migrateModel(full, { binding: ["c".repeat(64), DEVICE, GENERATION] }), null);
+  assert.equal(migrateModel(full, { binding: [OWNER, "wrong-device", GENERATION] }), null);
+  assert.equal(migrateModel(full, { binding: [OWNER, DEVICE, "d".repeat(64)] }), null);
+  assert.equal(migrateModel(full, { catalog: ["Bench Press"] }), null,
+    "every v3 name must resolve against the durable catalog before it becomes an index");
   const malformedMetrics = structuredClone(full);
   malformedMetrics[8][0] = [1, 2];
   assert.equal(migrateModel(malformedMetrics), null);
@@ -259,7 +329,7 @@ test("Forerunner 55 upgrade preserves an owner-bound full-v3 active workout", as
   assert.equal(migrateModel(intervalsWithoutTimeline), null);
 });
 
-test("Forerunner 55 checkpoints the first second, pause, and bounded rest recovery", async () => {
+test("Forerunner 55 checkpoints explicit lifecycle boundaries without periodic history copies", async () => {
   const [store, view] = await Promise.all([
     read("garmin/source/GymStore.mc"),
     read("garmin/source/WorkoutView.mc")
@@ -267,7 +337,12 @@ test("Forerunner 55 checkpoints the first second, pause, and bounded rest recove
   const compactValidation = section(
     store,
     "(:enhancedCompactCheckpoint)\n    static function isValidActiveWorkoutSnapshot(snapshot)",
-    "// Preserve the proven low-memory validation path"
+    "// The five 96 KiB products"
+  );
+  const compact96Validation = section(
+    store,
+    "(:compactCheckpoint96)\n    static function isValidActiveWorkoutSnapshot(snapshot)",
+    "// These products used the full v3 parallel-array snapshot"
   );
   const compactRestore = section(
     store,
@@ -286,16 +361,19 @@ test("Forerunner 55 checkpoints the first second, pause, and bounded rest recove
   );
 
   assert.match(compactValidation, /snapshotSets\.size\(\) == 0 && startedAtSeconds != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
-  assert.match(compactCheckpoint, /!force && \(GymSession\.paused \|\|[\s\S]*GymSession\.elapsedSeconds - lastCompactCheckpointElapsed < 15\)/);
+  assert.match(compact96Validation, /snapshotSets\.size\(\) == 0 && startedAtSeconds != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
+  assert.match(compactCheckpoint, /if \(!force\) \{\s*return true;/);
+  assert.doesNotMatch(compactCheckpoint, /elapsedSeconds - lastCompactCheckpointElapsed < 15/);
   assert.match(compactCheckpoint, /origin = GymSession\.startedAt/);
-  assert.match(compactCheckpoint, /persistActiveWorkoutSnapshot\(sets, origin, checkpoint\)[\s\S]*activeWorkoutStartedAtSeconds = origin[\s\S]*runtimeWorkoutStartedAtSeconds = origin[\s\S]*lastCompactCheckpointElapsed = GymSession\.elapsedSeconds/);
-  assert.match(compactSave, /runtimeWorkoutStartedAtSeconds == null[\s\S]*emptyTimelineCheckpoint\(\) : currentTimelineCheckpoint/);
-  assert.match(compactSave, /persistActiveWorkoutSnapshot\([\s\S]*sets,[\s\S]*activeWorkoutStartedAtSeconds,[\s\S]*checkpoint/);
+  assert.match(compactCheckpoint, /persistActiveWorkoutSnapshot\(sets, origin, checkpoint\)[\s\S]*activeWorkoutStartedAtSeconds = origin[\s\S]*runtimeWorkoutStartedAtSeconds = origin/);
+  assert.doesNotMatch(compactSave, /persistActiveWorkoutSnapshot\(/);
   assert.match(compactRestore, /lastInterval = sets\[sets\.size\(\) - 1\]\.get\("setInterval"\)/);
   assert.match(compactRestore, /elapsedSinceSet = checkpoint\[0\] - lastInterval\[1\]/);
   assert.match(compactRestore, /remainingRest = restSecondsDefault - elapsedSinceSet/);
   assert.match(view, /startOrResumeWorkout\(\)[\s\S]*checkpointLiveWorkout\(true\)/);
+  assert.match(view, /A restored workout is already durable[\s\S]*!resuming && !GymStore\.checkpointLiveWorkout\(true\)/);
   assert.match(view, /openPauseMenu\(\)[\s\S]*checkpointLiveWorkout\(true\)/);
+  assert.match(view, /function onHide\(\)[\s\S]*checkpointLiveWorkout\(true\)[\s\S]*stopSensors\(\)/);
 
   const ORIGIN = 1_800_000_000;
   const tombstone = [3, "a".repeat(64), "fr55", null, null, [],

@@ -28,7 +28,8 @@ internal data class GarminPlanSubmissionKey(
     val pairingGeneration: String,
     val includePairingGeneration: Boolean,
     val languageTag: String,
-    val orderedPlan: List<NamedWorkoutSetDraft>
+    val orderedPlan: List<NamedWorkoutSetDraft>,
+    val exerciseCatalog: List<String>
 )
 
 internal data class GarminPlanSubmissionEnvelope(
@@ -83,7 +84,8 @@ internal fun garminPlanRequestFingerprint(
     authTransitionKey: String,
     trustedDeviceBinding: String?,
     languageTag: String,
-    orderedPlan: List<NamedWorkoutSetDraft>
+    orderedPlan: List<NamedWorkoutSetDraft>,
+    exerciseCatalog: List<String>
 ): String? {
     if (!isValidGarminAccountBinding(accountBinding)) return null
     if (!isValidGarminAccountBinding(authTransitionKey)) return null
@@ -92,13 +94,32 @@ internal fun garminPlanRequestFingerprint(
     }
     if (languageTag.length !in 2..16 || languageTag.any(Char::isISOControl)) return null
     val plan = validatedGarminPlanOrNull(orderedPlan)?.takeIf { it.isNotEmpty() } ?: return null
+    val catalog = mergedGarminExerciseCatalogForFreeOrder(
+        plan = plan,
+        exercises = exerciseCatalog,
+        maximumCount = MAX_GARMIN_WORKOUT_SETS
+    ) ?: return null
+    if (
+        !isWithinProjectedGarminDurableWorkoutBudget(
+            plan = plan,
+            exerciseCatalog = catalog,
+            accountBinding = accountBinding,
+            deviceBinding = trustedDeviceBinding ?: MAX_PROJECTED_GARMIN_DEVICE_BINDING,
+            // A first pairing has not allocated its generation yet. Its durable shape is the
+            // same bounded 64-character token as the account binding used for this projection.
+            pairingGeneration = accountBinding
+        )
+    ) {
+        return null
+    }
     return digestGarminPlanSubmission {
-        updateString("gymapp-garmin-plan-call/v1")
+        updateString("gymapp-garmin-plan-call/v2")
         updateString(accountBinding)
         updateString(authTransitionKey)
         updateString(trustedDeviceBinding ?: "unpaired")
         updateString(languageTag)
         updatePlan(plan)
+        updateExerciseCatalog(catalog)
     }
 }
 
@@ -110,8 +131,24 @@ internal fun garminPlanSubmissionFingerprint(key: GarminPlanSubmissionKey): Stri
     if (key.languageTag.length !in 2..16 || key.languageTag.any(Char::isISOControl)) return null
     val plan = validatedGarminPlanOrNull(key.orderedPlan)?.takeIf { it.isNotEmpty() }
         ?: return null
+    val catalog = mergedGarminExerciseCatalogForFreeOrder(
+        plan = plan,
+        exercises = key.exerciseCatalog,
+        maximumCount = MAX_GARMIN_WORKOUT_SETS
+    ) ?: return null
+    if (
+        !isWithinProjectedGarminDurableWorkoutBudget(
+            plan = plan,
+            exerciseCatalog = catalog,
+            accountBinding = key.accountBinding,
+            deviceBinding = key.deviceBinding,
+            pairingGeneration = key.pairingGeneration
+        )
+    ) {
+        return null
+    }
     return digestGarminPlanSubmission {
-        updateString("gymapp-garmin-plan-submission/v1")
+        updateString("gymapp-garmin-plan-submission/v2")
         updateString(key.accountBinding)
         updateString(key.authTransitionKey)
         updateString(key.deviceBinding)
@@ -119,6 +156,7 @@ internal fun garminPlanSubmissionFingerprint(key: GarminPlanSubmissionKey): Stri
         updateBoolean(key.includePairingGeneration)
         updateString(key.languageTag)
         updatePlan(plan)
+        updateExerciseCatalog(catalog)
     }
 }
 
@@ -168,6 +206,11 @@ internal fun materializeGarminPlanSubmissionPayload(
     if (envelope.revision !in 1L..MAX_GARMIN_SYNC_REVISION) return null
     val plan = validatedGarminPlanOrNull(key.orderedPlan)?.takeIf { it.isNotEmpty() }
         ?: return null
+    val catalog = mergedGarminExerciseCatalogForFreeOrder(
+        plan = plan,
+        exercises = key.exerciseCatalog,
+        maximumCount = MAX_GARMIN_WORKOUT_SETS
+    ) ?: return null
     val basePayload = mapOf<String, Any>(
         "type" to "sync",
         "resetWorkout" to false,
@@ -175,6 +218,7 @@ internal fun materializeGarminPlanSubmissionPayload(
         "planNames" to plan.map { it.exerciseName },
         "planWeights" to plan.map { it.weight },
         "planReps" to plan.map { it.reps },
+        "exercises" to catalog,
         "syncId" to envelope.requestId,
         "requestId" to envelope.requestId
     )
@@ -225,6 +269,9 @@ private fun encodeGarminPlanSubmissionEnvelope(
 
 private fun isLowerHex(value: Char): Boolean = value in '0'..'9' || value in 'a'..'f'
 
+// Long.MIN_VALUE is the widest transport-valid decimal device binding (20 bytes).
+private const val MAX_PROJECTED_GARMIN_DEVICE_BINDING = "-9223372036854775808"
+
 private class GarminPlanDigestBuilder(
     private val digest: MessageDigest
 ) {
@@ -250,6 +297,11 @@ private class GarminPlanDigestBuilder(
             updateLong(java.lang.Double.doubleToLongBits(canonicalWeight))
             updateLong(set.reps.toLong())
         }
+    }
+
+    fun updateExerciseCatalog(exercises: List<String>) {
+        updateLong(exercises.size.toLong())
+        exercises.forEach(::updateString)
     }
 }
 
