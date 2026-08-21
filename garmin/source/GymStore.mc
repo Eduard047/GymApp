@@ -456,6 +456,7 @@ class GymStore {
                 }
             }
         }
+        GymWorkoutMode.restore();
     }
 
     (:fullLegacyState)
@@ -858,6 +859,7 @@ class GymStore {
                 }
             }
         }
+        GymWorkoutMode.restore();
     }
 
     (:compactLegacyState)
@@ -2237,7 +2239,7 @@ class GymStore {
     }
 
     static function applyCurrentPlanSet() {
-        if (plan.size() == 0) {
+        if (!GymWorkoutMode.usesPlan || plan.size() == 0) {
             return false;
         }
         var exerciseName = currentExercise();
@@ -2428,7 +2430,8 @@ class GymStore {
         var previousWeight = weight;
         var previousReps = reps;
         var previousExerciseIndex = exerciseIndex;
-        var wasPlannedSet = remainingPlannedSetsForExercise(currentExercise()) > 0;
+        var wasPlannedSet = GymWorkoutMode.usesPlan &&
+            remainingPlannedSetsForExercise(currentExercise()) > 0;
         var postCommitWeight = weight;
         var postCommitReps = reps;
         if (wasPlannedSet) {
@@ -2769,6 +2772,7 @@ class GymStore {
         var cleared = save();
         if (cleared) {
             clearPreparedWorkout(null);
+            GymWorkoutMode.clear();
         }
         return cleared;
     }
@@ -2815,7 +2819,11 @@ class GymStore {
         clearTransientSetActions();
         applyDeferredSyncIfIdle();
         var compatibilitySaved = save();
-        return compatibilitySaved || atomicallyCleared;
+        var cleared = compatibilitySaved || atomicallyCleared;
+        if (cleared) {
+            GymWorkoutMode.clear();
+        }
+        return cleared;
     }
 
     static function restSeconds() {
@@ -3169,7 +3177,7 @@ class GymStore {
             )) {
             message.put("setIntervals", setIntervals);
         }
-        if (plan.size() > 0) {
+        if (GymWorkoutMode.usesPlan && plan.size() > 0) {
             var plannedTargetSetCount = plan.size();
             // Released phone parsers require the legacy field to be at least the
             // number of actual sets. Keep that compatibility envelope while the
@@ -4252,6 +4260,7 @@ class GymStore {
             // stale data even if durable owner metadata is externally repaired.
             Storage.deleteValue("activeWorkoutV1");
             Storage.deleteValue("activeRuntimeV1");
+            Storage.deleteValue("activeWorkoutModeV1");
             Storage.deleteValue("preparedWorkoutV1");
             Storage.deleteValue("lastWorkoutSyncV1");
         } catch (e) {
@@ -4264,6 +4273,7 @@ class GymStore {
         cloudDeviceBinding = null;
         sets = [];
         plan = [];
+        GymWorkoutMode.usesPlan = true;
         pending = [];
         preparedWorkout = null;
         lastWorkoutSyncAtSeconds = null;

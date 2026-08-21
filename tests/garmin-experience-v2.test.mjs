@@ -370,7 +370,7 @@ test("Forerunner 55 checkpoints explicit lifecycle boundaries without periodic h
   assert.match(compactRestore, /lastInterval = sets\[sets\.size\(\) - 1\]\.get\("setInterval"\)/);
   assert.match(compactRestore, /elapsedSinceSet = checkpoint\[0\] - lastInterval\[1\]/);
   assert.match(compactRestore, /remainingRest = restSecondsDefault - elapsedSinceSet/);
-  assert.match(view, /startOrResumeWorkout\(\)[\s\S]*checkpointLiveWorkout\(true\)/);
+  assert.match(view, /startOrResumeWorkout\(usePlan\)[\s\S]*checkpointLiveWorkout\(true\)/);
   assert.match(view, /A restored workout is already durable[\s\S]*!resuming && !GymStore\.checkpointLiveWorkout\(true\)/);
   assert.match(view, /openPauseMenu\(\)[\s\S]*checkpointLiveWorkout\(true\)/);
   assert.match(view, /function onHide\(\)[\s\S]*checkpointLiveWorkout\(true\)[\s\S]*stopSensors\(\)/);

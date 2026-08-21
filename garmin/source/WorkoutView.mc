@@ -38,7 +38,16 @@ class WorkoutView extends Ui.View {
     (:enhancedRecoveryCheckpoint)
     function onShow() {
         ticker.start(method(:tick), 1000, true);
-        page = GymStore.hasPreparedWorkout() ? 3 : 7;
+        if (GymStore.hasPreparedWorkout()) {
+            page = 3;
+        } else if (GymSession.recording) {
+            page = GymSession.paused ? 2 : 0;
+            if (!GymSession.paused) {
+                GymSession.startSensors();
+            }
+        } else {
+            page = 7;
+        }
         selected = 0;
         pauseSelected = 0;
         discardSelected = 0;
@@ -55,7 +64,16 @@ class WorkoutView extends Ui.View {
     (:compactRecovery96)
     function onShow() {
         ticker.start(method(:tick), 1000, true);
-        page = GymStore.hasPreparedWorkout() ? 3 : 7;
+        if (GymStore.hasPreparedWorkout()) {
+            page = 3;
+        } else if (GymSession.recording) {
+            page = GymSession.paused ? 2 : 0;
+            if (!GymSession.paused) {
+                GymSession.startSensors();
+            }
+        } else {
+            page = 7;
+        }
         selected = 0;
         getApp().pollMailbox();
         if (page == 7 && GymStore.shouldStartTutorial()) {
@@ -296,7 +314,7 @@ class WorkoutView extends Ui.View {
     }
 
     (:enhancedRecoveryCheckpoint)
-    function startOrResumeWorkout() {
+    function startOrResumeWorkout(usePlan) {
         if (page != 7 || GymSession.fitSaved || GymStore.hasPreparedWorkout()) {
             GymStore.status = "START FAIL";
             Ui.requestUpdate();
@@ -316,9 +334,16 @@ class WorkoutView extends Ui.View {
                 started = true;
             }
         } else {
+            if (!GymWorkoutMode.begin(usePlan)) {
+                Ui.requestUpdate();
+                return false;
+            }
             started = GymSession.start();
         }
         if (!started) {
+            if (!resuming) {
+                GymWorkoutMode.clear();
+            }
             Ui.requestUpdate();
             return false;
         }
@@ -341,7 +366,7 @@ class WorkoutView extends Ui.View {
     }
 
     (:compactRecovery96)
-    function startOrResumeWorkout() {
+    function startOrResumeWorkout(usePlan) {
         if (page != 7 || GymSession.fitSaved || GymStore.hasPreparedWorkout()) {
             GymStore.status = "START FAIL";
             Ui.requestUpdate();
@@ -357,9 +382,16 @@ class WorkoutView extends Ui.View {
                 started = true;
             }
         } else {
+            if (!GymWorkoutMode.begin(usePlan)) {
+                Ui.requestUpdate();
+                return false;
+            }
             started = GymSession.start();
         }
         if (!started) {
+            if (!resuming) {
+                GymWorkoutMode.clear();
+            }
             Ui.requestUpdate();
             return false;
         }
@@ -783,6 +815,30 @@ class WorkoutView extends Ui.View {
             GymStore.tr("START WORKOUT", "ПОЧАТИ ТРЕН.", "НАЧАТЬ ТРЕН.");
     }
 
+    function readyActionCount() {
+        return !hasWorkoutToResume() && GymStore.plan.size() > 0 ? 4 : 3;
+    }
+
+    function readyActionText(index) {
+        if (hasWorkoutToResume()) {
+            if (index == 0) {
+                return GymStore.tr("RESUME WORKOUT", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ");
+            }
+        } else if (GymStore.plan.size() > 0) {
+            if (index == 0) {
+                return GymStore.tr("START PLAN", "ПОЧАТИ ПЛАН", "НАЧАТЬ ПЛАН");
+            } else if (index == 1) {
+                return GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
+            }
+            index -= 1;
+        } else if (index == 0) {
+            return GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
+        }
+        return index == 1 ?
+            GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН") :
+            GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
+    }
+
     (:fullLegacyState)
     function drawReady(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
@@ -799,23 +855,22 @@ class WorkoutView extends Ui.View {
             fitTextWidth(dc, readyBindingText(), Gfx.FONT_XTINY, sr(w, h, 174)),
             Gfx.TEXT_JUSTIFY_CENTER);
 
-        drawReadyRow(dc, w, h, 0, 106, readyPrimaryText());
-        drawReadyRow(dc, w, h, 1, 151,
-            GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН"));
-        drawReadyRow(dc, w, h, 2, 196,
-            GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ"));
+        if (readyActionCount() == 4) {
+            for (var i = 0; i < 4; i += 1) {
+                drawReadyRow(dc, w, h, i, 91 + (i * 38), readyActionText(i));
+            }
+        } else {
+            for (var j = 0; j < 3; j += 1) {
+                drawReadyRow(dc, w, h, j, 106 + (j * 45), readyActionText(j));
+            }
+        }
     }
 
     (:compactRichRecovery)
     function drawReady(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
-        var action = readyPrimaryText();
-        if (selected == 1) {
-            action = GymStore.tr("SYNC", "СИНХ", "СИНХ");
-        } else if (selected == 2) {
-            action = GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
-        }
+        var action = readyActionText(selected);
         var compactFont = w >= 200 ? Gfx.FONT_SMALL : Gfx.FONT_XTINY;
         dc.drawText(w / 2, h / 3, compactFont,
             GymStore.tr("GYMAPP READY", "GYMAPP ГОТОВ", "GYMAPP ГОТОВО"),
@@ -831,12 +886,7 @@ class WorkoutView extends Ui.View {
     function drawReady(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
-        var action = readyPrimaryText();
-        if (selected == 1) {
-            action = GymStore.tr("SYNC", "СИНХ", "СИНХ");
-        } else if (selected == 2) {
-            action = GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
-        }
+        var action = readyActionText(selected);
         dc.drawText(w / 2, h / 3, Gfx.FONT_XTINY,
             GymStore.tr("GYMAPP READY", "GYMAPP ГОТОВ", "GYMAPP ГОТОВО"),
             Gfx.TEXT_JUSTIFY_CENTER);
@@ -865,7 +915,8 @@ class WorkoutView extends Ui.View {
         }
         if (tutorialStep < 2) {
             tutorialStep += 1;
-            selected = tutorialStep;
+            selected = readyActionCount() == 4 && tutorialStep > 0 ?
+                tutorialStep + 1 : tutorialStep;
             return;
         }
         if (GymStore.markTutorialHandled()) {
@@ -883,7 +934,8 @@ class WorkoutView extends Ui.View {
         }
         if (tutorialStep > 0) {
             tutorialStep -= 1;
-            selected = tutorialStep;
+            selected = readyActionCount() == 4 && tutorialStep > 0 ?
+                tutorialStep + 1 : tutorialStep;
             return;
         }
         if (GymStore.markTutorialHandled()) {
@@ -896,8 +948,9 @@ class WorkoutView extends Ui.View {
 
     (:fullLegacyState)
     function drawTutorialOverlay(dc, w, h) {
-        var targetY = tutorialStep == 0 ? 106 :
-            (tutorialStep == 1 ? 151 : 196);
+        var targetY = readyActionCount() == 4 ?
+            (tutorialStep == 0 ? 91 : (tutorialStep == 1 ? 167 : 205)) :
+            (tutorialStep == 0 ? 106 : (tutorialStep == 1 ? 151 : 196));
         dc.setColor(Gfx.COLOR_BLUE, Gfx.COLOR_TRANSPARENT);
         dc.drawRoundedRectangle(sx(w, 42), sy(h, targetY - 5),
             sr(w, h, 176), sr(w, h, 44), sr(w, h, 11));
@@ -2080,7 +2133,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             return true;
         }
         if (view.page == 7) {
-            view.selected = (view.selected + 1) % 3;
+            view.selected = (view.selected + 1) % view.readyActionCount();
             Ui.requestUpdate();
             return true;
         }
@@ -2119,7 +2172,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             return true;
         }
         if (view.page == 7) {
-            view.selected = (view.selected + 1) % 3;
+            view.selected = (view.selected + 1) % view.readyActionCount();
             Ui.requestUpdate();
             return true;
         }
@@ -2153,7 +2206,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             return true;
         }
         if (view.page == 7) {
-            view.selected = (view.selected + 2) % 3;
+            view.selected = (view.selected + view.readyActionCount() - 1) %
+                view.readyActionCount();
             Ui.requestUpdate();
             return true;
         }
@@ -2197,7 +2251,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             return true;
         }
         if (view.page == 7) {
-            view.selected = (view.selected + 2) % 3;
+            view.selected = (view.selected + view.readyActionCount() - 1) %
+                view.readyActionCount();
             Ui.requestUpdate();
             return true;
         }
@@ -2461,7 +2516,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         if (view.tutorialActive) {
             view.tutorialNext();
         } else if (view.page == 7) {
-            var readyRow = rowAt(y, 106, 45, 3);
+            var readyRow = view.readyActionCount() == 4 ?
+                rowAt(y, 91, 38, 4) : rowAt(y, 106, 45, 3);
             if (readyRow >= 0) {
                 view.selected = readyRow;
                 handleReadySelection();
@@ -2749,9 +2805,13 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     function handleReadySelection() {
+        var resuming = view.hasWorkoutToResume();
+        var hasPlanChoice = !resuming && GymStore.plan.size() > 0;
         if (view.selected == 0) {
-            view.startOrResumeWorkout();
-        } else if (view.selected == 1) {
+            view.startOrResumeWorkout(hasPlanChoice);
+        } else if (hasPlanChoice && view.selected == 1) {
+            view.startOrResumeWorkout(false);
+        } else if (view.selected == (hasPlanChoice ? 2 : 1)) {
             view.syncFromReady();
         } else {
             openReadySettings();

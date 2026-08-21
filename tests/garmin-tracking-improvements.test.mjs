@@ -399,7 +399,8 @@ test("Garmin fuses bounded motion evidence with HR and falls back safely", async
 
   const listener = section(session, "static function startMotionListener()", "static function stopMotionListener()");
   assert.match(listener, /Sensor has :registerSensorDataListener/);
-  assert.match(listener, /:sampleRate => 10/);
+  assert.match(listener, /var sampleRate = motionSampleRate\(\)/);
+  assert.match(session, /Sensor has :getMaxSampleRate[\s\S]*sampleRate = supported/);
   assert.match(listener, /catch \(ex\)[\s\S]*motionAvailable = false/);
   const callback = section(session, "static function onSensorData(data)", "static function isFiniteSensorNumber");
   assert.match(callback, /count > 40/);
@@ -414,7 +415,8 @@ test("Garmin fuses bounded motion evidence with HR and falls back safely", async
     session,
     /if \(setConfidence >= 75 &&[\s\S]*hasCredibleRestRestartEvidence\(risingEnough\)[\s\S]*activeSignalCount \+= 1/
   );
-  assert.match(session, /if \(activeSignalCount >= 3\)/);
+  assert.match(session, /var requiredStartSignals = freshMotionEvidence \? 3 : 8/);
+  assert.match(session, /activeSignalCount >= requiredStartSignals/);
   assert.match(view, /SET MAYBE/);
   assert.match(view, /confidenceLabel\(\)/);
 });
@@ -429,7 +431,7 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   const listener = section(session, "static function startMotionListener()", "static function stopMotionListener()");
   const fullListener = listener.slice(0, listener.indexOf("// The compact hardware tier"));
   assert.match(listener, /:synchronous => true/);
-  assert.match(listener, /:gyroscope => \{[\s\S]*:sampleRate => 10/);
+  assert.match(listener, /:gyroscope => \{[\s\S]*:sampleRate => sampleRate/);
   assert.equal(
     (fullListener.match(/Sensor\.registerSensorDataListener/g) || []).length,
     2,
@@ -444,8 +446,9 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
 
   const callback = section(session, "static function onSensorData(data)", "static function isFiniteSensorNumber");
   assert.match(callback, /count > 40[\s\S]*count = 40/);
-  assert.match(callback, /absolute\(dominant\) >= 10/);
-  assert.match(callback, /reversals >= 1 && reversals <= 6/);
+  assert.match(callback, /var dominantAxis = totalXDelta/);
+  assert.match(callback, /absolute\(dominantDelta\) >= 10/);
+  assert.match(callback, /reversals >= 1 && reversals <= 8/);
   assert.match(callback, /data has :gyroscopeData/);
   assert.match(callback, /if \(!gyroRead\) \{\s*gyroAvailable = false;\s*gyroScore = 0\.0;/);
   assert.match(callback, /accelStrong \|\| \(accelModerate && gyroStrong\)/);
@@ -457,16 +460,17 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   assert.match(noise, /var ceiling = base \* 1\.75/);
 
   const lifecycle = section(session, "static function updateMotionLifecycle()", "static function activeSetSeconds()");
-  assert.match(lifecycle, /motionBurstSignals >= 4 && motionRhythmSignals >= 3/);
+  assert.match(lifecycle, /motionBurstSignals >= 3 && motionRhythmSignals >= 2/);
+  assert.match(lifecycle, /motionReversalCount >= 4/);
   assert.match(
     session,
-    /static function canArmMotionCandidate\(\)[\s\S]*elapsedSeconds - lastLoggedSetSeconds >=[\s\S]*10/
+    /static function canArmMotionCandidate\(\)[\s\S]*elapsedSeconds - lastLoggedSetSeconds >=[\s\S]*8/
   );
   assert.match(lifecycle, /quietSeconds >= motionQuietWindowSeconds\(\)/);
   assert.match(lifecycle, /motionDuration >= motionMinimumSetSeconds\(\)[\s\S]*endSetFromMotion\(\)[\s\S]*else if \(currentSetMotionOnly\)[\s\S]*discardShortMotionInterval\(\)/);
   assert.match(lifecycle, /if \(!GymStore\.autoPromptEnabled\) \{\s*return;/);
   assert.match(lifecycle, /static function endSetFromMotion\(\)/);
-  const motionEnd = section(session, "static function endSetFromMotion()", "static function snapshotMotionSetZones()");
+  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState)\n    static function endSetFromMotion()");
   assert.match(motionEnd, /var ended = lastCredibleMotionSeconds/);
   assert.match(motionEnd, /ended < activeStartSeconds[\s\S]*ended > elapsedSeconds/);
   assert.doesNotMatch(motionEnd, /activeEvidenceEndSeconds\(\)/);
@@ -729,7 +733,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   );
   const evidenceTotals = section(session, "static function captureActiveEvidenceTotals()", "static function captureEndedSetTotals()");
   assert.doesNotMatch(evidenceTotals, /currentSetEndGymCalories|currentSetEndGarminCalories/);
-  const motionEnd = section(session, "static function endSetFromMotion()", "static function snapshotMotionSetZones()");
+  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState)\n    static function endSetFromMotion()");
   assert.doesNotMatch(motionEnd, /currentSetLastEvidenceGymCalories|currentSetLastEvidenceGarminCalories/);
   const initialMotionSnapshot = section(session, "static function initializeMotionSetSnapshot()", "static function motionMinimumSetSeconds()");
   assert.match(initialMotionSnapshot, /currentSetEndGymCalories = gymCalories/);
@@ -1010,7 +1014,7 @@ test("Garmin keeps the selected exercise and completes plan targets in free orde
   assert.match(countCompleted, /item\.get\("exerciseName"\)\.toString\(\)\.equals\(exerciseName\)/);
 
   const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
-  assert.match(addSet, /var wasPlannedSet = remainingPlannedSetsForExercise\(currentExercise\(\)\) > 0/);
+  assert.match(addSet, /var wasPlannedSet = GymWorkoutMode\.usesPlan &&[\s\S]*remainingPlannedSetsForExercise\(currentExercise\(\)\) > 0/);
   assert.match(addSet, /postCommitPlanItem = planItemForExerciseAfterCompleted/);
   assert.match(addSet, /nextSets\.size\(\), currentExercise\(\), postCommitWeight, postCommitReps/);
   assert.match(addSet, /if \(wasPlannedSet\)[\s\S]*weight = postCommitWeight;[\s\S]*reps = postCommitReps/);
@@ -1829,9 +1833,10 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
     "name-based legacy snapshots do not depend on the catalog key"
   );
   const onShow = section(view, "function onShow()", "function onHide()");
-  const explicitStart = section(view, "function startOrResumeWorkout()", "function syncFromReady()");
-  assert.match(onShow, /page = GymStore\.hasPreparedWorkout\(\) \? 3 : 7/);
-  assert.doesNotMatch(onShow, /GymSession\.(?:start|resume|startSensors)\(/);
+  const explicitStart = section(view, "function startOrResumeWorkout(usePlan)", "function syncFromReady()");
+  assert.match(onShow, /if \(GymStore\.hasPreparedWorkout\(\)\) \{\s*page = 3;/);
+  assert.match(onShow, /else if \(GymSession\.recording\)[\s\S]*page = GymSession\.paused \? 2 : 0/);
+  assert.doesNotMatch(onShow, /GymSession\.(?:start|resume)\(/);
   assert.match(explicitStart, /hasWorkoutToResume\(\)/);
   assert.match(explicitStart, /started = GymSession\.start\(\)/);
   assert.match(explicitStart, /if \(resuming\)[\s\S]*GymStore\.markWorkoutResumed\(\)[\s\S]*"RESUMED"/);
@@ -2156,7 +2161,7 @@ test("Garmin active runtime checkpoint is bounded, owner-scoped, and restart-saf
     writer.slice(writer.indexOf("(:compactCheckpoint96)")),
     /lastCompactCheckpointElapsed/
   );
-  assert.match(view, /startOrResumeWorkout\(\)[\s\S]*checkpointLiveWorkout\(true\)/);
+  assert.match(view, /startOrResumeWorkout\(usePlan\)[\s\S]*checkpointLiveWorkout\(true\)/);
   assert.match(view, /openPauseMenu\(\)[\s\S]*GymSession\.pause\(\)[\s\S]*checkpointLiveWorkout\(true\)/);
   assert.match(onHide, /checkpointLiveWorkout\(true\)[\s\S]*stopSensors\(\)/);
 
@@ -2421,11 +2426,12 @@ test("Garmin ignores one-bpm and weak post-save noise before suspending rest", a
   assert.match(effort, /renewedRiseDelta = 3/);
   assert.match(effort, /renewedRiseTrend = 2\.0/);
   assert.match(effort, /setConfidence >= 75/);
-  assert.match(effort, /activeSignalCount >= 3/);
+  assert.match(effort, /requiredStartSignals = freshMotionEvidence \? 3 : 8/);
   assert.match(restart, /GymStore\.restDurationMs <= 0/);
-  assert.match(restart, /lastLoggedSetSeconds >=[\s\S]*10/);
+  assert.match(restart, /lastLoggedSetSeconds < 8/);
   assert.match(restart, /motionSignalCount >= 3/);
-  assert.match(restart, /motionBurstSignals >= 4 && motionRhythmSignals >= 3/);
+  assert.match(restart, /motionBurstSignals >= 3 && motionRhythmSignals >= 2/);
+  assert.match(restart, /motionReversalCount >= 4/);
 
   const renewedZoneRise = (delta, trend, sensitivity = 1) => {
     const deltaThreshold = sensitivity === 0 ? 4 : sensitivity === 2 ? 2 : 3;
@@ -2440,21 +2446,21 @@ test("Garmin ignores one-bpm and weak post-save noise before suspending rest", a
     );
   }
 
-  const canRestartRest = ({ age, deadband = 10, rising, strong, signals, burst, rhythm }) =>
+  const canRestartRest = ({ age, deadband = 8, strong, signals, burst, rhythm, reversals }) =>
     age >= deadband &&
-    (rising || (strong && signals >= 3 && burst >= 4 && rhythm >= 3));
+    strong && signals >= 3 && burst >= 3 && rhythm >= 2 && reversals >= 4;
   assert.equal(
-    canRestartRest({ age: 3, rising: false, strong: true, signals: 4, burst: 4, rhythm: 3 }),
+    canRestartRest({ age: 3, strong: true, signals: 4, burst: 4, rhythm: 3, reversals: 4 }),
     false,
     "even strong handling motion is suppressed inside the post-save deadband"
   );
   assert.equal(
-    canRestartRest({ age: 20, rising: false, strong: false, signals: 1, burst: 1, rhythm: 0 }),
+    canRestartRest({ age: 20, strong: false, signals: 1, burst: 1, rhythm: 0, reversals: 0 }),
     false,
     "weak motion during the 90-second rest cannot cancel it"
   );
   assert.equal(
-    canRestartRest({ age: 20, rising: false, strong: true, signals: 3, burst: 4, rhythm: 3 }),
+    canRestartRest({ age: 20, strong: true, signals: 3, burst: 4, rhythm: 3, reversals: 4 }),
     true,
     "sustained rep-like movement can still start the next set early"
   );

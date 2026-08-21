@@ -114,7 +114,7 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
       clearActiveWorkout.indexOf("sets = []"),
     "the authoritative empty snapshot must commit before active globals are cleared"
   );
-  assert.match(clearActiveWorkout, /return compatibilitySaved \|\| atomicallyCleared/);
+  assert.match(clearActiveWorkout, /var cleared = compatibilitySaved \|\| atomicallyCleared[\s\S]*GymWorkoutMode\.clear\(\)[\s\S]*return cleared/);
 });
 
 test("Garmin partial workouts declare plan progress and drain one queued workout per ack", async () => {
@@ -128,7 +128,7 @@ test("Garmin partial workouts declare plan progress and drain one queued workout
     "static function workoutMessage(requestId)",
     "static function applyPhoneSync("
   );
-  assert.match(workoutMessage, /if \(plan\.size\(\) > 0\)/);
+  assert.match(workoutMessage, /if \(GymWorkoutMode\.usesPlan && plan\.size\(\) > 0\)/);
   assert.match(workoutMessage, /var plannedTargetSetCount = plan\.size\(\)/);
   assert.match(workoutMessage, /var plannedSetCount = plannedTargetSetCount/);
   assert.match(workoutMessage, /plannedSetCount < setCopies\.size\(\)[\s\S]*plannedSetCount = setCopies\.size\(\)/);

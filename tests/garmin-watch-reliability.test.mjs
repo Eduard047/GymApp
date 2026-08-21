@@ -261,7 +261,7 @@ test("Garmin FIT pause, resume, discard, and startup fail without false UI succe
   const resume = section(session, "static function resume()", "static function stopAndSave()");
   const discard = section(session, "static function discard()", "static function resetForAccountTransition()");
   const onShow = section(view, "function onShow()", "function onHide()");
-  const explicitStart = section(view, "function startOrResumeWorkout()", "function syncFromReady()");
+  const explicitStart = section(view, "function startOrResumeWorkout(usePlan)", "function syncFromReady()");
 
   assert.match(start, /if \(session\.start\(\)\)[\s\S]*else \{[\s\S]*failStartAndCleanup\(\)/);
   assert.match(start, /catch \(ex\) \{[\s\S]*failStartAndCleanup\(\)/);
@@ -271,8 +271,9 @@ test("Garmin FIT pause, resume, discard, and startup fail without false UI succe
   assert.match(resume, /!session\.start\(\)[\s\S]*return false/);
   assert.ok(resume.indexOf("session.start()") < resume.indexOf("paused = false"));
   assert.match(discard, /discarded = session\.discard\(\)[\s\S]*if \(!discarded\)[\s\S]*return false/);
-  assert.match(onShow, /page = GymStore\.hasPreparedWorkout\(\) \? 3 : 7/);
-  assert.doesNotMatch(onShow, /GymSession\.(?:start|resume|startSensors)\(/);
+  assert.match(onShow, /if \(GymStore\.hasPreparedWorkout\(\)\) \{\s*page = 3;/);
+  assert.match(onShow, /else if \(GymSession\.recording\)[\s\S]*page = GymSession\.paused \? 2 : 0/);
+  assert.doesNotMatch(onShow, /GymSession\.(?:start|resume)\(/);
   assert.match(explicitStart, /GymSession\.recording[\s\S]*GymSession\.paused[\s\S]*GymSession\.resume\(\)/);
   assert.match(explicitStart, /else \{[\s\S]*started = GymSession\.start\(\)/);
   assert.ok(
