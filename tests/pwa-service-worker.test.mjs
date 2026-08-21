@@ -671,7 +671,7 @@ test("cached documents receive the same anti-framing policy", async () => {
   const response = await responsePromiseFor(handler, "https://example.test/GymApp/");
 
   assert.equal(await response.text(), "cached");
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v133"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v134"]);
   assert.match(response.headers.get("Content-Security-Policy"), /style-src 'self'/);
   assert.match(response.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.doesNotMatch(response.headers.get("Content-Security-Policy"), /unsafe-inline/);
@@ -687,7 +687,7 @@ test("shared workout documents use the stricter offline chooser policy", async (
     const policy = response.headers.get("Content-Security-Policy");
 
     assert.equal(await response.text(), "cached");
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v133"]);
+    assert.deepEqual(worker.openedCaches, ["gym-pwa-v134"]);
     assert.match(policy, /default-src 'none'/);
     assert.match(policy, /connect-src 'none'/);
     assert.match(policy, /worker-src 'none'/);
@@ -706,7 +706,7 @@ test("install reloads one internally consistent version before promptly replacin
   handler({ waitUntil(value) { installPromise = value; } });
   await installPromise;
 
-    assert.deepEqual(worker.openedCaches, ["gym-pwa-v133"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v134"]);
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/exercise-search-vocabulary.v1.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/app.v96.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/shared-workout.v65.js")));
@@ -827,7 +827,7 @@ test("a sibling github.io project scope never enters GymApp legacy cleanup", asy
   await installPromise;
 
   assert.equal(worker.skipWaitingCount(), 1);
-  assert.deepEqual(worker.openedCaches, ["gym-pwa-v133"]);
+  assert.deepEqual(worker.openedCaches, ["gym-pwa-v134"]);
   assert.equal(worker.claimCount(), 0);
   assert.equal(isIntercepted(worker.listeners.get("fetch"), scope), true);
 });

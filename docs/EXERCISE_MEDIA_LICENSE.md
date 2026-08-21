@@ -9,11 +9,13 @@ Free Exercise DB is released under the
 the material is dedicated to the public domain and may be copied, modified,
 published, used, sold, or distributed for commercial or non-commercial use.
 
-Five exercise pairs were generated specifically for GymApp with fictional
-people using OpenAI image generation. They are not derived from Free Exercise
-DB. Their keys and movement descriptions are recorded under
-`generatedExercises` in `exercise-media-sources.json`.
+Six exercise pairs are derived from commercially licensed GymVisual animations.
+GymVisual grants perpetual, worldwide, royalty-free use in mobile apps and
+websites under the license recorded in `exercise-media-sources.json`. GymApp
+bundles only the resized start and finish reference frames; the original GIF
+archives are not included or redistributed. The affected keys and purchased
+product references are recorded under `licensedExercises`.
 
 Every built-in catalog exercise now has a start and finish reference image.
 The source registry identifies whether each pair comes from the pinned public
-dataset or from the GymApp-specific generated set.
+dataset or the commercially licensed GymVisual set.

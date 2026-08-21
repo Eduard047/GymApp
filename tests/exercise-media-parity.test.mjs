@@ -91,12 +91,14 @@ test("every built-in exercise has two identical 480x320 assets on Android, iOS, 
 test("media source registry and both PWA allowlists cover the exact catalog", () => {
   const expected = catalogKeys().toSorted();
   const publicSources = Object.keys(sourceRegistry.exercises);
-  const generatedSources = Object.keys(sourceRegistry.generatedExercises);
-  assert.deepEqual(publicSources.filter(key => generatedSources.includes(key)), []);
-  assert.deepEqual([...publicSources, ...generatedSources].toSorted(), expected);
+  const licensedSources = Object.keys(sourceRegistry.licensedExercises);
+  assert.deepEqual(publicSources.filter(key => licensedSources.includes(key)), []);
+  assert.deepEqual([...publicSources, ...licensedSources].toSorted(), expected);
   assert.deepEqual(pwaAppMediaKeys().toSorted(), expected);
   assert.deepEqual(serviceWorkerMediaKeys().toSorted(), expected);
   assert.equal(sourceRegistry.exercises.hip_adduction, "Thigh_Adductor");
+  assert.equal(sourceRegistry.licensedSource.name, "GymVisual");
+  assert.match(sourceRegistry.licensedSource.licenseUrl, /^https:\/\/gymvisual\.com\//);
 });
 
 test("the active PWA bundle contains the reviewed coach and media code", async () => {

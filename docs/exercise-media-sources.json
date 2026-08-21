@@ -6,11 +6,13 @@
     "license": "Unlicense",
     "licenseUrl": "https://github.com/yuhonas/free-exercise-db/blob/main/LICENSE.md"
   },
-  "generatedSource": {
-    "name": "OpenAI image generation",
-    "created": "2026-08-02",
-    "updated": "2026-08-03",
-    "note": "Original GymApp-specific instructional images with fictional people; not derived from Free Exercise DB."
+  "licensedSource": {
+    "name": "GymVisual",
+    "website": "https://gymvisual.com/",
+    "license": "GymVisual royalty-free license",
+    "licenseUrl": "https://gymvisual.com/content/9-license",
+    "purchased": "2026-08-22",
+    "note": "Perpetual commercial app and website use. Original downloadable GIF archives are not redistributed."
   },
   "exercises": {
     "bench_press": "Barbell_Bench_Press_-_Medium_Grip",
@@ -61,12 +63,12 @@
     "lunge": "Dumbbell_Lunges",
     "french_press": "Standing_Overhead_Barbell_Triceps_Extension"
   },
-  "generatedExercises": {
-    "assisted_pull_up": "Counterweighted assisted pull-up machine, bottom and top positions",
-    "assisted_dip": "Counterweighted assisted dip machine, top and bottom positions",
-    "bulgarian_split_squat": "Dumbbell Bulgarian split squat, start and bottom positions",
-    "machine_lateral_raise": "Seated lateral-raise machine, lowered and raised positions",
-    "side_hyperextension": "Side hyperextension on a 45-degree bench, lowered and aligned positions",
-    "warm_up": "Low-intensity bodyweight squat warm-up, standing and squat positions"
+  "licensedExercises": {
+    "assisted_pull_up": "001713 Assisted Pull up",
+    "assisted_dip": "000913 Assisted Chest Dip (kneeling)",
+    "bulgarian_split_squat": "353313 Bulgarian Split Squat",
+    "machine_lateral_raise": "058413 Lever Lateral Raise",
+    "side_hyperextension": "569913 45 degrees Side Bend (male)",
+    "warm_up": "471413 Air Squat (VERSION 2)"
   }
 }
