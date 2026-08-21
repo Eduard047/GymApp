@@ -10,11 +10,13 @@ import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ActiveWorkoutDetails
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.ActiveWorkoutSetUpdate
+import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.DiscardActiveWorkoutResult
 import com.example.gymapp.data.repository.FinishActiveWorkoutResult
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetsResult
+import com.example.gymapp.data.repository.SaveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.UndoActiveWorkoutSetResult
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutRecommendationEngine
@@ -139,7 +141,12 @@ internal fun parseActiveWorkoutSetInput(
     weightInput: String,
     repsInput: String
 ): ParsedActiveWorkoutSet? {
-    val weight = parseWeightInputOrNull(weightInput) ?: return null
+    val normalizedWeight = weightInput.trim()
+    val weight = if (normalizedWeight.isEmpty()) {
+        0.0
+    } else {
+        parseWeightInputOrNull(normalizedWeight) ?: return null
+    }
     val normalizedReps = repsInput.trim()
     if (normalizedReps.length > MAX_ACTIVE_REPS_INPUT_LENGTH) return null
     val reps = normalizedReps.toIntOrNull() ?: return null
@@ -692,6 +699,88 @@ class ActiveWorkoutViewModel(
         }
     }
 
+    fun saveExercise(exerciseId: String) {
+        if (liveSync != null) return
+        val snapshot = details.value ?: return
+        val target = snapshot.exercises.firstOrNull {
+            it.activeWorkoutExercise.id == exerciseId
+        } ?: return
+        val operation = operationState.value
+        if (recordGate.inFlight.value.isNotEmpty() || operation.isRecordingAll ||
+            operation.isFinishing || operation.isDiscarding || operation.undoingSetId != null
+        ) return
+        val currentInputs = inputs.value
+        val parsed = parseActiveWorkoutSetBatch(target.sets.map { set ->
+            val input = currentInputs[set.id]
+                ?: return operationState.update {
+                    it.copy(message = LocalizedText(R.string.active_workout_changed))
+                }
+            ActiveWorkoutSetInputForBatch(set.id, input.weight, input.reps)
+        })
+        if (parsed is ParsedActiveWorkoutSetBatch.Invalid) {
+            operationState.update {
+                it.copy(
+                    message = LocalizedText(R.string.message_invalid_set_input),
+                    messageSetId = parsed.setId
+                )
+            }
+            return
+        }
+        val updates = (parsed as ParsedActiveWorkoutSetBatch.Valid).updates
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                repository.saveActiveWorkoutExercise(
+                    exerciseId = exerciseId,
+                    updates = updates,
+                    expectedRevision = snapshot.activeWorkout.revision
+                )
+            }.getOrNull()
+            operationState.update {
+                when (result) {
+                    is SaveActiveWorkoutExerciseResult.Saved -> it.copy(
+                        isRecordingAll = false,
+                        message = LocalizedText(R.string.active_workout_exercise_saved),
+                        messageSetId = null
+                    )
+                    else -> it.copy(
+                        isRecordingAll = false,
+                        message = LocalizedText(R.string.active_workout_changed),
+                        messageSetId = null
+                    )
+                }
+            }
+        }
+    }
+
+    fun addSet(exerciseId: String) {
+        if (liveSync != null) return
+        val snapshot = details.value ?: return
+        val operation = operationState.value
+        if (recordGate.inFlight.value.isNotEmpty() || operation.isRecordingAll ||
+            operation.isFinishing || operation.isDiscarding || operation.undoingSetId != null
+        ) return
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                repository.addActiveWorkoutSet(exerciseId, snapshot.activeWorkout.revision)
+            }.getOrNull()
+            operationState.update {
+                when (result) {
+                    is AddActiveWorkoutSetResult.Added -> it.copy(isRecordingAll = false)
+                    AddActiveWorkoutSetResult.LimitReached -> it.copy(
+                        isRecordingAll = false,
+                        message = LocalizedText(R.string.active_workout_set_limit_reached)
+                    )
+                    else -> it.copy(
+                        isRecordingAll = false,
+                        message = LocalizedText(R.string.active_workout_changed)
+                    )
+                }
+            }
+        }
+    }
+
     fun undoLatestSet(setId: String) {
         val snapshot = details.value ?: return
         if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isRecordingAll ||
@@ -964,7 +1053,7 @@ class ActiveWorkoutViewModel(
         .orEmpty()
         .asSequence()
         .flatMap { exercise -> exercise.sets.asSequence() }
-        .any { set -> set.id == setId && set.completedAt == null } &&
+        .any { set -> set.id == setId && (liveSync == null || set.completedAt == null) } &&
         setId !in recordGate.inFlight.value
 
     private fun messageForRecordFailure(result: RecordActiveWorkoutSetResult): LocalizedText =

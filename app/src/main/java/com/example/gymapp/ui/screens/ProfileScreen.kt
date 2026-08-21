@@ -1,7 +1,9 @@
 package com.example.gymapp.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -59,7 +61,6 @@ import com.example.gymapp.push.PushNavigationTarget
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
-import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
@@ -72,8 +73,7 @@ import java.util.Date
 
 private enum class ProfileSection {
     Training,
-    Settings,
-    Help
+    Settings
 }
 
 @Composable
@@ -168,8 +168,6 @@ internal fun ProfileScreen(
     Column(modifier = modifier.fillMaxSize()) {
         ProfileSectionSwitcher(
             selected = selectedSection,
-            pendingCount = friendsState.dashboard?.pendingWorkoutInviteCount.orZero() +
-                liveWorkoutState.inbox?.invitations.orEmpty().size,
             onSelected = { selectedSection = it }
         )
         if (selectedSection == ProfileSection.Training) {
@@ -248,21 +246,9 @@ internal fun ProfileScreen(
                     backupMessage = accountState.backupMessage,
                     onExportBackup = onExportBackup,
                     onExportDiagnostics = onExportDiagnostics,
-                    onOpenImport = onOpenImport
+                    onOpenImport = onOpenImport,
+                    onShowTutorial = onShowTutorial
                 )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(
-                    start = GymSpacing.ScreenHorizontal,
-                    top = GymSpacing.ScreenTop,
-                    end = GymSpacing.ScreenHorizontal,
-                    bottom = GymSpacing.ScreenBottom
-                ),
-                verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
-            ) {
-                item { TutorialHelpCard(onShowTutorial = onShowTutorial) }
             }
         }
     }
@@ -357,12 +343,9 @@ internal fun ProfileScreen(
     }
 }
 
-private fun Int?.orZero(): Int = this ?: 0
-
 @Composable
 private fun ProfileSectionSwitcher(
     selected: ProfileSection,
-    pendingCount: Int,
     onSelected: (ProfileSection) -> Unit
 ) {
     Column(
@@ -376,26 +359,6 @@ private fun ProfileSectionSwitcher(
             ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)
-        ) {
-            Text(
-                text = stringResource(R.string.profile_screen_subtitle),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (pendingCount > 0) {
-                InfoPill(
-                    text = stringResource(
-                        R.string.profile_pending_training_count,
-                        pendingCount.coerceAtMost(99)
-                    )
-                )
-            }
-        }
         GymSegmentedControl(
             items = listOf(
                 GymSegmentItem(
@@ -405,10 +368,6 @@ private fun ProfileSectionSwitcher(
                 GymSegmentItem(
                     ProfileSection.Settings,
                     stringResource(R.string.profile_section_settings)
-                ),
-                GymSegmentItem(
-                    ProfileSection.Help,
-                    stringResource(R.string.profile_help_title)
                 )
             ),
             selected = selected,
@@ -440,8 +399,10 @@ private fun LazyListScope.profileSettingsContent(
     backupMessage: com.example.gymapp.util.LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
-    onOpenImport: () -> Unit
+    onOpenImport: () -> Unit,
+    onShowTutorial: () -> Unit
 ) {
+    item { SettingsSectionHeader(stringResource(R.string.profile_settings_account)) }
     item {
         AccountStatusCard(
             label = accountState.accountLabel.ifBlank {
@@ -458,6 +419,7 @@ private fun LazyListScope.profileSettingsContent(
             onResetGarminPairing = onResetGarminPairing
         )
     }
+    item { SettingsSectionHeader(stringResource(R.string.profile_settings_devices_sync)) }
     item { GarminDeviceCard(garminDeviceState) }
     if (accountState.isCloudAccount && cloudSyncChoiceRequired) {
         item {
@@ -494,6 +456,7 @@ private fun LazyListScope.profileSettingsContent(
             )
         }
     }
+    item { SettingsSectionHeader(stringResource(R.string.profile_settings_data)) }
     item {
         BackupToolsCard(
             message = backupMessage,
@@ -502,10 +465,23 @@ private fun LazyListScope.profileSettingsContent(
             onOpenImport = onOpenImport
         )
     }
+    item { SettingsSectionHeader(stringResource(R.string.profile_settings_help_support)) }
+    item { TutorialHelpCard(onShowTutorial = onShowTutorial) }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = GymSpacing.Small, start = GymSpacing.XSmall)
+    )
 }
 
 @Composable
 private fun TutorialHelpCard(onShowTutorial: () -> Unit) {
+    val context = LocalContext.current
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -522,9 +498,33 @@ private fun TutorialHelpCard(onShowTutorial: () -> Unit) {
             ) {
                 Text(stringResource(R.string.tutorial_show_action))
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+            ) {
+                TextButton(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROFILE_SUPPORT_URL)))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.profile_support_action))
+                }
+                TextButton(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROFILE_PRIVACY_URL)))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.auth_privacy_policy))
+                }
+            }
         }
     }
 }
+
+private const val PROFILE_SUPPORT_URL = "https://gymapptracker.com/support.html"
+private const val PROFILE_PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html"
 
 @Composable
 private fun LocalProfileActionsCard(

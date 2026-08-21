@@ -122,7 +122,19 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
         )
     }
 
-    func testWeeklyDurationFallsBackWhenMeasuredDurationIsMissingOrZero() {
+    func testWeeklyDurationPrefersNativeMeasurementAndFallsBackWithoutIt() {
+        XCTAssertEqual(
+            WeeklyTrainingSummary.durationMinutes(
+                for: summary(durationSeconds: 95, exerciseCount: 20, setCount: 100, volume: 0)
+            ),
+            2
+        )
+        XCTAssertEqual(
+            WeeklyTrainingSummary.durationMinutes(
+                for: summary(durationSeconds: 0, exerciseCount: 20, setCount: 100, volume: 0)
+            ),
+            0
+        )
         XCTAssertEqual(
             WeeklyTrainingSummary.durationMinutes(
                 for: summary(exerciseCount: 3, setCount: 9, volume: 0)
@@ -145,6 +157,7 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
     private func summary(
         date: Date = Date(timeIntervalSince1970: 1_786_588_800),
         note: String? = nil,
+        durationSeconds: Int? = nil,
         exerciseCount: Int = 1,
         setCount: Int = 1,
         volume: Double
@@ -153,6 +166,7 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
             workoutID: UUID(),
             date: date,
             note: note,
+            durationSeconds: durationSeconds,
             exerciseCount: exerciseCount,
             setCount: setCount,
             totalVolume: volume

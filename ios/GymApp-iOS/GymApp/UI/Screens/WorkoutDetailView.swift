@@ -1497,6 +1497,16 @@ struct WorkoutDetailView: View {
                         value: workout.totalVolume.formatted(.number.precision(.fractionLength(0 ... 1))),
                         onHero: true
                     )
+                    if let duration = workout.durationSeconds {
+                        GymMetricTile(
+                            label: gymText(
+                                "Duration", "Тривалість", "Время",
+                                languageCode: languageCode
+                            ),
+                            value: compactWorkoutDuration(duration, languageCode: languageCode),
+                            onHero: true
+                        )
+                    }
                 }
 
                 if sharedWorkoutURL(workout) != nil {
@@ -1522,6 +1532,30 @@ struct WorkoutDetailView: View {
                 }
             }
         }
+    }
+
+    private func compactWorkoutDuration(_ seconds: Int, languageCode: String) -> String {
+        let minutes = max(1, max(0, seconds) / 60)
+        let hours = minutes / 60
+        let remaining = minutes % 60
+        if hours == 0 {
+            return gymText(
+                "\(minutes) min", "\(minutes) хв", "\(minutes) мин",
+                languageCode: languageCode
+            )
+        }
+        if remaining == 0 {
+            return gymText(
+                "\(hours)h", "\(hours) год", "\(hours) ч",
+                languageCode: languageCode
+            )
+        }
+        return gymText(
+            "\(hours)h \(remaining)m",
+            "\(hours) год \(remaining) хв",
+            "\(hours) ч \(remaining) мин",
+            languageCode: languageCode
+        )
     }
 
     private func sharedWorkoutURL(_ workout: WorkoutSession) -> URL? {
@@ -2423,7 +2457,7 @@ private struct SavedWorkoutShareChooser: View {
                         }
 
                         if let shareURL {
-                            GymPanel(highlighted: true) {
+                            GymPanel {
                                 VStack(alignment: .leading, spacing: 10) {
                                     GymSectionTitle(
                                         title: t("Share through another app", "Надіслати через інший застосунок", "Отправить через другое приложение")
@@ -2448,7 +2482,7 @@ private struct SavedWorkoutShareChooser: View {
                             }
                         }
 
-                        GymPanel {
+                        GymPanel(highlighted: true) {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(alignment: .firstTextBaseline) {
                                     GymSectionTitle(
@@ -2502,11 +2536,14 @@ private struct SavedWorkoutShareChooser: View {
                             }
                         }
 
-                        Text(t(
-                            "Only exercises and planned sets are shared. Notes, dates, account data, and health metrics stay private.",
-                            "Передаються лише вправи й заплановані підходи. Нотатки, дати, дані акаунта й показники здоров’я залишаються приватними.",
-                            "Передаются только упражнения и запланированные подходы. Заметки, даты, данные аккаунта и показатели здоровья остаются приватными."
-                        ))
+                        Label(
+                            t(
+                                "Only exercises and planned sets are shared.",
+                                "Передаються лише вправи й заплановані підходи.",
+                                "Передаются только упражнения и запланированные подходы."
+                            ),
+                            systemImage: "shield"
+                        )
                         .font(.caption)
                         .foregroundStyle(GymTheme.textSecondary)
                     }
@@ -2522,24 +2559,27 @@ private struct SavedWorkoutShareChooser: View {
     @ViewBuilder
     private func friendShareButtons(_ friend: SocialFriendSummary) -> some View {
         Button {
+            onStartLive(friend)
+        } label: {
+            Label(
+                t("Create LIVE", "Створити LIVE", "Создать LIVE"),
+                systemImage: "figure.strengthtraining.traditional"
+            )
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymPrimaryButtonStyle())
+        .disabled(!canStartLive)
+
+        Button {
             onSendCopy(friend)
         } label: {
             Label(
                 t("Send copy", "Надіслати копію", "Отправить копию"),
                 systemImage: "doc.on.doc"
             )
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(GymSecondaryButtonStyle())
-
-        Button {
-            onStartLive(friend)
-        } label: {
-            Label("LIVE", systemImage: "figure.strengthtraining.traditional")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(GymPrimaryButtonStyle())
-        .disabled(!canStartLive)
+        .buttonStyle(GymSecondaryButtonStyle())
     }
 
     private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {

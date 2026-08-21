@@ -198,7 +198,8 @@ test("privacy invalidation is private, opaque, and forces authoritative detail c
 test("friend workout history stays summary-visible and exact detail is read only", () => {
   assert.match(androidFriend, /FriendWorkoutSummaryCard/);
   assert.match(androidFriend, /FriendWorkoutDetail/);
-  assert.match(androidFriend, /friend_workout_sets_private/);
+  assert.match(androidFriend, /friendWorkoutDetailsAvailable/);
+  assert.match(androidFriend, /showChevron = false/);
   assert.doesNotMatch(androidFriend, /colorScheme\.primary[\s\S]{0,120}friendRecordMetrics/);
   assert.match(iosFriends, /FriendWorkoutReadOnlyDetailView/);
   assert.match(iosFriends, /Sets are private\./);

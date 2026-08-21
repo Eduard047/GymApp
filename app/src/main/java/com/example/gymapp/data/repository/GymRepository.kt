@@ -22,6 +22,7 @@ import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
+import com.example.gymapp.data.entity.WorkoutPlanDraftEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingProfile
@@ -96,6 +97,21 @@ sealed interface RecordActiveWorkoutSetsResult {
     data object AlreadyCompleted : RecordActiveWorkoutSetsResult
 }
 
+sealed interface SaveActiveWorkoutExerciseResult {
+    data class Saved(val revision: Long, val count: Int) : SaveActiveWorkoutExerciseResult
+    data object Missing : SaveActiveWorkoutExerciseResult
+    data object Stale : SaveActiveWorkoutExerciseResult
+    data object TargetChanged : SaveActiveWorkoutExerciseResult
+}
+
+sealed interface AddActiveWorkoutSetResult {
+    data class Added(val revision: Long, val setId: String) : AddActiveWorkoutSetResult
+    data object Missing : AddActiveWorkoutSetResult
+    data object Stale : AddActiveWorkoutSetResult
+    data object TargetChanged : AddActiveWorkoutSetResult
+    data object LimitReached : AddActiveWorkoutSetResult
+}
+
 sealed interface UndoActiveWorkoutSetResult {
     data class Undone(val revision: Long) : UndoActiveWorkoutSetResult
     data object Missing : UndoActiveWorkoutSetResult
@@ -142,6 +158,7 @@ private const val MIGRATED_LEGACY_GARMIN_GENERATION =
     "0000000000000000000000000000000000000000000000000000000000000000"
 private const val LEGACY_GARMIN_FALLBACK_GENERATION =
     "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+private const val MAX_WORKOUT_PLAN_DRAFT_BYTES = 256 * 1_024
 
 /**
  * Collision-resistant identity for import de-duplication.
@@ -154,7 +171,8 @@ private const val LEGACY_GARMIN_FALLBACK_GENERATION =
 internal fun workoutImportSignature(
     date: Long,
     note: String?,
-    workoutExercises: List<WorkoutExerciseDraft>
+    workoutExercises: List<WorkoutExerciseDraft>,
+    durationSeconds: Long? = null
 ): String {
     val digest = MessageDigest.getInstance("SHA-256")
     val numberBuffer = ByteBuffer.allocate(Long.SIZE_BYTES)
@@ -180,9 +198,15 @@ internal fun workoutImportSignature(
         digest.update(utf8)
     }
 
-    digest.update("GymAppWorkoutImportSignatureV1".toByteArray(Charsets.UTF_8))
+    digest.update("GymAppWorkoutImportSignatureV2".toByteArray(Charsets.UTF_8))
     updateLong(date)
     updateNullableString(note?.trim()?.takeIf { it.isNotEmpty() })
+    if (durationSeconds == null) {
+        digest.update(0.toByte())
+    } else {
+        digest.update(1.toByte())
+        updateLong(durationSeconds)
+    }
     updateInt(workoutExercises.size)
     workoutExercises.forEach { exercise ->
         updateLong(exercise.exerciseId)
@@ -320,6 +344,7 @@ class GymRepository(
     private val muscleMappingDao = database.muscleMappingDao()
     private val garminWorkoutReceiptDao = database.garminWorkoutReceiptDao()
     private val activeWorkoutDao = database.activeWorkoutDao()
+    private val workoutPlanDraftDao = database.workoutPlanDraftDao()
     private val deletionStoreToken = UUID.randomUUID().toString()
     private val activeWorkoutMutationMutex = Mutex()
     @Volatile
@@ -931,6 +956,11 @@ class GymRepository(
                         JSONObject()
                             .put("date", sessionDetails.session.date)
                             .put("note", sessionDetails.session.note)
+                            .apply {
+                                sessionDetails.session.durationSeconds?.let { duration ->
+                                    put("durationSeconds", duration)
+                                }
+                            }
                             .put("exercises", JSONArray().apply {
                                 sessionDetails.workoutExercises.forEach { workoutExercise ->
                                     put(
@@ -1269,7 +1299,12 @@ class GymRepository(
                 }
 
                 if (drafts.isNotEmpty()) {
-                    val signature = workoutImportSignature(session.date, session.note, drafts)
+                    val signature = workoutImportSignature(
+                        date = session.date,
+                        note = session.note,
+                        workoutExercises = drafts,
+                        durationSeconds = session.durationSeconds
+                    )
                     if (replaceExisting || existingSignatures.add(signature)) {
                         require(sessionCount < WorkoutDataLimits.MAX_SESSIONS) {
                             "Backup exceeds the workout limit for this account."
@@ -1286,7 +1321,8 @@ class GymRepository(
                         val insertedSessionId = insertValidatedWorkoutSession(
                             date = session.date,
                             note = session.note,
-                            workoutExercises = drafts
+                            workoutExercises = drafts,
+                            durationSeconds = session.durationSeconds
                         )
                         if (replaceExisting) {
                             val provenanceSignature = garminProvenanceSignature(session)
@@ -1348,6 +1384,7 @@ class GymRepository(
                 ValidatedBackupSession(
                     date = details.session.date,
                     note = details.session.note,
+                    durationSeconds = details.session.durationSeconds,
                     blocks = details.workoutExercises.map { workoutExercise ->
                         ValidatedBackupBlock(
                             exercise = ValidatedBackupExercise(
@@ -1418,6 +1455,23 @@ class GymRepository(
         activeWorkoutDao.observe(ACTIVE_WORKOUT_ID).map { details ->
             details?.sortedActiveWorkout()
         }
+
+    suspend fun getWorkoutPlanDraftPayload(): String? = withContext(Dispatchers.IO) {
+        workoutPlanDraftDao.get()?.payload
+    }
+
+    suspend fun saveWorkoutPlanDraftPayload(payload: String) = withContext(Dispatchers.IO) {
+        require(payload.toByteArray(Charsets.UTF_8).size <= MAX_WORKOUT_PLAN_DRAFT_BYTES) {
+            "Workout plan draft is too large."
+        }
+        workoutPlanDraftDao.save(
+            WorkoutPlanDraftEntity(payload = payload, updatedAt = currentTimeMillis())
+        )
+    }
+
+    suspend fun clearWorkoutPlanDraft() = withContext(Dispatchers.IO) {
+        workoutPlanDraftDao.clear()
+    }
 
     suspend fun getActiveWorkoutSnapshot(): ActiveWorkoutDetails? =
         activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)?.sortedActiveWorkout()
@@ -1785,6 +1839,99 @@ class GymRepository(
         }
     }
 
+    suspend fun saveActiveWorkoutExercise(
+        exerciseId: String,
+        updates: List<ActiveWorkoutSetUpdate>,
+        expectedRevision: Long
+    ): SaveActiveWorkoutExerciseResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(exerciseId)) { "Active exercise identifier is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE)
+        require(updates.isNotEmpty() &&
+            updates.size <= WorkoutDataLimits.MAX_SETS_PER_EXERCISE &&
+            updates.map { it.setId }.toSet().size == updates.size
+        ) { "Active exercise set batch is invalid." }
+        updates.forEach { update ->
+            require(isStableActiveWorkoutId(update.setId))
+            requireValidSet(update.weight, update.reps)
+        }
+        val completedAt = currentTimeMillis()
+        require(WorkoutDataLimits.isValidTimestamp(completedAt))
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction SaveActiveWorkoutExerciseResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction SaveActiveWorkoutExerciseResult.Stale
+            }
+            val target = details.exercises.firstOrNull {
+                it.activeWorkoutExercise.id == exerciseId
+            } ?: return@withTransaction SaveActiveWorkoutExerciseResult.TargetChanged
+            if (target.sets.map { it.id }.toSet() != updates.map { it.setId }.toSet()) {
+                return@withTransaction SaveActiveWorkoutExerciseResult.TargetChanged
+            }
+            check(activeWorkoutDao.advanceRevisionForBulkRecord(
+                ACTIVE_WORKOUT_ID,
+                expectedRevision
+            ) == 1)
+            val targetById = target.sets.associateBy { it.id }
+            updates.forEach { update ->
+                val stored = checkNotNull(targetById[update.setId])
+                check(activeWorkoutDao.saveSetForExercise(
+                    setId = update.setId,
+                    expectedActiveWorkoutExerciseId = stored.activeWorkoutExerciseId,
+                    weight = update.weight,
+                    reps = update.reps,
+                    completedAt = completedAt
+                ) == 1)
+            }
+            SaveActiveWorkoutExerciseResult.Saved(expectedRevision + 1L, updates.size)
+        }
+    }
+
+    suspend fun addActiveWorkoutSet(
+        exerciseId: String,
+        expectedRevision: Long
+    ): AddActiveWorkoutSetResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(exerciseId))
+        require(expectedRevision in 0 until Long.MAX_VALUE)
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction AddActiveWorkoutSetResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction AddActiveWorkoutSetResult.Stale
+            }
+            val target = details.exercises.firstOrNull {
+                it.activeWorkoutExercise.id == exerciseId
+            } ?: return@withTransaction AddActiveWorkoutSetResult.TargetChanged
+            if (target.sets.size >= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                return@withTransaction AddActiveWorkoutSetResult.LimitReached
+            }
+            val usedIds = details.exercises.flatMap { exercise ->
+                listOf(exercise.activeWorkoutExercise.id) + exercise.sets.map { it.id }
+            }.toMutableSet()
+            val setId = nextStableActiveWorkoutId(usedIds)
+            val previous = target.sets.maxByOrNull { it.orderIndex }
+            check(activeWorkoutDao.advanceRevisionForBulkRecord(
+                ACTIVE_WORKOUT_ID,
+                expectedRevision
+            ) == 1)
+            activeWorkoutDao.insertSets(listOf(
+                ActiveWorkoutSetEntity(
+                    id = setId,
+                    activeWorkoutExerciseId = exerciseId,
+                    weight = previous?.weight ?: 0.0,
+                    reps = previous?.reps ?: 1,
+                    orderIndex = target.sets.size,
+                    completedAt = null
+                )
+            ))
+            AddActiveWorkoutSetResult.Added(expectedRevision + 1L, setId)
+        }
+    }
+
     suspend fun undoLatestActiveWorkoutSet(
         setId: String,
         expectedRevision: Long
@@ -1863,10 +2010,17 @@ class GymRepository(
                 "This account has reached the total set limit."
             }
 
+            val durationSeconds = ((currentTimeMillis() - details.activeWorkout.startedAt)
+                .coerceAtLeast(0L) / 1_000L).also { duration ->
+                require(WorkoutDataLimits.isValidWorkoutDuration(duration)) {
+                    "Active workout duration is outside the supported range."
+                }
+            }
             val sessionId = insertValidatedWorkoutSession(
                 date = details.activeWorkout.date,
                 note = details.activeWorkout.note,
-                workoutExercises = completedExercises
+                workoutExercises = completedExercises,
+                durationSeconds = durationSeconds
             )
             check(
                 activeWorkoutDao.deleteIfRevisionMatches(
@@ -2496,6 +2650,7 @@ class GymRepository(
         return workoutImportSignature(
             date = details.session.date,
             note = details.session.note,
+            durationSeconds = details.session.durationSeconds,
             workoutExercises = details.workoutExercises
                 .sortedBy { it.workoutExercise.orderIndex }
                 .map { exercise ->
@@ -2514,6 +2669,7 @@ class GymRepository(
             ValidatedBackupSession(
                 date = details.session.date,
                 note = details.session.note,
+                durationSeconds = details.session.durationSeconds,
                 blocks = details.workoutExercises.map { workoutExercise ->
                     ValidatedBackupBlock(
                         exercise = ValidatedBackupExercise(
@@ -2711,12 +2867,17 @@ class GymRepository(
     private suspend fun insertValidatedWorkoutSession(
         date: Long,
         note: String?,
-        workoutExercises: List<WorkoutExerciseDraft>
+        workoutExercises: List<WorkoutExerciseDraft>,
+        durationSeconds: Long? = null
     ): Long {
+        require(durationSeconds == null || WorkoutDataLimits.isValidWorkoutDuration(durationSeconds)) {
+            "Workout duration is outside the supported range."
+        }
         val sessionId = workoutDao.insert(
             WorkoutSessionEntity(
                 date = date,
-                note = note?.trim().orEmpty().ifBlank { null }
+                note = note?.trim().orEmpty().ifBlank { null },
+                durationSeconds = durationSeconds
             )
         )
 

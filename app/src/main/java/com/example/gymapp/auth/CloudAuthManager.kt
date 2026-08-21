@@ -20,6 +20,7 @@ import com.example.gymapp.push.pushRegistrationRequestJson
 import com.example.gymapp.push.pushRevocationRequestJson
 import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1438,7 +1439,8 @@ class CloudAuthManager internal constructor(
         state: JSONObject,
         xp: Int,
         level: Int,
-        workouts: Int
+        workouts: Int,
+        workoutDurations: JSONArray = JSONArray()
     ) = withContext(Dispatchers.IO) {
         remoteStateMutex.withLock {
             val freshSession = freshCloudSession(session)
@@ -1517,6 +1519,27 @@ class CloudAuthManager internal constructor(
                     )
                     .toString()
             )
+            requireActiveCloudSession(freshSession)
+
+            try {
+                val durationResponse = authenticatedRequest(
+                    session = freshSession,
+                    path = "/rest/v1/rpc/social_sync_workout_durations",
+                    method = "POST",
+                    body = JSONObject().put("p_items", workoutDurations).toString()
+                )
+                val result = JSONObject(durationResponse)
+                check(result.keys().asSequence().toSet() == setOf("version", "syncedCount") &&
+                    result.optInt("version", -1) == 1 &&
+                    result.optInt("syncedCount", -1) == workoutDurations.length()) {
+                    "Workout duration sync response is invalid."
+                }
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                // The core row and public profile are already committed. Duration is an
+                // optional forward-compatible sidecar, so a transient RPC failure must not
+                // turn that successful write into a stale-revision retry loop.
+            }
             requireActiveCloudSession(freshSession)
         }
     }

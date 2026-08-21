@@ -2358,11 +2358,13 @@ final class AppState: ObservableObject {
         )
         let uploadedBackup = try JSONDecoder().decode(GymBackup.self, from: data)
         let uploadedIdentity = try Self.cloudWorkoutIdentity(uploadedBackup)
+        let workoutDurations = try Self.workoutDurationSyncItems(store.workouts)
         try await cloudSync.saveRemoteState(
             backupData: data,
             xp: profile.xp,
             level: profile.level,
             workouts: profile.workouts,
+            workoutDurations: workoutDurations,
             expectedUserID: expectedUserID
         )
         guard auth.session?.storageKey == expectedStorageKey,
@@ -2377,6 +2379,39 @@ final class AppState: ObservableObject {
             storageKey: expectedStorageKey,
             clean: currentIdentity == uploadedIdentity
         )
+    }
+
+    private static func workoutDurationSyncItems(
+        _ workouts: [WorkoutSession]
+    ) throws -> [[String: Any]] {
+        guard workouts.count <= BackupImportLimits.standard.maximumSessions else {
+            throw CloudSyncError.invalidPayload
+        }
+        var seen = Set<Int64>()
+        var result: [[String: Any]] = []
+        result.reserveCapacity(workouts.count)
+        for workout in workouts {
+            guard let duration = workout.durationSeconds else { continue }
+            let millisecondsValue = (workout.date.timeIntervalSince1970 * 1_000).rounded()
+            guard millisecondsValue.isFinite,
+                  millisecondsValue >= -62_135_769_600_000,
+                  millisecondsValue <= 64_092_211_200_000,
+                  (0 ... 7 * 24 * 60 * 60).contains(duration) else {
+                throw CloudSyncError.invalidPayload
+            }
+            let milliseconds = Int64(millisecondsValue)
+            guard seen.insert(milliseconds).inserted else {
+                throw CloudSyncError.invalidPayload
+            }
+            result.append([
+                "workoutStartedAt": milliseconds,
+                "durationSeconds": duration
+            ])
+        }
+        return result.sorted {
+            ($0["workoutStartedAt"] as? Int64 ?? 0) <
+                ($1["workoutStartedAt"] as? Int64 ?? 0)
+        }
     }
 
     private func ensureActivationIsCurrent(

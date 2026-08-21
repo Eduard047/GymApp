@@ -2131,14 +2131,14 @@ struct AddWorkoutView: View {
 
 }
 
-struct PlanEditorSnapshot: Encodable, Equatable {
-    private struct ExerciseSnapshot: Encodable, Equatable {
+struct PlanEditorSnapshot: Codable, Equatable {
+    private struct ExerciseSnapshot: Codable, Equatable {
         let exerciseID: UUID
         let sets: [SetSnapshot]
         let coachRecommendation: WorkoutRecommendation?
     }
 
-    private struct SetSnapshot: Encodable, Equatable {
+    private struct SetSnapshot: Codable, Equatable {
         let weight: Double
         let reps: Int
     }
@@ -2169,7 +2169,7 @@ struct PlanEditorSnapshot: Encodable, Equatable {
     }
 }
 
-struct WorkoutPlanEditorDraftState: Equatable {
+struct WorkoutPlanEditorDraftState: Codable, Equatable {
     let accountStorageKey: String
     let date: Date
     let note: String

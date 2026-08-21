@@ -74,6 +74,10 @@ struct WeeklyTrainingSummary: Equatable {
     }
 
     static func durationMinutes(for session: WorkoutSessionSummary) -> Int {
+        if let seconds = session.durationSeconds,
+           (0 ... 7 * 24 * 60 * 60).contains(seconds) {
+            return Int((seconds + 59) / 60)
+        }
         if let seconds = GarminWorkoutNoteParser.parse(session.note)?.durationSeconds,
            seconds > 0 {
             return Int((seconds + 59) / 60)

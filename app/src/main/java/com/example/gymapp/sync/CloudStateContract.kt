@@ -5,6 +5,7 @@ import com.example.gymapp.data.repository.BackupImportValidator
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.canonicalV229CloudWorkoutDigest
 import com.example.gymapp.data.repository.validateBackupOwnerContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -85,8 +86,11 @@ internal fun attachSharedCloudExtensions(
     }
     result.optJSONArray("sessions")?.let { sessions ->
         repeat(sessions.length()) { sessionIndex ->
-            sessions.optJSONObject(sessionIndex)
-                ?.optJSONArray("exercises")
+            sessions.optJSONObject(sessionIndex)?.let { session ->
+                // Duration is retained in local history and full backups. Keep it out of the
+                // shared schema-v2 core until every supported legacy client accepts the field.
+                session.remove("durationSeconds")
+                session.optJSONArray("exercises")
                 ?.let { blocks ->
                     repeat(blocks.length()) { blockIndex ->
                         blocks.optJSONObject(blockIndex)?.apply {
@@ -95,6 +99,7 @@ internal fun attachSharedCloudExtensions(
                         }
                     }
                 }
+            }
         }
     }
     require(result.keySet() == V229_CANONICAL_ROOT_KEYS) {
@@ -113,6 +118,32 @@ internal fun attachSharedCloudExtensions(
         allowMissingPortableCatalogKeys = false
     )
     WorkoutDataLimits.requireSafeJsonEnvelope(result.toString())
+    return result
+}
+
+internal fun workoutDurationSyncItems(canonicalCore: JSONObject): JSONArray {
+    val sessions = canonicalCore.optJSONArray("sessions") ?: JSONArray()
+    require(sessions.length() <= WorkoutDataLimits.MAX_SESSIONS) {
+        "Workout duration metadata is too large."
+    }
+    val seenStartedAt = HashSet<Long>(sessions.length())
+    val result = JSONArray()
+    repeat(sessions.length()) { index ->
+        val session = sessions.getJSONObject(index)
+        if (!session.has("durationSeconds") || session.isNull("durationSeconds")) return@repeat
+        val startedAt = session.getLong("date")
+        val durationSeconds = session.getLong("durationSeconds")
+        require(WorkoutDataLimits.isValidTimestamp(startedAt) &&
+            WorkoutDataLimits.isValidWorkoutDuration(durationSeconds) &&
+            seenStartedAt.add(startedAt)) {
+            "Workout duration metadata is invalid."
+        }
+        result.put(
+            JSONObject()
+                .put("workoutStartedAt", startedAt)
+                .put("durationSeconds", durationSeconds)
+        )
+    }
     return result
 }
 

@@ -490,6 +490,45 @@ class GymDatabaseRoomMigrationTest {
     }
 
     @Test
+    fun migrationFourteenToFifteenAddsDurationAndDatabaseBoundPlanDraft() {
+        migrationHelper.createDatabase(DURATION_DRAFT_TEST_DATABASE, 14).apply {
+            execSQL("INSERT INTO workout_sessions(id, date, note) VALUES (9, 1750000000000, 'Keep history')")
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            DURATION_DRAFT_TEST_DATABASE,
+            15,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query(
+                "SELECT note, durationSeconds FROM workout_sessions WHERE id = 9"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep history", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+            migrated.execSQL(
+                """
+                INSERT INTO workout_plan_draft(id, payload, updatedAt)
+                VALUES (1, '{"version":1}', 1750000000100)
+                """.trimIndent()
+            )
+            migrated.query(
+                "SELECT payload, updatedAt FROM workout_plan_draft WHERE id = 1"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("{\"version\":1}", cursor.getString(0))
+                assertEquals(1_750_000_000_100L, cursor.getLong(1))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
     fun migrationElevenToFourteenMatchesV229UpgradeAndPreservesHistory() {
         migrationHelper.createDatabase(V229_TO_ACTIVE_WORKOUT_TEST_DATABASE, 11).apply {
             execSQL(
@@ -559,6 +598,7 @@ class GymDatabaseRoomMigrationTest {
         const val LOAD_PROFILE_TEST_DATABASE = "room-migration-11-to-12"
         const val ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-12-to-13"
         const val UNDO_MARKER_TEST_DATABASE = "room-migration-13-to-14"
+        const val DURATION_DRAFT_TEST_DATABASE = "room-migration-14-to-15"
         const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-14"
     }
 }

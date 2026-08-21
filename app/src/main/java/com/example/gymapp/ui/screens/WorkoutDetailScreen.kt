@@ -314,7 +314,7 @@ internal fun WorkoutDetailScreen(
                     start = GymSpacing.ScreenHorizontal,
                     top = GymSpacing.ScreenTop,
                     end = GymSpacing.ScreenHorizontal,
-                    bottom = GymSpacing.ScreenBottom
+                    bottom = 112.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
             ) {
@@ -342,6 +342,7 @@ internal fun WorkoutDetailScreen(
                             volume = details.workoutExercises.sumOf { exercise ->
                                 exercise.sets.sumOf { set -> set.weight * set.reps }
                             },
+                            durationSeconds = details.session.durationSeconds,
                             onShare = shareWorkout,
                             isEditing = isEditingWorkout,
                             showDelete = controls.showDeleteWorkout,
@@ -780,6 +781,7 @@ private fun WorkoutHeaderCard(
     exerciseCount: Int,
     setCount: Int,
     volume: Double,
+    durationSeconds: Long?,
     onShare: () -> Unit,
     isEditing: Boolean,
     showDelete: Boolean,
@@ -828,21 +830,32 @@ private fun WorkoutHeaderCard(
                 color = Color.White.copy(alpha = 0.84f)
             )
             MetricStrip(
-                metrics = listOf(
+                metrics = buildList {
+                    add(
                     GymMetric(
                         stringResource(R.string.post_workout_metric_exercises),
                         exerciseCount.toString()
-                    ),
+                    ))
+                    add(
                     GymMetric(
                         stringResource(R.string.post_workout_metric_sets),
                         setCount.toString()
-                    ),
+                    ))
+                    add(
                     GymMetric(
                         stringResource(R.string.post_workout_metric_volume),
                         formatCompactWeight(volume),
                         emphasized = true
-                    )
-                ),
+                    ))
+                    durationSeconds?.let { duration ->
+                        add(
+                            GymMetric(
+                                stringResource(R.string.post_workout_metric_duration),
+                                formatWorkoutDuration(duration)
+                            )
+                        )
+                    }
+                },
                 onHero = true
             )
             WorkoutEditModeButton(
@@ -850,6 +863,20 @@ private fun WorkoutHeaderCard(
                 onToggleEdit = onToggleEdit
             )
         }
+    }
+}
+
+@Composable
+private fun formatWorkoutDuration(totalSeconds: Long): String {
+    val minutes = (totalSeconds.coerceAtLeast(0L) / 60L).coerceAtLeast(1L)
+    val hours = minutes / 60L
+    val remainingMinutes = minutes % 60L
+    return if (hours == 0L) {
+        stringResource(R.string.duration_minutes_compact, minutes)
+    } else if (remainingMinutes == 0L) {
+        stringResource(R.string.duration_hours_compact, hours)
+    } else {
+        stringResource(R.string.duration_hours_minutes_compact, hours, remainingMinutes)
     }
 }
 

@@ -170,6 +170,7 @@ internal data class SocialFriendWorkout(
     val workoutDay: String,
     val exerciseCount: Int,
     val setCount: Int,
+    val durationSeconds: Long? = null,
     val truncated: Boolean,
     val exercises: List<SocialFriendWorkoutExercise>
 )
@@ -967,7 +968,11 @@ private fun parseSocialFriendWorkout(raw: JSONObject): SocialFriendWorkout {
         setOf(
             "workoutId", "startedAt", "workoutDay", "exerciseCount", "setCount",
             "truncated", "exercises"
-        )
+        ) + if (raw.has("durationSeconds")) {
+            setOf("durationSeconds")
+        } else {
+            emptySet()
+        }
     )
     val exerciseCount = raw.requiredInt(
         "exerciseCount",
@@ -980,6 +985,17 @@ private fun parseSocialFriendWorkout(raw: JSONObject): SocialFriendWorkout {
         WorkoutDataLimits.MAX_EXERCISES_PER_SESSION * WorkoutDataLimits.MAX_SETS_PER_EXERCISE
     )
     val truncated = raw.requiredBoolean("truncated")
+    val durationSeconds = if (raw.has("durationSeconds") && !raw.isNull("durationSeconds")) {
+        val number = raw.opt("durationSeconds") as? Number
+            ?: throw IllegalArgumentException("Social response is invalid.")
+        val value = number.toLong()
+        require(number.toDouble().isFinite() && number.toDouble() == value.toDouble() &&
+            WorkoutDataLimits.isValidWorkoutDuration(value)
+        ) { "Social response is invalid." }
+        value
+    } else {
+        null
+    }
     val exercises = raw.requiredArray("exercises", SOCIAL_MAX_WORKOUT_EXERCISES)
         .mapObjects { exercise ->
             exercise.requireExactKeys(setOf("catalogKey", "name", "sets"))
@@ -1020,6 +1036,7 @@ private fun parseSocialFriendWorkout(raw: JSONObject): SocialFriendWorkout {
         workoutDay = raw.requiredWorkoutDay("workoutDay"),
         exerciseCount = exerciseCount,
         setCount = setCount,
+        durationSeconds = durationSeconds,
         truncated = truncated,
         exercises = exercises
     )

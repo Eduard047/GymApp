@@ -1760,7 +1760,7 @@ internal fun buildTodayHeroMetrics(
 }
 
 /**
- * Prefer a positive, parser-bounded Garmin duration and round it up to a whole minute. Historical
+ * Prefer a measured, bounded duration and round it up to a whole minute. Historical
  * rows without measured time use the shared fallback: three minutes per exercise plus two minutes
  * per set, clamped to 10...90 minutes.
  */
@@ -1770,7 +1770,7 @@ internal fun estimateWorkoutMinutes(
     measuredDurationSeconds: Long? = null
 ): Int {
     measuredDurationSeconds
-        ?.takeIf { it in 1L..MAX_GARMIN_DURATION_SECONDS }
+        ?.takeIf { it in 0L..MAX_GARMIN_DURATION_SECONDS }
         ?.let { duration -> return ((duration + 59L) / 60L).toInt() }
     val estimated = exerciseCount.coerceAtLeast(0).toLong() * 3L +
         setCount.coerceAtLeast(0).toLong() * 2L
@@ -1816,9 +1816,8 @@ internal fun buildWeeklyTrainingSummary(
         .toList()
     val completedDates = currentWeekSessions.mapTo(linkedSetOf()) { it.first }
     val estimatedMinutes = currentWeekSessions.fold(0L) { total, (_, session) ->
-        val measuredDurationSeconds = session.session.note
-            ?.let(::parseGarminWorkoutMetrics)
-            ?.durationSeconds
+        val measuredDurationSeconds = session.session.durationSeconds
+            ?: session.session.note?.let(::parseGarminWorkoutMetrics)?.durationSeconds
         (total + estimateWorkoutMinutes(
             exerciseCount = session.exerciseCount,
             setCount = session.setCount,

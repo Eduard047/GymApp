@@ -162,6 +162,7 @@ import com.example.gymapp.sync.cloudSnapshotApplyDecision
 import com.example.gymapp.sync.isCanonicalSharedCloudEnvelope
 import com.example.gymapp.sync.isSharedCloudStateCandidate
 import com.example.gymapp.sync.prepareSharedCloudState
+import com.example.gymapp.sync.workoutDurationSyncItems
 import com.example.gymapp.sync.runCurrentCloudSyncConflictAction
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
@@ -1504,8 +1505,9 @@ internal fun GymAppRoot(
                         email = session.email,
                         remote = true
                     )
+                    val canonicalState = repository.buildCloudBackupJson(owner = owner)
                     val state = attachSharedCloudExtensions(
-                        canonicalCore = repository.buildCloudBackupJson(owner = owner),
+                        canonicalCore = canonicalState,
                         extensions = sharedCloudExtensions
                     )
                     val stateDigest = withContext(Dispatchers.Default) {
@@ -1517,7 +1519,8 @@ internal fun GymAppRoot(
                         state = state,
                         xp = stats.xp,
                         level = stats.level,
-                        workouts = stats.workouts
+                        workouts = stats.workouts,
+                        workoutDurations = workoutDurationSyncItems(canonicalState)
                     )
                     check(isSameCloudSessionGeneration(
                         session,
@@ -1628,8 +1631,9 @@ internal fun GymAppRoot(
                             email = session.email,
                             remote = true
                         )
+                        val canonicalLocalBackup = repository.buildCloudBackupJson(owner = owner)
                         val localBackup = attachSharedCloudExtensions(
-                            canonicalCore = repository.buildCloudBackupJson(owner = owner),
+                            canonicalCore = canonicalLocalBackup,
                             extensions = sharedCloudExtensions
                         )
                         val localDigest = withContext(Dispatchers.Default) {
@@ -1648,7 +1652,8 @@ internal fun GymAppRoot(
                             state = localBackup,
                             xp = stats.xp,
                             level = stats.level,
-                            workouts = stats.workouts
+                            workouts = stats.workouts,
+                            workoutDurations = workoutDurationSyncItems(canonicalLocalBackup)
                         )
                         check(isSameCloudSessionGeneration(
                             session,
@@ -2906,11 +2911,9 @@ internal fun GymAppRoot(
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 onSetWeightChanged = viewModel::updateSetWeight,
                                 onSetRepsChanged = viewModel::updateSetReps,
-                                onRecordSet = viewModel::recordSet,
+                                onSaveExercise = viewModel::saveExercise,
+                                onAddSet = viewModel::addSet,
                                 onRecordAllPendingSets = viewModel::recordAllPendingSets,
-                                onUndoLatestSet = viewModel::undoLatestSet,
-                                onAdjustRestTimer = viewModel::adjustRestTimer,
-                                onStopRestTimer = viewModel::stopRestTimer,
                                 onFinishWorkout = viewModel::finishWorkout,
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,

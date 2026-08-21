@@ -107,15 +107,6 @@ struct ActiveWorkoutView: View {
                             liveParticipantSelection == .current {
                             progressPanel(draft)
 
-                            WorkoutRestTimerControls(
-                                manager: restTimers,
-                                timerID: timerKey(draftID: draft.id),
-                                exerciseName: currentRestExerciseName(draft),
-                                onStart: startManualRest,
-                                onAdjust: adjustManualRest,
-                                onStop: stopManualRest
-                            )
-
                             if let statusMessage {
                                 GymStatusBanner(message: statusMessage, isError: statusIsError)
                             }
@@ -339,12 +330,6 @@ struct ActiveWorkoutView: View {
                 )
                 .accessibilityValue("\(draft.completedSetCount) / \(draft.plannedSetCount)")
 
-                if let next = nextSetDescription(draft) {
-                    Text(next)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.9))
-                        .accessibilityLabel(next)
-                }
             }
         }
     }
@@ -809,15 +794,34 @@ struct ActiveWorkoutView: View {
                     } label: {
                         Label(
                             gymText(
-                                "Add planned set",
-                                "Додати запланований підхід",
-                                "Добавить запланированный подход",
+                                "Add set",
+                                "Додати підхід",
+                                "Добавить подход",
                                 languageCode: gymCurrentLanguageCode()
                             ),
                             systemImage: "plus.circle"
                         )
                     }
                     .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled(
+                        storedExercise == nil || draft.commitIntent != nil ||
+                            liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                    )
+
+                    Button {
+                        saveExercise(exercise, draft: draft)
+                    } label: {
+                        Label(
+                            gymText(
+                                "Save exercise",
+                                "Зберегти вправу",
+                                "Сохранить упражнение",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            systemImage: "checkmark.circle.fill"
+                        )
+                    }
+                    .buttonStyle(GymPrimaryButtonStyle())
                     .disabled(
                         storedExercise == nil || draft.commitIntent != nil ||
                             liveWorkoutCoordinator.planIsFrozenForCurrentDraft
@@ -858,31 +862,6 @@ struct ActiveWorkoutView: View {
                     )
                     .font(.caption.bold())
                     .foregroundStyle(GymTheme.secondary)
-                    if draft.undoableSetID == set.id {
-                        Button {
-                            undoLatestSet(set, draft: draft)
-                        } label: {
-                            Label(
-                                gymText(
-                                    "Undo latest",
-                                    "Скасувати останній",
-                                    "Отменить последний",
-                                    languageCode: gymCurrentLanguageCode()
-                                ),
-                                systemImage: "arrow.uturn.backward.circle"
-                            )
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(draft.commitIntent != nil)
-                        .accessibilityHint(
-                            gymText(
-                                "Restores this set for editing and stops the current rest timer",
-                                "Повертає цей підхід до редагування й зупиняє таймер",
-                                "Возвращает подход к редактированию и останавливает таймер",
-                                languageCode: gymCurrentLanguageCode()
-                            )
-                        )
-                    }
                 }
             }
 
@@ -895,29 +874,6 @@ struct ActiveWorkoutView: View {
                 }
             }
 
-            if !set.isCompleted {
-                let restSeconds = restDurationSeconds(for: exercise)
-                Button {
-                    recordSet(
-                        set,
-                        exercise: exercise,
-                        exerciseName: exerciseName,
-                        draft: draft
-                    )
-                } label: {
-                    Label(
-                        gymText(
-                            "Record set · start \(restSeconds) sec rest",
-                            "Записати підхід · відпочинок \(restSeconds) с",
-                            "Записать подход · отдых \(restSeconds) с",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "checkmark.circle.fill"
-                    )
-                }
-                .buttonStyle(GymPrimaryButtonStyle())
-                .disabled(draft.commitIntent != nil)
-            }
         }
         .padding(12)
         .background(
@@ -956,8 +912,9 @@ struct ActiveWorkoutView: View {
             )
             .keyboardType(.decimalPad)
             .gymTextFieldChrome()
-            .disabled(set.isCompleted || draft.commitIntent != nil)
-            .accessibilityHidden(set.isCompleted || draft.commitIntent != nil)
+            .disabled(
+                draft.commitIntent != nil || liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+            )
         }
         .frame(maxWidth: .infinity)
 
@@ -980,8 +937,9 @@ struct ActiveWorkoutView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(GymTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
-            .disabled(set.isCompleted || draft.commitIntent != nil)
-            .accessibilityHidden(set.isCompleted || draft.commitIntent != nil)
+            .disabled(
+                draft.commitIntent != nil || liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+            )
         }
         .frame(maxWidth: .infinity)
     }
@@ -1002,9 +960,9 @@ struct ActiveWorkoutView: View {
                 } label: {
                     Label(
                         gymText(
-                            "Save all sets",
-                            "Зберегти всі підходи",
-                            "Сохранить все подходы",
+                            "Save all",
+                            "Зберегти все",
+                            "Сохранить всё",
                             languageCode: gymCurrentLanguageCode()
                         ),
                         systemImage: "checkmark.circle"
@@ -1204,15 +1162,15 @@ struct ActiveWorkoutView: View {
             }
             statusMessage = restCleanupSucceeded
                 ? gymText(
-                    "All unfinished sets were saved together. Rest was stopped.",
-                    "Усі незавершені підходи збережено разом. Відпочинок зупинено.",
-                    "Все незавершённые подходы сохранены вместе. Отдых остановлен.",
+                    "All sets saved.",
+                    "Усі підходи збережено.",
+                    "Все подходы сохранены.",
                     languageCode: gymCurrentLanguageCode()
                 )
                 : gymText(
-                    "All sets were saved, but the old rest timer could not be fully cleared.",
-                    "Усі підходи збережено, але старий таймер відпочинку не вдалося повністю очистити.",
-                    "Все подходы сохранены, но старый таймер отдыха не удалось полностью очистить.",
+                    "Sets were saved, but old local controls could not be fully cleared.",
+                    "Підходи збережено, але старі локальні елементи не вдалося повністю очистити.",
+                    "Подходы сохранены, но старые локальные элементы не удалось полностью очистить.",
                     languageCode: gymCurrentLanguageCode()
                 )
             statusIsError = !restCleanupSucceeded
@@ -1409,6 +1367,30 @@ struct ActiveWorkoutView: View {
             )
         }
         return nil
+    }
+
+    private func saveExercise(_ exercise: ActiveWorkoutExercise, draft: ActiveWorkoutDraft) {
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        do {
+            _ = try activeWorkoutStore.saveExercise(
+                draftID: draft.id,
+                exerciseBlockID: exercise.id,
+                expectedRevision: draft.revision
+            )
+            withAnimation(.easeInOut(duration: 0.2)) {
+                collapsedExerciseIDs.insert(exercise.id)
+            }
+            statusMessage = gymText(
+                "Exercise saved.", "Вправу збережено.", "Упражнение сохранено.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusIsError = false
+        } catch {
+            show(error)
+        }
     }
 
     private func appendSet(to exercise: ActiveWorkoutExercise) {

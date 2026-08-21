@@ -102,6 +102,24 @@ interface ActiveWorkoutDao {
     @Query(
         """
         UPDATE active_workout_sets
+        SET weight = :weight,
+            reps = :reps,
+            completedAt = :completedAt
+        WHERE id = :setId
+            AND activeWorkoutExerciseId = :expectedActiveWorkoutExerciseId
+        """
+    )
+    suspend fun saveSetForExercise(
+        setId: String,
+        expectedActiveWorkoutExerciseId: String,
+        weight: Double,
+        reps: Int,
+        completedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE active_workout_sets
         SET completedAt = NULL
         WHERE id = :setId
             AND activeWorkoutExerciseId = :expectedActiveWorkoutExerciseId

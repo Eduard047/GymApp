@@ -10,7 +10,11 @@ import org.junit.Test
 
 class ActiveWorkoutViewModelTest {
     @Test
-    fun validSetInputAcceptsExplicitZeroAndCommaDecimal() {
+    fun validSetInputAcceptsBlankAsZeroExplicitZeroAndCommaDecimal() {
+        assertEquals(
+            ParsedActiveWorkoutSet(weight = 0.0, reps = 8),
+            parseActiveWorkoutSetInput("", "8")
+        )
         assertEquals(
             ParsedActiveWorkoutSet(weight = 0.0, reps = 12),
             parseActiveWorkoutSetInput("0", "12")
@@ -23,7 +27,6 @@ class ActiveWorkoutViewModelTest {
 
     @Test
     fun invalidSetInputRejectsNonFiniteAndOutOfBoundsValues() {
-        assertNull(parseActiveWorkoutSetInput("", "8"))
         assertNull(parseActiveWorkoutSetInput("NaN", "8"))
         assertNull(parseActiveWorkoutSetInput("Infinity", "8"))
         assertNull(parseActiveWorkoutSetInput("1000001", "8"))

@@ -1393,6 +1393,13 @@ private struct RankedSocialProfile: Identifiable {
 
 @MainActor
 private struct FriendDetailView: View {
+    private enum ActivitySection: String, CaseIterable, Identifiable {
+        case workouts
+        case records
+
+        var id: String { rawValue }
+    }
+
     fileprivate enum WorkoutShareMode: String, Identifiable {
         case copy
         case live
@@ -1428,6 +1435,8 @@ private struct FriendDetailView: View {
     @State private var workoutShareMode: WorkoutShareMode?
     @State private var sharingWorkoutID: UUID?
     @State private var actionMessage: String?
+    @State private var activitySection: ActivitySection = .workouts
+    @State private var safetyExpanded = false
 
     init(
         friend: SocialFriendSummary,
@@ -1454,9 +1463,22 @@ private struct FriendDetailView: View {
                         GymStatusBanner(message: errorMessage, isError: true)
                     }
                     if let details {
-                        progressCard(details)
-                        recentWorkoutsCard(details)
-                        recordsCard(details)
+                        sharingStrip(details)
+                        Picker(
+                            t("Friend activity", "Активність друга", "Активность друга"),
+                            selection: $activitySection
+                        ) {
+                            Text(t("Workouts", "Тренування", "Тренировки"))
+                                .tag(ActivitySection.workouts)
+                            Text(t("Records", "Рекорди", "Рекорды"))
+                                .tag(ActivitySection.records)
+                        }
+                        .pickerStyle(.segmented)
+                        if activitySection == .workouts {
+                            recentWorkoutsCard(details)
+                        } else {
+                            recordsCard(details)
+                        }
                         safetyCard
                     } else if isLoading {
                         ProgressView(t("Loading friend…", "Завантажуємо друга…", "Загружаем друга…"))
@@ -1550,12 +1572,24 @@ private struct FriendDetailView: View {
 
     private var header: some View {
         GymHeroPanel {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
                 Label(friend.displayName, systemImage: "person.crop.circle.fill")
                     .font(.title2.bold())
-                Text(t("Accepted friend", "Прийнятий друг", "Принятый друг"))
-                    .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.82))
+                if let details,
+                   details.friend.statsAvailable,
+                   let xp = details.friend.xp,
+                   let level = details.friend.level,
+                   let workouts = details.friend.workouts {
+                    HStack(spacing: 10) {
+                        heroMetric("XP", "\(xp)")
+                        heroMetric(t("Level", "Рівень", "Уровень"), "\(level)")
+                        heroMetric(t("Workouts", "Тренування", "Тренировки"), "\(workouts)")
+                    }
+                } else {
+                    Text(t("Accepted friend", "Прийнятий друг", "Принятый друг"))
+                        .font(.subheadline)
+                        .foregroundStyle(Color.white.opacity(0.82))
+                }
             }
         }
     }
@@ -1564,12 +1598,8 @@ private struct FriendDetailView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    title: t("Train with this friend", "Тренуйся з цим другом", "Тренируйся с этим другом"),
-                    supporting: t(
-                        "Create a new plan for a synchronized live room, or send one saved workout as an editable copy.",
-                        "Створи новий план для синхронізованої live-кімнати або надішли збережене тренування як редаговану копію.",
-                        "Создай новый план для синхронизированной live-комнаты или отправь сохранённую тренировку как редактируемую копию."
-                    )
+                    title: t("Train together", "Тренуйтеся разом", "Тренируйтесь вместе"),
+                    supporting: "LIVE"
                 )
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { friendTrainingButtons }
@@ -1593,22 +1623,22 @@ private struct FriendDetailView: View {
     @ViewBuilder
     private var friendTrainingButtons: some View {
         Button {
-            workoutShareMode = .copy
-        } label: {
-            Label(t("Send workout", "Надіслати тренування", "Отправить тренировку"), systemImage: "paperplane.fill")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(GymSecondaryButtonStyle())
-        .disabled(isMutating || appState.workoutStore.workouts.isEmpty)
-
-        Button {
             onCreateLiveWorkout(friend)
         } label: {
-            Label(t("Train live", "Тренуватися live", "Тренироваться live"), systemImage: "figure.strengthtraining.traditional")
+            Label(t("Create LIVE", "Створити LIVE", "Создать LIVE"), systemImage: "figure.strengthtraining.traditional")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(GymPrimaryButtonStyle())
         .disabled(isMutating)
+
+        Button {
+            workoutShareMode = .copy
+        } label: {
+            Label(t("Send saved", "Надіслати збережене", "Отправить сохранённую"), systemImage: "paperplane.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymSecondaryButtonStyle())
+        .disabled(isMutating || appState.workoutStore.workouts.isEmpty)
     }
 
     private func progressCard(_ details: SocialFriendDetails) -> some View {
@@ -1662,7 +1692,7 @@ private struct FriendDetailView: View {
                                 HStack {
                                     Text(formatDay(workout.workoutDay)).font(.headline)
                                     Spacer()
-                                    Text("\(workout.exerciseCount) · \(workout.setCount)")
+                                    Text(["\(workout.exerciseCount) · \(workout.setCount)", durationLabel(workout.durationSeconds)].compactMap { $0 }.joined(separator: " · "))
                                         .font(.caption.monospacedDigit())
                                         .foregroundStyle(GymTheme.textSecondary)
                                 }
@@ -1755,20 +1785,64 @@ private struct FriendDetailView: View {
 
     private var safetyCard: some View {
         GymPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(t("Friend controls", "Керування другом", "Управление другом")).font(.headline)
-                Button(t("Remove friend", "Видалити друга", "Удалить друга"), role: .destructive) {
-                    confirmation = .remove
+            DisclosureGroup(
+                t("Friend controls", "Керування другом", "Управление другом"),
+                isExpanded: $safetyExpanded
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Button(t("Remove friend", "Видалити друга", "Удалить друга"), role: .destructive) {
+                        confirmation = .remove
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isMutating)
+                    Button(t("Block person", "Заблокувати користувача", "Заблокировать пользователя"), role: .destructive) {
+                        confirmation = .block
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isMutating)
                 }
-                .buttonStyle(.bordered)
-                .disabled(isMutating)
-                Button(t("Block person", "Заблокувати користувача", "Заблокировать пользователя"), role: .destructive) {
-                    confirmation = .block
-                }
-                .buttonStyle(.bordered)
-                .disabled(isMutating)
+                .padding(.top, 10)
             }
         }
+    }
+
+    private func sharingStrip(_ details: SocialFriendDetails) -> some View {
+        GymPanel {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("Sharing", "Поширення", "Доступ")).font(.headline)
+                    Text(t(
+                        "Only activity this friend allows",
+                        "Лише дозволена другом активність",
+                        "Только разрешённая другом активность"
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                }
+            } icon: {
+                Image(systemName: "checkmark.shield.fill")
+                    .foregroundStyle(GymTheme.primary)
+            }
+        }
+    }
+
+    private func heroMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption)
+            Text(value).font(.headline.monospacedDigit())
+        }
+        .foregroundStyle(Color.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func durationLabel(_ seconds: Int?) -> String? {
+        guard let seconds else { return nil }
+        let hours = seconds / 3_600
+        let minutes = seconds % 3_600 / 60
+        let remainder = seconds % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%d:%02d", minutes, remainder)
     }
 
     private func metric(_ title: String, _ value: String) -> some View {
@@ -2025,6 +2099,12 @@ private struct FriendWorkoutReadOnlyDetailView: View {
                                     t("Sets", "Підходи", "Подходы"),
                                     workout.setCount
                                 )
+                                if let durationSeconds = workout.durationSeconds {
+                                    compactMetric(
+                                        t("Duration", "Тривалість", "Длительность"),
+                                        durationLabel(durationSeconds)
+                                    )
+                                }
                             }
                         }
                     }
@@ -2093,6 +2173,26 @@ private struct FriendWorkoutReadOnlyDetailView: View {
             Text(value.formatted()).font(.headline.monospacedDigit())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func compactMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(GymTheme.textPrimary)
+        }
+    }
+
+    private func durationLabel(_ seconds: Int) -> String {
+        let hours = seconds / 3_600
+        let minutes = seconds % 3_600 / 60
+        let remainder = seconds % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%d:%02d", minutes, remainder)
     }
 
     private func formatDay(_ raw: String) -> String {

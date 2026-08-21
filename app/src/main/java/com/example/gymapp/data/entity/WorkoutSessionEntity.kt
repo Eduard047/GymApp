@@ -11,6 +11,6 @@ import androidx.room.PrimaryKey
 data class WorkoutSessionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val date: Long,
-    val note: String?
+    val note: String?,
+    val durationSeconds: Long? = null
 )
-

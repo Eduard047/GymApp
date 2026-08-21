@@ -35,6 +35,7 @@ internal data class ValidatedBackupBlock(
 internal data class ValidatedBackupSession(
     val date: Long,
     val note: String?,
+    val durationSeconds: Long? = null,
     val blocks: List<ValidatedBackupBlock>
 )
 
@@ -98,6 +99,17 @@ internal object BackupImportValidator {
                 ?: defaultTimestamp
             require(WorkoutDataLimits.isValidTimestamp(date)) {
                 "Workout timestamp is outside the supported range."
+            }
+            val durationSeconds = if (
+                session.has("durationSeconds") && !session.isNull("durationSeconds")
+            ) {
+                session.requiredIntegralNumber("durationSeconds").also { duration ->
+                    require(WorkoutDataLimits.isValidWorkoutDuration(duration)) {
+                        "Workout duration is outside the supported range."
+                    }
+                }
+            } else {
+                null
             }
 
             val nestedExercises = session.optionalArrayOrNull("exercises")
@@ -165,7 +177,12 @@ internal object BackupImportValidator {
                 "Backup exceeds the distinct exercise limit."
             }
 
-            ValidatedBackupSession(date = date, note = note, blocks = blocks)
+            ValidatedBackupSession(
+                date = date,
+                note = note,
+                durationSeconds = durationSeconds,
+                blocks = blocks
+            )
         }
 
         validateRedundantWorkoutLoadProfiles(exercises, sessions)

@@ -1,7 +1,7 @@
 import PhotosUI
 import SwiftUI
 
-struct WorkoutEditorSetDraft: Identifiable, Hashable {
+struct WorkoutEditorSetDraft: Identifiable, Hashable, Codable {
     let id: UUID
     var weight: Double
     var reps: Int
@@ -31,7 +31,7 @@ struct WorkoutEditorSetDraft: Identifiable, Hashable {
     }
 }
 
-struct WorkoutEditorExerciseDraft: Identifiable, Hashable {
+struct WorkoutEditorExerciseDraft: Identifiable, Hashable, Codable {
     let id: UUID
     var exerciseID: UUID
     var sets: [WorkoutEditorSetDraft]

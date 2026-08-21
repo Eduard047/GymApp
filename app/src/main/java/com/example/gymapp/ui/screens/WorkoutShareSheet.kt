@@ -2,6 +2,7 @@ package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -9,10 +10,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -57,11 +64,6 @@ internal fun WorkoutShareSheet(
                         stringResource(R.string.workout_share_choose_title),
                         style = MaterialTheme.typography.headlineSmall
                     )
-                    Text(
-                        stringResource(R.string.workout_invites_independent_copy),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
             item {
@@ -71,107 +73,94 @@ internal fun WorkoutShareSheet(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            stringResource(R.string.workout_share_link_title),
+                            stringResource(R.string.workout_share_live_friend_title),
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            stringResource(R.string.workout_share_link_supporting),
+                            stringResource(R.string.workout_share_live_friend_supporting_short),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        OutlinedButton(onClick = onShareLink, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.workout_share_link_action))
+                        if (!isCloudAccount) {
+                            Text(
+                                stringResource(R.string.workout_share_friend_login_required),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else if (friends.isEmpty()) {
+                            Text(
+                                stringResource(R.string.workout_share_friend_empty),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            workoutShareFriends(friends, preferredFriendProfileId).forEach { friend ->
+                                Button(
+                                    onClick = { onStartLiveWithFriend(friend) },
+                                    enabled = !isLiveInviteSending,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            R.string.workout_share_live_friend_action,
+                                            friend.displayName
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
             item {
-                Text(
-                    stringResource(R.string.workout_share_copy_friend_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
-            if (!isCloudAccount) {
-                item {
-                    Text(
-                        stringResource(R.string.workout_share_friend_login_required),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else if (friends.isEmpty()) {
-                item {
-                    Text(
-                        stringResource(R.string.workout_share_friend_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                items(
-                    workoutShareFriends(friends, preferredFriendProfileId),
-                    key = { "share-${it.profileId}" }
-                ) { friend ->
-                    OutlinedButton(
-                        onClick = { onSendToFriend(friend) },
-                        enabled = !isWorkoutInviteSending,
-                        modifier = Modifier.fillMaxWidth()
+            item {
+                AppPanel(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            stringResource(R.string.workout_share_copy_friend_action, friend.displayName),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            stringResource(R.string.workout_share_copy_friend_title),
+                            style = MaterialTheme.typography.titleMedium
                         )
+                        if (isCloudAccount && friends.isNotEmpty()) {
+                            workoutShareFriends(friends, preferredFriendProfileId).forEach { friend ->
+                                OutlinedButton(
+                                    onClick = { onSendToFriend(friend) },
+                                    enabled = !isWorkoutInviteSending,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            R.string.workout_share_copy_friend_action,
+                                            friend.displayName
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        OutlinedButton(onClick = onShareLink, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.workout_share_link_title))
+                        }
                     }
                 }
             }
             item {
-                Text(
-                    stringResource(R.string.workout_share_live_friend_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-            item {
-                Text(
-                    stringResource(R.string.workout_share_live_friend_supporting),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (!isCloudAccount) {
-                item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Shield, contentDescription = null)
                     Text(
-                        stringResource(R.string.workout_share_friend_login_required),
-                        style = MaterialTheme.typography.bodyMedium,
+                        stringResource(R.string.workout_share_privacy_footer),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            } else if (friends.isEmpty()) {
-                item {
-                    Text(
-                        stringResource(R.string.workout_share_friend_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                items(
-                    workoutShareFriends(friends, preferredFriendProfileId),
-                    key = { "live-${it.profileId}" }
-                ) { friend ->
-                    OutlinedButton(
-                        onClick = { onStartLiveWithFriend(friend) },
-                        enabled = !isLiveInviteSending,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            stringResource(R.string.workout_share_live_friend_action, friend.displayName),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
             }
         }

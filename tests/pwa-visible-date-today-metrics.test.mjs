@@ -226,7 +226,9 @@ test("weekly Today summary uses a local Monday week and the cross-client estimat
   const summary = plain(vm.runInContext(`(() => {
     state.profile.days = 4;
     const now = new Date(2026, 7, 12, 20, 0, 0).getTime();
-    const session = (id, timestamp, sets, note = "") => ({ id, startedAt: timestamp, sets, note });
+    const session = (id, timestamp, sets, note = "", durationSeconds = null) => ({
+      id, startedAt: timestamp, sets, note, ...(durationSeconds === null ? {} : { durationSeconds })
+    });
     const set = (id, exerciseName, weight, reps) => ({ id, exerciseName, weight, reps });
     const cappedSets = Array.from({ length: 30 }, (_, index) =>
       set(100 + index, "Exercise " + index, 1, 1));
@@ -239,7 +241,7 @@ test("weekly Today summary uses a local Monday week and the cross-client estimat
       ),
       session(2, new Date(2026, 7, 12, 8).getTime(), [
         set(2, "Squat", 10, 10), set(3, "Squat", 20, 5), set(4, "Row", 30, 1)
-      ]),
+      ], "", 95),
       session(3, new Date(2026, 7, 12, 9).getTime(), cappedSets),
       session(4, new Date(2026, 7, 9, 10).getTime(), [set(200, "Old", 999, 1)]),
       session(5, new Date(2026, 7, 13, 10).getTime(), [set(201, "Future", 999, 1)])
@@ -252,10 +254,11 @@ test("weekly Today summary uses a local Monday week and the cross-client estimat
   assert.equal(summary.completedWorkouts, 3);
   assert.equal(summary.completedTrainingDays, 2);
   assert.equal(summary.targetTrainingDays, 4);
-  assert.equal(summary.trainingMinutes, 163);
+  assert.equal(summary.trainingMinutes, 153);
   assert.equal(summary.totalVolume, 760);
   const sandboxDuration = context();
   assert.equal(vm.runInContext(`measuredWorkoutMinutes({ note: "Garmin · Duration 0:00" })`, sandboxDuration), null);
+  assert.equal(vm.runInContext(`measuredWorkoutMinutes({ durationSeconds: 0, sets: [] })`, sandboxDuration), 0);
   assert.equal(vm.runInContext(`estimatedWorkoutMinutes({ note: "not Garmin", sets: [] })`, sandboxDuration), 10);
 });
 

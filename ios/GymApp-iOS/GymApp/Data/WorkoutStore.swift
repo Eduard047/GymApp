@@ -1059,6 +1059,7 @@ public final class WorkoutStore: ObservableObject {
                 id: intent.workoutID,
                 date: intent.workoutDate,
                 note: intent.note,
+                durationSeconds: intent.durationSeconds,
                 exercises: completedBlocks
             )
             state.workouts.append(workout)
@@ -1566,6 +1567,7 @@ public final class WorkoutStore: ObservableObject {
                 return BackupSession(
                     date: try Self.validatedTimestamp(workout.date, field: "session timestamp"),
                     note: workout.note,
+                    durationSeconds: workout.durationSeconds,
                     exercises: workout.exercises.compactMap { block in
                         guard let exercise = exerciseByID[block.exerciseID], !block.sets.isEmpty else {
                             return nil
@@ -1654,6 +1656,9 @@ public final class WorkoutStore: ObservableObject {
         }
         backup.sessions = backup.sessions.map { session in
             var portable = session
+            // Keep duration in local history and full backups without making the shared
+            // schema-v2 core unreadable to supported legacy clients.
+            portable.durationSeconds = nil
             portable.exercises = session.exercises?.map { block in
                 var portableBlock = block
                 portableBlock.machineLoadProfile = nil
@@ -2833,6 +2838,7 @@ public final class WorkoutStore: ObservableObject {
             let signature = Self.importSignature(
                 dateMilliseconds: timestamp,
                 note: note,
+                durationSeconds: session.durationSeconds,
                 drafts: drafts
             )
             if replacingExisting || existingSignatures.insert(signature).inserted {
@@ -2842,6 +2848,7 @@ public final class WorkoutStore: ObservableObject {
                 let workout = try Self.makeWorkout(
                     date: Date(gymEpochMilliseconds: timestamp),
                     note: note,
+                    durationSeconds: session.durationSeconds,
                     drafts: drafts,
                     knownExerciseIDs: Set(next.exercises.map(\.id))
                 )
@@ -3239,6 +3246,10 @@ public final class WorkoutStore: ObservableObject {
             guard isSupportedTimestamp(workout.date) else {
                 throw WorkoutStoreError.corruptStore("A workout timestamp is outside the supported range.")
             }
+            if let duration = workout.durationSeconds,
+               !(0 ... 7 * 24 * 60 * 60).contains(duration) {
+                throw WorkoutStoreError.corruptStore("A workout duration is outside the supported range.")
+            }
             _ = try validatedNote(workout.note)
             for block in workout.exercises {
                 guard blockIDs.insert(block.id).inserted else {
@@ -3536,6 +3547,12 @@ public final class WorkoutStore: ObservableObject {
         }
 
         for (originalSession, session) in zip(original.sessions, canonical.sessions) {
+            if let duration = session.durationSeconds,
+               !(0 ... 7 * 24 * 60 * 60).contains(duration) {
+                throw WorkoutStoreError.malformedBackup(
+                    "A workout duration is outside the supported range."
+                )
+            }
             guard let timestamp = session.date,
                   (try? validatedTimestamp(timestamp, field: "session timestamp")) != nil else {
                 throw WorkoutStoreError.malformedBackup("A workout timestamp is required.")
@@ -3857,10 +3874,15 @@ public final class WorkoutStore: ObservableObject {
     private static func makeWorkout(
         date: Date,
         note: String?,
+        durationSeconds: Int? = nil,
         drafts: [WorkoutExerciseDraft],
         knownExerciseIDs: Set<UUID>
     ) throws -> WorkoutSession {
         _ = try validatedTimestamp(date, field: "session timestamp")
+        if let durationSeconds,
+           !(0 ... 7 * 24 * 60 * 60).contains(durationSeconds) {
+            throw WorkoutStoreError.invalidWorkout("Workout duration is outside the supported range.")
+        }
         guard !drafts.isEmpty else {
             throw WorkoutStoreError.invalidWorkout("At least one exercise is required.")
         }
@@ -3880,6 +3902,7 @@ public final class WorkoutStore: ObservableObject {
         return WorkoutSession(
             date: date,
             note: try validatedNote(note),
+            durationSeconds: durationSeconds,
             exercises: blocks
         )
     }
@@ -3923,6 +3946,10 @@ public final class WorkoutStore: ObservableObject {
         let limits = BackupImportLimits.standard
         _ = try validatedTimestamp(intent.workoutDate, field: "session timestamp")
         _ = try validatedTimestamp(intent.preparedAt, field: "completion timestamp")
+        if let duration = intent.durationSeconds,
+           !(0 ... 7 * 24 * 60 * 60).contains(duration) {
+            throw WorkoutStoreError.invalidWorkout("Invalid active workout duration.")
+        }
         guard try validatedNote(intent.note) == intent.note,
               !intent.exercises.isEmpty,
               intent.exercises.count <= limits.maximumExercisesPerSession,
@@ -4087,6 +4114,7 @@ public final class WorkoutStore: ObservableObject {
             workoutID: workout.id,
             date: workout.date,
             note: workout.note,
+            durationSeconds: workout.durationSeconds,
             exerciseCount: workout.exercises.filter { !$0.sets.isEmpty }.count,
             setCount: workout.setCount,
             totalVolume: workout.totalVolume
@@ -4185,6 +4213,7 @@ public final class WorkoutStore: ObservableObject {
         importSignature(
             dateMilliseconds: workout.date.gymEpochMilliseconds,
             note: workout.note,
+            durationSeconds: workout.durationSeconds,
             drafts: workout.exercises.map { block in
                 WorkoutExerciseDraft(
                     exerciseID: block.exerciseID,
@@ -4197,9 +4226,10 @@ public final class WorkoutStore: ObservableObject {
     private static func importSignature(
         dateMilliseconds: Int64,
         note: String?,
+        durationSeconds: Int? = nil,
         drafts: [WorkoutExerciseDraft]
     ) -> String {
-        var components = ["\(dateMilliseconds)|\(note?.gymTrimmed ?? "")"]
+        var components = ["\(dateMilliseconds)|\(note?.gymTrimmed ?? "")|\(durationSeconds.map(String.init) ?? "-")"]
         components.reserveCapacity(1 + drafts.count + drafts.reduce(0) { $0 + $1.sets.count })
         for block in drafts {
             components.append("|\(block.exerciseID.uuidString)")

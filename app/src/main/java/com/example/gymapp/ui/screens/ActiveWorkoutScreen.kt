@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -76,11 +77,9 @@ fun ActiveWorkoutScreen(
     exerciseMediaOwnerKey: String,
     onSetWeightChanged: (String, String) -> Unit,
     onSetRepsChanged: (String, String) -> Unit,
-    onRecordSet: (String) -> Unit,
+    onSaveExercise: (String) -> Unit,
+    onAddSet: (String) -> Unit,
     onRecordAllPendingSets: () -> Unit,
-    onUndoLatestSet: (String) -> Unit,
-    onAdjustRestTimer: (Int) -> Unit,
-    onStopRestTimer: () -> Unit,
     onFinishWorkout: () -> Unit,
     onDiscardWorkout: () -> Unit,
     onDismissMessage: () -> Unit,
@@ -125,7 +124,7 @@ fun ActiveWorkoutScreen(
             start = GymSpacing.ScreenHorizontal,
             top = GymSpacing.ScreenTop,
             end = GymSpacing.ScreenHorizontal,
-            bottom = GymSpacing.ScreenBottom
+            bottom = 112.dp
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
     ) {
@@ -209,18 +208,13 @@ fun ActiveWorkoutScreen(
                 exercise = exercise,
                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                 operationInProgress = operationInProgress,
-                inFlightSetIds = uiState.setRecordingsInFlight,
-                latestCompletedSetId = uiState.latestCompletedSetId,
-                undoingSetId = uiState.undoingSetId,
-                restSecondsRemaining = uiState.restSecondsRemaining,
+                allowExerciseActions = uiState.liveConnectionMode == null,
                 inlineMessage = uiState.message,
                 inlineMessageSetId = uiState.messageSetId,
                 onSetWeightChanged = onSetWeightChanged,
                 onSetRepsChanged = onSetRepsChanged,
-                onRecordSet = onRecordSet,
-                onUndoLatestSet = onUndoLatestSet,
-                onAdjustRestTimer = onAdjustRestTimer,
-                onStopRestTimer = onStopRestTimer,
+                onSaveExercise = { onSaveExercise(exercise.id) },
+                onAddSet = { onAddSet(exercise.id) },
                 onDismissMessage = onDismissMessage
             )
         }
@@ -251,17 +245,7 @@ fun ActiveWorkoutScreen(
                             }
                             Text(text = stringResource(R.string.action_save_all_pending_sets))
                         }
-                        Text(
-                            text = stringResource(R.string.active_workout_save_all_supporting),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
-                    Text(
-                        text = stringResource(R.string.active_workout_finish_supporting),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     Button(
                         onClick = onFinishWorkout,
                         enabled = uiState.completedSetCount > 0 && !operationInProgress,
@@ -294,11 +278,6 @@ fun ActiveWorkoutScreen(
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.active_workout_back_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }
@@ -393,16 +372,6 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White
             )
-            if (uiState.restSecondsRemaining > 0) {
-                Text(
-                    text = stringResource(
-                        R.string.label_exercise_rest_remaining,
-                        formatRestTime(uiState.restSecondsRemaining)
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
-                )
-            }
         }
     }
 }
@@ -496,18 +465,13 @@ private fun ActiveWorkoutExerciseCard(
     exercise: ActiveWorkoutExerciseUiState,
     exerciseMediaOwnerKey: String,
     operationInProgress: Boolean,
-    inFlightSetIds: Set<String>,
-    latestCompletedSetId: String?,
-    undoingSetId: String?,
-    restSecondsRemaining: Int,
+    allowExerciseActions: Boolean,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
     inlineMessageSetId: String?,
     onSetWeightChanged: (String, String) -> Unit,
     onSetRepsChanged: (String, String) -> Unit,
-    onRecordSet: (String) -> Unit,
-    onUndoLatestSet: (String) -> Unit,
-    onAdjustRestTimer: (Int) -> Unit,
-    onStopRestTimer: () -> Unit,
+    onSaveExercise: () -> Unit,
+    onAddSet: () -> Unit,
     onDismissMessage: () -> Unit
 ) {
     val fullyCompleted = exercise.sets.isNotEmpty() &&
@@ -567,34 +531,53 @@ private fun ActiveWorkoutExerciseCard(
                 }
             }
             if (!isExpanded && fullyCompleted) {
-                Text(
-                    text = stringResource(R.string.active_workout_exercise_completed_collapsed),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                TextButton(
+                    onClick = { isExpanded = true },
+                    enabled = allowExerciseActions && !operationInProgress
+                ) { Text(stringResource(R.string.active_workout_edit_exercise)) }
             }
             if (isExpanded) exercise.sets.forEach { set ->
                 ActiveWorkoutSetRow(
                     set = set,
                     operationInProgress = operationInProgress,
-                    isRecording = set.id in inFlightSetIds,
-                    isLatestCompleted = set.id == latestCompletedSetId,
-                    isUndoing = set.id == undoingSetId,
-                    restDurationSeconds = exercise.restDurationSeconds,
-                    restSecondsRemaining = if (set.id == latestCompletedSetId) {
-                        restSecondsRemaining
-                    } else {
-                        0
-                    },
+                    editable = allowExerciseActions || !set.isCompleted,
                     inlineMessage = inlineMessage.takeIf { inlineMessageSetId == set.id },
                     onWeightChanged = { value -> onSetWeightChanged(set.id, value) },
                     onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
-                    onRecord = { onRecordSet(set.id) },
-                    onUndo = { onUndoLatestSet(set.id) },
-                    onAdjustRestTimer = onAdjustRestTimer,
-                    onStopRestTimer = onStopRestTimer,
                     onDismissMessage = onDismissMessage
                 )
+            }
+            if (isExpanded && allowExerciseActions) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onAddSet,
+                        enabled = !operationInProgress,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text(
+                            stringResource(R.string.active_workout_add_set),
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            onSaveExercise()
+                            isExpanded = false
+                        },
+                        enabled = !operationInProgress,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null)
+                        Text(
+                            stringResource(R.string.active_workout_save_exercise),
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -604,18 +587,10 @@ private fun ActiveWorkoutExerciseCard(
 private fun ActiveWorkoutSetRow(
     set: ActiveWorkoutSetUiState,
     operationInProgress: Boolean,
-    isRecording: Boolean,
-    isLatestCompleted: Boolean,
-    isUndoing: Boolean,
-    restDurationSeconds: Int,
-    restSecondsRemaining: Int,
+    editable: Boolean,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
     onWeightChanged: (String) -> Unit,
     onRepsChanged: (String) -> Unit,
-    onRecord: () -> Unit,
-    onUndo: () -> Unit,
-    onAdjustRestTimer: (Int) -> Unit,
-    onStopRestTimer: () -> Unit,
     onDismissMessage: () -> Unit
 ) {
     val containerColor = if (set.isCompleted) {
@@ -676,9 +651,10 @@ private fun ActiveWorkoutSetRow(
                 value = set.weightInput,
                 onValueChange = onWeightChanged,
                 label = { Text(text = stringResource(R.string.label_weight_kg)) },
+                placeholder = { Text("0") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                enabled = set.isCompleted || !operationInProgress,
-                readOnly = set.isCompleted,
+                enabled = editable && !operationInProgress,
+                readOnly = !editable,
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
@@ -687,110 +663,11 @@ private fun ActiveWorkoutSetRow(
                 onValueChange = onRepsChanged,
                 label = { Text(text = stringResource(R.string.label_reps)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                enabled = set.isCompleted || !operationInProgress,
-                readOnly = set.isCompleted,
+                enabled = editable && !operationInProgress,
+                readOnly = !editable,
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
-        }
-        if (!set.isCompleted) {
-            Button(
-                onClick = onRecord,
-                enabled = !operationInProgress,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-            ) {
-                if (isRecording) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-                Text(text = stringResource(R.string.action_log_set_and_rest, restDurationSeconds))
-            }
-        }
-        if (isLatestCompleted) {
-            if (restSecondsRemaining > 0) {
-                AppPanel(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics {
-                            stateDescription = formatRestTime(restSecondsRemaining)
-                        },
-                    highlighted = true
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.active_workout_rest_saved),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = formatRestTime(restSecondsRemaining),
-                            style = MaterialTheme.typography.headlineSmall
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            val subtractDescription = stringResource(
-                                R.string.active_workout_rest_subtract
-                            )
-                            val addDescription = stringResource(R.string.active_workout_rest_add)
-                            OutlinedButton(
-                                onClick = { onAdjustRestTimer(-15) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                                    .semantics {
-                                        contentDescription = subtractDescription
-                                    }
-                            ) { Text("−15") }
-                            OutlinedButton(
-                                onClick = { onAdjustRestTimer(15) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                                    .semantics {
-                                        contentDescription = addDescription
-                                    }
-                            ) { Text("+15") }
-                            TextButton(
-                                onClick = onStopRestTimer,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                            ) {
-                                Text(stringResource(R.string.active_workout_rest_stop))
-                            }
-                        }
-                    }
-                }
-            }
-            OutlinedButton(
-                onClick = onUndo,
-                enabled = !operationInProgress,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-            ) {
-                if (isUndoing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(18.dp),
-                        strokeWidth = 2.dp
-                    )
-                }
-                Text(stringResource(R.string.active_workout_undo_action))
-            }
         }
         inlineMessage?.let { message ->
             Row(
@@ -815,13 +692,6 @@ private fun ActiveWorkoutSetRow(
     }
     }
 }
-
-private fun formatRestTime(totalSeconds: Int): String = String.format(
-    Locale.getDefault(),
-    "%02d:%02d",
-    totalSeconds / 60,
-    totalSeconds % 60
-)
 
 private fun formatActiveWorkoutTime(totalSeconds: Long): String {
     val bounded = totalSeconds.coerceAtLeast(0L)

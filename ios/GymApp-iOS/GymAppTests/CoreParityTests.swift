@@ -2912,6 +2912,9 @@ final class CoreParityTests: XCTestCase {
             case ("/rest/v1/profiles", "POST"):
                 XCTAssertEqual(bearer, "Bearer refreshed-cloud-access")
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                XCTAssertEqual(bearer, "Bearer refreshed-cloud-access")
+                return try workoutDurationSyncResponse(for: request)
             default:
                 XCTFail("Unexpected cloud forced-refresh request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
@@ -10572,6 +10575,8 @@ final class CoreParityTests: XCTestCase {
                 )
             case ("/rest/v1/profiles", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try workoutDurationSyncResponse(for: request)
             default:
                 XCTFail("Unexpected conflict request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(
@@ -10736,6 +10741,8 @@ final class CoreParityTests: XCTestCase {
                 )
             case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try workoutDurationSyncResponse(for: request)
             default:
                 XCTFail("Unexpected cloud/logout request: \(request.httpMethod ?? "nil") \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
@@ -10817,6 +10824,8 @@ final class CoreParityTests: XCTestCase {
                 )
             case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try workoutDurationSyncResponse(for: request)
             default:
                 XCTFail("Unexpected failed-upload logout request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
@@ -10918,6 +10927,8 @@ final class CoreParityTests: XCTestCase {
                 )
             case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try workoutDurationSyncResponse(for: request)
             default:
                 XCTFail("Unexpected stable-signout request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
@@ -11029,6 +11040,8 @@ final class CoreParityTests: XCTestCase {
                 )
             case ("/rest/v1/profiles", "POST"), ("/auth/v1/logout", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try workoutDurationSyncResponse(for: request)
             default:
                 XCTFail("Unexpected in-flight-signout request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(for: request, statusCode: 404, json: "{}")
@@ -11122,6 +11135,8 @@ final class CoreParityTests: XCTestCase {
                 )
             case ("/rest/v1/profiles", "POST"):
                 return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try workoutDurationSyncResponse(for: request)
             case ("/rest/v1/rpc/social_dashboard", "POST"):
                 return try AuthURLProtocolStub.response(
                     for: request,
@@ -16558,6 +16573,23 @@ private final class RemoteStateGate {
 private func garminRequestBody(_ request: URLRequest) throws -> [String: Any] {
     try XCTUnwrap(
         JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+    )
+}
+
+private func workoutDurationSyncResponse(
+    for request: URLRequest
+) throws -> (HTTPURLResponse, Data) {
+    let body = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
+    )
+    let items = try XCTUnwrap(body["p_items"] as? [[String: Any]])
+    let response = try JSONSerialization.data(withJSONObject: [
+        "version": 1,
+        "syncedCount": items.count
+    ])
+    return try AuthURLProtocolStub.response(
+        for: request,
+        json: try XCTUnwrap(String(data: response, encoding: .utf8))
     )
 }
 

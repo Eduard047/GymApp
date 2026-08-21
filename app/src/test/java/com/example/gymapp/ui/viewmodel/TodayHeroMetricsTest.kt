@@ -34,7 +34,15 @@ class TodayHeroMetricsTest {
         val zoneId = ZoneId.of("UTC")
         val now = LocalDate.of(2026, 8, 15).atTime(12, 0).atZone(zoneId).toInstant().toEpochMilli()
         val sessions = listOf(
-            summary(1, 100.0, LocalDate.of(2026, 8, 10), zoneId, exercises = 2, sets = 3),
+            summary(
+                1,
+                100.0,
+                LocalDate.of(2026, 8, 10),
+                zoneId,
+                exercises = 2,
+                sets = 3,
+                durationSeconds = 95L
+            ),
             summary(
                 2,
                 200.0,
@@ -69,7 +77,7 @@ class TodayHeroMetricsTest {
         assertEquals(3, summary.completedWorkoutCount)
         assertEquals(2, summary.completedTrainingDays)
         assertEquals(4, summary.targetTrainingDays)
-        assertEquals(88, summary.estimatedMinutes)
+        assertEquals(78, summary.estimatedMinutes)
         assertEquals(300.0, summary.totalVolume, 0.0)
     }
 
@@ -94,6 +102,7 @@ class TodayHeroMetricsTest {
             )
         )
         assertEquals(10, estimateWorkoutMinutes(exerciseCount = -1, setCount = -1))
+        assertEquals(0, estimateWorkoutMinutes(exerciseCount = 6, setCount = 18, measuredDurationSeconds = 0))
         assertEquals(90, estimateWorkoutMinutes(exerciseCount = Int.MAX_VALUE, setCount = Int.MAX_VALUE))
         assertEquals(
             63,
@@ -121,12 +130,14 @@ class TodayHeroMetricsTest {
         exercises: Int = 1,
         sets: Int = 1,
         hour: Int = 8,
-        note: String? = null
+        note: String? = null,
+        durationSeconds: Long? = null
     ) = WorkoutSessionSummary(
         session = WorkoutSessionEntity(
             id = id,
             date = date.atTime(hour, 0).atZone(zoneId).toInstant().toEpochMilli(),
-            note = note
+            note = note,
+            durationSeconds = durationSeconds
         ),
         exerciseCount = exercises,
         setCount = sets,

@@ -32,6 +32,7 @@ object WorkoutDataLimits {
     const val MAX_CATALOG_KEY_LENGTH = 128
     const val MAX_WEIGHT = 1_000_000.0
     const val MAX_REPS = 10_000
+    const val MAX_WORKOUT_DURATION_SECONDS = 7L * 24L * 60L * 60L
 
     // Foundation Date.distantPast...Date.distantFuture. Using the narrower
     // cross-platform range keeps Android backups portable to iOS while
@@ -43,6 +44,9 @@ object WorkoutDataLimits {
         weight.isFinite() && weight >= 0.0 && weight <= MAX_WEIGHT
 
     fun isValidReps(reps: Int): Boolean = reps in 1..MAX_REPS
+
+    fun isValidWorkoutDuration(durationSeconds: Long): Boolean =
+        durationSeconds in 0L..MAX_WORKOUT_DURATION_SECONDS
 
     fun canAddSets(existingCount: Int, incomingCount: Int): Boolean =
         existingCount >= 0 && incomingCount >= 0 &&

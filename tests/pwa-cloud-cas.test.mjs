@@ -166,7 +166,17 @@ function loadContext(fetchImpl, {
         return target;
       }
     },
-    fetch: fetchImpl,
+    fetch: async (url, options) => {
+      const response = await fetchImpl(url, options);
+      if (url.includes("/rest/v1/rpc/social_sync_workout_durations") && response.status === 204) {
+        const body = JSON.parse(options?.body || "{}");
+        return new Response(JSON.stringify({
+          version: 1,
+          syncedCount: Array.isArray(body.p_items) ? body.p_items.length : -1
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return response;
+    },
     history: { replaceState() {}, pushState() {}, state: null },
     document: {
       documentElement: { lang: "en" },
@@ -291,9 +301,10 @@ test("successful cloud CAS adopts only the trigger-owned revision before updatin
   };`, context);
 
   await vm.runInContext("saveRemoteState()", context);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   assert.equal(requests[0].options.method, "PATCH");
-  assert.match(requests[1].url, /\/rest\/v1\/profiles\?on_conflict=user_id$/);
+  assert.match(requests[1].url, /\/rest\/v1\/rpc\/social_sync_workout_durations$/);
+  assert.match(requests[2].url, /\/rest\/v1\/profiles\?on_conflict=user_id$/);
   assert.equal(
     vm.runInContext("remoteStateSync.revision", context),
     "2026-07-13T20:00:00.000001+00:00"
@@ -2231,9 +2242,11 @@ test("cloud recovery reset is explicit and uses the quarantined row revision as 
   await vm.runInContext("resetCloudRecovery()", context);
 
   assert.equal(confirmations, 1);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   assert.match(requests[0].url, /user_states\?user_id=eq\.[^&]+&updated_at=eq\.2026-07-13T20%3A00%3A00\.000001%2B00%3A00/);
   assert.equal(requests[0].options.method, "PATCH");
+  assert.match(requests[1].url, /\/rest\/v1\/rpc\/social_sync_workout_durations$/);
+  assert.match(requests[2].url, /\/rest\/v1\/profiles\?on_conflict=user_id$/);
   const replacementPayload = JSON.parse(requests[0].options.body).state;
   assert.equal(replacementPayload.sessions.length, 0);
   assert.equal(replacementPayload.owner.userId, ACTIVE_USER_ID);
@@ -2989,10 +3002,11 @@ test("logout flushes the debounced cloud state before revoking only the local Su
 
   await vm.runInContext("logoutAccount()", context);
 
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 4);
   assert.match(requests[0].url, /\/rest\/v1\/user_states/);
-  assert.match(requests[1].url, /\/rest\/v1\/profiles/);
-  const logoutUrl = new URL(requests[2].url);
+  assert.match(requests[1].url, /\/rest\/v1\/rpc\/social_sync_workout_durations/);
+  assert.match(requests[2].url, /\/rest\/v1\/profiles/);
+  const logoutUrl = new URL(requests[3].url);
   assert.equal(logoutUrl.pathname, "/auth/v1/logout");
   assert.equal(logoutUrl.searchParams.get("scope"), "local");
   assert.notEqual(logoutUrl.searchParams.get("scope"), "global");
@@ -3009,6 +3023,9 @@ test("a profile publication failure reports a partial result after the workout s
         headers: { "Content-Type": "application/json" }
       });
     }
+    if (url.includes("/rpc/social_sync_workout_durations")) {
+      return new Response(null, { status: 204 });
+    }
     return new Response(JSON.stringify({ message: "profile unavailable" }), {
       status: 503,
       headers: { "Content-Type": "application/json" }
@@ -3023,7 +3040,7 @@ test("a profile publication failure reports a partial result after the workout s
   const result = await vm.runInContext("saveRemoteState()", context);
   assert.equal(result.stateSaved, true);
   assert.equal(result.profileUpdated, false);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   assert.equal(
     vm.runInContext("remoteStateSync.revision", context),
     "2026-07-13T20:00:00.000001+00:00"

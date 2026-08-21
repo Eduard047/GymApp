@@ -14,6 +14,7 @@ import com.example.gymapp.data.dao.GarminWorkoutReceiptDao
 import com.example.gymapp.data.dao.MuscleMappingDao
 import com.example.gymapp.data.dao.SetDao
 import com.example.gymapp.data.dao.WorkoutDao
+import com.example.gymapp.data.dao.WorkoutPlanDraftDao
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ActiveWorkoutEntity
 import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
@@ -27,6 +28,7 @@ import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionEntity
+import com.example.gymapp.data.entity.WorkoutPlanDraftEntity
 import java.util.concurrent.ConcurrentHashMap
 
 @Database(
@@ -43,9 +45,10 @@ import java.util.concurrent.ConcurrentHashMap
         GarminWorkoutProvenanceEntity::class,
         ActiveWorkoutEntity::class,
         ActiveWorkoutExerciseEntity::class,
-        ActiveWorkoutSetEntity::class
+        ActiveWorkoutSetEntity::class,
+        WorkoutPlanDraftEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 abstract class GymDatabase : RoomDatabase() {
@@ -57,6 +60,7 @@ abstract class GymDatabase : RoomDatabase() {
     abstract fun muscleMappingDao(): MuscleMappingDao
     abstract fun garminWorkoutReceiptDao(): GarminWorkoutReceiptDao
     abstract fun activeWorkoutDao(): ActiveWorkoutDao
+    abstract fun workoutPlanDraftDao(): WorkoutPlanDraftDao
 
     companion object {
         private val INSTANCES = ConcurrentHashMap<String, GymDatabase>()
@@ -494,6 +498,22 @@ abstract class GymDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE workout_sessions ADD COLUMN durationSeconds INTEGER")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS workout_plan_draft (
+                        id INTEGER NOT NULL,
+                        payload TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         internal val REGISTERED_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -507,7 +527,8 @@ abstract class GymDatabase : RoomDatabase() {
             MIGRATION_10_11,
             MIGRATION_11_12,
             MIGRATION_12_13,
-            MIGRATION_13_14
+            MIGRATION_13_14,
+            MIGRATION_14_15
         )
 
         fun getInstance(context: Context, databaseName: String = "gym_database"): GymDatabase {

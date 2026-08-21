@@ -41,11 +41,15 @@ import com.example.gymapp.util.TrainingProfileManager
 import com.example.gymapp.util.TrainingSplit
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -58,6 +62,8 @@ import java.time.DateTimeException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class SetInputState(
     val weight: String = "",
@@ -374,6 +380,84 @@ private class WorkoutDraftDigestWriter(
 internal fun hasRetainedWorkoutDraft(state: AddWorkoutUiState): Boolean =
     state.isDirty || state.exerciseDrafts.isNotEmpty() || state.note.isNotBlank()
 
+private data class PersistedWorkoutPlanDraft(
+    val workoutDate: Long,
+    val note: String,
+    val exerciseDrafts: List<ExerciseInputState>,
+    val smartWorkoutEffort: SmartWorkoutEffort,
+    val isDirty: Boolean
+)
+
+private fun JSONObject.exactKeySet(): Set<String> = keys().asSequence().toSet()
+
+private fun PersistedWorkoutPlanDraft.toJson(): String = JSONObject()
+    .put("schemaVersion", 1)
+    .put("workoutDate", workoutDate)
+    .put("note", note)
+    .put("smartWorkoutEffort", smartWorkoutEffort.name)
+    .put("isDirty", isDirty)
+    .put("exercises", JSONArray().apply {
+        exerciseDrafts.forEach { draft ->
+            put(JSONObject()
+                .put("draftId", draft.draftId)
+                .put("exerciseId", draft.exerciseId)
+                .put("sets", JSONArray().apply {
+                    draft.sets.forEach { set ->
+                        put(JSONObject().put("weight", set.weight).put("reps", set.reps))
+                    }
+                }))
+        }
+    })
+    .toString()
+
+private fun parsePersistedWorkoutPlanDraft(payload: String): PersistedWorkoutPlanDraft? =
+    runCatching {
+        require(payload.toByteArray(Charsets.UTF_8).size <= 256 * 1_024)
+        val root = JSONObject(payload)
+        require(root.exactKeySet() == setOf(
+            "schemaVersion", "workoutDate", "note", "smartWorkoutEffort", "isDirty", "exercises"
+        ))
+        require(root.getInt("schemaVersion") == 1)
+        val date = root.getLong("workoutDate")
+        require(WorkoutDataLimits.isValidTimestamp(date))
+        val note = root.getString("note")
+        require(WorkoutDataLimits.isValidNote(note))
+        val effort = SmartWorkoutEffort.valueOf(root.getString("smartWorkoutEffort"))
+        val rawExercises = root.getJSONArray("exercises")
+        require(rawExercises.length() <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION)
+        val usedDraftIds = hashSetOf<Long>()
+        val exercises = List(rawExercises.length()) { exerciseIndex ->
+            val rawExercise = rawExercises.getJSONObject(exerciseIndex)
+            require(rawExercise.exactKeySet() == setOf("draftId", "exerciseId", "sets"))
+            val draftId = rawExercise.getLong("draftId")
+            require(draftId > 0L && usedDraftIds.add(draftId))
+            val exerciseId = if (rawExercise.isNull("exerciseId")) null else {
+                rawExercise.getLong("exerciseId").also { require(it > 0L) }
+            }
+            val rawSets = rawExercise.getJSONArray("sets")
+            require(rawSets.length() in 1..WorkoutDataLimits.MAX_SETS_PER_EXERCISE)
+            ExerciseInputState(
+                draftId = draftId,
+                exerciseId = exerciseId,
+                sets = List(rawSets.length()) { setIndex ->
+                    val rawSet = rawSets.getJSONObject(setIndex)
+                    require(rawSet.exactKeySet() == setOf("weight", "reps"))
+                    val weight = rawSet.getString("weight")
+                    val reps = rawSet.getString("reps")
+                    require(weight.length <= 64 && reps.length <= 10)
+                    SetInputState(weight = weight, reps = reps)
+                }
+            )
+        }
+        PersistedWorkoutPlanDraft(
+            workoutDate = date,
+            note = note,
+            exerciseDrafts = exercises,
+            smartWorkoutEffort = effort,
+            isDirty = root.getBoolean("isDirty")
+        )
+    }.getOrNull()
+
 internal fun canHydrateLaunchPlanIntoDraft(state: AddWorkoutUiState): Boolean =
     !hasRetainedWorkoutDraft(state)
 
@@ -411,7 +495,7 @@ internal fun planSyncErrorText(error: Throwable): LocalizedText {
     return LocalizedText(resource)
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class AddWorkoutViewModel internal constructor(
     private val repository: GymRepository,
     private val syncClient: PhoneSyncClient,
@@ -505,6 +589,7 @@ class AddWorkoutViewModel internal constructor(
     private val hasValidationError = MutableStateFlow(false)
     private val isDirty = MutableStateFlow(false)
     private val activeWorkoutStarted = MutableStateFlow(false)
+    private val durableDraftLoaded = MutableStateFlow(false)
 
     private val exercises = repository.observeExercises()
     private val exerciseHistory: StateFlow<List<ExerciseHistoryEntry>> = repository.observeAllExerciseHistory()
@@ -565,6 +650,59 @@ class AddWorkoutViewModel internal constructor(
     )
 
     init {
+        viewModelScope.launch {
+            try {
+                val activeWorkoutExists = repository.getActiveWorkoutSnapshot() != null
+                val restored = if (activeWorkoutExists) {
+                    repository.clearWorkoutPlanDraft()
+                    null
+                } else {
+                    repository.getWorkoutPlanDraftPayload()?.let(::parsePersistedWorkoutPlanDraft)
+                }
+                if (restored != null && !hasRetainedDraft()) {
+                    workoutDate.value = restored.workoutDate
+                    note.value = restored.note
+                    exerciseDrafts.value = restored.exerciseDrafts
+                    smartWorkoutEffort.value = restored.smartWorkoutEffort
+                    isDirty.value = restored.isDirty
+                    nextDraftId = (restored.exerciseDrafts.maxOfOrNull { it.draftId } ?: 0L) + 1L
+                } else if (!activeWorkoutExists && restored == null) {
+                    repository.clearWorkoutPlanDraft()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Keep the editor usable if account-local draft storage is temporarily unavailable.
+            } finally {
+                durableDraftLoaded.value = true
+            }
+        }
+        viewModelScope.launch {
+            combine(
+                workoutDate,
+                note,
+                exerciseDrafts,
+                smartWorkoutEffort,
+                isDirty
+            ) { date, noteValue, drafts, effort, dirty ->
+                PersistedWorkoutPlanDraft(date, noteValue, drafts, effort, dirty)
+            }
+                .debounce(250L)
+                .collect { draft ->
+                    if (!durableDraftLoaded.value) return@collect
+                    try {
+                        if (draft.isDirty || draft.exerciseDrafts.isNotEmpty() || draft.note.isNotBlank()) {
+                            repository.saveWorkoutPlanDraftPayload(draft.toJson())
+                        } else {
+                            repository.clearWorkoutPlanDraft()
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        // A later editor mutation retries the bounded account-local write.
+                    }
+                }
+        }
         launchToken?.let { token ->
             openLaunchPlan(token, launchPlanHandoff)
         }
@@ -808,6 +946,7 @@ class AddWorkoutViewModel internal constructor(
         lastRequestedLaunchToken = token
         val generation = ++launchHydrationGeneration
         viewModelScope.launch {
+            durableDraftLoaded.first { it }
             exerciseCatalogState.first { catalog -> catalog.isLoaded }
             if (generation != launchHydrationGeneration) return@launch
             val accepted = try {
@@ -1528,6 +1667,9 @@ class AddWorkoutViewModel internal constructor(
     }
 
     private fun resetDraftState() {
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) {
+            runCatching { repository.clearWorkoutPlanDraft() }
+        }
         launchHydrationGeneration += 1L
         watchPlanSyncGeneration += 1L
         workoutDate.value = System.currentTimeMillis()

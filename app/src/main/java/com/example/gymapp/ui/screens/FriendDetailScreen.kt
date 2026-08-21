@@ -14,9 +14,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,6 +43,8 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.GymMetric
+import com.example.gymapp.ui.components.GymSegmentItem
+import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.MetricStrip
 import com.example.gymapp.ui.components.ScreenHeader
@@ -73,6 +81,8 @@ internal fun FriendDetailScreen(
     var selectedWorkout by remember(friend?.profileId) {
         mutableStateOf<SocialFriendWorkout?>(null)
     }
+    var activityTab by remember(friend?.profileId) { mutableStateOf(FriendActivityTab.Workouts) }
+    var manageExpanded by remember(friend?.profileId) { mutableStateOf(false) }
 
     val authorizedSelectedWorkout = selectedWorkout?.takeIf { workout ->
         friend != null &&
@@ -117,7 +127,11 @@ internal fun FriendDetailScreen(
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)) {
+            AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+                ) {
                 ScreenHeader(
                     title = friend.displayName
                 )
@@ -146,6 +160,7 @@ internal fun FriendDetailScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                }
             }
         }
 
@@ -154,10 +169,10 @@ internal fun FriendDetailScreen(
                 eyebrow = stringResource(R.string.friend_train_eyebrow),
                 title = stringResource(R.string.friend_train_title),
                 supporting = stringResource(R.string.friend_train_supporting),
-                primaryLabel = stringResource(R.string.friend_choose_workout_action),
-                onPrimary = { onChooseWorkout(friend) },
-                secondaryLabel = stringResource(R.string.friend_build_live_action),
-                onSecondary = { onBuildLiveWorkout(friend) },
+                primaryLabel = stringResource(R.string.friend_create_live_action),
+                onPrimary = { onBuildLiveWorkout(friend) },
+                secondaryLabel = stringResource(R.string.friend_send_saved_action),
+                onSecondary = { onChooseWorkout(friend) },
                 enabled = !actionInFlight
             )
         }
@@ -192,12 +207,17 @@ internal fun FriendDetailScreen(
         }
 
         item {
-            SectionTitle(
-                eyebrow = stringResource(R.string.friend_recent_eyebrow),
-                title = stringResource(R.string.friend_recent_title)
+            GymSegmentedControl(
+                items = listOf(
+                    GymSegmentItem(FriendActivityTab.Workouts, stringResource(R.string.friend_activity_workouts)),
+                    GymSegmentItem(FriendActivityTab.Records, stringResource(R.string.friend_activity_records))
+                ),
+                selected = activityTab,
+                onSelected = { activityTab = it },
+                modifier = Modifier.fillMaxWidth()
             )
         }
-        if (!details.sharing.recentWorkouts) {
+        if (activityTab == FriendActivityTab.Workouts && !details.sharing.recentWorkouts) {
             item {
                 EmptyStatePanel(
                     title = stringResource(R.string.friend_section_private_title),
@@ -205,7 +225,7 @@ internal fun FriendDetailScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-        } else if (details.activityUpdatedAt == null) {
+        } else if (activityTab == FriendActivityTab.Workouts && details.activityUpdatedAt == null) {
             item {
                 EmptyStatePanel(
                     title = stringResource(R.string.friend_activity_unavailable_title),
@@ -213,7 +233,7 @@ internal fun FriendDetailScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-        } else if (details.recentWorkouts.isEmpty()) {
+        } else if (activityTab == FriendActivityTab.Workouts && details.recentWorkouts.isEmpty()) {
             item {
                 EmptyStatePanel(
                     title = stringResource(R.string.friend_recent_empty_title),
@@ -221,37 +241,25 @@ internal fun FriendDetailScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-        } else if (friendWorkoutDetailsAvailable && friendWorkouts.isNotEmpty()) {
-            items(
-                friendWorkouts,
-                key = { workout -> workout.workoutId }
-            ) { workout ->
-                FriendWorkoutCard(
-                    workout = workout,
-                    onOpen = { selectedWorkout = workout }
-                )
-            }
-        } else {
-            items(details.recentWorkouts) { workout ->
-                FriendWorkoutSummaryCard(workout)
-            }
+        } else if (activityTab == FriendActivityTab.Workouts) {
             item {
-                Text(
-                    stringResource(R.string.friend_workout_sets_private),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                AppPanel(modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        if (friendWorkoutDetailsAvailable && friendWorkouts.isNotEmpty()) {
+                            friendWorkouts.forEachIndexed { index, workout ->
+                                if (index > 0) HorizontalDivider()
+                                FriendWorkoutRow(workout = workout) { selectedWorkout = workout }
+                            }
+                        } else {
+                            details.recentWorkouts.forEachIndexed { index, workout ->
+                                if (index > 0) HorizontalDivider()
+                                FriendWorkoutSummaryRow(workout)
+                            }
+                        }
+                    }
+                }
             }
-        }
-
-        item {
-            SectionTitle(
-                eyebrow = stringResource(R.string.friend_records_eyebrow),
-                title = stringResource(R.string.friend_records_title),
-                supporting = stringResource(R.string.friend_records_supporting)
-            )
-        }
-        if (!details.sharing.records) {
+        } else if (!details.sharing.records) {
             item {
                 EmptyStatePanel(
                     title = stringResource(R.string.friend_section_private_title),
@@ -290,24 +298,32 @@ internal fun FriendDetailScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SectionTitle(
-                        eyebrow = stringResource(R.string.friends_safety_eyebrow),
-                        title = stringResource(R.string.friend_manage_title),
-                        supporting = stringResource(R.string.friend_manage_supporting)
-                    )
-                    OutlinedButton(
-                        onClick = { confirmAction = FriendSafetyAction.Remove },
-                        enabled = !actionInFlight,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.friend_remove_action))
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            stringResource(R.string.friend_manage_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            if (manageExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null
+                        )
                     }
-                    OutlinedButton(
-                        onClick = { confirmAction = FriendSafetyAction.Block },
-                        enabled = !actionInFlight,
+                    TextButton(
+                        onClick = { manageExpanded = !manageExpanded },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.friend_block_action))
+                    ) { Text(stringResource(R.string.friend_manage_toggle)) }
+                    if (manageExpanded) {
+                        OutlinedButton(
+                            onClick = { confirmAction = FriendSafetyAction.Remove },
+                            enabled = !actionInFlight,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.friend_remove_action)) }
+                        OutlinedButton(
+                            onClick = { confirmAction = FriendSafetyAction.Block },
+                            enabled = !actionInFlight,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.friend_block_action)) }
                     }
                 }
             }
@@ -366,7 +382,7 @@ internal fun FriendDetailScreen(
 private fun SharingCard(details: SocialFriendDetails) {
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(stringResource(R.string.friend_sharing_title), style = MaterialTheme.typography.titleMedium)
@@ -379,6 +395,80 @@ private fun SharingCard(details: SocialFriendDetails) {
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun FriendWorkoutRow(
+    workout: SocialFriendWorkout,
+    onOpen: () -> Unit
+) {
+    FriendActivityRow(
+        day = workout.workoutDay,
+        exerciseCount = workout.exerciseCount,
+        setCount = workout.setCount,
+        exerciseNames = workout.exercises.map { it.name },
+        showChevron = true,
+        onOpen = onOpen
+    )
+}
+
+@Composable
+private fun FriendWorkoutSummaryRow(workout: SocialRecentWorkout) {
+    FriendActivityRow(
+        day = workout.workoutDay,
+        exerciseCount = workout.exerciseCount,
+        setCount = workout.setCount,
+        exerciseNames = workout.exercises.map { it.name },
+        showChevron = false,
+        onOpen = null
+    )
+}
+
+@Composable
+private fun FriendActivityRow(
+    day: String,
+    exerciseCount: Int,
+    setCount: Int,
+    exerciseNames: List<String>,
+    showChevron: Boolean,
+    onOpen: (() -> Unit)?
+) {
+    val firstNames = exerciseNames.take(2).map { localizedExerciseName(it) }
+    val extraCount = (exerciseNames.size - firstNames.size).coerceAtLeast(0)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(localizedFriendActivityDay(day), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.workout_invite_summary, exerciseCount, setCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (firstNames.isNotEmpty()) {
+                Text(
+                    firstNames.joinToString(" · ") + if (extraCount > 0) " +$extraCount" else "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (showChevron) {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = stringResource(R.string.friend_workout_open_action),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -493,16 +583,22 @@ private fun FriendWorkoutDetail(
         }
         item {
             MetricStrip(
-                metrics = listOf(
-                    GymMetric(
+                metrics = buildList {
+                    add(GymMetric(
                         stringResource(R.string.friend_workout_exercises_label),
                         workout.exerciseCount.toString()
-                    ),
-                    GymMetric(
+                    ))
+                    add(GymMetric(
                         stringResource(R.string.friend_workout_sets_label),
                         workout.setCount.toString()
-                    )
-                )
+                    ))
+                    workout.durationSeconds?.let { duration ->
+                        add(GymMetric(
+                            stringResource(R.string.post_workout_metric_duration),
+                            compactFriendWorkoutDuration(duration)
+                        ))
+                    }
+                }
             )
         }
         if (workout.truncated) {
@@ -564,6 +660,18 @@ private fun FriendWorkoutDetail(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun compactFriendWorkoutDuration(totalSeconds: Long): String {
+    val minutes = (totalSeconds.coerceAtLeast(0L) / 60L).coerceAtLeast(1L)
+    val hours = minutes / 60L
+    val remainingMinutes = minutes % 60L
+    return when {
+        hours == 0L -> stringResource(R.string.duration_minutes_compact, minutes)
+        remainingMinutes == 0L -> stringResource(R.string.duration_hours_compact, hours)
+        else -> stringResource(R.string.duration_hours_minutes_compact, hours, remainingMinutes)
     }
 }
 
@@ -638,4 +746,5 @@ private fun sharingLabel(shared: Boolean): String = stringResource(
     if (shared) R.string.friend_sharing_on else R.string.friend_sharing_off
 )
 
+private enum class FriendActivityTab { Workouts, Records }
 private enum class FriendSafetyAction { Remove, Block }

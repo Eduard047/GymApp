@@ -282,9 +282,6 @@ final class ActiveWorkoutStore: ObservableObject {
             now: now
         ) { candidate in
             let location = try Self.setLocation(setID: setID, in: candidate)
-            guard candidate.exercises[location.exercise].sets[location.set].completedAt == nil else {
-                throw ActiveWorkoutStoreError.setAlreadyCompleted
-            }
             try Self.validate(weight: weight, reps: reps)
             candidate.exercises[location.exercise].sets[location.set].weight = weight == 0 ? 0.0 : weight
             candidate.exercises[location.exercise].sets[location.set].reps = reps
@@ -381,6 +378,36 @@ final class ActiveWorkoutStore: ObservableObject {
                 timing.activeSince = now
             }
             candidate.timing = timing
+        }
+    }
+
+    @discardableResult
+    func saveExercise(
+        draftID: UUID,
+        exerciseBlockID: UUID,
+        expectedRevision: UInt64,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard let exerciseIndex = candidate.exercises.firstIndex(where: {
+                $0.id == exerciseBlockID
+            }) else {
+                throw ActiveWorkoutStoreError.exerciseUnavailable
+            }
+            guard !candidate.exercises[exerciseIndex].sets.isEmpty else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            for set in candidate.exercises[exerciseIndex].sets {
+                try Self.validate(weight: set.weight, reps: set.reps)
+            }
+            for setIndex in candidate.exercises[exerciseIndex].sets.indices {
+                candidate.exercises[exerciseIndex].sets[setIndex].completedAt = now
+            }
+            candidate.undoableSetID = nil
         }
     }
 
@@ -830,6 +857,12 @@ final class ActiveWorkoutStore: ObservableObject {
               Set(intent.exercises.map(\.id)).count == intent.exercises.count else {
             throw ActiveWorkoutStoreError.invalidDraft
         }
+        if let duration = intent.durationSeconds {
+            guard (0 ... 7 * 24 * 60 * 60).contains(duration),
+                  duration == max(0, Int(intent.preparedAt.timeIntervalSince(draft.startedAt))) else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+        }
         let completedBlockIDs = Set(draft.exercises.compactMap { exercise in
             exercise.sets.contains(where: \.isCompleted) ? exercise.id : nil
         })
@@ -1007,6 +1040,7 @@ final class ActiveWorkoutStore: ObservableObject {
             workoutDate: draft.workoutDate,
             note: draft.note,
             preparedAt: preparedAt,
+            durationSeconds: max(0, Int(preparedAt.timeIntervalSince(draft.startedAt))),
             exercises: completedExercises
         )
     }

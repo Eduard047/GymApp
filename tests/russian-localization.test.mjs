@@ -52,16 +52,15 @@ test("Android Russian resources cover every English string with compatible place
   assert.equal(russian.get("action_start_workout"), "Начать тренировку");
   assert.match(english.get("add_workout_plan_mode_hint"), /targets sent to Garmin/);
   assert.match(english.get("add_workout_active_mode_hint"), /durable local plan/);
-  assert.match(
-    english.get("active_workout_supporting"),
-    /saved before a movement-aware rest timer starts/
-  );
   assert.match(addWorkout, /R\.string\.action_add_planned_set/);
   assert.match(addWorkout, /R\.string\.action_start_workout/);
   assert.match(addWorkout, /R\.string\.add_workout_plan_mode_hint/);
   assert.match(addWorkout, /R\.string\.add_workout_active_mode_hint/);
-  assert.match(activeWorkout, /R\.string\.action_log_set_and_rest/);
-  assert.match(activeWorkout, /R\.string\.active_workout_finish_supporting/);
+  assert.match(activeWorkout, /R\.string\.active_workout_add_set/);
+  assert.match(activeWorkout, /R\.string\.action_save_all_pending_sets/);
+  assert.doesNotMatch(activeWorkout, /R\.string\.action_log_set_and_rest/);
+  assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_supporting/);
+  assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_finish_supporting/);
   assert.equal(english.get("garmin_set_intervals_title"), "Chronological watch sets");
   assert.equal(ukrainian.get("garmin_watch_set_label"), "Підхід з годинника S%1$d");
   assert.equal(russian.get("garmin_watch_set_label"), "Подход с часов S%1$d");
@@ -247,12 +246,12 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.match(indexSource, /russian-text\.v83\.js/);
+  assert.match(indexSource, /russian-text\.v84\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v95\.js/);
-  assert.match(workerSource, /russian-text\.v83\.js/);
+  assert.match(indexSource, /app\.v96\.js/);
+  assert.match(workerSource, /russian-text\.v84\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v95\.js/);
+  assert.match(workerSource, /app\.v96\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });

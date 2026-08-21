@@ -34,7 +34,7 @@ struct SocialSelfProfile: Equatable, Sendable {
     let settingsRevision: Int
 }
 
-struct SocialFriendSummary: Identifiable, Equatable, Sendable {
+struct SocialFriendSummary: Identifiable, Codable, Equatable, Sendable {
     var id: String { friendshipID }
 
     let friendshipID: String
@@ -186,6 +186,7 @@ struct SocialFriendWorkout: Identifiable, Equatable, Sendable {
     let workoutDay: String
     let exerciseCount: Int
     let setCount: Int
+    let durationSeconds: Int?
     let truncated: Bool
     let exercises: [SocialFriendWorkoutExercise]
 }
@@ -975,10 +976,11 @@ enum SocialPayloadParser {
     private static func friendWorkout(_ value: Any) throws -> SocialFriendWorkout {
         let workoutObject = try object(
             value,
-            keys: [
+            requiredKeys: [
                 "workoutId", "startedAt", "workoutDay", "exerciseCount", "setCount",
                 "truncated", "exercises"
-            ]
+            ],
+            optionalKeys: ["durationSeconds"]
         )
         let workoutID = try string(workoutObject["workoutId"], maximumCharacters: 35, maximumBytes: 35)
         guard workoutID.range(
@@ -989,6 +991,10 @@ enum SocialPayloadParser {
         }
         let exerciseCount = try integer(workoutObject["exerciseCount"], range: 1 ... 100)
         let setCount = try integer(workoutObject["setCount"], range: 1 ... 10_000)
+        let durationSeconds = workoutObject["durationSeconds"] == nil ||
+            isNull(workoutObject["durationSeconds"])
+            ? nil
+            : try integer(workoutObject["durationSeconds"], range: 0 ... 604_800)
         let truncated = try boolean(workoutObject["truncated"])
         let exercises = try array(
             workoutObject["exercises"],
@@ -1027,6 +1033,7 @@ enum SocialPayloadParser {
             workoutDay: try day(workoutObject["workoutDay"]),
             exerciseCount: exerciseCount,
             setCount: setCount,
+            durationSeconds: durationSeconds,
             truncated: truncated,
             exercises: exercises
         )

@@ -103,6 +103,7 @@ final class CloudSyncService: ObservableObject {
         xp: Int,
         level: Int,
         workouts: Int,
+        workoutDurations: [[String: Any]] = [],
         expectedUserID: String? = nil
     ) async throws {
         guard backupData.count <= Self.maximumCloudStateBytes else {
@@ -177,6 +178,31 @@ final class CloudSyncService: ObservableObject {
             prefer: "resolution=merge-duplicates,return=minimal",
             body: profileBody
         )
+        guard operationRevision == expectedOperation,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
+
+        do {
+            let durationData = try await request(
+                path: "/rest/v1/rpc/social_sync_workout_durations",
+                method: "POST",
+                expectedUserID: userID,
+                body: ["p_items": workoutDurations]
+            )
+            guard let result = try JSONSerialization.jsonObject(with: durationData) as? [String: Any],
+                  Set(result.keys) == ["version", "syncedCount"],
+                  (result["version"] as? NSNumber)?.intValue == 1,
+                  (result["syncedCount"] as? NSNumber)?.intValue == workoutDurations.count else {
+                throw CloudSyncError.invalidResponse
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // The core row and public profile are already committed. Duration is an
+            // optional forward-compatible sidecar, so a transient RPC failure must not
+            // turn that successful write into a stale-revision retry loop.
+        }
         guard operationRevision == expectedOperation,
               auth.session?.cloud?.userID == userID else {
             throw AuthServiceError.sessionChanged

@@ -143,6 +143,44 @@ class CloudStateContractTest {
     }
 
     @Test
+    fun `duration sidecar is bounded while the legacy cloud core stays exact`() {
+        val input = canonicalState().apply {
+            getJSONArray("sessions").getJSONObject(0).put("durationSeconds", 3_723)
+        }
+
+        val sidecar = workoutDurationSyncItems(input)
+        val written = attachSharedCloudExtensions(input, extensions = null)
+
+        assertEquals(1, sidecar.length())
+        assertEquals(
+            input.getJSONArray("sessions").getJSONObject(0).getLong("date"),
+            sidecar.getJSONObject(0).getLong("workoutStartedAt")
+        )
+        assertEquals(3_723L, sidecar.getJSONObject(0).getLong("durationSeconds"))
+        assertFalse(written.getJSONArray("sessions").getJSONObject(0).has("durationSeconds"))
+        assertTrue(isCanonicalSharedCloudEnvelope(written, userId))
+    }
+
+    @Test
+    fun `duration sidecar rejects out of range and ambiguous session timestamps`() {
+        val outOfRange = canonicalState().apply {
+            getJSONArray("sessions").getJSONObject(0).put("durationSeconds", 604_801)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            workoutDurationSyncItems(outOfRange)
+        }
+
+        val duplicate = canonicalState().apply {
+            val first = getJSONArray("sessions").getJSONObject(0)
+            first.put("durationSeconds", 60)
+            getJSONArray("sessions").put(JSONObject(first.toString()).put("durationSeconds", 90))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            workoutDurationSyncItems(duplicate)
+        }
+    }
+
+    @Test
     fun `canonical v2 normalizes missing built-in catalog keys in catalog and blocks`() {
         val expectedDigest = canonicalWorkoutPayloadDigest(canonicalState())
         val compatibleRows = listOf(

@@ -2909,7 +2909,8 @@ test("workout share chooser keeps link fallback and targets confirmed friends on
   assert.match(markup, /data-action="send-workout-invite"/);
   assert.match(markup, /data-action="send-live-workout-invite"/);
   assert.match(markup, /p_22222222222222222222222222222222/);
-  assert.match(markup, /Live starts for both people as soon as the friend joins and keeps set progress synchronized/);
+  assert.match(markup, /Only exercises and planned sets are shared\./);
+  assert.doesNotMatch(markup, /Live starts for both people as soon as the friend joins and keeps set progress synchronized/);
   assert.doesNotMatch(markup, /accountId|userId|private note|must-not-leak/);
 });
 

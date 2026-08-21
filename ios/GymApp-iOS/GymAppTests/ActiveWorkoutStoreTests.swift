@@ -622,6 +622,39 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(completed.activeElapsedSeconds(at: completedAt.addingTimeInterval(10)), 30)
     }
 
+    func testFinishPersistsWallClockDurationAndFullBackupRoundTripsIt() throws {
+        let context = try makeContext(account: "active-duration")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let setID = UUID()
+        let started = try startSingleSet(
+            context,
+            setID: setID,
+            weight: 0,
+            reps: 12,
+            now: startedAt
+        )
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: setID,
+            expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(60)
+        )
+
+        let finished = try context.active.finish(
+            draftID: recorded.id,
+            expectedRevision: recorded.revision,
+            into: context.history,
+            now: startedAt.addingTimeInterval(3_723)
+        )
+
+        XCTAssertEqual(finished.durationSeconds, 3_723)
+        let backup = try context.history.makeBackup(
+            owner: BackupOwner(accountID: "active-duration", userID: nil, email: nil, remote: false)
+        )
+        XCTAssertEqual(backup.sessions.count, 1)
+        XCTAssertEqual(try XCTUnwrap(backup.sessions.first).durationSeconds, 3_723)
+    }
+
     func testRecordAllSetsRollsBackMissingOrInvalidInputAndRejectsStaleRevision() throws {
         let context = try makeContext(account: "active-record-all-rollback")
         let startedAt = Date(timeIntervalSince1970: 1_800_000_090)

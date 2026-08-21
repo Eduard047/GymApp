@@ -104,6 +104,8 @@ class ActiveWorkoutLifecycleTest {
             assertTrue(finish is FinishActiveWorkoutResult.Finished)
             val sessionId = (finish as FinishActiveWorkoutResult.Finished).sessionId
             val history = checkNotNull(database.workoutDao().getSessionDetailsSnapshot(sessionId))
+            assertNotNull(history.session.durationSeconds)
+            assertTrue(history.session.durationSeconds in 0L..604_800L)
             val savedSets = history.workoutExercises.single().sets
             assertEquals(1, savedSets.size)
             assertEquals(81.0, savedSets.single().weight, 0.0)

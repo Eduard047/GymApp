@@ -155,17 +155,20 @@ public struct WorkoutSession: Codable, Identifiable, Hashable, Sendable {
     public let id: UUID
     public var date: Date
     public var note: String?
+    public var durationSeconds: Int?
     public var exercises: [WorkoutExercise]
 
     public init(
         id: UUID = UUID(),
         date: Date,
         note: String? = nil,
+        durationSeconds: Int? = nil,
         exercises: [WorkoutExercise]
     ) {
         self.id = id
         self.date = date
         self.note = note
+        self.durationSeconds = durationSeconds
         self.exercises = exercises
     }
 
@@ -230,6 +233,7 @@ public struct WorkoutSessionSummary: Codable, Identifiable, Hashable, Sendable {
     public let workoutID: UUID
     public let date: Date
     public let note: String?
+    public let durationSeconds: Int?
     public let exerciseCount: Int
     public let setCount: Int
     public let totalVolume: Double
@@ -238,6 +242,7 @@ public struct WorkoutSessionSummary: Codable, Identifiable, Hashable, Sendable {
         workoutID: UUID,
         date: Date,
         note: String?,
+        durationSeconds: Int? = nil,
         exerciseCount: Int,
         setCount: Int,
         totalVolume: Double
@@ -245,6 +250,7 @@ public struct WorkoutSessionSummary: Codable, Identifiable, Hashable, Sendable {
         self.workoutID = workoutID
         self.date = date
         self.note = note
+        self.durationSeconds = durationSeconds
         self.exerciseCount = exerciseCount
         self.setCount = setCount
         self.totalVolume = totalVolume
@@ -674,17 +680,20 @@ public struct BackupSession: Codable, Hashable, Sendable {
     public var date: Int64?
     public var startedAt: Int64?
     public var note: String?
+    public var durationSeconds: Int?
     public var exercises: [BackupWorkoutExercise]?
     public var sets: [LegacyBackupSet]?
 
     public init(
         date: Int64,
         note: String? = nil,
+        durationSeconds: Int? = nil,
         exercises: [BackupWorkoutExercise]
     ) {
         self.date = date
         self.startedAt = nil
         self.note = note
+        self.durationSeconds = durationSeconds
         self.exercises = exercises
         self.sets = nil
     }

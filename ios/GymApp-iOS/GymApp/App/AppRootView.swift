@@ -510,6 +510,17 @@ private struct MainTabShell: View {
             workoutStorageURL: currentStore.storageURL
         )
         try? activeStore.rebindExercises(to: currentStore)
+        let planDraftStore = WorkoutPlanEditorDraftStore()
+        let persistedPlanDraft: WorkoutPlanEditorDraftState?
+        if activeStore.draft == nil {
+            persistedPlanDraft = planDraftStore.load(
+                accountStorageKey: currentStore.accountStorageKey
+            )
+        } else {
+            planDraftStore.clear(accountStorageKey: currentStore.accountStorageKey)
+            persistedPlanDraft = nil
+        }
+        _workoutEditorDraft = State(initialValue: persistedPlanDraft)
         _activeWorkoutStore = StateObject(
             wrappedValue: activeStore
         )
@@ -962,6 +973,12 @@ private struct MainTabShell: View {
                 presentSharedWorkoutPreviewIfPossible()
                 scheduleAutomaticTutorial()
             }
+        }
+        .onChange(of: workoutEditorDraft) { draft in
+            WorkoutPlanEditorDraftStore().save(
+                draft,
+                accountStorageKey: store.accountStorageKey
+            )
         }
         .onChange(of: showsActiveWorkout) { isPresented in
             if !isPresented {

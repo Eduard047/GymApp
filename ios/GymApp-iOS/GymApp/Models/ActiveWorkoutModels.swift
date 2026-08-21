@@ -63,7 +63,24 @@ struct ActiveWorkoutCommitIntent: Codable, Equatable, Sendable {
     let workoutDate: Date
     let note: String?
     let preparedAt: Date
+    let durationSeconds: Int?
     let exercises: [ActiveWorkoutCommitExercise]
+
+    init(
+        workoutID: UUID,
+        workoutDate: Date,
+        note: String?,
+        preparedAt: Date,
+        durationSeconds: Int? = nil,
+        exercises: [ActiveWorkoutCommitExercise]
+    ) {
+        self.workoutID = workoutID
+        self.workoutDate = workoutDate
+        self.note = note
+        self.preparedAt = preparedAt
+        self.durationSeconds = durationSeconds
+        self.exercises = exercises
+    }
 }
 
 /// Local-only stopwatch state. The workout's editable envelope remains backward
