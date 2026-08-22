@@ -88,6 +88,14 @@ covered owner, friend, anonymous, non-friend, stale-revision, replay, revoke,
 future-workout, zero-weight, and exact-two-participant cases without retaining
 fixture rows.
 
+On 2026-08-22 the production migration history was verified through
+`20260822071247`. The workout-duration sidecar and its corrected friend-detail
+enrichment retain private-table denial, exact live-session ownership, explicit
+detail consent, and the bounded latest-five projection. A rollback-only
+synthetic smoke covered owner sync, malformed input, cross-account isolation,
+authorized friend read, consent revocation, and invalid-session denial; it
+retained zero fixture rows.
+
 Public Supabase client identifiers are not privileged credentials. Secret keys,
 service-role keys, connection strings, raw device tokens, and real account data
 must never enter clients, logs, Git, or release assets.

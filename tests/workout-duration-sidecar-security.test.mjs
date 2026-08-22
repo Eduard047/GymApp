@@ -7,7 +7,7 @@ const migration = await readFile(
   "utf8"
 );
 const enrichmentFix = await readFile(
-  "supabase/migrations/20260822065909_fix_friend_workout_duration_enrichment.sql",
+  "supabase/migrations/20260822071247_fix_friend_workout_duration_enrichment.sql",
   "utf8"
 );
 
