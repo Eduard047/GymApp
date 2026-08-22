@@ -1064,6 +1064,9 @@ final class AppState: ObservableObject {
             )
             return
         }
+        if cloudSavePhase == .debouncing {
+            abandonPendingCloudSave()
+        }
         let store = workoutStore
         let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
         do {

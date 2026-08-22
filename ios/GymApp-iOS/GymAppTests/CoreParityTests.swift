@@ -10697,6 +10697,7 @@ final class CoreParityTests: XCTestCase {
         _ = try appState.workoutStore.addExercise(name: "This Device Exercise")
 
         await appState.forceCloudSync()
+        try await Task.sleep(for: .seconds(2))
 
         XCTAssertNotNil(appState.cloudSyncConflict)
         XCTAssertEqual(appState.cloudSyncStatus, .conflict)
