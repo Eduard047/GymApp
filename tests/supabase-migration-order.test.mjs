@@ -6,9 +6,11 @@ const migrationsDirectory = "supabase/migrations";
 const migrationNamePattern = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 
 const productionFirstRecordedVersion = "20260629115900";
-const productionLastRecordedVersion = "20260816233818";
-const productionMigrationCount = 45;
-const reviewedForwardMigrations = [];
+const productionLastRecordedVersion = "20260821200800";
+const productionMigrationCount = 46;
+const reviewedForwardMigrations = [
+  "20260822065909_fix_friend_workout_duration_enrichment.sql",
+];
 
 function migrationVersion(fileName) {
   const match = migrationNamePattern.exec(fileName);
