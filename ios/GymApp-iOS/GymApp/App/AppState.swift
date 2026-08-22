@@ -1064,6 +1064,7 @@ final class AppState: ObservableObject {
             )
             return
         }
+        await Task.yield()
         if cloudSavePhase == .debouncing {
             abandonPendingCloudSave()
         }
