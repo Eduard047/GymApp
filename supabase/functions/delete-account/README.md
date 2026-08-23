@@ -16,7 +16,7 @@ Repository contract 4 has canonical source SHA-256
 the release gate remains closed until that source is deployed and read back.
 The one-time reauthentication grant, durable pre-authentication budget, HMAC
 secret, and service-only wrapper were applied and read back; the deployment
-contract release gate is open.
+contract release gate is closed for repository contract 4.
 
 Security properties:
 
