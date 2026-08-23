@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v134";
+const CACHE_VERSION = "v136";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -34,27 +34,27 @@ const ASSETS = [
   "./index.html",
   "./confirmed.html",
   "./confirmed.v56.css",
-  "./confirmed.v56.js",
+  "./confirmed.v57.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
   "./styles.v77.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
-  "./state-contract.v71.js",
+  "./state-contract.v72.js",
   "./garmin-cloud-sync.v57.js",
   "./progression-rules.v57.js",
-  "./shared-workout.v65.js",
+  "./shared-workout.v66.js",
   "./shared-workout-flow.v71.js",
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
   "./russian-text.v84.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v96.js",
+  "./app.v98.js",
   "./workout/",
   "./workout/index.html",
   "./workout/landing.v2.css",
-  "./workout/landing.v3.js",
+  "./workout/landing.v4.js",
   ...EXERCISE_MEDIA_KEYS.flatMap(key => [
     `./exercise-media/${key}_0.jpg`,
     `./exercise-media/${key}_1.jpg`
