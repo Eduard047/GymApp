@@ -11,64 +11,6 @@ $ErrorActionPreference = "Stop"
 
 $expectedPackageId = "com.setforge.gymapp"
 
-function ConvertFrom-JavaPropertyEscapes {
-    param([string]$Value)
-
-    $builder = [System.Text.StringBuilder]::new()
-    for ($index = 0; $index -lt $Value.Length; $index++) {
-        $character = $Value[$index]
-        if ($character -ne '\' -or $index + 1 -ge $Value.Length) {
-            [void]$builder.Append($character)
-            continue
-        }
-
-        $index++
-        $escaped = $Value[$index]
-        switch ($escaped) {
-            't' { [void]$builder.Append("`t") }
-            'r' { [void]$builder.Append("`r") }
-            'n' { [void]$builder.Append("`n") }
-            'f' { [void]$builder.Append([char]12) }
-            'u' {
-                if ($index + 4 -ge $Value.Length) {
-                    throw "Invalid Unicode escape in keystore.properties."
-                }
-                $hex = $Value.Substring($index + 1, 4)
-                $codePoint = 0
-                if (-not [int]::TryParse(
-                    $hex,
-                    [System.Globalization.NumberStyles]::HexNumber,
-                    [System.Globalization.CultureInfo]::InvariantCulture,
-                    [ref]$codePoint
-                )) {
-                    throw "Invalid Unicode escape in keystore.properties."
-                }
-                [void]$builder.Append([char]$codePoint)
-                $index += 4
-            }
-            default { [void]$builder.Append($escaped) }
-        }
-    }
-    return $builder.ToString()
-}
-
-function Read-ReleaseKeystoreProperties {
-    param([string]$Path)
-
-    $properties = @{}
-    foreach ($line in Get-Content -LiteralPath $Path) {
-        if ($line -match '^\s*(storeFile|storePassword|keyAlias|storeType)\s*[=:]\s*(.*)$') {
-            $properties[$matches[1]] = ConvertFrom-JavaPropertyEscapes $matches[2]
-        }
-    }
-    foreach ($requiredName in @('storeFile', 'storePassword', 'keyAlias')) {
-        if ([string]::IsNullOrWhiteSpace($properties[$requiredName])) {
-            throw "keystore.properties is missing required release signing configuration."
-        }
-    }
-    return $properties
-}
-
 function Get-Sha256Hex {
     param([byte[]]$Bytes)
 
@@ -498,17 +440,25 @@ if (-not (Test-Path $gradleWrapperPath)) {
     throw "Gradle wrapper not found at: $gradleWrapperPath"
 }
 
-$keystorePropertiesPath = Join-Path $projectRoot "keystore.properties"
-if (-not (Test-Path $keystorePropertiesPath)) {
-    throw "keystore.properties not found. Create a local release keystore before building the Play Store AAB."
+$keystorePath = $env:GYMAPP_RELEASE_KEYSTORE_PATH
+$releaseKeyAlias = $env:GYMAPP_RELEASE_KEY_ALIAS
+$releaseStorePassword = $env:GYMAPP_RELEASE_STORE_PASSWORD
+$releaseKeyPassword = $env:GYMAPP_RELEASE_KEY_PASSWORD
+$releaseStoreType = $env:GYMAPP_RELEASE_STORE_TYPE
+if (@($keystorePath, $releaseKeyAlias, $releaseStorePassword, $releaseKeyPassword) |
+    Where-Object { [string]::IsNullOrWhiteSpace($_) }) {
+    throw "Release signing requires all GYMAPP_RELEASE_* environment variables."
 }
-$keystoreProperties = Read-ReleaseKeystoreProperties $keystorePropertiesPath
-$keystorePath = $keystoreProperties['storeFile']
 if (-not [System.IO.Path]::IsPathRooted($keystorePath)) {
-    $keystorePath = Join-Path $projectRoot $keystorePath
+    throw "GYMAPP_RELEASE_KEYSTORE_PATH must be an absolute path outside the repository."
+}
+$keystorePath = [System.IO.Path]::GetFullPath($keystorePath)
+$repositoryPrefix = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+if ($keystorePath.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "The release keystore must be stored outside the repository."
 }
 if (-not (Test-Path -LiteralPath $keystorePath -PathType Leaf)) {
-    throw "The configured release keystore file was not found."
+    throw "The external release keystore file was not found."
 }
 
 $gradlePropertiesPath = Join-Path $projectRoot "gradle.properties"
@@ -563,9 +513,9 @@ $aapt2Path = Resolve-AndroidBuildTool $androidSdkPath 'aapt2'
 $keystoreCertificateArguments = @{
     KeytoolPath = $keytoolPath
     KeystorePath = $keystorePath
-    KeyAlias = $keystoreProperties['keyAlias']
-    StorePassword = $keystoreProperties['storePassword']
-    StoreType = $keystoreProperties['storeType']
+    KeyAlias = $releaseKeyAlias
+    StorePassword = $releaseStorePassword
+    StoreType = $releaseStoreType
 }
 $expectedCertificateSha256 = Get-ReleaseKeystoreCertificateSha256 @keystoreCertificateArguments
 $manifestMetadataPath = Join-Path $projectRoot 'app/build/intermediates/merged_manifests/release/processReleaseManifest/output-metadata.json'
@@ -606,8 +556,8 @@ $aabSignatureArguments = @{
     KeytoolPath = $keytoolPath
     BundlePath = $bundleSource
     KeystorePath = $keystorePath
-    StorePassword = $keystoreProperties['storePassword']
-    StoreType = $keystoreProperties['storeType']
+    StorePassword = $releaseStorePassword
+    StoreType = $releaseStoreType
     ExpectedCertificateSha256 = $expectedCertificateSha256
 }
 Assert-AabSignature @aabSignatureArguments

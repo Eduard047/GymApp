@@ -1997,7 +1997,8 @@ final class AppState: ObservableObject {
 
     func deleteCurrentAccountAndData(
         expectedStorageKey: String,
-        expectedCloudUserID: String?
+        expectedCloudUserID: String?,
+        currentPassword: String? = nil
     ) async throws {
         let target = AccountDeletionTarget(
             storageKey: expectedStorageKey,
@@ -2017,7 +2018,7 @@ final class AppState: ObservableObject {
         let generation = accountDeletionGeneration
         let task = Task { @MainActor [weak self] in
             guard let self else { throw CancellationError() }
-            try await self.performAccountDeletion(target)
+            try await self.performAccountDeletion(target, currentPassword: currentPassword)
         }
         accountDeletionTarget = target
         accountDeletionTask = task
@@ -2031,7 +2032,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func performAccountDeletion(_ target: AccountDeletionTarget) async throws {
+    private func performAccountDeletion(
+        _ target: AccountDeletionTarget,
+        currentPassword: String?
+    ) async throws {
         try ensureDeletionTargetIsCurrent(target)
         let deletingStore = workoutStore
         let scheduledSave = pendingCloudSave
@@ -2056,6 +2060,7 @@ final class AppState: ObservableObject {
                 await nativePushManager?.prepareForSessionEnd(expectedUserID: cloudUserID)
                 try await auth.deleteCloudAccountOnServer(
                     expectedUserID: cloudUserID,
+                    currentPassword: currentPassword ?? "",
                     beforeRequest: {
                         // This throwing hook runs immediately before each actual
                         // DELETE URLSession load (including a retry). An initial

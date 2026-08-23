@@ -150,12 +150,12 @@ test("shared workout identities reject normalized and built-in duplicates", () =
 });
 
 test("PWA previews a validated share and imports it only after explicit confirmation", () => {
-  assert.match(workoutIndexSource, /shared-workout\.v65\.js/);
-  assert.match(workoutIndexSource, /workout\/landing\.v3\.js|\.\/landing\.v3\.js/);
+  assert.match(workoutIndexSource, /shared-workout\.v66\.js/);
+  assert.match(workoutIndexSource, /workout\/landing\.v4\.js|\.\/landing\.v4\.js/);
   assert.match(workoutIndexSource, /continue-web/);
-  assert.match(indexSource, /shared-workout\.v65\.js/);
+  assert.match(indexSource, /shared-workout\.v66\.js/);
   assert.match(indexSource, /shared-workout-flow\.v71\.js/);
-  assert.match(workerSource, /shared-workout\.v65\.js/);
+  assert.match(workerSource, /shared-workout\.v66\.js/);
   assert.match(workerSource, /shared-workout-flow\.v71\.js/);
   assert.match(appSource, /configureBuiltInIdentityResolver\?\.\(catalogKeyRecognizedFromName\)/);
   assert.match(appSource, /const SHARED_WORKOUT_URL = `\$\{PUBLIC_SITE_URL\}workout\/`/);

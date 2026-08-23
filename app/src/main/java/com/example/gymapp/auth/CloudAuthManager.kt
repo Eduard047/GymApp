@@ -308,13 +308,38 @@ internal data class CloudAccountDeletionRequest(
     val body: String
 )
 
-internal fun cloudAccountDeletionRequest(): CloudAccountDeletionRequest =
+internal fun cloudAccountDeletionPreparationRequest(): CloudAccountDeletionRequest =
+    CloudAccountDeletionRequest(
+        path = "/functions/v1/delete-account",
+        method = "POST",
+        headers = emptyMap(),
+        body = JSONObject().put("action", "prepare").toString()
+    )
+
+internal fun cloudAccountDeletionRequest(grant: String): CloudAccountDeletionRequest =
     CloudAccountDeletionRequest(
         path = "/functions/v1/delete-account",
         method = "POST",
         headers = mapOf("X-GymApp-Delete" to "confirmed"),
-        body = JSONObject().put("confirmation", "DELETE").toString()
+        body = JSONObject()
+            .put("action", "delete")
+            .put("confirmation", "DELETE")
+            .put("grant", grant)
+            .toString()
     )
+
+internal fun accountDeletionGrantFromResponse(response: String): String? = runCatching {
+    val json = JSONObject(response)
+    val keys = buildSet {
+        val iterator = json.keys()
+        while (iterator.hasNext()) add(iterator.next())
+    }
+    json.optString("grant").takeIf {
+        keys == setOf("grant", "expiresAt") &&
+            it.matches(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) &&
+            runCatching { OffsetDateTime.parse(json.getString("expiresAt")) }.isSuccess
+    }
+}.getOrNull()
 
 internal fun isSuccessfulCloudAccountDeletionResponse(response: String): Boolean = runCatching {
     val json = JSONObject(response)
@@ -612,6 +637,7 @@ class CloudAuthManager internal constructor(
     )
 
     private val prefs = context.applicationContext.getSharedPreferences("gym_cloud_auth", Context.MODE_PRIVATE)
+    private val secureAuthStore = AndroidKeystoreAuthStore(context.applicationContext)
     private val localDatabaseBindingStore = LocalDatabaseBindingStore(context.applicationContext)
     private val localProfileRegistry = localProfileRegistryOverride
         ?: LocalProfileRegistry(context.applicationContext)
@@ -619,7 +645,7 @@ class CloudAuthManager internal constructor(
         editor.commit()
     }
     private val localAuthClearer = localAuthClearerOverride ?: {
-        clearAuthPreferencesSynchronously(prefs)
+        clearAllAuthStorageSynchronously()
     }
     private val liveWorkoutSidecarStore = LiveWorkoutSidecarStore(context.applicationContext)
     private val socialWorkoutInviteRequestStore =
@@ -926,6 +952,9 @@ class CloudAuthManager internal constructor(
                 }
                 error("The local account could not be persisted.")
             }
+            check(secureAuthStore.clear()) {
+                "Protected cloud credentials could not be cleared for the local account transition."
+            }
             val physicalDatabaseName = runCatching {
                 localDatabaseBindingStore.physicalDatabaseName(session)
             }.getOrElse { error ->
@@ -1047,7 +1076,7 @@ class CloudAuthManager internal constructor(
             }
             authMutationVersion += 1
             remoteStateRevisions.clear()
-            val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
+            val preferencesCleared = clearAllAuthStorageSynchronously()
             if (!preferencesCleared) {
                 // A storage failure must never keep the captured access token active in memory.
                 // Retry the disk clear asynchronously while the process remains signed out.
@@ -1278,14 +1307,52 @@ class CloudAuthManager internal constructor(
 
     /** Deletes the authenticated Supabase account. Local account data is cleared by the caller. */
     suspend fun deleteCloudAccount(
-        expectedSession: AccountSession.Cloud
+        expectedSession: AccountSession.Cloud,
+        currentPassword: String
     ): AccountSession.Cloud = withContext(Dispatchers.IO) {
+        require(currentPassword.isNotEmpty()) { "Enter your current password." }
+        require(currentPassword.toByteArray(Charsets.UTF_8).size <= 1_024) {
+            "Current password is too long."
+        }
         val session = synchronized(authStateLock) {
             activeCloudSessionFor(_authState.value.session, expectedSession)
         } ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
-        val freshSession = freshCloudSession(session)
+        val reauthenticated = cloudSessionFromAuthResponse(
+            JSONObject(
+                request(
+                    path = "/auth/v1/token?grant_type=password",
+                    method = "POST",
+                    body = JSONObject()
+                        .put("email", session.email)
+                        .put("password", currentPassword)
+                        .toString()
+                )
+            )
+        )
+        require(reauthenticated.userId == session.userId &&
+            reauthenticated.email.equals(session.email, ignoreCase = true)) {
+            "Account reauthentication returned a different owner."
+        }
+        val freshSession = synchronized(authStateLock) {
+            activeCloudSessionFor(_authState.value.session, session)
+                ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
+            persist(reauthenticated)
+            _authState.value = _authState.value.copy(session = reauthenticated)
+            reauthenticated
+        }
         val requestSession = requireActiveCloudSession(freshSession)
-        val deletionRequest = cloudAccountDeletionRequest()
+        val preparationRequest = cloudAccountDeletionPreparationRequest()
+        val grant = accountDeletionGrantFromResponse(
+            request(
+                path = preparationRequest.path,
+                method = preparationRequest.method,
+                token = requestSession.accessToken,
+                body = preparationRequest.body,
+                additionalHeaders = preparationRequest.headers,
+                maxResponseBytes = 2 * 1_024
+            )
+        ) ?: error("Cloud account deletion preparation returned an invalid response.")
+        val deletionRequest = cloudAccountDeletionRequest(grant)
         val deletionRecord = checkNotNull(
             PendingCloudAccountDeletion.fromSession(freshSession)
         ) { "Cloud account identity is invalid." }
@@ -1348,7 +1415,7 @@ class CloudAuthManager internal constructor(
         authMutationVersion += 1
         remoteStateRevisions.clear()
         liveWorkoutSidecarStore.clearCloudAccountLocalState(expectedSession.userId)
-        if (!clearAuthPreferencesSynchronously(prefs)) {
+        if (!clearAllAuthStorageSynchronously()) {
             prefs.edit().clear().apply()
         }
         _authState.value = fallbackState
@@ -1366,7 +1433,7 @@ class CloudAuthManager internal constructor(
             authMutationVersion += 1
             remoteStateRevisions.clear()
             liveWorkoutSidecarStore.clearCloudAccountLocalState(expectedSession.userId)
-            val preferencesCleared = clearAuthPreferencesSynchronously(prefs)
+            val preferencesCleared = clearAllAuthStorageSynchronously()
             durableAuthCleanupCompleted = preferencesCleared
             if (!preferencesCleared) {
                 // The server-side account is already gone. Keep the process signed out and
@@ -1385,7 +1452,7 @@ class CloudAuthManager internal constructor(
             // A concurrent logout may have cleared only the in-memory state. Retry the durable
             // clear before allowing the deletion journal to retire.
             liveWorkoutSidecarStore.clearCloudAccountLocalState(expectedSession.userId)
-            durableAuthCleanupCompleted = clearAuthPreferencesSynchronously(prefs)
+            durableAuthCleanupCompleted = clearAllAuthStorageSynchronously()
             if (!durableAuthCleanupCompleted) prefs.edit().clear().apply()
         }
         // When another account has already become active, retain the owner-bound journal until
@@ -2477,17 +2544,18 @@ class CloudAuthManager internal constructor(
             email = email,
             createdAtMillis = System.currentTimeMillis()
         ).also { transaction ->
-            prefs.edit()
-                .putString(
-                    key,
-                    JSONObject()
-                        .put("state", transaction.state)
-                        .put("codeVerifier", transaction.codeVerifier)
-                        .put("email", transaction.email)
-                        .put("createdAtMillis", transaction.createdAtMillis)
-                        .toString()
-                )
-                .apply()
+            val encoded = JSONObject()
+                .put("state", transaction.state)
+                .put("codeVerifier", transaction.codeVerifier)
+                .put("email", transaction.email)
+                .put("createdAtMillis", transaction.createdAtMillis)
+                .toString()
+            check(secureAuthStore.putString(key, encoded)) {
+                "The authentication transaction could not be protected."
+            }
+            check(prefs.edit().remove(key).commit()) {
+                "The legacy authentication transaction could not be removed."
+            }
         }
     }
 
@@ -2521,7 +2589,10 @@ class CloudAuthManager internal constructor(
 
     private fun pendingAuthTransaction(key: String): PendingAuthTransaction? {
         return runCatching {
-            val json = JSONObject(prefs.getString(key, null).orEmpty())
+            val protected = secureAuthStore.getString(key)
+            val legacy = prefs.getString(key, null)
+            val raw = protected ?: legacy
+            val json = JSONObject(raw.orEmpty())
             PendingAuthTransaction(
                 state = json.getString("state"),
                 codeVerifier = json.getString("codeVerifier"),
@@ -2531,6 +2602,11 @@ class CloudAuthManager internal constructor(
                 transaction.state.matches(Regex("^[A-Za-z0-9_-]{32}$")) &&
                     transaction.codeVerifier.matches(Regex("^[A-Za-z0-9_-]{43,128}$")) &&
                     transaction.email.length <= 254
+            }?.also {
+                if (protected == null) {
+                    check(secureAuthStore.putString(key, checkNotNull(legacy)))
+                    check(prefs.edit().remove(key).commit())
+                }
             }
         }.getOrNull()
     }
@@ -2538,7 +2614,8 @@ class CloudAuthManager internal constructor(
     private fun clearPendingAuthTransaction(key: String, expectedState: String? = null) {
         synchronized(authStateLock) {
             if (expectedState == null || pendingAuthTransaction(key)?.state == expectedState) {
-                prefs.edit().remove(key).apply()
+                secureAuthStore.remove(key)
+                prefs.edit().remove(key).commit()
             }
         }
     }
@@ -2563,26 +2640,27 @@ class CloudAuthManager internal constructor(
         ) {
             "Local deletion cleanup is still pending for this account. Restart GymApp and try again."
         }
-        prefs.edit()
-            .putString("mode", "cloud")
-            .putString(
-                "cloud",
-                JSONObject()
-                    .put("userId", session.userId)
-                    .put("email", session.email)
-                    .put("displayName", session.displayName)
-                    .put("accessToken", session.accessToken)
-                    .put("refreshToken", session.refreshToken)
-                    .put("sessionGeneration", session.sessionGeneration)
-                    .toString()
-            )
-            .apply()
+        val encoded = JSONObject()
+            .put("userId", session.userId)
+            .put("email", session.email)
+            .put("displayName", session.displayName)
+            .put("accessToken", session.accessToken)
+            .put("refreshToken", session.refreshToken)
+            .put("sessionGeneration", session.sessionGeneration)
+            .toString()
+        check(secureAuthStore.putString("cloud", encoded)) {
+            "Cloud credentials could not be protected."
+        }
+        check(prefs.edit().putString("mode", "cloud").remove("cloud").commit()) {
+            secureAuthStore.remove("cloud")
+            "Cloud authentication state could not be committed."
+        }
     }
 
     private fun readSession(): StoredSessionRead {
         val pendingDeletion = localProfileDeletionJournal.snapshot()
         if (pendingDeletion.unreadable || pendingDeletion.record != null) {
-            clearAuthPreferencesSynchronously(prefs)
+            clearAllAuthStorageSynchronously()
             return StoredSessionRead(
                 recoveryMessage = LocalizedText(R.string.local_profile_delete_cleanup_pending)
             )
@@ -2631,7 +2709,7 @@ class CloudAuthManager internal constructor(
                         if (pendingCreation && storedProfileId != null) {
                             val databaseRolledBack = pendingPhysicalDatabaseName != null &&
                                 localDatabaseRollback(pendingPhysicalDatabaseName)
-                            if (databaseRolledBack && clearAuthPreferencesSynchronously(prefs)) {
+                            if (databaseRolledBack && clearAllAuthStorageSynchronously()) {
                                 // Only remove the durable identity after its auth pointer and
                                 // any partially created DB files are gone. A failed cleanup is
                                 // left journaled for a future retry, but never published.
@@ -2663,7 +2741,17 @@ class CloudAuthManager internal constructor(
                     }
                 }
             }
-            "cloud" -> parseStoredCloudSession(prefs.getString("cloud", null))
+            "cloud" -> run {
+                val protected = secureAuthStore.getString("cloud")
+                val legacy = prefs.getString("cloud", null)
+                val raw = protected ?: legacy
+                parseStoredCloudSession(raw)?.also {
+                    if (protected == null) {
+                        check(secureAuthStore.putString("cloud", checkNotNull(legacy)))
+                        check(prefs.edit().remove("cloud").commit())
+                    }
+                }
+            }
                 ?.let { session ->
                     if (shouldSuppressRestoredCloudSession(
                             accountDeletionJournal.snapshot(),
@@ -2672,7 +2760,7 @@ class CloudAuthManager internal constructor(
                     ) {
                         // A deletion request with an unknown or successful outcome must never
                         // restore that owner's local session while durable cleanup is retried.
-                        if (!clearAuthPreferencesSynchronously(prefs)) {
+                        if (!clearAllAuthStorageSynchronously()) {
                             prefs.edit().clear().apply()
                         }
                         StoredSessionRead(
@@ -2697,6 +2785,12 @@ class CloudAuthManager internal constructor(
         }
     }
 
+    private fun clearAllAuthStorageSynchronously(): Boolean {
+        val protectedCleared = secureAuthStore.clear()
+        val legacyCleared = clearAuthPreferencesSynchronously(prefs)
+        return protectedCleared && legacyCleared
+    }
+
     private fun isStructurallyValidCloudSession(session: AccountSession.Cloud): Boolean =
         isCanonicalUuid(session.userId) &&
             isStructurallyValidEmail(session.email.trim().lowercase()) &&
@@ -2712,7 +2806,7 @@ class CloudAuthManager internal constructor(
             if (activeCloudSessionFor(_authState.value.session, expectedSession) == null) return
             authMutationVersion += 1
             remoteStateRevisions.clear()
-            if (!clearAuthPreferencesSynchronously(prefs)) {
+            if (!clearAllAuthStorageSynchronously()) {
                 prefs.edit().clear().apply()
             }
             _authState.value = AuthUiState(

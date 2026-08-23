@@ -7,6 +7,8 @@
         <!-- Auth sessions, PKCE verifiers, push bindings, and Garmin credentials are device-bound. -->
         <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
+        <exclude domain="sharedpref" path="gym_cloud_auth_secure.xml" />
+        <exclude domain="sharedpref" path="gym_cloud_auth_secure.xml.bak" />
         <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml" />
         <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml.bak" />
         <exclude domain="sharedpref" path="gym_local_database_bindings.xml" />
@@ -47,6 +49,8 @@
         <exclude domain="file" path="." />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml" />
         <exclude domain="sharedpref" path="gym_cloud_auth.xml.bak" />
+        <exclude domain="sharedpref" path="gym_cloud_auth_secure.xml" />
+        <exclude domain="sharedpref" path="gym_cloud_auth_secure.xml.bak" />
         <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml" />
         <exclude domain="sharedpref" path="gym_cloud_account_deletion_journal.xml.bak" />
         <exclude domain="sharedpref" path="gym_local_database_bindings.xml" />

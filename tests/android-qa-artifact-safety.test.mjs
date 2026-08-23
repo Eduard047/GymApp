@@ -58,13 +58,21 @@ test("QA authentication callbacks cannot be claimed by the production app", () =
   assert.match(cloudAuth, /BuildConfig\.AUTH_BRIDGE_VARIANT_QUERY/);
 });
 
-test("Phone production releases use the optional production signing contract", () => {
-  assert.match(phoneBuild, /rootProject\.file\("keystore\.properties"\)/);
+test("Phone production releases require external environment-only signing material", () => {
+  assert.match(phoneBuild, /environmentVariable\("GYMAPP_RELEASE_KEYSTORE_PATH"\)/);
+  assert.match(phoneBuild, /environmentVariable\("GYMAPP_RELEASE_STORE_PASSWORD"\)/);
+  assert.match(phoneBuild, /release keystore must be stored outside the repository/i);
+  assert.doesNotMatch(phoneBuild, /keystore\.properties/);
   assert.match(phoneBuild, /create\("release"\)[\s\S]*?storeFile/);
   assert.match(
     phoneBuild,
-    /release\s*\{[\s\S]*?if \(keystorePropertiesFile\.exists\(\)\)[\s\S]*?signingConfig/
+    /release\s*\{[\s\S]*?if \(releaseSigningConfigured\)[\s\S]*?signingConfig/
   );
+  for (const script of [phoneReleaseScript, playReleaseScript]) {
+    assert.match(script, /GYMAPP_RELEASE_KEYSTORE_PATH/);
+    assert.match(script, /release keystore must be stored outside the repository/i);
+    assert.doesNotMatch(script, /keystore\.properties/);
+  }
 });
 
 test("production Android scripts default to the declared release version", () => {

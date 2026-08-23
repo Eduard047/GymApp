@@ -3477,7 +3477,7 @@ internal fun GymAppRoot(
                                         }
                                     }
                                 },
-                                onDeleteCloudAccount = deleteAccount@ {
+                                onDeleteCloudAccount = deleteAccount@ { currentPassword ->
                                     if (!accountActionsEnabled(
                                             authLoading = authState.isLoading,
                                             deletionInProgress = accountDeletionInProgress
@@ -3494,7 +3494,8 @@ internal fun GymAppRoot(
                                         runCatching {
                                             withContext(NonCancellable) {
                                                 val deletedSession = authManager.deleteCloudAccount(
-                                                    capturedSession
+                                                    capturedSession,
+                                                    currentPassword
                                                 )
                                                 var cleanupFailures =
                                                     runConfirmedAccountDeletionLocalCleanup(

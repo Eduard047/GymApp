@@ -57,21 +57,21 @@ test("delete-account has one canonical Edge source with a pinned contract hash",
   );
 });
 
-test("live-session RPC remains between user verification and administrative deletion", () => {
+test("one-time deletion grant remains between user verification and administrative deletion", () => {
   const authUserCall = source.indexOf("/auth/v1/user");
   const liveSessionCall = source.indexOf(
-    "/rest/v1/rpc/require_live_session_for_account_deletion",
+    "/rest/v1/rpc/consume_account_deletion_grant",
   );
   const administrativeDelete = source.indexOf("/auth/v1/admin/users/");
 
   assert.ok(authUserCall >= 0, "Auth user verification must remain present");
   assert.ok(
     liveSessionCall > authUserCall,
-    "live-session RPC must run after Auth user verification",
+    "one-time grant consumption must run after Auth user verification",
   );
   assert.ok(
     administrativeDelete > liveSessionCall,
-    "administrative deletion must run only after the live-session RPC",
+    "administrative deletion must run only after one-time grant consumption",
   );
   assert.match(source, /Authorization: authorization/);
   assert.match(
@@ -96,7 +96,7 @@ test("known production state is represented by an enforceable release gate", asy
   );
   assert.match(
     requiredMigration,
-    /require_live_session_for_account_deletion/,
+    /consume_account_deletion_grant/,
   );
 
   const production = deploymentContract.knownProduction;

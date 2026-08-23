@@ -7,21 +7,23 @@ second function copy under a platform directory. The machine-readable
 [deployment contract](deployment-contract.json) pins the reviewed source hash,
 the last observed production version, and the release gate.
 
-Production deployment record: version 3 is `ACTIVE` with `verify_jwt=true` in
+Last observed production deployment: version 3 was `ACTIVE` with `verify_jwt=true` in
 project `owrcbsrectdgaotndtxy` as last observed on 2026-07-22. The deployed
 canonical repository source has SHA-256
 `e622cdcd640e726578ffd6ccea955186360a3afa0fda35dd70cc903068642f6d`.
-`20260722010000_require_live_session_for_account_deletion.sql` is applied, the
-live-session behavior passed production E2E, and the deployment contract release
-gate is open.
+That deployment predates the one-time reauthentication grant and pre-authentication
+budget. The deployment contract release gate therefore remains closed until the
+new migrations, secret, and Edge source are deployed and read back.
 
 Security properties:
 
 - accepts only `POST` with `Content-Type: application/json`;
-- requires the exact body `{ "confirmation": "DELETE" }` and rejects extra fields;
+- accepts only the exact prepare body `{ "action": "prepare" }` or delete body `{ "action": "delete", "confirmation": "DELETE", "grant": "<uuid>" }`;
+- durably meters requests by an HMAC-pseudonymized network source before Auth validation;
 - verifies the caller's bearer token and current Auth user with `GET /auth/v1/user` using a publishable/anon key;
-- then calls the authenticated `require_live_session_for_account_deletion()` RPC with the same bearer; the RPC derives `auth.uid()` and the signed JWT `session_id` only at the database boundary, requires that exact user/session row to remain in `auth.sessions`, and returns only that bound user ID — neither identifier is accepted from the client;
-- requires the Auth user UUID and live-session RPC UUID to match exactly before deletion;
+- preparation requires a password-authenticated JWT no older than five minutes and issues a five-minute capability bound to the exact user and Auth session;
+- deletion atomically consumes that one-time capability while locking and validating the same live Auth session;
+- requires the Auth user UUID and consumed-grant RPC UUID to match exactly before deletion;
 - hard-deletes that exact user through `DELETE /auth/v1/admin/users/{id}` with a new Supabase secret key or the legacy `SUPABASE_SERVICE_ROLE_KEY`;
 - never logs tokens, keys, request bodies, email addresses, or upstream error bodies;
 - returns bounded, generic errors with `Cache-Control: no-store`;
@@ -36,16 +38,17 @@ Required:
 - `SUPABASE_URL`
 - one of `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_PUBLISHABLE_KEYS` (JSON containing a `default` or other named key), or legacy `SUPABASE_ANON_KEY`
 - one of `SUPABASE_SECRET_KEY`, `SUPABASE_SECRET_KEYS` (JSON containing a `default` or other named key), or legacy `SUPABASE_SERVICE_ROLE_KEY` — server-only; never put any of these values in the iOS app, source control, screenshots, Review Notes, or client logs
+- `GATEWAY_PREAUTH_HMAC_SECRET` — 32 random bytes encoded as 64 hexadecimal characters; server-only
 
 Optional:
 
 - `DELETE_ACCOUNT_ALLOWED_ORIGIN=https://your-web-app.example` enables browser preflight for exactly that origin. Native iOS requests don't require CORS. When unset, browser preflight is denied.
 
 Keep the platform's per-function `verify_jwt` setting enabled (the default). The
-function retains its `/auth/v1/user` validation, then performs the authoritative
-live-session RPC immediately before the admin call. The RPC is available only to
-`authenticated`, has no arguments, uses an empty search path, and returns the same
-`auth.uid()` whose signed `session_id` still exists in `auth.sessions`.
+function retains its `/auth/v1/user` validation, then atomically consumes the
+one-time grant immediately before the admin call. Both grant RPCs are available
+only to `authenticated`, use an empty search path, and derive the user/session
+identity exclusively from signed JWT claims.
 
 ## Request
 
@@ -54,7 +57,14 @@ POST /functions/v1/delete-account
 Authorization: Bearer <user-access-token>
 Content-Type: application/json
 
-{"confirmation":"DELETE"}
+{"action":"prepare"}
+```
+
+After a successful fresh password sign-in, preparation returns a five-minute
+`grant`. Send it once with:
+
+```json
+{"action":"delete","confirmation":"DELETE","grant":"<uuid>"}
 ```
 
 Success:
@@ -102,8 +112,8 @@ supabase functions serve delete-account
 ```
 
 The normal contract test checks the pinned production snapshot against the
-repository contract. Production version 3 was deployed on 2026-07-22 after the
-live-session migration, so the enforced release check is expected to pass:
+repository contract. The enforced release check is expected to fail until the
+new contract is deployed and read back:
 
 ```sh
 GYMAPP_ENFORCE_SUPABASE_RELEASE_GATE=1 \
@@ -122,11 +132,11 @@ curl -i \
   -X POST 'http://127.0.0.1:54321/functions/v1/delete-account' \
   -H 'Authorization: Bearer <disposable-user-access-token>' \
   -H 'Content-Type: application/json' \
-  --data '{"confirmation":"DELETE"}'
+  --data '{"action":"prepare"}'
 ```
 
 Also test missing/invalid bearer token, a globally signed-out or administratively
 revoked session whose JWT has not yet expired, wrong method, non-JSON media type,
-malformed JSON, wrong confirmation, extra fields, oversized body, live-session RPC
+malformed JSON, wrong confirmation, extra fields, oversized body, grant RPC
 failure, Storage ownership failure, and repeat deletion. Never use a real customer
 account for these tests.

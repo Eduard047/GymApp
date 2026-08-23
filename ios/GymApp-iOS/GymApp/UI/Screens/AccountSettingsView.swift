@@ -971,6 +971,7 @@ private struct AccountDeletionConfirmationView: View {
     let onDeleted: () -> Void
 
     @State private var confirmation = ""
+    @State private var currentPassword = ""
     @State private var isDeleting = false
     @State private var errorMessage: String?
 
@@ -1009,6 +1010,15 @@ private struct AccountDeletionConfirmationView: View {
                         .accessibilityLabel("Deletion confirmation")
                         .accessibilityHint("Enter the word DELETE in capital letters")
 
+                    if target.isCloudAccount {
+                        SecureField("Current password", text: $currentPassword)
+                            .textContentType(.password)
+                            .submitLabel(.done)
+                            .gymTextFieldChrome()
+                            .accessibilityLabel("Current password")
+                            .accessibilityHint("Re-enter your current password before permanent deletion")
+                    }
+
                     if let errorMessage {
                         GymStatusBanner(message: errorMessage, isError: true)
                     }
@@ -1037,8 +1047,8 @@ private struct AccountDeletionConfirmationView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .disabled(!confirmationMatches || isDeleting)
-                    .opacity(confirmationMatches && !isDeleting ? 1 : 0.46)
+                    .disabled(!deletionInputIsValid || isDeleting)
+                    .opacity(deletionInputIsValid && !isDeleting ? 1 : 0.46)
                     .accessibilityHint("Permanently deletes the current profile and its data")
 
                     Text("Deletion starts only after you press the red button. Closing this screen leaves your account unchanged.")
@@ -1067,6 +1077,10 @@ private struct AccountDeletionConfirmationView: View {
         confirmation.trimmingCharacters(in: .whitespacesAndNewlines) == "DELETE"
     }
 
+    private var deletionInputIsValid: Bool {
+        confirmationMatches && (!target.isCloudAccount || !currentPassword.isEmpty)
+    }
+
     private var finalButtonTitle: String {
         target.isCloudAccount ? "Permanently delete account" : "Permanently delete local profile"
     }
@@ -1079,14 +1093,15 @@ private struct AccountDeletionConfirmationView: View {
     }
 
     private func deleteAccount() {
-        guard confirmationMatches, !isDeleting else { return }
+        guard deletionInputIsValid, !isDeleting else { return }
         isDeleting = true
         errorMessage = nil
         Task {
             do {
                 try await appState.deleteCurrentAccountAndData(
                     expectedStorageKey: target.storageKey,
-                    expectedCloudUserID: target.cloudUserID
+                    expectedCloudUserID: target.cloudUserID,
+                    currentPassword: target.isCloudAccount ? currentPassword : nil
                 )
                 isDeleting = false
                 onDeleted()

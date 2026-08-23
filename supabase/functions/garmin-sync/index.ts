@@ -6,6 +6,7 @@ import {
 } from "../_shared/garmin-capability.ts";
 import { validateGarminPlan } from "../_shared/garmin-plan-contract.ts";
 import { scheduleBestEffortGarminTelemetry } from "../_shared/garmin-telemetry.ts";
+import { debitPreauthBudget } from "../_shared/preauth-budget.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -321,6 +322,28 @@ function scheduleCapabilityUse(
       runtime.waitUntil(task);
     },
   );
+}
+
+async function legacyPreauthResponse(
+  request: Request,
+  supabaseUrl: string,
+  databaseSecretKey: string,
+): Promise<Response | null> {
+  const result = await debitPreauthBudget(
+    request,
+    "garmin_legacy",
+    supabaseUrl,
+    databaseSecretKey,
+  );
+  if (result.status === "allowed") return null;
+  if (result.status === "rate_limited") {
+    return json(
+      { error: "Rate limit exceeded", retryAfter: result.retryAfter },
+      429,
+      { "Retry-After": String(result.retryAfter) },
+    );
+  }
+  return json({ error: "Service unavailable" }, 503);
 }
 
 Deno.serve(async (request) => {
@@ -713,6 +736,14 @@ Deno.serve(async (request) => {
         capabilityVersionHeaders(2),
       );
     }
+    if (legacyCapabilitiesEnabled && DEVICE_NONCE_PATTERN.test(deviceToken)) {
+      const preauthResponse = await legacyPreauthResponse(
+        request,
+        supabaseUrl,
+        databaseSecretKey,
+      );
+      if (preauthResponse) return preauthResponse;
+    }
     const capability = await resolveGarminCapability(
       deviceToken,
       capabilityHmacSecret,
@@ -863,6 +894,14 @@ Deno.serve(async (request) => {
         426,
         capabilityVersionHeaders(2),
       );
+    }
+    if (legacyCapabilitiesEnabled && DEVICE_NONCE_PATTERN.test(deviceToken)) {
+      const preauthResponse = await legacyPreauthResponse(
+        request,
+        supabaseUrl,
+        databaseSecretKey,
+      );
+      if (preauthResponse) return preauthResponse;
     }
     const capability = await resolveGarminCapability(
       deviceToken,

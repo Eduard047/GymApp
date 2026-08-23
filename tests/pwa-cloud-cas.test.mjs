@@ -10,7 +10,23 @@ const [appSource, stateContractSource, garminCloudSource] = await Promise.all([
   readFile("pwa/garmin-cloud-sync.js", "utf8")
 ]);
 const ACTIVE_USER_ID = "00000000-0000-4000-8000-000000000001";
+const DELETION_GRANT_ID = "00000000-0000-4000-8000-000000000011";
 const UUID_V4_PATTERN_FOR_TEST = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function freshDeletionSession() {
+  return {
+    access_token: unsignedJwtFor(ACTIVE_USER_ID),
+    refresh_token: "fresh-refresh-token",
+    user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
+  };
+}
+
+function deletionPreparation() {
+  return {
+    grant: DELETION_GRANT_ID,
+    expiresAt: new Date(Date.now() + 60_000).toISOString()
+  };
+}
 
 function garminTestCapability(_deviceId, nonce = "b".repeat(64)) {
   return nonce;
@@ -240,7 +256,7 @@ function loadContext(fetchImpl, {
       sessionStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({
         access_token: ${JSON.stringify(unsignedJwtFor(ACTIVE_USER_ID))},
         refresh_token: "opaque-refresh-token",
-        user: { id: activeAccount.userId }
+        user: { id: activeAccount.userId, email: "owner@example.com" }
       }));
       state = defaultAppState();
       accountEpoch = 7;
@@ -3454,7 +3470,20 @@ test("mandatory password update and cloud deletion validate Supabase responses b
         headers: { "Content-Type": "application/json" }
       });
     }
+    if (url.endsWith("/auth/v1/token?grant_type=password")) {
+      return new Response(JSON.stringify(freshDeletionSession()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     if (url.endsWith("/functions/v1/delete-account")) {
+      const body = JSON.parse(options.body);
+      if (body.action === "prepare") {
+        return new Response(JSON.stringify(deletionPreparation()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       return new Response(JSON.stringify({ deleted: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -3477,10 +3506,19 @@ test("mandatory password update and cloud deletion validate Supabase responses b
   assert.deepEqual(JSON.parse(requests[0].options.body), { password: "StrongPass123!" });
 
   context.window.confirm = () => true;
-  context.window.prompt = () => "DELETE";
+  const deletionPrompts = ["DELETE", "CurrentPassword123!"];
+  context.window.prompt = () => deletionPrompts.shift();
   await vm.runInContext("deleteCloudAccount()", context);
-  const deleteRequest = requests.find(request => request.url.endsWith("/functions/v1/delete-account"));
-  assert.deepEqual(JSON.parse(deleteRequest.options.body), { confirmation: "DELETE" });
+  const reauthenticationRequest = requests.find(request => request.url.endsWith("/auth/v1/token?grant_type=password"));
+  assert.deepEqual(JSON.parse(reauthenticationRequest.options.body), {
+    email: "owner@example.com",
+    password: "CurrentPassword123!"
+  });
+  const deleteRequests = requests.filter(request => request.url.endsWith("/functions/v1/delete-account"));
+  assert.deepEqual(deleteRequests.map(request => JSON.parse(request.options.body)), [
+    { action: "prepare" },
+    { action: "delete", confirmation: "DELETE", grant: DELETION_GRANT_ID }
+  ]);
   assert.equal(vm.runInContext("activeAccount", context), null);
   assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
   assert.equal(context.localStorage.getItem(`gym-pwa-account:remote-${ACTIVE_USER_ID}`), null);
@@ -3489,8 +3527,20 @@ test("mandatory password update and cloud deletion validate Supabase responses b
 });
 
 test("an expanded deletion response is outcome-unknown and clears local private state", async () => {
-  const context = loadContext(async url => {
+  const context = loadContext(async (url, options) => {
+    if (url.endsWith("/auth/v1/token?grant_type=password")) {
+      return new Response(JSON.stringify(freshDeletionSession()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     if (url.endsWith("/functions/v1/delete-account")) {
+      if (JSON.parse(options.body).action === "prepare") {
+        return new Response(JSON.stringify(deletionPreparation()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       return new Response(JSON.stringify({ deleted: true, unexpected: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -3504,7 +3554,8 @@ test("an expanded deletion response is outcome-unknown and clears local private 
     saveState({ queueRemote: false });
   `, context);
   context.window.confirm = () => true;
-  context.window.prompt = () => "DELETE";
+  const deletionPrompts = ["DELETE", "CurrentPassword123!"];
+  context.window.prompt = () => deletionPrompts.shift();
 
   await vm.runInContext("deleteCloudAccount()", context);
 
@@ -3517,8 +3568,20 @@ test("an expanded deletion response is outcome-unknown and clears local private 
 test("deterministic cloud deletion rejection disarms the journal and preserves the account", async () => {
   let context;
   let requestSawJournal = false;
-  context = loadContext(async url => {
+  context = loadContext(async (url, options) => {
+    if (url.endsWith("/auth/v1/token?grant_type=password")) {
+      return new Response(JSON.stringify(freshDeletionSession()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     if (url.endsWith("/functions/v1/delete-account")) {
+      if (JSON.parse(options.body).action === "prepare") {
+        return new Response(JSON.stringify(deletionPreparation()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       requestSawJournal = context.localStorage.getItem("gym-pwa-cloud-account-deletion-v1") !== null;
       return new Response(JSON.stringify({ message: "recent login required" }), {
         status: 422,
@@ -3534,13 +3597,17 @@ test("deterministic cloud deletion rejection disarms the journal and preserves t
   `, context);
   const sessionBefore = context.sessionStorage.getItem("gym-pwa-supabase-session-v1");
   context.window.confirm = () => true;
-  context.window.prompt = () => "DELETE";
+  const deletionPrompts = ["DELETE", "CurrentPassword123!"];
+  context.window.prompt = () => deletionPrompts.shift();
 
   await vm.runInContext("deleteCloudAccount()", context);
 
   assert.equal(requestSawJournal, true, "the owner-bound journal must exist before dispatch");
   assert.equal(vm.runInContext("activeAccount.userId", context), ACTIVE_USER_ID);
-  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), sessionBefore);
+  const retainedFreshSession = JSON.parse(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"));
+  assert.notEqual(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), sessionBefore);
+  assert.equal(retainedFreshSession.user.id, ACTIVE_USER_ID);
+  assert.equal(retainedFreshSession.refresh_token, "fresh-refresh-token");
   assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 1);
   assert.equal(context.localStorage.getItem("gym-pwa-cloud-account-deletion-v1"), null);
 });

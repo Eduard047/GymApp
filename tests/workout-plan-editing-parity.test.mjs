@@ -73,7 +73,7 @@ const [
   readFile("pwa/app.js", "utf8"),
   readFile("pwa/index.html", "utf8"),
   readFile("pwa/workout/index.html", "utf8"),
-  readFile("pwa/workout/landing.v3.js", "utf8")
+  readFile("pwa/workout/landing.v4.js", "utf8")
 ]);
 
 const contract = JSON.parse(contractSource);
@@ -991,7 +991,7 @@ test("browser exposes the same editor contract and validated shared-plan handoff
   assert.match(rootHtml, /app\.v\d+\.js/);
   assert.match(rootHtml, /shared-workout\.v\d+\.js/);
   assert.match(sharedWorkoutHtml, /shared-workout\.v\d+\.js/);
-  assert.match(sharedWorkoutHtml, /landing\.v3\.js/);
+  assert.match(sharedWorkoutHtml, /landing\.v4\.js/);
   assert.match(sharedWorkoutHtml, /continue-web|Continue on website/);
   assert.doesNotMatch(sharedWorkoutHtml, /<(?:form|input|textarea|select)\b/i);
   assert.match(sharedWorkoutScript, /codec\?\.fromHash|codec\.fromHash/);

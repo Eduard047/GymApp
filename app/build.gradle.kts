@@ -4,7 +4,6 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.security.MessageDigest
-import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -136,10 +135,31 @@ fun buildConfigString(value: String): String =
 val firebaseClients = firebaseClientBuildConfigs()
 val productionFirebaseClient = firebaseClients["com.setforge.gymapp"]
 val developmentFirebaseClient = firebaseClients["com.setforge.gymapp.dev"]
-val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = Properties().apply {
-    if (keystorePropertiesFile.exists()) {
-        keystorePropertiesFile.inputStream().use(::load)
+val releaseKeystorePath = providers.environmentVariable("GYMAPP_RELEASE_KEYSTORE_PATH").orNull
+val releaseKeyAlias = providers.environmentVariable("GYMAPP_RELEASE_KEY_ALIAS").orNull
+val releaseStorePassword = providers.environmentVariable("GYMAPP_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyPassword = providers.environmentVariable("GYMAPP_RELEASE_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(
+    releaseKeystorePath,
+    releaseKeyAlias,
+    releaseStorePassword,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+if (listOf(
+        releaseKeystorePath,
+        releaseKeyAlias,
+        releaseStorePassword,
+        releaseKeyPassword
+    ).any { !it.isNullOrBlank() } && !releaseSigningConfigured
+) {
+    error("Release signing requires all GYMAPP_RELEASE_* environment variables.")
+}
+val releaseKeystoreFile = releaseKeystorePath?.let(::file)?.canonicalFile
+if (releaseKeystoreFile != null) {
+    val repositoryRoot = rootProject.projectDir.canonicalFile.toPath()
+    require(releaseKeystoreFile.isFile) { "The external release keystore was not found." }
+    require(!releaseKeystoreFile.toPath().startsWith(repositoryRoot)) {
+        "The release keystore must be stored outside the repository."
     }
 }
 
@@ -171,11 +191,11 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+            if (releaseSigningConfigured) {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
         }
     }
@@ -223,7 +243,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            if (keystorePropertiesFile.exists()) {
+            if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }
             proguardFiles(

@@ -1621,6 +1621,15 @@ private struct GarminPhoneReceiptLedger: Codable {
     var records: [Record]
 }
 
+private struct GarminDeviceSelectionTransaction: Codable, Equatable {
+    static let currentVersion = 1
+
+    let version: Int
+    let storageKeyHash: String
+    let nonce: UUID
+    let createdAt: TimeInterval
+}
+
 @MainActor
 final class GarminPhoneSyncService: NSObject, ObservableObject {
     private static let returnURLScheme = "com.setforge.gymapp.ios"
@@ -1631,6 +1640,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     private static let maximumDevices = 8
     private static let maximumInboundBatch = 8
     private static let maximumReceiptsPerHour = 60
+    private static let deviceSelectionMaximumAge: TimeInterval = 5 * 60
+    private static let deviceSelectionFutureSkew: TimeInterval = 60
 
     @Published private(set) var devices: [GarminPhoneDeviceSummary] = []
     @Published private(set) var statusMessage: String?
@@ -1647,6 +1658,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     private var apps: [UUID: IQApp] = [:]
     private var syncInFlight: [UUID: UUID] = [:]
     private var syncDeliveryTimeoutTasks: [UUID: Task<Void, Never>] = [:]
+    private var pendingDeviceSelection: GarminDeviceSelectionTransaction?
 
     init(
         auth: AuthService,
@@ -1682,10 +1694,21 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     }
 
     func selectDevices() {
-        guard auth.session != nil else {
+        guard auth.session != nil, let storageKey = activeStorageKey else {
             publishStatus("Sign in before connecting a Garmin watch.", isError: true)
             return
         }
+        let transaction = GarminDeviceSelectionTransaction(
+            version: GarminDeviceSelectionTransaction.currentVersion,
+            storageKeyHash: Data(storageKey.utf8).garminSHA256Hex,
+            nonce: UUID(),
+            createdAt: Date().timeIntervalSince1970
+        )
+        guard persistDeviceSelection(transaction, storageKey: storageKey) else {
+            publishStatus("Garmin device selection could not be prepared safely.", isError: true)
+            return
+        }
+        pendingDeviceSelection = transaction
         connectIQ.showDeviceSelection()
     }
 
@@ -1698,6 +1721,10 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         }
         guard selected.count <= Self.maximumDevices else {
             publishStatus("Garmin returned too many watches. Select at most eight.", isError: true)
+            return true
+        }
+        guard consumePendingDeviceSelection() else {
+            publishStatus("This Garmin device selection is no longer valid. Start it again in GymApp.", isError: true)
             return true
         }
         rawDevices = Dictionary(
@@ -1721,6 +1748,10 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     }
 
     private func activate(_ session: AppAccountSession?) {
+        if let previousStorageKey = activeStorageKey {
+            clearPendingDeviceSelection(storageKey: previousStorageKey)
+        }
+        pendingDeviceSelection = nil
         connectIQ.unregisterAllDeviceEvents(delegate: self)
         connectIQ.unregisterAllAppMessages(delegate: self)
         apps.removeAll()
@@ -1733,6 +1764,55 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         guard session != nil else { return }
         restoreDevices()
         registerDevices()
+    }
+
+    private func persistDeviceSelection(
+        _ transaction: GarminDeviceSelectionTransaction,
+        storageKey: String
+    ) -> Bool {
+        guard transaction.version == GarminDeviceSelectionTransaction.currentVersion,
+              transaction.storageKeyHash == Data(storageKey.utf8).garminSHA256Hex,
+              let data = try? JSONEncoder().encode(transaction),
+              data.count <= 1024 else {
+            return false
+        }
+        let key = deviceSelectionTransactionKey(storageKey: storageKey)
+        defaults.set(data, forKey: key)
+        guard defaults.data(forKey: key) == data else { return false }
+        rememberStateKey(key, storageKey: storageKey)
+        return true
+    }
+
+    private func consumePendingDeviceSelection(now: Date = Date()) -> Bool {
+        guard let storageKey = activeStorageKey,
+              let inMemory = pendingDeviceSelection else {
+            return false
+        }
+        let key = deviceSelectionTransactionKey(storageKey: storageKey)
+        guard let data = defaults.data(forKey: key), data.count <= 1024,
+              let durable = try? JSONDecoder().decode(
+                GarminDeviceSelectionTransaction.self,
+                from: data
+              ) else {
+            clearPendingDeviceSelection(storageKey: storageKey)
+            return false
+        }
+        defaults.removeObject(forKey: key)
+        pendingDeviceSelection = nil
+        let nowSeconds = now.timeIntervalSince1970
+        return durable == inMemory
+            && durable.version == GarminDeviceSelectionTransaction.currentVersion
+            && durable.storageKeyHash == Data(storageKey.utf8).garminSHA256Hex
+            && durable.createdAt <= nowSeconds + Self.deviceSelectionFutureSkew
+            && nowSeconds - durable.createdAt <= Self.deviceSelectionMaximumAge
+    }
+
+    private func clearPendingDeviceSelection(storageKey: String) {
+        defaults.removeObject(forKey: deviceSelectionTransactionKey(storageKey: storageKey))
+    }
+
+    private func deviceSelectionTransactionKey(storageKey: String) -> String {
+        "garmin-phone-device-selection.v1.\(Data(storageKey.utf8).garminSHA256Hex)"
     }
 
     private func registerDevices() {

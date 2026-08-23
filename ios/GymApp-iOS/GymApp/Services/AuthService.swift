@@ -1008,18 +1008,54 @@ final class AuthService: ObservableObject {
     /// The caller must erase the matching local store after this returns.
     func deleteCloudAccountOnServer(
         expectedUserID: String,
+        currentPassword: String = "",
         beforeRequest: (() throws -> Void)? = nil,
         onRequestDispositionChange: ((AccountDeletionRequestDisposition) -> Void)? = nil
     ) async throws {
         isLoading = true
         defer { isLoading = false }
-        let cloud = try await validCloudSession(expectedUserID: expectedUserID)
+        let existing = try await validCloudSession(expectedUserID: expectedUserID)
+        guard !currentPassword.isEmpty, currentPassword.utf8.count <= 1_024 else {
+            throw AuthServiceError.invalidPassword
+        }
+        let authObject = try await requestJSON(
+            path: "/auth/v1/token?grant_type=password",
+            method: "POST",
+            body: ["email": existing.email, "password": currentPassword]
+        )
+        let reauthenticated = try parseCloudSession(authObject)
+        guard reauthenticated.userID == expectedUserID,
+              reauthenticated.email.caseInsensitiveCompare(existing.email) == .orderedSame else {
+            throw AuthServiceError.sessionChanged
+        }
+        try persist(.cloud(reauthenticated), requiresPasswordUpdate: false)
+        let preparation = try await requestAuthenticatedJSON(
+            path: "/functions/v1/delete-account",
+            method: "POST",
+            initialSession: reauthenticated,
+            body: ["action": "prepare"]
+        )
+        let fractionalTimestamp = ISO8601DateFormatter()
+        fractionalTimestamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let standardTimestamp = ISO8601DateFormatter()
+        let expiresAtText = preparation["expiresAt"] as? String
+        let expiresAt = expiresAtText.flatMap {
+            fractionalTimestamp.date(from: $0) ?? standardTimestamp.date(from: $0)
+        }
+        guard preparation.count == 2,
+              let grant = preparation["grant"] as? String,
+              UUID(uuidString: grant) != nil,
+              let expiresAt,
+              expiresAt > Date(),
+              expiresAt <= Date().addingTimeInterval(10 * 60) else {
+            throw AuthServiceError.malformedResponse
+        }
         let object = try await requestAuthenticatedJSON(
             path: "/functions/v1/delete-account",
             method: "POST",
-            initialSession: cloud,
+            initialSession: reauthenticated,
             headers: ["X-GymApp-Delete": "confirmed"],
-            body: ["confirmation": "DELETE"],
+            body: ["action": "delete", "confirmation": "DELETE", "grant": grant],
             beforeRequest: beforeRequest,
             onRequestDispositionChange: onRequestDispositionChange
         )

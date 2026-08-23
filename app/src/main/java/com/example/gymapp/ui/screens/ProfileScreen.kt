@@ -130,7 +130,7 @@ internal fun ProfileScreen(
         newPassword: String,
         nonce: String?
     ) -> Unit,
-    onDeleteCloudAccount: () -> Unit,
+    onDeleteCloudAccount: (String) -> Unit,
     localProfileName: String?,
     onDeleteLocalProfile: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
@@ -301,9 +301,9 @@ internal fun ProfileScreen(
     if (showAccountDeletion) {
         DeleteCloudAccountDialog(
             onDismiss = { showAccountDeletion = false },
-            onConfirm = {
+            onConfirm = { currentPassword ->
                 showAccountDeletion = false
-                onDeleteCloudAccount()
+                onDeleteCloudAccount(currentPassword)
             }
         )
     }
@@ -956,15 +956,21 @@ private fun ProfilePasswordField(
 @Composable
 private fun DeleteCloudAccountDialog(
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: (String) -> Unit
 ) {
     var confirmation by rememberSaveable { mutableStateOf("") }
+    var currentPassword by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.account_delete_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.account_delete_warning))
+                ProfilePasswordField(
+                    value = currentPassword,
+                    onValueChange = { currentPassword = it },
+                    label = stringResource(R.string.account_current_password)
+                )
                 OutlinedTextField(
                     value = confirmation,
                     onValueChange = { confirmation = it.take(16) },
@@ -979,8 +985,8 @@ private fun DeleteCloudAccountDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = confirmation == "DELETE",
-                onClick = onConfirm
+                enabled = confirmation == "DELETE" && currentPassword.isNotEmpty(),
+                onClick = { onConfirm(currentPassword) }
             ) {
                 Text(
                     text = stringResource(R.string.account_delete_confirm),

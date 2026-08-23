@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { debitPreauthBudget } from "../_shared/preauth-budget.ts";
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const MAX_BODY_BYTES = 48 * 1024;
@@ -628,6 +629,21 @@ export async function handleRequest(req: Request): Promise<Response> {
   const publishableKey = getPublishableKey();
   const serviceKey = getServiceKey();
   if (!projectUrl || !publishableKey || !serviceKey) {
+    return jsonResponse(req, 503, { error: "service_unavailable" });
+  }
+
+  const preauthBudget = await debitPreauthBudget(
+    req,
+    "social_live",
+    projectUrl,
+    serviceKey,
+  );
+  if (preauthBudget.status === "rate_limited") {
+    return jsonResponse(req, 429, { error: "rate_limited" }, {
+      "Retry-After": String(preauthBudget.retryAfter),
+    });
+  }
+  if (preauthBudget.status !== "allowed") {
     return jsonResponse(req, 503, { error: "service_unavailable" });
   }
 

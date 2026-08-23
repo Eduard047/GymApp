@@ -1,3 +1,5 @@
+import { debitPreauthBudget } from "../_shared/preauth-budget.ts";
+
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const MAX_BODY_BYTES = 1_024;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -114,9 +116,13 @@ function isUuid(value: unknown): value is string {
       .test(value);
 }
 
-async function readConfirmation(
+type DeletionRequest =
+  | { action: "prepare" }
+  | { action: "delete"; grant: string };
+
+async function readDeletionRequest(
   req: Request,
-): Promise<"confirmed" | "invalid" | "too_large"> {
+): Promise<DeletionRequest | "invalid" | "too_large"> {
   const contentLength = req.headers.get("content-length");
   if (contentLength) {
     const declaredLength = Number(contentLength);
@@ -171,11 +177,22 @@ async function readConfirmation(
     }
 
     const body = parsed as JsonRecord;
-    const keys = Object.keys(body);
-    return keys.length === 1 && keys[0] === "confirmation" &&
-        body.confirmation === "DELETE"
-      ? "confirmed"
-      : "invalid";
+    const keys = Object.keys(body).sort();
+    if (
+      keys.length === 1 && keys[0] === "action" &&
+      body.action === "prepare"
+    ) {
+      return { action: "prepare" };
+    }
+    if (
+      keys.length === 3 && keys[0] === "action" &&
+      keys[1] === "confirmation" && keys[2] === "grant" &&
+      body.action === "delete" && body.confirmation === "DELETE" &&
+      isUuid(body.grant)
+    ) {
+      return { action: "delete", grant: body.grant.toLowerCase() };
+    }
+    return "invalid";
   } catch {
     return "invalid";
   }
@@ -221,14 +238,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse(req, 401, { error: "invalid_authorization" });
   }
 
-  const confirmation = await readConfirmation(req);
-  if (confirmation === "too_large") {
+  const deletionRequest = await readDeletionRequest(req);
+  if (deletionRequest === "too_large") {
     return jsonResponse(req, 413, { error: "request_too_large" });
   }
-  if (confirmation !== "confirmed") {
+  if (deletionRequest === "invalid") {
     return jsonResponse(req, 400, {
-      error: "confirmation_required",
-      expected: { confirmation: "DELETE" },
+      error: "invalid_deletion_request",
     });
   }
 
@@ -239,6 +255,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const administrativeKey = getSecretOrServiceRoleKey();
 
   if (!projectUrl || !publishableOrAnonKey || !administrativeKey) {
+    return jsonResponse(req, 503, { error: "service_unavailable" });
+  }
+
+  const preauthBudget = await debitPreauthBudget(
+    req,
+    "delete_account",
+    projectUrl,
+    administrativeKey,
+  );
+  if (preauthBudget.status === "rate_limited") {
+    return jsonResponse(req, 429, { error: "rate_limited" }, {
+      "Retry-After": String(preauthBudget.retryAfter),
+    });
+  }
+  if (preauthBudget.status !== "allowed") {
     return jsonResponse(req, 503, { error: "service_unavailable" });
   }
 
@@ -261,8 +292,38 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
     }
 
+    if (deletionRequest.action === "prepare") {
+      const prepareResponse = await fetch(
+        `${projectUrl}/rest/v1/rpc/prepare_account_deletion`,
+        {
+          method: "POST",
+          headers: {
+            apikey: publishableOrAnonKey,
+            Authorization: authorization,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        },
+      );
+      if (!prepareResponse.ok) {
+        return jsonResponse(req, 401, { error: "recent_reauthentication_required" });
+      }
+      const prepared = await prepareResponse.json() as JsonRecord;
+      if (
+        prepared.version !== 1 || !isUuid(prepared.grant) ||
+        typeof prepared.expiresAt !== "string" || prepared.expiresAt.length > 64
+      ) {
+        return jsonResponse(req, 502, { error: "account_deletion_preparation_failed" });
+      }
+      return jsonResponse(req, 200, {
+        grant: prepared.grant.toLowerCase(),
+        expiresAt: prepared.expiresAt,
+      });
+    }
+
     const liveSessionResponse = await fetch(
-      `${projectUrl}/rest/v1/rpc/require_live_session_for_account_deletion`,
+      `${projectUrl}/rest/v1/rpc/consume_account_deletion_grant`,
       {
         method: "POST",
         headers: {
@@ -270,13 +331,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
           Authorization: authorization,
           "Content-Type": "application/json",
         },
-        body: "{}",
+        body: JSON.stringify({ p_grant: deletionRequest.grant }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       },
     );
 
     if (!liveSessionResponse.ok) {
-      return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
+      return jsonResponse(req, 401, { error: "invalid_deletion_grant" });
     }
 
     const liveSessionUserId = await liveSessionResponse.json() as unknown;

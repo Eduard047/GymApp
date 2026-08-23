@@ -70,15 +70,15 @@ test("landing is a bounded, script-only renderer with a strict standalone CSP", 
   assert.doesNotMatch(html, /<style\b/i);
   assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
   assert.match(html, /<html lang="en" class="frame-pending">/);
-  assert.ok(html.indexOf("../frame-guard.v56.js") < html.indexOf("../shared-workout.v65.js"));
-  assert.match(html, /\.\.\/shared-workout\.v65\.js/);
-  assert.match(html, /\.\/landing\.v3\.js/);
+  assert.ok(html.indexOf("../frame-guard.v56.js") < html.indexOf("../shared-workout.v66.js"));
+  assert.match(html, /\.\.\/shared-workout\.v66\.js/);
+  assert.match(html, /\.\/landing\.v4\.js/);
   assert.match(html, /\.\/landing\.v2\.css/);
   assert.match(source, /textContent/);
   assert.doesNotMatch(source, /\.innerHTML|insertAdjacentHTML|document\.write/);
   assert.match(source, /addEventListener\("hashchange", render\)/);
 
-  const versionedScript = readFileSync(new URL("../pwa/workout/landing.v3.js", import.meta.url));
+  const versionedScript = readFileSync(new URL("../pwa/workout/landing.v4.js", import.meta.url));
   const versionedStyle = readFileSync(new URL("../pwa/workout/landing.v2.css", import.meta.url));
   assert.equal(versionedScript.equals(readFileSync(new URL("../pwa/workout/landing.js", import.meta.url))), true);
   assert.equal(versionedStyle.equals(readFileSync(new URL("../pwa/workout/landing.css", import.meta.url))), true);

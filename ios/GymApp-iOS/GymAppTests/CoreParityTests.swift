@@ -8971,6 +8971,7 @@ final class CoreParityTests: XCTestCase {
         do {
             try await auth.deleteCloudAccountOnServer(
                 expectedUserID: "original-user",
+                currentPassword: "CurrentPassword123!",
                 onRequestDispositionChange: { disposition in
                     requestDispositions.append(disposition)
                 }
@@ -9041,7 +9042,8 @@ final class CoreParityTests: XCTestCase {
             do {
                 try await appState.deleteCurrentAccountAndData(
                     expectedStorageKey: target.storageKey,
-                    expectedCloudUserID: target.cloudUserID
+                    expectedCloudUserID: target.cloudUserID,
+                    currentPassword: "CurrentPassword123!"
                 )
                 XCTFail("Deletion must not follow an identity that was not confirmed.")
             } catch AuthServiceError.sessionChanged {
@@ -9129,7 +9131,8 @@ final class CoreParityTests: XCTestCase {
         let deletion = Task {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: originalSession.storageKey,
-                expectedCloudUserID: originalCloud.userID
+                expectedCloudUserID: originalCloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
         }
         await fulfillment(of: [requestStarted], timeout: 2)
@@ -9227,7 +9230,8 @@ final class CoreParityTests: XCTestCase {
         let firstDeletion = Task {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
         }
         await fulfillment(of: [requestStarted], timeout: 2)
@@ -9235,7 +9239,8 @@ final class CoreParityTests: XCTestCase {
         do {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: "cloud_unconfirmed-replacement",
-                expectedCloudUserID: "unconfirmed-replacement"
+                expectedCloudUserID: "unconfirmed-replacement",
+                    currentPassword: "CurrentPassword123!"
             )
             XCTFail("An in-flight deletion must not be reused for another target.")
         } catch AuthServiceError.sessionChanged {
@@ -9247,7 +9252,8 @@ final class CoreParityTests: XCTestCase {
         let duplicateDeletion = Task {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
         }
         await Task.yield()
@@ -9308,7 +9314,8 @@ final class CoreParityTests: XCTestCase {
         do {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
             XCTFail("A 2xx response without {deleted:true} must be treated as outcome unknown.")
         } catch AuthServiceError.malformedResponse {
@@ -9390,7 +9397,8 @@ final class CoreParityTests: XCTestCase {
         do {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
             XCTFail("A lost response must not be interpreted as a failed server deletion.")
         } catch {
@@ -9460,7 +9468,8 @@ final class CoreParityTests: XCTestCase {
         do {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
             XCTFail("An authoritative 4xx must reject account deletion.")
         } catch AuthServiceError.requestFailed(let status, _) {
@@ -9577,7 +9586,8 @@ final class CoreParityTests: XCTestCase {
         do {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
             XCTFail("A failed refresh must not dispatch or imply a second delete attempt.")
         } catch {
@@ -9698,7 +9708,8 @@ final class CoreParityTests: XCTestCase {
         let deletion = Task {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
         }
         await fulfillment(of: [refreshStarted], timeout: 2)
@@ -9825,7 +9836,8 @@ final class CoreParityTests: XCTestCase {
         let deletion = Task {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
         }
         await fulfillment(of: [refreshStarted], timeout: 2)
@@ -9960,7 +9972,8 @@ final class CoreParityTests: XCTestCase {
         do {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
             XCTFail("A lost retry response must preserve pending cleanup.")
         } catch {
@@ -10026,7 +10039,8 @@ final class CoreParityTests: XCTestCase {
         do {
             try await appState.deleteCurrentAccountAndData(
                 expectedStorageKey: accountSession.storageKey,
-                expectedCloudUserID: cloud.userID
+                expectedCloudUserID: cloud.userID,
+                    currentPassword: "CurrentPassword123!"
             )
             XCTFail("Another pending deletion must block a cloud delete request.")
         } catch AuthServiceError.accountDeletionCleanupPending {
@@ -10091,6 +10105,7 @@ final class CoreParityTests: XCTestCase {
         do {
             try await auth.deleteCloudAccountOnServer(
                 expectedUserID: cloud.userID,
+                currentPassword: "CurrentPassword123!",
                 onRequestDispositionChange: { dispositions.append($0) }
             )
             XCTFail("A lost refreshed deletion response must remain outcome-unknown.")
@@ -10154,6 +10169,7 @@ final class CoreParityTests: XCTestCase {
         do {
             try await auth.deleteCloudAccountOnServer(
                 expectedUserID: cloud.userID,
+                currentPassword: "CurrentPassword123!",
                 onRequestDispositionChange: { dispositions.append($0) }
             )
             XCTFail("A failed refresh must not dispatch a second deletion request.")
@@ -10190,7 +10206,10 @@ final class CoreParityTests: XCTestCase {
             urlSession.invalidateAndCancel()
         }
 
-        try await auth.deleteCloudAccountOnServer(expectedUserID: cloud.userID)
+        try await auth.deleteCloudAccountOnServer(
+            expectedUserID: cloud.userID,
+            currentPassword: "CurrentPassword123!"
+        )
 
         let request = try XCTUnwrap(recorder.requests.first)
         XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")

@@ -155,14 +155,32 @@ class CloudAuthManagerTest {
 
     @Test
     fun accountDeletionRequestAndResponseUseTheExactEdgeFunctionContract() {
-        val request = cloudAccountDeletionRequest()
+        val preparation = cloudAccountDeletionPreparationRequest()
+        val preparationBody = JSONObject(preparation.body)
+        assertEquals("POST", preparation.method)
+        assertEquals("/functions/v1/delete-account", preparation.path)
+        assertTrue(preparation.headers.isEmpty())
+        assertEquals(setOf("action"), preparationBody.keys().asSequence().toSet())
+        assertEquals("prepare", preparationBody.getString("action"))
+
+        val grant = "10000000-0000-4000-8000-000000000001"
+        val request = cloudAccountDeletionRequest(grant)
         val body = JSONObject(request.body)
 
         assertEquals("POST", request.method)
         assertEquals("/functions/v1/delete-account", request.path)
         assertEquals(mapOf("X-GymApp-Delete" to "confirmed"), request.headers)
-        assertEquals(setOf("confirmation"), body.keys().asSequence().toSet())
+        assertEquals(setOf("action", "confirmation", "grant"), body.keys().asSequence().toSet())
+        assertEquals("delete", body.getString("action"))
         assertEquals("DELETE", body.getString("confirmation"))
+        assertEquals(grant, body.getString("grant"))
+        assertEquals(
+            grant,
+            accountDeletionGrantFromResponse(
+                "{\"grant\":\"$grant\",\"expiresAt\":\"2026-08-23T16:00:00Z\"}"
+            )
+        )
+        assertNull(accountDeletionGrantFromResponse("{\"grant\":\"$grant\"}"))
         assertTrue(isSuccessfulCloudAccountDeletionResponse("{\"deleted\":true}"))
         assertFalse(isSuccessfulCloudAccountDeletionResponse("{\"deleted\":false}"))
         assertFalse(
