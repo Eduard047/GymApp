@@ -718,6 +718,23 @@ test("PWA profile inputs materially change a bounded session budget", () => {
   assert.equal(ppl.focus, "Push");
 });
 
+test("PWA default aesthetic deficit plan matches the cross-platform twelve-set contract", () => {
+  const context = loadPwaContext();
+  const plan = planFor(context, {
+    profile: { split: "Upper / Lower", days: 4, goal: "Aesthetic Cut", calories: "Deficit" },
+    sessions: [],
+    effort: "Standard"
+  });
+
+  assert.equal(plan.focus, "Upper");
+  assert.equal(plan.setBudget, 12);
+  assert.equal(plan.exercises.length, 4);
+  assert.equal(
+    plan.exercises.reduce((sum, item) => sum + item.recommendation.sets.length, 0),
+    12
+  );
+});
+
 test("PWA Smart Coach keeps its generated set cap and manual sets through apply and replacement", async () => {
   const context = loadPwaContext();
   const result = JSON.parse(JSON.stringify(await vm.runInContext(`(async () => {

@@ -6309,6 +6309,30 @@ final class CoreParityTests: XCTestCase {
         XCTAssertGreaterThan(lowFrequency, highFrequency)
     }
 
+    func testDefaultAestheticDeficitPlanMatchesCrossPlatformTwelveSetContract() {
+        let exercises = BuiltInExerciseCatalog.definitions.map {
+            Exercise(name: $0.englishName, catalogKey: $0.key)
+        }
+        let plan = RecommendationEngine.buildWorkoutPlan(
+            exercises: exercises,
+            history: [],
+            trainingProfile: TrainingProfile(
+                split: .upperLower,
+                workoutsPerWeek: 4,
+                goal: .aestheticFatLoss,
+                calorieMode: .deficit
+            ),
+            effort: .standard
+        )
+
+        XCTAssertEqual(plan.focus, .upper)
+        XCTAssertEqual(plan.exercises.count, 4)
+        XCTAssertEqual(
+            plan.exercises.reduce(0) { $0 + $1.recommendation.sets.count },
+            12
+        )
+    }
+
     func testBuiltInCatalogFillsEveryProfileBudgetWithExactlyOneTrunkExercise() {
         let exercises = BuiltInExerciseCatalog.definitions.map {
             Exercise(name: $0.englishName, catalogKey: $0.key)
@@ -6365,17 +6389,22 @@ final class CoreParityTests: XCTestCase {
                                 effort == .recovery ? .recovery : .standard,
                                 context
                             )
+                            let expectedTrunkCount = plan.focus == .upper && plan.exercises.count == 4
+                                ? 0
+                                : 1
                             XCTAssertEqual(
                                 plan.exercises.filter { exercise in
                                     exercise.exercise.catalogKey.map(trunkKeys.contains) ?? false
                                 }.count,
-                                1,
+                                expectedTrunkCount,
                                 "\(context) trunk"
                             )
-                            XCTAssertTrue(
-                                plan.exercises.last?.exercise.catalogKey.map(trunkKeys.contains) ?? false,
-                                "\(context) trunk last"
-                            )
+                            if expectedTrunkCount == 1 {
+                                XCTAssertTrue(
+                                    plan.exercises.last?.exercise.catalogKey.map(trunkKeys.contains) ?? false,
+                                    "\(context) trunk last"
+                                )
+                            }
                             XCTAssertEqual(
                                 Set(plan.exercises.map { $0.exercise.id }).count,
                                 plan.exercises.count,
@@ -9103,6 +9132,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(originalSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: originalCloud
+            ) { return response }
             requestStarted.fulfill()
             _ = releaseRequest.wait(timeout: .now() + 5)
             return try AuthURLProtocolStub.response(
@@ -9158,7 +9191,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(
             customExerciseNames(in: appState.workoutStore).contains("Replacement Account Data")
         )
-        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(recorder.requests.count, 3)
         XCTAssertEqual(
             defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
             originalSession.storageKey
@@ -9193,6 +9226,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             let shouldBlock = gateLock.withLock {
                 guard !hasBlockedRequest else { return false }
                 hasBlockedRequest = true
@@ -9261,7 +9298,7 @@ final class CoreParityTests: XCTestCase {
 
         try await firstDeletion.value
         try await duplicateDeletion.value
-        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(recorder.requests.count, 3)
         XCTAssertNil(auth.session)
         XCTAssertFalse(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
@@ -9290,6 +9327,10 @@ final class CoreParityTests: XCTestCase {
         let remote = try remoteBackupData(exerciseName: "Remote Before Delete", owner: owner)
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
             return try AuthURLProtocolStub.response(for: request, json: "{}")
         }
@@ -9373,6 +9414,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
             throw URLError(.networkConnectionLost)
         }
@@ -9405,8 +9450,8 @@ final class CoreParityTests: XCTestCase {
             XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
         }
 
-        XCTAssertEqual(recorder.requests.count, 1)
-        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertEqual(recorder.requests.count, 3)
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertEqual(
             defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
@@ -9439,6 +9484,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
             return try AuthURLProtocolStub.response(
                 for: request,
@@ -9478,8 +9527,8 @@ final class CoreParityTests: XCTestCase {
             XCTFail("Unexpected definitive deletion rejection: \(error)")
         }
 
-        XCTAssertEqual(recorder.requests.count, 1)
-        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertEqual(recorder.requests.count, 3)
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
         XCTAssertTrue(appState.isAccountReady)
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertTrue(
@@ -9510,7 +9559,7 @@ final class CoreParityTests: XCTestCase {
         }
 
         XCTAssertTrue(relaunchedReady)
-        XCTAssertEqual(relaunchedAuth.session, accountSession)
+        XCTAssertEqual(relaunchedAuth.session?.cloud?.userID, cloud.userID)
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertTrue(
             customExerciseNames(in: relaunchedState.workoutStore).contains(
@@ -9546,6 +9595,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             switch request.url?.path {
             case "/functions/v1/delete-account":
                 return try AuthURLProtocolStub.response(
@@ -9596,9 +9649,14 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertEqual(
             recorder.requests.map(\.url?.path),
-            ["/functions/v1/delete-account", "/auth/v1/token"]
+            [
+                "/auth/v1/token",
+                "/functions/v1/delete-account",
+                "/functions/v1/delete-account",
+                "/auth/v1/token"
+            ]
         )
-        XCTAssertEqual(auth.session, accountSession)
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
         XCTAssertTrue(appState.isAccountReady)
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertTrue(
@@ -9739,7 +9797,7 @@ final class CoreParityTests: XCTestCase {
         }
 
         XCTAssertTrue(relaunchedReady)
-        XCTAssertEqual(relaunchedAuth.session, accountSession)
+        XCTAssertEqual(relaunchedAuth.session?.cloud?.userID, cloud.userID)
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertTrue(
             customExerciseNames(in: relaunchedState.workoutStore).contains(
@@ -9792,6 +9850,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             switch request.url?.path {
             case "/functions/v1/delete-account":
                 return try AuthURLProtocolStub.response(
@@ -9868,7 +9930,7 @@ final class CoreParityTests: XCTestCase {
         }
 
         XCTAssertTrue(relaunchedReady)
-        XCTAssertEqual(relaunchedAuth.session, accountSession)
+        XCTAssertEqual(relaunchedAuth.session?.cloud?.userID, cloud.userID)
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertTrue(
             customExerciseNames(in: relaunchedState.workoutStore).contains(
@@ -9886,7 +9948,12 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertEqual(
             recorder.requests.map(\.url?.path),
-            ["/functions/v1/delete-account", "/auth/v1/token"]
+            [
+                "/auth/v1/token",
+                "/functions/v1/delete-account",
+                "/functions/v1/delete-account",
+                "/auth/v1/token"
+            ]
         )
         XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageURL.path))
@@ -9916,6 +9983,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(accountSession)
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             switch request.url?.path {
             case "/functions/v1/delete-account"
                     where request.value(forHTTPHeaderField: "Authorization")
@@ -9983,6 +10054,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(
             recorder.requests.map(\.url?.path),
             [
+                "/auth/v1/token",
+                "/functions/v1/delete-account",
                 "/functions/v1/delete-account",
                 "/auth/v1/token",
                 "/functions/v1/delete-account"
@@ -10071,6 +10144,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(.cloud(cloud))
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             switch request.url?.path {
             case "/functions/v1/delete-account"
                     where request.value(forHTTPHeaderField: "Authorization")
@@ -10116,6 +10193,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(
             recorder.requests.map(\.url?.path),
             [
+                "/auth/v1/token",
+                "/functions/v1/delete-account",
                 "/functions/v1/delete-account",
                 "/auth/v1/token",
                 "/functions/v1/delete-account"
@@ -10142,6 +10221,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(.cloud(cloud))
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             switch request.url?.path {
             case "/functions/v1/delete-account":
                 return try AuthURLProtocolStub.response(
@@ -10179,10 +10262,15 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertEqual(
             recorder.requests.map(\.url?.path),
-            ["/functions/v1/delete-account", "/auth/v1/token"]
+            [
+                "/auth/v1/token",
+                "/functions/v1/delete-account",
+                "/functions/v1/delete-account",
+                "/auth/v1/token"
+            ]
         )
         XCTAssertEqual(dispositions, [.outcomeUnknown, .definitivelyRejected])
-        XCTAssertEqual(auth.session?.cloud, cloud)
+        XCTAssertEqual(auth.session?.cloud?.userID, cloud.userID)
     }
 
     func testDeleteAccountAcceptsExactServerContract() async throws {
@@ -10199,6 +10287,10 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(.cloud(cloud))
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
+            if let response = try accountDeletionPrerequisiteResponse(
+                for: request,
+                cloud: cloud
+            ) { return response }
             return try AuthURLProtocolStub.response(for: request, json: #"{"deleted":true}"#)
         }
         defer {
@@ -10211,7 +10303,8 @@ final class CoreParityTests: XCTestCase {
             currentPassword: "CurrentPassword123!"
         )
 
-        let request = try XCTUnwrap(recorder.requests.first)
+        XCTAssertEqual(recorder.requests.count, 3)
+        let request = try XCTUnwrap(recorder.requests.last)
         XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-GymApp-Delete"), "confirmed")
         XCTAssertEqual(try jsonObject(from: request)["confirmation"] as? String, "DELETE")
@@ -15588,6 +15681,7 @@ final class CoreParityTests: XCTestCase {
             connectIQ: transport
         )
         service.bind(workoutStore: store)
+        service.selectDevices()
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
@@ -15665,6 +15759,7 @@ final class CoreParityTests: XCTestCase {
             connectIQ: transport
         )
         service.bind(workoutStore: storeA)
+        service.selectDevices()
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
@@ -15760,6 +15855,7 @@ final class CoreParityTests: XCTestCase {
         service.bind(workoutStore: storeB)
         transport.selectionResponse = [device]
         let beforeAccountBSelection = transport.sent.count
+        service.selectDevices()
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
@@ -15871,6 +15967,7 @@ final class CoreParityTests: XCTestCase {
             connectIQ: transport
         )
         service.bind(workoutStore: storeA)
+        service.selectDevices()
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
@@ -15950,6 +16047,7 @@ final class CoreParityTests: XCTestCase {
         )
         service.bind(workoutStore: storeB)
         transport.selectionResponse = [device]
+        service.selectDevices()
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
@@ -16032,6 +16130,7 @@ final class CoreParityTests: XCTestCase {
             syncDeliveryTimeout: .milliseconds(20)
         )
         service.bind(workoutStore: storeA)
+        service.selectDevices()
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
@@ -16065,6 +16164,7 @@ final class CoreParityTests: XCTestCase {
         service.bind(workoutStore: storeB)
         transport.sendCompletionResult = true
         transport.selectionResponse = [device]
+        service.selectDevices()
         XCTAssertTrue(
             service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!)
         )
@@ -16594,6 +16694,60 @@ private func garminRequestBody(_ request: URLRequest) throws -> [String: Any] {
     try XCTUnwrap(
         JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any]
     )
+}
+
+private func accountDeletionPrerequisiteResponse(
+    for request: URLRequest,
+    cloud: CloudAccountSession
+) throws -> (HTTPURLResponse, Data)? {
+    let body = try request.httpBody.flatMap {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+    } ?? [:]
+    let components = request.url.flatMap {
+        URLComponents(url: $0, resolvingAgainstBaseURL: false)
+    }
+    let grantType = components?.queryItems?.first(where: { $0.name == "grant_type" })?.value
+
+    if request.url?.path == "/auth/v1/token", grantType == "password" {
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(body["email"] as? String, cloud.email)
+        XCTAssertEqual(body["password"] as? String, "CurrentPassword123!")
+        let refreshToken = try XCTUnwrap(cloud.refreshToken)
+        let object: [String: Any] = [
+            "access_token": cloud.accessToken,
+            "refresh_token": refreshToken,
+            "expires_in": 3_600,
+            "user": [
+                "id": cloud.userID,
+                "email": cloud.email,
+                "user_metadata": ["display_name": cloud.displayName]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return try AuthURLProtocolStub.response(
+            for: request,
+            json: try XCTUnwrap(String(data: data, encoding: .utf8))
+        )
+    }
+
+    if request.url?.path == "/functions/v1/delete-account",
+       body["action"] as? String == "prepare" {
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertNil(request.value(forHTTPHeaderField: "X-GymApp-Delete"))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let object: [String: Any] = [
+            "grant": "11111111-2222-4333-8444-555555555555",
+            "expiresAt": formatter.string(from: Date().addingTimeInterval(300))
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return try AuthURLProtocolStub.response(
+            for: request,
+            json: try XCTUnwrap(String(data: data, encoding: .utf8))
+        )
+    }
+
+    return nil
 }
 
 private func workoutDurationSyncResponse(

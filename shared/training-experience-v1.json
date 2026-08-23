@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "clients": ["android", "ios"],
+  "clients": ["android", "ios", "pwa"],
   "profileDefaults": {
     "split": "upperLower",
     "workoutsPerWeek": 4,
@@ -52,7 +52,39 @@
   "smartPlan": {
     "maximumExercises": 8,
     "maximumWorkingSets": 24,
-    "maximumSetsPerExercise": 4
+    "maximumSetsPerExercise": 4,
+    "minimumExercises": 4,
+    "minimumSetsPerExercise": 3,
+    "frequencyBaseSets": {
+      "2": 20,
+      "3": 18,
+      "4": 16,
+      "5": 15,
+      "6": 14
+    },
+    "goalSetAdjustment": {
+      "aestheticFatLoss": -2,
+      "muscleGain": 2,
+      "strength": -1,
+      "balanced": 0
+    },
+    "calorieSetAdjustment": {
+      "deficit": -2,
+      "maintenance": 0,
+      "surplus": 2
+    },
+    "effortSetAdjustment": {
+      "recovery": -3,
+      "standard": 0,
+      "hard": 1
+    },
+    "minimumWorkingSets": {
+      "recovery": 12,
+      "standard": 12,
+      "hard": 13
+    },
+    "hardReservedSets": 1,
+    "exerciseCountRounding": "floor"
   },
   "launchSeed": {
     "accountBound": true,

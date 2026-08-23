@@ -928,6 +928,27 @@ class WorkoutRecommendationEngineTest {
     }
 
     @Test
+    fun defaultAestheticDeficitPlanMatchesCrossPlatformTwelveSetContract() {
+        val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
+            exercises = catalog(),
+            history = emptyList(),
+            trainingProfile = TrainingProfile(
+                split = TrainingSplit.UpperLower,
+                workoutsPerWeek = 4,
+                goal = TrainingGoal.AestheticFatLoss,
+                calorieMode = CalorieMode.Deficit
+            ),
+            effort = SmartWorkoutEffort.Standard,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+
+        assertEquals(SmartWorkoutFocus.Upper, plan.focus)
+        assertEquals(4, plan.exercises.size)
+        assertEquals(12, plan.exercises.sumOf { it.recommendation.sets.size })
+    }
+
+    @Test
     fun goalAndDeficitDoNotCollapseNormalExerciseCountMatrix() {
         fun count(days: Int, split: TrainingSplit): Int = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = catalog(),
@@ -947,7 +968,7 @@ class WorkoutRecommendationEngineTest {
             lowerFrequency >= higherFrequency
         })
         assertTrue(fullBodyCounts.all { it in 4..8 })
-        assertTrue(count(4, TrainingSplit.UpperLower) >= 5)
+        assertTrue(count(4, TrainingSplit.UpperLower) >= 4)
         assertTrue(count(6, TrainingSplit.PushPullLegs) >= 3)
     }
 
@@ -1013,8 +1034,7 @@ class WorkoutRecommendationEngineTest {
         assertEquals(SmartWorkoutFocus.Lower, lower.focus)
         assertEquals(1, lower.exerciseNames().count { it in trunkNames })
         assertEquals(SmartWorkoutFocus.Upper, upperAfterCore.focus)
-        assertEquals(1, upperAfterCore.exerciseNames().count { it in trunkNames })
-        assertTrue(upperAfterCore.exerciseNames().contains("Hyperextension"))
+        assertEquals(0, upperAfterCore.exerciseNames().count { it in trunkNames })
         assertEquals(SmartWorkoutFocus.Push, pushAfterCore.focus)
         assertEquals(1, pushAfterCore.exerciseNames().count { it in trunkNames })
         assertTrue(pushAfterCore.exerciseNames().contains("Hyperextension"))
@@ -1095,15 +1115,18 @@ class WorkoutRecommendationEngineTest {
         val names = plan.exerciseNames()
 
         assertEquals(SmartWorkoutFocus.Upper, plan.focus)
-        assertEquals(8, names.size)
+        assertEquals(5, names.size)
         assertTrue(names.any { it == "Bench Press" || it == "Shoulder Press" })
-        assertTrue(names.any { it == "Cable Row" || it == "Pull Up" || it == "Crane Pulldown" })
+        assertTrue(names.any {
+            it == "Cable Row" || it == "Barbell Row" || it == "Pull Up" ||
+                it == "Crane Pulldown" || it == "Lat Pulldown"
+        })
         assertTrue(plan.exercises.sumOf { it.recommendation.sets.size } <= 24)
         assertTrue(names.contains("Weighted Crunch"))
     }
 
     @Test
-    fun highFrequencyMuscleGainUpperPlanKeepsEightExercisesWithinSessionCap() {
+    fun highFrequencyMuscleGainUpperPlanMatchesCrossPlatformEighteenSetCap() {
         val plan = WorkoutRecommendationEngine.buildWorkoutPlan(
             exercises = catalog(),
             history = emptyList(),
@@ -1118,8 +1141,8 @@ class WorkoutRecommendationEngineTest {
         )
 
         assertEquals(SmartWorkoutFocus.Upper, plan.focus)
-        assertEquals(8, plan.exercises.size)
-        assertEquals(24, plan.exercises.sumOf { it.recommendation.sets.size })
+        assertEquals(6, plan.exercises.size)
+        assertEquals(18, plan.exercises.sumOf { it.recommendation.sets.size })
         assertTrue(plan.exerciseNames().any { it == "Bench Press" || it == "Shoulder Press" })
         assertTrue(plan.exerciseNames().any { it == "Cable Row" || it == "Pull Up" })
     }
@@ -1222,7 +1245,7 @@ class WorkoutRecommendationEngineTest {
             zoneId = zoneId
         )
 
-        assertEquals(8, plan.exercises.size)
+        assertEquals(6, plan.exercises.size)
         assertTrue(plan.exercises.all { it.exercise.id <= WorkoutDataLimits.MAX_EXERCISES })
     }
 
@@ -1317,9 +1340,12 @@ class WorkoutRecommendationEngineTest {
                             zoneId = zoneId
                         )
                         assertTrue(context, plan.exercises.size in 4..8)
+                        val expectedTrunkCount = if (
+                            plan.focus == SmartWorkoutFocus.Upper && plan.exercises.size == 4
+                        ) 0 else 1
                         assertEquals(
                             "$context trunk",
-                            1,
+                            expectedTrunkCount,
                             plan.exerciseNames().count { it in trunkNames }
                         )
                         assertEquals(plan.exercises.size, plan.exercises.map { it.exercise.id }.distinct().size)
@@ -1442,7 +1468,7 @@ class WorkoutRecommendationEngineTest {
             history = chestHistory,
             trainingProfile = TrainingProfile(
                 split = TrainingSplit.FullBody,
-                workoutsPerWeek = 6,
+                workoutsPerWeek = 3,
                 goal = TrainingGoal.Balanced,
                 calorieMode = CalorieMode.Maintenance
             ),
@@ -1473,7 +1499,7 @@ class WorkoutRecommendationEngineTest {
             history = emptyList(),
             trainingProfile = TrainingProfile(
                 split = TrainingSplit.FullBody,
-                workoutsPerWeek = 6,
+                workoutsPerWeek = 3,
                 goal = TrainingGoal.Strength,
                 calorieMode = CalorieMode.Deficit
             ),
@@ -1528,7 +1554,7 @@ class WorkoutRecommendationEngineTest {
         assertEquals(SmartWorkoutEffort.Auto, recovery.requestedEffort)
         assertEquals(SmartWorkoutEffort.Recovery, recovery.appliedEffort)
         assertEquals(SmartWorkoutEffortAdjustment.AutoRecovery, recovery.effortAdjustment)
-        assertEquals(6, recovery.exercises.size)
+        assertEquals(4, recovery.exercises.size)
         assertTrue(recovery.exercises.all { it.recommendation.sets.size == 3 })
         assertEquals(SmartWorkoutEffort.Standard, standard.appliedEffort)
         assertFalse(standard.appliedEffort == SmartWorkoutEffort.Hard)
@@ -1639,7 +1665,7 @@ class WorkoutRecommendationEngineTest {
     }
 
     @Test
-    fun newCompoundDoesNotConsumeOneOfTwoPreparedHardSlots() {
+    fun newCompoundDoesNotConsumeThePreparedHardSlot() {
         val exercises = listOf(
             ExerciseEntity(id = 1, name = "Bench Press", isFavorite = true),
             ExerciseEntity(id = 2, name = "Dumbbell Bench Press"),
@@ -1669,7 +1695,7 @@ class WorkoutRecommendationEngineTest {
         assertTrue(plan.exerciseNames().toString(), newCompoundIndex in 0 until lastHardIndex)
         assertEquals(3, newCompound.sets.size)
         assertEquals(2..3, newCompound.targetRir)
-        assertEquals(2, hardPrepared.size)
+        assertEquals(1, hardPrepared.size)
         assertTrue(hardPrepared.all { it.recommendation.sets.size == 4 })
     }
 
@@ -1955,7 +1981,7 @@ class WorkoutRecommendationEngineTest {
         val surplusSets = surplusPlan.exercises.sumOf { it.recommendation.sets.size }
         assertTrue(deficitSets < balancedSets)
         assertTrue(balancedSets <= surplusSets)
-        assertTrue(balancedPlan.exercises != surplusPlan.exercises)
+        assertTrue(deficitSets != surplusSets)
 
         assertTrue(
             workingSets(base.copy(workoutsPerWeek = 2)) >

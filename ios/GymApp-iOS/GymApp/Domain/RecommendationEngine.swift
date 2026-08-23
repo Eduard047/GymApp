@@ -1384,7 +1384,8 @@ public enum RecommendationEngine {
         // round a partial three-set slot up into another exercise; that can make
         // a higher-frequency plan contain more exercises when primary movements
         // switch from four sets to three. This also matches the PWA budget rule.
-        return min(8, max(4, budget / 3))
+        let reservedHardSets = effort == .hard ? 1 : 0
+        return min(8, max(4, (budget - reservedHardSets) / 3))
     }
 
     /// A bounded per-session budget keeps low-frequency sessions useful without producing
@@ -1395,28 +1396,30 @@ public enum RecommendationEngine {
         effort: SmartWorkoutEffort = .standard
     ) -> Int {
         let frequencyBase: Int = switch min(6, max(2, profile.workoutsPerWeek)) {
-        case 2: 24
-        case 3: 21
-        case 4: 18
-        case 5: 16
-        default: 15
+        case 2: 20
+        case 3: 18
+        case 4: 16
+        case 5: 15
+        default: 14
         }
         let goalAdjustment: Int = switch profile.goal {
         case .muscleGain: 2
-        case .strength, .balanced: 0
-        case .aestheticFatLoss: -1
+        case .strength: -1
+        case .aestheticFatLoss: -2
+        case .balanced: 0
         }
         let calorieAdjustment: Int = switch profile.calorieMode {
-        case .deficit: -3
+        case .deficit: -2
         case .maintenance: 0
-        case .surplus: 3
+        case .surplus: 2
         }
         let effortAdjustment: Int = switch effort {
-        case .recovery: -5
-        case .hard: 2
+        case .recovery: -3
+        case .hard: 1
         case .auto, .standard: 0
         }
-        return min(24, max(12, frequencyBase + goalAdjustment + calorieAdjustment + effortAdjustment))
+        let minimum = effort == .hard ? 13 : 12
+        return min(24, max(minimum, frequencyBase + goalAdjustment + calorieAdjustment + effortAdjustment))
     }
 
     private static func programmingPreferenceScore(
@@ -2230,10 +2233,12 @@ public enum RecommendationEngine {
         // Reserve one direct trunk slot, but append it only after the working
         // movements so the generated order is compounds, accessories, trunk.
         let allTrunkCandidates = candidates.filter(isTrunkAccessory)
+        let reserveTrunk = !allTrunkCandidates.isEmpty &&
+            (focus != .upper || targetExerciseCount > 4)
         remaining.removeAll(where: isTrunkAccessory)
-        let workingExerciseTarget = allTrunkCandidates.isEmpty
-            ? max(targetExerciseCount, selected.count)
-            : max(selected.count, targetExerciseCount - 1)
+        let workingExerciseTarget = reserveTrunk
+            ? max(selected.count, targetExerciseCount - 1)
+            : max(targetExerciseCount, selected.count)
 
         while selected.count < workingExerciseTarget, !remaining.isEmpty {
             let usedSetBudget = selected.reduce(0) { $0 + $1.plannedSetCount }
@@ -2282,7 +2287,7 @@ public enum RecommendationEngine {
             !isHyperextension($0) ||
                 (!hasCompoundHinge && recentHyperextensionSessionCount < 2)
         }
-        if let trunk = safeTrunkCandidates.min(by: {
+        if reserveTrunk, let trunk = safeTrunkCandidates.min(by: {
                let leftPreferred = isHyperextension($0) == prefersHyperextension
                let rightPreferred = isHyperextension($1) == prefersHyperextension
                if leftPreferred != rightPreferred { return leftPreferred }
@@ -2307,10 +2312,7 @@ public enum RecommendationEngine {
             if leftPriority != rightPriority { return leftPriority < rightPriority }
             return left.offset < right.offset
         }.map(\.element)
-        let finalCount = allTrunkCandidates.isEmpty
-            ? targetExerciseCount
-            : max(targetExerciseCount, selected.count)
-        return Array(ordered.prefix(finalCount))
+        return Array(ordered.prefix(targetExerciseCount))
     }
 
     private static func isTrunkAccessory(_ candidate: ExerciseCandidate) -> Bool {

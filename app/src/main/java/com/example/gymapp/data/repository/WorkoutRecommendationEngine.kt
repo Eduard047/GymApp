@@ -519,11 +519,13 @@ object WorkoutRecommendationEngine {
             zoneId = zoneId,
             feedback = applicableFeedback
         )
-        val targetExerciseCount = targetExerciseCount(trainingProfile, effortResolution.applied)
         val targetWorkingSetBudget = targetWorkingSetBudget(
             trainingProfile = trainingProfile,
-            effort = effortResolution.applied,
-            exerciseLimit = targetExerciseCount
+            effort = effortResolution.applied
+        )
+        val targetExerciseCount = targetExerciseCount(
+            targetWorkingSetBudget,
+            effortResolution.applied
         )
         val weeklyTargets = weeklyMuscleTargets(trainingProfile)
         val completedWeeklySets = completedWeeklyEffectiveSets(
@@ -1229,62 +1231,45 @@ object WorkoutRecommendationEngine {
     }
 
     private fun targetExerciseCount(
-        trainingProfile: TrainingProfile,
+        workingSetBudget: Int,
         effort: SmartWorkoutEffort = SmartWorkoutEffort.Standard
     ): Int {
-        val days = trainingProfile.workoutsPerWeek.coerceIn(2, 6)
-        val base = when (days) {
-            2 -> 10
-            3 -> 9
-            4 -> 8
-            5 -> 7
-            else -> 6
-        }
-        val goalAdjustment = when (trainingProfile.goal) {
-            TrainingGoal.MuscleGain -> 1
-            TrainingGoal.Strength,
-            TrainingGoal.AestheticFatLoss -> -1
-            TrainingGoal.Balanced -> 0
-        }
-        val calorieAdjustment = when (trainingProfile.calorieMode) {
-            CalorieMode.Deficit -> -1
-            CalorieMode.Maintenance -> 0
-            CalorieMode.Surplus -> 1
-        }
-        val effortAdjustment = if (effort == SmartWorkoutEffort.Recovery) -2 else 0
-        return (base + goalAdjustment + calorieAdjustment + effortAdjustment)
-            .coerceIn(5, SMART_WORKOUT_MAX_EXERCISES)
+        val reservedHardSets = if (effort == SmartWorkoutEffort.Hard) 1 else 0
+        return ((workingSetBudget - reservedHardSets) / SMART_WORKOUT_MIN_SETS_PER_EXERCISE)
+            .coerceIn(4, SMART_WORKOUT_MAX_EXERCISES)
     }
 
     private fun targetWorkingSetBudget(
         trainingProfile: TrainingProfile,
-        effort: SmartWorkoutEffort,
-        exerciseLimit: Int
+        effort: SmartWorkoutEffort
     ): Int {
+        val frequencyBase = when (trainingProfile.workoutsPerWeek.coerceIn(2, 6)) {
+            2 -> 20
+            3 -> 18
+            4 -> 16
+            5 -> 15
+            else -> 14
+        }
         val goalAdjustment = when (trainingProfile.goal) {
             TrainingGoal.MuscleGain -> 2
-            TrainingGoal.Strength -> -2
-            TrainingGoal.AestheticFatLoss -> -1
+            TrainingGoal.Strength -> -1
+            TrainingGoal.AestheticFatLoss -> -2
             TrainingGoal.Balanced -> 0
         }
         val calorieAdjustment = when (trainingProfile.calorieMode) {
-            CalorieMode.Deficit -> -3
+            CalorieMode.Deficit -> -2
             CalorieMode.Maintenance -> 0
-            CalorieMode.Surplus -> 3
+            CalorieMode.Surplus -> 2
         }
         val effortAdjustment = when (effort) {
             SmartWorkoutEffort.Recovery -> -3
-            SmartWorkoutEffort.Hard -> 2
+            SmartWorkoutEffort.Hard -> 1
             SmartWorkoutEffort.Auto,
             SmartWorkoutEffort.Standard -> 0
         }
-        val minimum = exerciseLimit * SMART_WORKOUT_MIN_SETS_PER_EXERCISE
-        val maximum = min(
-            SMART_WORKOUT_MAX_TOTAL_SETS,
-            exerciseLimit * SMART_WORKOUT_MAX_SETS_PER_EXERCISE
-        )
-        return (exerciseLimit * 3 + goalAdjustment + calorieAdjustment + effortAdjustment)
-            .coerceIn(minimum, maximum)
+        val minimum = if (effort == SmartWorkoutEffort.Hard) 13 else 12
+        return (frequencyBase + goalAdjustment + calorieAdjustment + effortAdjustment)
+            .coerceIn(minimum, SMART_WORKOUT_MAX_TOTAL_SETS)
     }
 
     private fun programmingPreferenceScore(
@@ -1946,8 +1931,10 @@ object WorkoutRecommendationEngine {
         // Reserve one trunk slot, but choose it after the working movements. This keeps
         // compounds first and lets the trunk chooser avoid hyperextensions after a hinge.
         val hasTrunkCandidate = candidates.any { it.analysis.isTrunkExercise() }
+        val reserveTrunk = hasTrunkCandidate &&
+            (focus != SmartWorkoutFocus.Upper || targetExerciseCount > 4)
         remaining.removeAll { it.analysis.isTrunkExercise() }
-        val nonTrunkTarget = if (hasTrunkCandidate) {
+        val nonTrunkTarget = if (reserveTrunk) {
             (targetExerciseCount - 1).coerceAtLeast(0)
         } else {
             targetExerciseCount
@@ -1975,7 +1962,7 @@ object WorkoutRecommendationEngine {
             recordSelection(best)
         }
 
-        if (selected.size < targetExerciseCount && hasTrunkCandidate) {
+        if (selected.size < targetExerciseCount && reserveTrunk) {
             selectTrunkExercise(
                 candidates = candidates,
                 selected = selected,
