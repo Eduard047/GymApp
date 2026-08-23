@@ -65,7 +65,6 @@ cookies.txt
 
 # Local helper files
 /CON
-/AGENTS.md
 /design-qa.md
 /release-readiness.md
 /security-reports/
