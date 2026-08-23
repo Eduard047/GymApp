@@ -8,9 +8,12 @@ second function copy under a platform directory. The machine-readable
 the last observed production version, and the release gate.
 
 Last observed production deployment: version 13 was `ACTIVE` with
-`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-23. Its canonical
-repository source has SHA-256
+`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-23. Its deployed
+source has SHA-256
 `18bf031b874e7efde9b9473979b173158b187b46c7f12ee5f023bcc51a5a4f3d`.
+Repository contract 4 has canonical source SHA-256
+`74617de1dbaba0b6103b04d1461a46ddd597d1df0e735b0a21a23d38d0556ab4`;
+the release gate remains closed until that source is deployed and read back.
 The one-time reauthentication grant, durable pre-authentication budget, HMAC
 secret, and service-only wrapper were applied and read back; the deployment
 contract release gate is open.

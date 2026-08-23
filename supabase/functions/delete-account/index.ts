@@ -307,14 +307,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
         },
       );
       if (!prepareResponse.ok) {
-        return jsonResponse(req, 401, { error: "recent_reauthentication_required" });
+        return jsonResponse(req, 401, {
+          error: "recent_reauthentication_required",
+        });
       }
       const prepared = await prepareResponse.json() as JsonRecord;
       if (
         prepared.version !== 1 || !isUuid(prepared.grant) ||
         typeof prepared.expiresAt !== "string" || prepared.expiresAt.length > 64
       ) {
-        return jsonResponse(req, 502, { error: "account_deletion_preparation_failed" });
+        return jsonResponse(req, 502, {
+          error: "account_deletion_preparation_failed",
+        });
       }
       return jsonResponse(req, 200, {
         grant: prepared.grant.toLowerCase(),

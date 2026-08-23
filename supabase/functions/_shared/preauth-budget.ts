@@ -27,8 +27,8 @@ function sourceAddress(request: Request): string {
   return SOURCE_PATTERN.test(candidate) ? candidate.toLowerCase() : "unknown";
 }
 
-function bytesFromHex(value: string): Uint8Array {
-  const bytes = new Uint8Array(value.length / 2);
+function bytesFromHex(value: string): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(new ArrayBuffer(value.length / 2));
   for (let index = 0; index < bytes.length; index += 1) {
     bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
   }
