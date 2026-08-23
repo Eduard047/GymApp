@@ -7,13 +7,13 @@ second function copy under a platform directory. The machine-readable
 [deployment contract](deployment-contract.json) pins the reviewed source hash,
 the last observed production version, and the release gate.
 
-Last observed production deployment: version 3 was `ACTIVE` with `verify_jwt=true` in
-project `owrcbsrectdgaotndtxy` as last observed on 2026-07-22. The deployed
-canonical repository source has SHA-256
-`e622cdcd640e726578ffd6ccea955186360a3afa0fda35dd70cc903068642f6d`.
-That deployment predates the one-time reauthentication grant and pre-authentication
-budget. The deployment contract release gate therefore remains closed until the
-new migrations, secret, and Edge source are deployed and read back.
+Last observed production deployment: version 13 was `ACTIVE` with
+`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-23. Its canonical
+repository source has SHA-256
+`18bf031b874e7efde9b9473979b173158b187b46c7f12ee5f023bcc51a5a4f3d`.
+The one-time reauthentication grant, durable pre-authentication budget, HMAC
+secret, and service-only wrapper were applied and read back; the deployment
+contract release gate is open.
 
 Security properties:
 

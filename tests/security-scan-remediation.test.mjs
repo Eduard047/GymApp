@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [sessionSql, durationSql, deletionSql, preauthSql, pushSource, pwaSource, stateSource, androidStore] =
+const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, coalesceFixSql, pushSource, pwaSource, stateSource, androidStore] =
   await Promise.all([
-    readFile("supabase/migrations/20260823153000_harden_live_sessions_and_push_ownership.sql", "utf8"),
-    readFile("supabase/migrations/20260823154000_bound_workout_duration_sync.sql", "utf8"),
-    readFile("supabase/migrations/20260823155000_require_one_time_account_deletion_grants.sql", "utf8"),
-    readFile("supabase/migrations/20260823156000_add_edge_preauth_budgets.sql", "utf8"),
+    readFile("supabase/migrations/20260823160702_harden_live_sessions_and_push_ownership.sql", "utf8"),
+    readFile("supabase/migrations/20260823160703_bound_workout_duration_sync.sql", "utf8"),
+    readFile("supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql", "utf8"),
+    readFile("supabase/migrations/20260823160706_add_edge_preauth_budgets.sql", "utf8"),
+    readFile("supabase/migrations/20260823161839_fix_edge_preauth_service_wrapper.sql", "utf8"),
+    readFile("supabase/migrations/20260823162119_fix_security_hardening_coalesce_calls.sql", "utf8"),
     readFile("supabase/functions/_shared/preauth-budget.ts", "utf8"),
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/state-contract.js", "utf8"),
@@ -58,6 +60,13 @@ test("public Edge pre-authentication work has service-only durable source and gl
   assert.match(preauthSql, /\('garmin_legacy', 90, 3000\)/);
   assert.match(preauthSql, /grant execute on function public\.edge_preauth_debit\(text, text\)[\s\S]*to service_role/);
   assert.doesNotMatch(preauthSql, /grant execute on function public\.edge_preauth_debit\(text, text\)[\s\S]*to (?:anon|authenticated)/);
+  assert.match(preauthWrapperFixSql, /alter function public\.edge_preauth_debit\(text, text\) security definer/);
+  assert.match(preauthWrapperFixSql, /set search_path = ''/);
+  assert.doesNotMatch(preauthWrapperFixSql, /grant usage on schema gymapp_private/);
+  assert.match(coalesceFixSql, /social_sync_workout_durations\(jsonb\)/);
+  assert.match(coalesceFixSql, /gymapp_private\.edge_preauth_debit\(text,text\)/);
+  assert.match(coalesceFixSql, /regexp_count/);
+  assert.match(coalesceFixSql, /'pg_catalog\.coalesce',[\s\S]*'coalesce'/);
   assert.match(pushSource, /GATEWAY_PREAUTH_HMAC_SECRET/);
   assert.match(pushSource, /crypto\.subtle\.sign/);
   assert.match(pushSource, /p_source_hash: hash/);

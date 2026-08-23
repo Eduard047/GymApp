@@ -4,7 +4,20 @@ const HMAC_SECRET_PATTERN = /^[0-9a-f]{64}$/i;
 export type PreauthBudgetResult =
   | { status: "allowed" }
   | { status: "rate_limited"; retryAfter: number }
-  | { status: "unavailable" };
+  | {
+    status: "unavailable";
+    reason: string;
+  };
+
+function unavailable(code: string): PreauthBudgetResult {
+  const safeCode = /^[a-z0-9_]{1,64}$/.test(code) ? code : "rpc_rejected";
+  // A bounded code is operationally useful without logging the source address,
+  // its HMAC, any credential, or a database response body.
+  console.warn("Gateway pre-authentication budget unavailable", {
+    code: safeCode,
+  });
+  return { status: "unavailable", reason: safeCode };
+}
 
 function sourceAddress(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0]
@@ -47,7 +60,7 @@ export async function debitPreauthBudget(
   administrativeKey: string,
 ): Promise<PreauthBudgetResult> {
   const hash = await sourceHash(request, route);
-  if (!hash) return { status: "unavailable" };
+  if (!hash) return unavailable("invalid_hmac_secret");
   const headers: Record<string, string> = {
     apikey: administrativeKey,
     "Content-Type": "application/json",
@@ -65,7 +78,16 @@ export async function debitPreauthBudget(
         signal: AbortSignal.timeout(5_000),
       },
     );
-    if (!response.ok) return { status: "unavailable" };
+    if (!response.ok) {
+      const errorBody = await response.clone().json().catch(() => null) as
+        | Record<string, unknown>
+        | null;
+      const responseCode = typeof errorBody?.code === "string" &&
+          /^[A-Za-z0-9]{1,16}$/.test(errorBody.code)
+        ? errorBody.code.toLowerCase()
+        : "unknown";
+      return unavailable(`rpc_${response.status}_${responseCode}`);
+    }
     const result = await response.json() as Record<string, unknown>;
     if (result.allowed === true && result.retryAfter === 0) {
       return { status: "allowed" };
@@ -73,8 +95,8 @@ export async function debitPreauthBudget(
     if (result.allowed === false && result.retryAfter === 60) {
       return { status: "rate_limited", retryAfter: 60 };
     }
-    return { status: "unavailable" };
+    return unavailable("invalid_rpc_response");
   } catch {
-    return { status: "unavailable" };
+    return unavailable("rpc_transport_error");
   }
 }
