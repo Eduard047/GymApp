@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migration = await readFile(
-  "supabase/migrations/20260824120000_sync_activity_only_workouts.sql",
+  "supabase/migrations/20260824180647_sync_activity_only_workouts.sql",
   "utf8"
 );
 const databaseTest = await readFile(

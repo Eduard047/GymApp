@@ -6,10 +6,11 @@ static notification through FCM HTTP v1, APNs, or Web Push, and then atomically
 records success, retry, permanent failure, or invalid-registration revocation.
 It is not a browser/client API.
 
-A read-only production metadata readback on 2026-08-24 found `push-dispatch`
-version 5 `ACTIVE` with `verify_jwt=false` and 54 migrations through
-`20260823162119`. The configured Vault/provider and successful dispatcher/
-monitor empty-queue evidence was observed on 2026-08-10 against version 4; it
+A production metadata readback after the approved 2026-08-24 database rollout
+found `push-dispatch` version 5 `ACTIVE` with `verify_jwt=false` and 57
+migrations through `20260824180727`. The configured Vault/provider and
+successful dispatcher/monitor empty-queue evidence was observed on 2026-08-10
+against version 4; it
 was not rerun merely because later metadata was read. The production tables then
 contained no registered installations or queued deliveries, so that evidence
 proved only the authenticated empty-queue path. Physical APNs/FCM/Web Push

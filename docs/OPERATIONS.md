@@ -97,16 +97,24 @@ synthetic smoke covered owner sync, malformed input, cross-account isolation,
 authorized friend read, consent revocation, and invalid-session denial; it
 retained zero fixture rows.
 
-On 2026-08-24 a read-only production readback found 54 migrations through
-`20260823162119_fix_security_hardening_coalesce_calls`. Active Edge Function
-metadata was `garmin-sync` version 12 (`verify_jwt=false`), `delete-account`
-version 14 (`verify_jwt=true`), `social-live-gateway` version 6
-(`verify_jwt=true`), and `push-dispatch` version 5 (`verify_jwt=false`). The
-canonical local chain additionally contains the reviewed forward migrations
-`20260824120000_sync_activity_only_workouts.sql` and
-`20260824123000_harden_remaining_supabase_boundaries.sql`; neither has been
-deployed. Do not describe production as matching the repository until both are
-applied, read back, and their denied-path checks pass in the target environment.
+On 2026-08-24 an approved production rollout brought the canonical history to
+57 migrations through
+`20260824180727_harden_remaining_supabase_boundaries`. It applied the
+read-only exact-session predicate hotfix, the activity-only workout sidecar,
+and the remaining default-ACL/private-projection hardening. Readback confirmed
+the helper's non-locking read-only branch and key-share-locked write branch,
+unchanged owner-table RLS policies, FORCE RLS with no client table grants for
+the new/private projections, and no remaining local migration drift. A bounded
+production smoke then covered owner reads/writes, cross-owner isolation,
+wrong/expired/malformed/missing/revoked sessions, activity-only sync/replay,
+and anonymous denial. A real authenticated PostgREST `GET`/`HEAD` of
+`user_states` plus `GET profiles` returned HTTP 200; the matching API log was
+200 and the current PostgreSQL log window contained no read-only key-share
+error. The disposable account and every dependent fixture row were removed.
+Active Edge Function metadata remained `garmin-sync` version 12
+(`verify_jwt=false`),
+`delete-account` version 14 (`verify_jwt=true`), `social-live-gateway` version 6
+(`verify_jwt=true`), and `push-dispatch` version 5 (`verify_jwt=false`).
 
 Public Supabase client identifiers are not privileged credentials. Secret keys,
 service-role keys, connection strings, raw device tokens, and real account data

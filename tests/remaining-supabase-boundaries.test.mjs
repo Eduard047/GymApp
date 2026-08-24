@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migration = await readFile(
-  "supabase/migrations/20260824123000_harden_remaining_supabase_boundaries.sql",
+  "supabase/migrations/20260824180727_harden_remaining_supabase_boundaries.sql",
   "utf8"
 );
 const databaseTest = await readFile(

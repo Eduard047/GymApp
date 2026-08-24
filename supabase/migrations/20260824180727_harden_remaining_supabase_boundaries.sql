@@ -132,7 +132,8 @@ revoke all privileges on table gymapp_private.user_state_progression
 -- on client-authored state. Bind that compatibility projection to the exact
 -- current Auth session as well as auth.uid(), so a deleted/revoked or expired
 -- access JWT returns no rows. VOLATILE is required because the live-session
--- helper takes a key-share lock to serialize reads with session deletion.
+-- helper keeps a key-share lock for read-write callers; read-only projections
+-- use the helper's non-locking exact-session check.
 create or replace function public.leaderboard_public_rows()
 returns table (
   profile_id text,

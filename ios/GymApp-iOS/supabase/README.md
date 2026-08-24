@@ -9,15 +9,14 @@ restore a platform-local function copy.
 
 ## Current production metadata snapshot — read-only 2026-08-24
 
-The canonical production history contains 54 migrations through
-`20260823162119_fix_security_hardening_coalesce_calls`. Active Edge Function
+The canonical production history contains 57 migrations through
+`20260824180727_harden_remaining_supabase_boundaries`. Active Edge Function
 metadata is `garmin-sync` version 12 (`verify_jwt=false`), `delete-account`
 version 14 (`verify_jwt=true`), `social-live-gateway` version 6
 (`verify_jwt=true`), and `push-dispatch` version 5 (`verify_jwt=false`). The
-repository-root chain has two reviewed local-only forward migrations:
-`20260824120000_sync_activity_only_workouts.sql` and
-`20260824123000_harden_remaining_supabase_boundaries.sql`. Neither is deployed;
-production therefore does not yet match the complete canonical local chain.
+read-only exact-session predicate hotfix, activity-only workout sidecar, and
+remaining boundary hardening were applied and read back on 2026-08-24;
+production matches the complete canonical local migration chain.
 
 This metadata readback does not replace the dated functional evidence below.
 After any backend release, rerun the exact-session, cross-account, replay,
