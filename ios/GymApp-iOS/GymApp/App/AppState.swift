@@ -1167,7 +1167,6 @@ final class AppState: ObservableObject {
             )
             return
         }
-        await Task.yield()
         if cloudSavePhase == .debouncing {
             abandonPendingCloudSave()
         }
@@ -2411,8 +2410,12 @@ final class AppState: ObservableObject {
     private func observeStore() {
         storeSubscription?.cancel()
         storeSubscription = workoutStore.objectWillChange.sink { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor in
+            // WorkoutStore is MainActor-isolated and ObservableObjectPublisher delivers
+            // synchronously. Handle the mutation in that same turn so a manual sync can
+            // reliably cancel the resulting debounce instead of racing a queued Task that
+            // may schedule a second CAS write after reconciliation has already started.
+            MainActor.assumeIsolated {
+                guard let self else { return }
                 guard !self.applyingRemoteState,
                       !self.isSigningOut,
                       self.isAccountReady,

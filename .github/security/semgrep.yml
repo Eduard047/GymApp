@@ -67,7 +67,7 @@ rules:
   - id: gymapp-swift-sensitive-userdefaults
     message: Credentials and password material belong in Keychain, not UserDefaults.
     severity: ERROR
-    languages: [swift]
+    languages: [generic]
     metadata:
       cwe: "CWE-312: Cleartext Storage of Sensitive Information"
       confidence: HIGH
@@ -76,15 +76,13 @@ rules:
         - /ios/GymApp-iOS/GymApp/**/*.swift
         - /.github/security/semgrep-tests/*.swift
     patterns:
-      - pattern: 'UserDefaults.standard.set($VALUE, forKey: $KEY)'
-      - metavariable-regex:
-          metavariable: $KEY
-          regex: '(?i).*?(access.?token|refresh.?token|password|secret).*?'
+      - pattern: 'UserDefaults.standard.set(...)'
+      - pattern-regex: '(?i)forKey\s*:\s*[^\r\n]*(access.?token|refresh.?token|password|secret)[^\r\n]*'
 
   - id: gymapp-hardcoded-cleartext-url
     message: Production network destinations must use HTTPS.
     severity: ERROR
-    languages: [kotlin, swift, javascript, typescript]
+    languages: [generic]
     metadata:
       cwe: "CWE-319: Cleartext Transmission of Sensitive Information"
       confidence: HIGH

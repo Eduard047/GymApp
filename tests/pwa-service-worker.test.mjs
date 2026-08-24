@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
@@ -252,7 +252,6 @@ function strictServedPwaAsset(request, scope = "https://example.test/GymApp/") {
   const relativePath = decodeURIComponent(url.pathname.slice(scopeUrl.pathname.length)) || "index.html";
   try {
     const file = new URL(`../pwa/${relativePath}`, import.meta.url);
-    if (!statSync(file).isFile()) return new Response("not found", { status: 404 });
     return new Response(readFileSync(file), { status: 200 });
   } catch {
     return new Response("not found", { status: 404 });
@@ -285,6 +284,16 @@ function responsePromiseFor(handler, url, options = {}) {
 function isIntercepted(handler, url, options = {}) {
   return responsePromiseFor(handler, url, options) !== null;
 }
+
+test("strict PWA fixture reads a served asset directly and rejects a missing asset", async () => {
+  const served = strictServedPwaAsset("https://example.test/GymApp/app.v99.js");
+  const missing = strictServedPwaAsset("https://example.test/GymApp/missing.v99.js");
+
+  assert.equal(served.status, 200);
+  assert.ok((await served.text()).length > 0);
+  assert.equal(missing.status, 404);
+  assert.equal(await missing.text(), "not found");
+});
 
 test("service worker caches only exact immutable current same-origin assets", () => {
   for (const scope of ["https://example.test/", "https://example.test/GymApp/"]) {
