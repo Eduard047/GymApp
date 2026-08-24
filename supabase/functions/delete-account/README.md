@@ -7,16 +7,13 @@ second function copy under a platform directory. The machine-readable
 [deployment contract](deployment-contract.json) pins the reviewed source hash,
 the last observed production version, and the release gate.
 
-Last observed production deployment: version 13 was `ACTIVE` with
-`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-23. Its deployed
-source has SHA-256
-`18bf031b874e7efde9b9473979b173158b187b46c7f12ee5f023bcc51a5a4f3d`.
-Repository contract 4 has canonical source SHA-256
+Last observed production deployment: version 14 was `ACTIVE` with
+`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-24. Its deployed
+source byte-for-byte matched repository contract 4 with canonical SHA-256
 `74617de1dbaba0b6103b04d1461a46ddd597d1df0e735b0a21a23d38d0556ab4`;
-the release gate remains closed until that source is deployed and read back.
-The one-time reauthentication grant, durable pre-authentication budget, HMAC
-secret, and service-only wrapper were applied and read back; the deployment
-contract release gate is closed for repository contract 4.
+the deployment contract release gate is open. The one-time reauthentication
+grant, durable pre-authentication budget, HMAC secret, and service-only wrapper
+were applied and read back before the function deployment.
 
 Security properties:
 
@@ -115,8 +112,7 @@ supabase functions serve delete-account
 ```
 
 The normal contract test checks the pinned production snapshot against the
-repository contract. The enforced release check is expected to fail until the
-new contract is deployed and read back:
+repository contract. The enforced release check must pass before a release:
 
 ```sh
 GYMAPP_ENFORCE_SUPABASE_RELEASE_GATE=1 \
