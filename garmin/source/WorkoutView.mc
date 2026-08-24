@@ -701,16 +701,12 @@ class WorkoutView extends Ui.View {
         if (page == 7) {
             drawReady(dc, w, h);
         } else if (page == 0) {
-            if (GymWorkoutMode.isFree()) {
-                drawFreeDashboard(dc, w, h);
-            } else {
-                var rest = GymStore.restSeconds();
-                var active = GymSession.effortState.equals("SET ACTIVE");
-                var maybe = GymSession.effortState.equals("SET MAYBE");
-                drawTinyDashboard(dc, w, h,
-                    GymSession.hr == null ? "--" : GymSession.hr.toString(),
-                    rest, active, maybe, dashboardStatusText(rest, active, maybe));
-            }
+            var rest = GymStore.restSeconds();
+            var active = GymSession.effortState.equals("SET ACTIVE");
+            var maybe = GymSession.effortState.equals("SET MAYBE");
+            drawTinyDashboard(dc, w, h,
+                GymSession.hr == null ? "--" : GymSession.hr.toString(),
+                rest, active, maybe, dashboardStatusText(rest, active, maybe));
         } else if (page == 1) {
             drawEntry(dc, w, h);
         } else if (page == 2) {
@@ -748,16 +744,12 @@ class WorkoutView extends Ui.View {
         if (page == 7) {
             drawReady(dc, w, h);
         } else if (page == 0) {
-            if (GymWorkoutMode.isFree()) {
-                drawFreeDashboard(dc, w, h);
-            } else {
-                var rest = GymStore.restSeconds();
-                var active = GymSession.effortState.equals("SET ACTIVE");
-                var maybe = GymSession.effortState.equals("SET MAYBE");
-                drawTinyDashboard(dc, w, h,
-                    GymSession.hr == null ? "--" : GymSession.hr.toString(),
-                    rest, active, maybe, dashboardStatusText(rest, active, maybe));
-            }
+            var rest = GymStore.restSeconds();
+            var active = GymSession.effortState.equals("SET ACTIVE");
+            var maybe = GymSession.effortState.equals("SET MAYBE");
+            drawTinyDashboard(dc, w, h,
+                GymSession.hr == null ? "--" : GymSession.hr.toString(),
+                rest, active, maybe, dashboardStatusText(rest, active, maybe));
         } else if (page == 1) {
             drawEntry(dc, w, h);
         } else if (page == 2) {
@@ -827,21 +819,21 @@ class WorkoutView extends Ui.View {
     (:compactLegacyState)
     function readyStatusText() {
         var current = GymStore.status == null ? "" : GymStore.status.toString();
-        if (current.equals("FIT FAIL") || current.equals("FIT CHECK") ||
-            current.equals("SAVE FAIL") || current.equals("START FAIL") ||
-            current.equals("REC FAIL") || current.equals("FIT RETRY")) {
-            return GymStore.tr("DATA KEPT", "ДАНІ Є", "ДАННЫЕ ЕСТЬ");
+        if ("|FIT FAIL|FIT CHECK|SAVE FAIL|START FAIL|REC FAIL|FIT RETRY|".find(
+                "|" + current + "|") != null) {
+            return Ui.loadResource(Rez.Strings.CompactDataKept).toString();
         } else if (current.equals("REOPEN")) {
-            return GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК");
+            return Ui.loadResource(Rez.Strings.CompactReopenApp).toString();
         }
         if (!GymStore.hasAccountBinding()) {
-            return GymStore.tr("NOT PAIRED", "НЕ ПРИВ'ЯЗ.", "НЕ СОПРЯЖ.");
+            return Ui.loadResource(Rez.Strings.CompactNotPaired).toString();
         }
-        if (GymStore.pending.size() > 0) {
-            return GymStore.tr("WAITING ", "ЧЕКАЄ ", "ЖДУТ ") +
-                GymStore.pending.size().toString();
+        var waiting = GymStore.pending.size();
+        if (waiting > 0) {
+            return Ui.loadResource(Rez.Strings.CompactWaiting).toString() +
+                waiting.toString();
         }
-        return GymStore.tr("SYNC ", "СИНХ ", "СИНХ ") +
+        return Ui.loadResource(Rez.Strings.CompactSync).toString() +
             GymStore.lastWorkoutSyncText();
     }
 
@@ -1019,15 +1011,10 @@ class WorkoutView extends Ui.View {
 
     (:compactLegacyState)
     function drawTutorialOverlay(dc, w, h) {
-        dc.setColor(Gfx.COLOR_BLUE, Gfx.COLOR_TRANSPARENT);
-        dc.drawRectangle(2, (h / 2) - 12, w - 4, 24);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        var label = tutorialStep == 0 ?
-            GymStore.tr("START", "СТАРТ", "СТАРТ") :
-            (tutorialStep == 1 ? GymStore.tr("SYNC", "СИНХ", "СИНХ") :
-                GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТР"));
         dc.drawText(w / 2, 2, Gfx.FONT_XTINY,
-            (tutorialStep + 1).toString() + "/3 " + label,
+            (tutorialStep + 1).toString() + "/3 " +
+                readyActionText(selected),
             Gfx.TEXT_JUSTIFY_CENTER);
     }
 
@@ -1105,6 +1092,7 @@ class WorkoutView extends Ui.View {
         }
     }
 
+    (:richWorkoutMode)
     function drawFreeDashboard(dc, w, h) {
         var hrText = GymSession.hr == null ? "--" : GymSession.hr.toString();
         var stateText = GymSession.paused ?
@@ -1234,18 +1222,24 @@ class WorkoutView extends Ui.View {
             Gfx.TEXT_JUSTIFY_CENTER);
         dc.drawText(w / 2, 48, Gfx.FONT_TINY,
             GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, 76, Gfx.FONT_XTINY,
-            fitText(GymStore.currentExerciseLabel(), 18),
-            Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, 100, Gfx.FONT_XTINY,
-            GymStore.tr("SETS ", "ПІДХ ", "ПОДХ ") +
-                GymStore.sets.size().toString() + "  " + setSummaryText(),
-            Gfx.TEXT_JUSTIFY_CENTER);
-        dc.setColor(GymSession.autoLogPrompt || setActive || rest > 0 ?
-            Gfx.COLOR_GREEN : (setMaybe ? Gfx.COLOR_YELLOW : Gfx.COLOR_WHITE),
-            Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 128, Gfx.FONT_XTINY,
-            fitText(status, 18), Gfx.TEXT_JUSTIFY_CENTER);
+        if (GymWorkoutMode.isFree()) {
+            dc.drawText(w / 2, 84, Gfx.FONT_XTINY,
+                "KCAL " + GymStore.totalGymCalories().format("%.1f"),
+                Gfx.TEXT_JUSTIFY_CENTER);
+        } else {
+            dc.drawText(w / 2, 76, Gfx.FONT_XTINY,
+                fitText(GymStore.currentExerciseLabel(), 18),
+                Gfx.TEXT_JUSTIFY_CENTER);
+            dc.drawText(w / 2, 100, Gfx.FONT_XTINY,
+                GymStore.tr("SETS ", "ПІДХ ", "ПОДХ ") +
+                    GymStore.sets.size().toString() + "  " + setSummaryText(),
+                Gfx.TEXT_JUSTIFY_CENTER);
+            dc.setColor(GymSession.autoLogPrompt || setActive || rest > 0 ?
+                Gfx.COLOR_GREEN : (setMaybe ? Gfx.COLOR_YELLOW : Gfx.COLOR_WHITE),
+                Gfx.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, 128, Gfx.FONT_XTINY,
+                fitText(status, 18), Gfx.TEXT_JUSTIFY_CENTER);
+        }
         if (GymSession.paused) {
             dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
             dc.drawCircle(w / 2, h / 2, (w / 2) - 5);
@@ -1745,25 +1739,19 @@ class WorkoutView extends Ui.View {
 
     (:compactRecovery96)
     function drawSummary(dc, w, h) {
-        if (GymWorkoutMode.isFree()) {
-            drawFreeSummary(dc, w, h);
-            return;
-        }
-        drawHeader(dc, w, h, GymStore.tr("SUMMARY", "ПІДСУМ", "ИТОГ"));
-        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 62), Gfx.FONT_TINY, GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(w / 2, sy(h, 112), Gfx.FONT_XTINY,
-            GymStore.tr("SETS ", "ПІДХ ", "ПОДХ ") + GymStore.sets.size().toString(),
-            Gfx.TEXT_JUSTIFY_CENTER);
-        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, sy(h, 146), Gfx.FONT_XTINY,
-            fitText(readyStatusText(), 18), Gfx.TEXT_JUSTIFY_CENTER);
+        // The compact dashboard already renders the complete allowed surface:
+        // FREE stops after duration/HR/calories, while PLANNED continues with
+        // exercise/set state. Reusing it keeps the summary semantically exact.
+        drawTinyDashboard(dc, w, h,
+            GymSession.hr == null ? "--" : GymSession.hr.toString(),
+            0, false, false, readyStatusText());
         dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, sy(h, 190), Gfx.FONT_XTINY,
             "> " + fitText(GymStore.tr("SAVE & EXIT", "ЗБЕРЕГТИ", "СОХРАНИТЬ"), 13),
             Gfx.TEXT_JUSTIFY_CENTER);
     }
 
+    (:richWorkoutMode)
     function drawFreeSummary(dc, w, h) {
         drawHeader(dc, w, h,
             GymStore.tr("FREE", "ВІЛЬНО", "СВОБОДНО"));

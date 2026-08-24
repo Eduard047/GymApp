@@ -29,8 +29,8 @@ const restoreMode = ({ marker, prepared, owner, device, generation, unfinished, 
   const preparedMode = Array.isArray(prepared) && bindingMatches(prepared) &&
     ((prepared.length === 6 && prepared[0] === 1) ||
       (prepared.length === 7 && prepared[0] === 2 &&
-        ["free", "planned"].includes(prepared[6])))
-    ? (prepared.length === 7 ? prepared[6] : "planned") : null;
+        typeof prepared[6] === "boolean"))
+    ? (prepared.length === 7 && prepared[6] ? "free" : "planned") : null;
   const markerValid = Array.isArray(marker) && marker.length === 5 && marker[0] === 1 &&
     bindingMatches(marker) && typeof marker[4] === "boolean" && unfinished &&
     (!marker[4] || validPlan(plan, catalog)) &&
@@ -81,7 +81,7 @@ test("mode recovery requires exact ownership and preserves the prepared mode", (
   };
   const freeMarker = [1, "acct", "watch", "g1", false];
   const plannedMarker = [1, "acct", "watch", "g1", true];
-  const freePrepared = [2, "acct", "watch", "g1", "req", 0, "free"];
+  const freePrepared = [2, "acct", "watch", "g1", "req", 0, true];
   assert.equal(restoreMode({ ...base, marker: freeMarker, prepared: freePrepared }), Mode.FREE);
   assert.equal(restoreMode({ ...base, marker: plannedMarker, prepared: null }), Mode.PLANNED);
   assert.equal(restoreMode({ ...base, marker: null, prepared: freePrepared }), Mode.FREE,
@@ -135,6 +135,10 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   assert.match(mode, /usePlan && !hasValidPlan\(\)/);
   assert.match(mode, /state = usePlan \? MODE_PLANNED : MODE_FREE/);
   assert.match(mode, /activeWorkoutModeV1/);
+  assert.match(mode, /markerSize == 2 \|\| markerSize == 5/,
+    "96 KiB mode recovery must accept the released 3.1.x marker");
+  assert.match(mode, /GymStore\.hasUnfinishedWorkout\(\)/,
+    "the compact marker is usable only beside an accepted owner-bound workout");
 
   const startSensors = section(session, "static function startSensors()", "static function stopSensors()");
   assert.match(startSensors, /if \(!GymWorkoutMode\.canResume\(\)\)/);
@@ -144,6 +148,10 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   const heartRate = section(session, "static function applyHeartRate(value)", "static function filteredHeartRate(value)");
   assert.match(heartRate, /if \(detailedTracking\)[\s\S]*trackRecoveryHeartRate\(value\)[\s\S]*updateEffortState/);
   assert.match(heartRate, /else \{[\s\S]*autoLogPrompt = false[\s\S]*activeSetSeen = false[\s\S]*effortState = "FREE"/);
+  const tick = section(session, "static function tick()", "static function startSensors()");
+  assert.match(tick,
+    /expireStaleHeartRate\(\)[\s\S]*if \(!detailedTracking\)[\s\S]*if \(!paused\)[\s\S]*effortState = "FREE"/,
+    "FREE stale-HR expiry must preserve the paused lifecycle without arming detailed tracking");
 
   for (const guardedMutation of ["nextExercise", "addSet", "canUndoLastSet", "undoLastSet", "restSeconds"]) {
     const start = `static function ${guardedMutation}(`;
@@ -158,6 +166,20 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   assert.match(freeDashboard, /GymSession\.zone/);
   assert.match(freeDashboard, /GymStore\.totalGymCalories\(\)/);
   assert.doesNotMatch(freeDashboard, /currentExercise|weight|reps|sets|rest|autoLog|motion/i);
+  const compactDashboard = section(view,
+    "(:compactLegacyState)\n    function drawTinyDashboard",
+    "(:fullLegacyState)\n    function drawCompactHeartIcon");
+  assert.match(compactDashboard,
+    /if \(GymWorkoutMode\.isFree\(\)\)[\s\S]*totalGymCalories\(\)[\s\S]*\} else \{[\s\S]*currentExerciseLabel\(\)/,
+    "96 KiB FREE must branch away from exercise and set rows");
+  const compactReadyStatus = section(view,
+    "(:compactLegacyState)\n    function readyStatusText()",
+    "function readyPrimaryText()");
+  assert.match(compactReadyStatus,
+    /\|FIT FAIL\|FIT CHECK\|SAVE FAIL\|START FAIL\|REC FAIL\|FIT RETRY\|/,
+    "compact recovery must localize exactly the released data-retention statuses");
+  assert.doesNotMatch(compactReadyStatus, /current\.find\("FAIL"\)/,
+    "unrelated internal failures must not be mislabeled as retained workout data");
   assert.match(view, /GymWorkoutMode\.isFree\(\)[\s\S]*openPauseMenu\(\)/);
   assert.match(view, /function navigateContent\(delta\) \{\s*if \(GymWorkoutMode\.isFree\(\)/);
   assert.match(view, /function hasPendingSetPrompt\(\) \{\s*if \(!GymWorkoutMode\.allowsDetailedTracking\(\)\)/);
@@ -176,14 +198,15 @@ test("prepared FREE commit and queue are mode-bound, positive-duration, and plan
   const recover = section(store,
     "static function recoverQueuedWorkout()", "static function beginAccountTransition()");
 
-  assert.match(preparedValidator, /value\.size\(\) != 6 && value\.size\(\) != 7/);
-  assert.match(preparedValidator, /value\.size\(\) == 6[\s\S]*return true/);
-  assert.match(preparedValidator, /"free"[\s\S]*"planned"/);
+  assert.match(preparedValidator, /markerSize != 6 && markerSize != 7/);
+  assert.match(preparedValidator, /markerSize == 6[\s\S]*return true/);
+  assert.match(preparedValidator, /value\[6\] instanceof Lang\.Boolean/);
   assert.match(prepare, /var freeMode = GymWorkoutMode\.isFree\(\)/);
-  assert.match(prepare, /freeMode && \(sets\.size\(\) != 0 \|\| !GymSession\.recording\)/);
+  assert.match(prepare,
+    /if \(freeMode\) \{\s*if \(sets\.size\(\) != 0 \|\| !GymSession\.recording\)/);
   assert.match(prepare, /checkpointLiveWorkout\(true\)/);
   assert.match(prepare, /freeCheckpoint\[0\] <= 0/);
-  assert.match(prepare, /var marker = \[\s*2,[\s\S]*freeMode \? "free" : "planned"/);
+  assert.match(prepare, /var marker = \[\s*2,[\s\S]*freeMode\s*\]/);
 
   assert.match(message, /"workoutMode" => workoutMode/);
   assert.match(message, /"sets" => setCopies/);
@@ -192,9 +215,9 @@ test("prepared FREE commit and queue are mode-bound, positive-duration, and plan
   assert.match(message, /runtimeWorkoutStartedAtSeconds/);
   assert.match(validator, /message\.size\(\) > 21/);
   assert.match(validator, /modeValue\.toString\(\)\.equals\("free"\)/);
-  assert.match(validator, /freeSets\.size\(\) != 0/);
-  assert.match(validator, /durationSeconds"\), 1\.0, 604800\.0/);
-  assert.match(validator, /message\.get\("setMetrics"\) == null/);
+  assert.match(validator, /setsValue\.size\(\) != 0/);
+  assert.match(validator, /isBoundedNumber\(durationValue, 1\.0, 604800\.0\)/);
+  assert.match(validator, /setMetricsValue == null/);
   assert.match(validator, /Missing workoutMode is the released detailed payload/);
   assert.doesNotMatch(recover, /plan = \[\]/,
     "finishing one activity must not erase the downloaded plan");

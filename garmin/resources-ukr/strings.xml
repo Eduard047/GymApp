@@ -1,4 +1,9 @@
 <resources xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://developer.garmin.com/downloads/connect-iq/resources.xsd">
     <string id="AppName">GymApp</string>
     <string id="CloudDeviceTokenTitle">Хмарний токен</string>
+    <string id="CompactDataKept">ДАНІ Є</string>
+    <string id="CompactReopenApp">ПЕРЕЗАПУСК</string>
+    <string id="CompactNotPaired">НЕ ПРИВ'ЯЗ.</string>
+    <string id="CompactWaiting">ЧЕКАЄ </string>
+    <string id="CompactSync">СИНХ </string>
 </resources>

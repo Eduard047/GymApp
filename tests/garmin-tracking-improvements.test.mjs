@@ -238,7 +238,16 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
   assert.match(calories, /if \(deltaSeconds > 30\)[\s\S]*deltaSeconds = 30/);
   assert.match(calories, /gymCalories \+= lastKcalPerMinute \* \(deltaSeconds \/ 60\.0\)/);
   assert.match(calories, /lastCalorieSeconds = elapsedSeconds/);
-  assert.equal((view.match(/GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/g) || []).length, 5);
+  assert.equal((view.match(/GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/g) || []).length, 6);
+  const compactTinyDashboard = section(
+    view,
+    "(:compactLegacyState)\n    function drawTinyDashboard(",
+    "(:fullLegacyState)\n    function drawCompactHeartIcon("
+  );
+  assert.match(
+    compactTinyDashboard,
+    /if \(GymWorkoutMode\.isFree\(\)\)[\s\S]*"KCAL " \+ GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)[\s\S]*\} else \{[\s\S]*GymStore\.currentExerciseLabel\(\)/
+  );
 
   const displayedCalories = (value) => value.toFixed(1);
   assert.equal(displayedCalories(0), "0.0");
@@ -1375,7 +1384,8 @@ test("Garmin omits unavailable system calories and heart rate instead of sending
     "if (allIntervalsAvailable"
   );
 
-  assert.match(freshDiagnostics, /if \(messageCheckpoint\[2\] != null\)/);
+  assert.match(freshDiagnostics, /var garminTotal = messageCheckpoint\[2\]/);
+  assert.match(freshDiagnostics, /if \(garminTotal != null\)[\s\S]*message\.put\("garminCalories", garminTotal\)/);
   assert.match(freshDiagnostics, /if \(messageCheckpoint\[6\] != null\)/);
   assert.equal((freshDiagnostics.match(/message\.put\("garminCalories"/g) || []).length, 1);
   assert.equal((freshDiagnostics.match(/message\.put\("lastHeartRate"/g) || []).length, 1);
@@ -1459,7 +1469,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
 
   assert.match(
     jungle,
-    /^base\.excludeAnnotations = .*compactLegacyState.*compactRecovery96.*compactCheckpoint96.*enhancedCompactCheckpoint.*noPageDots.*tightFullDebugState$/m
+    /^base\.excludeAnnotations = .*compactLegacyState.*compactRecovery96.*compactCheckpoint96.*enhancedCompactCheckpoint.*noPageDots.*tightFullDebugState;compactWorkoutMode96$/m
   );
   const compactProducts = [
     "descentg1",
@@ -1471,12 +1481,14 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   ];
   assert.match(
     jungle,
-    /^fr55\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState$/m
+    /^fr55\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96$/m
   );
   for (const product of compactProducts.filter((product) => product !== "fr55")) {
     assert.match(jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState$`, "m"));
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode$`, "m"));
   }
+  assert.equal((jungle.match(/;richWorkoutMode$/gm) || []).length, 5);
+  assert.equal((jungle.match(/;compactWorkoutMode96$/gm) || []).length, 7);
   assert.equal(
     (jungle.match(/\.excludeAnnotations = fullLegacyState/g) || []).length,
     compactProducts.length + 5
@@ -1499,7 +1511,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   for (const product of constrained128Products) {
     assert.match(
       jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState$`, "m")
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96$`, "m")
     );
     assert.match(powershellBuild, new RegExp(`'${product}'`));
   }
@@ -1929,9 +1941,14 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   ]) {
     assert.match(resumedMetrics, new RegExp(`message\\.put\\("${field}"`));
   }
-  assert.match(resumedMetrics, /messageCheckpoint\[2\]/);
+  assert.match(resumedMetrics, /var duration = messageCheckpoint\[0\]/);
+  assert.match(resumedMetrics, /var gymTotal = messageCheckpoint\[1\]/);
+  assert.match(resumedMetrics, /var garminTotal = messageCheckpoint\[2\]/);
   assert.match(resumedMetrics, /messageCheckpoint\[6\]/);
-  assert.match(message, /areSetIntervalsConsistent\([\s\S]*messageCheckpoint\[0\]/);
+  assert.match(
+    message,
+    /areSetIntervalsConsistent\(\s*setIntervals,\s*duration,\s*gymTotal,\s*garminTotal\s*\)/
+  );
   assert.ok(
     message.indexOf("areSetIntervalsConsistent(") < message.indexOf('message.put("setIntervals"'),
     "aggregate validation must happen before the optional diagnostics enter the payload"
@@ -2006,7 +2023,8 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   assert.equal(zonesAfterGap[4], 0, "the later Z4 sample must not smear across t2-t4");
 
   const workoutValidation = section(store, "static function isValidWorkoutMessage(", "static function isValidOptionalAccountBinding(");
-  assert.match(workoutValidation, /isOptionalBoundedNumber\(message\.get\("durationSeconds"\)/);
+  assert.match(workoutValidation, /var durationValue = message\.get\("durationSeconds"\)/);
+  assert.match(workoutValidation, /isOptionalBoundedNumber\(durationValue, 0\.0, 604800\.0\)/);
 
   const fullSave = section(
     store,

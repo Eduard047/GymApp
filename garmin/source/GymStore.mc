@@ -2880,11 +2880,14 @@ class GymStore {
     }
 
     static function isValidPreparedWorkout(value) {
-        if (!(value instanceof Lang.Array) ||
-            (value.size() != 6 && value.size() != 7) ||
+        if (!(value instanceof Lang.Array)) {
+            return false;
+        }
+        var markerSize = value.size();
+        if ((markerSize != 6 && markerSize != 7) ||
             !(value[0] instanceof Lang.Number) ||
-            ((value.size() == 6 && value[0] != 1) ||
-                (value.size() == 7 && value[0] != 2))) {
+            ((markerSize == 6 && value[0] != 1) ||
+                (markerSize == 7 && value[0] != 2))) {
             return false;
         }
         if (!isValidAccountBinding(value[1]) ||
@@ -2894,14 +2897,12 @@ class GymStore {
             !isBoundedInteger(value[5], 0, 1)) {
             return false;
         }
-        if (value.size() == 6) {
+        if (markerSize == 6) {
             // Released phase markers predate FREE payloads. They can only
             // represent the existing detailed/planned transaction.
             return true;
         }
-        return isBoundedText(value[6], 7) &&
-            (value[6].toString().equals("free") ||
-                value[6].toString().equals("planned"));
+        return value[6] instanceof Lang.Boolean;
     }
 
     static function hasPreparedWorkout() {
@@ -2910,9 +2911,8 @@ class GymStore {
             !activeWorkoutSnapshotMatchesBindings(preparedWorkout)) {
             return false;
         }
-        var mode = preparedWorkout.size() == 7 ?
-            preparedWorkout[6].toString() : "planned";
-        if (mode.equals("planned")) {
+        var freeMode = preparedWorkout.size() == 7 && preparedWorkout[6];
+        if (!freeMode) {
             return isValidSetList(sets, maxWorkoutSets, false);
         }
         // A FREE phase marker is useful only beside a real, owner-bound
@@ -2941,13 +2941,10 @@ class GymStore {
             return true;
         }
         var freeMode = GymWorkoutMode.isFree();
-        var plannedMode = GymWorkoutMode.isPlanned();
-        if ((!freeMode && !plannedMode) ||
-            (plannedMode && !isValidSetList(sets, maxWorkoutSets, false)) ||
-            (freeMode && (sets.size() != 0 || !GymSession.recording))) {
-            return false;
-        }
         if (freeMode) {
+            if (sets.size() != 0 || !GymSession.recording) {
+                return false;
+            }
             // Commit the last live metric slice before creating phase 0. A FREE
             // workout has no synthetic set to prove existence, so positive
             // elapsed time in this owner-bound snapshot is the authority.
@@ -2959,6 +2956,9 @@ class GymStore {
                 freeCheckpoint[0] <= 0) {
                 return false;
             }
+        } else if (!GymWorkoutMode.isPlanned() ||
+            !isValidSetList(sets, maxWorkoutSets, false)) {
+            return false;
         }
         var marker = [
             2,
@@ -2968,7 +2968,7 @@ class GymStore {
                 pairingGeneration.toString() : null,
             nextRequestId("workout"),
             0,
-            freeMode ? "free" : "planned"
+            freeMode
         ];
         try {
             Storage.setValue("preparedWorkoutV1", marker);
@@ -3158,9 +3158,8 @@ class GymStore {
             !preparedWorkout[4].toString().equals(requestId.toString())) {
             return null;
         }
-        var workoutMode = preparedWorkout.size() == 7 ?
-            preparedWorkout[6].toString() : "planned";
-        var freeMode = workoutMode.equals("free");
+        var freeMode = preparedWorkout.size() == 7 && preparedWorkout[6];
+        var workoutMode = freeMode ? "free" : "planned";
         if ((freeMode && sets.size() != 0) ||
             (!freeMode && !isValidSetList(sets, maxWorkoutSets, false))) {
             return null;
@@ -3230,8 +3229,11 @@ class GymStore {
             message.put("setMetrics", setMetrics);
         }
         if (messageCheckpoint != null) {
-            message.put("durationSeconds", messageCheckpoint[0]);
-            message.put("gymCalories", messageCheckpoint[1]);
+            var duration = messageCheckpoint[0];
+            var gymTotal = messageCheckpoint[1];
+            var garminTotal = messageCheckpoint[2];
+            message.put("durationSeconds", duration);
+            message.put("gymCalories", gymTotal);
             var combinedSamples = messageCheckpoint[4];
             var combinedAverage = combinedSamples > 0 ?
                 (messageCheckpoint[3] / combinedSamples).toNumber() : 0;
@@ -3243,22 +3245,22 @@ class GymStore {
             // Optional scalar diagnostics must be absent, rather than explicit
             // null, so released phone parsers can accept a workout when the
             // Garmin system calorie or heart-rate source is unavailable.
-            if (messageCheckpoint[2] != null) {
-                message.put("garminCalories", messageCheckpoint[2]);
+            if (garminTotal != null) {
+                message.put("garminCalories", garminTotal);
             }
             if (messageCheckpoint[6] != null) {
                 message.put("lastHeartRate", messageCheckpoint[6]);
             }
-        }
-        if (allIntervalsAvailable && !freeMode &&
-            setIntervals.size() == setCopies.size() &&
-            areSetIntervalsConsistent(
-                setIntervals,
-                messageCheckpoint[0],
-                messageCheckpoint[1],
-                messageCheckpoint[2]
-            )) {
-            message.put("setIntervals", setIntervals);
+            if (allIntervalsAvailable && !freeMode &&
+                setIntervals.size() == setCopies.size() &&
+                areSetIntervalsConsistent(
+                    setIntervals,
+                    duration,
+                    gymTotal,
+                    garminTotal
+                )) {
+                message.put("setIntervals", setIntervals);
+            }
         }
         if (!freeMode && plan.size() > 0) {
             var plannedTargetSetCount = plan.size();
@@ -5555,6 +5557,13 @@ class GymStore {
         var version = message.get("bindingVersion");
         var type = message.get("type");
         var modeValue = message.get("workoutMode");
+        var setsValue = message.get("sets");
+        var durationValue = message.get("durationSeconds");
+        var gymCaloriesValue = message.get("gymCalories");
+        var garminCaloriesValue = message.get("garminCalories");
+        var setMetricsValue = message.get("setMetrics");
+        var setIntervalsValue = message.get("setIntervals");
+        var plannedCountValue = message.get("plannedSetCount");
         if (modeValue != null &&
             (!isBoundedText(modeValue, 7) ||
                 (!modeValue.toString().equals("free") &&
@@ -5569,9 +5578,9 @@ class GymStore {
             isBoundedText(message.get("deviceBinding"), maxBindingLength) &&
             isValidOptionalAccountBinding(message.get("pairingGeneration")) &&
             isBoundedNumber(message.get("startedAtSeconds"), 946684800.0, 2147483647.0) &&
-            isOptionalBoundedNumber(message.get("durationSeconds"), 0.0, 604800.0) &&
-            isOptionalBoundedNumber(message.get("gymCalories"), 0.0, 10000000.0) &&
-            isOptionalBoundedNumber(message.get("garminCalories"), 0.0, 10000000.0) &&
+            isOptionalBoundedNumber(durationValue, 0.0, 604800.0) &&
+            isOptionalBoundedNumber(gymCaloriesValue, 0.0, 10000000.0) &&
+            isOptionalBoundedNumber(garminCaloriesValue, 0.0, 10000000.0) &&
             isOptionalBoundedNumber(message.get("avgHeartRate"), 0.0, 300.0) &&
             isOptionalBoundedNumber(message.get("maxHeartRate"), 0.0, 300.0) &&
             isOptionalBoundedNumber(message.get("lastHeartRate"), 0.0, 300.0) &&
@@ -5580,43 +5589,43 @@ class GymStore {
             return false;
         }
         if (modeValue != null && modeValue.toString().equals("free")) {
-            var freeSets = message.get("sets");
-            if (!(freeSets instanceof Lang.Array) || freeSets.size() != 0) {
+            if (!(setsValue instanceof Lang.Array) || setsValue.size() != 0) {
                 return false;
             }
-            return isValidSetList(freeSets, maxWorkoutSets, true) &&
-                isBoundedNumber(message.get("durationSeconds"), 1.0, 604800.0) &&
-                isBoundedNumber(message.get("gymCalories"), 0.0, 10000000.0) &&
-                message.get("setMetrics") == null &&
-                message.get("setIntervals") == null &&
-                message.get("plannedSetCount") == null &&
+            return isValidSetList(setsValue, maxWorkoutSets, true) &&
+                isBoundedNumber(durationValue, 1.0, 604800.0) &&
+                isBoundedNumber(gymCaloriesValue, 0.0, 10000000.0) &&
+                setMetricsValue == null &&
+                setIntervalsValue == null &&
+                plannedCountValue == null &&
                 message.get("plannedTargetSetCount") == null &&
                 message.get("completedPlannedSetCount") == null;
         }
         // Missing workoutMode is the released detailed payload. Treat it as
         // planned so an already queued workout keeps its exact validation and
         // request identity after upgrading the watch app.
-        return isValidSetList(message.get("sets"), maxWorkoutSets, false) &&
-            (message.get("setMetrics") == null ||
-                isValidSetMetricsList(message.get("setMetrics"), message.get("sets"))) &&
-            (message.get("setIntervals") == null ||
-                (isValidSetIntervalsList(message.get("setIntervals"), message.get("sets")) &&
+        var actualSetCount = setListCount(setsValue);
+        return isValidSetList(setsValue, maxWorkoutSets, false) &&
+            (setMetricsValue == null ||
+                isValidSetMetricsList(setMetricsValue, setsValue)) &&
+            (setIntervalsValue == null ||
+                (isValidSetIntervalsList(setIntervalsValue, setsValue) &&
                     areSetIntervalsConsistent(
-                        message.get("setIntervals"),
-                        message.get("durationSeconds"),
-                        message.get("gymCalories"),
-                        message.get("garminCalories")
+                        setIntervalsValue,
+                        durationValue,
+                        gymCaloriesValue,
+                        garminCaloriesValue
                     ))) &&
-            (message.get("plannedSetCount") == null ||
+            (plannedCountValue == null ||
                 isValidPlannedSetCount(
-                    message.get("plannedSetCount"),
-                    setListCount(message.get("sets"))
+                    plannedCountValue,
+                    actualSetCount
                 )) &&
             isValidExactPlannedProgress(
-                message.get("plannedSetCount"),
+                plannedCountValue,
                 message.get("plannedTargetSetCount"),
                 message.get("completedPlannedSetCount"),
-                setListCount(message.get("sets"))
+                actualSetCount
             );
     }
 

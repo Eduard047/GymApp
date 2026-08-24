@@ -27,16 +27,17 @@ class GymWorkoutMode {
     }
 
     static function allowsDetailedTracking() {
-        return isPlanned();
+        return state == MODE_PLANNED;
     }
 
     static function hasValidPlan() {
-        if (!GymStore.isValidSetList(GymStore.plan, GymStore.maxPlanSets, true) ||
-            GymStore.plan.size() == 0) {
+        var currentPlan = GymStore.plan;
+        if (!GymStore.isValidSetList(currentPlan, GymStore.maxPlanSets, true) ||
+            currentPlan.size() == 0) {
             return false;
         }
-        for (var i = 0; i < GymStore.plan.size(); i += 1) {
-            var item = GymStore.plan[i];
+        for (var i = 0; i < currentPlan.size(); i += 1) {
+            var item = currentPlan[i];
             if (!(item instanceof Lang.Dictionary) ||
                 GymStore.exerciseIndexForName(item.get("exerciseName")) < 0) {
                 return false;
@@ -46,9 +47,11 @@ class GymWorkoutMode {
     }
 
     static function canResume() {
-        return isFree() || (isPlanned() && hasValidPlan());
+        return state == MODE_FREE ||
+            (state == MODE_PLANNED && hasValidPlan());
     }
 
+    (:richWorkoutMode)
     static function begin(usePlan) {
         if (!(usePlan instanceof Lang.Boolean) || !isIdle() ||
             GymStore.hasUnfinishedWorkout()) {
@@ -93,13 +96,58 @@ class GymWorkoutMode {
         }
     }
 
+    // The five 96 KiB products use the same state machine and owner-bound
+    // journal with fewer branches and virtual calls. Keeping this as a separate
+    // annotated implementation avoids charging larger watches for the compact
+    // compatibility path and gives the constrained products loader headroom.
+    (:compactWorkoutMode96)
+    static function begin(usePlan) {
+        if (!(usePlan instanceof Lang.Boolean) || state != MODE_IDLE ||
+            GymStore.hasUnfinishedWorkout()) {
+            GymStore.status = "MODE FAIL";
+            return false;
+        }
+        if (usePlan && !hasValidPlan()) {
+            GymStore.status = "NO PLAN";
+            return false;
+        }
+        state = usePlan ? MODE_PLANNED : MODE_FREE;
+        if (usePlan) {
+            if (!GymStore.selectNextPlanSlotInGlobalOrder()) {
+                state = MODE_IDLE;
+                GymStore.status = "NO PLAN";
+                return false;
+            }
+        } else {
+            GymStore.restDurationMs = 0;
+            GymStore.restStartedAt = null;
+        }
+        if (!GymStore.hasAccountBinding()) {
+            return true;
+        }
+        // The compact marker is authorized transitively by the validated,
+        // owner/device/generation-bound active snapshot required by restore().
+        // A crash before that snapshot exists leaves no resumable workout and
+        // therefore cannot activate this marker for any account.
+        try {
+            Storage.setValue("activeWorkoutModeV1", [1, usePlan]);
+            return true;
+        } catch (e) {
+            state = MODE_IDLE;
+            GymStore.status = "SAVE FAIL";
+            return false;
+        }
+    }
+
+    (:richWorkoutMode)
     static function restore() {
         state = MODE_IDLE;
         var marker = Storage.getValue("activeWorkoutModeV1");
         var preparedMode = null;
         if (GymStore.hasPreparedWorkout()) {
             preparedMode = GymStore.preparedWorkout.size() == 7 ?
-                GymStore.preparedWorkout[6].toString() : "planned";
+                (GymStore.preparedWorkout[6] ? "free" : "planned") :
+                "planned";
         }
         var valid = marker instanceof Lang.Array && marker.size() == 5 &&
             marker[0] instanceof Lang.Number && marker[0] == 1 &&
@@ -134,6 +182,38 @@ class GymWorkoutMode {
             Storage.deleteValue("activeWorkoutModeV1");
         } catch (e) {
         }
+    }
+
+    (:compactWorkoutMode96)
+    static function restore() {
+        state = MODE_IDLE;
+        // A valid phase marker is already account/device/generation-bound by
+        // GymStore. It is the later journal, so it authoritatively restores the
+        // exact mode even if the smaller active marker was lost or stale.
+        if (GymStore.hasPreparedWorkout()) {
+            var preparedFree = GymStore.preparedWorkout.size() == 7 &&
+                GymStore.preparedWorkout[6];
+            if (preparedFree || hasValidPlan()) {
+                state = preparedFree ? MODE_FREE : MODE_PLANNED;
+            }
+            return;
+        }
+        var marker = Storage.getValue("activeWorkoutModeV1");
+        var markerSize = marker instanceof Lang.Array ? marker.size() : 0;
+        var modeIndex = markerSize - 1;
+        // Size five is the released 3.1.x marker. Its duplicated bindings need
+        // not be re-evaluated here because GymStore has already accepted the
+        // exact active snapshot under those same three bindings.
+        var valid = (markerSize == 2 || markerSize == 5) &&
+            marker[0] instanceof Lang.Number && marker[0] == 1 &&
+            marker[modeIndex] instanceof Lang.Boolean &&
+            GymStore.hasUnfinishedWorkout() &&
+            (!marker[modeIndex] || hasValidPlan());
+        if (valid) {
+            state = marker[modeIndex] ? MODE_PLANNED : MODE_FREE;
+            return;
+        }
+        clear();
     }
 
     static function clear() {

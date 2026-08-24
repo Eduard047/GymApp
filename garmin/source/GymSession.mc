@@ -501,10 +501,16 @@ class GymSession {
                 hrSource = "SNS";
                 applyHeartRate(sampledSensorHeartRate);
             } else {
-                if (detailedTracking) {
-                    expireStaleHeartRate();
-                } else {
-                    expireFreeHeartRate();
+                expireStaleHeartRate();
+                if (!detailedTracking) {
+                    // The shared expiry clears stale sensor/filter state. FREE
+                    // then restores its metrics-only state without arming any
+                    // detector, prompt, or synthetic set transition.
+                    autoLogPrompt = false;
+                    activeSetSeen = false;
+                    if (!paused) {
+                        effortState = "FREE";
+                    }
                 }
             }
         }
@@ -1558,26 +1564,6 @@ class GymSession {
 
     static function isValidHeartRate(value) {
         return value instanceof Lang.Number && value > 0 && value <= 240;
-    }
-
-    static function expireFreeHeartRate() {
-        if (hr == null || elapsedSeconds - lastValidHrSeconds < 5) {
-            return;
-        }
-        hr = null;
-        activityHr = null;
-        sensorHr = null;
-        hrSource = "--";
-        zone = 0;
-        filteredHr = null;
-        previousFilterHr = null;
-        olderFilterHr = null;
-        lastHr = null;
-        hrTrend = 0.0;
-        activeSignalCount = 0;
-        autoLogPrompt = false;
-        activeSetSeen = false;
-        effortState = paused ? "PAUSED" : "FREE";
     }
 
     static function applyHeartRate(value) {
