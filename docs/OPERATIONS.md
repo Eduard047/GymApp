@@ -66,11 +66,12 @@ Before any database release, compare local and linked histories with the current
 CLI and inspect `supabase db push --dry-run`. On 2026-07-22 the pre-existing RLS
 bootstrap objects were compared with their repository definition before their
 missing history row was repaired. The eight pending migrations were then applied
-in order and verified. Local and production histories now match through
-`20260722013200`; production contains 37 revision-bound state projections, zero
-quarantined states, and zero profile/projection mismatches. `garmin-sync` version
-6 and `delete-account` version 3 are active; a real disposable v2 device completed
-fetch, acknowledge, replay, rotation, and post-cutover continuity checks.
+in order and verified. At that historical checkpoint, local and production
+matched through `20260722013200`; production contained 37 revision-bound state
+projections, zero quarantined states, and zero profile/projection mismatches.
+`garmin-sync` version 6 and `delete-account` version 3 were active; a real
+disposable v2 device completed fetch, acknowledge, replay, rotation, and
+post-cutover continuity checks.
 
 Production Auth currently enforces the historical eight-character server
 minimum. Android, iOS, and the browser client enforce the twelve-character
@@ -95,6 +96,17 @@ detail consent, and the bounded latest-five projection. A rollback-only
 synthetic smoke covered owner sync, malformed input, cross-account isolation,
 authorized friend read, consent revocation, and invalid-session denial; it
 retained zero fixture rows.
+
+On 2026-08-24 a read-only production readback found 54 migrations through
+`20260823162119_fix_security_hardening_coalesce_calls`. Active Edge Function
+metadata was `garmin-sync` version 12 (`verify_jwt=false`), `delete-account`
+version 14 (`verify_jwt=true`), `social-live-gateway` version 6
+(`verify_jwt=true`), and `push-dispatch` version 5 (`verify_jwt=false`). The
+canonical local chain additionally contains the reviewed forward migrations
+`20260824120000_sync_activity_only_workouts.sql` and
+`20260824123000_harden_remaining_supabase_boundaries.sql`; neither has been
+deployed. Do not describe production as matching the repository until both are
+applied, read back, and their denied-path checks pass in the target environment.
 
 Public Supabase client identifiers are not privileged credentials. Secret keys,
 service-role keys, connection strings, raw device tokens, and real account data

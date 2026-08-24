@@ -203,12 +203,16 @@ test("Today plan metrics are history-only, finite, bounded, zero-safe, and order
 test("Today shows lifetime and weekly metrics once in every state", () => {
   assert.match(stylesSource, /\.focus-lens-plan-metrics \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics strong \{[\s\S]*white-space: nowrap/);
-  assert.match(stylesSource, /\.focus-lens-plan-metrics span \{[\s\S]*font-size: 11px[\s\S]*-webkit-line-clamp: 2/);
+  assert.match(stylesSource, /\.focus-lens-plan-metrics span \{[\s\S]*font-size: 12px[\s\S]*-webkit-line-clamp: 2/);
   const focus = appSource.indexOf("function focusLensCard(");
   const focusEnd = appSource.indexOf("\nasync function startPreparedSmartWorkout", focus);
   const focusBody = appSource.slice(focus, focusEnd);
-  assert.equal((focusBody.match(/todayPlanMetricsMarkup\(\)/g) || []).length, 3);
-  assert.equal((focusBody.match(/weeklyWorkoutSummaryMarkup\(weeklySummary\)/g) || []).length, 3);
+  const details = appSource.indexOf("function focusLensDetailsMarkup(");
+  const detailsEnd = appSource.indexOf("\nfunction focusLensCard(", details);
+  const detailsBody = appSource.slice(details, detailsEnd);
+  assert.equal((detailsBody.match(/todayPlanMetricsMarkup\(\)/g) || []).length, 1);
+  assert.equal((detailsBody.match(/weeklyWorkoutSummaryMarkup\(weeklySummary\)/g) || []).length, 1);
+  assert.equal((focusBody.match(/focusLensDetailsMarkup\(weeklySummary/g) || []).length, 3);
   const completedStart = focusBody.indexOf("const completedToday");
   const completedEnd = focusBody.indexOf("const decision", completedStart);
   const completedBranch = focusBody.slice(completedStart, completedEnd);

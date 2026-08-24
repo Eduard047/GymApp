@@ -99,9 +99,15 @@ internal enum class GarminInboundPairingGenerationMatch {
     Rejected
 }
 
+internal enum class GarminWorkoutMode {
+    Planned,
+    Free
+}
+
 internal data class GarminWorkoutCommand(
     val requestId: String,
     val startedAtMillis: Long,
+    val mode: GarminWorkoutMode,
     val sets: List<NamedWorkoutSetDraft>,
     val durationSeconds: Long?,
     val gymCalories: Double?,
@@ -144,6 +150,7 @@ internal data class GarminSetInterval(
 internal enum class GarminWorkoutParseIssue {
     Envelope,
     RequestId,
+    WorkoutMode,
     Sets,
     SetShape,
     SetName,
@@ -188,7 +195,9 @@ internal fun canonicalGarminWorkoutPayloadDigest(command: GarminWorkoutCommand):
  */
 internal fun legacyGarminWorkoutPayloadDigestForUpgrade(
     command: GarminWorkoutCommand
-): String? = if (hasGarminExtendedReceiptFields(command)) {
+): String? = if (command.mode == GarminWorkoutMode.Free) {
+    null
+} else if (hasGarminExtendedReceiptFields(command)) {
     garminWorkoutPayloadDigest(command, includeExtendedReceiptFields = false)
 } else {
     null
@@ -253,11 +262,15 @@ private fun garminWorkoutPayloadDigest(
         includeExtendedReceiptFields && hasGarminExtendedReceiptFields(command)
     updateString(
         when {
+            command.mode == GarminWorkoutMode.Free -> "gymapp-garmin-workout/v4"
             hasExtendedReceiptFields -> "gymapp-garmin-workout/v3"
             hasSetStatistics -> "gymapp-garmin-workout/v2"
             else -> "gymapp-garmin-workout/v1"
         }
     )
+    if (command.mode == GarminWorkoutMode.Free) {
+        updateString("free")
+    }
     updateString(command.requestId)
     updateLong(command.startedAtMillis)
     updateInt(command.sets.size)
@@ -724,9 +737,23 @@ internal fun parseGarminWorkoutCommandResult(
     val requestId = requiredGarminString(command, "requestId", MAX_GARMIN_REQUEST_ID_LENGTH)
     require(isValidGarminMessageId(requestId, MAX_GARMIN_REQUEST_ID_LENGTH))
 
+    issue = GarminWorkoutParseIssue.WorkoutMode
+    val mode = when (val rawMode = command["workoutMode"]) {
+        null -> {
+            require(!command.containsKey("workoutMode"))
+            GarminWorkoutMode.Planned
+        }
+        "planned" -> GarminWorkoutMode.Planned
+        "free" -> GarminWorkoutMode.Free
+        else -> error("Garmin workout mode is malformed.")
+    }
+
     issue = GarminWorkoutParseIssue.Sets
     val rawSets = command["sets"] as? List<*> ?: error("Garmin workout sets are missing.")
-    require(rawSets.size in 1..MAX_GARMIN_WORKOUT_SETS)
+    when (mode) {
+        GarminWorkoutMode.Planned -> require(rawSets.size in 1..MAX_GARMIN_WORKOUT_SETS)
+        GarminWorkoutMode.Free -> require(rawSets.isEmpty())
+    }
     val sets = rawSets.map { raw ->
         issue = GarminWorkoutParseIssue.SetShape
         @Suppress("UNCHECKED_CAST")
@@ -775,6 +802,13 @@ internal fun parseGarminWorkoutCommandResult(
     )
     val hasPlannedTargetSetCount = command.containsKey("plannedTargetSetCount")
     val hasCompletedPlannedSetCount = command.containsKey("completedPlannedSetCount")
+    if (mode == GarminWorkoutMode.Free) {
+        require(
+            !command.containsKey("plannedSetCount") &&
+                !hasPlannedTargetSetCount &&
+                !hasCompletedPlannedSetCount
+        )
+    }
     require(hasPlannedTargetSetCount == hasCompletedPlannedSetCount)
     if (hasPlannedTargetSetCount) {
         require(
@@ -787,6 +821,9 @@ internal fun parseGarminWorkoutCommandResult(
 
     issue = GarminWorkoutParseIssue.SetMetrics
     val rawSetMetrics = command["setMetrics"]
+    if (mode == GarminWorkoutMode.Free) {
+        require(!command.containsKey("setMetrics"))
+    }
     val setStatistics = if (rawSetMetrics == null) {
         List(sets.size) { null }
     } else {
@@ -807,6 +844,9 @@ internal fun parseGarminWorkoutCommandResult(
 
     issue = GarminWorkoutParseIssue.SetIntervals
     val rawSetIntervals = command["setIntervals"]
+    if (mode == GarminWorkoutMode.Free) {
+        require(!command.containsKey("setIntervals"))
+    }
     val setIntervals = if (rawSetIntervals == null) {
         List(sets.size) { null }
     } else {
@@ -833,6 +873,9 @@ internal fun parseGarminWorkoutCommandResult(
         MIN_GARMIN_STARTED_AT_SECONDS,
         nowSeconds + MAX_GARMIN_FUTURE_SKEW_SECONDS
     ) ?: nowSeconds
+    if (mode == GarminWorkoutMode.Free) {
+        require(command.containsKey("startedAtSeconds"))
+    }
     val startedAtMillis = Math.multiplyExact(startedAtSeconds, 1_000L)
     require(WorkoutDataLimits.isValidTimestamp(startedAtMillis))
     issue = GarminWorkoutParseIssue.HeartRate
@@ -871,6 +914,10 @@ internal fun parseGarminWorkoutCommandResult(
         0,
         MAX_GARMIN_CALORIES.toInt()
     )
+    if (mode == GarminWorkoutMode.Free) {
+        require(durationSeconds != null && durationSeconds >= 1L)
+        require(gymCalories != null)
+    }
 
     if (rawSetIntervals != null) {
         val structuredIntervals = setIntervals.map { checkNotNull(it) }
@@ -913,6 +960,7 @@ internal fun parseGarminWorkoutCommandResult(
     GarminWorkoutCommand(
         requestId = requestId,
         startedAtMillis = startedAtMillis,
+        mode = mode,
         sets = sets,
         durationSeconds = durationSeconds,
         gymCalories = gymCalories,

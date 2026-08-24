@@ -73,6 +73,10 @@ internal fun attachSharedCloudExtensions(
     // implicit trusted local value. The bag is intentionally not written back while v2.2.9 must
     // share this row; those clients reject or erase fields outside their exact canonical core.
     extensions?.let(::validateExtensions)
+    val validatedInput = BackupImportValidator.validate(canonicalCore)
+    val activityOnlyIndexes = validatedInput.sessions.mapIndexedNotNull { index, session ->
+        index.takeIf { session.blocks.isEmpty() && session.durationSeconds?.let { it > 0L } == true }
+    }.toSet()
     val result = JSONObject(canonicalCore.toString())
     result.remove("extensions")
     result.remove("catalogSeedVersion")
@@ -82,6 +86,18 @@ internal fun attachSharedCloudExtensions(
                 remove("favorite")
                 remove("loadProfile")
             }
+        }
+    }
+    result.optJSONArray("sessions")?.let { sessions ->
+        if (activityOnlyIndexes.isNotEmpty()) {
+            val compatibleSessions = JSONArray()
+            repeat(sessions.length()) { index ->
+                if (index !in activityOnlyIndexes) {
+                    compatibleSessions.put(JSONObject(sessions.getJSONObject(index).toString()))
+                }
+            }
+            result.put("sessions", compatibleSessions)
+            result.optJSONObject("summary")?.put("sessionCount", compatibleSessions.length())
         }
     }
     result.optJSONArray("sessions")?.let { sessions ->
@@ -130,6 +146,11 @@ internal fun workoutDurationSyncItems(canonicalCore: JSONObject): JSONArray {
     val result = JSONArray()
     repeat(sessions.length()) { index ->
         val session = sessions.getJSONObject(index)
+        val exercises = session.optJSONArray("exercises")
+            ?: throw IllegalArgumentException("Workout duration exercise list is invalid.")
+        // Garmin activity-only rows are owner-private and must never leak through the social
+        // duration projection, even while the local full backup still contains their mirrors.
+        if (exercises.length() == 0) return@repeat
         if (!session.has("durationSeconds") || session.isNull("durationSeconds")) return@repeat
         val startedAt = session.getLong("date")
         val durationSeconds = session.getLong("durationSeconds")

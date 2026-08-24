@@ -1956,6 +1956,53 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(target.workouts.first?.exercises.first?.sets.count, 2)
     }
 
+    func testActivityOnlyWorkoutPersistsAndRoundTripsWithoutFabricatedSets() throws {
+        let sourceDirectory = try temporaryDirectory(named: "activity-only-source")
+        let targetDirectory = try temporaryDirectory(named: "activity-only-target")
+        let source = try WorkoutStore(
+            accountStorageKey: "activity-only",
+            directoryURL: sourceDirectory
+        )
+        let workout = try source.createActivityWorkout(
+            date: Date(timeIntervalSince1970: 1_750_000_000),
+            note: "Garmin · Free workout · Duration 20:34 · Gym kcal 87",
+            durationSeconds: 1_234
+        )
+
+        XCTAssertTrue(workout.exercises.isEmpty)
+        XCTAssertEqual(workout.setCount, 0)
+        XCTAssertEqual(source.workoutSummaries.count, 1)
+        XCTAssertEqual(source.workoutSummaries.first?.durationSeconds, 1_234)
+
+        let reopened = try WorkoutStore(
+            accountStorageKey: "activity-only",
+            directoryURL: sourceDirectory
+        )
+        XCTAssertEqual(reopened.workouts.count, 1)
+        XCTAssertTrue(try XCTUnwrap(reopened.workouts.first).exercises.isEmpty)
+
+        let owner = BackupOwner(accountID: "activity-only", remote: false)
+        let data = try reopened.exportBackupData(owner: owner)
+        let target = try WorkoutStore(
+            accountStorageKey: "activity-only",
+            directoryURL: targetDirectory
+        )
+        let first = try target.importBackup(data: data, activeOwner: owner)
+        let second = try target.importBackup(data: data, activeOwner: owner)
+
+        XCTAssertEqual(first.importedSessions, 1)
+        XCTAssertEqual(second.skippedDuplicateSessions, 1)
+        XCTAssertEqual(target.workouts.count, 1)
+        XCTAssertTrue(try XCTUnwrap(target.workouts.first).exercises.isEmpty)
+        XCTAssertEqual(target.workouts.first?.durationSeconds, 1_234)
+        XCTAssertThrowsError(
+            try target.createActivityWorkout(
+                date: Date(timeIntervalSince1970: 1_750_000_100),
+                durationSeconds: 0
+            )
+        )
+    }
+
     func testBuiltInExerciseCatalogUsesStableKeysAndExactAliases() throws {
         XCTAssertEqual(BuiltInExerciseCatalog.definitions.count, 53)
         XCTAssertEqual(Set(BuiltInExerciseCatalog.definitions.map(\.key)).count, 53)
@@ -5405,7 +5452,9 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertEqual(packaged, expected)
         XCTAssertEqual(packaged.count, BuiltInExerciseCatalog.definitions.count * 2)
-        XCTAssertFalse(packaged.contains(where: { $0.contains(" 2.jpg") }))
+        XCTAssertFalse(packaged.contains(where: {
+            $0.range(of: #" [2-9][0-9]*\.jpg$"#, options: .regularExpression) != nil
+        }))
     }
 
     func testExerciseMediaUsesStableRawIdentityAcrossRussianAndUkrainianDisplay() throws {
@@ -6233,7 +6282,7 @@ final class CoreParityTests: XCTestCase {
             ("bench_press", 5, 180),
             ("incline_dumbbell_press", 6, 120),
             ("biceps_curl", 8, 75),
-            ("plank", 8, 75)
+            ("plank", 8, 60)
         ]
 
         for (catalogKey, expectedReps, expectedRest) in fixtures {
@@ -9134,8 +9183,14 @@ final class CoreParityTests: XCTestCase {
             recorder.append(request)
             if let response = try accountDeletionPrerequisiteResponse(
                 for: request,
-                cloud: originalCloud
+                cloud: originalCloud,
+                allowRefresh: true
             ) { return response }
+            let body = try request.httpBody.flatMap {
+                try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+            } ?? [:]
+            XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+            XCTAssertEqual(body["action"] as? String, "delete")
             requestStarted.fulfill()
             _ = releaseRequest.wait(timeout: .now() + 5)
             return try AuthURLProtocolStub.response(
@@ -9191,7 +9246,14 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(
             customExerciseNames(in: appState.workoutStore).contains("Replacement Account Data")
         )
-        XCTAssertEqual(recorder.requests.count, 3)
+        XCTAssertEqual(
+            recorder.requests.map { "\($0.url?.path ?? "nil")?\($0.url?.query ?? "")" },
+            [
+                "/auth/v1/token?grant_type=password",
+                "/functions/v1/delete-account?",
+                "/functions/v1/delete-account?"
+            ]
+        )
         XCTAssertEqual(
             defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"),
             originalSession.storageKey
@@ -9228,8 +9290,14 @@ final class CoreParityTests: XCTestCase {
             recorder.append(request)
             if let response = try accountDeletionPrerequisiteResponse(
                 for: request,
-                cloud: cloud
+                cloud: cloud,
+                allowRefresh: true
             ) { return response }
+            let body = try request.httpBody.flatMap {
+                try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+            } ?? [:]
+            XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+            XCTAssertEqual(body["action"] as? String, "delete")
             let shouldBlock = gateLock.withLock {
                 guard !hasBlockedRequest else { return false }
                 hasBlockedRequest = true
@@ -9298,7 +9366,14 @@ final class CoreParityTests: XCTestCase {
 
         try await firstDeletion.value
         try await duplicateDeletion.value
-        XCTAssertEqual(recorder.requests.count, 3)
+        XCTAssertEqual(
+            recorder.requests.map { "\($0.url?.path ?? "nil")?\($0.url?.query ?? "")" },
+            [
+                "/auth/v1/token?grant_type=password",
+                "/functions/v1/delete-account?",
+                "/functions/v1/delete-account?"
+            ]
+        )
         XCTAssertNil(auth.session)
         XCTAssertFalse(FileManager.default.fileExists(atPath: storageURL.path))
         XCTAssertNil(defaults.string(forKey: "gymapp.pending-account-deletion-storage-key"))
@@ -10454,7 +10529,29 @@ final class CoreParityTests: XCTestCase {
     func testKnownCloudAccountOpensOwnerBoundLocalSnapshotOfflineThenReconcilesOnline() async throws {
         let directory = try temporaryDirectory(named: "known-cloud-offline-activation")
         let defaults = temporaryDefaults(named: "known-cloud-offline-activation")
-        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: defaults
+        )
+        AuthURLProtocolStub.handler = { request in
+            XCTFail(
+                "Unexpected offline reconciliation request: " +
+                    "\(request.httpMethod ?? "nil") \(request.url?.absoluteString ?? "nil")"
+            )
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 404,
+                json: "{}"
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
         let cloud = cloudSession(userID: "known-cloud-offline-user")
         let session = AppAccountSession.cloud(cloud)
         let owner = BackupOwner(
@@ -10486,6 +10583,7 @@ final class CoreParityTests: XCTestCase {
             auth: auth,
             defaults: defaults,
             workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
             remoteStateLoader: { requestedUserID in
                 XCTAssertEqual(requestedUserID, cloud.userID)
                 loadAttempts += 1
@@ -11652,7 +11750,7 @@ final class CoreParityTests: XCTestCase {
 
     func testFirstWorkoutActivationUsesParityChipRowsAndOneTodayHeader() throws {
         let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
-        XCTAssertTrue(source.contains("screenHeader\n                        if activeWorkoutDraft != nil"))
+        XCTAssertTrue(source.contains("screenHeader {\n                            proxy.scrollTo(\"workout-history\""))
         XCTAssertTrue(source.contains("store.workoutSummaries.isEmpty, !activationDismissed"))
         XCTAssertTrue(source.contains("activationGoalChoiceGrid("))
         XCTAssertTrue(source.contains("options: TrainingActivationChoices.goals"))
@@ -11663,8 +11761,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(source.contains("\"Today’s effort\""))
         XCTAssertTrue(source.contains("\"Aesthetic Cut\""))
         XCTAssertTrue(source.contains("activationLensShape.fill(GymTheme.heroGradient)"))
-        XCTAssertTrue(source.contains("topLeadingRadius: 44"))
-        XCTAssertTrue(source.contains("topTrailingRadius: 76"))
+        XCTAssertTrue(source.contains("topLeadingRadius: 28"))
+        XCTAssertTrue(source.contains("topTrailingRadius: 28"))
         XCTAssertTrue(source.contains("ActivationChipButtonStyle"))
         XCTAssertTrue(source.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
         XCTAssertFalse(source.contains("Stepper(value: $activationDays"))
@@ -11674,9 +11772,11 @@ final class CoreParityTests: XCTestCase {
             "guidance.decision == .train ? .auto : .recovery"
         ))
         for exactCopy in [
+            "Use suggested plan", "Використати пораду", "Использовать рекомендацию",
+            "Review exercises", "Переглянути вправи", "Посмотреть упражнения",
             "Start plan", "Почати план", "Начать план",
             "Edit plan", "Редагувати план", "Редактировать план",
-            "Create manually", "Створити вручну", "Создать вручную",
+            "Build manually", "Створити вручну", "Собрать вручную",
             "Train anyway", "Усе одно тренуватися", "Всё равно тренироваться"
         ] {
             XCTAssertTrue(source.contains("\"\(exactCopy)\""))
@@ -11688,7 +11788,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(source.contains("\"На этой неделе\""))
         XCTAssertTrue(source.contains("completedToday ? \"Workout complete\""))
         XCTAssertTrue(source.contains("\"Today's work is saved in your history.\""))
-        XCTAssertTrue(source.contains("weeklyTrainingSummaryView(weeklySummary)"))
+        XCTAssertTrue(source.contains("weeklyTrainingSummaryView(summary)"))
         XCTAssertTrue(source.contains("todayHeroMetricsRow"))
         XCTAssertTrue(source.contains("_ = onStartPlan(launchSeed)"))
         XCTAssertTrue(source.contains("_ = onAddWorkout(launchSeed)"))
@@ -14375,6 +14475,93 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(resumedSegment.endingHeartRateZone)
     }
 
+    func testGarminPhoneParserAcceptsOnlyExplicitMetricsOnlyFreeWorkout() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        let now = Date(timeIntervalSince1970: 1_750_001_000)
+        let free: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "free-workout-1234567890",
+            "workoutMode": "free",
+            "startedAtSeconds": 1_750_000_000,
+            "durationSeconds": 1_234,
+            "gymCalories": 0.0,
+            "sets": []
+        ]
+
+        let command = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(free, expectedBinding: binding, now: now)
+        )
+        XCTAssertEqual(command.mode, .free)
+        XCTAssertTrue(command.sets.isEmpty)
+        XCTAssertTrue(command.setStatistics.isEmpty)
+        XCTAssertTrue(command.setIntervals.isEmpty)
+        XCTAssertEqual(command.durationSeconds, 1_234)
+        XCTAssertEqual(command.gymCalories, 0)
+        XCTAssertTrue(
+            GarminPhoneSyncService.formattedWorkoutNote(command, language: "en")
+                .contains("Free workout")
+        )
+
+        let plannedBase: [String: Any] = [
+            "type": "create_workout",
+            "bindingVersion": 2,
+            "accountBinding": binding.account,
+            "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "requestId": "planned-workout-1234567890",
+            "startedAtSeconds": 1_750_000_000,
+            "sets": [["exerciseName": "Squat", "weight": 120.0, "reps": 5]]
+        ]
+        let legacyPlanned = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(plannedBase, expectedBinding: binding, now: now)
+        )
+        let explicitPlanned = try XCTUnwrap(
+            GarminPhoneWorkoutParser.parse(
+                plannedBase.merging(["workoutMode": "planned"]) { _, value in value },
+                expectedBinding: binding,
+                now: now
+            )
+        )
+        XCTAssertEqual(legacyPlanned.mode, .planned)
+        XCTAssertEqual(legacyPlanned.digest, explicitPlanned.digest)
+        XCTAssertNotEqual(legacyPlanned.digest, command.digest)
+
+        var malformedMessages: [[String: Any]] = []
+        for key in ["workoutMode", "startedAtSeconds", "durationSeconds", "gymCalories"] {
+            var value = free
+            value.removeValue(forKey: key)
+            malformedMessages.append(value)
+        }
+        let malformedFields: [(String, Any)] = [
+            ("workoutMode", "unknown"),
+            ("durationSeconds", 0),
+            ("sets", [["exerciseName": "Squat", "weight": 120.0, "reps": 5]]),
+            ("setMetrics", []),
+            ("setIntervals", []),
+            ("plannedSetCount", 1),
+            ("lastHeartRate", Double.nan)
+        ]
+        for (key, value) in malformedFields {
+            var malformed = free
+            malformed[key] = value
+            malformedMessages.append(malformed)
+        }
+        for malformed in malformedMessages {
+            XCTAssertNil(
+                GarminPhoneWorkoutParser.parse(malformed, expectedBinding: binding, now: now),
+                "Unexpected free-workout acceptance: \(malformed)"
+            )
+        }
+    }
+
     func testGarminPhoneParserRejectsWrongBindingAndMalformedMetrics() {
         let binding = GarminPhoneBinding(
             account: String(repeating: "a", count: 64),
@@ -16698,7 +16885,8 @@ private func garminRequestBody(_ request: URLRequest) throws -> [String: Any] {
 
 private func accountDeletionPrerequisiteResponse(
     for request: URLRequest,
-    cloud: CloudAccountSession
+    cloud: CloudAccountSession,
+    allowRefresh: Bool = false
 ) throws -> (HTTPURLResponse, Data)? {
     let body = try request.httpBody.flatMap {
         try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
@@ -16712,6 +16900,28 @@ private func accountDeletionPrerequisiteResponse(
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(body["email"] as? String, cloud.email)
         XCTAssertEqual(body["password"] as? String, "CurrentPassword123!")
+        let refreshToken = try XCTUnwrap(cloud.refreshToken)
+        let object: [String: Any] = [
+            "access_token": cloud.accessToken,
+            "refresh_token": refreshToken,
+            "expires_in": 3_600,
+            "user": [
+                "id": cloud.userID,
+                "email": cloud.email,
+                "user_metadata": ["display_name": cloud.displayName]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return try AuthURLProtocolStub.response(
+            for: request,
+            json: try XCTUnwrap(String(data: data, encoding: .utf8))
+        )
+    }
+
+    if allowRefresh,
+       request.url?.path == "/auth/v1/token", grantType == "refresh_token" {
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(body["refresh_token"] as? String, cloud.refreshToken)
         let refreshToken = try XCTUnwrap(cloud.refreshToken)
         let object: [String: Any] = [
             "access_token": cloud.accessToken,
@@ -16758,8 +16968,9 @@ private func workoutDurationSyncResponse(
     )
     let items = try XCTUnwrap(body["p_items"] as? [[String: Any]])
     let response = try JSONSerialization.data(withJSONObject: [
-        "version": 1,
-        "syncedCount": items.count
+        "version": 2,
+        "syncedCount": items.count,
+        "changedCount": items.count
     ])
     return try AuthURLProtocolStub.response(
         for: request,
@@ -16835,7 +17046,18 @@ private final class AuthURLProtocolStub: URLProtocol, @unchecked Sendable {
         }
         do {
             let materializedRequest = try Self.materializedRequest(request)
-            let (response, data) = try handler(materializedRequest)
+            let responseAndData: (HTTPURLResponse, Data)
+            if materializedRequest.url?.path == "/rest/v1/rpc/garmin_read_activity_only_workouts"
+                || materializedRequest.url?.path == "/rest/v1/rpc/garmin_sync_activity_only_workouts" {
+                responseAndData = try Self.response(
+                    for: materializedRequest,
+                    statusCode: 404,
+                    json: #"{"code":"PGRST202","message":"function unavailable"}"#
+                )
+            } else {
+                responseAndData = try handler(materializedRequest)
+            }
+            let (response, data) = responseAndData
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)

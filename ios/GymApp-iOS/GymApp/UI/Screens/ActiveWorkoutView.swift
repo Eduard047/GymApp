@@ -184,21 +184,41 @@ struct ActiveWorkoutView: View {
                 )
             }
             if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
-                ToolbarItem(placement: .destructiveAction) {
-                Button(role: .destructive) {
-                    showingDiscardConfirmation = true
-                } label: {
-                    Label(
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button(role: .destructive) {
+                            showingDiscardConfirmation = true
+                        } label: {
+                            Label(
+                                gymText(
+                                    "Discard",
+                                    "Відкинути",
+                                    "Удалить",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "trash"
+                            )
+                        }
+                        .disabled(currentDraft?.commitIntent != nil)
+                    } label: {
+                        Label(
+                            gymText(
+                                "More workout options",
+                                "Інші дії",
+                                "Другие действия",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            systemImage: "ellipsis.circle"
+                        )
+                    }
+                    .accessibilityLabel(
                         gymText(
-                            "Discard",
-                            "Відкинути",
-                            "Удалить",
+                            "More workout options",
+                            "Інші дії",
+                            "Другие действия",
                             languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "trash"
+                        )
                     )
-                }
-                .disabled(currentDraft?.commitIntent != nil)
                 }
             }
         }
@@ -283,37 +303,55 @@ struct ActiveWorkoutView: View {
                     .foregroundStyle(Color.white.opacity(0.84))
                 }
 
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 108), spacing: 8)],
-                    alignment: .leading,
-                    spacing: 8
-                ) {
-                    GymInfoPill(
-                        "\(draft.completedSetCount) / \(draft.plannedSetCount)",
-                        systemImage: "checkmark.circle.fill",
-                        accent: .white
-                    )
-                    GymInfoPill(
-                        gymFormattedDate(draft.startedAt, date: .omitted, time: .shortened),
-                        systemImage: "clock.fill",
-                        accent: .white
-                    )
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        GymInfoPill(
-                            Self.clock(draft.totalElapsedSeconds(at: context.date)),
-                            systemImage: "stopwatch.fill",
-                            accent: .white
-                        )
-                        .accessibilityLabel(
-                            gymText(
-                                "Workout time",
-                                "Загальний час тренування",
-                                "Общее время тренировки",
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: 8),
+                            GridItem(.flexible(), spacing: 8)
+                        ],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        GymMetricTile(
+                            label: gymText(
+                                "Elapsed",
+                                "Минуло",
+                                "Прошло",
                                 languageCode: gymCurrentLanguageCode()
-                            )
+                            ),
+                            value: Self.clock(draft.totalElapsedSeconds(at: context.date)),
+                            emphasized: true,
+                            onHero: true
+                        )
+                        GymMetricTile(
+                            label: gymText(
+                                "Completed",
+                                "Виконано",
+                                "Выполнено",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            value: gymText(
+                                "\(draft.completedSetCount) of \(draft.plannedSetCount)",
+                                "\(draft.completedSetCount) з \(draft.plannedSetCount)",
+                                "\(draft.completedSetCount) из \(draft.plannedSetCount)",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            onHero: true
                         )
                     }
                 }
+
+                Label(
+                    gymText(
+                        "Started at \(gymFormattedDate(draft.startedAt, date: .omitted, time: .shortened))",
+                        "Початок о \(gymFormattedDate(draft.startedAt, date: .omitted, time: .shortened))",
+                        "Начало в \(gymFormattedDate(draft.startedAt, date: .omitted, time: .shortened))",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                    systemImage: "clock"
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.82))
 
                 ProgressView(
                     value: Double(draft.completedSetCount),
@@ -732,8 +770,12 @@ struct ActiveWorkoutView: View {
         )
         let completedCount = exercise.sets.lazy.filter(\.isCompleted).count
         let fullyCompleted = completedCount == exercise.sets.count
+        let currentExerciseID = draft.exercises.first(where: { candidate in
+            candidate.sets.contains(where: { !$0.isCompleted })
+        })?.id
+        let isCurrent = currentExerciseID == exercise.id
         let isCollapsed = collapsedExerciseIDs.contains(exercise.id)
-        return GymPanel(highlighted: !fullyCompleted) {
+        return GymPanel(highlighted: isCurrent) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     if let storedExercise {
@@ -765,6 +807,26 @@ struct ActiveWorkoutView: View {
                                 .font(.subheadline.monospacedDigit().weight(.bold))
                                 .foregroundStyle(
                                     fullyCompleted ? GymTheme.secondary : GymTheme.textSecondary
+                                )
+                                Text(
+                                    isCurrent
+                                        ? gymText(
+                                            "Current exercise", "Поточна вправа", "Текущее упражнение",
+                                            languageCode: gymCurrentLanguageCode()
+                                        )
+                                        : fullyCompleted
+                                            ? gymText(
+                                                "Completed", "Завершено", "Завершено",
+                                                languageCode: gymCurrentLanguageCode()
+                                            )
+                                            : gymText(
+                                                "Up next", "Далі", "Далее",
+                                                languageCode: gymCurrentLanguageCode()
+                                            )
+                                )
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(
+                                    isCurrent ? GymTheme.primary : GymTheme.textSecondary
                                 )
                             }
                             Spacer(minLength: 8)
@@ -1092,6 +1154,11 @@ struct ActiveWorkoutView: View {
                updatedExercise.sets.allSatisfy(\.isCompleted) {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     _ = collapsedExerciseIDs.insert(exercise.id)
+                    if let nextExercise = updated.exercises.first(where: { candidate in
+                        candidate.sets.contains(where: { !$0.isCompleted })
+                    }) {
+                        collapsedExerciseIDs.remove(nextExercise.id)
+                    }
                 }
             }
             if restOutcome == .synchronized {
@@ -1380,7 +1447,7 @@ struct ActiveWorkoutView: View {
                 exerciseBlockID: exercise.id,
                 expectedRevision: draft.revision
             )
-            withAnimation(.easeInOut(duration: 0.2)) {
+            _ = withAnimation(.easeInOut(duration: 0.2)) {
                 collapsedExerciseIDs.insert(exercise.id)
             }
             statusMessage = gymText(
@@ -1497,9 +1564,12 @@ struct ActiveWorkoutView: View {
 
     private func collapseCompletedExercises() {
         guard let draft = currentDraft else { return }
-        collapsedExerciseIDs.formUnion(
+        let currentExerciseID = draft.exercises.first(where: { exercise in
+            exercise.sets.contains(where: { !$0.isCompleted })
+        })?.id
+        collapsedExerciseIDs = Set(
             draft.exercises.compactMap { exercise in
-                exercise.sets.allSatisfy(\.isCompleted) ? exercise.id : nil
+                exercise.id == currentExerciseID ? nil : exercise.id
             }
         )
     }

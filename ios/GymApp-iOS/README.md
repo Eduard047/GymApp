@@ -57,7 +57,7 @@ xcodebuild \
 ## Before a real App Store upload
 
 1. Open `GymApp.xcodeproj`, select your Apple Developer Team, and confirm the final bundle identifier.
-2. Keep every canonical migration from the repository-root `supabase/migrations/` directory and both repository-root Edge Functions synchronized in every environment. Production matches all 22 migrations through `20260722013200`; `garmin-sync` version 6 and `delete-account` version 3 are active. The 2026-07-22 valid-device fetch/ack/replay/cutover smoke and disposable-account deletion/cascade E2E passed, and the [deployment gate](../../supabase/functions/delete-account/deployment-contract.json) is clear. Evidence and scope are recorded in [PRODUCTION_BACKEND_VERIFICATION.md](AppStore/PRODUCTION_BACKEND_VERIFICATION.md).
+2. Keep every canonical migration from the repository-root `supabase/migrations/` directory and every repository-root Edge Function synchronized in each environment. A read-only 2026-08-24 readback found 54 production migrations through `20260823162119`; `garmin-sync` version 12, `delete-account` version 14, `social-live-gateway` version 6, and `push-dispatch` version 5 are active. The local chain also contains `20260824120000_sync_activity_only_workouts.sql` and `20260824123000_harden_remaining_supabase_boundaries.sql`, which are not deployed. Apply/read back those forward migrations and rerun the current deployment gates before submission. The 2026-07-22 valid-device and deletion E2E below remains historical evidence, not proof for later function versions. Evidence and scope are recorded in [PRODUCTION_BACKEND_VERIFICATION.md](AppStore/PRODUCTION_BACKEND_VERIFICATION.md) and [OPERATIONS.md](../../docs/OPERATIONS.md).
 3. Keep `https://gymapptracker.com/confirmed.html?platform=ios&state=*` and
    `com.setforge.gymapp.ios://auth/callback/*` in the Supabase Auth redirect
    allowlist. The first-party HTTPS page accepts only a PKCE `code` plus the
@@ -77,7 +77,7 @@ copies. The policy covers iOS, Android, browser/PWA, and optional Garmin feature
 in English, Ukrainian, and Russian; re-verify the hosted copy after every policy
 update.
 
-### External verification status
+### Historical external verification status
 
 The production database, Auth, RLS, state projection, Garmin gateway, and
 account-deletion behavior were reverified on 2026-07-22:

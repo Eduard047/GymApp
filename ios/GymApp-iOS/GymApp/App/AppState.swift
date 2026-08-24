@@ -155,14 +155,25 @@ final class AppState: ObservableObject {
         var dirty: Bool
         var pending: Bool
         var lastSuccessfulAt: Date?
+        var activityBaselineDigest: Data?
+        var activityDirty: Bool?
+        var activityPending: Bool?
 
         static let empty = CloudSyncCheckpoint(
             version: 1,
             baselineDigest: nil,
             dirty: false,
             pending: false,
-            lastSuccessfulAt: nil
+            lastSuccessfulAt: nil,
+            activityBaselineDigest: nil,
+            activityDirty: false,
+            activityPending: false
         )
+    }
+
+    private struct ActivityOnlyCloudSyncReport {
+        let localItems: [ActivityOnlyWorkoutCloudItem]
+        let clean: Bool
     }
 
     private struct AccountDeletionTarget: Equatable {
@@ -623,7 +634,16 @@ final class AppState: ObservableObject {
             var loadedReadOnlyUnsupportedState = false
             var requiresCanonicalCloudUpload = false
             var requiresAuthoritativeCloudReconciliation = false
+            var activitySidecarRequiresUpload = false
+            var performedInitialCloudUpload = false
             if let expectedUserID {
+                try migrateLegacyActivityOnlyCloudPreferences(
+                    into: candidate,
+                    storageKey: expectedStorageKey,
+                    userID: expectedUserID
+                )
+                let localActivityItemsBeforeCoreRestore =
+                    try candidate.activityOnlyCloudSnapshotItems()
                 let remoteData: Data?
                 do {
                     if let remoteStateLoader {
@@ -722,6 +742,12 @@ final class AppState: ObservableObject {
                                 data: preparedBackup.data,
                                 activeOwner: expectedOwner
                             )
+                            let postRestoreActivityItems =
+                                try candidate.activityOnlyCloudSnapshotItems()
+                            _ = try candidate.applyActivityOnlyCloudItems(
+                                localActivityItemsBeforeCoreRestore,
+                                expectedLocalItems: postRestoreActivityItems
+                            )
                             if preparedBackup.roundTripSafe {
                                 try candidate.setCloudExtensionsData(
                                     preparedBackup.extensionsData
@@ -755,7 +781,36 @@ final class AppState: ObservableObject {
                         expectedStorageKey: expectedStorageKey,
                         expectedUserID: expectedUserID
                     )
+                    performedInitialCloudUpload = true
                     cloudWritesAllowed = true
+                }
+
+                if cloudWritesAllowed,
+                   !performedInitialCloudUpload,
+                   remoteStateLoader == nil {
+                    do {
+                        activitySidecarRequiresUpload = try await
+                            loadAndMergeActivityOnlyCloudSidecar(
+                                into: candidate,
+                                storageKey: expectedStorageKey,
+                                userID: expectedUserID
+                            )
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        // The schema-v2 row remains independently usable. Preserve every
+                        // local activity and keep its private sidecar visibly pending.
+                        cloudError = cloudError ?? error
+                        let localItems = try candidate.activityOnlyCloudSnapshotItems()
+                        try recordActivityOnlyCloudBaseline(
+                            localItems,
+                            store: candidate,
+                            storageKey: expectedStorageKey,
+                            ownerUserID: expectedUserID,
+                            clean: false,
+                            successfulAt: nil
+                        )
+                    }
                 }
             }
             // A remote restore may replace local rows. Accounts without a seed marker receive
@@ -779,7 +834,8 @@ final class AppState: ObservableObject {
             isPreparingAccount = false
             accountPreparationError = nil
             if (seededExerciseCount > 0 || catalogSeedMarkerChanged ||
-                requiresCanonicalCloudUpload) && cloudWritesAllowed {
+                requiresCanonicalCloudUpload || activitySidecarRequiresUpload) &&
+                cloudWritesAllowed && remoteStateLoader == nil {
                 scheduleCloudSave(delay: .zero)
             }
 
@@ -871,9 +927,17 @@ final class AppState: ObservableObject {
                 preparedBackup.extensionsData
             )
             if useCloudVersion {
+                let activityItemsBeforeCoreRestore =
+                    try pending.localStore.activityOnlyCloudSnapshotItems()
                 _ = try pending.localStore.restoreBackup(
                     data: preparedBackup.data,
                     activeOwner: pending.owner
+                )
+                let postRestoreActivityItems =
+                    try pending.localStore.activityOnlyCloudSnapshotItems()
+                _ = try pending.localStore.applyActivityOnlyCloudItems(
+                    activityItemsBeforeCoreRestore,
+                    expectedLocalItems: postRestoreActivityItems
                 )
                 catalogChanged = try pending.localStore.seedBuiltInExercises() > 0
                 _ = try pending.localStore.seedDefaultMuscleMappings()
@@ -904,7 +968,7 @@ final class AppState: ObservableObject {
             accountPreparationError = nil
             publish(store: pending.localStore, activeStorageKey: pending.storageKey)
             isPreparingAccount = false
-            if catalogChanged {
+            if remoteStateLoader == nil && (catalogChanged || useCloudVersion) {
                 scheduleCloudSave(delay: .zero)
             }
             show(
@@ -937,7 +1001,7 @@ final class AppState: ObservableObject {
     }
 
     static func cloudWorkoutIdentity(_ backup: GymBackup) throws -> CloudWorkoutIdentity {
-        let canonical = try WorkoutStore.canonicalCloudWorkoutIdentityInput(backup)
+        let canonical = try WorkoutStore.canonicalV229CloudWorkoutCore(backup)
         let configuredExercises = canonical.exercises
             .filter {
                 BuiltInExerciseCatalog.resolvedKey(
@@ -992,6 +1056,8 @@ final class AppState: ObservableObject {
         var checkpoint = cloudCheckpoint(for: storageKey)
         checkpoint.dirty = true
         checkpoint.pending = true
+        checkpoint.activityDirty = true
+        checkpoint.activityPending = true
         persistCloudCheckpoint(checkpoint, storageKey: storageKey)
         cloudSyncStatus = .pending
     }
@@ -1008,14 +1074,51 @@ final class AppState: ObservableObject {
         checkpoint.pending = !clean
         if let successfulAt { checkpoint.lastSuccessfulAt = successfulAt }
         persistCloudCheckpoint(checkpoint, storageKey: storageKey)
-        cloudSyncStatus = clean
+        let fullyClean = clean && checkpoint.activityDirty != true &&
+            checkpoint.activityPending != true
+        cloudSyncStatus = fullyClean
+            ? .synced(checkpoint.lastSuccessfulAt ?? Date())
+            : .pending
+    }
+
+    private func recordActivityOnlyCloudBaseline(
+        _ items: [ActivityOnlyWorkoutCloudItem],
+        store: WorkoutStore,
+        storageKey: String,
+        ownerUserID: String,
+        clean: Bool,
+        successfulAt: Date? = Date()
+    ) throws {
+        guard store.accountStorageKey == storageKey else {
+            throw WorkoutStoreError.storageAccountMismatch
+        }
+        try ActivityOnlyWorkoutCloudCodec.validate(items)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let digest = Data(SHA256.hash(data: try encoder.encode(items)))
+        var checkpoint = cloudCheckpoint(for: storageKey)
+        if clean {
+            let baseline = try ActivityOnlyWorkoutCloudBaseline(
+                ownerUserID: ownerUserID,
+                items: items
+            )
+            try store.saveActivityOnlyCloudBaseline(baseline)
+            checkpoint.activityBaselineDigest = digest
+        }
+        checkpoint.activityDirty = !clean
+        checkpoint.activityPending = !clean
+        if clean, let successfulAt { checkpoint.lastSuccessfulAt = successfulAt }
+        persistCloudCheckpoint(checkpoint, storageKey: storageKey)
+        let fullyClean = !checkpoint.dirty && !checkpoint.pending && clean
+        cloudSyncStatus = fullyClean
             ? .synced(checkpoint.lastSuccessfulAt ?? Date())
             : .pending
     }
 
     private func restoreCloudCheckpointStatus(storageKey: String) {
         let checkpoint = cloudCheckpoint(for: storageKey)
-        if checkpoint.pending || checkpoint.dirty {
+        if checkpoint.pending || checkpoint.dirty ||
+            checkpoint.activityPending == true || checkpoint.activityDirty == true {
             cloudSyncStatus = .pending
         } else if let lastSuccessfulAt = checkpoint.lastSuccessfulAt {
             cloudSyncStatus = .synced(lastSuccessfulAt)
@@ -1107,6 +1210,23 @@ final class AppState: ObservableObject {
     ) async {
         let storageKey = session.storageKey
         do {
+            let activityItemsBeforeCore = try store.activityOnlyCloudSnapshotItems()
+            let preparedPendingActivityReport = try await
+                replayPendingActivityOnlySyncIfNeeded(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID
+                )
+            if let preparedPendingActivityReport {
+                try recordActivityOnlyCloudBaseline(
+                    preparedPendingActivityReport.localItems,
+                    store: store,
+                    storageKey: storageKey,
+                    ownerUserID: userID,
+                    clean: false,
+                    successfulAt: nil
+                )
+            }
             cloudSyncStatus = .checking
             let remoteData = try await cloudSync.withSyncIndicator {
                 if let remoteStateLoader {
@@ -1130,7 +1250,9 @@ final class AppState: ObservableObject {
                         from: store,
                         owner: owner,
                         expectedStorageKey: storageKey,
-                        expectedUserID: userID
+                        expectedUserID: userID,
+                        preparedActivityReport: preparedPendingActivityReport,
+                        activityPendingAlreadyReplayed: true
                     )
                 }
                 cloudWritableAccountStorageKey = storageKey
@@ -1159,6 +1281,12 @@ final class AppState: ObservableObject {
             try store.setCloudExtensionsData(prepared.extensionsData)
             if remoteIdentity == localIdentity {
                 recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                try await finishManualActivityOnlyCloudSync(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID,
+                    preparedPendingReport: preparedPendingActivityReport
+                )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
                 show(message: "Cloud data is up to date.", isError: false)
@@ -1174,7 +1302,9 @@ final class AppState: ObservableObject {
                         from: store,
                         owner: owner,
                         expectedStorageKey: storageKey,
-                        expectedUserID: userID
+                        expectedUserID: userID,
+                        preparedActivityReport: preparedPendingActivityReport,
+                        activityPendingAlreadyReplayed: true
                     )
                 }
                 cloudWritableAccountStorageKey = storageKey
@@ -1190,7 +1320,18 @@ final class AppState: ObservableObject {
                 _ = try store.restoreBackup(data: prepared.data, activeOwner: owner)
                 _ = try store.seedBuiltInExercises()
                 _ = try store.seedDefaultMuscleMappings()
+                let postRestoreActivityItems = try store.activityOnlyCloudSnapshotItems()
+                _ = try store.applyActivityOnlyCloudItems(
+                    activityItemsBeforeCore,
+                    expectedLocalItems: postRestoreActivityItems
+                )
                 recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                try await finishManualActivityOnlyCloudSync(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID,
+                    preparedPendingReport: preparedPendingActivityReport
+                )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
                 show(message: "Newer cloud workout data was loaded.", isError: false)
@@ -2184,6 +2325,12 @@ final class AppState: ObservableObject {
             applyingRemoteState = false
             isPreparingAccount = false
         }
+        if !Self.clearActivityOnlyCloudDeletionArtifacts(
+            defaults: defaults,
+            storageKey: storageKey
+        ) {
+            cleanupError = cleanupError ?? AuthServiceError.accountDeletionCleanupPending
+        }
 
         guard cleanupError == nil else {
             // The marker intentionally survives. Startup retries secure local cleanup before
@@ -2347,11 +2494,324 @@ final class AppState: ObservableObject {
         cloudSavePhase = .idle
     }
 
+    private func loadAndMergeActivityOnlyCloudSidecar(
+        into store: WorkoutStore,
+        storageKey: String,
+        userID: String
+    ) async throws -> Bool {
+        let report = try await synchronizeActivityOnlyCloudSidecar(
+            store: store,
+            storageKey: storageKey,
+            userID: userID
+        )
+        return !report.clean
+    }
+
+    private func ensureCurrentActivityOnlyOwner(
+        store: WorkoutStore,
+        storageKey: String,
+        userID: String
+    ) throws {
+        guard store.accountStorageKey == storageKey,
+              auth.session?.storageKey == storageKey,
+              auth.session?.cloud?.userID == userID else {
+            throw AuthServiceError.sessionChanged
+        }
+    }
+
+    private func submitExactPendingActivityOnlySync(
+        _ pending: PendingActivityOnlyWorkoutCloudSync,
+        store: WorkoutStore,
+        storageKey: String,
+        userID: String
+    ) async throws -> ActivityOnlyWorkoutCloudSyncResult {
+        guard let requestID = pending.requestUUID else {
+            throw CloudSyncError.invalidPayload
+        }
+        for attempt in 0 ..< 2 {
+            do {
+                return try await cloudSync.syncActivityOnlyWorkouts(
+                    expectedRevision: pending.expectedRevision,
+                    requestID: requestID,
+                    items: pending.items,
+                    exactRequestBody: pending.requestBody,
+                    expectedUserID: userID
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard attempt == 0,
+                      Self.activityOnlyOutcomeRequiresExactReplay(error) else {
+                    throw error
+                }
+                try await Task.sleep(for: .milliseconds(250))
+                try ensureCurrentActivityOnlyOwner(
+                    store: store,
+                    storageKey: storageKey,
+                    userID: userID
+                )
+            }
+        }
+        throw CloudSyncError.invalidResponse
+    }
+
+    /// Replays an outcome-unknown full-snapshot request before any fresh read or
+    /// materialization. A non-nil report means the exact request remains pending and
+    /// the caller must not create or reconcile a replacement sidecar request yet.
+    private func replayPendingActivityOnlySyncIfNeeded(
+        store: WorkoutStore,
+        storageKey: String,
+        userID: String
+    ) async throws -> ActivityOnlyCloudSyncReport? {
+        try ensureCurrentActivityOnlyOwner(
+            store: store,
+            storageKey: storageKey,
+            userID: userID
+        )
+        try migrateLegacyActivityOnlyCloudPreferences(
+            into: store,
+            storageKey: storageKey,
+            userID: userID
+        )
+        guard let pending = store.loadPendingActivityOnlyCloudSync(
+            ownerUserID: userID
+        ) else { return nil }
+
+        let result = try await submitExactPendingActivityOnlySync(
+            pending,
+            store: store,
+            storageKey: storageKey,
+            userID: userID
+        )
+        try ensureCurrentActivityOnlyOwner(
+            store: store,
+            storageKey: storageKey,
+            userID: userID
+        )
+        switch result {
+        case .unavailable, .rateLimited:
+            return ActivityOnlyCloudSyncReport(
+                localItems: try store.activityOnlyCloudSnapshotItems(),
+                clean: false
+            )
+        case .synced, .conflict, .requestConflict:
+            // A confirmed replay or a known rejected CAS outcome releases this UUID.
+            // Conflict cases proceed to a fresh authoritative read with a new UUID.
+            try store.clearPendingActivityOnlyCloudSync()
+            return nil
+        case .invalidPayload:
+            try store.clearPendingActivityOnlyCloudSync()
+            throw CloudSyncError.invalidPayload
+        case .revisionExhausted:
+            try store.clearPendingActivityOnlyCloudSync()
+            throw CloudSyncError.requestFailed(
+                "The activity-only cloud revision is exhausted. Local activities remain preserved."
+            )
+        }
+    }
+
+    private func migrateLegacyActivityOnlyCloudPreferences(
+        into store: WorkoutStore,
+        storageKey: String,
+        userID: String
+    ) throws {
+        if store.loadPendingActivityOnlyCloudSync(ownerUserID: userID) == nil,
+           let legacyPending =
+            LegacyPendingActivityOnlyWorkoutCloudSyncPreferences.loadForMigration(
+                defaults: defaults,
+                storageKey: storageKey,
+                ownerUserID: userID
+            ) {
+            try store.savePendingActivityOnlyCloudSync(legacyPending)
+        }
+        if store.loadActivityOnlyCloudBaseline(ownerUserID: userID) == nil,
+           let legacyBaseline =
+            LegacyActivityOnlyWorkoutCloudBaselinePreferences.loadForMigration(
+                defaults: defaults,
+                storageKey: storageKey,
+                ownerUserID: userID
+            ) {
+            try store.saveActivityOnlyCloudBaseline(legacyBaseline)
+        }
+        guard LegacyPendingActivityOnlyWorkoutCloudSyncPreferences.clearAndVerify(
+            defaults: defaults,
+            storageKey: storageKey
+        ),
+        LegacyActivityOnlyWorkoutCloudBaselinePreferences.clearAndVerify(
+            defaults: defaults,
+            storageKey: storageKey
+        ) else {
+            throw WorkoutStoreError.persistenceFailure(
+                "Legacy activity-only cloud preferences could not be removed safely."
+            )
+        }
+    }
+
+    private func synchronizeActivityOnlyCloudSidecar(
+        store: WorkoutStore,
+        storageKey: String,
+        userID: String,
+        pendingAlreadyReplayed: Bool = false
+    ) async throws -> ActivityOnlyCloudSyncReport {
+        func currentLocalItems() throws -> [ActivityOnlyWorkoutCloudItem] {
+            try store.activityOnlyCloudSnapshotItems()
+        }
+        func report(
+            _ items: [ActivityOnlyWorkoutCloudItem],
+            clean: Bool
+        ) throws -> ActivityOnlyCloudSyncReport {
+            try recordActivityOnlyCloudBaseline(
+                items,
+                store: store,
+                storageKey: storageKey,
+                ownerUserID: userID,
+                clean: clean,
+                successfulAt: clean ? Date() : nil
+            )
+            return ActivityOnlyCloudSyncReport(localItems: items, clean: clean)
+        }
+        try ensureCurrentActivityOnlyOwner(
+            store: store,
+            storageKey: storageKey,
+            userID: userID
+        )
+
+        if !pendingAlreadyReplayed,
+           let pendingReport = try await replayPendingActivityOnlySyncIfNeeded(
+            store: store,
+            storageKey: storageKey,
+            userID: userID
+           ) {
+            return try report(pendingReport.localItems, clean: false)
+        }
+
+        let baselineItems = store.loadActivityOnlyCloudBaseline(
+            ownerUserID: userID
+        )?.items ?? []
+
+        for attempt in 0 ..< 2 {
+            let readResult = try await cloudSync.loadActivityOnlyWorkouts(
+                expectedUserID: userID
+            )
+            try ensureCurrentActivityOnlyOwner(
+                store: store,
+                storageKey: storageKey,
+                userID: userID
+            )
+            guard case .snapshot(let snapshot) = readResult else {
+                return try report(try currentLocalItems(), clean: false)
+            }
+
+            let localItems = try currentLocalItems()
+            let reconciled = try ActivityOnlyWorkoutCloudCodec.reconciledItems(
+                base: baselineItems,
+                remote: snapshot.items,
+                local: localItems,
+                coreWorkoutTimestamps: ActivityOnlyWorkoutCloudCodec.coreWorkoutTimestamps(
+                    store.workouts
+                )
+            )
+            _ = try store.applyActivityOnlyCloudItems(
+                reconciled.outbound,
+                expectedLocalItems: localItems
+            )
+            try ensureCurrentActivityOnlyOwner(
+                store: store,
+                storageKey: storageKey,
+                userID: userID
+            )
+            let mergedLocalItems = try currentLocalItems()
+            guard reconciled.outbound != snapshot.items else {
+                return try report(mergedLocalItems, clean: true)
+            }
+
+            let pending = try PendingActivityOnlyWorkoutCloudSync(
+                ownerUserID: userID,
+                expectedRevision: snapshot.revision,
+                items: reconciled.outbound
+            )
+            try store.savePendingActivityOnlyCloudSync(pending)
+            let result = try await submitExactPendingActivityOnlySync(
+                pending,
+                store: store,
+                storageKey: storageKey,
+                userID: userID
+            )
+            try ensureCurrentActivityOnlyOwner(
+                store: store,
+                storageKey: storageKey,
+                userID: userID
+            )
+            switch result {
+            case .synced:
+                try store.clearPendingActivityOnlyCloudSync()
+                return try report(try currentLocalItems(), clean: true)
+            case .unavailable, .rateLimited:
+                // Keep the exact pending tuple for the next bounded retry.
+                return try report(try currentLocalItems(), clean: false)
+            case .conflict, .requestConflict:
+                try store.clearPendingActivityOnlyCloudSync()
+                if attempt == 0 { continue }
+                throw CloudSyncError.requestFailed(
+                    "Activity-only cloud data changed repeatedly. Local and remote activities remain preserved."
+                )
+            case .invalidPayload:
+                try store.clearPendingActivityOnlyCloudSync()
+                throw CloudSyncError.invalidPayload
+            case .revisionExhausted:
+                try store.clearPendingActivityOnlyCloudSync()
+                throw CloudSyncError.requestFailed(
+                    "The activity-only cloud revision is exhausted. Local activities remain preserved."
+                )
+            }
+        }
+        throw CloudSyncError.staleRemoteState
+    }
+
+    static func activityOnlyOutcomeRequiresExactReplay(_ error: Error) -> Bool {
+        if case CloudSyncError.postgRESTFailure(_, let code, _) = error {
+            return code == "55P03" || code == "57014"
+        }
+        if let urlError = error as? URLError {
+            return urlError.code != .cancelled
+        }
+        return false
+    }
+
+    private func finishManualActivityOnlyCloudSync(
+        store: WorkoutStore,
+        storageKey: String,
+        userID: String,
+        preparedPendingReport: ActivityOnlyCloudSyncReport?
+    ) async throws {
+        let report: ActivityOnlyCloudSyncReport
+        if let preparedPendingReport {
+            report = preparedPendingReport
+        } else {
+            report = try await synchronizeActivityOnlyCloudSidecar(
+                store: store,
+                storageKey: storageKey,
+                userID: userID,
+                pendingAlreadyReplayed: true
+            )
+        }
+        let currentItems = try store.activityOnlyCloudSnapshotItems()
+        try recordActivityOnlyCloudBaseline(
+            report.localItems,
+            store: store,
+            storageKey: storageKey,
+            ownerUserID: userID,
+            clean: report.clean && currentItems == report.localItems
+        )
+    }
+
     private func uploadCurrentState(
         from store: WorkoutStore,
         owner: BackupOwner,
         expectedStorageKey: String,
-        expectedUserID: String
+        expectedUserID: String,
+        preparedActivityReport: ActivityOnlyCloudSyncReport? = nil,
+        activityPendingAlreadyReplayed: Bool = false
     ) async throws {
         guard store.accountStorageKey == expectedStorageKey,
               auth.session?.storageKey == expectedStorageKey,
@@ -2359,6 +2819,17 @@ final class AppState: ObservableObject {
               owner.accountID == expectedUserID,
               owner.userID == expectedUserID else {
             throw AuthServiceError.sessionChanged
+        }
+        let activityReport: ActivityOnlyCloudSyncReport
+        if let preparedActivityReport {
+            activityReport = preparedActivityReport
+        } else {
+            activityReport = try await synchronizeActivityOnlyCloudSidecar(
+                store: store,
+                storageKey: expectedStorageKey,
+                userID: expectedUserID,
+                pendingAlreadyReplayed: activityPendingAlreadyReplayed
+            )
         }
         let profile = store.syncProfileStats()
         let data = try store.exportCloudBackupData(
@@ -2388,9 +2859,17 @@ final class AppState: ObservableObject {
             storageKey: expectedStorageKey,
             clean: currentIdentity == uploadedIdentity
         )
+        let currentActivityItems = try store.activityOnlyCloudSnapshotItems()
+        try recordActivityOnlyCloudBaseline(
+            activityReport.localItems,
+            store: store,
+            storageKey: expectedStorageKey,
+            ownerUserID: expectedUserID,
+            clean: activityReport.clean && currentActivityItems == activityReport.localItems
+        )
     }
 
-    private static func workoutDurationSyncItems(
+    static func workoutDurationSyncItems(
         _ workouts: [WorkoutSession]
     ) throws -> [[String: Any]] {
         guard workouts.count <= BackupImportLimits.standard.maximumSessions else {
@@ -2400,6 +2879,9 @@ final class AppState: ObservableObject {
         var result: [[String: Any]] = []
         result.reserveCapacity(workouts.count)
         for workout in workouts {
+            // Empty-set Garmin activities are owner-private and use their dedicated CAS
+            // sidecar. Never leak or erase them through the social duration projection.
+            guard !workout.exercises.isEmpty else { continue }
             guard let duration = workout.durationSeconds else { continue }
             let millisecondsValue = (workout.date.timeIntervalSince1970 * 1_000).rounded()
             guard millisecondsValue.isFinite,
@@ -2505,12 +2987,38 @@ final class AppState: ObservableObject {
                 cleanupFailed = true
             }
         }
+        if !clearActivityOnlyCloudDeletionArtifacts(
+            defaults: defaults,
+            storageKey: storageKey
+        ) {
+            cleanupFailed = true
+        }
 
         if !cleanupFailed {
             _ = PendingAccountDeletionStore.clearExact(storageKey, defaults: defaults)
             auth.pendingAccountDeletionStateDidChange()
         }
         defaults.removeObject(forKey: legacyPendingDeletionGarminUserIDKey)
+    }
+
+    private static func clearActivityOnlyCloudDeletionArtifacts(
+        defaults: UserDefaults,
+        storageKey: String
+    ) -> Bool {
+        let pendingCleared =
+            LegacyPendingActivityOnlyWorkoutCloudSyncPreferences.clearAndVerify(
+            defaults: defaults,
+            storageKey: storageKey
+        )
+        let baselineCleared =
+            LegacyActivityOnlyWorkoutCloudBaselinePreferences.clearAndVerify(
+            defaults: defaults,
+            storageKey: storageKey
+        )
+        let checkpointKey = cloudCheckpointKeyPrefix + storageKey
+        defaults.removeObject(forKey: checkpointKey)
+        let checkpointCleared = defaults.object(forKey: checkpointKey) == nil
+        return pendingCleared && baselineCleared && checkpointCleared
     }
 
     private static func cloudUserID(fromDeletionStorageKey storageKey: String) -> String? {

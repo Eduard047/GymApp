@@ -246,12 +246,12 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.match(indexSource, /russian-text\.v84\.js/);
+  assert.match(indexSource, /russian-text\.v85\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v98\.js/);
-  assert.match(workerSource, /russian-text\.v84\.js/);
+  assert.match(indexSource, /app\.v99\.js/);
+  assert.match(workerSource, /russian-text\.v85\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v98\.js/);
+  assert.match(workerSource, /app\.v99\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });

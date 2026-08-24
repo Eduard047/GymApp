@@ -529,6 +529,142 @@ class GymDatabaseRoomMigrationTest {
     }
 
     @Test
+    fun migrationFifteenToSixteenAddsPrivateActivitySidecarWithoutChangingHistory() {
+        migrationHelper.createDatabase(ACTIVITY_SIDECAR_TEST_DATABASE, 15).apply {
+            execSQL(
+                "INSERT INTO workout_sessions(id, date, note, durationSeconds) " +
+                    "VALUES (21, 1750000000000, 'Existing activity', 1234)"
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            ACTIVITY_SIDECAR_TEST_DATABASE,
+            16,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query(
+                "SELECT note, durationSeconds FROM workout_sessions WHERE id = 21"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Existing activity", cursor.getString(0))
+                assertEquals(1_234L, cursor.getLong(1))
+            }
+            migrated.execSQL(
+                """
+                INSERT INTO activity_only_workouts(
+                    workoutStartedAt, durationSeconds, gymCaloriesMillis, garminCalories,
+                    averageHeartRate, maximumHeartRate, endingHeartRateZone, note
+                ) VALUES (1750000000000, 1234, 87125, 92, 131, 168, 3, 'Existing activity')
+                """.trimIndent()
+            )
+            migrated.execSQL(
+                """
+                INSERT INTO activity_only_workout_sync_journal(
+                    id, ownerUserId, expectedRevision, requestId, itemsJson, itemsDigest
+                ) VALUES (
+                    1,
+                    '11111111-1111-1111-1111-111111111111',
+                    7,
+                    '22222222-2222-2222-2222-222222222222',
+                    '[]',
+                    '${"a".repeat(64)}'
+                )
+                """.trimIndent()
+            )
+            migrated.query("SELECT COUNT(*) FROM activity_only_workouts").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+            migrated.query("SELECT expectedRevision FROM activity_only_workout_sync_journal")
+                .use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(7L, cursor.getLong(0))
+                }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrationSixteenToSeventeenPreservesSidecarAndJournalAndAddsExactBaseline() {
+        val owner = "11111111-1111-1111-1111-111111111111"
+        val request = "22222222-2222-2222-2222-222222222222"
+        val digest = "a".repeat(64)
+        migrationHelper.createDatabase(ACTIVITY_BASELINE_TEST_DATABASE, 16).apply {
+            execSQL(
+                """
+                INSERT INTO activity_only_workouts(
+                    workoutStartedAt, durationSeconds, gymCaloriesMillis, garminCalories,
+                    averageHeartRate, maximumHeartRate, endingHeartRateZone, note
+                ) VALUES (1750000000000, 1234, 87125, NULL, NULL, NULL, NULL, 'exact note')
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO activity_only_workout_sync_journal(
+                    id, ownerUserId, expectedRevision, requestId, itemsJson, itemsDigest
+                ) VALUES (1, '$owner', 7, '$request', '[]', '$digest')
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            ACTIVITY_BASELINE_TEST_DATABASE,
+            17,
+            true,
+            *GymDatabase.REGISTERED_MIGRATIONS
+        )
+        try {
+            migrated.query(
+                "SELECT gymCaloriesMillis, garminCalories, note FROM activity_only_workouts"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(87_125L, cursor.getLong(0))
+                assertTrue(cursor.isNull(1))
+                assertEquals("exact note", cursor.getString(2))
+            }
+            migrated.query(
+                "SELECT ownerUserId, expectedRevision, requestId, itemsJson, itemsDigest " +
+                    "FROM activity_only_workout_sync_journal"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(owner, cursor.getString(0))
+                assertEquals(7L, cursor.getLong(1))
+                assertEquals(request, cursor.getString(2))
+                assertEquals("[]", cursor.getString(3))
+                assertEquals(digest, cursor.getString(4))
+            }
+            val exactItems =
+                "[{\"workoutStartedAt\":1750000000000,\"durationSeconds\":1234," +
+                    "\"gymCalories\":87.125,\"note\":\"exact note\"}]"
+            migrated.execSQL(
+                """
+                INSERT INTO activity_only_workout_sync_baseline(
+                    id, ownerUserId, revision, itemsJson, itemsDigest
+                ) VALUES (1, ?, 7, ?, ?)
+                """.trimIndent(),
+                arrayOf<Any>(owner, exactItems, digest)
+            )
+            migrated.query(
+                "SELECT ownerUserId, revision, itemsJson, itemsDigest " +
+                    "FROM activity_only_workout_sync_baseline"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(owner, cursor.getString(0))
+                assertEquals(7L, cursor.getLong(1))
+                assertEquals(exactItems, cursor.getString(2))
+                assertEquals(digest, cursor.getString(3))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
     fun migrationElevenToFourteenMatchesV229UpgradeAndPreservesHistory() {
         migrationHelper.createDatabase(V229_TO_ACTIVE_WORKOUT_TEST_DATABASE, 11).apply {
             execSQL(
@@ -599,6 +735,8 @@ class GymDatabaseRoomMigrationTest {
         const val ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-12-to-13"
         const val UNDO_MARKER_TEST_DATABASE = "room-migration-13-to-14"
         const val DURATION_DRAFT_TEST_DATABASE = "room-migration-14-to-15"
+        const val ACTIVITY_SIDECAR_TEST_DATABASE = "room-migration-15-to-16"
+        const val ACTIVITY_BASELINE_TEST_DATABASE = "room-migration-16-to-17"
         const val V229_TO_ACTIVE_WORKOUT_TEST_DATABASE = "room-migration-11-to-14"
     }
 }

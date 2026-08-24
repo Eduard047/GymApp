@@ -98,6 +98,57 @@ final class CloudSyncService: ObservableObject {
         return try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
     }
 
+    func loadActivityOnlyWorkouts(
+        expectedUserID: String? = nil
+    ) async throws -> ActivityOnlyWorkoutCloudReadResult {
+        do {
+            let (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/garmin_read_activity_only_workouts",
+                expectedUserID: expectedUserID,
+                body: [:],
+                maximumResponseBytes: ActivityOnlyWorkoutCloudCodec.maximumResponseBytes
+            )
+            return .snapshot(try ActivityOnlyWorkoutCloudCodec.parseReadResponse(data))
+        } catch let error where Self.isMissingActivityOnlyRPC(error) {
+            // Mixed-version deployments must keep the local owner-private activity instead
+            // of falling back to schema-v2 or the public workout-duration sidecar.
+            return .unavailable
+        }
+    }
+
+    func syncActivityOnlyWorkouts(
+        expectedRevision: Int64,
+        requestID: UUID,
+        items: [ActivityOnlyWorkoutCloudItem],
+        exactRequestBody: Data? = nil,
+        expectedUserID: String? = nil
+    ) async throws -> ActivityOnlyWorkoutCloudSyncResult {
+        let canonicalRequestBody = try ActivityOnlyWorkoutCloudCodec.syncRequestData(
+            expectedRevision: expectedRevision,
+            requestID: requestID,
+            items: items
+        )
+        guard exactRequestBody.map({ $0 == canonicalRequestBody }) ?? true else {
+            throw CloudSyncError.invalidPayload
+        }
+        do {
+            let (data, _) = try await socialRequest(
+                path: "/rest/v1/rpc/garmin_sync_activity_only_workouts",
+                expectedUserID: expectedUserID,
+                encodedBody: exactRequestBody ?? canonicalRequestBody,
+                maximumResponseBytes: ActivityOnlyWorkoutCloudCodec.maximumResponseBytes
+            )
+            let result = try ActivityOnlyWorkoutCloudCodec.parseSyncResponse(data)
+            if case .synced(_, let syncedCount, _, _) = result,
+               syncedCount != items.count {
+                throw CloudSyncError.invalidResponse
+            }
+            return result
+        } catch let error where Self.isMissingActivityOnlyRPC(error) {
+            return .unavailable
+        }
+    }
+
     func saveRemoteState(
         backupData: Data,
         xp: Int,
@@ -191,10 +242,43 @@ final class CloudSyncService: ObservableObject {
                 body: ["p_items": workoutDurations]
             )
             guard let result = try JSONSerialization.jsonObject(with: durationData) as? [String: Any],
-                  Set(result.keys) == ["version", "syncedCount"],
-                  (result["version"] as? NSNumber)?.intValue == 1,
-                  (result["syncedCount"] as? NSNumber)?.intValue == workoutDurations.count else {
+                  let version = ActivityOnlyWorkoutCloudCodec.exactInteger(
+                    result["version"], range: 1 ... 2
+                  ) else {
                 throw CloudSyncError.invalidResponse
+            }
+            if version == 1 {
+                guard Set(result.keys) == ["version", "syncedCount"],
+                      ActivityOnlyWorkoutCloudCodec.exactInteger(
+                        result["syncedCount"], range: 0 ... 5_000
+                      ) == Int64(workoutDurations.count) else {
+                    throw CloudSyncError.invalidResponse
+                }
+            } else if let error = result["error"] as? String {
+                guard Set(result.keys) == ["version", "error", "retryAfter"],
+                      ["rate_limited", "invalid_payload"].contains(error),
+                      let retryAfter = ActivityOnlyWorkoutCloudCodec.exactInteger(
+                        result["retryAfter"], range: 0 ... 600
+                      ),
+                      (error == "rate_limited" && (1 ... 600).contains(retryAfter)) ||
+                        (error == "invalid_payload" && retryAfter == 0) else {
+                    throw CloudSyncError.invalidResponse
+                }
+                throw CloudSyncError.requestFailed(
+                    "Workout duration synchronization was rejected: \(error)."
+                )
+            } else {
+                guard Set(result.keys) == [
+                    "version", "syncedCount", "changedCount"
+                ],
+                ActivityOnlyWorkoutCloudCodec.exactInteger(
+                    result["syncedCount"], range: 0 ... 5_000
+                ) == Int64(workoutDurations.count),
+                ActivityOnlyWorkoutCloudCodec.exactInteger(
+                    result["changedCount"], range: 0 ... 10_000
+                ) != nil else {
+                    throw CloudSyncError.invalidResponse
+                }
             }
         } catch is CancellationError {
             throw CancellationError()
@@ -787,7 +871,8 @@ final class CloudSyncService: ObservableObject {
     private func socialRequest(
         path: String,
         expectedUserID: String?,
-        body: Any,
+        body: Any? = nil,
+        encodedBody: Data? = nil,
         maximumResponseBytes: Int
     ) async throws -> (Data, String) {
         let expectedOperation = operationRevision
@@ -799,7 +884,8 @@ final class CloudSyncService: ObservableObject {
             method: "POST",
             expectedUserID: userID,
             maximumResponseBytes: maximumResponseBytes,
-            body: body
+            body: body,
+            encodedBody: encodedBody
         )
         guard operationRevision == expectedOperation,
               auth.session?.cloud?.userID == userID else {
@@ -815,8 +901,27 @@ final class CloudSyncService: ObservableObject {
         prefer: String? = nil,
         conflictMeansStaleState: Bool = false,
         maximumResponseBytes: Int? = nil,
-        body: Any? = nil
+        body: Any? = nil,
+        encodedBody: Data? = nil
     ) async throws -> Data {
+        guard body == nil || encodedBody == nil else {
+            throw CloudSyncError.invalidPayload
+        }
+        let requestBody: Data?
+        if let encodedBody {
+            requestBody = encodedBody
+        } else if let body {
+            requestBody = try JSONSerialization.data(
+                withJSONObject: body,
+                options: [.sortedKeys]
+            )
+        } else {
+            requestBody = nil
+        }
+        if let requestBody,
+           requestBody.count > Self.maximumCloudRequestBytes {
+            throw CloudSyncError.invalidPayload
+        }
         guard let initialSession = auth.session?.cloud,
               initialSession.userID == expectedUserID else {
             throw AuthServiceError.sessionChanged
@@ -829,7 +934,7 @@ final class CloudSyncService: ObservableObject {
                 prefer: prefer,
                 conflictMeansStaleState: conflictMeansStaleState,
                 maximumResponseBytes: maximumResponseBytes,
-                body: body
+                body: requestBody
             )
         } catch RequestFailure.http(let statusCode, _, _)
                     where statusCode == 401 || statusCode == 403 {
@@ -848,7 +953,7 @@ final class CloudSyncService: ObservableObject {
                     prefer: prefer,
                     conflictMeansStaleState: conflictMeansStaleState,
                     maximumResponseBytes: maximumResponseBytes,
-                    body: body
+                    body: requestBody
                 )
             } catch RequestFailure.http(let statusCode, let code, let message) {
                 throw Self.cloudError(
@@ -873,7 +978,7 @@ final class CloudSyncService: ObservableObject {
         prefer: String? = nil,
         conflictMeansStaleState: Bool = false,
         maximumResponseBytes: Int? = nil,
-        body: Any? = nil
+        body: Data? = nil
     ) async throws -> Data {
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
             throw CloudSyncError.invalidResponse
@@ -894,11 +999,7 @@ final class CloudSyncService: ObservableObject {
         if let prefer { request.setValue(prefer, forHTTPHeaderField: "Prefer") }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            let encoded = try JSONSerialization.data(withJSONObject: body)
-            guard encoded.count <= Self.maximumCloudRequestBytes else {
-                throw CloudSyncError.invalidPayload
-            }
-            request.httpBody = encoded
+            request.httpBody = body
         }
         let data: Data
         let http: HTTPURLResponse
@@ -954,6 +1055,17 @@ final class CloudSyncService: ObservableObject {
             // Some older test/proxy layers omit PostgREST's structured error body.
             // Keep this exact generic 404 compatible without treating arbitrary
             // request failures as evidence that the RPC is absent.
+            return message == "Cloud sync failed (HTTP 404)."
+        default:
+            return false
+        }
+    }
+
+    private static func isMissingActivityOnlyRPC(_ error: Error) -> Bool {
+        switch error {
+        case CloudSyncError.postgRESTFailure(let statusCode, let code, _):
+            return statusCode == 404 && (code == "PGRST202" || code == "42883")
+        case CloudSyncError.requestFailed(let message):
             return message == "Cloud sync failed (HTTP 404)."
         default:
             return false

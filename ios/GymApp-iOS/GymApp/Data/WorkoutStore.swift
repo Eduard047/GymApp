@@ -234,6 +234,13 @@ public final class WorkoutStore: ObservableObject {
     /// Stored separately from workout/domain state so unknown clients can round-trip data
     /// without iOS interpreting or exposing it.
     private(set) var cloudExtensionsData: Data?
+    /// Exact owner-private activity-only wire values. These preserve optional metrics
+    /// which older Garmin notes cannot represent losslessly (for example fractional kcal).
+    private(set) var activityOnlyCloudItems: [ActivityOnlyWorkoutCloudItem]
+    /// Private, owner-bound synchronization state lives in the protected account
+    /// envelope rather than backup-eligible preferences.
+    private var pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
+    private var activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
 
     public private(set) var accountStorageKey: String
     public private(set) var storageURL: URL
@@ -249,7 +256,7 @@ public final class WorkoutStore: ObservableObject {
 
     public var workoutSummaries: [WorkoutSessionSummary] {
         workouts
-            .filter { $0.setCount > 0 }
+            .filter { $0.setCount > 0 || Self.isActivityOnlyWorkout($0) }
             .map(Self.summary)
             .sorted { $0.date > $1.date }
     }
@@ -293,6 +300,9 @@ public final class WorkoutStore: ObservableObject {
         var favoriteExerciseIDs: [UUID]?
         var cloudExtensionsData: Data?
         var workoutFeedback: [PersistedWorkoutFeedback]?
+        var activityOnlyCloudItems: [ActivityOnlyWorkoutCloudItem]?
+        var pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
+        var activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
 
         private enum CodingKeys: String, CodingKey {
             case schemaVersion
@@ -302,6 +312,9 @@ public final class WorkoutStore: ObservableObject {
             case favoriteExerciseIDs
             case cloudExtensionsData
             case workoutFeedback
+            case activityOnlyCloudItems
+            case pendingActivityOnlyCloudSync
+            case activityOnlyCloudBaseline
         }
 
         init(
@@ -311,7 +324,10 @@ public final class WorkoutStore: ObservableObject {
             snapshot: WorkoutDataSnapshot,
             favoriteExerciseIDs: [UUID]?,
             cloudExtensionsData: Data?,
-            workoutFeedback: [PersistedWorkoutFeedback]?
+            workoutFeedback: [PersistedWorkoutFeedback]?,
+            activityOnlyCloudItems: [ActivityOnlyWorkoutCloudItem]?,
+            pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?,
+            activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
         ) {
             self.schemaVersion = schemaVersion
             self.accountStorageKey = accountStorageKey
@@ -320,6 +336,9 @@ public final class WorkoutStore: ObservableObject {
             self.favoriteExerciseIDs = favoriteExerciseIDs
             self.cloudExtensionsData = cloudExtensionsData
             self.workoutFeedback = workoutFeedback
+            self.activityOnlyCloudItems = activityOnlyCloudItems
+            self.pendingActivityOnlyCloudSync = pendingActivityOnlyCloudSync
+            self.activityOnlyCloudBaseline = activityOnlyCloudBaseline
         }
 
         init(from decoder: Decoder) throws {
@@ -340,6 +359,18 @@ public final class WorkoutStore: ObservableObject {
                 [PersistedWorkoutFeedback].self,
                 forKey: .workoutFeedback
             )
+            activityOnlyCloudItems = try? container.decodeIfPresent(
+                [ActivityOnlyWorkoutCloudItem].self,
+                forKey: .activityOnlyCloudItems
+            )
+            pendingActivityOnlyCloudSync = try container.decodeIfPresent(
+                PendingActivityOnlyWorkoutCloudSync.self,
+                forKey: .pendingActivityOnlyCloudSync
+            )
+            activityOnlyCloudBaseline = try container.decodeIfPresent(
+                ActivityOnlyWorkoutCloudBaseline.self,
+                forKey: .activityOnlyCloudBaseline
+            )
         }
     }
 
@@ -348,6 +379,9 @@ public final class WorkoutStore: ObservableObject {
         let cloudExtensionsData: Data?
         let workoutFeedbackByID: [UUID: WorkoutFeedback]
         let workoutFeedbackSessionDateByID: [UUID: Date]
+        let activityOnlyCloudItems: [ActivityOnlyWorkoutCloudItem]
+        let pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
+        let activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
     }
 
     private struct NormalizedWorkoutFeedback {
@@ -391,6 +425,9 @@ public final class WorkoutStore: ObservableObject {
         self.workoutFeedbackSessionDateByID = loaded.workoutFeedbackSessionDateByID
         self.catalogSeedVersion = loaded.snapshot.catalogSeedVersion
         self.cloudExtensionsData = loaded.cloudExtensionsData
+        self.activityOnlyCloudItems = loaded.activityOnlyCloudItems
+        self.pendingActivityOnlyCloudSync = loaded.pendingActivityOnlyCloudSync
+        self.activityOnlyCloudBaseline = loaded.activityOnlyCloudBaseline
     }
 
     /// Opens the account store while preserving an unreadable or mismatched envelope.
@@ -491,13 +528,29 @@ public final class WorkoutStore: ObservableObject {
         self.accountStorageKey = key
         self.storageURL = fileURL
         self.cloudExtensionsData = loaded.cloudExtensionsData
+        self.activityOnlyCloudItems = loaded.activityOnlyCloudItems
+        self.pendingActivityOnlyCloudSync = loaded.pendingActivityOnlyCloudSync
+        self.activityOnlyCloudBaseline = loaded.activityOnlyCloudBaseline
         self.workoutFeedbackByID = loaded.workoutFeedbackByID
         self.workoutFeedbackSessionDateByID = loaded.workoutFeedbackSessionDateByID
         publish(Self.normalized(loaded.snapshot))
     }
 
     public func clearAllData() throws {
-        try commit(WorkoutDataSnapshot())
+        let previousActivityOnlyCloudItems = activityOnlyCloudItems
+        let previousPendingActivityOnlyCloudSync = pendingActivityOnlyCloudSync
+        let previousActivityOnlyCloudBaseline = activityOnlyCloudBaseline
+        activityOnlyCloudItems = []
+        pendingActivityOnlyCloudSync = nil
+        activityOnlyCloudBaseline = nil
+        do {
+            try commit(WorkoutDataSnapshot())
+        } catch {
+            activityOnlyCloudItems = previousActivityOnlyCloudItems
+            pendingActivityOnlyCloudSync = previousPendingActivityOnlyCloudSync
+            activityOnlyCloudBaseline = previousActivityOnlyCloudBaseline
+            throw error
+        }
     }
 
     /// Replaces only the opaque shared-cloud extension sidecar. Validation and the local
@@ -517,6 +570,145 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
+    func setActivityOnlyCloudItems(_ items: [ActivityOnlyWorkoutCloudItem]) throws {
+        try ActivityOnlyWorkoutCloudCodec.validate(items)
+        let previous = activityOnlyCloudItems
+        activityOnlyCloudItems = items
+        do {
+            try persist(snapshot)
+        } catch {
+            activityOnlyCloudItems = previous
+            throw error
+        }
+    }
+
+    func loadPendingActivityOnlyCloudSync(
+        ownerUserID: String
+    ) -> PendingActivityOnlyWorkoutCloudSync? {
+        guard pendingActivityOnlyCloudSync?.ownerUserID == ownerUserID.lowercased() else {
+            return nil
+        }
+        return pendingActivityOnlyCloudSync
+    }
+
+    func savePendingActivityOnlyCloudSync(
+        _ pending: PendingActivityOnlyWorkoutCloudSync
+    ) throws {
+        try replaceActivityOnlyCloudSyncState(
+            pending: pending,
+            baseline: activityOnlyCloudBaseline
+        )
+    }
+
+    func clearPendingActivityOnlyCloudSync() throws {
+        try replaceActivityOnlyCloudSyncState(
+            pending: nil,
+            baseline: activityOnlyCloudBaseline
+        )
+    }
+
+    func loadActivityOnlyCloudBaseline(
+        ownerUserID: String
+    ) -> ActivityOnlyWorkoutCloudBaseline? {
+        guard activityOnlyCloudBaseline?.ownerUserID == ownerUserID.lowercased() else {
+            return nil
+        }
+        return activityOnlyCloudBaseline
+    }
+
+    var hasActivityOnlyCloudSyncArtifacts: Bool {
+        pendingActivityOnlyCloudSync != nil || activityOnlyCloudBaseline != nil
+    }
+
+    func saveActivityOnlyCloudBaseline(
+        _ baseline: ActivityOnlyWorkoutCloudBaseline
+    ) throws {
+        try replaceActivityOnlyCloudSyncState(
+            pending: pendingActivityOnlyCloudSync,
+            baseline: baseline
+        )
+    }
+
+    func clearActivityOnlyCloudSyncArtifacts() throws {
+        try replaceActivityOnlyCloudSyncState(pending: nil, baseline: nil)
+    }
+
+    private func replaceActivityOnlyCloudSyncState(
+        pending: PendingActivityOnlyWorkoutCloudSync?,
+        baseline: ActivityOnlyWorkoutCloudBaseline?
+    ) throws {
+        if let pending {
+            guard pending.requestUUID != nil else { throw CloudSyncError.invalidPayload }
+            try ActivityOnlyWorkoutCloudCodec.validate(pending.items)
+        }
+        if let baseline {
+            try ActivityOnlyWorkoutCloudCodec.validate(baseline.items)
+        }
+        if let pending, let baseline,
+           pending.ownerUserID != baseline.ownerUserID {
+            throw CloudSyncError.invalidPayload
+        }
+        let previousPending = pendingActivityOnlyCloudSync
+        let previousBaseline = activityOnlyCloudBaseline
+        pendingActivityOnlyCloudSync = pending
+        activityOnlyCloudBaseline = baseline
+        do {
+            try persist(snapshot)
+            let readBack = try Self.load(
+                accountStorageKey: accountStorageKey,
+                from: storageURL,
+                fileManager: fileManager
+            )
+            guard readBack.pendingActivityOnlyCloudSync == pending,
+                  readBack.activityOnlyCloudBaseline == baseline else {
+                throw WorkoutStoreError.persistenceFailure(
+                    "The private activity-only sync state failed read-back verification."
+                )
+            }
+        } catch {
+            pendingActivityOnlyCloudSync = previousPending
+            activityOnlyCloudBaseline = previousBaseline
+            try? persist(snapshot)
+            throw error
+        }
+    }
+
+    func activityOnlyCloudSnapshotItems() throws -> [ActivityOnlyWorkoutCloudItem] {
+        let derived = try ActivityOnlyWorkoutCloudItem.localItems(from: workouts)
+        let cachedByTimestamp = Dictionary(uniqueKeysWithValues: activityOnlyCloudItems.map {
+            ($0.workoutStartedAt, $0)
+        })
+        let coreTimestamps = ActivityOnlyWorkoutCloudCodec.coreWorkoutTimestamps(workouts)
+        var result: [ActivityOnlyWorkoutCloudItem] = []
+        result.reserveCapacity(derived.count + coreTimestamps.count)
+        for local in derived {
+            if let cached = cachedByTimestamp[local.workoutStartedAt] {
+                // A note/duration edit is local and must not reparse or erase the exact
+                // sensor wire. Preserve every optional metric, including nil versus zero,
+                // while replacing only the two locally editable fields.
+                result.append(try ActivityOnlyWorkoutCloudItem(
+                    workoutStartedAt: cached.workoutStartedAt,
+                    durationSeconds: local.durationSeconds,
+                    gymCalories: cached.gymCalories,
+                    garminCalories: cached.garminCalories,
+                    averageHeartRate: cached.averageHeartRate,
+                    maximumHeartRate: cached.maximumHeartRate,
+                    endingHeartRateZone: cached.endingHeartRateZone,
+                    note: local.note
+                ))
+            } else {
+                result.append(local)
+            }
+        }
+        for cached in activityOnlyCloudItems
+            where coreTimestamps.contains(cached.workoutStartedAt) {
+            result.append(cached)
+        }
+        result.sort { $0.workoutStartedAt < $1.workoutStartedAt }
+        try ActivityOnlyWorkoutCloudCodec.validate(result)
+        return result
+    }
+
     /// Removes the account-scoped file itself, used after an account/profile is deleted.
     /// Unlike `clearAllData`, this leaves no envelope containing the former storage key.
     public func destroyAccountData() throws {
@@ -525,6 +717,9 @@ public final class WorkoutStore: ObservableObject {
         // envelope before unlinking also makes a failed remove safe and retryable.
         publish(empty)
         cloudExtensionsData = nil
+        activityOnlyCloudItems = []
+        pendingActivityOnlyCloudSync = nil
+        activityOnlyCloudBaseline = nil
         workoutFeedbackByID = [:]
         workoutFeedbackSessionDateByID = [:]
         do {
@@ -538,6 +733,12 @@ public final class WorkoutStore: ObservableObject {
                 directoryURL: directoryURL,
                 fileManager: fileManager
             )
+            guard !hasActivityOnlyCloudSyncArtifacts,
+                  !fileManager.fileExists(atPath: storageURL.path) else {
+                throw WorkoutStoreError.persistenceFailure(
+                    "The private activity-only sync state was not removed."
+                )
+            }
         } catch let error as WorkoutStoreError {
             throw error
         } catch {
@@ -624,6 +825,11 @@ public final class WorkoutStore: ObservableObject {
         }
         if let firstError {
             throw WorkoutStoreError.persistenceFailure(firstError.localizedDescription)
+        }
+        guard candidates.allSatisfy({ !fileManager.fileExists(atPath: $0.path) }) else {
+            throw WorkoutStoreError.persistenceFailure(
+                "One or more private account files remained after deletion."
+            )
         }
     }
 
@@ -929,7 +1135,8 @@ public final class WorkoutStore: ObservableObject {
     public func createWorkout(
         date: Date,
         note: String? = nil,
-        namedSets: [NamedWorkoutSetDraft]
+        namedSets: [NamedWorkoutSetDraft],
+        durationSeconds: Int? = nil
     ) throws -> WorkoutSession? {
         guard !namedSets.isEmpty else { return nil }
         var created: WorkoutSession?
@@ -967,6 +1174,7 @@ public final class WorkoutStore: ObservableObject {
             let workout = try Self.makeWorkout(
                 date: date,
                 note: note,
+                durationSeconds: durationSeconds,
                 drafts: drafts,
                 knownExerciseIDs: Set(state.exercises.map(\.id))
             )
@@ -974,6 +1182,108 @@ public final class WorkoutStore: ObservableObject {
             created = workout
         }
         return created
+    }
+
+    @discardableResult
+    public func createActivityWorkout(
+        date: Date,
+        note: String? = nil,
+        durationSeconds: Int
+    ) throws -> WorkoutSession {
+        var created: WorkoutSession?
+        try mutate { state in
+            let workout = try Self.makeActivityOnlyWorkout(
+                date: date,
+                note: note,
+                durationSeconds: durationSeconds
+            )
+            state.workouts.append(workout)
+            created = workout
+        }
+        guard let created else {
+            throw WorkoutStoreError.persistenceFailure("The activity-only workout was not stored.")
+        }
+        return created
+    }
+
+    /// Atomically applies an already three-way-merged owner-private sidecar. The exact
+    /// pre-merge local wire is rechecked so an intervening local edit cannot be erased.
+    /// Core workouts at the same timestamp remain authoritative and are never replaced.
+    @discardableResult
+    func applyActivityOnlyCloudItems(
+        _ mergedItems: [ActivityOnlyWorkoutCloudItem],
+        expectedLocalItems: [ActivityOnlyWorkoutCloudItem]
+    ) throws -> Int {
+        try ActivityOnlyWorkoutCloudCodec.validate(mergedItems)
+        try ActivityOnlyWorkoutCloudCodec.validate(expectedLocalItems)
+        guard try activityOnlyCloudSnapshotItems() == expectedLocalItems else {
+            throw CloudSyncError.requestFailed(
+                "An activity-only workout changed while cloud data was being reconciled."
+            )
+        }
+
+        let previousCloudItems = activityOnlyCloudItems
+        activityOnlyCloudItems = mergedItems
+        var changed = 0
+        do {
+            try mutate { state in
+                let coreTimestamps = Set(state.workouts.lazy
+                    .filter { !$0.exercises.isEmpty }
+                    .map { $0.date.gymEpochMilliseconds })
+                var desiredByTimestamp = Dictionary(uniqueKeysWithValues:
+                    mergedItems.lazy
+                        .filter { !coreTimestamps.contains($0.workoutStartedAt) }
+                        .map { ($0.workoutStartedAt, $0) }
+                )
+                var seenActivityTimestamps = Set<Int64>()
+                var nextWorkouts: [WorkoutSession] = []
+                nextWorkouts.reserveCapacity(
+                    state.workouts.count + desiredByTimestamp.count
+                )
+
+                for workout in state.workouts {
+                    guard workout.exercises.isEmpty else {
+                        nextWorkouts.append(workout)
+                        continue
+                    }
+                    let timestamp = workout.date.gymEpochMilliseconds
+                    guard seenActivityTimestamps.insert(timestamp).inserted else {
+                        throw CloudSyncError.invalidPayload
+                    }
+                    guard let desired = desiredByTimestamp.removeValue(forKey: timestamp) else {
+                        changed += 1
+                        continue
+                    }
+                    var updated = workout
+                    if !desired.matchesMaterializedWorkout(workout) {
+                        updated.note = desired.note
+                        updated.durationSeconds = desired.durationSeconds
+                        changed += 1
+                    }
+                    nextWorkouts.append(updated)
+                }
+
+                guard nextWorkouts.count <=
+                        BackupImportLimits.standard.maximumSessions - desiredByTimestamp.count else {
+                    throw CloudSyncError.invalidPayload
+                }
+                for desired in desiredByTimestamp.values.sorted(by: {
+                    $0.workoutStartedAt < $1.workoutStartedAt
+                }) {
+                    nextWorkouts.append(try Self.makeActivityOnlyWorkout(
+                        date: Date(gymEpochMilliseconds: desired.workoutStartedAt),
+                        note: desired.note,
+                        durationSeconds: desired.durationSeconds
+                    ))
+                    changed += 1
+                }
+                state.workouts = nextWorkouts
+            }
+        } catch {
+            activityOnlyCloudItems = previousCloudItems
+            throw error
+        }
+        return changed
     }
 
     public func updateWorkout(id: UUID, date: Date, note: String?) throws {
@@ -1509,7 +1819,7 @@ public final class WorkoutStore: ObservableObject {
     func diagnosticsSnapshot() -> WorkoutDiagnosticsSnapshot {
         WorkoutDiagnosticsSnapshot(
             exerciseCount: exercises.count,
-            workoutCount: workouts.lazy.filter { $0.setCount > 0 }.count,
+            workoutCount: workoutSummaries.count,
             setCount: workouts.reduce(0) { $0 + $1.setCount },
             manualMuscleMappingCount: muscleMappings.count
         )
@@ -1555,7 +1865,9 @@ public final class WorkoutStore: ObservableObject {
             .sorted(by: BackupExercisePortableWireOrder.precedes)
         let backupSessions = try workouts
             .enumerated()
-            .filter { $0.element.setCount > 0 }
+            .filter {
+                $0.element.setCount > 0 || Self.isActivityOnlyWorkout($0.element)
+            }
             .sorted { lhs, rhs in
                 if lhs.element.date != rhs.element.date {
                     return lhs.element.date < rhs.element.date
@@ -1648,7 +1960,7 @@ public final class WorkoutStore: ObservableObject {
         let decoded = try JSONDecoder().decode(GymBackup.self, from: backupData)
         // A legacy local store can safely retain two previously distinct spellings that now
         // share one portable identity. Never publish that ambiguity or silently merge it.
-        var backup = try Self.canonicalCloudWorkoutIdentityInput(decoded)
+        var backup = try Self.canonicalV229CloudWorkoutCore(decoded)
         backup.exercises = backup.exercises.map { exercise in
             var portable = exercise
             portable.machineLoadProfile = nil
@@ -1666,6 +1978,7 @@ public final class WorkoutStore: ObservableObject {
             }
             return portable
         }
+        backup.summary = Self.canonicalBackupSummary(backup)
 
         let encoded: Data
         do {
@@ -2639,7 +2952,12 @@ public final class WorkoutStore: ObservableObject {
                 : nil
         }
 
-        var next = replacingExisting ? WorkoutDataSnapshot() : snapshot
+        let preservedActivityOnlyWorkouts = replacingExisting && resolvedOwner.remote
+            ? snapshot.workouts.filter(Self.isActivityOnlyWorkout)
+            : []
+        var next = replacingExisting
+            ? WorkoutDataSnapshot(workouts: preservedActivityOnlyWorkouts)
+            : snapshot
         next.catalogSeedVersion = replacingExisting
             ? backup.catalogSeedVersion
             : max(next.catalogSeedVersion, backup.catalogSeedVersion)
@@ -2830,7 +3148,9 @@ public final class WorkoutStore: ObservableObject {
             } else {
                 drafts = []
             }
-            guard !drafts.isEmpty else { continue }
+            let isActivityOnly = drafts.isEmpty &&
+                session.durationSeconds.map { $0 > 0 } == true
+            guard !drafts.isEmpty || isActivityOnly else { continue }
             let timestamp = try Self.validatedTimestamp(
                 session.date ?? session.startedAt ?? Date().gymEpochMilliseconds,
                 field: "session timestamp"
@@ -2845,13 +3165,22 @@ public final class WorkoutStore: ObservableObject {
                 guard next.workouts.count < limits.maximumSessions else {
                     throw WorkoutStoreError.importLimitExceeded("session count")
                 }
-                let workout = try Self.makeWorkout(
-                    date: Date(gymEpochMilliseconds: timestamp),
-                    note: note,
-                    durationSeconds: session.durationSeconds,
-                    drafts: drafts,
-                    knownExerciseIDs: Set(next.exercises.map(\.id))
-                )
+                let workout: WorkoutSession
+                if isActivityOnly {
+                    workout = try Self.makeActivityOnlyWorkout(
+                        date: Date(gymEpochMilliseconds: timestamp),
+                        note: note,
+                        durationSeconds: session.durationSeconds ?? 0
+                    )
+                } else {
+                    workout = try Self.makeWorkout(
+                        date: Date(gymEpochMilliseconds: timestamp),
+                        note: note,
+                        durationSeconds: session.durationSeconds,
+                        drafts: drafts,
+                        knownExerciseIDs: Set(next.exercises.map(\.id))
+                    )
+                }
                 next.workouts.append(workout)
                 importedSessions += 1
             } else {
@@ -2970,6 +3299,20 @@ public final class WorkoutStore: ObservableObject {
         workoutFeedbackByID: [UUID: WorkoutFeedback],
         workoutFeedbackSessionDateByID: [UUID: Date]
     ) throws {
+        try ActivityOnlyWorkoutCloudCodec.validate(activityOnlyCloudItems)
+        if let pendingActivityOnlyCloudSync {
+            guard pendingActivityOnlyCloudSync.requestUUID != nil else {
+                throw CloudSyncError.invalidPayload
+            }
+            try ActivityOnlyWorkoutCloudCodec.validate(pendingActivityOnlyCloudSync.items)
+        }
+        if let activityOnlyCloudBaseline {
+            try ActivityOnlyWorkoutCloudCodec.validate(activityOnlyCloudBaseline.items)
+        }
+        if let pendingActivityOnlyCloudSync, let activityOnlyCloudBaseline,
+           pendingActivityOnlyCloudSync.ownerUserID != activityOnlyCloudBaseline.ownerUserID {
+            throw CloudSyncError.invalidPayload
+        }
         let workoutDates = Dictionary(uniqueKeysWithValues: state.workouts.map { ($0.id, $0.date) })
         let persistedFeedback = workoutFeedbackByID
             .compactMap { workoutID, feedback in
@@ -2997,10 +3340,20 @@ public final class WorkoutStore: ObservableObject {
                 .map(\.id)
                 .sorted { $0.uuidString < $1.uuidString },
             cloudExtensionsData: cloudExtensionsData,
-            workoutFeedback: persistedFeedback.isEmpty ? nil : persistedFeedback
+            workoutFeedback: persistedFeedback.isEmpty ? nil : persistedFeedback,
+            activityOnlyCloudItems: activityOnlyCloudItems.isEmpty
+                ? nil
+                : activityOnlyCloudItems,
+            pendingActivityOnlyCloudSync: pendingActivityOnlyCloudSync,
+            activityOnlyCloudBaseline: activityOnlyCloudBaseline
         )
         do {
             let data = try Self.localEncoder().encode(envelope)
+            guard data.count <= BackupImportLimits.standard.maximumFileBytes else {
+                throw WorkoutStoreError.persistenceFailure(
+                    "The protected account envelope is too large."
+                )
+            }
             try data.write(
                 to: storageURL,
                 options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
@@ -3023,11 +3376,27 @@ public final class WorkoutStore: ObservableObject {
                 snapshot: WorkoutDataSnapshot(),
                 cloudExtensionsData: nil,
                 workoutFeedbackByID: [:],
-                workoutFeedbackSessionDateByID: [:]
+                workoutFeedbackSessionDateByID: [:],
+                activityOnlyCloudItems: [],
+                pendingActivityOnlyCloudSync: nil,
+                activityOnlyCloudBaseline: nil
             )
         }
         do {
+            let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey])
+            guard let fileSize = resourceValues.fileSize,
+                  fileSize >= 0,
+                  fileSize <= BackupImportLimits.standard.maximumFileBytes else {
+                throw WorkoutStoreError.corruptStore(
+                    "The protected account envelope is too large."
+                )
+            }
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard data.count <= BackupImportLimits.standard.maximumFileBytes else {
+                throw WorkoutStoreError.corruptStore(
+                    "The protected account envelope is too large."
+                )
+            }
             let envelope = try localDecoder().decode(PersistedEnvelope.self, from: data)
             guard (oldestSupportedPersistedSchemaVersion ... persistedSchemaVersion)
                 .contains(envelope.schemaVersion) else {
@@ -3083,11 +3452,41 @@ public final class WorkoutStore: ObservableObject {
                 sessionDates: decodedFeedbackDates,
                 workouts: migratedSnapshot.workouts
             )
+            let decodedActivityItems: [ActivityOnlyWorkoutCloudItem]
+            if let items = envelope.activityOnlyCloudItems,
+               (try? ActivityOnlyWorkoutCloudCodec.validate(items)) != nil {
+                decodedActivityItems = items
+            } else {
+                // A malformed optional cache cannot make the canonical local workout
+                // history unreadable. The next authoritative owner read rebuilds it.
+                decodedActivityItems = []
+            }
+            let decodedPendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
+            if let pending = envelope.pendingActivityOnlyCloudSync,
+               pending.requestUUID != nil,
+               (try? ActivityOnlyWorkoutCloudCodec.validate(pending.items)) != nil {
+                decodedPendingActivityOnlyCloudSync = pending
+            } else {
+                decodedPendingActivityOnlyCloudSync = nil
+            }
+            let decodedActivityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
+            if let baseline = envelope.activityOnlyCloudBaseline,
+               (try? ActivityOnlyWorkoutCloudCodec.validate(baseline.items)) != nil,
+               decodedPendingActivityOnlyCloudSync.map({
+                    $0.ownerUserID == baseline.ownerUserID
+               }) ?? true {
+                decodedActivityOnlyCloudBaseline = baseline
+            } else {
+                decodedActivityOnlyCloudBaseline = nil
+            }
             return LoadedStore(
                 snapshot: normalized(migratedSnapshot),
                 cloudExtensionsData: envelope.cloudExtensionsData,
                 workoutFeedbackByID: normalizedFeedback.values,
-                workoutFeedbackSessionDateByID: normalizedFeedback.sessionDates
+                workoutFeedbackSessionDateByID: normalizedFeedback.sessionDates,
+                activityOnlyCloudItems: decodedActivityItems,
+                pendingActivityOnlyCloudSync: decodedPendingActivityOnlyCloudSync,
+                activityOnlyCloudBaseline: decodedActivityOnlyCloudBaseline
             )
         } catch let error as WorkoutStoreError {
             throw error
@@ -3240,9 +3639,6 @@ public final class WorkoutStore: ObservableObject {
         var blockIDs = Set<UUID>()
         var setIDs = Set<UUID>()
         for workout in state.workouts {
-            guard !workout.exercises.isEmpty else {
-                throw WorkoutStoreError.corruptStore("A workout has no exercises.")
-            }
             guard isSupportedTimestamp(workout.date) else {
                 throw WorkoutStoreError.corruptStore("A workout timestamp is outside the supported range.")
             }
@@ -3251,6 +3647,14 @@ public final class WorkoutStore: ObservableObject {
                 throw WorkoutStoreError.corruptStore("A workout duration is outside the supported range.")
             }
             _ = try validatedNote(workout.note)
+            if workout.exercises.isEmpty {
+                guard isActivityOnlyWorkout(workout) else {
+                    throw WorkoutStoreError.corruptStore(
+                        "A workout without exercises must have a positive duration."
+                    )
+                }
+                continue
+            }
             for block in workout.exercises {
                 guard blockIDs.insert(block.id).inserted else {
                     throw WorkoutStoreError.corruptStore("Duplicate workout exercise identifier.")
@@ -3523,6 +3927,23 @@ public final class WorkoutStore: ObservableObject {
         return canonical
     }
 
+    /// Projects the local/full-backup model onto the exact workout core understood by 2.2.9.
+    /// Activity-only watch summaries are owner-private sidecar data; sending an empty exercise
+    /// array through schema v2 would make older clients reject or erase the whole cloud history.
+    static func canonicalV229CloudWorkoutCore(_ backup: GymBackup) throws -> GymBackup {
+        var core = try canonicalCloudWorkoutIdentityInput(backup)
+        core.sessions = core.sessions.compactMap { session in
+            let activityOnly = (session.exercises ?? []).isEmpty &&
+                session.durationSeconds.map { $0 > 0 } == true
+            guard !activityOnly else { return nil }
+            var compatible = session
+            compatible.durationSeconds = nil
+            return compatible
+        }
+        core.summary = canonicalBackupSummary(core)
+        return core
+    }
+
     private static func validateLosslessAuthoritativeRestore(
         original: GymBackup,
         canonical: GymBackup,
@@ -3582,8 +4003,13 @@ public final class WorkoutStore: ObservableObject {
             }
 
             if let blocks = session.exercises {
-                guard !blocks.isEmpty else {
-                    throw WorkoutStoreError.malformedBackup("A workout has no exercises.")
+                if blocks.isEmpty {
+                    guard session.durationSeconds.map({ $0 > 0 }) == true else {
+                        throw WorkoutStoreError.malformedBackup(
+                            "A workout without exercises must have a positive duration."
+                        )
+                    }
+                    continue
                 }
                 for block in blocks {
                     guard !block.sets.isEmpty else {
@@ -3613,12 +4039,19 @@ public final class WorkoutStore: ObservableObject {
                     }
                 }
             } else if let flatSets = session.sets {
-                guard !flatSets.isEmpty else {
-                    throw WorkoutStoreError.malformedBackup("A workout has no valid sets.")
+                if flatSets.isEmpty {
+                    guard session.durationSeconds.map({ $0 > 0 }) == true else {
+                        throw WorkoutStoreError.malformedBackup(
+                            "A workout without sets must have a positive duration."
+                        )
+                    }
+                    continue
                 }
                 _ = try authoritativeRows(flatSets: flatSets, limits: limits)
             } else {
-                throw WorkoutStoreError.malformedBackup("A workout has no exercises.")
+                guard session.durationSeconds.map({ $0 > 0 }) == true else {
+                    throw WorkoutStoreError.malformedBackup("A workout has no exercises.")
+                }
             }
         }
     }
@@ -3905,6 +4338,29 @@ public final class WorkoutStore: ObservableObject {
             durationSeconds: durationSeconds,
             exercises: blocks
         )
+    }
+
+    private static func makeActivityOnlyWorkout(
+        date: Date,
+        note: String?,
+        durationSeconds: Int
+    ) throws -> WorkoutSession {
+        _ = try validatedTimestamp(date, field: "session timestamp")
+        guard (1 ... 7 * 24 * 60 * 60).contains(durationSeconds) else {
+            throw WorkoutStoreError.invalidWorkout(
+                "Activity duration is outside the supported range."
+            )
+        }
+        return WorkoutSession(
+            date: date,
+            note: try validatedNote(note),
+            durationSeconds: durationSeconds,
+            exercises: []
+        )
+    }
+
+    private static func isActivityOnlyWorkout(_ workout: WorkoutSession) -> Bool {
+        workout.exercises.isEmpty && workout.durationSeconds.map { $0 > 0 } == true
     }
 
     private static func blockLocation(

@@ -474,6 +474,8 @@ private extension WorkoutRecommendationReason {
         case .aestheticGoal: "Fat-loss goal"
         case .calorieDeficit: "Calorie deficit"
         case .fourDayUpperLower: "Four-day upper/lower"
+        case .exerciseFeedbackTooHard: "Exercise feedback: too hard"
+        case .exerciseFeedbackRepeatedEasy: "Exercise feedback: ready to progress"
         }
     }
 }

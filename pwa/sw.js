@@ -1,8 +1,9 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v136";
+const CACHE_VERSION = "v140";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
+const UPDATE_REFRESH_QUERY_KEY = "gymapp_sw_refresh";
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
 const LEGACY_GITHUB_SCOPE_URL = new URL(LEGACY_GITHUB_SCOPE);
@@ -37,7 +38,7 @@ const ASSETS = [
   "./confirmed.v57.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v77.css",
+  "./styles.v78.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v72.js",
@@ -48,10 +49,9 @@ const ASSETS = [
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v84.js",
+  "./russian-text.v85.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v98.js",
-  "./workout/",
+  "./app.v99.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
@@ -159,7 +159,11 @@ function hasSensitiveQuery(url) {
 function isCacheableStaticRequest(request) {
   const url = new URL(request.url);
   if (!isSafeBaseRequest(request, url)) return false;
-  if (url.search && DOCUMENT_PATHS.has(url.pathname)) return false;
+  // Documents must always revalidate against the network. Treating the app
+  // shell as an immutable static asset lets an already controlled client stay
+  // pinned to an old index and therefore to an internally consistent but stale
+  // bundle set. The current cache remains the offline fallback below.
+  if (documentPolicy(url) !== null) return false;
   if (hasSensitiveQuery(url)) return false;
   return STATIC_URLS.has(url.href);
 }
@@ -191,6 +195,7 @@ function withDocumentSecurityHeaders(response, url, { noStore = false } = {}) {
 
 async function cachedCanonicalDocument(url) {
   const canonical = new URL(url.href);
+  if (canonical.pathname === WORKOUT_PATH) canonical.pathname = WORKOUT_INDEX_PATH;
   canonical.search = "";
   canonical.hash = "";
   const cache = await caches.open(CACHE_NAME);
@@ -516,17 +521,23 @@ if (IS_LEGACY_GITHUB_ORIGIN) {
       );
       await self.clients.claim();
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      await Promise.all(clients.slice(0, 32).map(client => {
+      clients.slice(0, 32).forEach(client => {
         try {
           const url = new URL(client.url);
           const isRootDocument = url.origin === self.location.origin &&
             (url.pathname === ROOT_PATH || url.pathname === INDEX_PATH);
-          if (!isRootDocument || hasSensitiveQuery(url)) return null;
-          return client.navigate(url.href).catch(() => null);
+          if (!isRootDocument || hasSensitiveQuery(url)) return;
+          const refreshUrl = new URL(url.href);
+          refreshUrl.searchParams.set(UPDATE_REFRESH_QUERY_KEY, CACHE_VERSION);
+          // WindowClient.navigate() resolves only after the replacement
+          // navigation completes. That navigation can wait for this worker to
+          // finish activating before its fetch event is dispatched, so it must
+          // never extend the activate event lifetime.
+          void Promise.resolve(client.navigate(refreshUrl.href)).catch(() => null);
         } catch {
-          return null;
+          // Ignore stale or malformed client records.
         }
-      }));
+      });
     })());
   });
 

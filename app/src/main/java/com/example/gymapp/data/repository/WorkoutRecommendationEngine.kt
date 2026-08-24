@@ -43,7 +43,9 @@ enum class WorkoutRecommendationReason {
     CalorieDeficit,
     FourDayUpperLower,
     RecoveryEffort,
-    HardEffort
+    HardEffort,
+    ExerciseFeedbackTooHard,
+    ExerciseFeedbackRepeatedEasy
 }
 
 data class WorkoutRecommendation(
@@ -55,7 +57,10 @@ data class WorkoutRecommendation(
     val daysSinceLastSession: Int?,
     val reasons: List<WorkoutRecommendationReason>,
     val targetRir: IntRange = 2..3
-)
+) {
+    val freshForSeconds: Int
+        get() = SMART_COACH_V2_FRESH_FOR_SECONDS
+}
 
 enum class SmartWorkoutEffort {
     Auto,
@@ -68,6 +73,7 @@ enum class SmartWorkoutEffortAdjustment {
     AutoRecovery,
     FeedbackHardRecovery,
     FeedbackEasyExtraSet,
+    ReadinessLowRecovery,
     HardInsufficientHistory,
     HardRecentBreak,
     HardMusclesRecovering
@@ -91,7 +97,10 @@ enum class SmartWorkoutVariant {
 data class SmartWorkoutExercise(
     val exercise: ExerciseEntity,
     val recommendation: WorkoutRecommendation
-)
+) {
+    val recommendedRestSeconds: Int
+        get() = WorkoutRecommendationEngine.recommendedRestSeconds(exercise.name)
+}
 
 enum class SmartWorkoutAlternativeReason {
     SameMovement,
@@ -114,8 +123,17 @@ data class SmartWorkoutPlan(
     val variant: SmartWorkoutVariant = SmartWorkoutVariant.A,
     val requestedEffort: SmartWorkoutEffort = SmartWorkoutEffort.Auto,
     val appliedEffort: SmartWorkoutEffort = SmartWorkoutEffort.Standard,
-    val effortAdjustment: SmartWorkoutEffortAdjustment? = null
-)
+    val effortAdjustment: SmartWorkoutEffortAdjustment? = null,
+    val adaptationReasons: List<SmartCoachV2Reason> = emptyList(),
+    val estimatedMinutes: Int? = null,
+    val setBudget: Int? = null
+) {
+    val contractVersion: Int
+        get() = SMART_COACH_V2_CONTRACT_VERSION
+
+    val freshForSeconds: Int
+        get() = SMART_COACH_V2_FRESH_FOR_SECONDS
+}
 
 internal const val SMART_WORKOUT_MAX_EXERCISES = 8
 internal const val SMART_WORKOUT_MAX_TOTAL_SETS = 24
@@ -135,7 +153,8 @@ object WorkoutRecommendationEngine {
         exerciseName: String? = null,
         loadProfile: ExerciseLoadProfile? = null,
         effort: SmartWorkoutEffort = SmartWorkoutEffort.Standard,
-        hardSetEligible: Boolean = true
+        hardSetEligible: Boolean = true,
+        exerciseFeedback: List<SmartCoachExerciseFeedbackSignalV2> = emptyList()
     ): WorkoutRecommendation {
         val appliedEffort = effort.takeUnless { it == SmartWorkoutEffort.Auto }
             ?: SmartWorkoutEffort.Standard
@@ -197,7 +216,8 @@ object WorkoutRecommendationEngine {
             } else {
                 defaultReps
             }
-            return WorkoutRecommendation(
+            return applyExerciseFeedbackV2(
+                recommendation = WorkoutRecommendation(
                 exerciseId = exerciseId,
                 sets = List(targetSetCount) {
                     RecommendedWorkoutSet(
@@ -225,6 +245,10 @@ object WorkoutRecommendationEngine {
                     kind = WorkoutRecommendationKind.NewExercise,
                     hardIntensityEligible = false
                 )
+                ),
+                analysis = programmingAnalysis,
+                loadProfile = loadProfile,
+                feedback = exerciseFeedback
             )
         }
 
@@ -444,7 +468,8 @@ object WorkoutRecommendationEngine {
             listOf(WorkoutRecommendationReason.ConservativeIncrease)
         }
 
-        return WorkoutRecommendation(
+        return applyExerciseFeedbackV2(
+            recommendation = WorkoutRecommendation(
             exerciseId = exerciseId,
             sets = sets,
             kind = kind,
@@ -461,6 +486,10 @@ object WorkoutRecommendationEngine {
                 kind = kind,
                 hardIntensityEligible = hardIntensityEligible
             )
+            ),
+            analysis = programmingAnalysis,
+            loadProfile = loadProfile,
+            feedback = exerciseFeedback
         )
     }
 
@@ -473,8 +502,21 @@ object WorkoutRecommendationEngine {
         loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
         manualMuscleMappings: Map<String, List<MuscleContribution>> = emptyMap(),
         effort: SmartWorkoutEffort = SmartWorkoutEffort.Auto,
-        latestFeedback: SmartCoachFeedback? = null
+        latestFeedback: SmartCoachFeedback? = null,
+        context: SmartCoachContextV2 = SmartCoachContextV2(),
+        exerciseFeedback: Map<Long, List<SmartCoachExerciseFeedbackSignalV2>> = emptyMap()
     ): SmartWorkoutPlan {
+        require(context.isValid()) { "Smart Coach v2 context is invalid." }
+        require(
+            exerciseFeedback.size <= 64 &&
+                exerciseFeedback.keys.all { it > 0L } &&
+                exerciseFeedback.values.all { it.size <= SMART_COACH_V2_MAX_FEEDBACK_PER_EXERCISE }
+        ) {
+            "Smart Coach v2 exercise feedback is invalid."
+        }
+        require(exerciseFeedback.values.sumOf { it.size } <= 64) {
+            "Smart Coach v2 exercise feedback is too large."
+        }
         val safeExercises = exercises
             .asSequence()
             .take(WorkoutDataLimits.MAX_EXERCISES)
@@ -511,7 +553,7 @@ object WorkoutRecommendationEngine {
             nowMillis = nowMillis,
             zoneId = zoneId
         )
-        val effortResolution = resolveEffort(
+        val historicalEffortResolution = resolveEffort(
             requested = effort,
             focus = focus,
             history = safeHistory,
@@ -519,10 +561,34 @@ object WorkoutRecommendationEngine {
             zoneId = zoneId,
             feedback = applicableFeedback
         )
-        val targetWorkingSetBudget = targetWorkingSetBudget(
+        val effortResolution = if (
+            context.readiness == SmartCoachReadinessV2.Low &&
+            historicalEffortResolution.applied != SmartWorkoutEffort.Recovery
+        ) {
+            EffortResolution(
+                applied = SmartWorkoutEffort.Recovery,
+                adjustment = SmartWorkoutEffortAdjustment.ReadinessLowRecovery
+            )
+        } else {
+            historicalEffortResolution
+        }
+        val baseWorkingSetBudget = targetWorkingSetBudget(
             trainingProfile = trainingProfile,
             effort = effortResolution.applied
         )
+        val contextAdaptation = resolveSmartCoachV2(
+            SmartCoachV2Scenario(
+                requestedEffort = effortResolution.applied,
+                baseSetBudget = baseWorkingSetBudget,
+                role = SmartCoachExerciseRoleV2.Isolation,
+                equipment = SmartCoachEquipmentV2.Other,
+                context = SmartCoachContextV2(
+                    readiness = context.readiness,
+                    availableMinutes = context.availableMinutes
+                )
+            )
+        )
+        val targetWorkingSetBudget = contextAdaptation.setBudget
         val targetExerciseCount = targetExerciseCount(
             targetWorkingSetBudget,
             effortResolution.applied
@@ -543,7 +609,23 @@ object WorkoutRecommendationEngine {
         }
         val recentSessionIds = recentSessionIds(safeHistory, limit = 3)
         val targetMuscles = targetMusclesForFocus(focus)
-        val candidates = safeExercises.map { exercise ->
+        var equipmentWasFiltered = false
+        var avoidedMuscleWasFiltered = false
+        val constrainedExercises = safeExercises.filter { exercise ->
+            val analysis = analysesByExerciseId.getValue(exercise.id)
+            val equipmentAllowed = context.availableEquipment?.contains(
+                exerciseEquipmentV2(exercise.name, analysis)
+            ) != false
+            val primaryMuscles = primaryMusclesV2(
+                exerciseName = exercise.name,
+                manualMuscleMappings = manualMuscleMappings
+            )
+            val muscleAllowed = primaryMuscles.none(context.musclesToAvoid::contains)
+            if (!equipmentAllowed) equipmentWasFiltered = true
+            if (!muscleAllowed) avoidedMuscleWasFiltered = true
+            equipmentAllowed && muscleAllowed
+        }
+        val candidates = constrainedExercises.map { exercise ->
             val analysis = analysesByExerciseId.getValue(exercise.id)
             val exerciseHistory = historyByIdentity[analysis.identityKey].orEmpty()
             val daysSince = exerciseHistory
@@ -637,7 +719,8 @@ object WorkoutRecommendationEngine {
                         exerciseName = candidate.exercise.name,
                         loadProfile = loadProfiles[candidate.exercise.id],
                         effort = effortResolution.applied,
-                        hardSetEligible = hardSetEligible
+                        hardSetEligible = hardSetEligible,
+                        exerciseFeedback = exerciseFeedback[candidate.exercise.id].orEmpty()
                     )
                 )
             })
@@ -651,11 +734,31 @@ object WorkoutRecommendationEngine {
                     planned.recommendation.kind == WorkoutRecommendationKind.Comeback
             }
         ) {
-            addOneSafeFeedbackSet(plannedExercises)
+            addOneSafeFeedbackSet(
+                plannedExercises,
+                maximumTotalSets = if (context.availableMinutes == null) {
+                    SMART_WORKOUT_MAX_TOTAL_SETS
+                } else {
+                    targetWorkingSetBudget
+                }
+            )
         } else {
             plannedExercises
         }
         val easyFeedbackApplied = easyAdjustedExercises !== plannedExercises
+        val adaptationReasons = buildList {
+            addAll(contextAdaptation.reasons)
+            if (equipmentWasFiltered) add(SmartCoachV2Reason.EquipmentUnavailable)
+            if (avoidedMuscleWasFiltered) add(SmartCoachV2Reason.AvoidedMuscle)
+            if (easyAdjustedExercises.any { planned ->
+                    WorkoutRecommendationReason.ExerciseFeedbackTooHard in planned.recommendation.reasons
+                }
+            ) add(SmartCoachV2Reason.ExerciseFeedbackTooHard)
+            if (easyAdjustedExercises.any { planned ->
+                    WorkoutRecommendationReason.ExerciseFeedbackRepeatedEasy in planned.recommendation.reasons
+                }
+            ) add(SmartCoachV2Reason.ExerciseFeedbackRepeatedEasy)
+        }.distinct().take(4)
         return SmartWorkoutPlan(
             focus = focus,
             exercises = easyAdjustedExercises,
@@ -666,15 +769,22 @@ object WorkoutRecommendationEngine {
                 SmartWorkoutEffortAdjustment.FeedbackEasyExtraSet
             } else {
                 effortResolution.adjustment
-            }
+            },
+            adaptationReasons = adaptationReasons,
+            estimatedMinutes = estimatedSmartWorkoutMinutes(easyAdjustedExercises),
+            setBudget = minOf(
+                SMART_WORKOUT_MAX_TOTAL_SETS,
+                targetWorkingSetBudget + if (easyFeedbackApplied) 1 else 0
+            )
         )
     }
 
     private fun addOneSafeFeedbackSet(
-        exercises: List<SmartWorkoutExercise>
+        exercises: List<SmartWorkoutExercise>,
+        maximumTotalSets: Int = SMART_WORKOUT_MAX_TOTAL_SETS
     ): List<SmartWorkoutExercise> {
         val totalSets = exercises.sumOf { it.recommendation.sets.size }
-        if (totalSets >= SMART_WORKOUT_MAX_TOTAL_SETS) return exercises
+        if (totalSets >= minOf(SMART_WORKOUT_MAX_TOTAL_SETS, maximumTotalSets)) return exercises
         val index = exercises.indexOfFirst { planned ->
             planned.recommendation.sets.size in
                 SMART_WORKOUT_MIN_SETS_PER_EXERCISE until SMART_WORKOUT_MAX_SETS_PER_EXERCISE
@@ -689,6 +799,118 @@ object WorkoutRecommendationEngine {
                 )
             )
         }
+    }
+
+    private fun applyExerciseFeedbackV2(
+        recommendation: WorkoutRecommendation,
+        analysis: ExerciseAnalysis?,
+        loadProfile: ExerciseLoadProfile?,
+        feedback: List<SmartCoachExerciseFeedbackSignalV2>
+    ): WorkoutRecommendation {
+        if (feedback.isEmpty()) return recommendation
+        val adaptation = resolveSmartCoachV2(
+            SmartCoachV2Scenario(
+                requestedEffort = SmartWorkoutEffort.Standard,
+                baseSetBudget = 12,
+                role = analysis.toSmartCoachV2Role(),
+                equipment = exerciseEquipmentV2(analysis),
+                feedback = feedback
+            )
+        )
+        if (adaptation.loadAdjustmentSteps == 0) return recommendation
+        val direction = loadProfile?.direction ?: if (analysis?.loadMode == ExerciseLoadMode.Assistance) {
+            ExerciseLoadDirection.LowerIsHarder
+        } else {
+            ExerciseLoadDirection.HigherIsHarder
+        }
+        val harder = adaptation.loadAdjustmentSteps > 0
+        val adjustedSets = recommendation.sets.map { set ->
+            val weight = set.weight
+            when {
+                weight != null && weight > 0.0 -> set.copy(
+                    weight = adjustedWeight(
+                        currentWeight = weight,
+                        harder = harder,
+                        direction = direction,
+                        loadProfile = loadProfile
+                    )
+                )
+                harder -> set.copy(reps = (set.reps + 1).coerceAtMost(10))
+                else -> set.copy(reps = (set.reps - 1).coerceAtLeast(1))
+            }
+        }
+        val feedbackReason = if (harder) {
+            WorkoutRecommendationReason.ExerciseFeedbackRepeatedEasy
+        } else {
+            WorkoutRecommendationReason.ExerciseFeedbackTooHard
+        }
+        return recommendation.copy(
+            sets = adjustedSets,
+            kind = if (!harder && recommendation.kind == WorkoutRecommendationKind.ProgressiveOverload) {
+                WorkoutRecommendationKind.HoldAndBuild
+            } else {
+                recommendation.kind
+            },
+            confidence = (recommendation.confidence + adaptation.confidenceDelta).coerceAtMost(1f),
+            estimatedVolume = if (recommendation.estimatedVolume > 0.0) {
+                adjustedSets.sumOf { (it.weight ?: 0.0) * it.reps }
+            } else {
+                0.0
+            },
+            reasons = (listOf(feedbackReason) + recommendation.reasons).distinct().take(3),
+            targetRir = if (harder) recommendation.targetRir else adaptation.targetRir
+        )
+    }
+
+    private fun ExerciseAnalysis?.toSmartCoachV2Role(): SmartCoachExerciseRoleV2 = when (this?.role) {
+        ExerciseRole.Primary -> SmartCoachExerciseRoleV2.Primary
+        ExerciseRole.Secondary -> SmartCoachExerciseRoleV2.Secondary
+        ExerciseRole.Core -> SmartCoachExerciseRoleV2.Core
+        ExerciseRole.Warmup -> SmartCoachExerciseRoleV2.Warmup
+        ExerciseRole.Isolation,
+        null -> SmartCoachExerciseRoleV2.Isolation
+    }
+
+    private fun exerciseEquipmentV2(analysis: ExerciseAnalysis?): SmartCoachEquipmentV2 =
+        exerciseEquipmentV2(analysis?.identityKey?.removePrefix("catalog:").orEmpty(), analysis)
+
+    private fun exerciseEquipmentV2(
+        exerciseName: String,
+        analysis: ExerciseAnalysis?
+    ): SmartCoachEquipmentV2 = when (analysis?.let { exerciseEquipment(exerciseName, it) }) {
+            ExerciseEquipment.Barbell -> SmartCoachEquipmentV2.Barbell
+            ExerciseEquipment.Dumbbell -> SmartCoachEquipmentV2.Dumbbell
+            ExerciseEquipment.Cable -> SmartCoachEquipmentV2.Cable
+            ExerciseEquipment.Machine -> SmartCoachEquipmentV2.Machine
+            ExerciseEquipment.Bodyweight -> SmartCoachEquipmentV2.Bodyweight
+            ExerciseEquipment.Assisted -> SmartCoachEquipmentV2.Assisted
+            ExerciseEquipment.Band -> SmartCoachEquipmentV2.Band
+            ExerciseEquipment.Other,
+            null -> SmartCoachEquipmentV2.Other
+        }
+
+    private fun primaryMusclesV2(
+        exerciseName: String,
+        manualMuscleMappings: Map<String, List<MuscleContribution>>
+    ): Set<String> {
+        val contributions = manualMuscleMappings[exerciseName.normalizedExerciseName()]
+            ?: defaultContributionsForExercise(exerciseName)
+        val peak = contributions.maxOfOrNull(MuscleContribution::weight) ?: return emptySet()
+        val threshold = max(0.5, peak * 0.8)
+        return contributions.asSequence()
+            .filter { it.weight >= threshold && it.muscleId in SmartCoachContextV2.KNOWN_MUSCLE_IDS }
+            .mapTo(linkedSetOf(), MuscleContribution::muscleId)
+    }
+
+    private fun estimatedSmartWorkoutMinutes(exercises: List<SmartWorkoutExercise>): Int? {
+        if (exercises.isEmpty()) return null
+        val seconds = exercises.mapIndexed { index, planned ->
+            val setCount = planned.recommendation.sets.size
+            val transition = if (index == 0) 0 else 60
+            setCount * 45 + (setCount - 1).coerceAtLeast(0) * planned.recommendedRestSeconds +
+                transition
+        }.sum()
+        return (seconds + 59) / 60
     }
 
     private fun enforceSmartPlanBounds(
@@ -1193,7 +1415,8 @@ object WorkoutRecommendationEngine {
             "bulgarian_split_squat", "lunge", "weighted_side_bend" -> ExerciseEquipment.Dumbbell
             "lat_pulldown", "straight_arm_pulldown", "seated_cable_row", "face_pull",
             "cable_curl", "triceps_pushdown", "v_bar_pushdown" -> ExerciseEquipment.Cable
-            "plate_loaded_row", "chest_fly_machine", "assisted_dip", "assisted_pull_up", "leg_press",
+            "assisted_dip", "assisted_pull_up" -> ExerciseEquipment.Assisted
+            "plate_loaded_row", "chest_fly_machine", "leg_press",
             "leg_extension", "lying_leg_curl", "seated_leg_curl", "hip_adduction",
             "hip_abduction", "machine_lateral_raise", "rear_delt_fly", "preacher_curl" ->
                 ExerciseEquipment.Machine
@@ -2277,6 +2500,7 @@ object WorkoutRecommendationEngine {
         Cable,
         Machine,
         Bodyweight,
+        Assisted,
         Band,
         Other
     }

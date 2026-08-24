@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,12 +42,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -57,6 +60,7 @@ import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
@@ -66,10 +70,15 @@ import com.example.gymapp.ui.viewmodel.LivePeerExerciseSummary
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
-import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.asString
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.text.NumberFormat
+
+internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
+internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
 
 @Composable
 fun ActiveWorkoutScreen(
@@ -86,6 +95,7 @@ fun ActiveWorkoutScreen(
     modifier: Modifier = Modifier
 ) {
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showMoreWorkoutOptions by rememberSaveable { mutableStateOf(false) }
     var liveParticipantTab by rememberSaveable(uiState.livePeerName) {
         mutableStateOf(LiveParticipantTab.Self)
     }
@@ -117,6 +127,9 @@ fun ActiveWorkoutScreen(
         uiState.setRecordingsInFlight.isNotEmpty() || uiState.undoingSetId != null
     val peerName = uiState.livePeerName
     val showSelfParticipant = peerName == null || liveParticipantTab == LiveParticipantTab.Self
+    val currentExerciseId = uiState.exercises.firstOrNull { exercise ->
+        exercise.sets.any { set -> !set.isCompleted }
+    }?.id
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -204,8 +217,18 @@ fun ActiveWorkoutScreen(
             items = uiState.exercises,
             key = ActiveWorkoutExerciseUiState::id
         ) { exercise ->
+            val fullyCompleted = exercise.sets.isNotEmpty() &&
+                exercise.sets.all(ActiveWorkoutSetUiState::isCompleted)
             ActiveWorkoutExerciseCard(
                 exercise = exercise,
+                initiallyExpanded = exercise.id == currentExerciseId,
+                statusLabel = stringResource(
+                    when {
+                        exercise.id == currentExerciseId -> R.string.active_workout_exercise_current
+                        fullyCompleted -> R.string.active_workout_exercise_completed
+                        else -> R.string.active_workout_exercise_up_next
+                    }
+                ),
                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                 operationInProgress = operationInProgress,
                 allowExerciseActions = uiState.liveConnectionMode == null,
@@ -268,15 +291,35 @@ fun ActiveWorkoutScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = { showDiscardConfirmation = true },
+                        onClick = { showMoreWorkoutOptions = !showMoreWorkoutOptions },
                         enabled = !operationInProgress,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = null)
+                        Icon(
+                            imageVector = if (showMoreWorkoutOptions) {
+                                Icons.Default.ExpandLess
+                            } else {
+                                Icons.Default.ExpandMore
+                            },
+                            contentDescription = null
+                        )
                         Text(
-                            text = stringResource(R.string.active_workout_discard_action),
+                            text = stringResource(R.string.active_workout_more_options),
                             modifier = Modifier.padding(start = 8.dp)
                         )
+                    }
+                    if (showMoreWorkoutOptions) {
+                        OutlinedButton(
+                            onClick = { showDiscardConfirmation = true },
+                            enabled = !operationInProgress,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = null)
+                            Text(
+                                text = stringResource(R.string.active_workout_discard_action),
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -350,27 +393,67 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                 uiState.completedSetCount,
                 uiState.totalSetCount
             )
+            val progressAccessibilityLabel = stringResource(
+                R.string.active_workout_progress_accessibility
+            )
+            val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+            val completedForProgress = uiState.completedSetCount.coerceAtLeast(0)
+            val totalForProgress = uiState.totalSetCount.coerceAtLeast(0)
+            val progressMaximum = totalForProgress.coerceAtLeast(1)
             Row(
-                modifier = Modifier.semantics {
-                    stateDescription = progressDescription
-                    progressBarRangeInfo = ProgressBarRangeInfo(
-                        current = uiState.completedSetCount.toFloat(),
-                        range = 0f..uiState.totalSetCount.coerceAtLeast(1).toFloat(),
-                        steps = (uiState.totalSetCount - 1).coerceAtLeast(0)
-                    )
-                },
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                InfoPill(text = progressDescription)
-                InfoPill(text = DateTimeUtils.formatDate(uiState.date))
+                MetricTile(
+                    label = stringResource(R.string.active_workout_elapsed_label),
+                    value = formatActiveWorkoutTime(uiState.workoutElapsedSeconds, locale),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(ACTIVE_WORKOUT_ELAPSED_METRIC_TAG),
+                    emphasized = true,
+                    onHero = true,
+                    utilityValue = true
+                )
+                MetricTile(
+                    label = stringResource(R.string.active_workout_completed_label),
+                    value = stringResource(
+                        R.string.active_workout_completed_value,
+                        uiState.completedSetCount,
+                        uiState.totalSetCount
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(ACTIVE_WORKOUT_COMPLETED_METRIC_TAG),
+                    onHero = true,
+                    utilityValue = true
+                )
             }
             Text(
                 text = stringResource(
-                    R.string.active_workout_total_time,
-                    formatActiveWorkoutTime(uiState.workoutElapsedSeconds)
+                    R.string.active_workout_started_at,
+                    formatActiveWorkoutStartedAt(uiState.startedAt, locale)
                 ),
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.82f)
+            )
+            LinearProgressIndicator(
+                progress = {
+                    completedForProgress.coerceAtMost(progressMaximum).toFloat() /
+                        progressMaximum.toFloat()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = progressAccessibilityLabel
+                        stateDescription = progressDescription
+                        progressBarRangeInfo = ProgressBarRangeInfo(
+                            current = completedForProgress.coerceAtMost(progressMaximum).toFloat(),
+                            range = 0f..progressMaximum.toFloat(),
+                            steps = (progressMaximum - 1).coerceAtLeast(0)
+                        )
+                    },
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.2f)
             )
         }
     }
@@ -463,6 +546,8 @@ private fun LivePeerExerciseCard(exercise: LivePeerExerciseSummary) {
 @Composable
 private fun ActiveWorkoutExerciseCard(
     exercise: ActiveWorkoutExerciseUiState,
+    initiallyExpanded: Boolean,
+    statusLabel: String,
     exerciseMediaOwnerKey: String,
     operationInProgress: Boolean,
     allowExerciseActions: Boolean,
@@ -476,9 +561,9 @@ private fun ActiveWorkoutExerciseCard(
 ) {
     val fullyCompleted = exercise.sets.isNotEmpty() &&
         exercise.sets.all(ActiveWorkoutSetUiState::isCompleted)
-    var isExpanded by rememberSaveable(exercise.id) { mutableStateOf(!fullyCompleted) }
-    LaunchedEffect(fullyCompleted) {
-        isExpanded = !fullyCompleted
+    var isExpanded by rememberSaveable(exercise.id) { mutableStateOf(initiallyExpanded) }
+    LaunchedEffect(fullyCompleted, initiallyExpanded) {
+        isExpanded = initiallyExpanded && !fullyCompleted
     }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -510,7 +595,7 @@ private fun ActiveWorkoutExerciseCard(
                         R.string.active_workout_exercise_progress,
                         exercise.sets.count(ActiveWorkoutSetUiState::isCompleted),
                         exercise.sets.size
-                    ),
+                    ).let { progress -> "$statusLabel · $progress" },
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = { isExpanded = !isExpanded }) {
@@ -693,14 +778,25 @@ private fun ActiveWorkoutSetRow(
     }
 }
 
-private fun formatActiveWorkoutTime(totalSeconds: Long): String {
+internal fun formatActiveWorkoutTime(
+    totalSeconds: Long,
+    locale: Locale = Locale.getDefault()
+): String {
     val bounded = totalSeconds.coerceAtLeast(0L)
     val hours = bounded / 3_600L
     val minutes = (bounded % 3_600L) / 60L
     val seconds = bounded % 60L
     return if (hours > 0L) {
-        String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds)
+        String.format(locale, "%02d:%02d:%02d", hours, minutes, seconds)
     } else {
-        String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+        String.format(locale, "%02d:%02d", minutes, seconds)
     }
 }
+
+internal fun formatActiveWorkoutStartedAt(
+    timestamp: Long,
+    locale: Locale = Locale.getDefault(),
+    zoneId: ZoneId = ZoneId.systemDefault()
+): String = DateTimeFormatter.ofPattern("HH:mm", locale)
+    .withZone(zoneId)
+    .format(Instant.ofEpochMilli(timestamp))

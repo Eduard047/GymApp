@@ -8,7 +8,10 @@ const migrationNamePattern = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 const productionFirstRecordedVersion = "20260629115900";
 const productionLastRecordedVersion = "20260823162119";
 const productionMigrationCount = 54;
-const reviewedForwardMigrations = [];
+const reviewedForwardMigrations = [
+  "20260824120000_sync_activity_only_workouts.sql",
+  "20260824123000_harden_remaining_supabase_boundaries.sql",
+];
 
 function migrationVersion(fileName) {
   const match = migrationNamePattern.exec(fileName);

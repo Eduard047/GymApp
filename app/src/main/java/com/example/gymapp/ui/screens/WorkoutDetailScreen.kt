@@ -265,7 +265,10 @@ internal fun WorkoutDetailScreen(
                 )
             }
         } else {
-            val isEditingWorkout = editingWorkoutSessionId == details.session.id
+            val isActivityOnly = details.workoutExercises.isEmpty() &&
+                details.session.durationSeconds?.let { it > 0L } == true
+            val isEditingWorkout = !isActivityOnly &&
+                editingWorkoutSessionId == details.session.id
             val controls = workoutDetailControlVisibility(isEditingWorkout)
             val listState = rememberLazyListState()
             val toggleEditMode = {
@@ -327,9 +330,10 @@ internal fun WorkoutDetailScreen(
                                 garminPresentation?.hasVerifiedGarminOrigin == true,
                             exerciseCount = details.workoutExercises.size,
                             setCount = details.workoutExercises.sumOf { it.sets.size },
+                            isActivityOnly = isActivityOnly,
                             onShare = shareWorkout,
                             isEditing = isEditingWorkout,
-                            showDelete = controls.showDeleteWorkout,
+                            showDelete = controls.showDeleteWorkout || isActivityOnly,
                             onToggleEdit = toggleEditMode,
                             onDelete = { confirmDeleteSession = true }
                         )
@@ -343,9 +347,10 @@ internal fun WorkoutDetailScreen(
                                 exercise.sets.sumOf { set -> set.weight * set.reps }
                             },
                             durationSeconds = details.session.durationSeconds,
+                            isActivityOnly = isActivityOnly,
                             onShare = shareWorkout,
                             isEditing = isEditingWorkout,
-                            showDelete = controls.showDeleteWorkout,
+                            showDelete = controls.showDeleteWorkout || isActivityOnly,
                             onToggleEdit = toggleEditMode,
                             onDelete = { confirmDeleteSession = true }
                         )
@@ -742,7 +747,11 @@ internal fun WorkoutDetailScreen(
         }
     }
 
-    if (confirmDeleteSession && isEditingWorkout) {
+    val isActivityOnlyWorkout = uiState.sessionDetails?.let { details ->
+        details.workoutExercises.isEmpty() &&
+            details.session.durationSeconds?.let { it > 0L } == true
+    } == true
+    if (confirmDeleteSession && (isEditingWorkout || isActivityOnlyWorkout)) {
         val details = uiState.sessionDetails
         AlertDialog(
             onDismissRequest = { confirmDeleteSession = false },
@@ -782,6 +791,7 @@ private fun WorkoutHeaderCard(
     setCount: Int,
     volume: Double,
     durationSeconds: Long?,
+    isActivityOnly: Boolean,
     onShare: () -> Unit,
     isEditing: Boolean,
     showDelete: Boolean,
@@ -803,11 +813,13 @@ private fun WorkoutHeaderCard(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onShare) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = stringResource(R.string.action_share_workout)
-                    )
+                if (!isActivityOnly) {
+                    IconButton(onClick = onShare) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = stringResource(R.string.action_share_workout)
+                        )
+                    }
                 }
                 if (showDelete) {
                     IconButton(onClick = onDelete) {
@@ -822,31 +834,40 @@ private fun WorkoutHeaderCard(
                 }
             }
             Text(
-                text = note
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { stringResource(R.string.details_note, it) }
-                    ?: stringResource(R.string.details_no_note),
+                text = if (isActivityOnly) {
+                    stringResource(R.string.garmin_free_workout_summary)
+                } else {
+                    note
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { stringResource(R.string.details_note, it) }
+                        ?: stringResource(R.string.details_no_note)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.84f)
             )
             MetricStrip(
                 metrics = buildList {
-                    add(
-                    GymMetric(
-                        stringResource(R.string.post_workout_metric_exercises),
-                        exerciseCount.toString()
-                    ))
-                    add(
-                    GymMetric(
-                        stringResource(R.string.post_workout_metric_sets),
-                        setCount.toString()
-                    ))
-                    add(
-                    GymMetric(
-                        stringResource(R.string.post_workout_metric_volume),
-                        formatCompactWeight(volume),
-                        emphasized = true
-                    ))
+                    if (!isActivityOnly) {
+                        add(
+                            GymMetric(
+                                stringResource(R.string.post_workout_metric_exercises),
+                                exerciseCount.toString()
+                            )
+                        )
+                        add(
+                            GymMetric(
+                                stringResource(R.string.post_workout_metric_sets),
+                                setCount.toString()
+                            )
+                        )
+                        add(
+                            GymMetric(
+                                stringResource(R.string.post_workout_metric_volume),
+                                formatCompactWeight(volume),
+                                emphasized = true
+                            )
+                        )
+                    }
                     durationSeconds?.let { duration ->
                         add(
                             GymMetric(
@@ -858,16 +879,18 @@ private fun WorkoutHeaderCard(
                 },
                 onHero = true
             )
-            WorkoutEditModeButton(
-                isEditing = isEditing,
-                onToggleEdit = onToggleEdit
-            )
+            if (!isActivityOnly) {
+                WorkoutEditModeButton(
+                    isEditing = isEditing,
+                    onToggleEdit = onToggleEdit
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun formatWorkoutDuration(totalSeconds: Long): String {
+internal fun formatWorkoutDuration(totalSeconds: Long): String {
     val minutes = (totalSeconds.coerceAtLeast(0L) / 60L).coerceAtLeast(1L)
     val hours = minutes / 60L
     val remainingMinutes = minutes % 60L
@@ -887,6 +910,7 @@ private fun GarminWorkoutHeaderCard(
     hasVerifiedGarminOrigin: Boolean,
     exerciseCount: Int,
     setCount: Int,
+    isActivityOnly: Boolean,
     onShare: () -> Unit,
     isEditing: Boolean,
     showDelete: Boolean,
@@ -905,7 +929,9 @@ private fun GarminWorkoutHeaderCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(
-                            if (hasVerifiedGarminOrigin) {
+                            if (isActivityOnly) {
+                                R.string.garmin_free_workout_title
+                            } else if (hasVerifiedGarminOrigin) {
                                 R.string.garmin_workout_title
                             } else {
                                 R.string.garmin_workout_format_title
@@ -929,11 +955,13 @@ private fun GarminWorkoutHeaderCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                IconButton(onClick = onShare) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = stringResource(R.string.action_share_workout)
-                    )
+                if (!isActivityOnly) {
+                    IconButton(onClick = onShare) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = stringResource(R.string.action_share_workout)
+                        )
+                    }
                 }
                 if (showDelete) {
                     IconButton(onClick = onDelete) {
@@ -957,53 +985,67 @@ private fun GarminWorkoutHeaderCard(
                     modifier = Modifier.weight(1f),
                     onHero = true
                 )
-                MetricTile(
-                    label = stringResource(R.string.garmin_metric_logged),
-                    value = pluralStringResource(
-                        R.plurals.saved_workout_set_count,
-                        setCount,
-                        setCount
-                    ),
-                    modifier = Modifier.weight(1f),
-                    onHero = true
-                )
+                if (isActivityOnly) {
+                    MetricTile(
+                        label = stringResource(R.string.garmin_metric_gym_kcal),
+                        value = metrics.gymCalories?.toString() ?: "—",
+                        modifier = Modifier.weight(1f),
+                        onHero = true
+                    )
+                } else {
+                    MetricTile(
+                        label = stringResource(R.string.garmin_metric_logged),
+                        value = pluralStringResource(
+                            R.plurals.saved_workout_set_count,
+                            setCount,
+                            setCount
+                        ),
+                        modifier = Modifier.weight(1f),
+                        onHero = true
+                    )
+                }
             }
             Text(
-                text = pluralStringResource(
-                    R.plurals.saved_workout_exercise_count,
-                    exerciseCount,
-                    exerciseCount
-                ) +
-                    " · " + stringResource(
+                text = if (isActivityOnly) {
+                    stringResource(R.string.garmin_free_workout_summary)
+                } else {
+                    pluralStringResource(
+                        R.plurals.saved_workout_exercise_count,
+                        exerciseCount,
+                        exerciseCount
+                    ) + " · " + stringResource(
                         if (hasVerifiedGarminOrigin) {
                             R.string.garmin_synced_sets_hint
                         } else {
                             R.string.garmin_note_derived_sets_hint
                         }
-                    ),
+                    )
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.78f)
             )
-            val completedSetCount = metrics.completedSetCount
-            completedSetCount?.let { completed ->
-                metrics.plannedSetCount
-                    ?.takeIf { planned -> planned > completed }
-                    ?.let { plannedSetCount ->
-                        Text(
-                            text = stringResource(
-                                R.string.garmin_partial_sets_status,
-                                completed,
-                                plannedSetCount
-                            ),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color.White
-                        )
-                    }
+            if (!isActivityOnly) {
+                val completedSetCount = metrics.completedSetCount
+                completedSetCount?.let { completed ->
+                    metrics.plannedSetCount
+                        ?.takeIf { planned -> planned > completed }
+                        ?.let { plannedSetCount ->
+                            Text(
+                                text = stringResource(
+                                    R.string.garmin_partial_sets_status,
+                                    completed,
+                                    plannedSetCount
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color.White
+                            )
+                        }
+                }
+                WorkoutEditModeButton(
+                    isEditing = isEditing,
+                    onToggleEdit = onToggleEdit
+                )
             }
-            WorkoutEditModeButton(
-                isEditing = isEditing,
-                onToggleEdit = onToggleEdit
-            )
         }
     }
 }

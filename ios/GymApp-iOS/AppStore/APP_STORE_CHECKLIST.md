@@ -29,9 +29,9 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
   callback for legacy clients/already-sent messages; Dashboard readback
   confirmed all seven entries on 2026-07-22.
 - [ ] Test signup and recovery PKCE exchange on the same physical device, an expired link, an unsolicited callback, and a callback containing raw access/refresh tokens (which the app must reject).
-- [ ] Before App Store submission, confirm that production matches every repository migration. The last verified production baseline is 36 migrations through `20260810092029`; GymApp 3.0.6 adds `20260810131353_add_idempotent_garmin_device_creation.sql` and `20260810135453_fix_garmin_validation_error_ambiguity.sql`, which must be deployed and read back first. Earlier bounded-state evidence remains documented in [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
-- [x] Production `social-live-gateway` version 3 and `push-dispatch` version 4 are `ACTIVE`; APNs, FCM, and Web Push credentials plus the dedicated dispatcher authorization are configured outside clients. The minute dispatcher and monitor returned successful production results on 2026-08-10 with zero registered installations/outbox work, so this proves scheduling and authorization—not physical notification delivery.
-- [ ] After the GymApp 3.0.6 backend deployment, read back the active `garmin-sync` version and repeat OPTIONS, malformed/oversized input denial, owner-bound idempotent device creation/replay, valid-device fetch/ack/replay, token rotation, and post-cutover continuity checks. Production version 8 was `ACTIVE` before this release deployment.
+- [ ] Before App Store submission, confirm that production matches every repository migration. A read-only 2026-08-24 readback found 54 production migrations through `20260823162119`; local forward migrations `20260824120000_sync_activity_only_workouts.sql` and `20260824123000_harden_remaining_supabase_boundaries.sql` still require an authorized deployment, readback, and denied-path verification. Earlier bounded-state evidence remains documented in [PRODUCTION_BACKEND_VERIFICATION.md](PRODUCTION_BACKEND_VERIFICATION.md).
+- [x] Read-only metadata shows production `social-live-gateway` version 6 and `push-dispatch` version 5 `ACTIVE`. APNs, FCM, and Web Push credentials plus the dedicated dispatcher authorization are configured outside clients. The minute dispatcher and monitor returned successful production results on 2026-08-10 against `push-dispatch` version 4 with zero registered installations/outbox work, so that historical run proves scheduling and authorization—not later-version or physical notification delivery.
+- [ ] Production `garmin-sync` version 12 is `ACTIVE` by read-only metadata. Repeat OPTIONS, malformed/oversized input denial, owner-bound idempotent device creation/replay, valid-device fetch/ack/replay, token rotation, activity-only sidecar synchronization, and post-cutover continuity checks after the pending database deployment.
 - [x] A disposable valid-device Edge Function fetch/ack smoke confirmed the existing per-device limiter path. Upstream gateway throttling remains recommended for volumetric traffic.
 - [x] No separate staging project is currently used. If one is introduced, apply every canonical migration from the repository-root `supabase/migrations/` directory in order and repeat the verification runbook there.
 - [ ] Complete the physical two-device client test: delete/edit on device A, then attempt a stale save from device B. The backend stale conditional `PATCH` and Android-style upsert contract passed on 2026-07-11, but the full device flow must still prove that removed workouts are not resurrected.
@@ -49,10 +49,11 @@ Current upload minimum: builds uploaded after 2026-04-28 must use **Xcode 26 or 
 - [x] Account deletion is exposed at **Profile → Account, privacy & deletion → Delete Account** and uses irreversible confirmation: [Apple account deletion](https://developer.apple.com/support/offering-account-deletion-in-your-app).
 - [x] `20260722010000_require_live_session_for_account_deletion.sql` and the
   canonical repository-root `delete-account` function are deployed. Production
-  version 3 is `ACTIVE` with `verify_jwt=true`; the refreshed
-  `deployment-contract.json`, enforced release gate, disposable-account
-  deletion, terminal-session rejection, and cascade verification passed on
-  2026-07-22.
+  version 14 is `ACTIVE` with `verify_jwt=true` by the 2026-08-24 metadata
+  readback. The `deployment-contract.json`, disposable-account deletion,
+  terminal-session rejection, and cascade verification passed on 2026-07-22
+  against historical version 3; rerun the current release gate and final
+  deletion/cascade path before submission.
 - [x] `deleteCurrentAccountAndData` clears the local account database, Supabase Keychain session, and account-specific preferences, then returns to signed-out state after successful server deletion.
 - [ ] Repeat that complete cleanup path from the final signed build on a physical iPhone.
 - [x] Sign in with Apple is not present, so token revocation is not applicable. If it is added later, implement revocation during deletion: [Apple TN3194](https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple).

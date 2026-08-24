@@ -992,6 +992,8 @@ private fun SmartWorkoutEffortAdjustment.smartCoachLabel(): String = when (this)
         stringResource(R.string.smart_effort_adjustment_feedback_hard)
     SmartWorkoutEffortAdjustment.FeedbackEasyExtraSet ->
         stringResource(R.string.smart_effort_adjustment_feedback_easy)
+    SmartWorkoutEffortAdjustment.ReadinessLowRecovery ->
+        stringResource(R.string.smart_effort_adjustment_readiness_low)
     SmartWorkoutEffortAdjustment.HardInsufficientHistory ->
         stringResource(R.string.smart_effort_adjustment_history)
     SmartWorkoutEffortAdjustment.HardRecentBreak ->

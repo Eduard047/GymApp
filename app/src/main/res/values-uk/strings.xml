@@ -441,9 +441,18 @@
     <string name="active_workout_supporting">Записуй кожен виконаний підхід. Він зберігається до запуску розумного таймера відпочинку.</string>
     <string name="active_workout_progress">Виконано підходів: %1$d із %2$d</string>
     <string name="active_workout_total_time">Загальний час тренування: %1$s</string>
+    <string name="active_workout_elapsed_label">Минуло</string>
+    <string name="active_workout_completed_label">Виконано</string>
+    <string name="active_workout_completed_value">%1$d з %2$d</string>
+    <string name="active_workout_started_at">Початок о %1$s</string>
+    <string name="active_workout_progress_accessibility">Прогрес тренування</string>
     <string name="active_workout_finish_eyebrow">КОЛИ ЗАКІНЧИШ</string>
     <string name="active_workout_finish_supporting">До історії потраплять лише записані підходи. Заплановані рядки не вплинуть на статистику.</string>
     <string name="active_workout_discard_action">Скасувати активне тренування</string>
+    <string name="active_workout_more_options">Інші дії</string>
+    <string name="active_workout_exercise_current">Зараз</string>
+    <string name="active_workout_exercise_completed">Виконано</string>
+    <string name="active_workout_exercise_up_next">Далі</string>
     <string name="active_workout_discard_title">Скасувати це тренування?</string>
     <string name="active_workout_discard_message">Активний план і записані в ньому підходи буде видалено з цього пристрою. До історії нічого не додасться.</string>
     <string name="active_workout_discard_confirm">Скасувати тренування</string>
@@ -715,6 +724,7 @@
     <string name="smart_coach_generated_focus">Тренування: %1$s · Варіант %2$s</string>
     <string name="smart_coach_applied_effort">Застосоване навантаження: %1$s</string>
     <string name="smart_effort_adjustment_auto_recovery">Авто обрало відновлювальне навантаження: цільові м’язи тренувалися нещодавно.</string>
+    <string name="smart_effort_adjustment_readiness_low">Після сьогоднішньої низької готовності обрано відновлювальне навантаження.</string>
     <string name="smart_effort_adjustment_history">Важке навантаження замінено звичайним: поки бракує історії тренувань.</string>
     <string name="smart_effort_adjustment_break">Важке навантаження замінено звичайним після тривалої перерви.</string>
     <string name="smart_effort_adjustment_recovery">Важке навантаження замінено звичайним: цільові м’язи ще відновлюються.</string>
@@ -730,6 +740,7 @@
     <string name="today_add_another_workout">Додати ще одне тренування</string>
     <string name="today_continue_plan">Продовжити план</string>
     <string name="weekly_training_summary_title">Цього тижня</string>
+    <string name="focus_lens_details">Тиждень і деталі плану</string>
     <string name="weekly_training_day_completed">тренування виконано</string>
     <string name="weekly_training_day_not_completed">без тренування</string>
     <string name="weekly_training_day_today">сьогодні</string>
@@ -738,9 +749,13 @@
     <string name="weekly_training_minutes_label">Хвилини</string>
     <string name="weekly_training_volume_label">Обсяг</string>
     <string name="activation_goal">Ціль</string>
+    <string name="activation_first_plan_title">Твій перший план</string>
+    <string name="activation_first_plan_supporting">Скористайся порадою зараз або створи тренування самостійно. Усі налаштування можна змінити.</string>
+    <string name="activation_adjust_recommendation">Налаштувати пораду</string>
+    <string name="activation_build_manually">Створити вручну</string>
     <string name="activation_days">Днів / тиждень</string>
     <string name="activation_effort">Навантаження сьогодні</string>
-    <string name="activation_start_plan">Почати план</string>
+    <string name="activation_start_plan">Використати пораду</string>
     <string name="activation_skip">Пропустити</string>
     <string name="today_weekly_rhythm">Ритм тижня</string>
     <string name="today_weekly_value">%1$d / %2$d днів</string>
@@ -918,6 +933,8 @@
     <string name="details_note">Нотатка: %1$s</string>
     <string name="details_no_note">Без нотатки</string>
     <string name="garmin_workout_title">Силове тренування Garmin</string>
+    <string name="garmin_free_workout_title">Вільне тренування Garmin</string>
+    <string name="garmin_free_workout_summary">Час, пульс і калорії — без вправ і підходів</string>
     <string name="garmin_workout_format_title">Силове тренування у форматі Garmin</string>
     <string name="garmin_workout_synced_from">%1$s · синхронізовано з Garmin</string>
     <string name="garmin_workout_note_derived_from">%1$s · показники прочитано зі збереженої нотатки</string>
@@ -1225,7 +1242,7 @@
     <string name="push_live_participant_finished_body">Переглянь актуальний стан у GymApp.</string>
     <string name="push_live_room_closed_title">Спільне тренування завершено</string>
     <string name="push_live_room_closed_body">Відкрий GymApp, щоб переглянути стан.</string>
-    <string name="activation_edit_plan">Редагувати план</string>
+    <string name="activation_edit_plan">Переглянути вправи</string>
     <string name="activation_create_manually">Створити вручну</string>
     <string name="today_plan_size">%1$d вправ · %2$d підходів</string>
     <string name="today_plan_duration">Близько %1$d хв</string>

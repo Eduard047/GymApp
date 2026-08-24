@@ -181,6 +181,28 @@ class CloudStateContractTest {
     }
 
     @Test
+    fun `activity only workout stays out of legacy core and social duration sidecar`() {
+        val input = canonicalState()
+        val activityDate = 1_750_000_100_000L
+        input.getJSONArray("sessions").put(
+            JSONObject()
+                .put("date", activityDate)
+                .put("note", "Garmin · Free workout · Duration 10:00 · Gym kcal 42")
+                .put("durationSeconds", 600)
+                .put("exercises", JSONArray())
+        )
+        input.getJSONObject("summary").put("sessionCount", 2)
+
+        val durations = workoutDurationSyncItems(input)
+        val written = attachSharedCloudExtensions(input, extensions = null)
+
+        assertEquals(0, durations.length())
+        assertEquals(1, written.getJSONArray("sessions").length())
+        assertEquals(1, written.getJSONObject("summary").getInt("sessionCount"))
+        assertTrue(isCanonicalSharedCloudEnvelope(written, userId))
+    }
+
+    @Test
     fun `canonical v2 normalizes missing built-in catalog keys in catalog and blocks`() {
         val expectedDigest = canonicalWorkoutPayloadDigest(canonicalState())
         val compatibleRows = listOf(

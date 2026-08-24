@@ -99,6 +99,79 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
+    fun freeWorkoutCommitsDurationAndReceiptWithoutFabricatedSets() = runBlocking {
+        withDatabase("garmin-free-workout") { database, repository ->
+            val note = "Garmin · Free workout · Duration 20:34 · Gym kcal 87"
+            val sidecar = ActivityOnlyWorkoutItem(
+                workoutStartedAt = 1_750_000_000_000L,
+                durationSeconds = 1_234L,
+                gymCalories = 87.125,
+                garminCalories = 92,
+                averageHeartRate = 131,
+                maximumHeartRate = 168,
+                endingHeartRateZone = 3,
+                note = note
+            )
+            val first = repository.applyGarminCreateWorkout(
+                ownerBinding = ownerBinding,
+                deviceBinding = deviceBinding,
+                pairingGeneration = pairingGeneration,
+                requestId = "free-workout-1234567890",
+                payloadDigest = "d".repeat(64),
+                date = 1_750_000_000_000L,
+                note = note,
+                sets = emptyList(),
+                durationSeconds = 1_234L,
+                isFreeWorkout = true,
+                activityOnlyWorkout = sidecar
+            )
+            val duplicate = repository.applyGarminCreateWorkout(
+                ownerBinding = ownerBinding,
+                deviceBinding = deviceBinding,
+                pairingGeneration = pairingGeneration,
+                requestId = "free-workout-1234567890",
+                payloadDigest = "d".repeat(64),
+                date = 1_750_000_000_000L,
+                note = note,
+                sets = emptyList(),
+                durationSeconds = 1_234L,
+                isFreeWorkout = true,
+                activityOnlyWorkout = sidecar
+            )
+
+            assertEquals(GarminWorkoutApplyResult.Applied, first)
+            assertEquals(GarminWorkoutApplyResult.AlreadyApplied, duplicate)
+            val summary = database.workoutDao().getSessions().first().single()
+            assertEquals(0, summary.exerciseCount)
+            assertEquals(0, summary.setCount)
+            assertEquals(1_234L, summary.session.durationSeconds)
+            assertTrue(summary.hasGarminReceipt)
+            val details = database.workoutDao()
+                .getSessionDetailsSnapshot(summary.session.id)
+            assertNotNull(details)
+            assertTrue(checkNotNull(details).workoutExercises.isEmpty())
+            assertEquals(sidecar, database.activityOnlyWorkoutDao().getAll().single().toItem())
+
+            assertTrue(
+                runCatching {
+                    repository.applyGarminCreateWorkout(
+                        ownerBinding = ownerBinding,
+                        deviceBinding = deviceBinding,
+                        pairingGeneration = pairingGeneration,
+                        requestId = "invalid-empty-1234567890",
+                        payloadDigest = "e".repeat(64),
+                        date = 1_750_000_100_000L,
+                        note = note,
+                        sets = emptyList(),
+                        durationSeconds = 1_234L,
+                        isFreeWorkout = false
+                    )
+                }.isFailure
+            )
+        }
+    }
+
+    @Test
     fun legacyExtendedDigestUpgradesOnlyAnExistingReceiptWithoutRewritingWorkout() = runBlocking {
         withDatabase("garmin-receipt-digest-upgrade") { database, repository ->
             val legacyDigest = "b".repeat(64)

@@ -146,7 +146,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(activityInfo, /return appliedHeartRate/);
   assert.match(
     store,
-    /var messageStartedAt = isValidWorkoutStartedAtSeconds\(activeWorkoutStartedAtSeconds\) \?[\s\S]*activeWorkoutStartedAtSeconds : GymSession\.startedAt/
+    /var messageStartedAt = isValidWorkoutStartedAtSeconds\(activeWorkoutStartedAtSeconds\) \?[\s\S]*activeWorkoutStartedAtSeconds :[\s\S]*runtimeWorkoutStartedAtSeconds : GymSession\.startedAt/
   );
   assert.match(store, /"startedAtSeconds" => messageStartedAt/);
   assert.doesNotMatch(store, /"startedAtSeconds" => Time\.now\(\)\.value\(\)/);

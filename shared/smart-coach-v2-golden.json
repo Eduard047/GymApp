@@ -1,0 +1,257 @@
+{
+  "contractVersion": 2,
+  "vectors": [
+    {
+      "name": "baseline-primary",
+      "input": {
+        "requestedEffort": "standard",
+        "baseSetBudget": 18,
+        "role": "primary",
+        "equipment": "barbell",
+        "primaryMuscles": ["chest"]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "standard",
+        "setBudget": 18,
+        "targetRir": [2, 3],
+        "restSeconds": 180,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": []
+      }
+    },
+    {
+      "name": "low-readiness-auto",
+      "input": {
+        "requestedEffort": "auto",
+        "readiness": "low",
+        "baseSetBudget": 18,
+        "role": "secondary",
+        "equipment": "dumbbell",
+        "primaryMuscles": ["shoulders"]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "recovery",
+        "setBudget": 18,
+        "targetRir": [3, 4],
+        "restSeconds": 120,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": ["readinessRecovery"]
+      }
+    },
+    {
+      "name": "time-cap-45",
+      "input": {
+        "requestedEffort": "standard",
+        "availableMinutes": 45,
+        "baseSetBudget": 20,
+        "role": "isolation",
+        "equipment": "cable",
+        "primaryMuscles": ["triceps"]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "standard",
+        "setBudget": 15,
+        "targetRir": [2, 3],
+        "restSeconds": 75,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": ["timeCapped"]
+      }
+    },
+    {
+      "name": "equipment-filtered",
+      "input": {
+        "requestedEffort": "standard",
+        "baseSetBudget": 16,
+        "role": "secondary",
+        "equipment": "machine",
+        "availableEquipment": ["barbell", "dumbbell"],
+        "primaryMuscles": ["quads"]
+      },
+      "expected": {
+        "eligible": false,
+        "appliedEffort": "standard",
+        "setBudget": 16,
+        "targetRir": [2, 3],
+        "restSeconds": 120,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": ["equipmentUnavailable"]
+      }
+    },
+    {
+      "name": "avoided-primary-muscle",
+      "input": {
+        "requestedEffort": "standard",
+        "baseSetBudget": 16,
+        "role": "primary",
+        "equipment": "barbell",
+        "primaryMuscles": ["quads", "glutes"],
+        "musclesToAvoid": ["quads"]
+      },
+      "expected": {
+        "eligible": false,
+        "appliedEffort": "standard",
+        "setBudget": 16,
+        "targetRir": [2, 3],
+        "restSeconds": 180,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": ["avoidedMuscle"]
+      }
+    },
+    {
+      "name": "one-hard-signal-protects",
+      "input": {
+        "requestedEffort": "hard",
+        "baseSetBudget": 18,
+        "role": "primary",
+        "equipment": "barbell",
+        "primaryMuscles": ["chest"],
+        "feedback": [
+          { "actualRir": 1, "outcome": "tooHard", "ageDays": 1 }
+        ]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "hard",
+        "setBudget": 18,
+        "targetRir": [3, 4],
+        "restSeconds": 180,
+        "loadAdjustmentSteps": -1,
+        "confidenceDeltaMilli": 50,
+        "freshForSeconds": 21600,
+        "reasons": ["exerciseFeedbackTooHard"]
+      }
+    },
+    {
+      "name": "two-easy-signals-progress",
+      "input": {
+        "requestedEffort": "standard",
+        "baseSetBudget": 18,
+        "role": "secondary",
+        "equipment": "dumbbell",
+        "primaryMuscles": ["shoulders"],
+        "feedback": [
+          { "actualRir": 5, "outcome": "tooEasy", "ageDays": 1 },
+          { "actualRir": 4, "outcome": "onTarget", "ageDays": 4 }
+        ]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "standard",
+        "setBudget": 18,
+        "targetRir": [2, 3],
+        "restSeconds": 120,
+        "loadAdjustmentSteps": 1,
+        "confidenceDeltaMilli": 50,
+        "freshForSeconds": 21600,
+        "reasons": ["exerciseFeedbackRepeatedEasy"]
+      }
+    },
+    {
+      "name": "single-easy-signal-holds",
+      "input": {
+        "requestedEffort": "standard",
+        "baseSetBudget": 18,
+        "role": "isolation",
+        "equipment": "dumbbell",
+        "primaryMuscles": ["biceps"],
+        "feedback": [
+          { "actualRir": 5, "outcome": "tooEasy", "ageDays": 1 }
+        ]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "standard",
+        "setBudget": 18,
+        "targetRir": [2, 3],
+        "restSeconds": 75,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": []
+      }
+    },
+    {
+      "name": "stale-hard-signal-ignored",
+      "input": {
+        "requestedEffort": "standard",
+        "baseSetBudget": 18,
+        "role": "secondary",
+        "equipment": "machine",
+        "primaryMuscles": ["upperBack"],
+        "feedback": [
+          { "actualRir": 0, "outcome": "tooHard", "ageDays": 15 }
+        ]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "standard",
+        "setBudget": 18,
+        "targetRir": [2, 3],
+        "restSeconds": 120,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": []
+      }
+    },
+    {
+      "name": "interrupted-feedback-does-not-infer-load",
+      "input": {
+        "requestedEffort": "standard",
+        "baseSetBudget": 18,
+        "role": "secondary",
+        "equipment": "machine",
+        "primaryMuscles": ["upperBack"],
+        "feedback": [
+          { "actualRir": 0, "outcome": "equipmentUnavailable", "ageDays": 1 },
+          { "actualRir": 5, "outcome": "timeCut", "ageDays": 2 }
+        ]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "standard",
+        "setBudget": 18,
+        "targetRir": [2, 3],
+        "restSeconds": 120,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": []
+      }
+    },
+    {
+      "name": "core-rest-is-sixty",
+      "input": {
+        "requestedEffort": "recovery",
+        "baseSetBudget": 12,
+        "role": "core",
+        "equipment": "bodyweight",
+        "primaryMuscles": ["abs"]
+      },
+      "expected": {
+        "eligible": true,
+        "appliedEffort": "recovery",
+        "setBudget": 12,
+        "targetRir": [3, 4],
+        "restSeconds": 60,
+        "loadAdjustmentSteps": 0,
+        "confidenceDeltaMilli": 0,
+        "freshForSeconds": 21600,
+        "reasons": []
+      }
+    }
+  ]
+}

@@ -141,7 +141,10 @@ interface WorkoutDao {
         LEFT JOIN workout_exercises we ON we.sessionId = s.id
         LEFT JOIN set_entries se ON se.workoutExerciseId = we.id
         GROUP BY s.id
-        HAVING COUNT(se.id) > 0
+        HAVING COUNT(se.id) > 0 OR (
+            COUNT(we.id) = 0 AND
+            s.durationSeconds BETWEEN 1 AND 604800
+        )
         ORDER BY s.date DESC
         """
     )
@@ -167,7 +170,10 @@ interface WorkoutDao {
         LEFT JOIN set_entries se ON se.workoutExerciseId = we.id
         WHERE s.date BETWEEN :startTimestamp AND :endTimestamp
         GROUP BY s.id
-        HAVING COUNT(se.id) > 0
+        HAVING COUNT(se.id) > 0 OR (
+            COUNT(we.id) = 0 AND
+            s.durationSeconds BETWEEN 1 AND 604800
+        )
         ORDER BY s.date DESC
         """
     )
@@ -213,12 +219,6 @@ interface WorkoutDao {
         """
         SELECT *
         FROM workout_sessions ws
-        WHERE EXISTS (
-            SELECT 1
-            FROM workout_exercises we
-            INNER JOIN set_entries se ON se.workoutExerciseId = we.id
-            WHERE we.sessionId = ws.id
-        )
         ORDER BY ws.date ASC, ws.id ASC
         """
     )

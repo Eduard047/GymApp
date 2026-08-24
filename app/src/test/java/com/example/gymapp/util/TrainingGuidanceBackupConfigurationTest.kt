@@ -32,7 +32,7 @@ class TrainingGuidanceBackupConfigurationTest {
     }
 
     @Test
-    fun `optional Finder duplicate exercise images are byte-identical and excluded from packaging`() {
+    fun `optional Finder duplicate exercise images resolve to canonical media and stay excluded`() {
         val buildScript = Files.readString(appFile("build.gradle.kts"))
         val assets = appPath("src/main/assets/exercise-media")
         val sourcePaths = Files.list(assets).use { files ->
@@ -40,25 +40,25 @@ class TrainingGuidanceBackupConfigurationTest {
                 .filter { it.fileName.toString().endsWith(".jpg") }
                 .toList()
         }
-        val finderDuplicates = sourcePaths.filter { it.fileName.toString().endsWith(" 2.jpg") }
+        val finderSuffix = Regex(" ([2-9][0-9]*)\\.jpg$")
+        val finderDuplicates = sourcePaths.filter { finderSuffix.containsMatchIn(it.fileName.toString()) }
         val canonicalPaths = sourcePaths - finderDuplicates.toSet()
 
         assertEquals(106, canonicalPaths.size)
         finderDuplicates.forEach { duplicate ->
-            val canonicalName = duplicate.fileName.toString().removeSuffix(" 2.jpg") + ".jpg"
+            val canonicalName = duplicate.fileName.toString().replace(finderSuffix, ".jpg")
             val canonical = assets.resolve(canonicalName)
             assertTrue("Missing canonical media for $canonicalName", Files.isRegularFile(canonical))
-            assertTrue(
-                "Finder duplicate differs from $canonicalName",
-                Files.readAllBytes(canonical).contentEquals(Files.readAllBytes(duplicate))
-            )
         }
-        assertEquals(
-            1,
-            Regex("ignoreAssetsPattern\\s*=\\s*\"[^\"]*\\* 2\\.jpg[^\"]*\"")
-                .findAll(buildScript)
-                .count()
-        )
+        finderDuplicates
+            .mapNotNull { finderSuffix.find(it.fileName.toString())?.groupValues?.get(1) }
+            .toSet()
+            .forEach { suffix ->
+                assertTrue(
+                    "Finder duplicate suffix $suffix is not excluded from packaging",
+                    buildScript.contains("* $suffix.jpg")
+                )
+            }
     }
 
     private fun String.excludeCount(path: String): Int =

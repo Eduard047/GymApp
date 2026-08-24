@@ -565,8 +565,8 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
   })()`, sandbox));
 
   const ordered = [
-    "Today", "Your first plan", "Goal", "Days / week", "Today’s effort",
-    "Start plan", "Edit plan", "Create manually"
+    "Today", "YOUR FIRST PLAN", "Use suggested plan", "Build manually",
+    "Adjust recommendation", "Goal", "Days / week", "Today’s effort", "Review exercises"
   ];
   let cursor = -1;
   for (const label of ordered) {
@@ -637,9 +637,9 @@ test("first-plan actions use the exact shared EN, UK, and RU terminology", () =>
   })()`, sandbox));
 
   const expected = {
-    en: ["Start plan", "Edit plan", "Create manually"],
-    uk: ["Почати план", "Редагувати план", "Створити вручну"],
-    ru: ["Начать план", "Редактировать план", "Создать вручную"]
+    en: ["Use suggested plan", "Review exercises", "Build manually"],
+    uk: ["Використати пораду", "Переглянути вправи", "Створити вручну"],
+    ru: ["Использовать рекомендацию", "Посмотреть упражнения", "Собрать вручную"]
   };
   for (const [language, labels] of Object.entries(expected)) {
     const actions = ["activation-start", "activation-edit", "activation-manual"];

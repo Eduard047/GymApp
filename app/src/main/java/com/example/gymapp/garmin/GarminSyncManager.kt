@@ -9,8 +9,10 @@ import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.activeCloudSessionFor
 import com.example.gymapp.auth.databaseName
 import com.example.gymapp.data.repository.GarminWorkoutApplyResult
+import com.example.gymapp.data.repository.ActivityOnlyWorkoutItem
 import com.example.gymapp.data.repository.NamedWorkoutSetDraft
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.data.repository.canonicalActivityOnlyGymCalories
 import com.example.gymapp.util.AppLanguage
 import com.garmin.android.connectiq.ConnectIQ
 import com.garmin.android.connectiq.IQApp
@@ -164,6 +166,13 @@ internal fun garminWorkoutNote(
     val isUk = language == AppLanguage.UK
     val isRu = language == AppLanguage.RU
     val details = mutableListOf("Garmin")
+    if (command.mode == GarminWorkoutMode.Free) {
+        details += when {
+            isUk -> "Вільне тренування"
+            isRu -> "Свободная тренировка"
+            else -> "Free workout"
+        }
+    }
     command.durationSeconds?.takeIf { it > 0L }?.let { seconds ->
         val minutes = seconds / 60
         val remainder = seconds % 60
@@ -1911,6 +1920,21 @@ class GarminSyncManager(
         if (!isStillActive(account)) return WorkoutPersistenceResult.Rejected
         val payloadDigest = canonicalGarminWorkoutPayloadDigest(workout)
         val legacyPayloadDigest = legacyGarminWorkoutPayloadDigestForUpgrade(workout)
+        val note = buildGarminWorkoutNote(workout)
+        val activityOnlyWorkout = if (workout.mode == GarminWorkoutMode.Free) {
+            ActivityOnlyWorkoutItem(
+                workoutStartedAt = workout.startedAtMillis,
+                durationSeconds = checkNotNull(workout.durationSeconds),
+                gymCalories = canonicalActivityOnlyGymCalories(workout.gymCalories ?: 0.0),
+                garminCalories = workout.garminCalories,
+                averageHeartRate = workout.averageHeartRate,
+                maximumHeartRate = workout.maximumHeartRate,
+                endingHeartRateZone = workout.endingHeartRateZone,
+                note = note
+            )
+        } else {
+            null
+        }
         val result = runCatching {
             application.repositoryFor(account.session).applyGarminCreateWorkout(
                 ownerBinding = binding.account,
@@ -1919,8 +1943,11 @@ class GarminSyncManager(
                 requestId = workout.requestId,
                 payloadDigest = payloadDigest,
                 date = workout.startedAtMillis,
-                note = buildGarminWorkoutNote(workout),
+                note = note,
                 sets = workout.sets,
+                durationSeconds = workout.durationSeconds,
+                isFreeWorkout = workout.mode == GarminWorkoutMode.Free,
+                activityOnlyWorkout = activityOnlyWorkout,
                 legacyPayloadDigest = legacyPayloadDigest
             )
         }.getOrElse { error ->

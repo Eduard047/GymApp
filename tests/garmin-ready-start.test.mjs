@@ -178,7 +178,7 @@ test("free workout mode is explicit, owner-bound, resume-safe, and omits plan pr
   assert.match(mode, /GymStore\.deviceBinding\.toString\(\)/);
   assert.match(mode, /GymStore\.pairingGeneration/);
   assert.match(mode, /GymStore\.hasUnfinishedWorkout\(\)/);
-  assert.match(store, /if \(!GymWorkoutMode\.usesPlan \|\| plan\.size\(\) == 0\)/);
-  assert.match(store, /if \(GymWorkoutMode\.usesPlan && plan\.size\(\) > 0\)/);
-  assert.match(store, /var wasPlannedSet = GymWorkoutMode\.usesPlan &&/);
+  assert.match(store, /if \(!GymWorkoutMode\.isPlanned\(\) \|\| plan\.size\(\) == 0\)/);
+  assert.match(store, /if \(!freeMode && plan\.size\(\) > 0\)/);
+  assert.match(store, /var wasPlannedSet = GymWorkoutMode\.isPlanned\(\) &&/);
 });

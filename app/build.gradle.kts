@@ -6,9 +6,9 @@ import java.time.format.DateTimeFormatter
 import java.security.MessageDigest
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.kapt")
 }
 
@@ -328,7 +328,7 @@ android {
     androidResources {
         // aapt ignore syntax is colon-delimited and matched against each asset
         // basename. Preserve Finder duplicates on disk, but never package them.
-        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:*~:* 2.jpg"
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:*~:* 2.jpg:* 3.jpg"
     }
     sourceSets {
         getByName("androidTest").assets.srcDir(file("schemas"))

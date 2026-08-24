@@ -6,13 +6,15 @@ static notification through FCM HTTP v1, APNs, or Web Push, and then atomically
 records success, retry, permanent failure, or invalid-registration revocation.
 It is not a browser/client API.
 
-Production deployment was read back on 2026-08-10: `push-dispatch` version 4 is
-`ACTIVE`, all 36 migrations through `20260810092029` are applied, the three
-Vault scheduler values and provider credentials are configured, and the
-dispatcher/monitor jobs are succeeding. The production tables still contain no
-registered installations or queued deliveries, so this proves the authenticated
-empty-queue path only. Physical APNs/FCM/Web Push receipt, account switching,
-revocation, and tap routing remain release-device checks.
+A read-only production metadata readback on 2026-08-24 found `push-dispatch`
+version 5 `ACTIVE` with `verify_jwt=false` and 54 migrations through
+`20260823162119`. The configured Vault/provider and successful dispatcher/
+monitor empty-queue evidence was observed on 2026-08-10 against version 4; it
+was not rerun merely because later metadata was read. The production tables then
+contained no registered installations or queued deliveries, so that evidence
+proved only the authenticated empty-queue path. Physical APNs/FCM/Web Push
+receipt, account switching, revocation, and tap routing remain release-device
+checks.
 
 ## Required server secrets
 

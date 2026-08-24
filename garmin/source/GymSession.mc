@@ -121,6 +121,10 @@ class GymSession {
     static var recoveryLowestHr = null;
 
     static function start() {
+        if (!GymWorkoutMode.canResume()) {
+            GymStore.status = "MODE FAIL";
+            return false;
+        }
         if (!retryAccountTransitionFitCleanup()) {
             return false;
         }
@@ -148,7 +152,7 @@ class GymSession {
         maxHr = 0;
         hrSamples = 0;
         zone = 0;
-        effortState = "WARMUP";
+        effortState = GymWorkoutMode.isFree() ? "FREE" : "WARMUP";
         lastHr = null;
         lastHrChangeSeconds = 0;
         autoLogPrompt = false;
@@ -257,6 +261,10 @@ class GymSession {
     }
 
     static function resume() {
+        if (!GymWorkoutMode.canResume()) {
+            GymStore.status = "MODE FAIL";
+            return false;
+        }
         if (!paused) {
             return true;
         }
@@ -283,7 +291,11 @@ class GymSession {
         startSensors();
         // Paused time is already removed from elapsedSeconds. It is not a set
         // boundary, so keep every active motion/HR snapshot intact across resume.
-        effortState = activeSetSeen ? "SET ACTIVE" : "READY";
+        if (GymWorkoutMode.isFree()) {
+            effortState = "FREE";
+        } else {
+            effortState = activeSetSeen ? "SET ACTIVE" : "READY";
+        }
         return true;
     }
 
@@ -465,6 +477,9 @@ class GymSession {
             retryAccountTransitionFitCleanup();
             return;
         }
+        if (!GymWorkoutMode.canResume()) {
+            return;
+        }
         if (startedAt > 0) {
             var now = Time.now().value();
             var currentPaused = paused && pausedAt > 0 ? now - pausedAt : 0;
@@ -473,7 +488,10 @@ class GymSession {
         if (paused) {
             return;
         }
-        expireSetCandidate();
+        var detailedTracking = GymWorkoutMode.allowsDetailedTracking();
+        if (detailedTracking) {
+            expireSetCandidate();
+        }
         // ActivityInfo and SensorInfo can expose the same watch sample. Read both for
         // diagnostics, but apply only one so averages and detection never double-count.
         var appliedActivityHeartRate = updateGarminActivityInfo();
@@ -483,22 +501,41 @@ class GymSession {
                 hrSource = "SNS";
                 applyHeartRate(sampledSensorHeartRate);
             } else {
-                expireStaleHeartRate();
+                if (detailedTracking) {
+                    expireStaleHeartRate();
+                } else {
+                    expireFreeHeartRate();
+                }
             }
         }
-        updateMotionLifecycle();
+        if (detailedTracking) {
+            updateMotionLifecycle();
+        }
         updateCalories();
-        captureActiveEvidenceTotals();
-        captureEndedSetTotals();
+        if (detailedTracking) {
+            captureActiveEvidenceTotals();
+            captureEndedSetTotals();
+        }
     }
 
     static function startSensors() {
+        if (!GymWorkoutMode.canResume()) {
+            stopSensors();
+            return;
+        }
         if (Toybox has :Sensor) {
             try {
                 Sensor.setEnabledSensors([Sensor.SENSOR_HEARTRATE]);
             } catch (ex) {
             }
-            startMotionListener();
+            if (GymWorkoutMode.allowsDetailedTracking()) {
+                startMotionListener();
+            } else {
+                // FREE is metrics-only. Heart rate stays enabled for FIT, zones,
+                // and calories, but no accelerometer/gyro listener may remain.
+                stopMotionListener();
+                motionAvailable = false;
+            }
         }
     }
 
@@ -623,6 +660,7 @@ class GymSession {
             }
         }
         motionListenerRegistered = false;
+        motionAvailable = false;
         motionScore = 0.0;
         gyroAvailable = false;
         gyroScore = 0.0;
@@ -657,6 +695,9 @@ class GymSession {
 
     (:fullLegacyState)
     static function onSensorData(data) {
+        if (!GymWorkoutMode.allowsDetailedTracking()) {
+            return;
+        }
         if (data == null || !(data has :accelerometerData) || data.accelerometerData == null) {
             return;
         }
@@ -832,6 +873,9 @@ class GymSession {
 
     (:compactLegacyState)
     static function onSensorData(data) {
+        if (!GymWorkoutMode.allowsDetailedTracking()) {
+            return;
+        }
         if (data == null || !(data has :accelerometerData) || data.accelerometerData == null) {
             return;
         }
@@ -1516,6 +1560,26 @@ class GymSession {
         return value instanceof Lang.Number && value > 0 && value <= 240;
     }
 
+    static function expireFreeHeartRate() {
+        if (hr == null || elapsedSeconds - lastValidHrSeconds < 5) {
+            return;
+        }
+        hr = null;
+        activityHr = null;
+        sensorHr = null;
+        hrSource = "--";
+        zone = 0;
+        filteredHr = null;
+        previousFilterHr = null;
+        olderFilterHr = null;
+        lastHr = null;
+        hrTrend = 0.0;
+        activeSignalCount = 0;
+        autoLogPrompt = false;
+        activeSetSeen = false;
+        effortState = paused ? "PAUSED" : "FREE";
+    }
+
     static function applyHeartRate(value) {
         if (!isValidHeartRate(value)) {
             return false;
@@ -1524,7 +1588,8 @@ class GymSession {
         // Attribute that bounded slice to the previous zone before replacing it;
         // a multi-second sensor gap remains unassigned instead of being painted
         // with the later reading's zone.
-        if (hr != null) {
+        var detailedTracking = GymWorkoutMode.allowsDetailedTracking();
+        if (detailedTracking && hr != null) {
             trackCandidateSetInterval(lastValidHrSeconds, zone);
             trackActiveSetInterval(lastValidHrSeconds, zone);
         }
@@ -1538,8 +1603,16 @@ class GymSession {
         trackMinuteHeartRate(value);
         zone = zoneFor(value);
         filteredHr = filteredHeartRate(value);
-        trackRecoveryHeartRate(value);
-        updateEffortState(filteredHr);
+        if (detailedTracking) {
+            trackRecoveryHeartRate(value);
+            updateEffortState(filteredHr);
+        } else {
+            // Reading HR in FREE updates only activity metrics. It must not arm
+            // HR-only set detection or synthesize set/rest state.
+            autoLogPrompt = false;
+            activeSetSeen = false;
+            effortState = "FREE";
+        }
         return true;
     }
 

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "id": "gymapp.smart-coach.v2",
+  "version": 2,
+  "status": "normative",
+  "clients": ["android", "ios", "pwa"],
+  "principles": {
+    "deterministic": true,
+    "offlineFirst": true,
+    "explainEveryAdaptation": true,
+    "autoNeverPromotesToHard": true,
+    "constraintsFailClosed": true,
+    "medicalDiagnosis": false
+  },
+  "inputs": {
+    "readiness": {
+      "optional": true,
+      "values": ["low", "normal", "high"],
+      "lowForcesRecovery": true,
+      "highNeverForcesHard": true
+    },
+    "availableMinutes": {
+      "optional": true,
+      "minimum": 30,
+      "maximum": 120,
+      "setCapFormula": "clamp(floor(availableMinutes / 3), 12, 24)"
+    },
+    "availableEquipment": {
+      "optional": true,
+      "absenceMeans": "unrestricted",
+      "minimumItemsWhenPresent": 1,
+      "maximumItems": 8,
+      "values": [
+        "barbell", "dumbbell", "cable", "machine", "bodyweight",
+        "assisted", "band", "other"
+      ]
+    },
+    "musclesToAvoid": {
+      "optional": true,
+      "maximumItems": 8,
+      "validation": "known canonical muscle ids only",
+      "selectionRule": "exclude an exercise when any primary muscle is avoided"
+    }
+  },
+  "exerciseFeedback": {
+    "processing": "localOnly",
+    "persistenceWhenCaptured": "accountLocalSidecar",
+    "cloudSocialBackupShapeUnchanged": true,
+    "maximumEntries": 64,
+    "maximumEntriesPerExercise": 8,
+    "maximumCoachAgeDays": 14,
+    "actualRir": { "optional": true, "minimum": 0, "maximum": 5 },
+    "outcomes": [
+      "onTarget", "tooEasy", "tooHard", "equipmentUnavailable", "timeCut"
+    ],
+    "adaptation": {
+      "oneTooHardOrRirAtMostOne": "one conservative load step easier and target RIR 3-4",
+      "twoConsecutiveTooEasyOrRirAtLeastFour": "one conservative load step harder",
+      "singleEasySignal": "hold",
+      "staleSignal": "ignore",
+      "equipmentUnavailableOrTimeCut": "do not infer load tolerance"
+    }
+  },
+  "output": {
+    "contractVersion": 2,
+    "freshForSeconds": 21600,
+    "maximumPlanReasons": 4,
+    "maximumExerciseReasons": 3,
+    "recommendedRestSeconds": {
+      "primary": 180,
+      "secondary": 120,
+      "isolation": 75,
+      "core": 60,
+      "warmup": 60
+    },
+    "targetRir": {
+      "recoveryOrProtective": [3, 4],
+      "hardEligibleCompound": [1, 2],
+      "standard": [2, 3]
+    },
+    "reasonIds": [
+      "readinessRecovery",
+      "timeCapped",
+      "equipmentUnavailable",
+      "avoidedMuscle",
+      "exerciseFeedbackTooHard",
+      "exerciseFeedbackRepeatedEasy"
+    ]
+  },
+  "compatibility": {
+    "missingV2Inputs": "v1 behavior",
+    "persistedV1PlansDecode": true,
+    "garminPayloadUnchanged": true,
+    "supabaseSchemaUnchanged": true
+  },
+  "goldenVectors": "smart-coach-v2-golden.json"
+}

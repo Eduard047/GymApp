@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "identityField": "workoutStartedAt",
+  "maximumItems": 5000,
+  "wireContract": {
+    "requiredFields": [
+      "workoutStartedAt",
+      "durationSeconds",
+      "gymCalories"
+    ],
+    "optionalFields": [
+      "garminCalories",
+      "averageHeartRate",
+      "maximumHeartRate",
+      "endingHeartRateZone",
+      "note"
+    ],
+    "absentOptionalFieldsAreDistinctFromZero": true,
+    "noteMaximumUnicodeCodePoints": 512,
+    "noteMaximumUtf8Bytes": 2048
+  },
+  "stateContract": {
+    "baselineIsOwnerBound": true,
+    "baselineRetainsExactItems": true,
+    "pendingRequestReplaysBeforeRemoteMaterialization": true,
+    "deleteVersusEditFailsClosed": true,
+    "divergentSameIdentityFailsClosed": true
+  },
+  "items": {
+    "a": {
+      "workoutStartedAt": 1785790000000,
+      "durationSeconds": 600,
+      "gymCalories": 30
+    },
+    "aLocalEdit": {
+      "workoutStartedAt": 1785790000000,
+      "durationSeconds": 660,
+      "gymCalories": 31.5,
+      "note": "local edit"
+    },
+    "aRemoteEdit": {
+      "workoutStartedAt": 1785790000000,
+      "durationSeconds": 720,
+      "gymCalories": 32,
+      "note": "remote edit"
+    },
+    "b": {
+      "workoutStartedAt": 1785791000000,
+      "durationSeconds": 754,
+      "gymCalories": 40
+    },
+    "cExact": {
+      "workoutStartedAt": 1785792000000,
+      "durationSeconds": 900,
+      "gymCalories": 45.125,
+      "note": "owner private"
+    },
+    "cZero": {
+      "workoutStartedAt": 1785792000000,
+      "durationSeconds": 900,
+      "gymCalories": 45.125,
+      "garminCalories": 0,
+      "averageHeartRate": 0,
+      "maximumHeartRate": 0,
+      "endingHeartRateZone": 0,
+      "note": "owner private"
+    }
+  },
+  "mergeScenarios": [
+    {
+      "name": "unchanged",
+      "base": ["a"],
+      "local": ["a"],
+      "remote": ["a"],
+      "result": ["a"]
+    },
+    {
+      "name": "local edit wins against unchanged remote",
+      "base": ["a"],
+      "local": ["aLocalEdit"],
+      "remote": ["a"],
+      "result": ["aLocalEdit"]
+    },
+    {
+      "name": "remote edit wins against unchanged local",
+      "base": ["a"],
+      "local": ["a"],
+      "remote": ["aRemoteEdit"],
+      "result": ["aRemoteEdit"]
+    },
+    {
+      "name": "same edit on both sides",
+      "base": ["a"],
+      "local": ["aLocalEdit"],
+      "remote": ["aLocalEdit"],
+      "result": ["aLocalEdit"]
+    },
+    {
+      "name": "independent additions merge",
+      "base": [],
+      "local": ["b"],
+      "remote": ["cExact"],
+      "result": ["b", "cExact"]
+    },
+    {
+      "name": "local deletion propagates",
+      "base": ["a"],
+      "local": [],
+      "remote": ["a"],
+      "result": []
+    },
+    {
+      "name": "remote deletion propagates",
+      "base": ["a"],
+      "local": ["a"],
+      "remote": [],
+      "result": []
+    },
+    {
+      "name": "deletion and unrelated addition both survive",
+      "base": ["a"],
+      "local": ["b"],
+      "remote": [],
+      "result": ["b"]
+    },
+    {
+      "name": "remote deletion and independent local addition",
+      "base": ["a"],
+      "local": ["a", "b"],
+      "remote": [],
+      "result": ["b"]
+    },
+    {
+      "name": "local deletion and independent exact remote addition",
+      "base": ["a"],
+      "local": [],
+      "remote": ["a", "cExact"],
+      "result": ["cExact"]
+    },
+    {
+      "name": "equal concurrent same-identity addition",
+      "base": [],
+      "local": ["b"],
+      "remote": ["b"],
+      "result": ["b"]
+    },
+    {
+      "name": "local delete versus remote edit conflicts",
+      "base": ["a"],
+      "local": [],
+      "remote": ["aRemoteEdit"],
+      "conflict": true
+    },
+    {
+      "name": "remote delete versus local edit conflicts",
+      "base": ["a"],
+      "local": ["aLocalEdit"],
+      "remote": [],
+      "conflict": true
+    },
+    {
+      "name": "divergent edits conflict",
+      "base": ["a"],
+      "local": ["aLocalEdit"],
+      "remote": ["aRemoteEdit"],
+      "conflict": true
+    },
+    {
+      "name": "divergent concurrent same-identity additions conflict",
+      "base": [],
+      "local": ["cExact"],
+      "remote": ["cZero"],
+      "conflict": true
+    }
+  ]
+}

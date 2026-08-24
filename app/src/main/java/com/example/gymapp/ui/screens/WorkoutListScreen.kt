@@ -34,6 +34,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -216,6 +218,9 @@ fun WorkoutListScreen(
                     key = { it.session.id }
                 ) { sessionSummary ->
                     val displayDate = DateTimeUtils.formatDate(sessionSummary.session.date)
+                    val isActivityOnly = sessionSummary.exerciseCount == 0 &&
+                        sessionSummary.setCount == 0 &&
+                        sessionSummary.session.durationSeconds?.let { it > 0L } == true
                     AppPanel(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -240,54 +245,76 @@ fun WorkoutListScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
-                                InfoPill(text = stringResource(R.string.stats_sets, sessionSummary.setCount))
+                                InfoPill(
+                                    text = if (isActivityOnly) {
+                                        formatWorkoutDuration(
+                                            checkNotNull(sessionSummary.session.durationSeconds)
+                                        )
+                                    } else {
+                                        stringResource(R.string.stats_sets, sessionSummary.setCount)
+                                    }
+                                )
                             }
 
                             Text(
-                                text = sessionSummary.session.note
-                                    ?.takeIf { it.isNotBlank() }
-                                    ?.let { stringResource(R.string.details_note, it) }
-                                    ?: stringResource(R.string.details_no_note),
+                                text = if (isActivityOnly) {
+                                    stringResource(R.string.garmin_free_workout_title)
+                                } else {
+                                    sessionSummary.session.note
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { stringResource(R.string.details_note, it) }
+                                        ?: stringResource(R.string.details_no_note)
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
+                            if (isActivityOnly) {
                                 Text(
-                                    text = stringResource(
-                                        R.string.stats_exercises,
-                                        sessionSummary.exerciseCount
-                                    ),
-                                    modifier = Modifier.weight(1f),
+                                    text = stringResource(R.string.garmin_free_workout_summary),
                                     style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = stringResource(
-                                        R.string.stats_sets,
-                                        sessionSummary.setCount
-                                    ),
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = stringResource(
-                                        R.string.stats_volume,
-                                        sessionSummary.totalVolume
-                                    ),
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.stats_exercises,
+                                            sessionSummary.exerciseCount
+                                        ),
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.stats_sets,
+                                            sessionSummary.setCount
+                                        ),
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.stats_volume,
+                                            sessionSummary.totalVolume
+                                        ),
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
@@ -510,6 +537,8 @@ private fun FocusLens(
     tutorialAnchors: TutorialAnchorRegistry?,
     modifier: Modifier = Modifier
 ) {
+    var showPlanDetails by rememberSaveable { mutableStateOf(false) }
+    var showActiveOptions by rememberSaveable { mutableStateOf(false) }
     val hasActiveWorkout = activeWorkoutProgress != null
     val shouldContinueRetainedPlan = shouldShowRetainedWorkoutDraftAction(
         hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
@@ -517,12 +546,7 @@ private fun FocusLens(
     )
     val hasCompletedToday = hasCompletedWorkoutToday && !hasActiveWorkout
     val darkTheme = isSystemInDarkTheme()
-    val lensShape = RoundedCornerShape(
-        topStart = 44.dp,
-        topEnd = 76.dp,
-        bottomEnd = 60.dp,
-        bottomStart = 32.dp
-    )
+    val lensShape = RoundedCornerShape(28.dp)
     val lensBrush = if (darkTheme) {
         Brush.linearGradient(
             listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B))
@@ -547,21 +571,10 @@ private fun FocusLens(
     Column(
         modifier = focusModifier
             .fillMaxWidth()
-            .heightIn(
-                min = if (
-                    hasActiveWorkout ||
-                    hasCompletedToday ||
-                    (shouldContinueRetainedPlan && todayPlan == null)
-                ) {
-                    220.dp
-                } else {
-                    280.dp
-                }
-            )
             .clip(lensShape)
             .background(lensBrush)
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .padding(22.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -655,10 +668,35 @@ private fun FocusLens(
             )
         }
 
-        WeeklyTrainingCard(summary = weeklyTrainingSummary)
-        TodayHeroMetricsRow(metrics = todayHeroMetrics)
-
-        Spacer(modifier = Modifier.weight(1f))
+        OutlinedButton(
+            onClick = { showPlanDetails = !showPlanDetails },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+        ) {
+            Icon(
+                imageVector = if (showPlanDetails) Icons.Default.ExpandLess
+                else Icons.Default.ExpandMore,
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.focus_lens_details))
+        }
+        if (showPlanDetails) {
+            WeeklyTrainingCard(summary = weeklyTrainingSummary)
+            TodayHeroMetricsRow(metrics = todayHeroMetrics)
+            if (!hasActiveWorkout && !hasCompletedToday) {
+                TextButton(
+                    onClick = onStartWorkout,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.activation_build_manually),
+                        color = Color.White
+                    )
+                }
+            }
+        }
 
         if (hasActiveWorkout) {
             Button(
@@ -669,8 +707,8 @@ private fun FocusLens(
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF123560)
                 ),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
             ) {
@@ -678,13 +716,28 @@ private fun FocusLens(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.action_continue_workout), fontWeight = FontWeight.Bold)
             }
-            OutlinedButton(
-                onClick = onDiscardWorkout,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+            TextButton(
+                onClick = { showActiveOptions = !showActiveOptions },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) {
-                Text(stringResource(R.string.active_workout_discard_action))
+                Icon(
+                    imageVector = if (showActiveOptions) Icons.Default.ExpandLess
+                    else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.workout_plan_more_options), color = Color.White)
+            }
+            if (showActiveOptions) {
+                OutlinedButton(
+                    onClick = onDiscardWorkout,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                ) {
+                    Text(stringResource(R.string.active_workout_discard_action))
+                }
             }
         } else if (shouldContinueRetainedPlan) {
             Button(
@@ -695,8 +748,8 @@ private fun FocusLens(
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF123560)
                 ),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
             ) {
@@ -734,8 +787,8 @@ private fun FocusLens(
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF123560)
                 ),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
             ) {
@@ -767,8 +820,8 @@ private fun FocusLens(
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF123560)
                 ),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
             ) {
@@ -800,15 +853,6 @@ private fun FocusLens(
                     Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(R.string.today_edit_plan))
-                }
-                TextButton(
-                    onClick = onStartWorkout,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) {
-                    Text(
-                        stringResource(R.string.activation_create_manually),
-                        color = Color.White
-                    )
                 }
             }
         }
@@ -1114,6 +1158,7 @@ private fun FirstWorkoutActivationCard(
     var goal by rememberSaveable { mutableStateOf(TrainingGoal.AestheticFatLoss) }
     var days by rememberSaveable { mutableStateOf(4) }
     var effort by rememberSaveable { mutableStateOf(FirstWorkoutEffort.Standard) }
+    var showRecommendationOptions by rememberSaveable { mutableStateOf(false) }
     val darkTheme = isSystemInDarkTheme()
     val brush = if (darkTheme) {
         Brush.linearGradient(listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B)))
@@ -1133,10 +1178,10 @@ private fun FirstWorkoutActivationCard(
     Column(
         modifier = focusModifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(44.dp, 76.dp, 60.dp, 32.dp))
+            .clip(RoundedCornerShape(28.dp))
             .background(brush)
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(22.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         if (hasRetainedWorkoutDraft) {
             Text(
@@ -1149,8 +1194,8 @@ private fun FirstWorkoutActivationCard(
                 onClick = onContinuePlan,
                 modifier = primaryModifier.fillMaxWidth().heightIn(min = 54.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF123560)
                 ),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
             ) {
@@ -1162,41 +1207,24 @@ private fun FirstWorkoutActivationCard(
                 )
             }
         } else {
-            ActivationChoiceRow(
-                label = stringResource(R.string.activation_goal),
-                options = TrainingGoal.entries.map { value ->
-                    value to stringResource(value.labelResource())
-                },
-                selected = goal,
-                onSelected = { goal = it },
-                columns = 2
+            Text(
+                text = stringResource(R.string.activation_first_plan_title),
+                style = MaterialTheme.typography.headlineLarge,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
             )
-            ActivationChoiceRow(
-                label = stringResource(R.string.activation_days),
-                options = (2..6).map { value -> value to value.toString() },
-                selected = days,
-                onSelected = { days = it }
-            )
-            ActivationChoiceRow(
-                label = stringResource(R.string.activation_effort),
-                options = listOf(
-                    FirstWorkoutEffort.Recovery to
-                        stringResource(R.string.smart_effort_recovery),
-                    FirstWorkoutEffort.Standard to
-                        stringResource(R.string.smart_effort_standard),
-                    FirstWorkoutEffort.Hard to stringResource(R.string.smart_effort_hard)
-                ),
-                selected = effort,
-                onSelected = { effort = it }
+            Text(
+                text = stringResource(R.string.activation_first_plan_supporting),
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White.copy(alpha = 0.86f)
             )
             Button(
                 onClick = { onStart(goal, days, effort) },
                 modifier = primaryModifier.fillMaxWidth().heightIn(min = 54.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    contentColor = Color.White
-                ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF123560)
+                )
             ) {
                 Text(
                     stringResource(R.string.activation_start_plan),
@@ -1204,17 +1232,63 @@ private fun FirstWorkoutActivationCard(
                 )
             }
             OutlinedButton(
-                onClick = { onEdit(goal, days, effort) },
+                onClick = onCreateManually,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
             ) {
-                Icon(imageVector = Icons.Default.Edit, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.activation_edit_plan))
+                Text(stringResource(R.string.activation_build_manually))
             }
-            TextButton(onClick = onCreateManually, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.activation_create_manually), color = Color.White)
+            OutlinedButton(
+                onClick = { showRecommendationOptions = !showRecommendationOptions },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
+            ) {
+                Icon(
+                    imageVector = if (showRecommendationOptions) Icons.Default.ExpandLess
+                    else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.activation_adjust_recommendation))
+            }
+            if (showRecommendationOptions) {
+                ActivationChoiceRow(
+                    label = stringResource(R.string.activation_goal),
+                    options = TrainingGoal.entries.map { value ->
+                        value to stringResource(value.labelResource())
+                    },
+                    selected = goal,
+                    onSelected = { goal = it },
+                    columns = 2
+                )
+                ActivationChoiceRow(
+                    label = stringResource(R.string.activation_days),
+                    options = (2..6).map { value -> value to value.toString() },
+                    selected = days,
+                    onSelected = { days = it }
+                )
+                ActivationChoiceRow(
+                    label = stringResource(R.string.activation_effort),
+                    options = listOf(
+                        FirstWorkoutEffort.Recovery to
+                            stringResource(R.string.smart_effort_recovery),
+                        FirstWorkoutEffort.Standard to
+                            stringResource(R.string.smart_effort_standard),
+                        FirstWorkoutEffort.Hard to stringResource(R.string.smart_effort_hard)
+                    ),
+                    selected = effort,
+                    onSelected = { effort = it }
+                )
+                TextButton(
+                    onClick = { onEdit(goal, days, effort) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.activation_edit_plan), color = Color.White)
+                }
             }
         }
     }
@@ -1317,6 +1391,8 @@ private fun SmartWorkoutEffortAdjustment?.recoveryReasonResource(): Int = when (
     SmartWorkoutEffortAdjustment.AutoRecovery -> R.string.smart_effort_adjustment_auto_recovery
     SmartWorkoutEffortAdjustment.FeedbackHardRecovery ->
         R.string.smart_effort_adjustment_feedback_hard
+    SmartWorkoutEffortAdjustment.ReadinessLowRecovery ->
+        R.string.smart_effort_adjustment_readiness_low
     else -> R.string.smart_reason_recovery_effort
 }
 

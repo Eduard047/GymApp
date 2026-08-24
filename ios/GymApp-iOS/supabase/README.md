@@ -7,7 +7,24 @@ deletion Edge Function now lives at the repository root:
 [delete-account](../../../supabase/functions/delete-account/README.md). Do not
 restore a platform-local function copy.
 
-## Production deployment record — updated 2026-07-22
+## Current production metadata snapshot — read-only 2026-08-24
+
+The canonical production history contains 54 migrations through
+`20260823162119_fix_security_hardening_coalesce_calls`. Active Edge Function
+metadata is `garmin-sync` version 12 (`verify_jwt=false`), `delete-account`
+version 14 (`verify_jwt=true`), `social-live-gateway` version 6
+(`verify_jwt=true`), and `push-dispatch` version 5 (`verify_jwt=false`). The
+repository-root chain has two reviewed local-only forward migrations:
+`20260824120000_sync_activity_only_workouts.sql` and
+`20260824123000_harden_remaining_supabase_boundaries.sql`. Neither is deployed;
+production therefore does not yet match the complete canonical local chain.
+
+This metadata readback does not replace the dated functional evidence below.
+After any backend release, rerun the exact-session, cross-account, replay,
+account-switch, deletion-cascade, Garmin-device, and physical-device gates that
+apply to the changed boundary.
+
+## Historical production deployment record — 2026-07-22
 
 > The canonical current migrations live in the repository-root
 > `supabase/migrations/` directory. On 2026-07-22 production history was

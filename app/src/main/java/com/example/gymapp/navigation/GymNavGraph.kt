@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -61,7 +60,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
@@ -151,6 +149,8 @@ import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
 import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.sync.PhoneSyncClient
+import com.example.gymapp.sync.ActivityOnlyWorkoutCloudBaseline
+import com.example.gymapp.sync.ActivityOnlyWorkoutReadResult
 import com.example.gymapp.sync.CloudSnapshotApplyDecision
 import com.example.gymapp.sync.CloudSyncConflictSnapshot
 import com.example.gymapp.sync.CloudSyncBaselineStore
@@ -162,6 +162,7 @@ import com.example.gymapp.sync.cloudSnapshotApplyDecision
 import com.example.gymapp.sync.isCanonicalSharedCloudEnvelope
 import com.example.gymapp.sync.isSharedCloudStateCandidate
 import com.example.gymapp.sync.prepareSharedCloudState
+import com.example.gymapp.sync.syncActivityOnlyWorkoutSidecar
 import com.example.gymapp.sync.workoutDurationSyncItems
 import com.example.gymapp.sync.runCurrentCloudSyncConflictAction
 import com.example.gymapp.util.AppLanguage
@@ -186,6 +187,10 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+
+private class ActivityOnlyWorkoutRpcUnavailableException : IllegalStateException(
+    "Activity-only workout RPC is unavailable."
+)
 
 internal fun shouldEnableCloudAutosave(
     pullSucceeded: Boolean,
@@ -667,8 +672,6 @@ internal fun GymAppRoot(
     pushManager: AndroidPushManager,
     pushNavigationInbox: PushNavigationInbox
 ) {
-    val useCompactBottomNavigationLabels =
-        LocalConfiguration.current.screenWidthDp <= 360
     val authState by authManager.authState.collectAsState()
     val uiIsolationKey = accountUiIsolationKey(
         session = authState.session,
@@ -747,6 +750,11 @@ internal fun GymAppRoot(
     }
     var cloudPullGeneration by key(uiIsolationKey) {
         remember { mutableStateOf<String?>(null) }
+    }
+    var activityOnlyCloudBaseline by key(uiIsolationKey) {
+        // The exact canonical item set is also durable in the account-specific Room database;
+        // this state only arms autosave after a successful owner-private RPC reconciliation.
+        remember { mutableStateOf<ActivityOnlyWorkoutCloudBaseline?>(null) }
     }
     var cloudSyncRetryVersion by key(uiIsolationKey) {
         remember { mutableStateOf(0) }
@@ -1291,6 +1299,74 @@ internal fun GymAppRoot(
         cloudSyncStatus = CloudSyncUiStatus(CloudSyncPhase.Synced, timestamp)
     }
 
+    suspend fun syncActivityOnlyFromBaseline(
+        session: AccountSession.Cloud,
+        baseline: ActivityOnlyWorkoutCloudBaseline?,
+        forceRemoteRead: Boolean = false
+    ): ActivityOnlyWorkoutCloudBaseline {
+        check(isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+            "Cloud account changed before activity-only synchronization."
+        }
+        val synced = syncActivityOnlyWorkoutSidecar(
+            ownerUserId = session.userId,
+            baseline = baseline,
+            readLocal = repository::getActivityOnlyWorkoutSnapshot,
+            reconcileLocal = repository::reconcileActivityOnlyWorkoutSidecar,
+            readRemote = {
+                when (val result = authManager.loadActivityOnlyWorkouts(session)) {
+                    is ActivityOnlyWorkoutReadResult.Available -> result.snapshot
+                    ActivityOnlyWorkoutReadResult.Unavailable ->
+                        throw ActivityOnlyWorkoutRpcUnavailableException()
+                }
+            },
+            writeRemote = { revision, requestId, items ->
+                authManager.syncActivityOnlyWorkouts(
+                    session = session,
+                    expectedRevision = revision,
+                    requestId = requestId,
+                    items = items
+                )
+            },
+            readJournal = repository::getActivityOnlyWorkoutSyncJournal,
+            persistJournal = repository::persistActivityOnlyWorkoutSyncJournal,
+            clearJournal = repository::clearActivityOnlyWorkoutSyncJournal,
+            persistBaseline = { confirmed ->
+                check(confirmed.ownerUserId == session.userId &&
+                    isSameCloudSessionGeneration(
+                        session,
+                        authManager.authState.value.session
+                    )) {
+                    "Cloud account changed while persisting activity-only baseline."
+                }
+                repository.persistActivityOnlyWorkoutSyncBaseline(confirmed.toRecord())
+            },
+            forceRemoteRead = forceRemoteRead
+        )
+        check(isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+            "Cloud account changed during activity-only synchronization."
+        }
+        return synced
+    }
+
+    suspend fun pullAndSyncActivityOnly(
+        session: AccountSession.Cloud
+    ): ActivityOnlyWorkoutCloudBaseline? {
+        check(isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+            "Cloud account changed before loading activity-only history."
+        }
+        val durableBaseline = repository.getActivityOnlyWorkoutSyncBaseline(session.userId)
+            ?.let(ActivityOnlyWorkoutCloudBaseline::fromRecord)
+        return try {
+            syncActivityOnlyFromBaseline(
+                session = session,
+                baseline = durableBaseline,
+                forceRemoteRead = true
+            )
+        } catch (throwable: Throwable) {
+            if (throwable is ActivityOnlyWorkoutRpcUnavailableException) null else throw throwable
+        }
+    }
+
     LaunchedEffect(uiIsolationKey) {
         if (authState.session is AccountSession.Local) {
             repository.seedBuiltInExercises()
@@ -1302,10 +1378,12 @@ internal fun GymAppRoot(
         val session = cloudSession ?: return@LaunchedEffect
         updateCloudSyncPhase(session, CloudSyncPhase.Checking)
         cloudPullGeneration = null
+        activityOnlyCloudBaseline = null
         cloudSyncRetryMode = null
         val pullResult = runCatching {
+            var pullConfirmedWithoutUpload = false
             val remoteState = authManager.loadRemoteState(session)
-            if (remoteState != null && remoteState.length() > 0) {
+            val canonicalRoundTripSafe = if (remoteState != null && remoteState.length() > 0) {
                 val preparedSharedState = if (isSharedCloudStateCandidate(remoteState)) {
                     withContext(Dispatchers.Default) {
                         prepareSharedCloudState(remoteState, session.userId)
@@ -1368,7 +1446,7 @@ internal fun GymAppRoot(
                                 session,
                                 authManager.authState.value.session
                             )) { "Cloud account changed while confirming the sync baseline." }
-                            recordCloudSyncSuccess(session)
+                            pullConfirmedWithoutUpload = true
                             true
                         }
 
@@ -1394,7 +1472,7 @@ internal fun GymAppRoot(
                                 session,
                                 authManager.authState.value.session
                             )) { "Cloud account changed while confirming the sync baseline." }
-                            recordCloudSyncSuccess(session)
+                            pullConfirmedWithoutUpload = true
                             true
                         }
 
@@ -1430,6 +1508,11 @@ internal fun GymAppRoot(
                     }
                 }
             }
+            if (canonicalRoundTripSafe) {
+                activityOnlyCloudBaseline = pullAndSyncActivityOnly(session)
+                if (pullConfirmedWithoutUpload) recordCloudSyncSuccess(session)
+            }
+            canonicalRoundTripSafe
         }
         pullResult.onFailure { throwable ->
             if (throwable is CancellationException) throw throwable
@@ -1490,9 +1573,15 @@ internal fun GymAppRoot(
         combine(
             repository.observeSessions(),
             repository.observeExercises(),
-            repository.observeExerciseMuscleMappings()
-        ) { sessions, exercises, mappings ->
-            listOf(sessions.size, exercises.size, mappings.size)
+            repository.observeExerciseMuscleMappings(),
+            repository.observeActivityOnlyWorkoutFingerprint()
+        ) { sessions, exercises, mappings, activityOnlyFingerprint ->
+            listOf(
+                sessions.size.toString(),
+                exercises.size.toString(),
+                mappings.size.toString(),
+                activityOnlyFingerprint
+            )
         }
             .onEach { updateCloudSyncPhase(session, CloudSyncPhase.Pending) }
             .debounce(1_500)
@@ -1528,6 +1617,12 @@ internal fun GymAppRoot(
                     )) { "Cloud account changed while confirming the sync baseline." }
                     check(cloudSyncBaselineStore.write(session.userId, stateDigest)) {
                         "Could not persist the cloud sync baseline. Automatic upload is paused."
+                    }
+                    activityOnlyCloudBaseline?.let { baseline ->
+                        activityOnlyCloudBaseline = syncActivityOnlyFromBaseline(
+                            session = session,
+                            baseline = baseline
+                        )
                     }
                     check(isSameCloudSessionGeneration(
                         session,
@@ -1667,6 +1762,7 @@ internal fun GymAppRoot(
                     // safely accepted; autosave will then publish the additive change if needed.
                     repository.seedBuiltInExercises()
                     repository.seedDefaultExerciseMuscleMappings()
+                    activityOnlyCloudBaseline = pullAndSyncActivityOnly(session)
                     recordCloudSyncSuccess(session)
                 }
             }
@@ -2062,31 +2158,14 @@ internal fun GymAppRoot(
                                                 Text(
                                                     text = stringResource(tab.labelRes),
                                                     style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontSize = if (
-                                                            useCompactBottomNavigationLabels
-                                                        ) {
-                                                            8.5.sp
-                                                        } else {
-                                                            9.sp
-                                                        },
-                                                        letterSpacing = if (
-                                                            useCompactBottomNavigationLabels
-                                                        ) {
-                                                            (-0.2).sp
-                                                        } else {
-                                                            0.sp
-                                                        }
+                                                        fontSize = 12.sp,
+                                                        lineHeight = 14.sp,
+                                                        letterSpacing = 0.sp
                                                     ),
-                                                    modifier = if (
-                                                        useCompactBottomNavigationLabels
-                                                    ) {
-                                                        Modifier.wrapContentWidth(unbounded = true)
-                                                    } else {
-                                                        Modifier.fillMaxWidth()
-                                                    },
+                                                    modifier = Modifier.fillMaxWidth(),
                                                     textAlign = TextAlign.Center,
-                                                    maxLines = 1,
-                                                    softWrap = false,
+                                                    maxLines = 2,
+                                                    softWrap = true,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                             }

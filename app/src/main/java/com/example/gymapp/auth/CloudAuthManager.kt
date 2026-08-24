@@ -11,6 +11,12 @@ import com.example.gymapp.data.repository.SharedWorkoutPlan
 import com.example.gymapp.data.repository.LiveWorkoutBinding
 import com.example.gymapp.data.repository.LiveWorkoutSidecarStore
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.data.repository.ActivityOnlyWorkoutItem
+import com.example.gymapp.sync.ActivityOnlyWorkoutReadResult
+import com.example.gymapp.sync.ActivityOnlyWorkoutSyncResponse
+import com.example.gymapp.sync.activityOnlyWorkoutSyncRequestJson
+import com.example.gymapp.sync.parseActivityOnlyWorkoutReadResponse
+import com.example.gymapp.sync.parseActivityOnlyWorkoutSyncResponse
 import com.example.gymapp.push.PushRegistration
 import com.example.gymapp.push.PushRevocation
 import com.example.gymapp.push.PushRpcSerialGate
@@ -22,6 +28,7 @@ import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +41,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URLEncoder
 import java.net.URL
@@ -56,6 +64,7 @@ private const val MAX_CLOUD_RESPONSE_BYTES = 256 * 1_024
 private const val MAX_CLOUD_STATE_RESPONSE_BYTES = 10 * 1_024 * 1_024
 private const val MAX_CLOUD_REQUEST_BYTES = 10 * 1_024 * 1_024
 private const val MAX_CLOUD_ERROR_RESPONSE_BYTES = 64 * 1_024
+private const val MAX_ACTIVITY_ONLY_CLOUD_RESPONSE_BYTES = 1_048_576
 private const val MAX_STORED_SESSION_BYTES = 64 * 1_024
 private const val MAX_AUTH_TOKEN_CHARS = 16 * 1_024
 private const val INACTIVE_CLOUD_SESSION_MESSAGE =
@@ -68,6 +77,58 @@ internal fun requireSafeCloudStateResponse(response: String) {
         rawJson = response,
         maximumBytes = MAX_CLOUD_STATE_RESPONSE_BYTES
     )
+}
+
+internal data class WorkoutDurationSyncAcknowledgement(
+    val syncedCount: Int,
+    val changedCount: Int
+)
+
+/** Strict production v2 acknowledgement; malformed or server-error envelopes fail closed. */
+internal fun parseWorkoutDurationSyncAcknowledgement(
+    rawResponse: String,
+    expectedCount: Int
+): WorkoutDurationSyncAcknowledgement {
+    require(expectedCount in 0..WorkoutDataLimits.MAX_SESSIONS)
+    WorkoutDataLimits.requireSafeJsonEnvelope(rawResponse, MAX_CLOUD_RESPONSE_BYTES)
+    val root = JSONObject(rawResponse)
+
+    fun exactInt(key: String, range: IntRange): Int {
+        val raw = root.opt(key)
+        require(raw is Number) { "Workout duration sync response is invalid." }
+        val value = runCatching { java.math.BigDecimal(raw.toString()).intValueExact() }
+            .getOrElse { throw IllegalArgumentException("Workout duration sync response is invalid.") }
+        require(value in range) { "Workout duration sync response is invalid." }
+        return value
+    }
+
+    require(exactInt("version", 2..2) == 2) {
+        "Workout duration sync response is invalid."
+    }
+    if (root.has("error")) {
+        require(root.keys().asSequence().toSet() == setOf("version", "error", "retryAfter")) {
+            "Workout duration sync response is invalid."
+        }
+        val error = root.opt("error") as? String
+            ?: throw IllegalArgumentException("Workout duration sync response is invalid.")
+        require(error.isNotBlank() && error.length <= 64) {
+            "Workout duration sync response is invalid."
+        }
+        exactInt("retryAfter", 1..600)
+        error("Workout duration synchronization was rejected: $error")
+    }
+    require(root.keys().asSequence().toSet() == setOf("version", "syncedCount", "changedCount")) {
+        "Workout duration sync response is invalid."
+    }
+    val syncedCount = exactInt("syncedCount", 0..WorkoutDataLimits.MAX_SESSIONS)
+    val changedCount = exactInt(
+        "changedCount",
+        0..(WorkoutDataLimits.MAX_SESSIONS * 2)
+    )
+    require(syncedCount == expectedCount) {
+        "Workout duration sync response is invalid."
+    }
+    return WorkoutDurationSyncAcknowledgement(syncedCount, changedCount)
 }
 
 sealed class AccountSession {
@@ -146,6 +207,37 @@ internal fun isUnavailableSocialWorkoutInboxPageRpc(
     responseCode: Int,
     errorCode: String?
 ): Boolean = responseCode == 404 && errorCode in setOf("PGRST202", "42883")
+
+internal fun isUnavailableActivityOnlyWorkoutRpc(
+    responseCode: Int,
+    errorCode: String?
+): Boolean = responseCode == 404 && errorCode in setOf("PGRST202", "PGRST203")
+
+internal fun isRetryableActivityOnlyWorkoutSqlState(errorCode: String?): Boolean =
+    errorCode in setOf("55P03", "57014")
+
+/** Retries only outcome-unknown transport failures; [operation] must close over one exact body. */
+internal suspend fun <T> retryActivityOnlyWorkoutOutcomeUnknown(
+    maximumAttempts: Int = 3,
+    isRetryableSqlFailure: (Throwable) -> Boolean,
+    retryDelay: suspend (attempt: Int) -> Unit = { attempt -> delay(150L * attempt) },
+    operation: suspend () -> T
+): T {
+    require(maximumAttempts in 1..3)
+    var lastTransient: Throwable? = null
+    repeat(maximumAttempts) { attempt ->
+        try {
+            return operation()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            if (error !is IOException && !isRetryableSqlFailure(error)) throw error
+            lastTransient = error
+        }
+        if (attempt + 1 < maximumAttempts) retryDelay(attempt + 1)
+    }
+    throw checkNotNull(lastTransient)
+}
 
 internal fun socialWorkoutInboxPageRequestBody(
     cursor: SocialWorkoutInboxCursor?,
@@ -666,6 +758,7 @@ class CloudAuthManager internal constructor(
     private val authStateLock = Any()
     private val refreshMutex = Mutex()
     private val remoteStateMutex = Mutex()
+    private val activityOnlyWorkoutMutex = Mutex()
     private val pushRpcGate = PushRpcSerialGate()
     private val logoutRevokeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile
@@ -1501,6 +1594,75 @@ class CloudAuthManager internal constructor(
         }
     }
 
+    internal suspend fun loadActivityOnlyWorkouts(
+        session: AccountSession.Cloud
+    ): ActivityOnlyWorkoutReadResult = withContext(Dispatchers.IO) {
+        activityOnlyWorkoutMutex.withLock {
+            val freshSession = freshCloudSession(session)
+            val response = try {
+                authenticatedRequest(
+                    session = freshSession,
+                    path = "/rest/v1/rpc/garmin_read_activity_only_workouts",
+                    method = "POST",
+                    body = "{}",
+                    maxResponseBytes = MAX_ACTIVITY_ONLY_CLOUD_RESPONSE_BYTES
+                )
+            } catch (error: SupabaseHttpException) {
+                if (isUnavailableActivityOnlyWorkoutRpc(
+                        responseCode = error.responseCode,
+                        errorCode = error.errorCode
+                    )
+                ) {
+                    return@withLock ActivityOnlyWorkoutReadResult.Unavailable
+                }
+                throw error
+            }
+            requireActiveCloudSession(freshSession)
+            ActivityOnlyWorkoutReadResult.Available(
+                parseActivityOnlyWorkoutReadResponse(response)
+            )
+        }
+    }
+
+    /**
+     * Sends a pre-identified full CAS snapshot. Every transient retry reuses the exact serialized
+     * body, so a timeout after commit can only become an idempotent server replay. UUID lifecycle
+     * belongs to the durable Room journal and is never changed by this transport method.
+     */
+    internal suspend fun syncActivityOnlyWorkouts(
+        session: AccountSession.Cloud,
+        expectedRevision: Long,
+        requestId: String,
+        items: List<ActivityOnlyWorkoutItem>
+    ): ActivityOnlyWorkoutSyncResponse {
+        val exactBody = activityOnlyWorkoutSyncRequestJson(
+            expectedRevision = expectedRevision,
+            requestId = requestId,
+            items = items
+        ).toString()
+        return withContext(Dispatchers.IO) {
+            activityOnlyWorkoutMutex.withLock {
+                retryActivityOnlyWorkoutOutcomeUnknown(
+                    isRetryableSqlFailure = { error ->
+                        error is SupabaseHttpException &&
+                            isRetryableActivityOnlyWorkoutSqlState(error.errorCode)
+                    }
+                ) {
+                    val freshSession = freshCloudSession(session)
+                    val response = authenticatedRequest(
+                        session = freshSession,
+                        path = "/rest/v1/rpc/garmin_sync_activity_only_workouts",
+                        method = "POST",
+                        body = exactBody,
+                        maxResponseBytes = MAX_ACTIVITY_ONLY_CLOUD_RESPONSE_BYTES
+                    )
+                    requireActiveCloudSession(freshSession)
+                    parseActivityOnlyWorkoutSyncResponse(response)
+                }
+            }
+        }
+    }
+
     suspend fun saveRemoteState(
         session: AccountSession.Cloud,
         state: JSONObject,
@@ -1595,12 +1757,10 @@ class CloudAuthManager internal constructor(
                     method = "POST",
                     body = JSONObject().put("p_items", workoutDurations).toString()
                 )
-                val result = JSONObject(durationResponse)
-                check(result.keys().asSequence().toSet() == setOf("version", "syncedCount") &&
-                    result.optInt("version", -1) == 1 &&
-                    result.optInt("syncedCount", -1) == workoutDurations.length()) {
-                    "Workout duration sync response is invalid."
-                }
+                parseWorkoutDurationSyncAcknowledgement(
+                    rawResponse = durationResponse,
+                    expectedCount = workoutDurations.length()
+                )
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
                 // The core row and public profile are already committed. Duration is an

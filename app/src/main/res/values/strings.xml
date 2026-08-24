@@ -441,9 +441,18 @@
     <string name="active_workout_supporting">Record each completed set. It is saved before a movement-aware rest timer starts.</string>
     <string name="active_workout_progress">Completed %1$d of %2$d sets</string>
     <string name="active_workout_total_time">Workout time: %1$s</string>
+    <string name="active_workout_elapsed_label">Elapsed</string>
+    <string name="active_workout_completed_label">Completed</string>
+    <string name="active_workout_completed_value">%1$d of %2$d</string>
+    <string name="active_workout_started_at">Started at %1$s</string>
+    <string name="active_workout_progress_accessibility">Workout progress</string>
     <string name="active_workout_finish_eyebrow">WHEN YOU ARE DONE</string>
     <string name="active_workout_finish_supporting">Only recorded sets will be added to workout history. Planned rows stay out of your statistics.</string>
     <string name="active_workout_discard_action">Discard active workout</string>
+    <string name="active_workout_more_options">More workout options</string>
+    <string name="active_workout_exercise_current">Current</string>
+    <string name="active_workout_exercise_completed">Completed</string>
+    <string name="active_workout_exercise_up_next">Up next</string>
     <string name="active_workout_discard_title">Discard this workout?</string>
     <string name="active_workout_discard_message">The active plan and its recorded sets will be removed from this device. Nothing will be added to workout history.</string>
     <string name="active_workout_discard_confirm">Discard workout</string>
@@ -709,6 +718,7 @@
     <string name="smart_coach_generated_focus">%1$s workout · Variant %2$s</string>
     <string name="smart_coach_applied_effort">Applied effort: %1$s</string>
     <string name="smart_effort_adjustment_auto_recovery">Auto selected Recovery because the target muscles were trained recently.</string>
+    <string name="smart_effort_adjustment_readiness_low">Recovery selected from today’s low-readiness check-in.</string>
     <string name="smart_effort_adjustment_history">Hard was reduced to Standard: more training history is needed.</string>
     <string name="smart_effort_adjustment_break">Hard was reduced to Standard after a longer training break.</string>
     <string name="smart_effort_adjustment_recovery">Hard was reduced to Standard because the target muscles are still recovering.</string>
@@ -724,6 +734,7 @@
     <string name="today_add_another_workout">Add another workout</string>
     <string name="today_continue_plan">Continue plan</string>
     <string name="weekly_training_summary_title">This week</string>
+    <string name="focus_lens_details">Week and plan details</string>
     <string name="weekly_training_day_completed">trained</string>
     <string name="weekly_training_day_not_completed">not trained</string>
     <string name="weekly_training_day_today">today</string>
@@ -732,9 +743,13 @@
     <string name="weekly_training_minutes_label">Minutes</string>
     <string name="weekly_training_volume_label">Volume</string>
     <string name="activation_goal">Goal</string>
+    <string name="activation_first_plan_title">Your first plan</string>
+    <string name="activation_first_plan_supporting">Use the suggestion now or build the workout yourself. You can adjust every setting.</string>
+    <string name="activation_adjust_recommendation">Adjust recommendation</string>
+    <string name="activation_build_manually">Build manually</string>
     <string name="activation_days">Days / week</string>
     <string name="activation_effort">Today’s effort</string>
-    <string name="activation_start_plan">Start plan</string>
+    <string name="activation_start_plan">Use suggested plan</string>
     <string name="activation_skip">Skip</string>
     <string name="today_weekly_rhythm">Weekly rhythm</string>
     <string name="today_weekly_value">%1$d / %2$d days</string>
@@ -912,6 +927,8 @@
     <string name="details_note">Note: %1$s</string>
     <string name="details_no_note">No note</string>
     <string name="garmin_workout_title">Garmin strength workout</string>
+    <string name="garmin_free_workout_title">Garmin free workout</string>
+    <string name="garmin_free_workout_summary">Time, heart rate, and calories — no exercises or sets</string>
     <string name="garmin_workout_format_title">Garmin-format strength workout</string>
     <string name="garmin_workout_synced_from">%1$s · synced from Garmin</string>
     <string name="garmin_workout_note_derived_from">%1$s · metrics read from the saved note</string>
@@ -1219,7 +1236,7 @@
     <string name="push_live_participant_finished_body">Your friend finished the live workout.</string>
     <string name="push_live_room_closed_title">Live workout ended</string>
     <string name="push_live_room_closed_body">Open GymApp to view the latest state.</string>
-    <string name="activation_edit_plan">Edit plan</string>
+    <string name="activation_edit_plan">Review exercises</string>
     <string name="activation_create_manually">Create manually</string>
     <string name="today_plan_size">%1$d exercises · %2$d sets</string>
     <string name="today_plan_duration">About %1$d min</string>

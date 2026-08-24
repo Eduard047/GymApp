@@ -24,7 +24,7 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   );
   assert.match(
     finishWorkout,
-    /GymStore\.sets\.size\(\) == 0 \|\| !GymStore\.hasAccountBinding\(\)[\s\S]*return true;/
+    /if \(!GymStore\.hasAccountBinding\(\)\)[\s\S]*return true;/
   );
   assert.match(view, /finishWorkoutMessage\(GymStore\.preparedWorkoutMessage\(\)\)/);
   assert.ok(
@@ -128,7 +128,7 @@ test("Garmin partial workouts declare plan progress and drain one queued workout
     "static function workoutMessage(requestId)",
     "static function applyPhoneSync("
   );
-  assert.match(workoutMessage, /if \(GymWorkoutMode\.usesPlan && plan\.size\(\) > 0\)/);
+  assert.match(workoutMessage, /if \(!freeMode && plan\.size\(\) > 0\)/);
   assert.match(workoutMessage, /var plannedTargetSetCount = plan\.size\(\)/);
   assert.match(workoutMessage, /var plannedSetCount = plannedTargetSetCount/);
   assert.match(workoutMessage, /plannedSetCount < setCopies\.size\(\)[\s\S]*plannedSetCount = setCopies\.size\(\)/);

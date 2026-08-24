@@ -47,27 +47,62 @@ class StringResourceParityTest {
         val russian = loadStrings("values-ru")
 
         assertEquals(
-            listOf("Start plan", "Edit plan", "Create manually"),
+            listOf("Use suggested plan", "Review exercises", "Build manually"),
             listOf(
                 english["activation_start_plan"],
                 english["activation_edit_plan"],
-                english["activation_create_manually"]
+                english["activation_build_manually"]
             )
         )
         assertEquals(
-            listOf("Почати план", "Редагувати план", "Створити вручну"),
+            listOf("Використати пораду", "Переглянути вправи", "Створити вручну"),
             listOf(
                 ukrainian["activation_start_plan"],
                 ukrainian["activation_edit_plan"],
-                ukrainian["activation_create_manually"]
+                ukrainian["activation_build_manually"]
             )
         )
         assertEquals(
-            listOf("Начать план", "Редактировать план", "Создать вручную"),
+            listOf("Использовать рекомендацию", "Посмотреть упражнения", "Собрать вручную"),
             listOf(
                 russian["activation_start_plan"],
                 russian["activation_edit_plan"],
-                russian["activation_create_manually"]
+                russian["activation_build_manually"]
+            )
+        )
+    }
+
+    @Test
+    fun activeWorkoutHeroMetricsAreExplicitInEverySupportedLanguage() {
+        val english = loadStrings("values")
+        val ukrainian = loadStrings("values-uk")
+        val russian = loadStrings("values-ru")
+
+        assertEquals(
+            listOf("Elapsed", "Completed", "%1\$d of %2\$d", "Started at %1\$s"),
+            listOf(
+                english["active_workout_elapsed_label"],
+                english["active_workout_completed_label"],
+                english["active_workout_completed_value"],
+                english["active_workout_started_at"]
+            )
+        )
+        assertEquals(
+            listOf("Минуло", "Виконано", "%1\$d з %2\$d", "Початок о %1\$s"),
+            listOf(
+                ukrainian["active_workout_elapsed_label"],
+                ukrainian["active_workout_completed_label"],
+                ukrainian["active_workout_completed_value"],
+                ukrainian["active_workout_started_at"]
+            )
+        )
+        assertEquals(
+            listOf("Прошло", "Выполнено", "%1\$d из %2\$d", "Начало в %1\$s"),
+            listOf(
+                russian["active_workout_elapsed_label"],
+                russian["active_workout_completed_label"],
+                russian["active_workout_completed_value"],
+                russian["active_workout_started_at"]
             )
         )
     }

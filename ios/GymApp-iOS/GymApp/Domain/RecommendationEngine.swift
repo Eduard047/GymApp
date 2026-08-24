@@ -45,6 +45,7 @@ public enum SmartWorkoutEffortAdjustment: String, Codable, Hashable, Sendable {
     case autoRecovery
     case autoFeedbackRecovery
     case feedbackEasyExtraSet
+    case readinessLowRecovery
     case hardInsufficientHistory
     case hardLongBreak
     case hardTargetNotRecovered
@@ -107,6 +108,8 @@ public enum WorkoutRecommendationReason: String, Codable, CaseIterable, Sendable
     case aestheticGoal
     case calorieDeficit
     case fourDayUpperLower
+    case exerciseFeedbackTooHard
+    case exerciseFeedbackRepeatedEasy
 }
 
 public struct WorkoutRecommendation: Codable, Identifiable, Hashable, Sendable {
@@ -119,8 +122,11 @@ public struct WorkoutRecommendation: Codable, Identifiable, Hashable, Sendable {
     public let daysSinceLastSession: Int?
     public let reasons: [WorkoutRecommendationReason]
 
+    public var freshForSeconds: Int { smartCoachV2FreshForSeconds }
+
     public var targetRIR: ClosedRange<Int> {
-        if kind == .deload || kind == .comeback || reasons.contains(.recoverySession) {
+        if kind == .deload || kind == .comeback || reasons.contains(.recoverySession) ||
+            reasons.contains(.exerciseFeedbackTooHard) {
             return 3 ... 4
         }
         if reasons.contains(.hardSession), sets.count == 4 {
@@ -143,6 +149,13 @@ public struct SmartWorkoutExercise: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID { exercise.id }
     public let exercise: Exercise
     public let recommendation: WorkoutRecommendation
+
+    public var recommendedRestSeconds: Int {
+        RecommendationEngine.restDurationSeconds(
+            exerciseCatalogKey: exercise.catalogKey,
+            exerciseName: exercise.name
+        )
+    }
 }
 
 public struct SmartWorkoutAlternative: Identifiable, Hashable, Sendable {
@@ -181,6 +194,12 @@ public struct SmartWorkoutPlan: Codable, Identifiable, Hashable, Sendable {
     public let requestedEffort: SmartWorkoutEffort
     public let appliedEffort: SmartWorkoutEffort
     public let effortAdjustment: SmartWorkoutEffortAdjustment?
+    public let adaptationReasons: [SmartCoachV2Reason]
+    public let estimatedMinutes: Int?
+    public let setBudget: Int?
+
+    public var contractVersion: Int { smartCoachV2ContractVersion }
+    public var freshForSeconds: Int { smartCoachV2FreshForSeconds }
 
     public init(
         focus: SmartWorkoutFocus,
@@ -188,7 +207,10 @@ public struct SmartWorkoutPlan: Codable, Identifiable, Hashable, Sendable {
         variant: SmartWorkoutVariant = .a,
         requestedEffort: SmartWorkoutEffort = .auto,
         appliedEffort: SmartWorkoutEffort = .standard,
-        effortAdjustment: SmartWorkoutEffortAdjustment? = nil
+        effortAdjustment: SmartWorkoutEffortAdjustment? = nil,
+        adaptationReasons: [SmartCoachV2Reason] = [],
+        estimatedMinutes: Int? = nil,
+        setBudget: Int? = nil
     ) {
         self.focus = focus
         self.exercises = exercises
@@ -196,6 +218,9 @@ public struct SmartWorkoutPlan: Codable, Identifiable, Hashable, Sendable {
         self.requestedEffort = requestedEffort
         self.appliedEffort = appliedEffort == .auto ? .standard : appliedEffort
         self.effortAdjustment = effortAdjustment
+        self.adaptationReasons = Array(adaptationReasons.prefix(4))
+        self.estimatedMinutes = estimatedMinutes
+        self.setBudget = setBudget
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -205,6 +230,9 @@ public struct SmartWorkoutPlan: Codable, Identifiable, Hashable, Sendable {
         case requestedEffort
         case appliedEffort
         case effortAdjustment
+        case adaptationReasons
+        case estimatedMinutes
+        case setBudget
     }
 
     public init(from decoder: Decoder) throws {
@@ -225,6 +253,12 @@ public struct SmartWorkoutPlan: Codable, Identifiable, Hashable, Sendable {
             SmartWorkoutEffortAdjustment.self,
             forKey: .effortAdjustment
         )
+        adaptationReasons = Array((try container.decodeIfPresent(
+            [SmartCoachV2Reason].self,
+            forKey: .adaptationReasons
+        ) ?? []).prefix(4))
+        estimatedMinutes = try container.decodeIfPresent(Int.self, forKey: .estimatedMinutes)
+        setBudget = try container.decodeIfPresent(Int.self, forKey: .setBudget)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -235,6 +269,11 @@ public struct SmartWorkoutPlan: Codable, Identifiable, Hashable, Sendable {
         try container.encode(requestedEffort, forKey: .requestedEffort)
         try container.encode(appliedEffort, forKey: .appliedEffort)
         try container.encodeIfPresent(effortAdjustment, forKey: .effortAdjustment)
+        if !adaptationReasons.isEmpty {
+            try container.encode(adaptationReasons, forKey: .adaptationReasons)
+        }
+        try container.encodeIfPresent(estimatedMinutes, forKey: .estimatedMinutes)
+        try container.encodeIfPresent(setBudget, forKey: .setBudget)
     }
 }
 
@@ -262,6 +301,7 @@ public enum RecommendationEngine {
         case machine
         case bodyweight
         case assisted
+        case band
         case other
     }
 
@@ -391,7 +431,7 @@ public enum RecommendationEngine {
         "assisted_dip": .assisted,
         "pull_up": .bodyweight,
         "assisted_pull_up": .assisted,
-        "band_assisted_pull_up": .assisted,
+        "band_assisted_pull_up": .band,
         "lat_pulldown": .cable,
         "straight_arm_pulldown": .cable,
         "barbell_row": .barbell,
@@ -445,6 +485,7 @@ public enum RecommendationEngine {
         trainingProfile: TrainingProfile = TrainingProfile(),
         effort: SmartWorkoutEffort = .standard,
         allowsHardSetBoost: Bool = true,
+        exerciseFeedback: [SmartCoachExerciseFeedbackSignalV2] = [],
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> WorkoutRecommendation {
@@ -507,7 +548,7 @@ public enum RecommendationEngine {
                 programmingAnalysis?.loadMode == .bodyweight
                 ? max(repRange.lowerBound, defaultRepsTarget - 1)
                 : defaultRepsTarget
-            return WorkoutRecommendation(
+            let recommendation = WorkoutRecommendation(
                 exerciseID: exerciseID,
                 sets: (0 ..< targetSetCount).map { index in
                     RecommendedWorkoutSet(
@@ -530,6 +571,12 @@ public enum RecommendationEngine {
                 reasons: appliedEffort == .recovery
                     ? [.noHistory, .recoverySession]
                     : [.noHistory]
+            )
+            return applyingExerciseFeedbackV2(
+                recommendation,
+                analysis: programmingAnalysis,
+                machineLoadProfile: machineLoadProfile,
+                feedback: exerciseFeedback
             )
         }
 
@@ -770,7 +817,7 @@ public enum RecommendationEngine {
         addReason(.conservativeIncrease, when: kind == .progressiveOverload)
         if reasons.isEmpty { reasons = [.conservativeIncrease] }
 
-        return WorkoutRecommendation(
+        let recommendation = WorkoutRecommendation(
             exerciseID: exerciseID,
             sets: sets,
             kind: kind,
@@ -786,6 +833,92 @@ public enum RecommendationEngine {
             daysSinceLastSession: daysSinceLastSession,
             reasons: Array(reasons.prefix(3))
         )
+        return applyingExerciseFeedbackV2(
+            recommendation,
+            analysis: programmingAnalysis,
+            machineLoadProfile: machineLoadProfile,
+            feedback: exerciseFeedback
+        )
+    }
+
+    private static func applyingExerciseFeedbackV2(
+        _ recommendation: WorkoutRecommendation,
+        analysis: ExerciseAnalysis?,
+        machineLoadProfile: MachineLoadProfile?,
+        feedback: [SmartCoachExerciseFeedbackSignalV2]
+    ) -> WorkoutRecommendation {
+        guard !feedback.isEmpty else { return recommendation }
+        let role: SmartCoachExerciseRoleV2 = switch analysis?.role {
+        case .primary: .primary
+        case .secondary: .secondary
+        case .core: .core
+        case .warmup: .warmup
+        case .isolation, nil: .isolation
+        }
+        let equipment: SmartCoachEquipmentV2 = switch analysis?.equipment {
+        case .barbell: .barbell
+        case .dumbbell: .dumbbell
+        case .cable: .cable
+        case .machine: .machine
+        case .bodyweight: .bodyweight
+        case .assisted: .assisted
+        case .band: .band
+        case .other, nil: .other
+        }
+        let adaptation = resolveSmartCoachV2(SmartCoachV2Scenario(
+            requestedEffort: .standard,
+            baseSetBudget: 12,
+            role: role,
+            equipment: equipment,
+            feedback: feedback
+        ))
+        guard adaptation.loadAdjustmentSteps != 0 else { return recommendation }
+        let harder = adaptation.loadAdjustmentSteps > 0
+        let loadDirection = effectiveLoadDirection(
+            machineLoadProfile: machineLoadProfile,
+            loadMode: analysis?.loadMode ?? .standard
+        )
+        let adjustedSets = recommendation.sets.map { set -> RecommendedWorkoutSet in
+            let adjustedWeight: Double?
+            let adjustedReps: Int
+            if let weight = set.weight, weight > 0 {
+                adjustedWeight = self.adjustedWeight(
+                    weight,
+                    adjustment: harder ? .harder : .easier(multiplier: 0.95),
+                    machineLoadProfile: machineLoadProfile,
+                    loadDirection: loadDirection
+                )
+                adjustedReps = set.reps
+            } else {
+                adjustedWeight = set.weight
+                adjustedReps = harder ? min(10, set.reps + 1) : max(1, set.reps - 1)
+            }
+            return RecommendedWorkoutSet(
+                id: set.id,
+                weight: adjustedWeight,
+                reps: adjustedReps
+            )
+        }
+        let feedbackReason: WorkoutRecommendationReason = harder
+            ? .exerciseFeedbackRepeatedEasy
+            : .exerciseFeedbackTooHard
+        var reasons = [feedbackReason]
+        for reason in recommendation.reasons where !reasons.contains(reason) {
+            reasons.append(reason)
+        }
+        return WorkoutRecommendation(
+            exerciseID: recommendation.exerciseID,
+            sets: adjustedSets,
+            kind: !harder && recommendation.kind == .progressiveOverload
+                ? .holdAndBuild
+                : recommendation.kind,
+            confidence: min(1, recommendation.confidence + adaptation.confidenceDelta),
+            estimatedVolume: recommendation.estimatedVolume > 0
+                ? adjustedSets.reduce(0) { $0 + ($1.weight ?? 0) * Double($1.reps) }
+                : 0,
+            daysSinceLastSession: recommendation.daysSinceLastSession,
+            reasons: Array(reasons.prefix(3))
+        )
     }
 
     public static func buildWorkoutPlan(
@@ -795,9 +928,17 @@ public enum RecommendationEngine {
         trainingProfile: TrainingProfile = TrainingProfile(),
         effort requestedEffort: SmartWorkoutEffort = .auto,
         latestFeedback: WorkoutFeedbackContext? = nil,
+        context: SmartCoachContextV2 = SmartCoachContextV2(),
+        exerciseFeedback: [UUID: [SmartCoachExerciseFeedbackSignalV2]] = [:],
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> SmartWorkoutPlan {
+        precondition(context.isValid, "Smart Coach v2 context is invalid.")
+        precondition(exerciseFeedback.count <= 64)
+        precondition(exerciseFeedback.values.allSatisfy {
+            $0.count <= smartCoachV2MaximumFeedbackPerExercise
+        })
+        precondition(exerciseFeedback.values.reduce(0) { $0 + $1.count } <= 64)
         var seenExerciseIDs = Set<UUID>()
         let usableExercises = exercises
             .prefix(maximumExerciseCount)
@@ -834,7 +975,7 @@ public enum RecommendationEngine {
         )
         let recentIDs = recentSessionIDs(usableHistory, limit: 3)
         let targetMuscles = targetMuscles(for: focus)
-        let effortResolution = resolveEffort(
+        let historicalEffortResolution = resolveEffort(
             requested: requestedEffort,
             targetMuscles: targetMuscles,
             history: usableHistory,
@@ -842,11 +983,26 @@ public enum RecommendationEngine {
             now: now,
             calendar: calendar
         )
+        let effortResolution: (effort: SmartWorkoutEffort, adjustment: SmartWorkoutEffortAdjustment?) =
+            context.readiness == .low && historicalEffortResolution.effort != .recovery
+                ? (.recovery, .readinessLowRecovery)
+                : historicalEffortResolution
         let appliedEffort = effortResolution.effort
-        let targetSessionSetBudget = targetSessionSetBudget(
+        let baseSessionSetBudget = targetSessionSetBudget(
             profile: trainingProfile,
             effort: appliedEffort
         )
+        let contextAdaptation = resolveSmartCoachV2(SmartCoachV2Scenario(
+            requestedEffort: appliedEffort,
+            baseSetBudget: baseSessionSetBudget,
+            role: .isolation,
+            equipment: .other,
+            context: SmartCoachContextV2(
+                readiness: context.readiness,
+                availableMinutes: context.availableMinutes
+            )
+        ))
+        let targetSessionSetBudget = contextAdaptation.setBudget
         let targetExerciseCount = targetExerciseCount(
             profile: trainingProfile,
             effort: appliedEffort,
@@ -863,13 +1019,27 @@ public enum RecommendationEngine {
             grouping: usableHistory,
             by: { entryIdentityKey($0) }
         )
-        let candidates = usableExercises.map { exercise -> ExerciseCandidate in
+        var equipmentWasFiltered = false
+        var avoidedMuscleWasFiltered = false
+        let candidates = usableExercises.compactMap { exercise -> ExerciseCandidate? in
             let identityKey = exerciseIdentityKey(exercise)
             let exerciseHistory = historyByIdentity[identityKey, default: []]
             let analysis = analyzeExercise(
                 exercise.name,
                 catalogKey: exercise.catalogKey
             )
+            let contributions = MuscleMappingEngine.contributions(
+                for: exercise.name,
+                manualMappings: manualContributionMap
+            )
+            let primaryMuscles = primaryMusclesV2(contributions)
+            let equipmentAllowed = context.availableEquipment?.contains(
+                smartCoachEquipmentV2(analysis)
+            ) ?? true
+            let muscleAllowed = primaryMuscles.isDisjoint(with: context.musclesToAvoid)
+            if !equipmentAllowed { equipmentWasFiltered = true }
+            if !muscleAllowed { avoidedMuscleWasFiltered = true }
+            guard equipmentAllowed, muscleAllowed else { return nil }
             let daysSince = exerciseHistory.map(\.sessionDate).max()
                 .map { calendar.gymDaysBetween($0, now) } ?? 7
             let sessionCount = Set(exerciseHistory.map(\.workoutID)).count
@@ -908,10 +1078,7 @@ public enum RecommendationEngine {
                 analysis: analysis,
                 identityKey: identityKey,
                 history: exerciseHistory,
-                muscleContributions: MuscleMappingEngine.contributions(
-                    for: exercise.name,
-                    manualMappings: manualContributionMap
-                ),
+                muscleContributions: contributions,
                 plannedSetCount: setBudget(
                     profile: trainingProfile,
                     analysis: analysis,
@@ -964,6 +1131,7 @@ public enum RecommendationEngine {
                     trainingProfile: trainingProfile,
                     effort: appliedEffort,
                     allowsHardSetBoost: mayBoostHardCompound,
+                    exerciseFeedback: exerciseFeedback[candidate.exercise.id, default: []],
                     now: now,
                     calendar: calendar
                 )
@@ -985,12 +1153,38 @@ public enum RecommendationEngine {
             $0 + $1.recommendation.sets.count
         }
         if mayApplyEasyFeedback {
-            plannedExercises = addingOneSafeSetIfPossible(to: plannedExercises)
+            plannedExercises = addingOneSafeSetIfPossible(
+                to: plannedExercises,
+                maximumTotalSets: context.availableMinutes == nil
+                    ? maximumSmartPlanSetCount
+                    : targetSessionSetBudget
+            )
         }
         let easyFeedbackApplied = plannedExercises.reduce(0) {
             $0 + $1.recommendation.sets.count
         } == setCountBeforeEasyFeedback + 1
         plannedExercises = enforcingSmartPlanCaps(on: plannedExercises)
+        var adaptationReasons = contextAdaptation.reasons
+        if equipmentWasFiltered, !adaptationReasons.contains(.equipmentUnavailable) {
+            adaptationReasons.append(.equipmentUnavailable)
+        }
+        if avoidedMuscleWasFiltered, !adaptationReasons.contains(.avoidedMuscle) {
+            adaptationReasons.append(.avoidedMuscle)
+        }
+        if plannedExercises.contains(where: {
+            $0.recommendation.reasons.contains(.exerciseFeedbackTooHard)
+        }) {
+            adaptationReasons.append(.exerciseFeedbackTooHard)
+        }
+        if plannedExercises.contains(where: {
+            $0.recommendation.reasons.contains(.exerciseFeedbackRepeatedEasy)
+        }) {
+            adaptationReasons.append(.exerciseFeedbackRepeatedEasy)
+        }
+        var uniqueAdaptationReasons: [SmartCoachV2Reason] = []
+        for reason in adaptationReasons where !uniqueAdaptationReasons.contains(reason) {
+            uniqueAdaptationReasons.append(reason)
+        }
         return SmartWorkoutPlan(
             focus: focus,
             exercises: plannedExercises,
@@ -999,7 +1193,13 @@ public enum RecommendationEngine {
             appliedEffort: appliedEffort,
             effortAdjustment: easyFeedbackApplied
                 ? .feedbackEasyExtraSet
-                : effortResolution.adjustment
+                : effortResolution.adjustment,
+            adaptationReasons: Array(uniqueAdaptationReasons.prefix(4)),
+            estimatedMinutes: estimatedSmartWorkoutMinutes(plannedExercises),
+            setBudget: min(
+                maximumSmartPlanSetCount,
+                targetSessionSetBudget + (easyFeedbackApplied ? 1 : 0)
+            )
         )
     }
 
@@ -1352,8 +1552,50 @@ public enum RecommendationEngine {
         switch analyzeExercise(exerciseName, catalogKey: exerciseCatalogKey).role {
         case .primary: 180
         case .secondary: 120
-        case .isolation, .core, .warmup: 75
+        case .isolation: 75
+        case .core, .warmup: 60
         }
+    }
+
+    private static func smartCoachEquipmentV2(
+        _ analysis: ExerciseAnalysis
+    ) -> SmartCoachEquipmentV2 {
+        switch analysis.equipment {
+        case .barbell: .barbell
+        case .dumbbell: .dumbbell
+        case .cable: .cable
+        case .machine: .machine
+        case .bodyweight: .bodyweight
+        case .assisted: .assisted
+        case .band: .band
+        case .other: .other
+        }
+    }
+
+    private static func primaryMusclesV2(
+        _ contributions: [MuscleContribution]
+    ) -> Set<String> {
+        let valid = contributions.filter {
+            $0.weight.isFinite && $0.weight > 0 &&
+                SmartCoachContextV2.knownMuscleIDs.contains($0.muscleID)
+        }
+        guard let peak = valid.map(\.weight).max() else { return [] }
+        let threshold = max(0.5, peak * 0.8)
+        return Set(valid.filter { $0.weight >= threshold }.map(\.muscleID))
+    }
+
+    private static func estimatedSmartWorkoutMinutes(
+        _ exercises: [SmartWorkoutExercise]
+    ) -> Int? {
+        guard !exercises.isEmpty else { return nil }
+        let seconds = exercises.enumerated().reduce(0) { total, element in
+            let (index, planned) = element
+            let setCount = planned.recommendation.sets.count
+            let transition = index == 0 ? 0 : 60
+            return total + setCount * 45 + max(0, setCount - 1) *
+                planned.recommendedRestSeconds + transition
+        }
+        return (seconds + 59) / 60
     }
 
     private static func setBudget(
@@ -1820,10 +2062,11 @@ public enum RecommendationEngine {
     }
 
     private static func addingOneSafeSetIfPossible(
-        to exercises: [SmartWorkoutExercise]
+        to exercises: [SmartWorkoutExercise],
+        maximumTotalSets: Int = maximumSmartPlanSetCount
     ) -> [SmartWorkoutExercise] {
         guard exercises.reduce(0, { $0 + $1.recommendation.sets.count }) <
-                maximumSmartPlanSetCount,
+                min(maximumSmartPlanSetCount, maximumTotalSets),
               let index = exercises.firstIndex(where: {
                   let recommendation = $0.recommendation
                   return recommendation.sets.count < 4 &&

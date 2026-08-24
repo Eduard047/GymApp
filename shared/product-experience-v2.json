@@ -1,16 +1,26 @@
 {
   "schemaVersion": 2,
-  "productVersion": "3.1.1",
+  "productVersion": "3.2.0",
   "fullClients": ["android", "ios", "pwa"],
   "wearableClient": "garmin",
   "terminology": {
     "navigation": ["today", "exercises", "progress", "profile"],
     "progressSections": ["overview", "exercises", "goals"],
     "missionsPlacement": "progress.goals",
+    "firstPlanAction": {
+      "en": "Use suggested plan",
+      "uk": "Використати пораду",
+      "ru": "Использовать рекомендацию"
+    },
     "manualPlanAction": {
-      "en": "Create manually",
+      "en": "Build manually",
       "uk": "Створити вручну",
-      "ru": "Создать вручную"
+      "ru": "Собрать вручную"
+    },
+    "reviewExercisesAction": {
+      "en": "Review exercises",
+      "uk": "Переглянути вправи",
+      "ru": "Посмотреть упражнения"
     },
     "tutorialAction": {
       "en": "Show tutorial",
@@ -37,7 +47,7 @@
     "states": ["recommendedPlan", "activeWorkout", "completedToday", "recovery"],
     "recommendedPlan": {
       "contentOrder": ["focus", "exerciseAndSetCount", "estimatedDuration", "weeklyRhythm"],
-      "actionsInOrder": ["startPlan", "editPlan", "createManually"]
+      "actionsInOrder": ["startPlan", "editPlan", "details.createManually"]
     },
     "retainedDraftOverride": {
       "appliesToStates": ["recommendedPlan", "completedToday", "recovery", "firstWorkoutActivation"],
@@ -46,7 +56,27 @@
     },
     "activeWorkout": {
       "contentOrder": ["currentExercise", "currentSet", "completedProgress", "restOrNextAction"],
-      "actionsInOrder": ["continueWorkout", "discardWorkout"]
+      "actionsInOrder": ["continueWorkout", "moreOptions.discardWorkout"],
+      "hero": {
+        "primaryMetrics": ["elapsed", "completed"],
+        "secondaryContext": "startedAt",
+        "everyTimeValueHasVisibleLabel": true,
+        "elapsed": {
+          "en": "Elapsed",
+          "uk": "Минуло",
+          "ru": "Прошло"
+        },
+        "completed": {
+          "en": "Completed",
+          "uk": "Виконано",
+          "ru": "Выполнено"
+        },
+        "startedAt": {
+          "en": "Started at",
+          "uk": "Початок о",
+          "ru": "Начало в"
+        }
+      }
     },
     "completedToday": {
       "source": "completedCanonicalHistoryInCurrentLocalCalendarDay",
@@ -58,15 +88,26 @@
       "contentOrder": ["reason", "nextRecommendedDay"],
       "actionsInOrder": ["trainAnyway", "editPlan"]
     },
-    "weeklySummaryPlacement": "today.belowCurrentState",
+    "weeklySummaryPlacement": "today.progressiveDisclosure.belowCurrentState",
     "weeklySummary": ["sevenDayCircles", "completedTrainingDaysVsTarget", "completedWorkouts", "trainingMinutes", "totalVolume"],
     "lifetimeMetricsPlacement": "today.heroAndProgress.overview",
     "heatmapPlacement": "progress.overview",
     "muscleLoadPlacement": "progress.overview",
-    "recommendationExplanation": "progressiveDisclosureWhyThisPlan"
+    "recommendationExplanation": "progressiveDisclosureWhyThisPlan",
+    "progressiveDisclosure": {
+      "defaultVisible": ["currentState", "primaryAction", "secondaryPlanAction"],
+      "details": ["weeklySummary", "lifetimeMetrics", "createManually"],
+      "activeWorkoutExercises": {
+        "current": "expanded",
+        "completed": "collapsed",
+        "upcoming": "collapsed"
+      },
+      "destructiveActions": "collapsedBehindMoreOptions"
+    }
   },
   "firstWorkout": {
-    "entryActionsInOrder": ["startPlan", "editPlan", "createManually"],
+    "entryActionsInOrder": ["startPlan", "createManually", "adjustRecommendation"],
+    "adjustRecommendationContains": ["goal", "daysPerWeek", "effort", "editPlan"],
     "skipAction": "createManually",
     "sameValidatedLaunchContract": true,
     "activeWorkoutOverwrite": "never",

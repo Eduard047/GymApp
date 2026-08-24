@@ -238,7 +238,7 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
   assert.match(calories, /if \(deltaSeconds > 30\)[\s\S]*deltaSeconds = 30/);
   assert.match(calories, /gymCalories \+= lastKcalPerMinute \* \(deltaSeconds \/ 60\.0\)/);
   assert.match(calories, /lastCalorieSeconds = elapsedSeconds/);
-  assert.equal((view.match(/GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/g) || []).length, 3);
+  assert.equal((view.match(/GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/g) || []).length, 5);
 
   const displayedCalories = (value) => value.toFixed(1);
   assert.equal(displayedCalories(0), "0.0");
@@ -1014,7 +1014,7 @@ test("Garmin keeps the selected exercise and completes plan targets in free orde
   assert.match(countCompleted, /item\.get\("exerciseName"\)\.toString\(\)\.equals\(exerciseName\)/);
 
   const addSet = section(store, "static function addSet()", "static function canUndoLastSet()");
-  assert.match(addSet, /var wasPlannedSet = GymWorkoutMode\.usesPlan &&[\s\S]*remainingPlannedSetsForExercise\(currentExercise\(\)\) > 0/);
+  assert.match(addSet, /var wasPlannedSet = GymWorkoutMode\.isPlanned\(\) &&[\s\S]*remainingPlannedSetsForExercise\(currentExercise\(\)\) > 0/);
   assert.match(addSet, /postCommitPlanItem = planItemForExerciseAfterCompleted/);
   assert.match(addSet, /nextSets\.size\(\), currentExercise\(\), postCommitWeight, postCommitReps/);
   assert.match(addSet, /if \(wasPlannedSet\)[\s\S]*weight = postCommitWeight;[\s\S]*reps = postCommitReps/);
@@ -2399,7 +2399,7 @@ test("Garmin set metrics are bounded, persisted, undo-aware, and synchronized wi
     "the previous set recovery update must be part of the same atomic snapshot"
   );
   assert.match(store, /setMetrics\.add\(compactSetMetrics\(setItem\)\)/);
-  assert.match(store, /"setMetrics" => setMetrics/);
+  assert.match(store, /message\.put\("setMetrics", setMetrics\)/);
   assert.match(store, /peakHeartRate == null \|\| startHeartRate > peakHeartRate/);
   assert.match(session, /peakHrValue == null \|\| endHrValue > peakHrValue/);
   assert.match(store, /static function isValidSetMetricsList/);

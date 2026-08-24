@@ -1893,7 +1893,10 @@ struct AddWorkoutView: View {
                 variant: plan.variant,
                 requestedEffort: plan.requestedEffort,
                 appliedEffort: plan.appliedEffort,
-                effortAdjustment: plan.effortAdjustment
+                effortAdjustment: plan.effortAdjustment,
+                adaptationReasons: plan.adaptationReasons,
+                estimatedMinutes: plan.estimatedMinutes,
+                setBudget: plan.setBudget
             )
         } else if latestSmartPlan != nil {
             latestSmartPlan = nil
@@ -2452,6 +2455,13 @@ private extension SmartWorkoutEffortAdjustment {
                 "One safe set was added after your latest feedback.",
                 "Після останнього відгуку додано один безпечний підхід.",
                 "После последнего отзыва добавлен один безопасный подход.",
+                languageCode: gymCurrentLanguageCode()
+            )
+        case .readinessLowRecovery:
+            gymText(
+                "Recovery was selected from today’s low-readiness check-in.",
+                "Після сьогоднішньої низької готовності обрано відновлення.",
+                "После сегодняшней низкой готовности выбрано восстановление.",
                 languageCode: gymCurrentLanguageCode()
             )
         case .hardInsufficientHistory:

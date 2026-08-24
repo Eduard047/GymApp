@@ -24,9 +24,9 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/live-workout.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v98.js", "utf8"),
-    readFile("pwa/styles.v77.css", "utf8"),
-    readFile("pwa/russian-text.v84.js", "utf8"),
+    readFile("pwa/app.v99.js", "utf8"),
+    readFile("pwa/styles.v78.css", "utf8"),
+    readFile("pwa/russian-text.v85.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
   ]);
 
@@ -84,13 +84,20 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/PostWorkoutSummaryScreen.kt"), /DateTimeUtils\.formatLongDate/);
   for (const path of [
     "app/src/main/java/com/example/gymapp/ui/screens/AddWorkoutScreen.kt",
-    "app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt",
     "app/src/main/java/com/example/gymapp/ui/screens/FriendWorkoutPickerSheet.kt",
     "app/src/main/java/com/example/gymapp/ui/screens/PersistedDeleteConfirmationDialogs.kt",
     "app/src/main/java/com/example/gymapp/ui/screens/ExerciseProgressScreen.kt"
   ]) {
     assert.match(source(path), /DateTimeUtils\.formatDate/);
   }
+  assert.match(
+    source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
+    /DateTimeFormatter\.ofPattern\("HH:mm", locale\)/
+  );
+  assert.doesNotMatch(
+    source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
+    /DateTimeUtils\.formatDate\(uiState\.startedAt/
+  );
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt"), /DateTimeUtils\.formatDate\(sessionTimestamp, locale\)/);
   assert.match(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /ofPattern\("EEEEE d", locale\)/);
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt"), /DateFormat\.getDateTimeInstance/);
@@ -225,20 +232,20 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v98.js",
-    styleBundle: "styles.v77.css",
-    russianBundle: "russian-text.v84.js",
+    appBundle: "app.v99.js",
+    styleBundle: "styles.v78.css",
+    russianBundle: "russian-text.v85.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v136"
+    serviceWorkerCache: "gym-pwa-v140"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v98\.js"/);
-  assert.match(pwaIndex, /href="\.\/styles\.v77\.css"/);
-  assert.match(pwaIndex, /src="\.\/russian-text\.v84\.js"/);
+  assert.match(pwaIndex, /src="\.\/app\.v99\.js"/);
+  assert.match(pwaIndex, /href="\.\/styles\.v78\.css"/);
+  assert.match(pwaIndex, /src="\.\/russian-text\.v85\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v136"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v98\.js"/);
-  assert.match(pwaServiceWorker, /"\.\/styles\.v77\.css"/);
-  assert.match(pwaServiceWorker, /"\.\/russian-text\.v84\.js"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v140"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v99\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/styles\.v78\.css"/);
+  assert.match(pwaServiceWorker, /"\.\/russian-text\.v85\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
   assert.equal(pwaAppBundle, pwaApp);
   assert.equal(pwaStyleBundle, pwaStyles);

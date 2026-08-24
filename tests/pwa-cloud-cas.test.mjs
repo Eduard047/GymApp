@@ -9,6 +9,10 @@ const [appSource, stateContractSource, garminCloudSource] = await Promise.all([
   readFile("pwa/state-contract.js", "utf8"),
   readFile("pwa/garmin-cloud-sync.js", "utf8")
 ]);
+const activityOnlyMergeContract = JSON.parse(await readFile(
+  "shared/activity-only-sync-v1.json",
+  "utf8"
+));
 const ACTIVE_USER_ID = "00000000-0000-4000-8000-000000000001";
 const DELETION_GRANT_ID = "00000000-0000-4000-8000-000000000011";
 const UUID_V4_PATTERN_FOR_TEST = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -142,7 +146,8 @@ function loadContext(fetchImpl, {
   sharedSessionValues = null,
   lockManager = null,
   seedActiveSession = true,
-  locationSearch = "?access_token=test"
+  locationSearch = "?access_token=test",
+  activityOnlyEnabled = false
 } = {}) {
   const values = sharedValues || new Map();
   const sessionValues = sharedSessionValues || new Map();
@@ -183,6 +188,14 @@ function loadContext(fetchImpl, {
       }
     },
     fetch: async (url, options) => {
+      if (!activityOnlyEnabled && url.includes("/rest/v1/rpc/garmin_read_activity_only_workouts")) {
+        return new Response(JSON.stringify({
+          code: "PGRST202",
+          details: null,
+          hint: null,
+          message: "Function is unavailable in this schema cache."
+        }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
       const response = await fetchImpl(url, options);
       if (url.includes("/rest/v1/rpc/social_sync_workout_durations") && response.status === 204) {
         const body = JSON.parse(options?.body || "{}");
@@ -373,6 +386,593 @@ test("cloud fingerprints are stable across equivalent object key order", () => {
     return remoteStateFingerprint(original, activeAccount.userId) ===
       remoteStateFingerprint(reordered, activeAccount.userId);
   })()`, context), true);
+});
+
+test("activity-only sidecar validates exact bounded metrics and stays outside legacy core/social rows", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const result = vm.runInContext(`(() => {
+    const snapshot = normalizeActivityOnlySnapshot({
+      version: 1,
+      revision: 4,
+      items: [{
+        workoutStartedAt: 1785791000000,
+        durationSeconds: 754,
+        gymCalories: 40.125,
+        garminCalories: 38,
+        averageHeartRate: 130,
+        maximumHeartRate: 165,
+        endingHeartRateZone: 3,
+        note: "owner private"
+      }]
+    });
+    const candidate = defaultAppState();
+    candidate.sessions = [{
+      id: 51,
+      startedAt: 1785790000000,
+      durationSeconds: 600,
+      note: "Strength",
+      exerciseNames: ["Bench Press"],
+      sets: [{ id: 52, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 80, reps: 8, orderIndex: 0 }]
+    }, {
+      id: 61,
+      startedAt: 1785791000000,
+      durationSeconds: 754,
+      note: "Garmin · Duration 12:34 · Gym kcal 40 · Garmin kcal 38 · Avg HR 130 · Max HR 165 · HR zone Z3",
+      exerciseNames: [],
+      sets: []
+    }];
+    const core = remoteStateCore(candidate, activeAccount.userId);
+    const activities = activityOnlySyncItems(candidate);
+    const socialDurations = workoutDurationSyncItems(candidate);
+    const activityBaseline = markActivityOnlyStateDirty(candidate, activeAccount.userId);
+    return {
+      snapshot,
+      coreSessionCount: core.sessions.length,
+      coreSetCount: core.summary.setCount,
+      activities,
+      socialDurations,
+      activityDirty: activityBaseline.dirty
+    };
+  })()`, context);
+
+  assert.equal(result.snapshot.revision, 4);
+  assert.equal(result.coreSessionCount, 1);
+  assert.equal(result.coreSetCount, 1);
+  assert.equal(result.activities.length, 1);
+  assert.equal(result.activities[0].workoutStartedAt, 1785791000000);
+  assert.equal(result.activities[0].endingHeartRateZone, 3);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.socialDurations)), [{
+    workoutStartedAt: 1785790000000,
+    durationSeconds: 600
+  }]);
+  assert.equal(result.activityDirty, true);
+
+  for (const invalid of [
+    `{ version: 1, revision: 0, items: [{ workoutStartedAt: 1, durationSeconds: 1, gymCalories: 0, extra: true }] }`,
+    `{ version: 1, revision: 0, items: [
+      { workoutStartedAt: 2, durationSeconds: 1, gymCalories: 0 },
+      { workoutStartedAt: 1, durationSeconds: 1, gymCalories: 0 }
+    ] }`,
+    `{ version: 1, revision: 0, items: [{ workoutStartedAt: 1, durationSeconds: 1, gymCalories: 0, averageHeartRate: 180, maximumHeartRate: 120 }] }`,
+    `{ version: 1, revision: 0, items: [{ workoutStartedAt: 1, durationSeconds: 1, gymCalories: 0, note: "x".repeat(513) }] }`
+  ]) {
+    assert.throws(
+      () => vm.runInContext(`normalizeActivityOnlySnapshot(${invalid})`, context),
+      /Activity-only workout/
+    );
+  }
+});
+
+test("cloud pull hydrates owner-private free activity without inventing exercises", async () => {
+  const activityStartedAt = 1785791000000;
+  const context = loadContext(async (url) => {
+    if (url.includes("/rest/v1/rpc/garmin_read_activity_only_workouts")) {
+      return new Response(JSON.stringify({
+        version: 1,
+        revision: 7,
+        items: [{
+          workoutStartedAt: activityStartedAt,
+          durationSeconds: 754,
+          gymCalories: 40,
+          garminCalories: 38,
+          averageHeartRate: 130,
+          maximumHeartRate: 165,
+          endingHeartRateZone: 3
+        }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/user_states?")) {
+      return new Response(JSON.stringify([{
+        state: validNativeCloudEnvelope(),
+        updated_at: "2026-07-20T10:00:00.000001+00:00"
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  }, { activityOnlyEnabled: true });
+
+  await vm.runInContext("pullRemoteState()", context);
+  const hydrated = vm.runInContext(`(() => {
+    const free = state.sessions.find(session => session.startedAt === ${activityStartedAt});
+    const baseline = loadActivityOnlySyncBaseline(activeAccount.userId);
+    return {
+      sessionCount: state.sessions.length,
+      durationSeconds: free?.durationSeconds,
+      sets: free?.sets?.length,
+      exerciseNames: free?.exerciseNames?.length,
+      note: free?.note,
+      supported: baseline?.supported,
+      revision: baseline?.revision,
+      dirty: baseline?.dirty
+    };
+  })()`, context);
+
+  assert.equal(hydrated.sessionCount, 2);
+  assert.equal(hydrated.durationSeconds, 754);
+  assert.equal(hydrated.sets, 0);
+  assert.equal(hydrated.exerciseNames, 0);
+  assert.match(hydrated.note, /Duration 12:34/);
+  assert.doesNotMatch(hydrated.note, /S1|planned/i);
+  assert.equal(hydrated.supported, true);
+  assert.equal(hydrated.revision, 7);
+  assert.equal(hydrated.dirty, false);
+});
+
+test("activity-only outcome-unknown retry replays the exact durable UUID and snapshot", async () => {
+  const requests = [];
+  let failFirst = true;
+  const context = loadContext(async (url, options) => {
+    if (!url.includes("/rest/v1/rpc/garmin_sync_activity_only_workouts")) {
+      throw new Error(`unexpected request: ${url}`);
+    }
+    requests.push(JSON.parse(options.body));
+    if (failFirst) {
+      failFirst = false;
+      throw new Error("network outcome unknown");
+    }
+    return new Response(JSON.stringify({
+      version: 1,
+      status: "synced",
+      revision: 5,
+      syncedCount: 1,
+      changedCount: 1,
+      replayed: true
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }, { activityOnlyEnabled: true });
+  vm.runInContext(`
+    state = installActivityOnlyItems(defaultAppState(), [{
+      workoutStartedAt: 1785791000000,
+      durationSeconds: 754,
+      gymCalories: 40
+    }]);
+    saveActivityOnlySyncBaseline({
+      version: 2,
+      userId: activeAccount.userId,
+      supported: true,
+      revision: 4,
+      remoteFingerprint: activityOnlyItemsFingerprint([]),
+      remoteItems: [],
+      localFingerprint: activityOnlyItemsFingerprint(activityOnlySyncItems(state)),
+      dirty: true,
+      updatedAt: Date.now()
+    });
+  `, context);
+
+  await assert.rejects(
+    vm.runInContext("syncRemoteActivityOnlyWorkouts(loadRemoteSession(), state)", context),
+    /outcome unknown/
+  );
+  assert.equal(vm.runInContext("Boolean(loadActivityOnlySyncRequest(activeAccount.userId))", context), true);
+  await vm.runInContext("syncRemoteActivityOnlyWorkouts(loadRemoteSession(), state)", context);
+
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1], requests[0]);
+  assert.match(requests[0].p_request_id, UUID_V4_PATTERN_FOR_TEST);
+  assert.equal(vm.runInContext("loadActivityOnlySyncRequest(activeAccount.userId)", context), null);
+  assert.equal(vm.runInContext("loadActivityOnlySyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("activity-only CAS conflict reads, losslessly merges and retries with a new UUID", async () => {
+  const syncBodies = [];
+  let syncAttempt = 0;
+  const context = loadContext(async (url, options) => {
+    if (url.includes("/rest/v1/rpc/garmin_sync_activity_only_workouts")) {
+      const body = JSON.parse(options.body);
+      syncBodies.push(body);
+      syncAttempt += 1;
+      const payload = syncAttempt === 1
+        ? { version: 1, status: "conflict", revision: 2 }
+        : { version: 1, status: "synced", revision: 3, syncedCount: 2, changedCount: 1, replayed: false };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/rpc/garmin_read_activity_only_workouts")) {
+      return new Response(JSON.stringify({
+        version: 1,
+        revision: 2,
+        items: [{ workoutStartedAt: 1785790000000, durationSeconds: 600, gymCalories: 30 }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  }, { activityOnlyEnabled: true });
+  vm.runInContext(`
+    state = installActivityOnlyItems(defaultAppState(), [{
+      workoutStartedAt: 1785791000000,
+      durationSeconds: 754,
+      gymCalories: 40
+    }]);
+    saveActivityOnlySyncBaseline({
+      version: 2,
+      userId: activeAccount.userId,
+      supported: true,
+      revision: 1,
+      remoteFingerprint: activityOnlyItemsFingerprint([]),
+      remoteItems: [],
+      localFingerprint: activityOnlyItemsFingerprint(activityOnlySyncItems(state)),
+      dirty: true,
+      updatedAt: Date.now()
+    });
+  `, context);
+
+  await vm.runInContext("syncRemoteActivityOnlyWorkouts(loadRemoteSession(), state)", context);
+
+  assert.equal(syncBodies.length, 2);
+  assert.notEqual(syncBodies[0].p_request_id, syncBodies[1].p_request_id);
+  assert.equal(syncBodies[0].p_expected_revision, 1);
+  assert.equal(syncBodies[1].p_expected_revision, 2);
+  assert.deepEqual(syncBodies[1].p_items.map(item => item.workoutStartedAt), [1785790000000, 1785791000000]);
+  assert.equal(vm.runInContext("state.sessions.filter(isActivityOnlySession).length", context), 2);
+  assert.equal(vm.runInContext("loadActivityOnlySyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("activity-only merge fails closed when two clients add the same timestamp differently", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  assert.throws(
+    () => vm.runInContext(`mergeActivityOnlyItems(
+      [],
+      [{ workoutStartedAt: 1785791000000, durationSeconds: 600, gymCalories: 30 }],
+      [{ workoutStartedAt: 1785791000000, durationSeconds: 754, gymCalories: 40 }]
+    )`, context),
+    /conflict/
+  );
+});
+
+test("PWA activity-only merge matches all shared three-way deletion and conflict scenarios", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const materialize = names => names.map(name => structuredClone(activityOnlyMergeContract.items[name]));
+  for (const scenario of activityOnlyMergeContract.mergeScenarios) {
+    const expression = `mergeActivityOnlyItems(
+      ${JSON.stringify(materialize(scenario.base))},
+      ${JSON.stringify(materialize(scenario.local))},
+      ${JSON.stringify(materialize(scenario.remote))}
+    )`;
+    if (scenario.conflict) {
+      assert.throws(() => vm.runInContext(expression, context), /conflict/i, scenario.name);
+    } else {
+      const actual = JSON.parse(vm.runInContext(`JSON.stringify(${expression})`, context));
+      assert.deepEqual(actual, materialize(scenario.result), scenario.name);
+    }
+  }
+});
+
+test("activity-only materialization preserves exact notes, nullable absence, zero and note-only edits", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const exact = {
+    workoutStartedAt: 1785793000000,
+    durationSeconds: 901,
+    gymCalories: 46.125,
+    garminCalories: 44,
+    averageHeartRate: 131,
+    maximumHeartRate: 166,
+    endingHeartRateZone: 3,
+    note: "server-private-format"
+  };
+  const result = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const exact = ${JSON.stringify(exact)};
+    const absent = ${JSON.stringify(activityOnlyMergeContract.items.cExact)};
+    const zero = ${JSON.stringify(activityOnlyMergeContract.items.cZero)};
+    const empty = defaultAppState();
+    empty.sessions = [];
+    const exactState = installActivityOnlyItems(empty, [exact]);
+    const untouched = activityOnlySyncItems(exactState, [exact])[0];
+    exactState.sessions[0].note = "user note only";
+    const noteEdited = activityOnlySyncItems(exactState, [exact])[0];
+    const absentState = installActivityOnlyItems(empty, [absent]);
+    const absentRoundTrip = activityOnlySyncItems(absentState, [absent])[0];
+    const zeroState = installActivityOnlyItems(empty, [zero]);
+    const zeroRoundTrip = activityOnlySyncItems(zeroState, [zero])[0];
+    return {
+      materializedNote: installActivityOnlyItems(empty, [exact]).sessions[0].note,
+      untouched,
+      noteEdited,
+      absentRoundTrip,
+      zeroRoundTrip,
+      boundedNulls: [
+        boundedActivityMetric(null, 0, 100),
+        boundedActivityMetric(undefined, 0, 100),
+        boundedActivityMetric("", 0, 100),
+        boundedActivityMetric("   ", 0, 100),
+        boundedActivityMetric(false, 0, 100)
+      ],
+      boundedZero: [
+        boundedActivityMetric(0, 0, 100),
+        boundedActivityMetric("0", 0, 100)
+      ]
+    };
+  })())`, context));
+
+  assert.equal(result.materializedNote, "server-private-format");
+  assert.deepEqual(result.untouched, exact);
+  assert.deepEqual(result.noteEdited, { ...exact, note: "user note only" });
+  assert.deepEqual(result.absentRoundTrip, activityOnlyMergeContract.items.cExact);
+  assert.equal(Object.hasOwn(result.absentRoundTrip, "garminCalories"), false);
+  assert.deepEqual(result.zeroRoundTrip, activityOnlyMergeContract.items.cZero);
+  assert.equal(result.zeroRoundTrip.garminCalories, 0);
+  assert.deepEqual(result.boundedNulls, [null, null, null, null, null]);
+  assert.deepEqual(result.boundedZero, [0, 0]);
+});
+
+test("a core timestamp collision keeps the exact hidden activity sidecar item", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const exact = {
+    workoutStartedAt: 1785794000000,
+    durationSeconds: 754,
+    gymCalories: 40.125,
+    garminCalories: 38,
+    averageHeartRate: 130,
+    maximumHeartRate: 165,
+    note: "hidden owner-private activity"
+  };
+  const result = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const exact = ${JSON.stringify(exact)};
+    const candidate = defaultAppState();
+    candidate.sessions = [{
+      id: 81,
+      startedAt: exact.workoutStartedAt,
+      durationSeconds: 600,
+      note: "Core workout",
+      exerciseNames: ["Bench Press"],
+      sets: [{
+        id: 82,
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        weight: 80,
+        reps: 8,
+        orderIndex: 0
+      }]
+    }];
+    const materialized = installActivityOnlyItems(candidate, [exact], candidate);
+    return {
+      sessionCount: materialized.sessions.length,
+      activityCount: materialized.sessions.filter(isActivityOnlySession).length,
+      sidecar: activityOnlySyncItems(materialized, [exact])
+    };
+  })())`, context));
+  assert.equal(result.sessionCount, 1);
+  assert.equal(result.activityCount, 0);
+  assert.deepEqual(result.sidecar, [exact]);
+});
+
+test("activity-only baselines are owner-bound, read legacy v1 and upgrade to exact v2", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const result = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const userId = activeAccount.userId;
+    const key = activityOnlySyncBaselineKey(userId);
+    const emptyFingerprint = activityOnlyItemsFingerprint([]);
+    localStorage.setItem(key, JSON.stringify({
+      version: 2,
+      userId: "00000000-0000-4000-8000-000000000099",
+      supported: true,
+      revision: 1,
+      remoteFingerprint: emptyFingerprint,
+      remoteItems: [],
+      localFingerprint: emptyFingerprint,
+      dirty: false,
+      updatedAt: 1
+    }));
+    const foreignAccepted = loadActivityOnlySyncBaseline(userId) !== null;
+    const foreignRemoved = localStorage.getItem(key) === null;
+
+    localStorage.setItem(key, JSON.stringify({
+      version: 1,
+      userId,
+      supported: true,
+      revision: 1,
+      remoteFingerprint: emptyFingerprint,
+      localFingerprint: emptyFingerprint,
+      dirty: false,
+      updatedAt: 2
+    }));
+    const legacy = loadActivityOnlySyncBaseline(userId);
+    const cached = defaultAppState();
+    cached.sessions = [];
+    const remoteItem = {
+      workoutStartedAt: 1785795000000,
+      durationSeconds: 600,
+      gymCalories: 30,
+      note: "exact after legacy"
+    };
+    const reconciliation = reconcileActivityOnlySnapshot({
+      supported: true,
+      version: 1,
+      revision: 2,
+      items: [remoteItem]
+    }, cached, userId);
+    return {
+      foreignAccepted,
+      foreignRemoved,
+      legacyVersion: legacy?.version,
+      legacyHasItems: Object.hasOwn(legacy || {}, "remoteItems"),
+      upgradedVersion: reconciliation.baseline.version,
+      upgradedItems: reconciliation.baseline.remoteItems,
+      upgradedDirty: reconciliation.baseline.dirty
+    };
+  })())`, context));
+  assert.equal(result.foreignAccepted, false);
+  assert.equal(result.foreignRemoved, true);
+  assert.equal(result.legacyVersion, 1);
+  assert.equal(result.legacyHasItems, false);
+  assert.equal(result.upgradedVersion, 2);
+  assert.deepEqual(result.upgradedItems, [{
+    workoutStartedAt: 1785795000000,
+    durationSeconds: 600,
+    gymCalories: 30,
+    note: "exact after legacy"
+  }]);
+  assert.equal(result.upgradedDirty, false);
+});
+
+test("a legacy digest baseline still reads remote before propagating a local deletion", async () => {
+  const requests = [];
+  const remoteItem = {
+    workoutStartedAt: 1785795500000,
+    durationSeconds: 600,
+    gymCalories: 30,
+    note: "legacy remote"
+  };
+  const context = loadContext(async (url, options) => {
+    requests.push(url);
+    if (url.includes("/rest/v1/rpc/garmin_read_activity_only_workouts")) {
+      return new Response(JSON.stringify({
+        version: 1,
+        revision: 1,
+        items: [remoteItem]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/rest/v1/rpc/garmin_sync_activity_only_workouts")) {
+      const body = JSON.parse(options.body);
+      assert.equal(body.p_expected_revision, 1);
+      assert.deepEqual(body.p_items, []);
+      return new Response(JSON.stringify({
+        version: 1,
+        status: "synced",
+        revision: 2,
+        syncedCount: 0,
+        changedCount: 1,
+        replayed: false
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  }, { activityOnlyEnabled: true });
+  vm.runInContext(`
+    state = defaultAppState();
+    state.sessions = [];
+    const legacyRemote = [${JSON.stringify(remoteItem)}];
+    saveActivityOnlySyncBaseline({
+      version: 1,
+      userId: activeAccount.userId,
+      supported: true,
+      revision: 1,
+      remoteFingerprint: activityOnlyItemsFingerprint(legacyRemote),
+      localFingerprint: activityOnlyItemsFingerprint([]),
+      dirty: true,
+      updatedAt: Date.now()
+    });
+  `, context);
+
+  await vm.runInContext("syncRemoteActivityOnlyWorkouts(loadRemoteSession(), state)", context);
+  assert.equal(requests.length, 2);
+  assert.match(requests[0], /garmin_read_activity_only_workouts/);
+  assert.match(requests[1], /garmin_sync_activity_only_workouts/);
+  const baseline = JSON.parse(vm.runInContext(
+    "JSON.stringify(loadActivityOnlySyncBaseline(activeAccount.userId))",
+    context
+  ));
+  assert.equal(baseline.version, 2);
+  assert.deepEqual(baseline.remoteItems, []);
+  assert.equal(baseline.dirty, false);
+});
+
+test("activity-only exact baseline accepts 5000 items and rejects count or storage overflow", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const result = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const userId = activeAccount.userId;
+    const firstStartedAt = window.GymStateContract.LIMITS.timestampMin;
+    const items = Array.from({ length: 5000 }, (_, index) => ({
+      workoutStartedAt: firstStartedAt + index,
+      durationSeconds: 1,
+      gymCalories: 0
+    }));
+    const normalized = normalizeActivityOnlySnapshot({ version: 1, revision: 3, items }).items;
+    const fingerprint = activityOnlyItemsFingerprint(normalized);
+    const saved = saveActivityOnlySyncBaseline({
+      version: 2,
+      userId,
+      supported: true,
+      revision: 3,
+      remoteFingerprint: fingerprint,
+      remoteItems: normalized,
+      localFingerprint: fingerprint,
+      dirty: false,
+      updatedAt: 3
+    });
+    let countOverflowRejected = false;
+    try {
+      normalizeActivityOnlySnapshot({
+        version: 1,
+        revision: 3,
+        items: [...items, {
+          workoutStartedAt: firstStartedAt + 5000,
+          durationSeconds: 1,
+          gymCalories: 0
+        }]
+      });
+    } catch {
+      countOverflowRejected = true;
+    }
+    const key = activityOnlySyncBaselineKey(userId);
+    localStorage.setItem(key, "x".repeat(MAX_ACTIVITY_ONLY_SYNC_BASELINE_STORAGE_BYTES + 1));
+    const storageOverflowRejected = loadActivityOnlySyncBaseline(userId) === null;
+    return {
+      savedCount: saved.remoteItems.length,
+      countOverflowRejected,
+      storageOverflowRejected,
+      overflowRemoved: localStorage.getItem(key) === null
+    };
+  })())`, context));
+  assert.deepEqual(result, {
+    savedCount: 5000,
+    countOverflowRejected: true,
+    storageOverflowRejected: true,
+    overflowRemoved: true
+  });
+});
+
+test("workout-duration sidecar accepts the production v2 acknowledgement and bounds errors", () => {
+  const context = loadContext(async () => {
+    throw new Error("network is not used");
+  });
+  const success = vm.runInContext(
+    `normalizeWorkoutDurationSyncResponse({ version: 2, syncedCount: 2, changedCount: 3 }, 2)`,
+    context
+  );
+  assert.equal(success.version, 2);
+  assert.throws(
+    () => vm.runInContext(
+      `normalizeWorkoutDurationSyncResponse({ version: 2, error: "rate_limited", retryAfter: 601 }, 0)`,
+      context
+    ),
+    /invalid/
+  );
+  assert.throws(
+    () => vm.runInContext(
+      `normalizeWorkoutDurationSyncResponse({ version: 2, error: "rate_limited", retryAfter: 60 }, 0)`,
+      context
+    ),
+    /rate_limited/
+  );
 });
 
 test("native cloud identity is catalog-order-insensitive but preserves workout order and multiplicity", () => {
@@ -972,7 +1572,7 @@ test("a clean missing-cloud baseline accepts a later completed-workout creation"
 
   await vm.runInContext("pullRemoteState()", context);
 
-  assert.equal(requests.length, 1);
+  assert.equal(requests.filter(request => request.url.includes("/rest/v1/user_states?")).length, 1);
   assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", context), 6);
   assert.equal(vm.runInContext("state.profile.goal", context), "Aesthetic Cut");
   assert.equal(vm.runInContext("cloudSyncConflict", context), null);
@@ -1190,7 +1790,11 @@ test("browser and cloud edits since the confirmed baseline require an explicit c
 
   await vm.runInContext("pullRemoteState()", context);
 
-  assert.equal(requests.length, 1, "conflict detection must not write either version");
+  assert.equal(
+    requests.filter(request => request.url.includes("/rest/v1/user_states?")).length,
+    1,
+    "conflict detection must not write either core version"
+  );
   assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", context), 8);
   assert.equal(vm.runInContext("cloudSyncConflict.userId", context), ACTIVE_USER_ID);
   assert.match(vm.runInContext("cloudSyncConflictScreen()", context), /Keep browser version/);

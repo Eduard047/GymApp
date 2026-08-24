@@ -1355,11 +1355,12 @@ struct WorkoutDetailView: View {
         GymBackground {
             if let workout = store.workout(id: workoutID) {
                 let garminSummary = GarminWorkoutNoteParser.parse(workout.note)
+                let activityOnly = isActivityOnly(workout)
                 ScrollView {
                     LazyVStack(spacing: 14) {
                         hero(workout, garminSummary: garminSummary)
 
-                        if !isEditing {
+                        if !isEditing && !activityOnly {
                             Button(action: beginEditing) {
                                 Label(
                                     gymText(
@@ -1376,17 +1377,36 @@ struct WorkoutDetailView: View {
 
                         if let summary = garminSummary,
                            summary.hasWorkoutMetrics || hasGarminSetDetails(summary) {
-                            watchMetricsSection(summary)
+                            watchMetricsSection(summary, activityOnly: activityOnly)
                         }
 
                         if let statusMessage {
                             GymStatusBanner(message: statusMessage, isError: true)
                         }
 
-                        if isEditing {
+                        if isEditing && !activityOnly {
                             metadataPanel(isGarminWorkout: garminSummary != nil)
                         }
-                        exerciseSection(workout)
+                        if activityOnly {
+                            Button(role: .destructive) {
+                                presentWorkoutDeletionConfirmation()
+                            } label: {
+                                Label(
+                                    gymText(
+                                        "Delete free workout",
+                                        "Видалити вільне тренування",
+                                        "Удалить свободную тренировку",
+                                        languageCode: gymCurrentLanguageCode()
+                                    ),
+                                    systemImage: "trash"
+                                )
+                                .frame(maxWidth: .infinity, minHeight: 46)
+                            }
+                            .buttonStyle(GymSecondaryButtonStyle())
+                            .disabled(pendingDeletion != nil)
+                        } else {
+                            exerciseSection(workout)
+                        }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
@@ -1468,13 +1488,21 @@ struct WorkoutDetailView: View {
         garminSummary: GarminWorkoutNoteSummary?
     ) -> some View {
         let languageCode = gymCurrentLanguageCode()
+        let activityOnly = isActivityOnly(workout)
         return GymHeroPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Text(gymFormattedDate(workout.date, date: .long, time: .shortened))
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
                 Text(
-                    garminSummary == nil
+                    activityOnly
+                        ? gymText(
+                            "Garmin free workout",
+                            "Вільне тренування Garmin",
+                            "Свободная тренировка Garmin",
+                            languageCode: languageCode
+                        )
+                        : garminSummary == nil
                         ? (workout.note?.isEmpty == false ? workout.note! : gymLocalized("Saved workout"))
                         : GarminWorkoutDetailCopy.workoutTitle(languageCode: languageCode)
                 )
@@ -1482,7 +1510,7 @@ struct WorkoutDetailView: View {
                     .foregroundStyle(Color.white.opacity(0.84))
                     .fixedSize(horizontal: false, vertical: true)
 
-                if garminSummary != nil {
+                if garminSummary != nil && !activityOnly {
                     Text(GarminWorkoutDetailCopy.syncedSupporting(languageCode: languageCode))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.76))
@@ -1490,13 +1518,15 @@ struct WorkoutDetailView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
-                    GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted(), onHero: true)
-                    GymMetricTile(label: "Sets", value: workout.setCount.formatted(), onHero: true)
-                    GymMetricTile(
-                        label: "Volume",
-                        value: workout.totalVolume.formatted(.number.precision(.fractionLength(0 ... 1))),
-                        onHero: true
-                    )
+                    if !activityOnly {
+                        GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted(), onHero: true)
+                        GymMetricTile(label: "Sets", value: workout.setCount.formatted(), onHero: true)
+                        GymMetricTile(
+                            label: "Volume",
+                            value: workout.totalVolume.formatted(.number.precision(.fractionLength(0 ... 1))),
+                            onHero: true
+                        )
+                    }
                     if let duration = workout.durationSeconds {
                         GymMetricTile(
                             label: gymText(
@@ -1507,6 +1537,24 @@ struct WorkoutDetailView: View {
                             onHero: true
                         )
                     }
+                    if activityOnly, let calories = garminSummary?.gymCalories {
+                        GymMetricTile(
+                            label: "GymApp",
+                            value: "\(calories) \(GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode))",
+                            onHero: true
+                        )
+                    }
+                }
+
+                if activityOnly {
+                    Text(gymText(
+                        "Time, heart rate, and calories only. No exercises or sets were created.",
+                        "Лише час, пульс і калорії. Вправи та підходи не створювалися.",
+                        "Только время, пульс и калории. Упражнения и подходы не создавались.",
+                        languageCode: languageCode
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.78))
                 }
 
                 if sharedWorkoutURL(workout) != nil {
@@ -1684,7 +1732,10 @@ struct WorkoutDetailView: View {
                 (summary.plannedSetCount ?? 0) > (summary.completedSetCount ?? Int.max))
     }
 
-    private func watchMetricsSection(_ summary: GarminWorkoutNoteSummary) -> some View {
+    private func watchMetricsSection(
+        _ summary: GarminWorkoutNoteSummary,
+        activityOnly: Bool = false
+    ) -> some View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: showsWatchMetrics ? 12 : 0) {
                 Button {
@@ -1709,9 +1760,15 @@ struct WorkoutDetailView: View {
                             .font(.headline)
                             .foregroundStyle(GymTheme.textPrimary)
                             Text(gymText(
-                                "Heart rate, timing and set insights",
-                                "Пульс, час та аналітика підходів",
-                                "Пульс, время и аналитика подходов",
+                                activityOnly
+                                    ? "Heart rate, time, and calories"
+                                    : "Heart rate, timing and set insights",
+                                activityOnly
+                                    ? "Пульс, час і калорії"
+                                    : "Пульс, час та аналітика підходів",
+                                activityOnly
+                                    ? "Пульс, время и калории"
+                                    : "Пульс, время и аналитика подходов",
                                 languageCode: gymCurrentLanguageCode()
                             ))
                             .font(.caption)
@@ -2284,16 +2341,23 @@ struct WorkoutDetailView: View {
     }
 
     private func presentWorkoutDeletionConfirmation() {
-        guard isEditing,
-              pendingDeletion == nil,
+        guard pendingDeletion == nil,
               isStoreContextCurrent(),
               let workout = store.workout(id: workoutID) else {
+            showStaleDeletion()
+            return
+        }
+        guard isEditing || isActivityOnly(workout) else {
             showStaleDeletion()
             return
         }
         activeAlert = .deleteWorkout(
             WorkoutDetailWorkoutDeletionTarget(store: store, workout: workout)
         )
+    }
+
+    private func isActivityOnly(_ workout: WorkoutSession) -> Bool {
+        workout.exercises.isEmpty && workout.durationSeconds.map { $0 > 0 } == true
     }
 
     private func presentDeletionConfirmation(_ target: WorkoutDetailDeletionTarget) {

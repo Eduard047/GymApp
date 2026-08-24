@@ -98,7 +98,7 @@ test("all three clients enforce the same Smart-plan budget formula and safety bo
   assert.match(pwaCoach, /profile\?\.goal === "Aesthetic Cut" \? -2/);
   assert.match(pwaCoach, /profile\?\.calories === "Deficit" \? -2/);
   assert.match(pwaCoach, /appliedEffort === "Recovery" \? -3 : appliedEffort === "Hard" \? 1 : 0/);
-  assert.match(pwaCoach, /Math\.floor\(\(smartSessionSetBudget\(appliedEffort\) - reservedHardSets\) \/ 3\)/);
+  assert.match(pwaCoach, /Math\.floor\(\(sessionSetBudget - reservedHardSets\) \/ 3\)/);
 });
 
 test("feedback remains a local account sidecar instead of changing portable sessions", () => {

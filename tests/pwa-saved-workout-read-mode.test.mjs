@@ -177,6 +177,43 @@ test("Garmin metrics and insights are collapsed behind Watch metrics", () => {
   assert.match(html, /180 kcal/);
 });
 
+test("Garmin free activity stays metrics-only in history and detail", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    state = {
+      ...defaultAppState(),
+      language: "en",
+      exercises: [{ id: 101, name: "Bench Press" }],
+      sessions: [{
+        id: 901,
+        startedAt: 1700000000000,
+        durationSeconds: 754,
+        note: "Garmin · Duration 12:34 · Gym kcal 40 · Garmin kcal 38 · Avg HR 130 · Max HR 165 · HR zone Z3",
+        sets: []
+      }],
+      mappings: {}
+    };
+    nav = [{ name: "workouts" }, { name: "detail", id: 901 }];
+    workoutDetailEditSessionId = null;
+  `, context);
+
+  const history = vm.runInContext("workoutItem(state.sessions[0])", context);
+  const detail = vm.runInContext("detailScreen(901)", context);
+
+  assert.match(history, /GARMIN · FREE/);
+  assert.match(history, /Free workout/);
+  assert.match(history, /12:34/);
+  assert.doesNotMatch(history, /Exercises|Sets|Volume|Note:/);
+
+  assert.match(detail, /Activity only/);
+  assert.match(detail, /12:34/);
+  assert.match(detail, /40 kcal/);
+  assert.match(detail, /130 bpm/);
+  assert.match(detail, /data-action="delete-session"/);
+  assert.doesNotMatch(detail, /data-action="(?:edit-workout|share-session|add-saved-workout-set|edit-set|delete-set)"/);
+  assert.doesNotMatch(detail, /Exercises|Sets|Reps|Volume|Garmin · Duration/);
+});
+
 test("Progress is read-only and uses a compact bounded searchable picker", () => {
   const context = loadPwaContext();
   const exercises = Array.from({ length: 95 }, (_, index) => ({

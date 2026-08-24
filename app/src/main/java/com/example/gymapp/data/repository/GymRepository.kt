@@ -10,6 +10,9 @@ import com.example.gymapp.data.entity.ActiveWorkoutDetails
 import com.example.gymapp.data.entity.ActiveWorkoutEntity
 import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
 import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
+import com.example.gymapp.data.entity.ActivityOnlyWorkoutEntity
+import com.example.gymapp.data.entity.ActivityOnlyWorkoutSyncBaselineEntity
+import com.example.gymapp.data.entity.ActivityOnlyWorkoutSyncJournalEntity
 import com.example.gymapp.data.entity.AppMetadataEntity
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseLoadProfileEntity
@@ -293,7 +296,6 @@ data class CloudWorkoutProjectionState internal constructor(
 ) {
     val isEmpty: Boolean
         get() = customExerciseCount == 0 &&
-            sessionCount == 0 &&
             workoutExerciseCount == 0 &&
             setCount == 0
 }
@@ -311,7 +313,9 @@ internal fun canonicalV229CloudWorkoutDigest(backup: ValidatedBackup): String =
             exercises = backup.exercises.map { exercise ->
                 exercise.copy(isFavorite = null, loadProfile = null)
             },
-            sessions = backup.sessions.map { session ->
+            // Activity-only watch summaries live in their owner-private sidecar. The released
+            // schema-v2 core requires at least one exercise and cannot represent them safely.
+            sessions = backup.sessions.filter { it.blocks.isNotEmpty() }.map { session ->
                 session.copy(
                     blocks = session.blocks.map { block ->
                         block.copy(
@@ -343,6 +347,7 @@ class GymRepository(
     private val setDao = database.setDao()
     private val muscleMappingDao = database.muscleMappingDao()
     private val garminWorkoutReceiptDao = database.garminWorkoutReceiptDao()
+    private val activityOnlyWorkoutDao = database.activityOnlyWorkoutDao()
     private val activeWorkoutDao = database.activeWorkoutDao()
     private val workoutPlanDraftDao = database.workoutPlanDraftDao()
     private val deletionStoreToken = UUID.randomUUID().toString()
@@ -682,6 +687,267 @@ class GymRepository(
         endTimestamp: Long
     ): Flow<List<WorkoutSessionSummary>> = workoutDao.getSessions(startTimestamp, endTimestamp)
         .catch { emit(emptyList()) }
+
+    /**
+     * Fingerprints both the exact private sidecar rows and their user-visible Room mirrors.
+     * Keeping the mirror in this flow means an edit or deletion cannot be hidden by an unchanged
+     * core-cloud digest.
+     */
+    fun observeActivityOnlyWorkoutFingerprint(): Flow<String> = combine(
+        activityOnlyWorkoutDao.observeAll(),
+        workoutDao.getSessions()
+    ) { storedRows, sessions ->
+        val byStartedAt = storedRows
+            .map(ActivityOnlyWorkoutEntity::toItem)
+            .associateByTo(linkedMapOf(), ActivityOnlyWorkoutItem::workoutStartedAt)
+        val mirroredStartedAt = hashSetOf<Long>()
+        sessions.forEach { summary ->
+            val duration = summary.session.durationSeconds
+            if (summary.exerciseCount != 0 || duration == null || duration <= 0L) {
+                return@forEach
+            }
+            require(mirroredStartedAt.add(summary.session.date)) {
+                "Activity-only workout mirrors have duplicate timestamps."
+            }
+            val stored = byStartedAt[summary.session.date]
+            byStartedAt[summary.session.date] = if (stored == null) {
+                ActivityOnlyWorkoutItem(
+                    workoutStartedAt = summary.session.date,
+                    durationSeconds = duration,
+                    gymCalories = 0.0,
+                    note = summary.session.note
+                )
+            } else {
+                stored.copy(durationSeconds = duration, note = summary.session.note)
+            }
+        }
+        activityOnlyWorkoutDigest(byStartedAt.values.sortedBy { it.workoutStartedAt })
+    }
+
+    suspend fun getActivityOnlyWorkoutSnapshot(): ActivityOnlyWorkoutLocalSnapshot =
+        database.withTransaction { currentActivityOnlyWorkoutSnapshot() }
+
+    /**
+     * Replaces the private sidecar and its unshadowed zero-exercise mirrors with one already
+     * three-way-merged canonical snapshot. Every collision is validated before the first write,
+     * so an ambiguous/core-invalid history fails closed without a partial replacement.
+     */
+    suspend fun reconcileActivityOnlyWorkoutSidecar(
+        targetItems: List<ActivityOnlyWorkoutItem>
+    ): ActivityOnlyWorkoutLocalSnapshot {
+        requireValidActivityOnlyWorkoutItems(targetItems)
+        return database.withTransaction {
+            val targetByStartedAt = targetItems.associateBy(
+                ActivityOnlyWorkoutItem::workoutStartedAt
+            )
+            val current = currentActivityOnlyWorkoutSnapshot()
+            val relevantStartedAt = (current.items.map(ActivityOnlyWorkoutItem::workoutStartedAt) +
+                targetByStartedAt.keys).toSet()
+            val sessionsByDate = workoutDao.getAllSessionDetailsForBackup()
+                .map(::sortSessionDetails)
+                .filter { it.session.date in relevantStartedAt }
+                .groupBy { it.session.date }
+
+            data class MirrorPlan(
+                val target: ActivityOnlyWorkoutItem?,
+                val mirror: WorkoutSessionEntity?
+            )
+
+            val plans = relevantStartedAt.sorted().map { startedAt ->
+                val collisions = sessionsByDate[startedAt].orEmpty()
+                val validCoreExists = collisions.any { details ->
+                    details.workoutExercises.isNotEmpty() &&
+                        details.workoutExercises.all { exercise -> exercise.sets.isNotEmpty() }
+                }
+                val invalidCoreExists = collisions.any { details ->
+                    details.workoutExercises.isNotEmpty() &&
+                        details.workoutExercises.any { exercise -> exercise.sets.isEmpty() }
+                }
+                require(!invalidCoreExists) {
+                    "Activity-only workout collides with an invalid core workout."
+                }
+                val activityMirrors = collisions.filter { details ->
+                    details.workoutExercises.isEmpty() &&
+                        details.session.durationSeconds?.let { it > 0L } == true
+                }
+                require(activityMirrors.size <= 1 &&
+                    (validCoreExists || activityMirrors.size == collisions.size)) {
+                    "Activity-only workout mirror collision is ambiguous."
+                }
+                require(!validCoreExists || activityMirrors.isEmpty()) {
+                    "Activity-only workout core collision has a stale visible mirror."
+                }
+                MirrorPlan(
+                    target = if (validCoreExists) null else targetByStartedAt[startedAt],
+                    mirror = activityMirrors.singleOrNull()?.session
+                )
+            }
+
+            val deletions = plans.filter { it.target == null && it.mirror != null }
+            val insertions = plans.count { it.target != null && it.mirror == null }
+            val finalSessionCount = workoutDao.getSessionCount() - deletions.size + insertions
+            require(finalSessionCount <= WorkoutDataLimits.MAX_SESSIONS) {
+                "Activity-only workout history exceeds the local workout limit."
+            }
+
+            plans.forEach { plan ->
+                val mirror = plan.mirror
+                val target = plan.target
+                when {
+                    target == null && mirror != null -> workoutDao.deleteSessionById(mirror.id)
+                    target != null && mirror == null -> insertValidatedWorkoutSession(
+                        date = target.workoutStartedAt,
+                        note = target.note,
+                        workoutExercises = emptyList(),
+                        durationSeconds = target.durationSeconds
+                    )
+                    target != null && mirror != null &&
+                        (mirror.durationSeconds != target.durationSeconds ||
+                            mirror.note != target.note) -> workoutDao.update(
+                        mirror.copy(
+                            durationSeconds = target.durationSeconds,
+                            note = target.note
+                        )
+                    )
+                }
+            }
+            activityOnlyWorkoutDao.deleteAll()
+            if (targetItems.isNotEmpty()) {
+                activityOnlyWorkoutDao.upsertAll(
+                    targetItems.map(ActivityOnlyWorkoutEntity::fromItem)
+                )
+            }
+            currentActivityOnlyWorkoutSnapshot().also { reconciled ->
+                require(reconciled.items == targetItems) {
+                    "Activity-only workout reconciliation did not produce the canonical snapshot."
+                }
+            }
+        }
+    }
+
+    suspend fun getActivityOnlyWorkoutSyncJournal(): ActivityOnlyWorkoutSyncJournalRecord? =
+        database.withTransaction { activityOnlyWorkoutDao.getSyncJournal()?.toRecord() }
+
+    suspend fun persistActivityOnlyWorkoutSyncJournal(
+        record: ActivityOnlyWorkoutSyncJournalRecord
+    ) {
+        requireCanonicalUuid(record.ownerUserId)
+        requireCanonicalUuid(record.requestId)
+        require(record.expectedRevision in 0L..MAX_ACTIVITY_ONLY_REVISION)
+        require(record.itemsDigest.matches(Regex("^[0-9a-f]{64}$")))
+        require(record.itemsJson.toByteArray(Charsets.UTF_8).size <= 1_048_576)
+        val entity = ActivityOnlyWorkoutSyncJournalEntity.fromRecord(record)
+        database.withTransaction {
+            val existing = activityOnlyWorkoutDao.getSyncJournal()
+            if (existing == null) {
+                activityOnlyWorkoutDao.insertSyncJournal(entity)
+            } else {
+                require(existing == entity) {
+                    "A different activity-only sync attempt is already pending."
+                }
+            }
+        }
+    }
+
+    suspend fun clearActivityOnlyWorkoutSyncJournal(
+        record: ActivityOnlyWorkoutSyncJournalRecord
+    ): Boolean = database.withTransaction {
+        activityOnlyWorkoutDao.deleteExactSyncJournal(
+            ownerUserId = record.ownerUserId,
+            expectedRevision = record.expectedRevision,
+            requestId = record.requestId,
+            itemsDigest = record.itemsDigest
+        ) == 1
+    }
+
+    suspend fun getActivityOnlyWorkoutSyncBaseline(
+        ownerUserId: String
+    ): ActivityOnlyWorkoutSyncBaselineRecord? {
+        requireCanonicalUuid(ownerUserId)
+        return database.withTransaction {
+            activityOnlyWorkoutDao.getSyncBaseline()?.also { baseline ->
+                require(baseline.ownerUserId == ownerUserId) {
+                    "Activity-only workout baseline belongs to another account."
+                }
+            }?.toRecord()
+        }
+    }
+
+    suspend fun persistActivityOnlyWorkoutSyncBaseline(
+        record: ActivityOnlyWorkoutSyncBaselineRecord
+    ) {
+        requireCanonicalUuid(record.ownerUserId)
+        require(record.revision in 0L..MAX_ACTIVITY_ONLY_REVISION)
+        require(record.itemsDigest.matches(Regex("^[0-9a-f]{64}$")))
+        require(record.itemsJson.toByteArray(Charsets.UTF_8).size <= 1_048_576)
+        val entity = ActivityOnlyWorkoutSyncBaselineEntity.fromRecord(record)
+        database.withTransaction {
+            val existing = activityOnlyWorkoutDao.getSyncBaseline()
+            if (existing == null) {
+                activityOnlyWorkoutDao.insertSyncBaseline(entity)
+            } else {
+                require(existing.ownerUserId == record.ownerUserId) {
+                    "Activity-only workout baseline belongs to another account."
+                }
+                require(record.revision >= existing.revision) {
+                    "Activity-only workout baseline revision cannot move backwards."
+                }
+                if (record.revision == existing.revision) {
+                    require(existing.itemsJson == record.itemsJson &&
+                        existing.itemsDigest == record.itemsDigest) {
+                        "Activity-only workout baseline revision has divergent items."
+                    }
+                    return@withTransaction
+                }
+                check(activityOnlyWorkoutDao.updateOwnerSyncBaseline(
+                    ownerUserId = record.ownerUserId,
+                    revision = record.revision,
+                    itemsJson = record.itemsJson,
+                    itemsDigest = record.itemsDigest
+                ) == 1) {
+                    "Activity-only workout baseline could not be updated."
+                }
+            }
+        }
+    }
+
+    private suspend fun currentActivityOnlyWorkoutSnapshot(): ActivityOnlyWorkoutLocalSnapshot {
+        val byStartedAt = activityOnlyWorkoutDao.getAll()
+            .map(ActivityOnlyWorkoutEntity::toItem)
+            .associateByTo(linkedMapOf(), ActivityOnlyWorkoutItem::workoutStartedAt)
+        val mirroredStartedAt = hashSetOf<Long>()
+        workoutDao.getAllSessionDetailsForBackup()
+            .map(::sortSessionDetails)
+            .forEach { details ->
+                val duration = details.session.durationSeconds
+                if (details.workoutExercises.isNotEmpty() || duration == null || duration <= 0L) {
+                    return@forEach
+                }
+                require(mirroredStartedAt.add(details.session.date)) {
+                    "Activity-only workout mirrors have duplicate timestamps."
+                }
+                val stored = byStartedAt[details.session.date]
+                byStartedAt[details.session.date] = if (stored == null) {
+                    ActivityOnlyWorkoutItem(
+                        workoutStartedAt = details.session.date,
+                        durationSeconds = duration,
+                        gymCalories = 0.0,
+                        note = details.session.note
+                    )
+                } else {
+                    stored.copy(durationSeconds = duration, note = details.session.note)
+                }
+            }
+        val items = byStartedAt.values.sortedBy(ActivityOnlyWorkoutItem::workoutStartedAt)
+        requireValidActivityOnlyWorkoutItems(items)
+        return ActivityOnlyWorkoutLocalSnapshot(items)
+    }
+
+    private fun requireCanonicalUuid(value: String) {
+        require(runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)) {
+            "Activity-only workout UUID is invalid."
+        }
+    }
 
     fun observeSessionsForMonth(monthOffset: Int): Flow<List<WorkoutSessionSummary>> {
         val (start, end) = DateTimeUtils.monthBounds(monthOffset)
@@ -1042,7 +1308,9 @@ class GymRepository(
 
     suspend fun getSyncProfileStats(): SyncProfileStats {
         return withContext(Dispatchers.Default) {
-            val sessions = workoutDao.getAllSessionDetailsForBackup().map(::sortSessionDetails)
+            val sessions = workoutDao.getAllSessionDetailsForBackup()
+                .map(::sortSessionDetails)
+                .filter { details -> details.workoutExercises.isNotEmpty() }
             val summaries = sessions.map { details ->
                 WorkoutSessionSummary(
                     session = details.session,
@@ -1132,6 +1400,22 @@ class GymRepository(
 
         database.withTransaction {
             val retainedGarminProvenance = mutableMapOf<String, Int>()
+            val retainedActivityOnlySessions = if (replaceExisting && activeRemote) {
+                val provenanceSessionIds = database.garminWorkoutReceiptDao()
+                    .getProvenanceSessionIds()
+                    .toSet()
+                workoutDao.getAllSessionDetailsForBackup()
+                    .asSequence()
+                    .map(::sortSessionDetails)
+                    .filter { details ->
+                        details.workoutExercises.isEmpty() &&
+                            details.session.durationSeconds?.let { it > 0L } == true
+                    }
+                    .map { details -> details to (details.session.id in provenanceSessionIds) }
+                    .toList()
+            } else {
+                emptyList()
+            }
             val retainedLocalLoadProfiles = if (replaceExisting && activeRemote) {
                 val profilesByExerciseId = currentExerciseLoadProfiles(rejectInvalid = true)
                 exerciseDao.getExercisesSnapshot().mapNotNull { exercise ->
@@ -1298,7 +1582,9 @@ class GymRepository(
                     }
                 }
 
-                if (drafts.isNotEmpty()) {
+                val isActivityOnly = drafts.isEmpty() && session.blocks.isEmpty() &&
+                    session.durationSeconds?.let { it > 0L } == true
+                if (drafts.isNotEmpty() || isActivityOnly) {
                     val signature = workoutImportSignature(
                         date = session.date,
                         note = session.note,
@@ -1309,11 +1595,16 @@ class GymRepository(
                         require(sessionCount < WorkoutDataLimits.MAX_SESSIONS) {
                             "Backup exceeds the workout limit for this account."
                         }
-                        requireValidWorkout(
-                            date = session.date,
-                            note = session.note,
-                            workoutExercises = drafts
-                        )
+                        if (isActivityOnly) {
+                            require(WorkoutDataLimits.isValidTimestamp(session.date))
+                            require(WorkoutDataLimits.isValidNote(session.note))
+                        } else {
+                            requireValidWorkout(
+                                date = session.date,
+                                note = session.note,
+                                workoutExercises = drafts
+                            )
+                        }
                         val incomingSetCount = drafts.sumOf { it.sets.size }
                         require(WorkoutDataLimits.canAddSets(accountSetCount, incomingSetCount)) {
                             "Backup exceeds the total set limit for this account."
@@ -1347,6 +1638,32 @@ class GymRepository(
                         importedSessions += 1
                     }
                 }
+            }
+
+            retainedActivityOnlySessions.forEach { (details, hadGarminProvenance) ->
+                val coreCollision = workoutDao
+                    .getSessionDetailsAtExactDate(details.session.date)
+                    .any { candidate -> candidate.workoutExercises.isNotEmpty() }
+                if (coreCollision) return@forEach
+                require(sessionCount < WorkoutDataLimits.MAX_SESSIONS) {
+                    "Cloud state plus private activity history exceeds the workout limit."
+                }
+                val duration = checkNotNull(details.session.durationSeconds)
+                require(WorkoutDataLimits.isValidTimestamp(details.session.date))
+                require(WorkoutDataLimits.isValidWorkoutDuration(duration) && duration > 0L)
+                require(WorkoutDataLimits.isValidNote(details.session.note))
+                val restoredSessionId = insertValidatedWorkoutSession(
+                    date = details.session.date,
+                    note = details.session.note,
+                    workoutExercises = emptyList(),
+                    durationSeconds = duration
+                )
+                if (hadGarminProvenance) {
+                    database.garminWorkoutReceiptDao().insertProvenance(
+                        GarminWorkoutProvenanceEntity(workoutSessionId = restoredSessionId)
+                    )
+                }
+                sessionCount += 1
             }
 
             if (replaceExisting) {
@@ -2106,7 +2423,8 @@ class GymRepository(
     suspend fun createWorkoutSessionFromNamedSets(
         date: Long,
         note: String?,
-        sets: List<NamedWorkoutSetDraft>
+        sets: List<NamedWorkoutSetDraft>,
+        durationSeconds: Long? = null
     ): Long? {
         if (sets.isEmpty()) {
             return null
@@ -2115,6 +2433,9 @@ class GymRepository(
             "Workout timestamp is outside the supported range."
         }
         require(WorkoutDataLimits.isValidNote(note)) { "Workout note exceeds the length limit." }
+        require(durationSeconds == null || WorkoutDataLimits.isValidWorkoutDuration(durationSeconds)) {
+            "Workout duration is outside the supported range."
+        }
         require(sets.size <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION * WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
             "Workout exceeds the set limit."
         }
@@ -2187,7 +2508,12 @@ class GymRepository(
                 note = note,
                 workoutExercises = workoutExercises
             )
-            insertValidatedWorkoutSession(date, note, workoutExercises)
+            insertValidatedWorkoutSession(
+                date = date,
+                note = note,
+                workoutExercises = workoutExercises,
+                durationSeconds = durationSeconds
+            )
         }
     }
 
@@ -2196,16 +2522,84 @@ class GymRepository(
             "Workout timestamp is outside the supported range."
         }
         require(WorkoutDataLimits.isValidNote(session.note)) { "Workout note exceeds the length limit." }
-        workoutDao.update(session)
+        database.withTransaction {
+            val previous = workoutDao.getSessionDetailsSnapshot(session.id)
+            val wasActivityOnly = previous?.let { details ->
+                details.workoutExercises.isEmpty() &&
+                    details.session.durationSeconds?.let { it > 0L } == true
+            } == true
+            if (wasActivityOnly) {
+                val duration = session.durationSeconds
+                require(duration != null && duration > 0L &&
+                    WorkoutDataLimits.isValidWorkoutDuration(duration)) {
+                    "Activity-only workout duration is invalid."
+                }
+                if (session.date != previous?.session?.date) {
+                    require(workoutDao.getSessionDetailsAtExactDate(session.date).isEmpty()) {
+                        "Activity-only workout timestamp already exists."
+                    }
+                }
+                val previousStartedAt = checkNotNull(previous).session.date
+                val stored = activityOnlyWorkoutDao.getAll()
+                    .firstOrNull { it.workoutStartedAt == previousStartedAt }
+                    ?.toItem()
+                val updatedItem = (stored ?: ActivityOnlyWorkoutItem(
+                    workoutStartedAt = previousStartedAt,
+                    durationSeconds = checkNotNull(previous.session.durationSeconds),
+                    gymCalories = 0.0,
+                    note = previous.session.note
+                )).copy(
+                    workoutStartedAt = session.date,
+                    durationSeconds = duration,
+                    note = session.note
+                )
+                requireValidActivityOnlyWorkoutItem(updatedItem)
+                if (previousStartedAt != session.date) {
+                    activityOnlyWorkoutDao.deleteByStartedAt(previousStartedAt)
+                }
+                activityOnlyWorkoutDao.upsert(ActivityOnlyWorkoutEntity.fromItem(updatedItem))
+            }
+            workoutDao.update(session)
+            if (!wasActivityOnly && previous != null && previous.session.date != session.date) {
+                restoreActivityOnlyMirrorIfUnshadowed(previous.session.date)
+                if (activityOnlyWorkoutDao.getByStartedAt(session.date) != null) {
+                    workoutDao.getSessionDetailsAtExactDate(session.date)
+                        .filter { it.session.id != session.id && it.workoutExercises.isEmpty() }
+                        .forEach { hiddenMirror ->
+                            workoutDao.deleteSessionById(hiddenMirror.session.id)
+                        }
+                }
+            }
+        }
     }
 
     suspend fun deleteWorkoutSession(session: WorkoutSessionEntity) {
-        workoutDao.delete(session)
+        database.withTransaction {
+            val details = workoutDao.getSessionDetailsSnapshot(session.id)
+            workoutDao.delete(session)
+            if (details?.workoutExercises?.isEmpty() == true &&
+                details.session.durationSeconds?.let { it > 0L } == true
+            ) {
+                activityOnlyWorkoutDao.deleteByStartedAt(details.session.date)
+            } else if (details != null) {
+                restoreActivityOnlyMirrorIfUnshadowed(details.session.date)
+            }
+        }
     }
 
     suspend fun deleteWorkoutSessionById(sessionId: Long) {
         if (sessionId <= 0) return
-        workoutDao.deleteSessionById(sessionId)
+        database.withTransaction {
+            val details = workoutDao.getSessionDetailsSnapshot(sessionId)
+            workoutDao.deleteSessionById(sessionId)
+            if (details?.workoutExercises?.isEmpty() == true &&
+                details.session.durationSeconds?.let { it > 0L } == true
+            ) {
+                activityOnlyWorkoutDao.deleteByStartedAt(details.session.date)
+            } else if (details != null) {
+                restoreActivityOnlyMirrorIfUnshadowed(details.session.date)
+            }
+        }
     }
 
     suspend fun addSet(
@@ -2427,12 +2821,35 @@ class GymRepository(
         }
 
         val sessionId = workoutDao.getSessionIdByWorkoutExerciseId(workoutExerciseId) ?: return
+        val sessionDate = workoutDao.getSessionDetailsSnapshot(sessionId)?.session?.date
         workoutDao.deleteWorkoutExerciseById(workoutExerciseId)
 
         val remainingExercises = workoutDao.getWorkoutExerciseCount(sessionId)
         if (remainingExercises == 0) {
             workoutDao.deleteSessionById(sessionId)
+            sessionDate?.let { restoreActivityOnlyMirrorIfUnshadowed(it) }
         }
+    }
+
+    /** Restores a private activity after the schema-v2 workout that shadowed it is removed. */
+    private suspend fun restoreActivityOnlyMirrorIfUnshadowed(workoutStartedAt: Long) {
+        val stored = activityOnlyWorkoutDao.getByStartedAt(workoutStartedAt)?.toItem() ?: return
+        val collisions = workoutDao.getSessionDetailsAtExactDate(workoutStartedAt)
+        if (collisions.any { it.workoutExercises.isNotEmpty() }) return
+        val existingActivities = collisions.filter { it.workoutExercises.isEmpty() }
+        require(existingActivities.size <= 1) {
+            "Activity-only workout mirror collision is ambiguous."
+        }
+        if (existingActivities.isNotEmpty()) return
+        require(workoutDao.getSessionCount() < WorkoutDataLimits.MAX_SESSIONS) {
+            "Activity-only workout history exceeds the local workout limit."
+        }
+        insertValidatedWorkoutSession(
+            date = stored.workoutStartedAt,
+            note = stored.note,
+            workoutExercises = emptyList(),
+            durationSeconds = stored.durationSeconds
+        )
     }
 
     private fun sortSessionDetails(details: WorkoutSessionDetails): WorkoutSessionDetails {
@@ -2473,6 +2890,9 @@ class GymRepository(
         date: Long,
         note: String?,
         sets: List<NamedWorkoutSetDraft>,
+        durationSeconds: Long? = null,
+        isFreeWorkout: Boolean = false,
+        activityOnlyWorkout: ActivityOnlyWorkoutItem? = null,
         legacyPayloadDigest: String? = null
     ): GarminWorkoutApplyResult {
         require(ownerBinding.matches(GARMIN_OWNER_BINDING_PATTERN))
@@ -2488,9 +2908,74 @@ class GymRepository(
                 legacyPayloadDigest != payloadDigest &&
                 legacyPayloadDigest.matches(SHA256_HEX_PATTERN)
         )
+        if (isFreeWorkout) {
+            require(sets.isEmpty())
+            require(durationSeconds != null && durationSeconds > 0L)
+            require(WorkoutDataLimits.isValidWorkoutDuration(durationSeconds))
+            require(WorkoutDataLimits.isValidTimestamp(date))
+            require(WorkoutDataLimits.isValidNote(note))
+            require(activityOnlyWorkout != null)
+            requireValidActivityOnlyWorkoutItem(activityOnlyWorkout)
+            require(activityOnlyWorkout.workoutStartedAt == date &&
+                activityOnlyWorkout.durationSeconds == durationSeconds &&
+                activityOnlyWorkout.note == note) {
+                "Activity-only workout sidecar does not match its visible mirror."
+            }
+        } else {
+            require(sets.isNotEmpty())
+            require(activityOnlyWorkout == null)
+        }
 
         return database.withTransaction {
             val receiptDao = database.garminWorkoutReceiptDao()
+
+            suspend fun persistFreeActivity(): Long? {
+                val item = checkNotNull(activityOnlyWorkout)
+                val stored = activityOnlyWorkoutDao
+                    .getByStartedAt(item.workoutStartedAt)
+                    ?.toItem()
+                require(stored == null || stored == item) {
+                    "Activity-only workout timestamp collision has divergent data."
+                }
+                val collisions = workoutDao.getSessionDetailsAtExactDate(item.workoutStartedAt)
+                    .map(::sortSessionDetails)
+                require(collisions.size <= 1) {
+                    "Activity-only workout timestamp collision is ambiguous."
+                }
+                val collision = collisions.singleOrNull()
+                val sessionId = when {
+                    collision == null -> {
+                        require(workoutDao.getSessionCount() < WorkoutDataLimits.MAX_SESSIONS) {
+                            "Activity-only workout history exceeds the local workout limit."
+                        }
+                        insertValidatedWorkoutSession(
+                            date = item.workoutStartedAt,
+                            note = item.note,
+                            workoutExercises = emptyList(),
+                            durationSeconds = item.durationSeconds
+                        )
+                    }
+
+                    collision.workoutExercises.isEmpty() -> {
+                        require(collision.session.durationSeconds == item.durationSeconds &&
+                            collision.session.note == item.note) {
+                            "Activity-only workout mirror has divergent data."
+                        }
+                        collision.session.id
+                    }
+
+                    collision.workoutExercises.all { exercise -> exercise.sets.isNotEmpty() } -> {
+                        // A valid schema-v2 workout remains the visible record. The independent
+                        // owner-private sidecar still retains the activity exactly.
+                        null
+                    }
+
+                    else -> error("Activity-only workout collides with an invalid core workout.")
+                }
+                activityOnlyWorkoutDao.upsert(ActivityOnlyWorkoutEntity.fromItem(item))
+                return sessionId
+            }
+
             val now = currentTimeMillis()
             if (now !in 1L..WorkoutDataLimits.MAX_TIMESTAMP_MILLIS) {
                 return@withTransaction GarminWorkoutApplyResult.Rejected
@@ -2509,8 +2994,10 @@ class GymRepository(
             )
             if (existing != null) {
                 return@withTransaction when {
-                    existing.payloadDigest == payloadDigest ->
+                    existing.payloadDigest == payloadDigest -> {
+                        if (isFreeWorkout) persistFreeActivity()
                         GarminWorkoutApplyResult.AlreadyApplied
+                    }
                     legacyPayloadDigest != null &&
                         existing.payloadDigest == legacyPayloadDigest -> {
                         // Older releases did not cover interval/progress fields in their digest.
@@ -2525,6 +3012,7 @@ class GymRepository(
                             replacementDigest = payloadDigest
                         )
                         if (upgraded == 1) {
+                            if (isFreeWorkout) persistFreeActivity()
                             GarminWorkoutApplyResult.AlreadyApplied
                         } else {
                             GarminWorkoutApplyResult.Rejected
@@ -2568,11 +3056,16 @@ class GymRepository(
                 return@withTransaction GarminWorkoutApplyResult.RateLimited
             }
 
-            val sessionId = createWorkoutSessionFromNamedSets(
-                date = date,
-                note = note,
-                sets = sets
-            ) ?: return@withTransaction GarminWorkoutApplyResult.Rejected
+            val sessionId = if (isFreeWorkout) {
+                persistFreeActivity()
+            } else {
+                createWorkoutSessionFromNamedSets(
+                    date = date,
+                    note = note,
+                    sets = sets,
+                    durationSeconds = durationSeconds
+                ) ?: return@withTransaction GarminWorkoutApplyResult.Rejected
+            }
             receiptDao.insert(
                 GarminWorkoutReceiptEntity(
                     ownerBinding = ownerBinding,
@@ -2583,9 +3076,11 @@ class GymRepository(
                     createdAt = now
                 )
             )
-            receiptDao.insertProvenance(
-                GarminWorkoutProvenanceEntity(workoutSessionId = sessionId)
-            )
+            sessionId?.let { storedSessionId ->
+                receiptDao.insertProvenance(
+                    GarminWorkoutProvenanceEntity(workoutSessionId = storedSessionId)
+                )
+            }
             GarminWorkoutApplyResult.Applied
         }
     }

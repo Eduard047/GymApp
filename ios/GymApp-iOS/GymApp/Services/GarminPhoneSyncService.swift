@@ -387,9 +387,15 @@ struct GarminPhoneSetInterval: Codable, Equatable {
     let heartRateZoneSeconds: [Int64]
 }
 
+enum GarminPhoneWorkoutMode: String, Codable, Equatable {
+    case planned
+    case free
+}
+
 struct GarminPhoneWorkoutCommand: Codable, Equatable {
     let requestID: String
     let startedAtSeconds: Int64
+    let mode: GarminPhoneWorkoutMode
     let sets: [NamedWorkoutSetDraft]
     let plannedSetCount: Int?
     let plannedTargetSetCount: Int?
@@ -406,6 +412,22 @@ struct GarminPhoneWorkoutCommand: Codable, Equatable {
     var digest: String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
+        if mode == .free {
+            let identity = GarminPhoneFreeWorkoutReceiptIdentity(
+                version: 1,
+                mode: mode,
+                requestID: requestID,
+                startedAtSeconds: startedAtSeconds,
+                durationSeconds: durationSeconds,
+                gymCalories: gymCalories,
+                garminCalories: garminCalories,
+                averageHeartRate: averageHeartRate,
+                maximumHeartRate: maximumHeartRate,
+                endingHeartRateZone: endingHeartRateZone
+            )
+            let data = (try? encoder.encode(identity)) ?? Data()
+            return data.garminSHA256Hex
+        }
         // Keep the released receipt identity stable. Exact planned/completed progress
         // and `setIntervals` are diagnostic enrichments; older clients ignored them
         // before persisting the same core workout and may replay after an ack loss.
@@ -424,6 +446,19 @@ struct GarminPhoneWorkoutCommand: Codable, Equatable {
         let data = (try? encoder.encode(legacyIdentity)) ?? Data()
         return data.garminSHA256Hex
     }
+}
+
+private struct GarminPhoneFreeWorkoutReceiptIdentity: Codable {
+    let version: Int
+    let mode: GarminPhoneWorkoutMode
+    let requestID: String
+    let startedAtSeconds: Int64
+    let durationSeconds: Int64?
+    let gymCalories: Double?
+    let garminCalories: Int?
+    let averageHeartRate: Int?
+    let maximumHeartRate: Int?
+    let endingHeartRateZone: Int?
 }
 
 private struct GarminPhoneWorkoutReceiptIdentity: Codable {
@@ -474,8 +509,30 @@ enum GarminPhoneWorkoutParser {
               requestID.unicodeScalars.allSatisfy({
                   CharacterSet.alphanumerics.contains($0) || "-_.:".unicodeScalars.contains($0)
               }),
-              let rawSets = array(message["sets"]),
-              (1 ... maximumSets).contains(rawSets.count) else {
+              let rawSets = array(message["sets"]) else {
+            return nil
+        }
+
+        let mode: GarminPhoneWorkoutMode
+        if message["workoutMode"] == nil {
+            mode = .planned
+        } else if let rawMode = string(message["workoutMode"], maximumBytes: 16),
+                  let parsedMode = GarminPhoneWorkoutMode(rawValue: rawMode) {
+            mode = parsedMode
+        } else {
+            return nil
+        }
+        guard mode == .free ? rawSets.isEmpty : (1 ... maximumSets).contains(rawSets.count) else {
+            return nil
+        }
+        if mode == .free,
+           (
+               message["plannedSetCount"] != nil ||
+                message["plannedTargetSetCount"] != nil ||
+                message["completedPlannedSetCount"] != nil ||
+                message["setMetrics"] != nil ||
+                message["setIntervals"] != nil
+           ) {
             return nil
         }
 
@@ -689,6 +746,10 @@ enum GarminPhoneWorkoutParser {
         ) else {
             return nil
         }
+        if mode == .free,
+           (message["startedAtSeconds"] == nil || message["startedAtSeconds"] is NSNull) {
+            return nil
+        }
         let averageHeartRate = optionalInteger(
             message["avgHeartRate"],
             minimum: 0,
@@ -699,8 +760,14 @@ enum GarminPhoneWorkoutParser {
             minimum: 0,
             maximum: 300
         )
+        let lastHeartRate = optionalInteger(
+            message["lastHeartRate"],
+            minimum: 0,
+            maximum: 300
+        )
         guard optionalNumberWasValid(message["avgHeartRate"], parsed: averageHeartRate),
               optionalNumberWasValid(message["maxHeartRate"], parsed: maximumHeartRate),
+              optionalNumberWasValid(message["lastHeartRate"], parsed: lastHeartRate),
               averageHeartRate == nil ||
                 maximumHeartRate == nil ||
                 averageHeartRate! <= maximumHeartRate! else {
@@ -732,6 +799,9 @@ enum GarminPhoneWorkoutParser {
               optionalNumberWasValid(message["garminCalories"], parsed: garminCalories),
               optionalNumberWasValid(message["heartRateZone"], parsed: heartRateZone) else {
             return nil
+        }
+        if mode == .free {
+            guard let duration, duration >= 1, gymCalories != nil else { return nil }
         }
 
         if message["setIntervals"] != nil, !(message["setIntervals"] is NSNull) {
@@ -765,6 +835,7 @@ enum GarminPhoneWorkoutParser {
         return GarminPhoneWorkoutCommand(
             requestID: requestID,
             startedAtSeconds: startedAtSeconds,
+            mode: mode,
             sets: sets,
             plannedSetCount: plannedSetCount,
             plannedTargetSetCount: plannedTargetSetCount,
@@ -2261,11 +2332,23 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         }
 
         do {
-            let created = try store.createWorkout(
-                date: Date(timeIntervalSince1970: TimeInterval(command.startedAtSeconds)),
-                note: workoutNote(command),
-                namedSets: command.sets
-            )
+            let workoutDate = Date(timeIntervalSince1970: TimeInterval(command.startedAtSeconds))
+            let note = workoutNote(command)
+            let created: WorkoutSession?
+            if command.mode == .free {
+                created = try store.createActivityWorkout(
+                    date: workoutDate,
+                    note: note,
+                    durationSeconds: Int(command.durationSeconds ?? 0)
+                )
+            } else {
+                created = try store.createWorkout(
+                    date: workoutDate,
+                    note: note,
+                    namedSets: command.sets,
+                    durationSeconds: command.durationSeconds.map(Int.init)
+                )
+            }
             guard created != nil,
                   readyWorkoutStore() === store else {
                 throw GarminPhoneSyncError.accountChanged
@@ -2418,6 +2501,13 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     ) -> String {
         let language = ["uk", "ru"].contains(rawLanguage) ? rawLanguage : "en"
         var details = ["Garmin"]
+        if command.mode == .free {
+            details.append(
+                language == "uk" ? "Вільне тренування" :
+                    language == "ru" ? "Свободная тренировка" :
+                    "Free workout"
+            )
+        }
         let progress: (completed: Int, planned: Int)?
         if let plannedTargetSetCount = command.plannedTargetSetCount,
            let completedPlannedSetCount = command.completedPlannedSetCount {
@@ -2549,6 +2639,10 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         return store.workouts.contains { workout in
             guard abs(workout.date.timeIntervalSince1970 - expectedDate) < 1 else {
                 return false
+            }
+            if command.mode == .free {
+                return workout.exercises.isEmpty &&
+                    workout.durationSeconds == command.durationSeconds.map(Int.init)
             }
             let flattened = workout.exercises.flatMap { block in
                 block.sets.map {

@@ -746,6 +746,7 @@ class GarminSyncSecurityTest {
 
         assertNotNull(parsed)
         checkNotNull(parsed)
+        assertEquals(GarminWorkoutMode.Planned, parsed.mode)
         assertEquals("request-1234567890", parsed.requestId)
         assertEquals(1_700_000_000_000L, parsed.startedAtMillis)
         assertEquals(listOf(NamedWorkoutSetDraft("Bench Press", 82.5, 8)), parsed.sets)
@@ -775,6 +776,58 @@ class GarminSyncSecurityTest {
         assertNull(resumedSegment?.averageHeartRate)
         assertNull(resumedSegment?.maximumHeartRate)
         assertNull(resumedSegment?.endingHeartRateZone)
+    }
+
+    @Test
+    fun freeWorkoutRequiresAnExplicitMetricsOnlyEnvelope() {
+        val nowMillis = 1_800_000_000_000L
+        val free = mapOf<Any?, Any?>(
+            "type" to "create_workout",
+            "requestId" to "free-workout-1234567890",
+            "workoutMode" to "free",
+            "startedAtSeconds" to 1_700_000_000L,
+            "durationSeconds" to 1_234L,
+            "gymCalories" to 0.0,
+            "sets" to emptyList<Any>()
+        )
+
+        val parsed = checkNotNull(parseGarminWorkoutCommand(free, nowMillis))
+        assertEquals(GarminWorkoutMode.Free, parsed.mode)
+        assertTrue(parsed.sets.isEmpty())
+        assertTrue(parsed.setStatistics.isEmpty())
+        assertTrue(parsed.setIntervals.isEmpty())
+        assertEquals(1_234L, parsed.durationSeconds)
+        assertEquals(0.0, parsed.gymCalories)
+        assertNull(parsed.garminCalories)
+        assertNull(parsed.averageHeartRate)
+        assertNull(legacyGarminWorkoutPayloadDigestForUpgrade(parsed))
+        assertTrue(garminWorkoutNote(parsed, AppLanguage.EN).contains("Free workout"))
+
+        val legacyPlanned = checkNotNull(parseGarminWorkoutCommand(validCommand(), nowMillis))
+        val explicitPlanned = checkNotNull(
+            parseGarminWorkoutCommand(validCommand() + ("workoutMode" to "planned"), nowMillis)
+        )
+        assertEquals(
+            canonicalGarminWorkoutPayloadDigest(legacyPlanned),
+            canonicalGarminWorkoutPayloadDigest(explicitPlanned)
+        )
+
+        listOf(
+            free - "workoutMode",
+            free + ("workoutMode" to null),
+            free + ("workoutMode" to "unknown"),
+            free + ("sets" to listOf(validSet())),
+            free - "startedAtSeconds",
+            free - "durationSeconds",
+            free + ("durationSeconds" to 0),
+            free - "gymCalories",
+            free + ("setMetrics" to emptyList<Any>()),
+            free + ("setIntervals" to emptyList<Any>()),
+            free + ("plannedSetCount" to 1),
+            free + ("plannedTargetSetCount" to 1) + ("completedPlannedSetCount" to 0)
+        ).forEach { malformed ->
+            assertNull(malformed.toString(), parseGarminWorkoutCommand(malformed, nowMillis))
+        }
     }
 
     @Test

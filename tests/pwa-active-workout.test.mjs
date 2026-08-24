@@ -498,8 +498,28 @@ test("workout stopwatch includes adjusted rest while its account-bound sidecar t
   assert.equal(timing.workoutId, vm.runInContext("activeWorkout.id", context));
   vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
   assert.equal(vm.runInContext(`activeWorkoutElapsedMillis(activeWorkout, ${createdAt + 120_000})`, context), 120_000);
-  assert.match(vm.runInContext("activeWorkoutScreen()", context), />Time</);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), />Elapsed</);
   assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /includes rest/);
+});
+
+test("active-workout hero labels elapsed, completed and started-at time in every locale", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const expectations = {
+    en: ["Elapsed", "Completed", "Started at"],
+    uk: ["Минуло", "Виконано", "Початок о"],
+    ru: ["Прошло", "Выполнено", "Начало в"]
+  };
+  for (const [language, labels] of Object.entries(expectations)) {
+    const markup = vm.runInContext(
+      `state.language = ${JSON.stringify(language)}; activeWorkoutScreen()`,
+      context
+    );
+    assert.match(markup, new RegExp(`<span>${labels[0]}</span><strong data-active-workout-elapsed`));
+    assert.match(markup, new RegExp(`<span>${labels[1]}</span><strong>0 / 2</strong>`));
+    assert.match(markup, new RegExp(`active-workout-started[^>]*>${labels[2]}\\s`));
+    assert.match(markup, /role="progressbar"[^>]*aria-valuenow="0"/);
+  }
 });
 
 test("write-ahead rest marker reconciles crashes between start, adjust, and stop state writes", async () => {
