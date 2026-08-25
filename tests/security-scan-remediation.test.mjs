@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, coalesceFixSql, pushSource, pwaSource, stateSource, androidStore] =
+const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, coalesceFixSql, identityIsolationSql, identityBudgetSource, deleteSource, socialSource, garminSource, pwaSource, stateSource, androidStore] =
   await Promise.all([
     readFile("supabase/migrations/20260823160702_harden_live_sessions_and_push_ownership.sql", "utf8"),
     readFile("supabase/migrations/20260823160703_bound_workout_duration_sync.sql", "utf8"),
@@ -10,7 +10,11 @@ const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, c
     readFile("supabase/migrations/20260823160706_add_edge_preauth_budgets.sql", "utf8"),
     readFile("supabase/migrations/20260823161839_fix_edge_preauth_service_wrapper.sql", "utf8"),
     readFile("supabase/migrations/20260823162119_fix_security_hardening_coalesce_calls.sql", "utf8"),
+    readFile("supabase/migrations/20260825105114_isolate_verified_edge_rate_limits.sql", "utf8"),
     readFile("supabase/functions/_shared/preauth-budget.ts", "utf8"),
+    readFile("supabase/functions/delete-account/index.ts", "utf8"),
+    readFile("supabase/functions/social-live-gateway/index.ts", "utf8"),
+    readFile("supabase/functions/garmin-sync/index.ts", "utf8"),
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/state-contract.js", "utf8"),
     readFile("app/src/main/java/com/example/gymapp/auth/AndroidKeystoreAuthStore.kt", "utf8"),
@@ -54,7 +58,7 @@ test("account deletion requires fresh password AMR and a single-use exact-sessio
   assert.match(deletionSql, /set consumed_at = pg_catalog\.clock_timestamp\(\)/);
 });
 
-test("public Edge pre-authentication work has service-only durable source and global budgets", () => {
+test("public Edge rate limits use verified identities without a shared global bucket", () => {
   assert.match(preauthSql, /\('delete_account', 12, 1200\)/);
   assert.match(preauthSql, /\('social_live', 180, 6000\)/);
   assert.match(preauthSql, /\('garmin_legacy', 90, 3000\)/);
@@ -67,9 +71,36 @@ test("public Edge pre-authentication work has service-only durable source and gl
   assert.match(coalesceFixSql, /gymapp_private\.edge_preauth_debit\(text,text\)/);
   assert.match(coalesceFixSql, /regexp_count/);
   assert.match(coalesceFixSql, /'pg_catalog\.coalesce',[\s\S]*'coalesce'/);
-  assert.match(pushSource, /GATEWAY_PREAUTH_HMAC_SECRET/);
-  assert.match(pushSource, /crypto\.subtle\.sign/);
-  assert.match(pushSource, /p_source_hash: hash/);
+  assert.match(identityIsolationSql, /\('delete_account', 12\)/);
+  assert.match(identityIsolationSql, /\('social_live', 180\)/);
+  const isolatedLimiterBody = identityIsolationSql.match(
+    /as \$function\$\s*([\s\S]*?)\$function\$;/,
+  )?.[1];
+  assert.ok(isolatedLimiterBody);
+  assert.doesNotMatch(isolatedLimiterBody, /global_(?:hash|limit)/);
+  assert.match(identityIsolationSql, /source_hash = pg_catalog\.repeat\('0', 64\)/);
+  assert.match(identityBudgetSource, /GATEWAY_PREAUTH_HMAC_SECRET/);
+  assert.match(identityBudgetSource, /crypto\.subtle\.sign/);
+  assert.match(identityBudgetSource, /p_source_hash: hash/);
+  assert.match(identityBudgetSource, /debitVerifiedIdentityBudget/);
+  assert.doesNotMatch(
+    identityBudgetSource,
+    /x-forwarded-for|cf-connecting-ip|x-real-ip/i,
+  );
+
+  const deleteAuth = deleteSource.indexOf("/auth/v1/user");
+  const deleteBudget = deleteSource.indexOf("debitVerifiedIdentityBudget(");
+  assert.ok(deleteAuth >= 0 && deleteAuth < deleteBudget);
+  assert.match(deleteSource, /`account:\$\{authenticatedUser\.id\.toLowerCase\(\)\}`/);
+
+  const socialAuth = socialSource.indexOf("userClient.auth.getUser(token)");
+  const socialBudget = socialSource.indexOf("debitVerifiedIdentityBudget(");
+  assert.ok(socialAuth >= 0 && socialAuth < socialBudget);
+  assert.match(socialSource, /`session:\$\{sessionId\.toLowerCase\(\)\}`/);
+
+  assert.doesNotMatch(garminSource, /preauth-budget|debitVerifiedIdentityBudget/);
+  assert.match(garminSource, /"garmin_fetch_pending_plan"/);
+  assert.match(garminSource, /"garmin_ack_plan"/);
 });
 
 test("push installation ownership transfer requires exact provider-address possession", () => {

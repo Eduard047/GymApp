@@ -13,7 +13,8 @@ service-only live-workout API. The exact request envelope is:
 
 The function validates an exact JSON allowlist, calls Supabase Auth `getUser`,
 extracts the `session_id` only from that already-verified JWT, commits a durable
-service-only perimeter debit in a separate PostgREST transaction, and then:
+HMAC-pseudonymized per-session perimeter debit in a separate PostgREST
+transaction, and then:
 
 - calls legacy social RPCs with the same user bearer so their existing
   `auth.uid()`/live-session checks remain authoritative;
@@ -31,6 +32,8 @@ Required environment:
 - `SUPABASE_URL`;
 - a publishable/anon key for the user-context client;
 - a secret/service-role key for only the debit and service-only live RPCs;
+- `GATEWAY_PREAUTH_HMAC_SECRET`, exactly 32 random bytes encoded as 64
+  hexadecimal characters and used only to pseudonymize the verified session;
 - `SOCIAL_LIVE_ALLOWED_ORIGIN` set to the exact production PWA origin. Native
   requests have no `Origin`; browser origins fail closed when it is absent or
   different.

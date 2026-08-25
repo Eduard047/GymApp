@@ -1,4 +1,4 @@
-import { debitPreauthBudget } from "../_shared/preauth-budget.ts";
+import { debitVerifiedIdentityBudget } from "../_shared/preauth-budget.ts";
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const MAX_BODY_BYTES = 1_024;
@@ -258,21 +258,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse(req, 503, { error: "service_unavailable" });
   }
 
-  const preauthBudget = await debitPreauthBudget(
-    req,
-    "delete_account",
-    projectUrl,
-    administrativeKey,
-  );
-  if (preauthBudget.status === "rate_limited") {
-    return jsonResponse(req, 429, { error: "rate_limited" }, {
-      "Retry-After": String(preauthBudget.retryAfter),
-    });
-  }
-  if (preauthBudget.status !== "allowed") {
-    return jsonResponse(req, 503, { error: "service_unavailable" });
-  }
-
   try {
     const verifyResponse = await fetch(`${projectUrl}/auth/v1/user`, {
       method: "GET",
@@ -290,6 +275,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const authenticatedUser = await verifyResponse.json() as JsonRecord;
     if (!isUuid(authenticatedUser.id)) {
       return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
+    }
+
+    const identityBudget = await debitVerifiedIdentityBudget(
+      `account:${authenticatedUser.id.toLowerCase()}`,
+      "delete_account",
+      projectUrl,
+      administrativeKey,
+    );
+    if (identityBudget.status === "rate_limited") {
+      return jsonResponse(req, 429, { error: "rate_limited" }, {
+        "Retry-After": String(identityBudget.retryAfter),
+      });
+    }
+    if (identityBudget.status !== "allowed") {
+      return jsonResponse(req, 503, { error: "service_unavailable" });
     }
 
     if (deletionRequest.action === "prepare") {

@@ -1,22 +1,27 @@
 {
   "schemaVersion": 1,
   "functionName": "delete-account",
-  "repositoryContractVersion": 4,
+  "repositoryContractVersion": 5,
   "repositorySource": "supabase/functions/delete-account/index.ts",
-  "repositorySourceSha256": "74617de1dbaba0b6103b04d1461a46ddd597d1df0e735b0a21a23d38d0556ab4",
+  "repositorySourceSha256": "a90be7db99f47a8a96a9bb0ba4b7c76a9a38b65db9ae3d6f825a2ec94952ccc4",
+  "repositorySharedSource": "supabase/functions/_shared/preauth-budget.ts",
+  "repositorySharedSourceSha256": "ba9a4df687723c9209606ced10ed65b04b31b199ce82582a6a1b7b85cfcc40e5",
   "requiredMigration": "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql",
+  "identityBudgetMigration": "supabase/migrations/20260825105114_isolate_verified_edge_rate_limits.sql",
   "knownProduction": {
     "projectRef": "owrcbsrectdgaotndtxy",
-    "observedAt": "2026-08-24",
-    "functionVersion": 14,
-    "implementsRepositoryContractVersion": 4,
-    "sourceSha256": "74617de1dbaba0b6103b04d1461a46ddd597d1df0e735b0a21a23d38d0556ab4",
+    "observedAt": "2026-08-25",
+    "functionVersion": 15,
+    "implementsRepositoryContractVersion": 5,
+    "sourceSha256": "a90be7db99f47a8a96a9bb0ba4b7c76a9a38b65db9ae3d6f825a2ec94952ccc4",
+    "sharedSourceSha256": "ba9a4df687723c9209606ced10ed65b04b31b199ce82582a6a1b7b85cfcc40e5",
     "verifyJwt": true,
-    "requiredMigrationApplied": true
+    "requiredMigrationApplied": true,
+    "identityBudgetMigrationApplied": true
   },
   "releaseGate": {
     "deploymentRequired": false,
-    "minimumProductionFunctionVersion": 14,
-    "reason": "Production version 14 was deployed and read back with the canonical repository contract 4 source and verify_jwt enabled."
+    "minimumProductionFunctionVersion": 15,
+    "reason": "Production version 15 was deployed and read back with the canonical repository contract 5 source, the isolated identity-budget migration, and verify_jwt enabled."
   }
 }

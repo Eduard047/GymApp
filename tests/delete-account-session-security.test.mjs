@@ -141,20 +141,51 @@ test("fresh preparation returns only a bounded one-time grant", async () => {
   assert.deepEqual(await response.json(), { grant: deletionGrant, expiresAt });
 });
 
-test("pre-authentication exhaustion prevents Auth validation", async () => {
+test("verified-identity exhaustion is checked only after Auth validation", async () => {
   let authAttempted = false;
+  let preparationAttempted = false;
   const response = await withFetchMock(async (input) => {
     const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      authAttempted = true;
+      return Response.json({ id: userId });
+    }
     if (url.endsWith("/rest/v1/rpc/edge_preauth_debit")) {
       return Response.json({ allowed: false, retryAfter: 60 });
     }
-    if (url.endsWith("/auth/v1/user")) authAttempted = true;
+    if (url.endsWith("/rest/v1/rpc/prepare_account_deletion")) {
+      preparationAttempted = true;
+    }
     throw new Error(`Unexpected request: ${url}`);
   }, () => edgeHandler(prepareRequest()));
 
   assert.equal(response.status, 429);
   assert.equal(response.headers.get("retry-after"), "60");
-  assert.equal(authAttempted, false);
+  assert.equal(authAttempted, true);
+  assert.equal(preparationAttempted, false);
+});
+
+test("an invalid bearer cannot debit any verified account budget", async () => {
+  let identityBudgetAttempted = false;
+  const response = await withFetchMock(async (input) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v1/user")) {
+      return Response.json(
+        { code: "bad_jwt" },
+        { status: 401 },
+      );
+    }
+    if (url.endsWith("/rest/v1/rpc/edge_preauth_debit")) {
+      identityBudgetAttempted = true;
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }, () => edgeHandler(prepareRequest()));
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    error: "invalid_or_expired_token",
+  });
+  assert.equal(identityBudgetAttempted, false);
 });
 
 test("a revoked session is rejected even when the old user endpoint would still accept its JWT", async () => {

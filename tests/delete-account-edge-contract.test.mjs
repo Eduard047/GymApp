@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 const sourcePath = "supabase/functions/delete-account/index.ts";
+const sharedSourcePath = "supabase/functions/_shared/preauth-budget.ts";
 const deploymentContractPath =
   "supabase/functions/delete-account/deployment-contract.json";
 const readmePath = "supabase/functions/delete-account/README.md";
@@ -17,12 +18,14 @@ const edgeConfigPath = "supabase/config.toml";
 
 const [
   source,
+  sharedSource,
   deploymentContractRaw,
   readme,
   iosSupabaseReadme,
   edgeConfig,
 ] = await Promise.all([
   readFile(sourcePath, "utf8"),
+  readFile(sharedSourcePath, "utf8"),
   readFile(deploymentContractPath, "utf8"),
   readFile(readmePath, "utf8"),
   readFile(iosSupabaseReadmePath, "utf8"),
@@ -43,10 +46,16 @@ async function pathExists(path) {
 test("delete-account has one canonical Edge source with a pinned contract hash", async () => {
   assert.equal(deploymentContract.functionName, "delete-account");
   assert.equal(deploymentContract.repositorySource, sourcePath);
+  assert.equal(deploymentContract.repositorySharedSource, sharedSourcePath);
   assert.equal(
     createHash("sha256").update(source).digest("hex"),
     deploymentContract.repositorySourceSha256,
     "update repositoryContractVersion and its source hash whenever the Edge contract changes",
+  );
+  assert.equal(
+    createHash("sha256").update(sharedSource).digest("hex"),
+    deploymentContract.repositorySharedSourceSha256,
+    "pin the shared verified-identity budget source whenever it changes",
   );
   assert.equal(await pathExists(nestedIOSSourcePath), false);
   assert.equal(await pathExists(nestedIOSReadmePath), false);
@@ -94,18 +103,31 @@ test("known production state is represented by an enforceable release gate", asy
     deploymentContract.requiredMigration,
     "utf8",
   );
+  const identityBudgetMigration = await readFile(
+    deploymentContract.identityBudgetMigration,
+    "utf8",
+  );
   assert.match(
     requiredMigration,
     /consume_account_deletion_grant/,
   );
+  assert.match(identityBudgetMigration, /Invalid verified identity/);
+  const isolatedLimiterBody = identityBudgetMigration.match(
+    /as \$function\$\s*([\s\S]*?)\$function\$;/,
+  )?.[1];
+  assert.ok(isolatedLimiterBody);
+  assert.doesNotMatch(isolatedLimiterBody, /global_(?:hash|limit)/);
 
   const production = deploymentContract.knownProduction;
   const gate = deploymentContract.releaseGate;
   const productionIsCurrent = production.requiredMigrationApplied === true &&
+    production.identityBudgetMigrationApplied === true &&
     production.functionVersion >= gate.minimumProductionFunctionVersion &&
     production.implementsRepositoryContractVersion ===
       deploymentContract.repositoryContractVersion &&
     production.sourceSha256 === deploymentContract.repositorySourceSha256 &&
+    production.sharedSourceSha256 ===
+      deploymentContract.repositorySharedSourceSha256 &&
     production.verifyJwt === true;
 
   assert.equal(

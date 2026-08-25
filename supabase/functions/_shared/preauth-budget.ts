@@ -1,7 +1,8 @@
-const SOURCE_PATTERN = /^[0-9a-f:.]{1,64}$/i;
 const HMAC_SECRET_PATTERN = /^[0-9a-f]{64}$/i;
+const VERIFIED_IDENTITY_PATTERN =
+  /^(?:account|session):[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export type PreauthBudgetResult =
+export type VerifiedIdentityBudgetResult =
   | { status: "allowed" }
   | { status: "rate_limited"; retryAfter: number }
   | {
@@ -9,22 +10,14 @@ export type PreauthBudgetResult =
     reason: string;
   };
 
-function unavailable(code: string): PreauthBudgetResult {
+function unavailable(code: string): VerifiedIdentityBudgetResult {
   const safeCode = /^[a-z0-9_]{1,64}$/.test(code) ? code : "rpc_rejected";
-  // A bounded code is operationally useful without logging the source address,
-  // its HMAC, any credential, or a database response body.
-  console.warn("Gateway pre-authentication budget unavailable", {
+  // A bounded code is operationally useful without logging the identity, its
+  // HMAC, any credential, or a database response body.
+  console.warn("Gateway verified-identity budget unavailable", {
     code: safeCode,
   });
   return { status: "unavailable", reason: safeCode };
-}
-
-function sourceAddress(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0]
-    ?.trim();
-  const candidate = request.headers.get("cf-connecting-ip")?.trim() ||
-    request.headers.get("x-real-ip")?.trim() || forwarded || "unknown";
-  return SOURCE_PATTERN.test(candidate) ? candidate.toLowerCase() : "unknown";
 }
 
 function bytesFromHex(value: string): Uint8Array<ArrayBuffer> {
@@ -35,7 +28,10 @@ function bytesFromHex(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-async function sourceHash(request: Request, route: string): Promise<string | null> {
+async function identityHash(
+  verifiedIdentity: string,
+  route: string,
+): Promise<string | null> {
   const secret = Deno.env.get("GATEWAY_PREAUTH_HMAC_SECRET")?.trim() ?? "";
   if (!HMAC_SECRET_PATTERN.test(secret)) return null;
   const key = await crypto.subtle.importKey(
@@ -48,18 +44,21 @@ async function sourceHash(request: Request, route: string): Promise<string | nul
   const digest = new Uint8Array(await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(`${route}\n${sourceAddress(request)}`),
+    new TextEncoder().encode(`${route}\n${verifiedIdentity.toLowerCase()}`),
   ));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function debitPreauthBudget(
-  request: Request,
-  route: "delete_account" | "social_live" | "garmin_legacy",
+export async function debitVerifiedIdentityBudget(
+  verifiedIdentity: string,
+  route: "delete_account" | "social_live",
   projectUrl: string,
   administrativeKey: string,
-): Promise<PreauthBudgetResult> {
-  const hash = await sourceHash(request, route);
+): Promise<VerifiedIdentityBudgetResult> {
+  if (!VERIFIED_IDENTITY_PATTERN.test(verifiedIdentity)) {
+    return unavailable("invalid_verified_identity");
+  }
+  const hash = await identityHash(verifiedIdentity, route);
   if (!hash) return unavailable("invalid_hmac_secret");
   const headers: Record<string, string> = {
     apikey: administrativeKey,
