@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v140";
+const CACHE_VERSION = "v141";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const UPDATE_REFRESH_QUERY_KEY = "gymapp_sw_refresh";
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
@@ -51,7 +51,7 @@ const ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v85.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v99.js",
+  "./app.v100.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
