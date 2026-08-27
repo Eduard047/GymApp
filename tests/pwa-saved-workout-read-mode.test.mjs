@@ -237,11 +237,11 @@ test("Garmin strength history replaces telemetry with a compact label and preser
   assert.match(telemetryOnly, /Garmin workout metrics/);
   assert.doesNotMatch(telemetryOnly, /Duration 12:34|Avg HR 130|HR zone Z3/);
 
-  vm.runInContext(`state.sessions[0].note += "\\nFelt strong <script>alert(1)</script>"`, context);
+  vm.runInContext(`state.sessions[0].note += "\\nFelt strong <ScRiPt>alert(1)</sCrIpT>"`, context);
   const withUserNote = vm.runInContext("workoutItem(state.sessions[0])", context);
   assert.match(withUserNote, /Garmin workout metrics · Note: Felt strong/);
-  assert.match(withUserNote, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  assert.doesNotMatch(withUserNote, /<script>/);
+  assert.match(withUserNote, /&lt;ScRiPt&gt;alert\(1\)&lt;\/sCrIpT&gt;/);
+  assert.doesNotMatch(withUserNote, /<script\b/i);
 
   vm.runInContext(`state.language = "ru"`, context);
   assert.match(
