@@ -1,5 +1,13 @@
 import SwiftUI
 
+func exerciseMuscleMappingSecondaryTitle(
+    english: String,
+    ukrainian: String,
+    languageCode: String
+) -> String {
+    languageCode == AppLanguage.english.rawValue ? ukrainian : english
+}
+
 struct ExerciseLibraryDeletionTarget: Equatable, Identifiable {
     struct LinkedImpact: Equatable {
         let workoutSnapshot: WorkoutSession
@@ -346,12 +354,14 @@ struct ExercisesView: View {
                     Button(gymLocalized("All muscles")) { muscleFilter = nil }
                         .buttonStyle(.bordered)
                         .tint(muscleFilter == nil ? GymTheme.primary : GymTheme.textSecondary)
+                        .accessibilityAddTraits(muscleFilter == nil ? .isSelected : [])
                     ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
                         Button(gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode())) {
                             muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
                         }
                         .buttonStyle(.bordered)
                         .tint(muscleFilter == muscle.id ? GymTheme.primary : GymTheme.textSecondary)
+                        .accessibilityAddTraits(muscleFilter == muscle.id ? .isSelected : [])
                     }
                 }
             }
@@ -1019,10 +1029,11 @@ private struct ExerciseMuscleMappingSheet: View {
                     }
 
                     ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
+                        let languageCode = gymCurrentLanguageCode()
                         let localizedMuscleTitle = gymText(
                             muscle.titleEn,
                             muscle.titleUk,
-                            languageCode: gymCurrentLanguageCode()
+                            languageCode: languageCode
                         )
                         GymPanel(
                             highlighted: selection.contains(muscle.id),
@@ -1032,9 +1043,11 @@ private struct ExerciseMuscleMappingSheet: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(localizedMuscleTitle)
                                         .font(.headline)
-                                    Text(
-                                        gymCurrentLanguageCode() == "uk" ? muscle.titleEn : muscle.titleUk
-                                    )
+                                    Text(exerciseMuscleMappingSecondaryTitle(
+                                        english: muscle.titleEn,
+                                        ukrainian: muscle.titleUk,
+                                        languageCode: languageCode
+                                    ))
                                         .font(.caption)
                                         .foregroundStyle(GymTheme.textSecondary)
                                 }
@@ -1044,7 +1057,7 @@ private struct ExerciseMuscleMappingSheet: View {
                                 gymText(
                                     "Adds or removes \(localizedMuscleTitle) from the manual mapping",
                                     "Додає або видаляє «\(localizedMuscleTitle)» у ручному зіставленні",
-                                    languageCode: gymCurrentLanguageCode()
+                                    languageCode: languageCode
                                 )
                             )
                         }

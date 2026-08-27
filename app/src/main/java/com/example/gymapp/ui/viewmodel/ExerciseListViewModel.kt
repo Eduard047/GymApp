@@ -27,6 +27,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -34,6 +35,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class ExerciseListUiState(
+    val isLoading: Boolean = false,
+    val loadError: LocalizedText? = null,
     val exercises: List<ExerciseEntity> = emptyList(),
     val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
     val muscleMappings: List<ExerciseMuscleMappingUiModel> = emptyList(),
@@ -65,6 +68,37 @@ data class ExerciseListUiState(
     val isCloudAccount: Boolean = false,
     val canLogout: Boolean = false
 )
+
+internal data class ExerciseAccountUiModel(
+    val label: String,
+    val supporting: String,
+    val isCloudAccount: Boolean,
+    val canLogout: Boolean
+)
+
+internal fun exerciseAccountUiModel(
+    session: AccountSession?,
+    canLogout: Boolean
+): ExerciseAccountUiModel = when (session) {
+    is AccountSession.Cloud -> ExerciseAccountUiModel(
+        label = session.displayName,
+        supporting = session.email,
+        isCloudAccount = true,
+        canLogout = canLogout
+    )
+    is AccountSession.Local -> ExerciseAccountUiModel(
+        label = session.displayName,
+        supporting = "",
+        isCloudAccount = false,
+        canLogout = canLogout
+    )
+    null -> ExerciseAccountUiModel(
+        label = "",
+        supporting = "",
+        isCloudAccount = false,
+        canLogout = false
+    )
+}
 
 data class ExerciseMuscleMappingUiModel(
     val exerciseName: String,
@@ -163,6 +197,7 @@ class ExerciseListViewModel(
     private val pendingExerciseDeletion = MutableStateFlow<ExerciseDeletionSnapshot?>(null)
     private val isExerciseDeletionInProgress = MutableStateFlow(false)
     private val exerciseDeletionError = MutableStateFlow<LocalizedText?>(null)
+    private val loadGeneration = MutableStateFlow(0L)
 
     private val selectedExerciseHistory = selectedExerciseId.flatMapLatest { exerciseId ->
         if (exerciseId == null) {
@@ -298,57 +333,72 @@ class ExerciseListViewModel(
         ExerciseConfigurationState(mapping, loadEditor)
     }
 
-    val uiState: StateFlow<ExerciseListUiState> = combine(
-        baseState,
-        editState,
-        backupState,
-        configurationState,
-        deletionState
-    ) { base, edit, backup, configuration, deletion ->
-        val mapping = configuration.mappings
-        val loadEditor = configuration.loadEditor
-        ExerciseListUiState(
-            exercises = base.exercises,
-            exerciseWorkoutCounts = base.exerciseWorkoutCounts,
-            muscleMappings = mapping.mappings,
-            mappingEditorExerciseName = mapping.editorExerciseName,
-            mappingEditorMuscles = mapping.editorMuscles,
-            loadProfiles = loadEditor.profiles,
-            loadEditorExercise = loadEditor.exercise,
-            loadEditorDirection = loadEditor.direction,
-            loadEditorWeights = loadEditor.weights,
-            loadEditorHasError = loadEditor.hasError,
-            newExerciseName = base.newExerciseName,
-            hasInputError = base.hasInputError,
-            editingExercise = edit.editingExercise,
-            editingExerciseName = edit.editingExerciseName,
-            selectedExerciseId = base.selectedExerciseId,
-            selectedExerciseName = base.exercises.firstOrNull { it.id == base.selectedExerciseId }?.name,
-            selectedExerciseHistory = base.selectedExerciseHistory,
-            pendingExerciseDeletion = deletion.pending,
-            isExerciseDeletionInProgress = deletion.isInProgress,
-            exerciseDeletionError = deletion.error,
-            backupJson = backup.generatedExport?.json,
-            backupIsDiagnostics = backup.generatedExport?.diagnosticsOnly == true,
-            backupMessage = backup.backupMessage,
-            importJson = backup.importJson,
-            importMessage = backup.importMessage,
-            isImportOpen = backup.isImportOpen,
-            accountLabel = activeAccountLabel(),
-            accountSupporting = activeAccountSupporting(),
-            isCloudAccount = authManager?.authState?.value?.session is AccountSession.Cloud,
-            canLogout = authManager != null
-        )
+    val uiState: StateFlow<ExerciseListUiState> = loadGeneration.flatMapLatest {
+        combine(
+            baseState,
+            editState,
+            backupState,
+            configurationState,
+            deletionState
+        ) { base, edit, backup, configuration, deletion ->
+            val mapping = configuration.mappings
+            val loadEditor = configuration.loadEditor
+            val account = activeAccountUiModel()
+            ExerciseListUiState(
+                isLoading = false,
+                exercises = base.exercises,
+                exerciseWorkoutCounts = base.exerciseWorkoutCounts,
+                muscleMappings = mapping.mappings,
+                mappingEditorExerciseName = mapping.editorExerciseName,
+                mappingEditorMuscles = mapping.editorMuscles,
+                loadProfiles = loadEditor.profiles,
+                loadEditorExercise = loadEditor.exercise,
+                loadEditorDirection = loadEditor.direction,
+                loadEditorWeights = loadEditor.weights,
+                loadEditorHasError = loadEditor.hasError,
+                newExerciseName = base.newExerciseName,
+                hasInputError = base.hasInputError,
+                editingExercise = edit.editingExercise,
+                editingExerciseName = edit.editingExerciseName,
+                selectedExerciseId = base.selectedExerciseId,
+                selectedExerciseName = base.exercises
+                    .firstOrNull { it.id == base.selectedExerciseId }
+                    ?.name,
+                selectedExerciseHistory = base.selectedExerciseHistory,
+                pendingExerciseDeletion = deletion.pending,
+                isExerciseDeletionInProgress = deletion.isInProgress,
+                exerciseDeletionError = deletion.error,
+                backupJson = backup.generatedExport?.json,
+                backupIsDiagnostics = backup.generatedExport?.diagnosticsOnly == true,
+                backupMessage = backup.backupMessage,
+                importJson = backup.importJson,
+                importMessage = backup.importMessage,
+                isImportOpen = backup.isImportOpen,
+                accountLabel = account.label,
+                accountSupporting = account.supporting,
+                isCloudAccount = account.isCloudAccount,
+                canLogout = account.canLogout
+            )
+        }.catch { error ->
+            if (error is CancellationException) throw error
+            emit(accountOnlyUiState(
+                loadError = LocalizedText(R.string.exercises_load_failed)
+            ))
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = ExerciseListUiState()
+        initialValue = accountOnlyUiState(isLoading = true)
     )
 
     init {
         viewModelScope.launch {
             repository.seedDefaultExerciseMuscleMappings()
         }
+    }
+
+    fun retryLoad() {
+        loadGeneration.value += 1L
     }
 
     fun updateNewExerciseName(value: String) {
@@ -722,20 +772,24 @@ class ExerciseListViewModel(
         }
     }
 
-    private fun activeAccountLabel(): String {
-        return when (val session = authManager?.authState?.value?.session) {
-            is AccountSession.Cloud -> session.displayName
-            is AccountSession.Local -> session.displayName
-            null -> ""
-        }
-    }
+    private fun activeAccountUiModel(): ExerciseAccountUiModel = exerciseAccountUiModel(
+        session = authManager?.authState?.value?.session,
+        canLogout = authManager != null
+    )
 
-    private fun activeAccountSupporting(): String {
-        return when (val session = authManager?.authState?.value?.session) {
-            is AccountSession.Cloud -> session.email
-            is AccountSession.Local -> ""
-            null -> ""
-        }
+    private fun accountOnlyUiState(
+        isLoading: Boolean = false,
+        loadError: LocalizedText? = null
+    ): ExerciseListUiState {
+        val account = activeAccountUiModel()
+        return ExerciseListUiState(
+            isLoading = isLoading,
+            loadError = loadError,
+            accountLabel = account.label,
+            accountSupporting = account.supporting,
+            isCloudAccount = account.isCloudAccount,
+            canLogout = account.canLogout
+        )
     }
 
     companion object {

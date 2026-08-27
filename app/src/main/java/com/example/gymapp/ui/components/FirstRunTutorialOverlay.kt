@@ -63,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.ui.theme.GymSpacing
+import kotlinx.coroutines.android.awaitFrame
 
 internal const val FIRST_RUN_TUTORIAL_VERSION = 1
 
@@ -169,7 +170,11 @@ internal fun FirstRunTutorialOverlay(
     val density = LocalDensity.current
 
     LaunchedEffect(step.id) {
-        focusRequester.requestFocus()
+        awaitFrame()
+        if (!focusRequester.requestFocus()) {
+            awaitFrame()
+            focusRequester.requestFocus()
+        }
     }
 
     BoxWithConstraints(
@@ -235,12 +240,10 @@ internal fun FirstRunTutorialOverlay(
                 .widthIn(max = 520.dp)
                 .fillMaxWidth()
                 .heightIn(max = maxHeight * 0.58f)
-                .focusRequester(focusRequester)
                 .focusProperties {
                     exit = { FocusRequester.Cancel }
                 }
                 .focusGroup()
-                .focusable()
                 .semantics(mergeDescendants = false) {
                     dialog()
                     paneTitle = title
@@ -256,6 +259,8 @@ internal fun FirstRunTutorialOverlay(
         ) {
             Column(
                 modifier = Modifier
+                    .focusRequester(focusRequester)
+                    .focusable()
                     .verticalScroll(rememberScrollState())
                     .padding(GymSpacing.XLarge),
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)

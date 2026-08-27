@@ -483,6 +483,12 @@
             "state" : "translated",
             "value" : "Поврежденный локальный файл сохранен для восстановления. Облачные данные обновятся после входа; для офлайн-профиля обратитесь к поддержке перед удалением приложения."
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку."
+          }
         }
       }
     },
@@ -1962,6 +1968,12 @@
             "state" : "translated",
             "value" : "Встроенное"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вбудована"
+          }
         }
       }
     },
@@ -2000,6 +2012,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "По названию"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "За назвою"
           }
         }
       }
@@ -2100,6 +2118,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Изменить пароль"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Змінити пароль"
           }
         }
       }
@@ -2784,6 +2808,12 @@
             "state" : "translated",
             "value" : "Подключить этот iPhone к Garmin"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Під’єднати цей iPhone до Garmin"
+          }
         }
       }
     },
@@ -2793,6 +2823,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Подключено"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Підключено"
           }
         }
       }
@@ -3067,6 +3103,12 @@
             "state" : "translated",
             "value" : "Кор"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кор"
+          }
         }
       }
     },
@@ -3260,6 +3302,12 @@
             "state" : "translated",
             "value" : "Текущий"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поточний"
+          }
         }
       }
     },
@@ -3289,6 +3337,28 @@
             "state" : "translated",
             "value" : "Текущий пароль"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поточний пароль"
+          }
+        }
+      }
+    },
+    "Current password is too long." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Текущий пароль слишком длинный."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поточний пароль задовгий."
+          }
         }
       }
     },
@@ -3316,6 +3386,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ежедневные"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Щоденні"
           }
         }
       }
@@ -3792,6 +3868,12 @@
             "state" : "translated",
             "value" : "Прямое подключение iPhone"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пряме підключення iPhone"
+          }
         }
       }
     },
@@ -3885,6 +3967,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Коснитесь дважды, чтобы закрыть"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Торкнися двічі, щоб закрити"
           }
         }
       }
@@ -5273,6 +5361,12 @@
             "state" : "translated",
             "value" : "GymApp не удалось открыть защищенное локальное хранилище. Твои данные не изменены."
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GymApp не вдалося відкрити захищене локальне сховище. Твої дані не змінено."
+          }
         }
       }
     },
@@ -5368,6 +5462,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Тренировка GymApp"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренування GymApp"
           }
         }
       }
@@ -5838,6 +5938,12 @@
             "state" : "translated",
             "value" : "Реже всего"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найрідші"
+          }
         }
       }
     },
@@ -6287,6 +6393,12 @@
             "state" : "translated",
             "value" : "Закрыто"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заблоковано"
+          }
         }
       }
     },
@@ -6448,6 +6560,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Низ тела"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Низ тіла"
           }
         }
       }
@@ -6704,6 +6822,12 @@
             "state" : "translated",
             "value" : "Период миссий"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Період місій"
+          }
         }
       }
     },
@@ -6783,6 +6907,12 @@
             "state" : "translated",
             "value" : "Месячные"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Щомісячні"
+          }
         }
       }
     },
@@ -6825,6 +6955,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Самые частые"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найчастіші"
           }
         }
       }
@@ -7457,6 +7593,12 @@
             "state" : "translated",
             "value" : "Нет результатов"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немає результатів"
+          }
         }
       }
     },
@@ -7468,6 +7610,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Нет результатов для «%@»."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немає результатів для «%@»."
           }
         }
       }
@@ -7679,6 +7827,12 @@
             "state" : "translated",
             "value" : "Не в сети"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не в мережі"
+          }
         }
       }
     },
@@ -7724,6 +7878,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Гаразд"
           }
         }
       }
@@ -7927,6 +8087,12 @@
             "state" : "translated",
             "value" : "Открываем защищенные данные тренировок этого аккаунта."
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відкриваємо захищені дані тренувань цього акаунта."
+          }
         }
       }
     },
@@ -7938,6 +8104,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Открывает форму, где требуется текущий пароль"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відкриває форму, для якої потрібен поточний пароль"
           }
         }
       }
@@ -7981,6 +8153,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Открывает Garmin Connect, где можно выбрать часы для отправки завершённых тренировок на этот iPhone"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відкриває Garmin Connect, де можна вибрати сполучені годинники для надсилання завершених тренувань на цей iPhone"
           }
         }
       }
@@ -8188,6 +8366,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пароль"
+          }
+        }
+      }
+    },
+    "Password is too long." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пароль слишком длинный."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пароль задовгий."
           }
         }
       }
@@ -8598,6 +8792,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Подготовка аккаунта"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Підготовка акаунта"
           }
         }
       }
@@ -9017,6 +9217,12 @@
             "state" : "translated",
             "value" : "Ранги"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ранги"
+          }
         }
       }
     },
@@ -9041,6 +9247,12 @@
       "extractionState" : "stale",
       "localizations" : {
         "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Рейтинг"
+          }
+        },
+        "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Рейтинг"
@@ -10723,6 +10935,12 @@
             "state" : "translated",
             "value" : "Хранилище недоступно"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сховище недоступне"
+          }
         }
       }
     },
@@ -12265,6 +12483,12 @@
             "state" : "translated",
             "value" : "Попробуйте другой фильтр."
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спробуй інший фільтр."
+          }
         }
       }
     },
@@ -12275,6 +12499,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Попробовать еще раз"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спробувати ще раз"
           }
         }
       }
@@ -12592,6 +12822,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Верх тела"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Верх тіла"
           }
         }
       }
@@ -13050,6 +13286,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Недельные"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Щотижневі"
           }
         }
       }

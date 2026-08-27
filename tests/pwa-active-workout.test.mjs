@@ -439,7 +439,14 @@ test("active workout markup escapes untrusted exercise names and notes", async (
 test("recording persists the completed set before starting the durable 180-second primary rest", async () => {
   const { context, localStorage, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
-  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const [setId, nextSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    context
+  ));
+  const initialMarkup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(initialMarkup, new RegExp(`data-action="record-active-set" data-id="${setId}"`));
+  assert.doesNotMatch(initialMarkup, new RegExp(`data-action="record-active-set" data-id="${nextSetId}"`));
+  assert.doesNotMatch(initialMarkup, /data-action="undo-active-set"|data-timer-display=/);
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "81,5" });
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "7" });
   localStorage.writes.length = 0;
@@ -474,6 +481,201 @@ test("recording persists the completed set before starting the durable 180-secon
   assert.equal(timer.entries[0].exerciseName, "Bench Press");
   assert.ok(timer.entries[0].deadlineMillis - stored.blocks[0].sets[0].completedAt >= 179_000);
   assert.ok(timer.entries[0].deadlineMillis - stored.blocks[0].sets[0].completedAt <= 181_000);
+  const lifecycleMarkup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(lifecycleMarkup, new RegExp(`data-action="undo-active-set" data-id="${setId}"`));
+  assert.match(lifecycleMarkup, new RegExp(`data-action="record-active-set" data-id="${nextSetId}"`));
+  assert.match(lifecycleMarkup, /data-action="timer-adjust"[^>]*data-seconds="-15"/);
+  assert.match(lifecycleMarkup, /data-action="timer-adjust"[^>]*data-seconds="15"/);
+  assert.match(lifecycleMarkup, /data-action="timer-stop"/);
+});
+
+test("recording a bodyweight set accepts blank weight as zero and still starts rest", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "" });
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "12" });
+
+  assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, context), true);
+  const stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.deepEqual(
+    [stored.blocks[0].sets[0].weight, stored.blocks[0].sets[0].reps, stored.blocks[0].sets[0].completed],
+    [0, 12, true]
+  );
+  const timerStorageKey = vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context);
+  assert.equal(JSON.parse(localStorage.getItem(timerStorageKey)).entries.length, 1);
+});
+
+test("completed active sets are read-only and bulk save cannot rewrite them", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  const [firstSetId, secondSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    context
+  ));
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="weight"]`, { value: "81.5" });
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="reps"]`, { value: "7" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${firstSetId})`, context), true);
+
+  const recorded = JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks[0].sets[0];
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(markup, new RegExp(`data-active-set-id="${firstSetId}" data-active-field="weight"[^>]*disabled`));
+  assert.match(markup, new RegExp(`data-active-set-id="${firstSetId}" data-active-field="reps"[^>]*disabled`));
+  assert.doesNotMatch(markup, new RegExp(`data-active-set-id="${secondSetId}" data-active-field="weight"[^>]*disabled`));
+
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="weight"]`, { value: "999" });
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="reps"]`, { value: "99" });
+  runtimeNodes.set(`[data-active-set-id="${secondSetId}"][data-active-field="weight"]`, { value: "83" });
+  runtimeNodes.set(`[data-active-set-id="${secondSetId}"][data-active-field="reps"]`, { value: "5" });
+  assert.equal(await vm.runInContext(`saveActiveWorkoutExercise(${blockId})`, context), true);
+
+  const saved = JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks[0].sets;
+  assert.deepEqual(
+    [saved[0].weight, saved[0].reps, saved[0].completedAt],
+    [recorded.weight, recorded.reps, recorded.completedAt],
+    "bulk save must preserve the already-recorded set exactly"
+  );
+  assert.deepEqual([saved[1].weight, saved[1].reps, saved[1].completed], [83, 5, true]);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /data-action="save-active-exercise"/);
+});
+
+test("Save exercise and Add set retire stale undo, timing, and rest projections", async () => {
+  const saver = loadContext();
+  await vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "Structural rest cleanup",
+      blocks: [
+        {
+          exerciseName: "Bench Press",
+          catalogKey: "bench_press",
+          sets: [{ weight: 80, reps: 8 }, { weight: 82, reps: 6 }]
+        },
+        {
+          exerciseName: "Squat",
+          catalogKey: "squat",
+          sets: [{ weight: 100, reps: 5 }]
+        }
+      ]
+    };
+    startWorkout();
+  `, saver.context);
+  const [firstSetId, unfinishedFirstBlockSetId, secondBlockSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify([activeWorkout.blocks[0].sets[0].id, activeWorkout.blocks[0].sets[1].id, activeWorkout.blocks[1].sets[0].id])",
+    saver.context
+  ));
+  const secondBlockId = vm.runInContext("activeWorkout.blocks[1].id", saver.context);
+  saver.runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="weight"]`, { value: "80" });
+  saver.runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="reps"]`, { value: "8" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${firstSetId})`, saver.context), true);
+  const timerStorageKey = vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", saver.context);
+  assert.notEqual(saver.localStorage.getItem(timerStorageKey), null);
+  saver.runtimeNodes.set(`[data-active-set-id="${secondBlockSetId}"][data-active-field="weight"]`, { value: "100" });
+  saver.runtimeNodes.set(`[data-active-set-id="${secondBlockSetId}"][data-active-field="reps"]`, { value: "5" });
+  saver.localStorage.writes.length = 0;
+
+  assert.equal(
+    await vm.runInContext(`saveActiveWorkoutExercise(${secondBlockId})`, saver.context),
+    true
+  );
+  const saved = JSON.parse(saver.localStorage.getItem(activeStorageKey(saver.context)));
+  assert.equal(saved.blocks[0].sets.find(set => set.id === unfinishedFirstBlockSetId).completed, false);
+  assert.equal(saved.blocks[1].sets[0].completed, true);
+  assert.ok(
+    saver.localStorage.writes.indexOf(activeBulkCleanupStorageKey(saver.context)) <
+      saver.localStorage.writes.indexOf(activeStorageKey(saver.context)),
+    "control cleanup intent must be durable before the structural main revision"
+  );
+  assert.equal(saver.localStorage.getItem(activeBulkCleanupStorageKey(saver.context)), null);
+  assert.equal(saver.localStorage.getItem(activeUndoStorageKey(saver.context)), null);
+  assert.equal(saver.localStorage.getItem(timerStorageKey), null);
+  const savedTiming = JSON.parse(saver.localStorage.getItem(activeTimingStorageKey(saver.context)));
+  assert.equal(savedTiming.restingUntil, null);
+  assert.equal(Number.isSafeInteger(savedTiming.activeSince), true);
+
+  const adder = loadContext();
+  await startTwoSetWorkout(adder.context);
+  const addBlockId = vm.runInContext("activeWorkout.blocks[0].id", adder.context);
+  const addSetId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", adder.context);
+  adder.runtimeNodes.set(`[data-active-set-id="${addSetId}"][data-active-field="weight"]`, { value: "80" });
+  adder.runtimeNodes.set(`[data-active-set-id="${addSetId}"][data-active-field="reps"]`, { value: "8" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${addSetId})`, adder.context), true);
+  const addTimerStorageKey = vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", adder.context);
+  assert.notEqual(adder.localStorage.getItem(addTimerStorageKey), null);
+
+  assert.equal(await vm.runInContext(`addActiveWorkoutSet(${addBlockId})`, adder.context), true);
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].sets.length", adder.context), 3);
+  assert.equal(adder.localStorage.getItem(activeBulkCleanupStorageKey(adder.context)), null);
+  assert.equal(adder.localStorage.getItem(activeUndoStorageKey(adder.context)), null);
+  assert.equal(adder.localStorage.getItem(addTimerStorageKey), null);
+  const addedTiming = JSON.parse(adder.localStorage.getItem(activeTimingStorageKey(adder.context)));
+  assert.equal(addedTiming.restingUntil, null);
+  assert.equal(Number.isSafeInteger(addedTiming.activeSince), true);
+});
+
+test("Add set reports its own action when durable rest cleanup needs recovery", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  vm.runInContext(`
+    globalThis.originalBulkCleanupReconciler = reconcileActiveWorkoutBulkCleanupIntent;
+    globalThis.bulkCleanupCalls = 0;
+    reconcileActiveWorkoutBulkCleanupIntent = (...args) => {
+      globalThis.bulkCleanupCalls += 1;
+      return globalThis.bulkCleanupCalls === 1
+        ? globalThis.originalBulkCleanupReconciler(...args)
+        : false;
+    };
+  `, context);
+
+  assert.equal(await vm.runInContext(`addActiveWorkoutSet(${blockId})`, context), true);
+  assert.equal(vm.runInContext("activeWorkoutUi.status", context), "error");
+  assert.equal(vm.runInContext("activeWorkoutUi.messageKey", context), "setAddedCleanupFailed");
+  const messages = {
+    en: "Set added, but old local rest controls could not be fully cleared.",
+    uk: "Підхід додано, але старі локальні елементи відпочинку не вдалося повністю очистити."
+  };
+  for (const [language, message] of Object.entries(messages)) {
+    assert.equal(
+      vm.runInContext(`state.language = ${JSON.stringify(language)}; activeWorkoutStatusText()`, context),
+      message
+    );
+  }
+});
+
+test("the latest completed exercise stays expanded while the next exercise becomes current", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "Two exercises",
+      blocks: [
+        { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }] },
+        { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 100, reps: 5 }] }
+      ]
+    };
+    startWorkout();
+  `, context);
+  const [firstSetId, nextSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks.map(block => block.sets[0].id))",
+    context
+  ));
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="weight"]`, { value: "80" });
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="reps"]`, { value: "8" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${firstSetId})`, context), true);
+
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  const completedStart = markup.indexOf('active-workout-exercise completed"');
+  const currentStart = markup.indexOf('active-workout-exercise current"');
+  assert.ok(completedStart >= 0 && currentStart > completedStart);
+  const completedMarkup = markup.slice(completedStart, currentStart);
+  assert.match(completedMarkup, /<details open>/);
+  assert.match(completedMarkup, /data-timer-display=/);
+  assert.match(completedMarkup, new RegExp(`data-action="undo-active-set" data-id="${firstSetId}"`));
+  assert.match(markup, new RegExp(
+    `active-workout-exercise current"><details open>[\\s\\S]*?data-action="record-active-set" data-id="${nextSetId}"`
+  ));
 });
 
 test("workout stopwatch includes adjusted rest while its account-bound sidecar tracks rest", async () => {
@@ -1301,7 +1503,13 @@ test("a separate durable marker preserves exactly one latest undo across reload 
   assert.equal(Object.hasOwn(JSON.parse(localStorage.getItem(activeStorageKey(context))), "undoableSetId"), false);
   vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), secondSetId);
-  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /Undo last set/);
+  const reloadMarkup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(reloadMarkup, /data-action="undo-active-set"/);
+  assert.match(reloadMarkup, /Undo last set/);
+  assert.match(reloadMarkup, /data-timer-display=/);
+  assert.match(reloadMarkup, /data-action="timer-adjust"[^>]*data-seconds="-15"/);
+  assert.match(reloadMarkup, /data-action="timer-adjust"[^>]*data-seconds="15"/);
+  assert.match(reloadMarkup, /data-action="timer-stop"/);
 
   assert.equal(await vm.runInContext(`undoLatestActiveSet(${firstSetId})`, context), false);
   assert.equal(await vm.runInContext(`undoLatestActiveSet(${secondSetId})`, context), true);
@@ -1344,7 +1552,7 @@ test("storage events refresh the separate undo marker across tabs", async () => 
 
   observer.windowListeners.get("storage")({ key: activeUndoStorageKey(observer.context) });
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", observer.context), setId);
-  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", observer.context), /Undo last set/);
+  assert.match(vm.runInContext("activeWorkoutScreen()", observer.context), /Undo last set/);
 
   assert.equal(await vm.runInContext(`undoLatestActiveSet(${setId})`, recorder.context), true);
   observer.windowListeners.get("storage")({ key: activeUndoStorageKey(observer.context) });
@@ -1562,6 +1770,41 @@ test("discard requires confirmation and removes only the local active draft", as
   assert.equal(localStorage.getItem(activeTimingStorageKey(context)), null);
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(vm.runInContext("state.sessions.length", context), 0);
+});
+
+test("external active-workout invalidation closes confirmation and restores stable focus", async () => {
+  for (const invalidation of ["active-storage", "auth-marker"]) {
+    const runtime = loadContext();
+    await startTwoSetWorkout(runtime.context);
+    let restoredFocus = 0;
+    const trigger = {
+      dataset: { action: "discard-active-workout" },
+      focus() {
+        restoredFocus += 1;
+        runtime.context.document.activeElement = this;
+      }
+    };
+    runtime.appNode.querySelectorAll = selector => selector === '[data-action="discard-active-workout"]'
+      ? [trigger]
+      : [];
+    vm.runInContext(
+      "requestDiscardActiveWorkout({ action: 'discard-active-workout' })",
+      runtime.context
+    );
+    assert.equal(vm.runInContext("modal.type", runtime.context), "confirm-discard-active");
+
+    if (invalidation === "active-storage") {
+      const key = activeStorageKey(runtime.context);
+      runtime.localStorage.removeItem(key);
+      runtime.windowListeners.get("storage")({ key });
+    } else {
+      const key = vm.runInContext("AUTH_KEY", runtime.context);
+      runtime.windowListeners.get("storage")({ key });
+    }
+
+    assert.equal(vm.runInContext("modal", runtime.context), null);
+    assert.equal(restoredFocus, 1, `${invalidation} must restore the confirmation invoker`);
+  }
 });
 
 test("account switching clears active memory without exposing or deleting the owner's draft", async () => {

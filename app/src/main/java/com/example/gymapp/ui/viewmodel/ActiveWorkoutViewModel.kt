@@ -93,6 +93,15 @@ data class ActiveWorkoutUiState(
     val livePendingOperationCount: Int = 0
 )
 
+internal fun activeWorkoutOperationInProgress(
+    setRecordingsInFlight: Set<String>,
+    isRecordingAll: Boolean,
+    isFinishing: Boolean,
+    isDiscarding: Boolean,
+    undoingSetId: String?
+): Boolean = setRecordingsInFlight.isNotEmpty() || isRecordingAll || isFinishing ||
+    isDiscarding || undoingSetId != null
+
 private data class ActiveWorkoutInput(
     val weight: String,
     val reps: String
@@ -197,13 +206,31 @@ internal fun resolvedWorkoutElapsedSeconds(
     nowMillis: Long
 ): Long = totalWorkoutElapsedSeconds(startedAtMillis, nowMillis)
 
-internal fun shouldRetireRestAfterBulkRecord(
+internal fun shouldReconcileRestAfterUndoCleared(
     undoableSetId: String?,
     setCompletionStates: List<Boolean>
 ): Boolean = undoableSetId == null &&
-    // The bulk transaction clears undo, unlike recording the final set individually.
-    setCompletionStates.isNotEmpty() &&
-    setCompletionStates.all { it }
+    // Save-exercise and add-set clear undo even when other sets remain pending. A completed set
+    // proves that this durable snapshot may own a rest interval that still needs retirement.
+    // Do not require restEndsAt here: the ledger can be resumed while notification cleanup fails.
+    setCompletionStates.any { it }
+
+internal fun reconcileRestAfterDurableWorkoutSnapshot(
+    undoableSetId: String?,
+    setCompletionStates: List<Boolean>,
+    timerReady: Boolean,
+    stopRest: () -> Boolean
+): ActiveWorkoutRestReconciliationStatus {
+    if (!shouldReconcileRestAfterUndoCleared(undoableSetId, setCompletionStates)) {
+        return ActiveWorkoutRestReconciliationStatus.NotRequired
+    }
+    val restStopped = timerReady && runCatching(stopRest).getOrDefault(false)
+    return if (restStopped) {
+        ActiveWorkoutRestReconciliationStatus.Reconciled
+    } else {
+        ActiveWorkoutRestReconciliationStatus.Failed
+    }
+}
 
 internal fun resolveActiveWorkoutExerciseId(
     exercises: List<ExerciseEntity>,
@@ -250,6 +277,43 @@ internal suspend fun persistActiveWorkoutSetBeforeRest(
     }
 }
 
+internal enum class ActiveWorkoutRestReconciliationStatus {
+    NotRequired,
+    Reconciled,
+    Failed
+}
+
+internal data class ActiveWorkoutPostMutationResult<T>(
+    val repositoryResult: T,
+    val restStatus: ActiveWorkoutRestReconciliationStatus
+)
+
+internal suspend fun <T> persistActiveWorkoutMutationAndReconcileRest(
+    persist: suspend () -> T,
+    isCommitted: (T) -> Boolean,
+    stopRest: () -> Boolean
+): ActiveWorkoutPostMutationResult<T> {
+    val repositoryResult = persist()
+    if (!isCommitted(repositoryResult)) {
+        return ActiveWorkoutPostMutationResult(
+            repositoryResult = repositoryResult,
+            restStatus = ActiveWorkoutRestReconciliationStatus.NotRequired
+        )
+    }
+    // The database mutation already cleared undo. Cleanup must still finish if the screen leaves.
+    val restStopped = withContext(NonCancellable) {
+        runCatching(stopRest).getOrDefault(false)
+    }
+    return ActiveWorkoutPostMutationResult(
+        repositoryResult = repositoryResult,
+        restStatus = if (restStopped) {
+            ActiveWorkoutRestReconciliationStatus.Reconciled
+        } else {
+            ActiveWorkoutRestReconciliationStatus.Failed
+        }
+    )
+}
+
 class ActiveWorkoutViewModel(
     private val repository: GymRepository,
     private val restTimerController: RestTimerController,
@@ -285,20 +349,21 @@ class ActiveWorkoutViewModel(
                     timerAccountKey,
                     startedAt
                 )
-                val shouldRetireRest = shouldRetireRestAfterBulkRecord(
+                val restRecovery = reconcileRestAfterDurableWorkoutSnapshot(
                     undoableSetId = workout.activeWorkout.undoableSetId,
                     setCompletionStates = workout.exercises
                         .flatMap { exercise -> exercise.sets }
-                        .map { set -> set.completedAt != null }
+                        .map { set -> set.completedAt != null },
+                    timerReady = timerReady,
+                    stopRest = {
+                        restTimerController.stopActiveWorkoutRest(timerAccountKey, startedAt)
+                    }
                 )
-                if (shouldRetireRest &&
-                    (!timerReady ||
-                        !restTimerController.stopActiveWorkoutRest(timerAccountKey, startedAt))
-                ) {
+                if (restRecovery == ActiveWorkoutRestReconciliationStatus.Failed) {
                     operationState.update {
                         it.copy(
                             message = LocalizedText(
-                                R.string.active_workout_all_sets_saved_rest_failed
+                                R.string.active_workout_change_saved_rest_failed
                             ),
                             messageSetId = null
                         )
@@ -469,9 +534,8 @@ class ActiveWorkoutViewModel(
             }
             return
         }
-        if (operationState.value.undoingSetId != null || operationState.value.isRecordingAll ||
-            !recordGate.tryStart(setId)
-        ) return
+        if (activeWorkoutOperationInProgress()) return
+        if (!recordGate.tryStart(setId)) return
 
         val restDurationSeconds = snapshot.exercises
             .firstOrNull { exercise -> exercise.sets.any { it.id == setId } }
@@ -729,18 +793,37 @@ class ActiveWorkoutViewModel(
         val updates = (parsed as ParsedActiveWorkoutSetBatch.Valid).updates
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching {
-                repository.saveActiveWorkoutExercise(
-                    exerciseId = exerciseId,
-                    updates = updates,
-                    expectedRevision = snapshot.activeWorkout.revision
+            val outcome = runCatching {
+                persistActiveWorkoutMutationAndReconcileRest(
+                    persist = {
+                        repository.saveActiveWorkoutExercise(
+                            exerciseId = exerciseId,
+                            updates = updates,
+                            expectedRevision = snapshot.activeWorkout.revision
+                        )
+                    },
+                    isCommitted = { it is SaveActiveWorkoutExerciseResult.Saved },
+                    stopRest = {
+                        restTimerController.stopActiveWorkoutRest(
+                            timerAccountKey,
+                            snapshot.activeWorkout.startedAt
+                        )
+                    }
                 )
             }.getOrNull()
             operationState.update {
-                when (result) {
+                val restCleanupFailed = outcome?.restStatus ==
+                    ActiveWorkoutRestReconciliationStatus.Failed
+                when (outcome?.repositoryResult) {
                     is SaveActiveWorkoutExerciseResult.Saved -> it.copy(
                         isRecordingAll = false,
-                        message = LocalizedText(R.string.active_workout_exercise_saved),
+                        message = LocalizedText(
+                            if (restCleanupFailed) {
+                                R.string.active_workout_change_saved_rest_failed
+                            } else {
+                                R.string.active_workout_exercise_saved
+                            }
+                        ),
                         messageSetId = null
                     )
                     else -> it.copy(
@@ -762,12 +845,36 @@ class ActiveWorkoutViewModel(
         ) return
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching {
-                repository.addActiveWorkoutSet(exerciseId, snapshot.activeWorkout.revision)
+            val outcome = runCatching {
+                persistActiveWorkoutMutationAndReconcileRest(
+                    persist = {
+                        repository.addActiveWorkoutSet(
+                            exerciseId,
+                            snapshot.activeWorkout.revision
+                        )
+                    },
+                    isCommitted = { it is AddActiveWorkoutSetResult.Added },
+                    stopRest = {
+                        restTimerController.stopActiveWorkoutRest(
+                            timerAccountKey,
+                            snapshot.activeWorkout.startedAt
+                        )
+                    }
+                )
             }.getOrNull()
             operationState.update {
-                when (result) {
-                    is AddActiveWorkoutSetResult.Added -> it.copy(isRecordingAll = false)
+                val restCleanupFailed = outcome?.restStatus ==
+                    ActiveWorkoutRestReconciliationStatus.Failed
+                when (outcome?.repositoryResult) {
+                    is AddActiveWorkoutSetResult.Added -> it.copy(
+                        isRecordingAll = false,
+                        message = if (restCleanupFailed) {
+                            LocalizedText(R.string.active_workout_change_saved_rest_failed)
+                        } else {
+                            null
+                        },
+                        messageSetId = null
+                    )
                     AddActiveWorkoutSetResult.LimitReached -> it.copy(
                         isRecordingAll = false,
                         message = LocalizedText(R.string.active_workout_set_limit_reached)
@@ -872,6 +979,7 @@ class ActiveWorkoutViewModel(
     fun adjustRestTimer(deltaSeconds: Int) {
         if (deltaSeconds !in -MAX_REST_ADJUST_SECONDS..MAX_REST_ADJUST_SECONDS) return
         if (deltaSeconds == 0) return
+        if (activeWorkoutOperationInProgress()) return
         val snapshot = details.value ?: return
         if (restTimerController.adjustActiveWorkoutRest(
                 accountKey = timerAccountKey,
@@ -886,6 +994,7 @@ class ActiveWorkoutViewModel(
     }
 
     fun stopRestTimer() {
+        if (activeWorkoutOperationInProgress()) return
         val snapshot = details.value ?: return
         if (!restTimerController.stopActiveWorkoutRest(
                 accountKey = timerAccountKey,
@@ -1055,6 +1164,17 @@ class ActiveWorkoutViewModel(
         .flatMap { exercise -> exercise.sets.asSequence() }
         .any { set -> set.id == setId && (liveSync == null || set.completedAt == null) } &&
         setId !in recordGate.inFlight.value
+
+    private fun activeWorkoutOperationInProgress(): Boolean {
+        val operation = operationState.value
+        return activeWorkoutOperationInProgress(
+            setRecordingsInFlight = recordGate.inFlight.value,
+            isRecordingAll = operation.isRecordingAll,
+            isFinishing = operation.isFinishing,
+            isDiscarding = operation.isDiscarding,
+            undoingSetId = operation.undoingSetId
+        )
+    }
 
     private fun messageForRecordFailure(result: RecordActiveWorkoutSetResult): LocalizedText =
         when (result) {

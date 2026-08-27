@@ -22,6 +22,8 @@ class AuthUiMessagesTest {
                 R.string.auth_error_connection,
             NEW_PASSWORD_POLICY_ERROR to
                 R.string.auth_error_password_policy,
+            "Password is too long." to
+                R.string.auth_error_password_too_long,
             "Display name can use letters, numbers, spaces, dot, dash and underscore." to
                 R.string.auth_error_display_name_characters,
             "Enter a valid email address." to R.string.auth_error_email_invalid,

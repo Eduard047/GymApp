@@ -14,8 +14,22 @@ import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.ZoneOffset
+import java.util.Locale
 
 class FriendsPushViewportTest {
+    @Test
+    fun friendRequestDateUsesTheSelectedLocaleAndDeviceZone() {
+        assertEquals(
+            "Sun, 9 Aug 2026",
+            localizedSocialRequestDate(
+                requestedAt = "2026-08-09T10:00:00Z",
+                locale = Locale.ENGLISH,
+                zoneId = ZoneOffset.UTC
+            )
+        )
+    }
+
     @Test
     fun exactOutgoingWorkoutTargetResolvesToItsLowerLazyListSlot() {
         val outgoing = (1..3).map(::outgoingInvite)

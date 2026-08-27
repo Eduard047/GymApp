@@ -67,6 +67,7 @@ private const val MAX_CLOUD_ERROR_RESPONSE_BYTES = 64 * 1_024
 private const val MAX_ACTIVITY_ONLY_CLOUD_RESPONSE_BYTES = 1_048_576
 private const val MAX_STORED_SESSION_BYTES = 64 * 1_024
 private const val MAX_AUTH_TOKEN_CHARS = 16 * 1_024
+internal const val MAX_LOGIN_PASSWORD_UTF8_BYTES = 1_024
 private const val INACTIVE_CLOUD_SESSION_MESSAGE =
     "This cloud session is no longer active. Sign in again before syncing."
 private const val STALE_REMOTE_STATE_MESSAGE =
@@ -782,6 +783,9 @@ class CloudAuthManager internal constructor(
         val cleanEmail = normalizeEmail(email)
         validateEmail(cleanEmail)
         require(password.isNotEmpty()) { "Enter your password." }
+        require(password.toByteArray(Charsets.UTF_8).size <= MAX_LOGIN_PASSWORD_UTF8_BYTES) {
+            "Password is too long."
+        }
         val authAttempt = beginAuthAttempt()
         return requireNotNull(
             authenticate(
@@ -976,7 +980,7 @@ class CloudAuthManager internal constructor(
                 null
             }
             val candidate = existingProfile?.displayName
-                ?: displayNameOrProfileId.trim().ifBlank { "Local" }
+                ?: displayNameOrProfileId.trim()
             val validatedName = if (resumeExisting) {
                 normalizedLocalDisplayNameOrNull(candidate)
             } else {

@@ -199,7 +199,7 @@ test("PWA inbox pages metadata and authorizes one exact invite plan at its revis
 
 test("active live UI has two nickname tabs, peer actual sets, and no owner start control", () => {
   const tabs = sourceBetween("function activeLiveParticipants", "function activeLiveWorkoutMarkup");
-  const binding = sourceBetween("function bindEvents()", "function activateProfileHubTabFromKeyboard");
+  const binding = sourceBetween("function bindEvents(", "function activateProfileHubTabFromKeyboard");
   const keyboardHandler = sourceBetween(
     "function activateLiveParticipantTabFromKeyboard",
     "function activateDataActionFromKeyboard"

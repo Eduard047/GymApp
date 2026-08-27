@@ -408,6 +408,12 @@ final class ActiveWorkoutStore: ObservableObject {
                 candidate.exercises[exerciseIndex].sets[setIndex].completedAt = now
             }
             candidate.undoableSetID = nil
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            if timing.restingUntil != nil {
+                timing.restingUntil = nil
+                timing.activeSince = now
+            }
+            candidate.timing = timing
         }
     }
 
@@ -530,6 +536,13 @@ final class ActiveWorkoutStore: ObservableObject {
             candidate.exercises[exerciseIndex].sets.append(
                 ActiveWorkoutSet(weight: weight, reps: reps)
             )
+            candidate.undoableSetID = nil
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            if timing.restingUntil != nil {
+                timing.restingUntil = nil
+                timing.activeSince = now
+            }
+            candidate.timing = timing
         }
     }
 

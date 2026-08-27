@@ -6,6 +6,7 @@ import vm from "node:vm";
 const appSource = await readFile(new URL("../pwa/app.js", import.meta.url), "utf8");
 const stateContractSource = await readFile(new URL("../pwa/state-contract.js", import.meta.url), "utf8");
 const garminCloudSource = await readFile(new URL("../pwa/garmin-cloud-sync.js", import.meta.url), "utf8");
+const russianTextSource = await readFile(new URL("../pwa/russian-text.js", import.meta.url), "utf8");
 
 function loadPwaContext() {
   const values = new Map();
@@ -73,6 +74,7 @@ function loadPwaContext() {
   context.window.GymStateContract = context.GymStateContract;
   vm.runInContext(garminCloudSource, context);
   context.window.GymGarminCloud = context.GymGarminCloud;
+  vm.runInContext(russianTextSource, context);
   vm.runInContext(appSource, context);
   return context;
 }
@@ -212,6 +214,40 @@ test("Garmin free activity stays metrics-only in history and detail", () => {
   assert.match(detail, /data-action="delete-session"/);
   assert.doesNotMatch(detail, /data-action="(?:edit-workout|share-session|add-saved-workout-set|edit-set|delete-set)"/);
   assert.doesNotMatch(detail, /Exercises|Sets|Reps|Volume|Garmin · Duration/);
+});
+
+test("Garmin strength history replaces telemetry with a compact label and preserves a separable note", () => {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    state = {
+      ...defaultAppState(),
+      language: "en",
+      exercises: [{ id: 101, name: "Bench Press" }],
+      sessions: [{
+        id: 902,
+        startedAt: 1700000000000,
+        note: "Garmin · Duration 12:34 · Gym kcal 40 · Garmin kcal 38 · Avg HR 130 · Max HR 165 · HR zone Z3",
+        sets: [{ id: 903, exerciseName: "Bench Press", weight: 60, reps: 8, orderIndex: 0 }]
+      }],
+      mappings: {}
+    };
+  `, context);
+
+  const telemetryOnly = vm.runInContext("workoutItem(state.sessions[0])", context);
+  assert.match(telemetryOnly, /Garmin workout metrics/);
+  assert.doesNotMatch(telemetryOnly, /Duration 12:34|Avg HR 130|HR zone Z3/);
+
+  vm.runInContext(`state.sessions[0].note += "\\nFelt strong <script>alert(1)</script>"`, context);
+  const withUserNote = vm.runInContext("workoutItem(state.sessions[0])", context);
+  assert.match(withUserNote, /Garmin workout metrics · Note: Felt strong/);
+  assert.match(withUserNote, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(withUserNote, /<script>/);
+
+  vm.runInContext(`state.language = "ru"`, context);
+  assert.match(
+    vm.runInContext("workoutItem(state.sessions[0])", context),
+    /Показатели тренировки Garmin · Заметка: Felt strong/
+  );
 });
 
 test("Progress is read-only and uses a compact bounded searchable picker", () => {

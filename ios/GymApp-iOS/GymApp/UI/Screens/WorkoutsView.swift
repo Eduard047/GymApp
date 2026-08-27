@@ -1534,10 +1534,11 @@ public struct WorkoutsView: View {
 
     private func workoutAccessibilityValue(_ workout: WorkoutSessionSummary) -> String {
         if isActivityOnly(workout) {
+            let duration = compactHistoryDuration(workout.durationSeconds ?? 0)
             return gymText(
-                "Garmin free workout, (compactHistoryDuration(workout.durationSeconds ?? 0)), no exercises or sets",
-                "Вільне тренування Garmin, (compactHistoryDuration(workout.durationSeconds ?? 0)), без вправ і підходів",
-                "Свободная тренировка Garmin, (compactHistoryDuration(workout.durationSeconds ?? 0)), без упражнений и подходов",
+                "Garmin free workout, \(duration), no exercises or sets",
+                "Вільне тренування Garmin, \(duration), без вправ і підходів",
+                "Свободная тренировка Garmin, \(duration), без упражнений и подходов",
                 languageCode: languageCode
             )
         }

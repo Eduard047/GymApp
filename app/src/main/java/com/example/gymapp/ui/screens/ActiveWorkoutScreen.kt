@@ -1,8 +1,10 @@
 package com.example.gymapp.ui.screens
 
+import android.text.format.DateFormat as AndroidDateFormat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,9 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -60,11 +64,15 @@ import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
+import com.example.gymapp.ui.viewmodel.activeWorkoutOperationInProgress
+import com.example.gymapp.ui.viewmodel.parseActiveWorkoutSetInput
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
 import com.example.gymapp.ui.viewmodel.LivePeerExerciseSummary
 import com.example.gymapp.ui.theme.GymControlShape
@@ -88,12 +96,17 @@ fun ActiveWorkoutScreen(
     onSetRepsChanged: (String, String) -> Unit,
     onSaveExercise: (String) -> Unit,
     onAddSet: (String) -> Unit,
+    onRecordSet: (String) -> Unit,
     onRecordAllPendingSets: () -> Unit,
+    onUndoLatestSet: (String) -> Unit,
+    onAdjustRestTimer: (Int) -> Unit,
+    onStopRestTimer: () -> Unit,
     onFinishWorkout: () -> Unit,
     onDiscardWorkout: () -> Unit,
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showMoreWorkoutOptions by rememberSaveable { mutableStateOf(false) }
     var liveParticipantTab by rememberSaveable(uiState.livePeerName) {
@@ -102,8 +115,13 @@ fun ActiveWorkoutScreen(
 
     when {
         uiState.isLoading -> {
-            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(horizontal = screenHorizontalPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                LoadingStatePanel(label = stringResource(R.string.active_workout_loading))
             }
             return
         }
@@ -123,20 +141,31 @@ fun ActiveWorkoutScreen(
         }
     }
 
-    val operationInProgress = uiState.isRecordingAll || uiState.isFinishing || uiState.isDiscarding ||
-        uiState.setRecordingsInFlight.isNotEmpty() || uiState.undoingSetId != null
+    val operationInProgress = activeWorkoutOperationInProgress(
+        setRecordingsInFlight = uiState.setRecordingsInFlight,
+        isRecordingAll = uiState.isRecordingAll,
+        isFinishing = uiState.isFinishing,
+        isDiscarding = uiState.isDiscarding,
+        undoingSetId = uiState.undoingSetId
+    )
+    val contextStateExpanded = stringResource(R.string.state_expanded)
+    val contextStateCollapsed = stringResource(R.string.state_collapsed)
     val peerName = uiState.livePeerName
     val showSelfParticipant = peerName == null || liveParticipantTab == LiveParticipantTab.Self
     val currentExerciseId = uiState.exercises.firstOrNull { exercise ->
         exercise.sets.any { set -> !set.isCompleted }
     }?.id
+    val currentSetId = uiState.exercises.asSequence()
+        .flatMap { exercise -> exercise.sets.asSequence() }
+        .firstOrNull { set -> !set.isCompleted }
+        ?.id
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = GymSpacing.ScreenHorizontal,
+            start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,
-            end = GymSpacing.ScreenHorizontal,
+            end = screenHorizontalPadding,
             bottom = 112.dp
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
@@ -232,12 +261,21 @@ fun ActiveWorkoutScreen(
                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                 operationInProgress = operationInProgress,
                 allowExerciseActions = uiState.liveConnectionMode == null,
+                currentSetId = currentSetId,
+                inFlightSetIds = uiState.setRecordingsInFlight,
+                latestCompletedSetId = uiState.latestCompletedSetId,
+                undoingSetId = uiState.undoingSetId,
+                restSecondsRemaining = uiState.restSecondsRemaining,
                 inlineMessage = uiState.message,
                 inlineMessageSetId = uiState.messageSetId,
                 onSetWeightChanged = onSetWeightChanged,
                 onSetRepsChanged = onSetRepsChanged,
                 onSaveExercise = { onSaveExercise(exercise.id) },
                 onAddSet = { onAddSet(exercise.id) },
+                onRecordSet = onRecordSet,
+                onUndoLatestSet = onUndoLatestSet,
+                onAdjustRestTimer = onAdjustRestTimer,
+                onStopRestTimer = onStopRestTimer,
                 onDismissMessage = onDismissMessage
             )
         }
@@ -256,7 +294,7 @@ fun ActiveWorkoutScreen(
                         OutlinedButton(
                             onClick = onRecordAllPendingSets,
                             enabled = !operationInProgress,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         ) {
                             if (uiState.isRecordingAll) {
                                 CircularProgressIndicator(
@@ -272,7 +310,7 @@ fun ActiveWorkoutScreen(
                     Button(
                         onClick = onFinishWorkout,
                         enabled = uiState.completedSetCount > 0 && !operationInProgress,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     ) {
                         if (uiState.isFinishing) {
                             CircularProgressIndicator(
@@ -293,7 +331,16 @@ fun ActiveWorkoutScreen(
                     OutlinedButton(
                         onClick = { showMoreWorkoutOptions = !showMoreWorkoutOptions },
                         enabled = !operationInProgress,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .semantics {
+                                stateDescription = if (showMoreWorkoutOptions) {
+                                    contextStateExpanded
+                                } else {
+                                    contextStateCollapsed
+                                }
+                            }
                     ) {
                         Icon(
                             imageVector = if (showMoreWorkoutOptions) {
@@ -312,7 +359,7 @@ fun ActiveWorkoutScreen(
                         OutlinedButton(
                             onClick = { showDiscardConfirmation = true },
                             enabled = !operationInProgress,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Delete, contentDescription = null)
                             Text(
@@ -385,6 +432,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 text = stringResource(R.string.active_workout_title),
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.headlineSmall,
                 color = Color.White
             )
@@ -396,6 +444,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
             val progressAccessibilityLabel = stringResource(
                 R.string.active_workout_progress_accessibility
             )
+            val context = LocalContext.current
             val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
             val completedForProgress = uiState.completedSetCount.coerceAtLeast(0)
             val totalForProgress = uiState.totalSetCount.coerceAtLeast(0)
@@ -431,7 +480,11 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
             Text(
                 text = stringResource(
                     R.string.active_workout_started_at,
-                    formatActiveWorkoutStartedAt(uiState.startedAt, locale)
+                    formatActiveWorkoutStartedAt(
+                        timestamp = uiState.startedAt,
+                        locale = locale,
+                        is24Hour = AndroidDateFormat.is24HourFormat(context)
+                    )
                 ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.82f)
@@ -551,20 +604,37 @@ private fun ActiveWorkoutExerciseCard(
     exerciseMediaOwnerKey: String,
     operationInProgress: Boolean,
     allowExerciseActions: Boolean,
+    currentSetId: String?,
+    inFlightSetIds: Set<String>,
+    latestCompletedSetId: String?,
+    undoingSetId: String?,
+    restSecondsRemaining: Int,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
     inlineMessageSetId: String?,
     onSetWeightChanged: (String, String) -> Unit,
     onSetRepsChanged: (String, String) -> Unit,
     onSaveExercise: () -> Unit,
     onAddSet: () -> Unit,
+    onRecordSet: (String) -> Unit,
+    onUndoLatestSet: (String) -> Unit,
+    onAdjustRestTimer: (Int) -> Unit,
+    onStopRestTimer: () -> Unit,
     onDismissMessage: () -> Unit
 ) {
     val fullyCompleted = exercise.sets.isNotEmpty() &&
         exercise.sets.all(ActiveWorkoutSetUiState::isCompleted)
+    val containsLatestCompletedSet = latestCompletedSetId != null &&
+        exercise.sets.any { it.id == latestCompletedSetId }
     var isExpanded by rememberSaveable(exercise.id) { mutableStateOf(initiallyExpanded) }
-    LaunchedEffect(fullyCompleted, initiallyExpanded) {
-        isExpanded = initiallyExpanded && !fullyCompleted
+    LaunchedEffect(fullyCompleted, initiallyExpanded, containsLatestCompletedSet) {
+        when {
+            containsLatestCompletedSet -> isExpanded = true
+            fullyCompleted -> isExpanded = false
+            initiallyExpanded -> isExpanded = true
+        }
     }
+    val expandedState = stringResource(R.string.state_expanded)
+    val collapsedState = stringResource(R.string.state_collapsed)
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -598,7 +668,12 @@ private fun ActiveWorkoutExerciseCard(
                     ).let { progress -> "$statusLabel · $progress" },
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = { isExpanded = !isExpanded }) {
+                IconButton(
+                    onClick = { isExpanded = !isExpanded },
+                    modifier = Modifier.semantics {
+                        stateDescription = if (isExpanded) expandedState else collapsedState
+                    }
+                ) {
                     Icon(
                         imageVector = if (isExpanded) {
                             Icons.Default.ExpandLess
@@ -625,42 +700,62 @@ private fun ActiveWorkoutExerciseCard(
                 ActiveWorkoutSetRow(
                     set = set,
                     operationInProgress = operationInProgress,
-                    editable = allowExerciseActions || !set.isCompleted,
+                    editable = !set.isCompleted,
+                    isCurrent = set.id == currentSetId,
+                    isRecording = set.id in inFlightSetIds,
+                    isLatestCompleted = set.id == latestCompletedSetId,
+                    isUndoing = set.id == undoingSetId,
+                    restDurationSeconds = exercise.restDurationSeconds,
+                    restSecondsRemaining = if (set.id == latestCompletedSetId) {
+                        restSecondsRemaining
+                    } else {
+                        0
+                    },
                     inlineMessage = inlineMessage.takeIf { inlineMessageSetId == set.id },
                     onWeightChanged = { value -> onSetWeightChanged(set.id, value) },
                     onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
+                    onRecord = { onRecordSet(set.id) },
+                    onUndo = { onUndoLatestSet(set.id) },
+                    onAdjustRestTimer = onAdjustRestTimer,
+                    onStopRestTimer = onStopRestTimer,
                     onDismissMessage = onDismissMessage
                 )
             }
             if (isExpanded && allowExerciseActions) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onAddSet,
-                        enabled = !operationInProgress,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Text(
-                            stringResource(R.string.active_workout_add_set),
-                            modifier = Modifier.padding(start = 6.dp)
-                        )
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val stackActions = maxWidth < 340.dp
+                    val actions: @Composable (Modifier, Modifier) -> Unit = { addModifier, saveModifier ->
+                        OutlinedButton(
+                            onClick = onAddSet,
+                            enabled = !operationInProgress,
+                            modifier = addModifier.heightIn(min = 48.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Text(
+                                stringResource(R.string.active_workout_add_set),
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        }
+                        Button(
+                            onClick = onSaveExercise,
+                            enabled = !operationInProgress,
+                            modifier = saveModifier.heightIn(min = 48.dp)
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null)
+                            Text(
+                                stringResource(R.string.active_workout_save_exercise),
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        }
                     }
-                    Button(
-                        onClick = {
-                            onSaveExercise()
-                            isExpanded = false
-                        },
-                        enabled = !operationInProgress,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null)
-                        Text(
-                            stringResource(R.string.active_workout_save_exercise),
-                            modifier = Modifier.padding(start = 6.dp)
-                        )
+                    if (stackActions) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            actions(Modifier.fillMaxWidth(), Modifier.fillMaxWidth())
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            actions(Modifier.weight(1f), Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -673,15 +768,26 @@ private fun ActiveWorkoutSetRow(
     set: ActiveWorkoutSetUiState,
     operationInProgress: Boolean,
     editable: Boolean,
+    isCurrent: Boolean,
+    isRecording: Boolean,
+    isLatestCompleted: Boolean,
+    isUndoing: Boolean,
+    restDurationSeconds: Int,
+    restSecondsRemaining: Int,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
     onWeightChanged: (String) -> Unit,
     onRepsChanged: (String) -> Unit,
+    onRecord: () -> Unit,
+    onUndo: () -> Unit,
+    onAdjustRestTimer: (Int) -> Unit,
+    onStopRestTimer: () -> Unit,
     onDismissMessage: () -> Unit
 ) {
-    val containerColor = if (set.isCompleted) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
+    val validSetInput = parseActiveWorkoutSetInput(set.weightInput, set.repsInput) != null
+    val containerColor = when {
+        set.isCompleted -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+        isCurrent -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -694,7 +800,9 @@ private fun ActiveWorkoutSetRow(
         },
         border = BorderStroke(
             1.dp,
-            if (set.isCompleted) {
+            if (isCurrent && !set.isCompleted) {
+                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.72f)
+            } else if (set.isCompleted) {
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
             } else {
                 MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
@@ -715,6 +823,9 @@ private fun ActiveWorkoutSetRow(
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f)
             )
+            if (isCurrent && !set.isCompleted) {
+                InfoPill(text = stringResource(R.string.active_workout_set_current))
+            }
             if (set.isCompleted) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
@@ -728,31 +839,102 @@ private fun ActiveWorkoutSetRow(
                 )
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = set.weightInput,
-                onValueChange = onWeightChanged,
-                label = { Text(text = stringResource(R.string.label_weight_kg)) },
-                placeholder = { Text("0") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                enabled = editable && !operationInProgress,
-                readOnly = !editable,
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = set.repsInput,
-                onValueChange = onRepsChanged,
-                label = { Text(text = stringResource(R.string.label_reps)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                enabled = editable && !operationInProgress,
-                readOnly = !editable,
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val stackEditors = maxWidth < 340.dp
+            if (stackEditors) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActiveWorkoutWeightField(
+                        set = set,
+                        editable = editable,
+                        operationInProgress = operationInProgress,
+                        onWeightChanged = onWeightChanged,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ActiveWorkoutRepsField(
+                        set = set,
+                        editable = editable,
+                        operationInProgress = operationInProgress,
+                        onRepsChanged = onRepsChanged,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActiveWorkoutWeightField(
+                        set = set,
+                        editable = editable,
+                        operationInProgress = operationInProgress,
+                        onWeightChanged = onWeightChanged,
+                        modifier = Modifier.weight(1f)
+                    )
+                    ActiveWorkoutRepsField(
+                        set = set,
+                        editable = editable,
+                        operationInProgress = operationInProgress,
+                        onRepsChanged = onRepsChanged,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+        if (!set.isCompleted) {
+            Button(
+                onClick = onRecord,
+                enabled = isCurrent && validSetInput && !operationInProgress,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+                if (isRecording) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 8.dp).size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Text(stringResource(R.string.action_log_set_and_rest, restDurationSeconds))
+            }
+        }
+        if (isLatestCompleted) {
+            if (restSecondsRemaining > 0) {
+                AppPanel(
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        stateDescription = formatRestTime(restSecondsRemaining)
+                    },
+                    highlighted = true
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            stringResource(R.string.active_workout_rest_saved),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            formatRestTime(restSecondsRemaining),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        ActiveWorkoutRestControls(
+                            enabled = !operationInProgress,
+                            onAdjustRestTimer = onAdjustRestTimer,
+                            onStopRestTimer = onStopRestTimer
+                        )
+                    }
+                }
+            }
+            OutlinedButton(
+                onClick = onUndo,
+                enabled = !operationInProgress,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+                if (isUndoing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 8.dp).size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+                Text(stringResource(R.string.active_workout_undo_action))
+            }
         }
         inlineMessage?.let { message ->
             Row(
@@ -778,6 +960,102 @@ private fun ActiveWorkoutSetRow(
     }
 }
 
+@Composable
+private fun ActiveWorkoutRestControls(
+    enabled: Boolean,
+    onAdjustRestTimer: (Int) -> Unit,
+    onStopRestTimer: () -> Unit
+) {
+    val subtractDescription = stringResource(R.string.active_workout_rest_subtract)
+    val addDescription = stringResource(R.string.active_workout_rest_add)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stacked = maxWidth < 320.dp
+        val controls: @Composable (Modifier, Modifier, Modifier) -> Unit =
+            { subtractModifier, addModifier, stopModifier ->
+                OutlinedButton(
+                    onClick = { onAdjustRestTimer(-15) },
+                    enabled = enabled,
+                    modifier = subtractModifier.heightIn(min = 48.dp).semantics {
+                        contentDescription = subtractDescription
+                    }
+                ) { Text("−15") }
+                OutlinedButton(
+                    onClick = { onAdjustRestTimer(15) },
+                    enabled = enabled,
+                    modifier = addModifier.heightIn(min = 48.dp).semantics {
+                        contentDescription = addDescription
+                    }
+                ) { Text("+15") }
+                TextButton(
+                    onClick = onStopRestTimer,
+                    enabled = enabled,
+                    modifier = stopModifier.heightIn(min = 48.dp)
+                ) { Text(stringResource(R.string.active_workout_rest_stop)) }
+            }
+        if (stacked) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                controls(
+                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth()
+                )
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                controls(Modifier.weight(1f), Modifier.weight(1f), Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveWorkoutWeightField(
+    set: ActiveWorkoutSetUiState,
+    editable: Boolean,
+    operationInProgress: Boolean,
+    onWeightChanged: (String) -> Unit,
+    modifier: Modifier
+) {
+    OutlinedTextField(
+        value = set.weightInput,
+        onValueChange = onWeightChanged,
+        label = { Text(stringResource(R.string.label_weight_kg)) },
+        placeholder = { Text("0") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        enabled = editable && !operationInProgress,
+        readOnly = !editable,
+        singleLine = true,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun ActiveWorkoutRepsField(
+    set: ActiveWorkoutSetUiState,
+    editable: Boolean,
+    operationInProgress: Boolean,
+    onRepsChanged: (String) -> Unit,
+    modifier: Modifier
+) {
+    OutlinedTextField(
+        value = set.repsInput,
+        onValueChange = onRepsChanged,
+        label = { Text(stringResource(R.string.label_reps)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        enabled = editable && !operationInProgress,
+        readOnly = !editable,
+        singleLine = true,
+        modifier = modifier
+    )
+}
+
+private fun formatRestTime(totalSeconds: Int): String = String.format(
+    Locale.getDefault(),
+    "%d:%02d",
+    totalSeconds.coerceAtLeast(0) / 60,
+    totalSeconds.coerceAtLeast(0) % 60
+)
+
 internal fun formatActiveWorkoutTime(
     totalSeconds: Long,
     locale: Locale = Locale.getDefault()
@@ -796,7 +1074,8 @@ internal fun formatActiveWorkoutTime(
 internal fun formatActiveWorkoutStartedAt(
     timestamp: Long,
     locale: Locale = Locale.getDefault(),
-    zoneId: ZoneId = ZoneId.systemDefault()
-): String = DateTimeFormatter.ofPattern("HH:mm", locale)
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    is24Hour: Boolean = true
+): String = DateTimeFormatter.ofPattern(if (is24Hour) "HH:mm" else "h:mm a", locale)
     .withZone(zoneId)
     .format(Instant.ofEpochMilli(timestamp))

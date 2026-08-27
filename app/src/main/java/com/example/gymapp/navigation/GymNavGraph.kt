@@ -12,7 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -2075,7 +2075,7 @@ internal fun GymAppRoot(
                             ) {
                                 NavigationBar(
                                     modifier = Modifier
-                                        .height(76.dp)
+                                        .heightIn(min = 76.dp)
                                         .padding(horizontal = 8.dp),
                                     containerColor = Color.Transparent,
                                     tonalElevation = 0.dp
@@ -2399,6 +2399,7 @@ internal fun GymAppRoot(
                                         }
                                     }
                                 },
+                                onRetryLoad = viewModel::retryLoad,
                                 tutorialAnchors = tutorialAnchors,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -2422,6 +2423,7 @@ internal fun GymAppRoot(
                                         launchSingleTop = true
                                     }
                                 },
+                                onRetryLoad = viewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -2439,6 +2441,7 @@ internal fun GymAppRoot(
 
                             RanksScreen(
                                 uiState = uiState,
+                                onRetryLoad = viewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -2992,7 +2995,11 @@ internal fun GymAppRoot(
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onSaveExercise = viewModel::saveExercise,
                                 onAddSet = viewModel::addSet,
+                                onRecordSet = viewModel::recordSet,
                                 onRecordAllPendingSets = viewModel::recordAllPendingSets,
+                                onUndoLatestSet = viewModel::undoLatestSet,
+                                onAdjustRestTimer = viewModel::adjustRestTimer,
+                                onStopRestTimer = viewModel::stopRestTimer,
                                 onFinishWorkout = viewModel::finishWorkout,
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,
@@ -3252,6 +3259,7 @@ internal fun GymAppRoot(
                                 onDismissExerciseLoadProfile = viewModel::closeExerciseLoadProfile,
                                 onDismissHistory = viewModel::closeExerciseHistory,
                                 onToggleFavorite = viewModel::toggleFavorite,
+                                onRetryLoad = viewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -3290,6 +3298,7 @@ internal fun GymAppRoot(
                                 onOpenRanks = {
                                     navController.navigate(AppDestination.Ranks.route)
                                 },
+                                onRetryOverviewLoad = overviewViewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -3743,6 +3752,7 @@ internal fun GymAppRoot(
                                             .resetSecureGarminPairing()
                                     }
                                 },
+                                onRetryLoad = profileViewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

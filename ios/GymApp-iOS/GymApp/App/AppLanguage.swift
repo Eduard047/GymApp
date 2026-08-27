@@ -512,6 +512,8 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
         switch authError {
         case .invalidEmail,
              .invalidPassword,
+             .loginPasswordTooLong,
+             .currentPasswordTooLong,
              .invalidPasswordReauthenticationNonce,
              .passwordReauthenticationRequired,
              .invalidDisplayName,

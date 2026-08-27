@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
+        <!-- In-process Compose test host. It has no intent filter and is never externally reachable. -->
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:exported="false" />
+
         <receiver
             android:name=".garmin.GarminDebugReceiver"
             android:exported="false">

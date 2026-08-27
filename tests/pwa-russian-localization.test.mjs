@@ -141,13 +141,44 @@ test("active workout lifecycle keeps explicit Russian start, record, finish, and
   const cases = new Map([
     ["Continue workout", "Продолжить тренировку"],
     ["Record set", "Записать подход"],
+    ["Rest timer", "Таймер отдыха"],
+    ["Password is too long.", "Пароль слишком длинный."],
     ["Set recorded, but the rest timer could not be saved.", "Подход записан, но таймер отдыха сохранить не удалось."],
+    ["Set added, but old local rest controls could not be fully cleared.", "Подход добавлен, но старые локальные элементы отдыха не удалось полностью очистить."],
+    ["Every set in this exercise is already saved.", "Все подходы в этом упражнении уже сохранены."],
+    ["Enter reps for every unfinished set. Weight can stay empty and will be saved as 0.", "Укажите повторения для каждого незавершённого подхода. Вес можно оставить пустым — он сохранится как 0."],
+    ["Enter whole-number reps. Weight can stay empty and will be recorded as 0.", "Укажите целое число повторов. Вес можно оставить пустым — он запишется как 0."],
     ["Finish workout", "Завершить тренировку"],
     ["Discard active workout?", "Отменить активную тренировку?"]
   ]);
   for (const [english, russian] of cases) {
     assert.equal(context.window.GymRussianText.translate(english), russian, english);
   }
+});
+
+test("active workout statuses, set plurals, and filter ARIA re-localize without a reload", () => {
+  const context = loadPwaContext();
+  const values = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    activeWorkoutUi = activeWorkoutStatus("success", "setAdded");
+    state.language = "en";
+    const english = activeWorkoutStatusText();
+    state.language = "uk";
+    const ukrainian = activeWorkoutStatusText();
+    state.language = "ru";
+    const russian = activeWorkoutStatusText();
+    const progress = activeWorkoutProgressLabel(3, 12);
+    const block = activeWorkoutBlockStateLabel({ sets: [{}, {}, {}] }, 3, false);
+    const filters = exerciseFilterControls();
+    return { english, ukrainian, russian, progress, block, filters };
+  })())`, context));
+
+  assert.equal(values.english, "Set added.");
+  assert.equal(values.ukrainian, "Підхід додано.");
+  assert.equal(values.russian, "Подход добавлен.");
+  assert.equal(values.progress, "Выполнено 3 из 12 подходов");
+  assert.equal(values.block, "3 / 3 подхода сохранено");
+  assert.match(values.filters, /aria-label="Основные фильтры упражнений"/);
+  assert.match(values.filters, /aria-label="Фильтры, активных: 0"/);
 });
 
 test("new social and exercise recovery actions have concise Russian labels", () => {

@@ -52,6 +52,7 @@
     <string name="friend_code_copied">Скопировано</string>
     <string name="friend_code_share">Поделиться</string>
     <string name="friend_code_share_subject">Код друга GymApp</string>
+    <string name="friend_code_clipboard_label">Код друга GymApp</string>
     <string name="friend_code_share_message">Добавь меня в GymApp по этому коду друга: %1$s</string>
     <string name="friend_code_invalid">Введи полный код друга GymApp.</string>
     <string name="friend_request_send">Отправить заявку</string>
@@ -201,6 +202,9 @@
     <string name="action_save">Сохранить</string>
     <string name="action_close">Закрыть</string>
     <string name="action_retry">Повторить</string>
+    <string name="state_loading">Загрузка</string>
+    <string name="state_expanded">Развёрнуто</string>
+    <string name="state_collapsed">Свёрнуто</string>
     <string name="action_current_month">Текущий месяц</string>
     <string name="action_return_to_current_month">Вернуться к текущему месяцу</string>
     <string name="action_repeat_last_workout">Повторить предыдущую тренировку</string>
@@ -227,6 +231,7 @@
     <string name="auth_continue_offline_supporting">Храни тренировки только на этом устройстве. Можно оставить имя «Local» или указать имя профиля.</string>
     <string name="auth_offline_consequence">Тренировки хранятся только на этом устройстве, пока ты их не экспортируешь; облачная синхронизация и восстановление недоступны.</string>
     <string name="auth_local_profile_name">Имя профиля</string>
+    <string name="auth_local_default_name">Local</string>
     <string name="auth_local_profile_name_hint">Необязательно; по умолчанию Local</string>
     <string name="auth_secure_account">Безопасная учетная запись</string>
     <string name="auth_privacy_policy">Политика конфиденциальности</string>
@@ -270,6 +275,7 @@
     <string name="auth_error_email_required">Введи электронную почту.</string>
     <string name="auth_error_email_invalid">Введи корректный адрес электронной почты.</string>
     <string name="auth_error_password_required">Введи пароль.</string>
+    <string name="auth_error_password_too_long">Пароль слишком длинный.</string>
     <string name="auth_error_repeat_email">Повтори электронную почту.</string>
     <string name="auth_error_email_mismatch">Адреса электронной почты не совпадают.</string>
     <string name="auth_error_display_name_length">Имя должно содержать 2–32 символа.</string>
@@ -438,6 +444,7 @@
     <string name="add_workout_completed_mode_hint">Режим выполненной тренировки: сохранение сразу добавляет все запланированные строки в историю и сводку.</string>
     <string name="add_workout_active_mode_hint">При старте план надёжно сохраняется на устройстве. Подход попадёт в историю только после его записи и завершения тренировки.</string>
     <string name="active_workout_title">Активная тренировка</string>
+    <string name="active_workout_loading">Загружаем активную тренировку…</string>
     <string name="active_workout_supporting">Записывай каждый выполненный подход. Он сохраняется до запуска умного таймера отдыха.</string>
     <string name="active_workout_progress">Выполнено подходов: %1$d из %2$d</string>
     <string name="active_workout_total_time">Общее время тренировки: %1$s</string>
@@ -461,6 +468,7 @@
     <string name="active_workout_exercise_progress">Записано подходов: %1$d из %2$d</string>
     <string name="active_workout_exercise_completed_collapsed">Все подходы записаны. Разверни блок, чтобы проверить их или отменить последний подход.</string>
     <string name="active_workout_set_completed">Записан</string>
+    <string name="active_workout_set_current">Сделай сейчас</string>
     <string name="active_workout_missing_title">Нет активной тренировки</string>
     <string name="active_workout_missing">Этой активной тренировки больше нет в текущем аккаунте.</string>
     <string name="active_workout_changed">Активная тренировка изменилась. Показана последняя сохранённая версия — проверь её перед повторной попыткой.</string>
@@ -484,6 +492,7 @@
     <string name="active_workout_save_all_supporting">Сначала проверяются вес и повторы каждого незаписанного подхода, затем все они сохраняются одной операцией без нового отдыха.</string>
     <string name="active_workout_all_sets_saved">Одновременно сохранено подходов: %1$d.</string>
     <string name="active_workout_all_sets_saved_rest_failed">Все подходы сохранены, но старый таймер отдыха не удалось полностью остановить.</string>
+    <string name="active_workout_change_saved_rest_failed">Изменение сохранено, но старый таймер отдыха не удалось полностью остановить.</string>
     <string name="active_workout_draft_title">Продолжить активную тренировку</string>
     <string name="active_workout_draft_progress">Записано подходов: %1$d из %2$d</string>
     <string name="note_template_push">День жима</string>
@@ -495,6 +504,10 @@
     <string name="label_exercise_name">Название упражнения</string>
     <string name="hint_exercise_name">например, Жим лежа</string>
     <string name="exercise_rename_title">Переименовать упражнение</string>
+    <string name="exercises_loading">Загружаем библиотеку упражнений…</string>
+    <string name="exercises_load_failed">Не удалось загрузить библиотеку упражнений.</string>
+    <string name="workouts_loading">Загружаем тренировки…</string>
+    <string name="workouts_load_failed">Не удалось загрузить тренировки.</string>
     <string name="label_rest_timer">Таймер отдыха</string>
     <string name="label_rest_timer_shared">Общий таймер отдыха</string>
     <string name="label_rest_timer_exercise">Таймер для упражнения</string>

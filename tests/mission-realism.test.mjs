@@ -333,3 +333,100 @@ test("mission presentation does not claim XP that progression does not award", (
   )?.[0] || "";
   assert.doesNotMatch(completedMissionModel, /rewardXp/);
 });
+
+test("post-workout rewards include only missions completed by that session", () => {
+  const context = loadPwaContext();
+  const result = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const startedAt = new Date(2026, 7, 27, 12).getTime();
+    const session = (id, minute) => ({
+      id,
+      startedAt: startedAt + minute * 60000,
+      note: "",
+      sets: [{ id: id * 10, exerciseName: "Bench Press", weight: 1, reps: 1 }]
+    });
+    const first = session(1, 0);
+    const second = session(2, 1);
+    state = { ...defaultAppState(), sessions: [first] };
+    const firstRewards = summaryRewards(first, []);
+    state = { ...state, sessions: [first, second] };
+    const secondRewards = summaryRewards(second, []);
+    return {
+      firstMissionIds: missionsCompletedBySession(first).map(item => item.id),
+      firstMissionTitles: firstRewards.missions.map(item => item.title),
+      secondMissionIds: missionsCompletedBySession(second).map(item => item.id),
+      secondMissionTitles: secondRewards.missions.map(item => item.title),
+      firstBadges: firstRewards.badges.map(item => item.title),
+      secondBadges: secondRewards.badges.map(item => item.title)
+    };
+  })())`, context));
+
+  assert.ok(result.firstMissionIds.includes("daily-check-in"));
+  assert.ok(result.firstMissionTitles.includes("Daily check-in"));
+  assert.ok(result.firstBadges.includes("First session"));
+  assert.ok(!result.secondMissionIds.includes("daily-check-in"));
+  assert.ok(!result.secondMissionTitles.includes("Daily check-in"));
+  assert.ok(!result.secondBadges.includes("First session"));
+});
+
+test("historical summaries use deterministic timestamp and id chronology", () => {
+  const context = loadPwaContext();
+  const result = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const monday = new Date(2026, 0, 5, 12).getTime();
+    const sharedTime = new Date(2026, 0, 6, 12).getTime();
+    const makeSession = (id, startedAt, weight, reps = 1) => ({
+      id,
+      startedAt,
+      note: "",
+      sets: [{ id: id * 10, exerciseName: "Bench Press", weight, reps, orderIndex: 0 }]
+    });
+    const older = makeSession(1, monday, 10);
+    const current = makeSession(20, sharedTime, 20);
+    const sameTimeLater = makeSession(30, sharedTime, 30);
+    const future = makeSession(40, new Date(2026, 7, 26, 12).getTime(), 1000, 100);
+    state = {
+      ...defaultAppState(),
+      profile: { ...defaultAppState().profile, days: 2 },
+      sessions: [future, sameTimeLater, current, older]
+    };
+    const currentThrough = sessionsThroughCurrent(current);
+    const laterThrough = sessionsThroughCurrent(sameTimeLater);
+    const currentProgress = levelProgress(xpForSessions(currentThrough));
+    const globalProgress = levelProgress(totalXp());
+    const currentMarkup = summaryScreen(current.id);
+    const laterMarkup = summaryScreen(sameTimeLater.id);
+    const currentMissionIds = missionsCompletedBySession(current).map(item => item.id);
+    const laterMissionIds = missionsCompletedBySession(sameTimeLater).map(item => item.id);
+
+    state.sessions = [future, sameTimeLater, current];
+    const firstSameTimeBadges = summaryRewards(current, []).badges.map(item => item.title);
+    const secondSameTimeBadges = summaryRewards(sameTimeLater, []).badges.map(item => item.title);
+    return {
+      currentPrevious: previousSessions(current, [future, sameTimeLater, current, older]).map(item => item.id),
+      currentThrough: currentThrough.map(item => item.id),
+      laterThrough: laterThrough.map(item => item.id),
+      currentProgress,
+      globalProgress,
+      currentMarkup,
+      laterMarkup,
+      currentMissionIds,
+      laterMissionIds,
+      firstSameTimeBadges,
+      secondSameTimeBadges
+    };
+  })())`, context));
+
+  assert.deepEqual(result.currentPrevious, [1]);
+  assert.deepEqual(result.currentThrough, [1, 20]);
+  assert.deepEqual(result.laterThrough, [1, 20, 30]);
+  assert.notEqual(result.currentProgress.level, result.globalProgress.level,
+    "future workouts must not change an old summary level");
+  assert.match(result.currentMarkup, new RegExp(`>Level ${result.currentProgress.level}<`));
+  assert.match(result.currentMarkup, new RegExp(`>${result.currentProgress.currentLevelXp} XP into this level<`));
+  assert.match(result.currentMarkup, /Week streak<\/span><strong>1 wk/);
+  assert.match(result.currentMarkup, /Previous best 10\.0 kg/);
+  assert.match(result.laterMarkup, /Previous best 20\.0 kg/);
+  assert.ok(result.currentMissionIds.includes("daily-check-in"));
+  assert.ok(!result.laterMissionIds.includes("daily-check-in"));
+  assert.ok(result.firstSameTimeBadges.includes("First session"));
+  assert.ok(!result.secondSameTimeBadges.includes("First session"));
+});

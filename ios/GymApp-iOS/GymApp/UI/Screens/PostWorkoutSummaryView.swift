@@ -1,9 +1,135 @@
 import SwiftUI
 
+struct PostWorkoutRewardDelta: Equatable {
+    let completedMissions: [MissionSnapshot]
+    let unlockedBadges: [BadgeSnapshot]
+
+    static let empty = PostWorkoutRewardDelta(completedMissions: [], unlockedBadges: [])
+}
+
+struct PostWorkoutAttribution {
+    let current: WorkoutSessionSummary
+    let sessionsThroughCurrent: [WorkoutSessionSummary]
+    let previousSessions: [WorkoutSessionSummary]
+    let afterSnapshot: GamificationSnapshot
+    let weeklyStreakWeeks: Int
+    let rewards: PostWorkoutRewardDelta
+}
+
+private func isPostWorkoutEarlier(
+    candidateDate: Date,
+    candidateID: UUID,
+    currentDate: Date,
+    currentID: UUID
+) -> Bool {
+    if candidateDate != currentDate {
+        return candidateDate < currentDate
+    }
+    return candidateID.uuidString < currentID.uuidString
+}
+
+func postWorkoutAttribution(
+    sessions: [WorkoutSessionSummary],
+    workoutID: UUID,
+    targetTrainingDays: Int,
+    calendar: Calendar
+) -> PostWorkoutAttribution? {
+    guard let current = sessions.first(where: { $0.workoutID == workoutID }) else {
+        return nil
+    }
+
+    let isEarlierThanCurrent: (WorkoutSessionSummary) -> Bool = { candidate in
+        isPostWorkoutEarlier(
+            candidateDate: candidate.date,
+            candidateID: candidate.workoutID,
+            currentDate: current.date,
+            currentID: current.workoutID
+        )
+    }
+    let sessionsThroughCurrent = sessions
+        .filter { $0.workoutID == workoutID || isEarlierThanCurrent($0) }
+        .sorted {
+            if $0.date != $1.date { return $0.date < $1.date }
+            return $0.workoutID.uuidString < $1.workoutID.uuidString
+        }
+    let previousSessions = sessionsThroughCurrent.filter(isEarlierThanCurrent)
+
+    let after = GamificationEngine.buildSnapshot(
+        sessions: sessionsThroughCurrent,
+        targetTrainingDays: targetTrainingDays,
+        now: current.date,
+        calendar: calendar
+    )
+    let before = GamificationEngine.buildSnapshot(
+        sessions: previousSessions,
+        targetTrainingDays: targetTrainingDays,
+        now: current.date,
+        calendar: calendar
+    )
+    let completedMissionIDsBefore = Set(
+        before.missions.all.lazy.filter(\.completed).map(\.id)
+    )
+    let unlockedBadgeIDsBefore = Set(before.unlockedBadges.lazy.map(\.id))
+    let rewards = PostWorkoutRewardDelta(
+        completedMissions: after.missions.all.filter {
+            $0.completed && !completedMissionIDsBefore.contains($0.id)
+        },
+        unlockedBadges: after.unlockedBadges.filter {
+            !unlockedBadgeIDsBefore.contains($0.id)
+        }
+    )
+
+    return PostWorkoutAttribution(
+        current: current,
+        sessionsThroughCurrent: sessionsThroughCurrent,
+        previousSessions: previousSessions,
+        afterSnapshot: after,
+        weeklyStreakWeeks: WeeklyStreakCalculator.current(
+            sessions: sessionsThroughCurrent,
+            targetTrainingDays: targetTrainingDays,
+            now: current.date,
+            calendar: calendar
+        ),
+        rewards: rewards
+    )
+}
+
+func postWorkoutRewardDelta(
+    sessions: [WorkoutSessionSummary],
+    workoutID: UUID,
+    targetTrainingDays: Int,
+    calendar: Calendar
+) -> PostWorkoutRewardDelta {
+    postWorkoutAttribution(
+        sessions: sessions,
+        workoutID: workoutID,
+        targetTrainingDays: targetTrainingDays,
+        calendar: calendar
+    )?.rewards ?? .empty
+}
+
+func postWorkoutPreviousHistory(
+    _ history: [ExerciseHistoryEntry],
+    current: WorkoutSessionSummary
+) -> [ExerciseHistoryEntry] {
+    history.filter { entry in
+        isPostWorkoutEarlier(
+            candidateDate: entry.sessionDate,
+            candidateID: entry.workoutID,
+            currentDate: current.date,
+            currentID: current.workoutID
+        )
+    }
+}
+
 @MainActor
 struct PostWorkoutSummaryView: View {
     @ObservedObject private var store: WorkoutStore
     @Environment(\.calendar) private var calendar
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    @State private var feedbackErrorMessage: String?
+    @State private var failedFeedback: WorkoutFeedback?
 
     private let workoutID: UUID
     private let onOpenDetail: (UUID) -> Void
@@ -36,7 +162,8 @@ struct PostWorkoutSummaryView: View {
     }
 
     var body: some View {
-        GymBackground {
+        let rewards = postWorkoutRewards
+        return GymBackground {
             if let workout = store.workout(id: workoutID) {
                 ScrollView {
                     LazyVStack(spacing: 14) {
@@ -50,11 +177,11 @@ struct PostWorkoutSummaryView: View {
                         if !personalRecords.isEmpty {
                             personalRecordsPanel
                         }
-                        if !completedMissions.isEmpty {
-                            missionsPanel
+                        if !rewards.completedMissions.isEmpty {
+                            missionsPanel(rewards.completedMissions)
                         }
-                        if !highlightedBadges.isEmpty {
-                            badgesPanel
+                        if !rewards.unlockedBadges.isEmpty {
+                            badgesPanel(rewards.unlockedBadges)
                         }
                         actions
                     }
@@ -75,7 +202,23 @@ struct PostWorkoutSummaryView: View {
     }
 
     private var gamification: GamificationSnapshot {
-        store.gamificationSnapshot(calendar: calendar)
+        postWorkoutExperience?.afterSnapshot ?? store.gamificationSnapshot(calendar: calendar)
+    }
+
+    private var postWorkoutExperience: PostWorkoutAttribution? {
+        let target = TrainingProfileStore().load(
+            accountStorageKey: store.accountStorageKey
+        ).workoutsPerWeek
+        return postWorkoutAttribution(
+            sessions: store.workoutSummaries,
+            workoutID: workoutID,
+            targetTrainingDays: target,
+            calendar: calendar
+        )
+    }
+
+    private var postWorkoutRewards: PostWorkoutRewardDelta {
+        postWorkoutExperience?.rewards ?? .empty
     }
 
     private var languageCode: String {
@@ -87,15 +230,7 @@ struct PostWorkoutSummaryView: View {
     }
 
     private var weeklyStreakWeeks: Int {
-        let target = TrainingProfileStore().load(
-            accountStorageKey: store.accountStorageKey
-        ).workoutsPerWeek
-        return WeeklyStreakCalculator.current(
-            sessions: store.workoutSummaries,
-            targetTrainingDays: target,
-            now: gamification.generatedAt,
-            calendar: calendar
-        )
+        postWorkoutExperience?.weeklyStreakWeeks ?? 0
     }
 
     private var sessionHistory: [ExerciseHistoryEntry] {
@@ -112,13 +247,16 @@ struct PostWorkoutSummaryView: View {
     }
 
     private var personalRecords: [SummaryPersonalRecord] {
-        guard let workout = store.workout(id: workoutID) else { return [] }
+        guard let workout = store.workout(id: workoutID),
+              let current = sessionSummary else { return [] }
         return workout.exercises.flatMap { block -> [SummaryPersonalRecord] in
             guard let exercise = store.exercise(id: block.exerciseID), !block.sets.isEmpty else {
                 return []
             }
-            let previous = store.exerciseHistory(exerciseID: block.exerciseID)
-                .filter { $0.workoutID != workoutID }
+            let previous = postWorkoutPreviousHistory(
+                store.exerciseHistory(exerciseID: block.exerciseID),
+                current: current
+            )
             let previousMaxWeight = previous.map(\.weight).max() ?? -1
             let previousEstimatedMax = previous.map(\.estimatedOneRepMax).max() ?? -1
             var values: [SummaryPersonalRecord] = []
@@ -155,21 +293,6 @@ struct PostWorkoutSummaryView: View {
             }
             return values
         }
-    }
-
-    private var completedMissions: [MissionSnapshot] {
-        gamification.missions.all.filter(\.completed)
-    }
-
-    private var highlightedBadges: [BadgeSnapshot] {
-        guard let workout = store.workout(id: workoutID) else { return [] }
-        let workoutDay = calendar.gymEpochDay(for: workout.date)
-        let newlyUnlocked = gamification.achievements
-            .filter { $0.unlockedAtEpochDay == workoutDay }
-            .map(\.badge)
-        return newlyUnlocked.isEmpty
-            ? Array(gamification.unlockedBadges.suffix(3))
-            : newlyUnlocked
     }
 
     private func rewardHero(_ workout: WorkoutSession) -> some View {
@@ -294,10 +417,42 @@ struct PostWorkoutSummaryView: View {
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
 
-                HStack(spacing: 8) {
-                    feedbackButton(.easy)
-                    feedbackButton(.normal)
-                    feedbackButton(.hard)
+                feedbackChoices
+
+                if let feedbackErrorMessage, let failedFeedback {
+                    GymStatusBanner(message: feedbackErrorMessage, isError: true)
+
+                    Button {
+                        saveFeedback(failedFeedback)
+                    } label: {
+                        Label(
+                            gymText(
+                                "Try again",
+                                "Спробувати ще раз",
+                                "Попробовать ещё раз",
+                                languageCode: languageCode
+                            ),
+                            systemImage: "arrow.clockwise"
+                        )
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var feedbackChoices: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 8) {
+                ForEach(WorkoutFeedback.allCases) { feedback in
+                    feedbackButton(feedback)
+                }
+            }
+        } else {
+            HStack(spacing: 8) {
+                ForEach(WorkoutFeedback.allCases) { feedback in
+                    feedbackButton(feedback)
                 }
             }
         }
@@ -306,16 +461,27 @@ struct PostWorkoutSummaryView: View {
     private func feedbackButton(_ feedback: WorkoutFeedback) -> some View {
         let selected = store.feedback(for: workoutID) == feedback
         return Button {
-            try? store.setWorkoutFeedback(feedback, for: workoutID)
+            saveFeedback(feedback)
         } label: {
             Text(feedbackTitle(feedback))
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
                 .minimumScaleFactor(0.75)
-                .frame(maxWidth: .infinity, minHeight: 42)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(WorkoutFeedbackButtonStyle(selected: selected))
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func saveFeedback(_ feedback: WorkoutFeedback) {
+        do {
+            try store.setWorkoutFeedback(feedback, for: workoutID)
+            feedbackErrorMessage = nil
+            failedFeedback = nil
+        } catch {
+            feedbackErrorMessage = gymErrorMessage(error, languageCode: languageCode)
+            failedFeedback = feedback
+        }
     }
 
     private func feedbackTitle(_ feedback: WorkoutFeedback) -> String {
@@ -390,14 +556,14 @@ struct PostWorkoutSummaryView: View {
     }
 
     @ViewBuilder
-    private var missionsPanel: some View {
+    private func missionsPanel(_ missions: [MissionSnapshot]) -> some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
                     title: gymText("Completed missions", "Виконані місії", "Выполненные миссии", languageCode: languageCode)
                 )
 
-                ForEach(completedMissions) { mission in
+                ForEach(missions) { mission in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Label(
@@ -420,14 +586,14 @@ struct PostWorkoutSummaryView: View {
     }
 
     @ViewBuilder
-    private var badgesPanel: some View {
+    private func badgesPanel(_ badges: [BadgeSnapshot]) -> some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
                     title: "Unlocked badges"
                 )
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 9)], spacing: 9) {
-                    ForEach(highlightedBadges) { badge in
+                    ForEach(badges) { badge in
                         VStack(spacing: 7) {
                             Image(systemName: "medal.fill")
                                 .font(.title2)

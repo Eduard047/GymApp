@@ -32,6 +32,8 @@ internal fun authErrorText(
             R.string.auth_error_connection
         message == NEW_PASSWORD_POLICY_ERROR ->
             R.string.auth_error_password_policy
+        message == "Password is too long." ->
+            R.string.auth_error_password_too_long
         message == "Display name can use letters, numbers, spaces, dot, dash and underscore." ->
             R.string.auth_error_display_name_characters
         message == "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore." ->

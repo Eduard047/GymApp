@@ -1,6 +1,7 @@
 package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,17 +14,22 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import com.example.gymapp.R
 import androidx.compose.ui.res.stringResource
 import com.example.gymapp.ui.components.ActivityHeatmapCard
+import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
+import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.MuscleHeatmapCard
 import com.example.gymapp.ui.components.SoloProgressHero
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
+import com.example.gymapp.util.asString
 
 internal enum class ProgressHubSection {
     Overview,
@@ -46,9 +52,11 @@ internal fun ProgressHubScreen(
     onMuscleMapPeriodSelected: (MuscleMapPeriod) -> Unit,
     onMuscleSelected: (String) -> Unit,
     onOpenRanks: () -> Unit,
+    onRetryOverviewLoad: () -> Unit = {},
     initialSection: ProgressHubSection = ProgressHubSection.Overview,
     modifier: Modifier = Modifier
 ) {
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var selectedIndex by rememberSaveable { mutableIntStateOf(initialSection.ordinal) }
     val selected = ProgressHubSection.entries.getOrElse(selectedIndex) {
         ProgressHubSection.Overview
@@ -75,46 +83,68 @@ internal fun ProgressHubScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    start = GymSpacing.ScreenHorizontal,
+                    start = screenHorizontalPadding,
                     top = GymSpacing.Small,
-                    end = GymSpacing.ScreenHorizontal,
+                    end = screenHorizontalPadding,
                     bottom = GymSpacing.XSmall
                 )
         )
 
         when (selected) {
-            ProgressHubSection.Overview -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = GymSpacing.ScreenHorizontal,
-                    top = GymSpacing.Small,
-                    end = GymSpacing.ScreenHorizontal,
-                    bottom = GymSpacing.ScreenBottom
-                ),
-                verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
-            ) {
-                item {
-                    MonthSwitcher(
-                        monthLabel = overviewState.monthLabel,
-                        isCurrentMonth = overviewState.monthOffset == 0,
-                        onPreviousMonth = onPreviousOverviewMonth,
-                        onCurrentMonth = onCurrentOverviewMonth,
-                        onNextMonth = onNextOverviewMonth
+            ProgressHubSection.Overview -> when {
+                overviewState.isLoading -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = screenHorizontalPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LoadingStatePanel(label = stringResource(R.string.workouts_loading))
+                }
+                overviewState.loadError != null -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = screenHorizontalPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyStatePanel(
+                        title = overviewState.loadError.asString(),
+                        actionLabel = stringResource(R.string.action_retry),
+                        onAction = onRetryOverviewLoad
                     )
                 }
-                item { SoloProgressHero(progress = overviewState.soloProgress) }
-                item { ActivityHeatmapCard(heatmap = overviewState.activityHeatmap) }
-                item {
-                    MuscleHeatmapCard(
-                        heatmap = overviewState.muscleHeatmap,
-                        onPeriodSelected = onMuscleMapPeriodSelected,
-                        onMuscleSelected = onMuscleSelected
-                    )
-                }
-                item {
-                    RecommendationsCard(
-                        recommendations = overviewState.trainingRecommendations
-                    )
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = screenHorizontalPadding,
+                        top = GymSpacing.Small,
+                        end = screenHorizontalPadding,
+                        bottom = GymSpacing.ScreenBottom
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+                ) {
+                    item {
+                        MonthSwitcher(
+                            monthLabel = overviewState.monthLabel,
+                            isCurrentMonth = overviewState.monthOffset == 0,
+                            onPreviousMonth = onPreviousOverviewMonth,
+                            onCurrentMonth = onCurrentOverviewMonth,
+                            onNextMonth = onNextOverviewMonth
+                        )
+                    }
+                    item { SoloProgressHero(progress = overviewState.soloProgress) }
+                    item { ActivityHeatmapCard(heatmap = overviewState.activityHeatmap) }
+                    item {
+                        MuscleHeatmapCard(
+                            heatmap = overviewState.muscleHeatmap,
+                            onPeriodSelected = onMuscleMapPeriodSelected,
+                            onMuscleSelected = onMuscleSelected
+                        )
+                    }
+                    item {
+                        RecommendationsCard(
+                            recommendations = overviewState.trainingRecommendations
+                        )
+                    }
                 }
             }
 
@@ -131,6 +161,7 @@ internal fun ProgressHubScreen(
             ProgressHubSection.Goals -> MissionsScreen(
                 uiState = overviewState,
                 onOpenRanks = onOpenRanks,
+                onRetryLoad = onRetryOverviewLoad,
                 modifier = Modifier.fillMaxSize()
             )
         }

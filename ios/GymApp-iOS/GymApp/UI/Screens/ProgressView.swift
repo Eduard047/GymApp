@@ -24,6 +24,7 @@ struct ProgressHubView: View {
 
     @ObservedObject private var store: WorkoutStore
     @Environment(\.calendar) private var calendar
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @State private var section: Section = .overview
@@ -49,20 +50,7 @@ struct ProgressHubView: View {
                     GymPanel(
                         contentPadding: EdgeInsets(top: 7, leading: 7, bottom: 7, trailing: 7)
                     ) {
-                        Picker(
-                            gymText(
-                                "Progress section",
-                                "Розділ прогресу",
-                                "Раздел прогресса",
-                                languageCode: languageCode
-                            ),
-                            selection: $section
-                        ) {
-                            ForEach(Section.allCases) { item in
-                                Text(item.title(languageCode)).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        progressSectionControl
                     }
                 }
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
@@ -83,6 +71,53 @@ struct ProgressHubView: View {
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
         .onChange(of: scenePhase) { phase in
             if phase == .active { referenceDate = Date() }
+        }
+    }
+
+    @ViewBuilder
+    private var progressSectionControl: some View {
+        let label = gymText(
+            "Progress section",
+            "Розділ прогресу",
+            "Раздел прогресса",
+            languageCode: languageCode
+        )
+        if dynamicTypeSize.isAccessibilitySize {
+            Menu {
+                ForEach(Section.allCases) { item in
+                    Button {
+                        section = item
+                    } label: {
+                        if section == item {
+                            Label(item.title(languageCode), systemImage: "checkmark")
+                        } else {
+                            Text(item.title(languageCode))
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: GymTheme.Spacing.small) {
+                    Text(section.title(languageCode))
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: GymTheme.Spacing.small)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .accessibilityValue(section.title(languageCode))
+        } else {
+            Picker(label, selection: $section) {
+                ForEach(Section.allCases) { item in
+                    Text(item.title(languageCode)).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
         }
     }
 

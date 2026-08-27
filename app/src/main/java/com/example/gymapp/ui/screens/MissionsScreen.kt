@@ -58,17 +58,43 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.viewmodel.MissionProgressUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
+import com.example.gymapp.util.asString
 
 @Composable
 fun MissionsScreen(
     uiState: WorkoutListUiState,
     onOpenRanks: () -> Unit = {},
+    onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    if (uiState.isLoading) {
+        Box(
+            modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            LoadingStatePanel(label = stringResource(R.string.workouts_loading))
+        }
+        return
+    }
+    uiState.loadError?.let { error ->
+        Box(
+            modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            EmptyStatePanel(
+                title = error.asString(),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = onRetryLoad
+            )
+        }
+        return
+    }
+
     var selectedPeriodIndex by rememberSaveable { mutableIntStateOf(0) }
     val selectedPeriod = MissionPeriod.entries.getOrElse(selectedPeriodIndex) {
         MissionPeriod.Daily

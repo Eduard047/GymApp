@@ -1,16 +1,25 @@
 import SwiftUI
 
+struct AuthCredentialDrafts: Equatable {
+    var email = ""
+    var repeatedEmail = ""
+    var password = ""
+    var repeatedPassword = ""
+    var displayName = ""
+
+    mutating func clearSensitiveFields() {
+        password = ""
+        repeatedPassword = ""
+    }
+}
+
 @MainActor
 public struct AuthView: View {
     @ObservedObject private var authService: AuthService
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     @State private var mode: AuthMode = .signIn
-    @State private var email = ""
-    @State private var repeatedEmail = ""
-    @State private var password = ""
-    @State private var repeatedPassword = ""
-    @State private var displayName = ""
+    @State private var drafts = AuthCredentialDrafts()
     @State private var passwordVisible = false
     @State private var repeatedPasswordVisible = false
     @State private var localMessage: String?
@@ -46,10 +55,17 @@ public struct AuthView: View {
                 .presentationDragIndicator(.visible)
         }
         .onChange(of: mode) { _ in
+            clearSensitiveDrafts()
             localMessage = nil
             authService.message = nil
             focusedField = .email
         }
+        .onChange(of: authService.pendingConfirmationEmail) { pendingEmail in
+            if pendingEmail != nil {
+                clearSensitiveDrafts()
+            }
+        }
+        .onDisappear(perform: clearSensitiveDrafts)
     }
 
     private var brandHeader: some View {
@@ -122,7 +138,7 @@ public struct AuthView: View {
 
                     passwordField(
                         title: "Password",
-                        text: $password,
+                        text: $drafts.password,
                         isVisible: $passwordVisible,
                         field: .password,
                         contentType: mode == .signIn ? .password : .newPassword,
@@ -132,7 +148,7 @@ public struct AuthView: View {
                     if mode == .signUp {
                         passwordField(
                             title: "Repeat password",
-                            text: $repeatedPassword,
+                            text: $drafts.repeatedPassword,
                             isVisible: $repeatedPasswordVisible,
                             field: .repeatedPassword,
                             contentType: .newPassword,
@@ -189,6 +205,7 @@ public struct AuthView: View {
                 Button {
                     localMessage = nil
                     offlineMessage = nil
+                    clearSensitiveDrafts()
                     showOfflineSheet = true
                 } label: {
                     Label("Continue offline", systemImage: "iphone")
@@ -202,7 +219,7 @@ public struct AuthView: View {
     private var emailField: some View {
         VStack(alignment: .leading, spacing: 6) {
             fieldLabel("Email")
-            TextField("you@example.com", text: $email)
+            TextField("you@example.com", text: $drafts.email)
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
                 .textInputAutocapitalization(.never)
@@ -220,7 +237,7 @@ public struct AuthView: View {
     private var repeatedEmailField: some View {
         VStack(alignment: .leading, spacing: 6) {
             fieldLabel("Repeat email")
-            TextField("you@example.com", text: $repeatedEmail)
+            TextField("you@example.com", text: $drafts.repeatedEmail)
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
                 .textInputAutocapitalization(.never)
@@ -236,7 +253,7 @@ public struct AuthView: View {
     private var displayNameField: some View {
         VStack(alignment: .leading, spacing: 6) {
             fieldLabel("Display name")
-            TextField("Athlete", text: $displayName)
+            TextField("Athlete", text: $drafts.displayName)
                 .textContentType(.nickname)
                 .submitLabel(.next)
                 .focused($focusedField, equals: .displayName)
@@ -254,14 +271,18 @@ public struct AuthView: View {
         contentType: UITextContentType,
         submitLabel: SubmitLabel
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let boundedText = Binding(
+            get: { text.wrappedValue },
+            set: { text.wrappedValue = GymLoginPasswordPolicy.boundedDraft($0) }
+        )
+        return VStack(alignment: .leading, spacing: 6) {
             fieldLabel(title)
             HStack(spacing: 8) {
                 Group {
                     if isVisible.wrappedValue {
-                        TextField(gymLocalized(title, languageCode: languageCode), text: text)
+                        TextField(gymLocalized(title, languageCode: languageCode), text: boundedText)
                     } else {
-                        SecureField(gymLocalized(title, languageCode: languageCode), text: text)
+                        SecureField(gymLocalized(title, languageCode: languageCode), text: boundedText)
                     }
                 }
                 .textContentType(contentType)
@@ -281,7 +302,7 @@ public struct AuthView: View {
                     isVisible.wrappedValue.toggle()
                 } label: {
                     Image(systemName: isVisible.wrappedValue ? "eye.slash" : "eye")
-                        .frame(minWidth: 32, minHeight: 32)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(GymTheme.textSecondary)
@@ -353,10 +374,9 @@ public struct AuthView: View {
             .disabled(authService.isLoading)
 
             Button("Use a different address") {
-                email = pendingEmail
-                repeatedEmail = ""
-                password = ""
-                repeatedPassword = ""
+                drafts.email = pendingEmail
+                drafts.repeatedEmail = ""
+                clearSensitiveDrafts()
                 localMessage = nil
                 mode = .signUp
                 authService.dismissEmailConfirmation(clearPendingRequest: true)
@@ -366,8 +386,8 @@ public struct AuthView: View {
             .disabled(authService.isLoading)
 
             Button("Back to sign in") {
-                email = pendingEmail
-                password = ""
+                drafts.email = pendingEmail
+                clearSensitiveDrafts()
                 localMessage = nil
                 mode = .signIn
                 authService.dismissEmailConfirmation(clearPendingRequest: false)
@@ -505,35 +525,58 @@ public struct AuthView: View {
             .foregroundStyle(GymTheme.textPrimary)
     }
 
+    private func clearSensitiveDrafts() {
+        drafts.clearSensitiveFields()
+        passwordVisible = false
+        repeatedPasswordVisible = false
+    }
+
     private func submit() {
         guard !authService.isLoading else { return }
         localMessage = validationMessage()
         guard localMessage == nil else { return }
 
+        let submittedEmail = drafts.email
+        let submittedPassword = drafts.password
+        let submittedDisplayName = drafts.displayName
+        let submittedMode = mode
         focusedField = nil
         authService.message = nil
         Task {
-            switch mode {
+            switch submittedMode {
             case .signIn:
-                await authService.signIn(email: email, password: password)
+                await authService.signIn(
+                    email: submittedEmail,
+                    password: submittedPassword
+                )
             case .signUp:
-                _ = await authService.signUp(email: email, password: password, displayName: displayName)
+                _ = await authService.signUp(
+                    email: submittedEmail,
+                    password: submittedPassword,
+                    displayName: submittedDisplayName
+                )
             }
         }
     }
 
     private func requestPasswordReset() {
-        localMessage = validEmail(email) ? nil : gymLocalized("Enter a valid email address first.")
+        localMessage = validEmail(drafts.email)
+            ? nil
+            : gymLocalized("Enter a valid email address first.")
         guard localMessage == nil else { return }
+        let submittedEmail = drafts.email
         focusedField = nil
-        Task { await authService.requestPasswordReset(email: email) }
+        Task { await authService.requestPasswordReset(email: submittedEmail) }
     }
 
     private func resendConfirmation() {
-        localMessage = validEmail(email) ? nil : gymLocalized("Enter a valid email address first.")
+        localMessage = validEmail(drafts.email)
+            ? nil
+            : gymLocalized("Enter a valid email address first.")
         guard localMessage == nil else { return }
+        let submittedEmail = drafts.email
         focusedField = nil
-        Task { await authService.resendConfirmation(email: email) }
+        Task { await authService.resendConfirmation(email: submittedEmail) }
     }
 
     private func continueOffline() {
@@ -559,18 +602,32 @@ public struct AuthView: View {
     }
 
     private func validationMessage() -> String? {
-        guard validEmail(email) else { return gymLocalized("Enter a valid email address.") }
-        guard !password.isEmpty else { return gymLocalized("Enter your password.") }
+        guard validEmail(drafts.email) else {
+            return gymLocalized("Enter a valid email address.")
+        }
+        guard !drafts.password.isEmpty else { return gymLocalized("Enter your password.") }
+
+        if mode == .signIn,
+           !GymLoginPasswordPolicy.accepts(drafts.password) {
+            return gymLocalized(
+                GymLoginPasswordPolicy.errorMessage,
+                languageCode: languageCode
+            )
+        }
 
         if mode == .signUp {
-            let cleanEmail = normalizedEmail(email)
-            guard cleanEmail == normalizedEmail(repeatedEmail) else { return gymLocalized("Email addresses do not match.") }
-            guard validPassword(password) else {
+            let cleanEmail = normalizedEmail(drafts.email)
+            guard cleanEmail == normalizedEmail(drafts.repeatedEmail) else {
+                return gymLocalized("Email addresses do not match.")
+            }
+            guard validPassword(drafts.password) else {
                 return gymLocalized(GymPasswordPolicy.errorMessage)
             }
-            guard password == repeatedPassword else { return gymLocalized("Passwords do not match.") }
+            guard drafts.password == drafts.repeatedPassword else {
+                return gymLocalized("Passwords do not match.")
+            }
 
-            let cleanName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanName = drafts.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             guard (2...32).contains(cleanName.count) else { return gymLocalized("Display name must be 2–32 characters.") }
         }
         return nil

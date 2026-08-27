@@ -24,9 +24,9 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/live-workout.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v100.js", "utf8"),
-    readFile("pwa/styles.v78.css", "utf8"),
-    readFile("pwa/russian-text.v85.js", "utf8"),
+    readFile("pwa/app.v101.js", "utf8"),
+    readFile("pwa/styles.v79.css", "utf8"),
+    readFile("pwa/russian-text.v86.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
   ]);
 
@@ -92,7 +92,11 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   }
   assert.match(
     source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
-    /DateTimeFormatter\.ofPattern\("HH:mm", locale\)/
+    /AndroidDateFormat\.is24HourFormat\(context\)/
+  );
+  assert.match(
+    source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
+    /if \(is24Hour\) "HH:mm" else "h:mm a"/
   );
   assert.doesNotMatch(
     source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
@@ -232,20 +236,20 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v100.js",
-    styleBundle: "styles.v78.css",
-    russianBundle: "russian-text.v85.js",
+    appBundle: "app.v101.js",
+    styleBundle: "styles.v79.css",
+    russianBundle: "russian-text.v86.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v141"
+    serviceWorkerCache: "gym-pwa-v142"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v100\.js"/);
-  assert.match(pwaIndex, /href="\.\/styles\.v78\.css"/);
-  assert.match(pwaIndex, /src="\.\/russian-text\.v85\.js"/);
+  assert.match(pwaIndex, /src="\.\/app\.v101\.js"/);
+  assert.match(pwaIndex, /href="\.\/styles\.v79\.css"/);
+  assert.match(pwaIndex, /src="\.\/russian-text\.v86\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v141"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v100\.js"/);
-  assert.match(pwaServiceWorker, /"\.\/styles\.v78\.css"/);
-  assert.match(pwaServiceWorker, /"\.\/russian-text\.v85\.js"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v142"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v101\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/styles\.v79\.css"/);
+  assert.match(pwaServiceWorker, /"\.\/russian-text\.v86\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
   assert.equal(pwaAppBundle, pwaApp);
   assert.equal(pwaStyleBundle, pwaStyles);

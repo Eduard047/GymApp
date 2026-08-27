@@ -1011,7 +1011,7 @@ private struct AccountDeletionConfirmationView: View {
                         .accessibilityHint("Enter the word DELETE in capital letters")
 
                     if target.isCloudAccount {
-                        SecureField("Current password", text: $currentPassword)
+                        SecureField("Current password", text: boundedCurrentPassword)
                             .textContentType(.password)
                             .submitLabel(.done)
                             .gymTextFieldChrome()
@@ -1071,6 +1071,14 @@ private struct AccountDeletionConfirmationView: View {
         }
         .interactiveDismissDisabled(isDeleting)
         .onAppear { confirmationFocused = true }
+        .onDisappear { currentPassword = "" }
+    }
+
+    private var boundedCurrentPassword: Binding<String> {
+        Binding(
+            get: { currentPassword },
+            set: { currentPassword = GymLoginPasswordPolicy.boundedDraft($0) }
+        )
     }
 
     private var confirmationMatches: Bool {
@@ -1078,7 +1086,11 @@ private struct AccountDeletionConfirmationView: View {
     }
 
     private var deletionInputIsValid: Bool {
-        confirmationMatches && (!target.isCloudAccount || !currentPassword.isEmpty)
+        confirmationMatches && (
+            !target.isCloudAccount || (
+                !currentPassword.isEmpty && GymLoginPasswordPolicy.accepts(currentPassword)
+            )
+        )
     }
 
     private var finalButtonTitle: String {
@@ -1094,6 +1106,7 @@ private struct AccountDeletionConfirmationView: View {
 
     private func deleteAccount() {
         guard deletionInputIsValid, !isDeleting else { return }
+        let submittedCurrentPassword = target.isCloudAccount ? currentPassword : nil
         isDeleting = true
         errorMessage = nil
         Task {
@@ -1101,9 +1114,10 @@ private struct AccountDeletionConfirmationView: View {
                 try await appState.deleteCurrentAccountAndData(
                     expectedStorageKey: target.storageKey,
                     expectedCloudUserID: target.cloudUserID,
-                    currentPassword: target.isCloudAccount ? currentPassword : nil
+                    currentPassword: submittedCurrentPassword
                 )
                 isDeleting = false
+                currentPassword = ""
                 onDeleted()
                 dismiss()
             } catch {

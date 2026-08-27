@@ -59,15 +59,19 @@ import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.push.PushUiState
 import com.example.gymapp.push.PushNavigationTarget
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
+import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import com.example.gymapp.sync.CloudSyncPhase
 import com.example.gymapp.sync.CloudSyncUiStatus
+import com.example.gymapp.util.getString
 import java.text.DateFormat
 import java.util.Date
 
@@ -136,9 +140,11 @@ internal fun ProfileScreen(
     garminDeviceState: GarminDeviceUiState,
     onRefreshGarminDevices: () -> Unit,
     onResetGarminPairing: () -> Unit,
+    onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var showGarminResetConfirmation by rememberSaveable { mutableStateOf(false) }
     var showPasswordChange by rememberSaveable { mutableStateOf(false) }
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
@@ -203,9 +209,9 @@ internal fun ProfileScreen(
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
-                    start = GymSpacing.ScreenHorizontal,
+                    start = screenHorizontalPadding,
                     top = GymSpacing.ScreenTop,
-                    end = GymSpacing.ScreenHorizontal,
+                    end = screenHorizontalPadding,
                     bottom = GymSpacing.ScreenBottom
                 ),
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
@@ -247,7 +253,8 @@ internal fun ProfileScreen(
                     onExportBackup = onExportBackup,
                     onExportDiagnostics = onExportDiagnostics,
                     onOpenImport = onOpenImport,
-                    onShowTutorial = onShowTutorial
+                    onShowTutorial = onShowTutorial,
+                    onRetryLoad = onRetryLoad
                 )
             }
         }
@@ -348,13 +355,14 @@ private fun ProfileSectionSwitcher(
     selected: ProfileSection,
     onSelected: (ProfileSection) -> Unit
 ) {
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                start = GymSpacing.ScreenHorizontal,
+                start = screenHorizontalPadding,
                 top = GymSpacing.Small,
-                end = GymSpacing.ScreenHorizontal,
+                end = screenHorizontalPadding,
                 bottom = GymSpacing.XSmall
             ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
@@ -400,16 +408,39 @@ private fun LazyListScope.profileSettingsContent(
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onOpenImport: () -> Unit,
-    onShowTutorial: () -> Unit
+    onShowTutorial: () -> Unit,
+    onRetryLoad: () -> Unit
 ) {
+    if (accountState.isLoading) {
+        item {
+            LoadingStatePanel(label = context.getString(R.string.exercises_loading))
+        }
+    }
+    accountState.loadError?.let { error ->
+        item {
+            EmptyStatePanel(
+                title = context.getString(error),
+                actionLabel = context.getString(R.string.action_retry),
+                onAction = onRetryLoad
+            )
+        }
+    }
     item { SettingsSectionHeader(stringResource(R.string.profile_settings_account)) }
     item {
         AccountStatusCard(
             label = accountState.accountLabel.ifBlank {
-                context.getString(R.string.account_mode_local)
+                if (accountState.isLoading || accountState.loadError != null) {
+                    context.getString(R.string.profile_settings_account)
+                } else {
+                    context.getString(R.string.account_mode_local)
+                }
             },
             supporting = accountState.accountSupporting.ifBlank {
-                context.getString(R.string.account_offline_supporting)
+                when {
+                    accountState.isLoading -> context.getString(R.string.exercises_loading)
+                    accountState.loadError != null -> context.getString(accountState.loadError)
+                    else -> context.getString(R.string.account_offline_supporting)
+                }
             },
             isCloudAccount = accountState.isCloudAccount,
             canLogout = accountState.canLogout,
@@ -944,7 +975,7 @@ private fun ProfilePasswordField(
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = { onValueChange(it.take(1_024)) },
+        onValueChange = { onValueChange(boundedAuthPasswordDraft(it)) },
         modifier = Modifier.fillMaxWidth(),
         label = { Text(label) },
         singleLine = true,
@@ -959,7 +990,8 @@ private fun DeleteCloudAccountDialog(
     onConfirm: (String) -> Unit
 ) {
     var confirmation by rememberSaveable { mutableStateOf("") }
-    var currentPassword by rememberSaveable { mutableStateOf("") }
+    // Credentials must never enter SavedState/Bundle persistence.
+    var currentPassword by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.account_delete_title)) },

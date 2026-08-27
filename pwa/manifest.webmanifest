@@ -1,13 +1,12 @@
 {
-  "name": "Gym Workout Tracker",
-  "short_name": "Gym Tracker",
-  "description": "Workout logging, progress, missions, and local backup for iPhone and desktop.",
+  "name": "GymApp",
+  "short_name": "GymApp",
+  "description": "Plan and track workouts, follow progress, and sync securely across GymApp clients.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0b1220",
-  "theme_color": "#0b1220",
+  "background_color": "#f7faff",
+  "theme_color": "#f7faff",
   "icons": [
     {
       "src": "./icon-192.png",

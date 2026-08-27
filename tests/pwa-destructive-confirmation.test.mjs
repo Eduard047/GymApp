@@ -37,6 +37,7 @@ function loadContext(options = {}) {
   const sessionStorage = createStorage();
   const runtimeNodes = new Map();
   const runtimeLists = new Map();
+  const windowListeners = new Map();
   const appNode = {
     innerHTML: "",
     children: [],
@@ -75,7 +76,7 @@ function loadContext(options = {}) {
     URL,
     URLSearchParams,
     window: {
-      addEventListener() {},
+      addEventListener(type, listener) { windowListeners.set(type, listener); },
       location: { search: "?access_token=test", hash: "", pathname: "/", replace() {} },
       GymProgressionRules: {
         MAX_SUPPORTED_XP: 2147483647,
@@ -123,6 +124,7 @@ function loadContext(options = {}) {
   context.localStorage = localStorage;
   context.runtimeLists = runtimeLists;
   context.runtimeNodes = runtimeNodes;
+  context.windowListeners = windowListeners;
   return context;
 }
 
@@ -149,6 +151,558 @@ test("destructive controls use explicit accessible in-app confirmation markup", 
     /data-action="delete-set"[^>]+data-session="[^>]+aria-label="\$\{txAttr\("Delete set"/g
   ) || [];
   assert.equal(labelledDeleteSets.length, 1, "saved-set deletion must exist only in detail edit mode");
+});
+
+test("ordinary dialogs focus an internal control, close on Escape, and restore their invoker", () => {
+  const context = loadContext();
+  let restoredFocus = false;
+  const background = { inert: false };
+  const invoker = {
+    dataset: { action: "open-exercise-more", id: "7001" },
+    focus() {
+      restoredFocus = true;
+      context.document.activeElement = this;
+    }
+  };
+  const focusTarget = {
+    focus() { context.document.activeElement = this; }
+  };
+  const listeners = new Map();
+  const modalElement = {
+    inert: false,
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    contains(element) { return element === focusTarget; },
+    focus() { context.document.activeElement = this; },
+    getAttribute() { return null; },
+    hasAttribute() { return false; },
+    querySelector() { return focusTarget; },
+    querySelectorAll() { return [focusTarget]; },
+    setAttribute() {}
+  };
+  context.appNode.children = [background, modalElement];
+  context.runtimeNodes.set(".modal", modalElement);
+  context.runtimeLists.set('[data-action="open-exercise-more"]', [invoker]);
+  vm.runInContext(`
+    render = () => true;
+    modal = {
+      type: "template",
+      returnFocus: { action: "open-exercise-more", id: 7001 }
+    };
+    bindEvents();
+  `, context);
+
+  assert.equal(background.inert, true);
+  assert.equal(context.document.activeElement, focusTarget);
+  const escapeEvent = {
+    key: "Escape",
+    prevented: false,
+    preventDefault() { this.prevented = true; }
+  };
+  listeners.get("keydown")(escapeEvent);
+  assert.equal(escapeEvent.prevented, true);
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(restoredFocus, true);
+});
+
+test("user-opened generic sheets capture and restore their rendered trigger", async () => {
+  const context = loadContext();
+  let restoredFocus = false;
+  const listeners = new Map();
+  const trigger = {
+    dataset: { action: "change-password" },
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    focus() { restoredFocus = true; }
+  };
+  context.runtimeLists.set("[data-action]", [trigger]);
+  context.runtimeLists.set('[data-action="change-password"]', [trigger]);
+  vm.runInContext("render = () => true; bindEvents();", context);
+
+  await listeners.get("click")({ stopPropagation() {} });
+
+  assert.equal(vm.runInContext("modal.type", context), "change-password");
+  assert.equal(vm.runInContext("modal.returnFocus.action", context), "change-password");
+  vm.runInContext("closeModal()", context);
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(restoredFocus, true);
+});
+
+test("async sheets bind return focus before their network work resolves", async () => {
+  const context = loadContext();
+  let restoredFocus = false;
+  let resolveNetwork;
+  const listeners = new Map();
+  const trigger = {
+    dataset: {
+      action: "open-friend",
+      profileId: "p_11111111111111111111111111111111"
+    },
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    focus() { restoredFocus = true; }
+  };
+  context.runtimeLists.set("[data-action]", [trigger]);
+  context.runtimeLists.set('[data-action="open-friend"]', [trigger]);
+  context.pendingNetwork = new Promise(resolve => { resolveNetwork = resolve; });
+  vm.runInContext(`
+    render = () => true;
+    handleAction = async () => {
+      modal = {
+        type: "friend-detail",
+        profileId: "p_11111111111111111111111111111111"
+      };
+      render();
+      await pendingNetwork;
+      return true;
+    };
+    bindEvents();
+  `, context);
+
+  const click = listeners.get("click")({ stopPropagation() {} });
+  assert.equal(vm.runInContext("modal.returnFocus.action", context), "open-friend");
+  assert.equal(
+    vm.runInContext("modal.returnFocus.profileId", context),
+    "p_11111111111111111111111111111111"
+  );
+  vm.runInContext("closeModal()", context);
+  assert.equal(restoredFocus, true, "the trigger is restored while the network request is unresolved");
+  resolveNetwork(true);
+  await click;
+  assert.equal(vm.runInContext("modal", context), null);
+});
+
+test("actions that close a modal restore its invoker before or after async work", async () => {
+  for (const closesSynchronously of [true, false]) {
+    const context = loadContext();
+    let invokerFocused = 0;
+    let resolveNetwork;
+    const listeners = new Map();
+    const action = {
+      dataset: { action: "submit-password-change" },
+      addEventListener(type, listener) { listeners.set(type, listener); }
+    };
+    const invoker = {
+      dataset: { action: "change-password" },
+      focus() { invokerFocused += 1; }
+    };
+    context.runtimeLists.set("[data-action]", [action]);
+    context.runtimeLists.set('[data-action="change-password"]', [invoker]);
+    context.pendingNetwork = new Promise(resolve => { resolveNetwork = resolve; });
+    vm.runInContext(`
+      render = () => true;
+      modal = { type: "change-password", returnFocus: { action: "change-password" } };
+      handleAction = async () => {
+        if (${closesSynchronously}) {
+          modal = null;
+          render();
+        } else {
+          await pendingNetwork;
+          modal = null;
+          render();
+        }
+        return true;
+      };
+      bindEvents();
+    `, context);
+
+    const click = listeners.get("click")({ stopPropagation() {} });
+    if (closesSynchronously) {
+      assert.equal(invokerFocused, 1);
+      resolveNetwork(true);
+    } else {
+      assert.equal(invokerFocused, 0);
+      resolveNetwork(true);
+    }
+    await click;
+    assert.ok(invokerFocused >= 1);
+    assert.equal(vm.runInContext("modal", context), null);
+  }
+
+  const fallback = loadContext();
+  let stableFallback = 0;
+  const listeners = new Map();
+  const action = {
+    dataset: { action: "submit-password-change" },
+    addEventListener(type, listener) { listeners.set(type, listener); }
+  };
+  fallback.runtimeLists.set("[data-action]", [action]);
+  vm.runInContext(`
+    render = () => true;
+    focusStableScreenContext = () => { globalThis.stableFallback += 1; };
+    globalThis.stableFallback = 0;
+    modal = { type: "change-password" };
+    handleAction = async () => { modal = null; render(); return true; };
+    bindEvents();
+  `, fallback);
+  await listeners.get("click")({ stopPropagation() {} });
+  stableFallback = vm.runInContext("globalThis.stableFallback", fallback);
+  assert.ok(stableFallback >= 1);
+});
+
+test("background live conflict closes its sheet and restores the room trigger", () => {
+  const context = loadContext();
+  let restoredFocus = 0;
+  const trigger = {
+    dataset: { action: "open-live-room", roomId: "11111111-1111-4111-8111-111111111111" },
+    focus() {
+      restoredFocus += 1;
+      context.document.activeElement = this;
+    }
+  };
+  context.runtimeLists.set('[data-action="open-live-room"]', [trigger]);
+  vm.runInContext(`
+    render = () => true;
+    showToast = () => true;
+    modal = {
+      type: "live-workout-room",
+      roomId: "11111111-1111-4111-8111-111111111111",
+      returnFocus: {
+        action: "open-live-room",
+        roomId: "11111111-1111-4111-8111-111111111111"
+      }
+    };
+    detachLiveWorkoutAfterConflict("liveRoomInactive");
+  `, context);
+
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(restoredFocus, 1);
+});
+
+test("Enter submits password flows through the generic focus lifecycle", async () => {
+  for (const outcome of ["success", "reauth"]) {
+    const context = loadContext();
+    let invokerFocused = 0;
+    const submitListeners = new Map();
+    const repeatListeners = new Map();
+    const invoker = {
+      dataset: { action: "change-password" },
+      focus() { invokerFocused += 1; }
+    };
+    const submit = {
+      dataset: { action: "submit-password-change" },
+      addEventListener(type, listener) { submitListeners.set(type, listener); },
+      click() {
+        this.clickPromise = submitListeners.get("click")({ stopPropagation() {} });
+        return this.clickPromise;
+      }
+    };
+    const repeat = {
+      addEventListener(type, listener) { repeatListeners.set(type, listener); }
+    };
+    context.runtimeLists.set("[data-action]", [submit]);
+    context.runtimeLists.set('[data-action="change-password"]', [invoker]);
+    context.runtimeNodes.set('[data-action="submit-password-change"]', submit);
+    context.runtimeNodes.set("#change-repeat-password", repeat);
+    vm.runInContext(`
+      render = () => true;
+      modal = { type: "change-password", returnFocus: { action: "change-password" } };
+      handleAction = async action => {
+        if (action !== "submit-password-change") return false;
+        modal = ${outcome === "success"
+          ? "null"
+          : "{ type: 'change-password', reauthRequired: true }"};
+        render();
+        return true;
+      };
+      bindEvents();
+    `, context);
+
+    const enter = {
+      key: "Enter",
+      prevented: false,
+      preventDefault() { this.prevented = true; }
+    };
+    repeatListeners.get("keydown")(enter);
+    assert.equal(enter.prevented, true);
+    await submit.clickPromise;
+
+    if (outcome === "success") {
+      assert.equal(vm.runInContext("modal", context), null);
+      assert.equal(invokerFocused, 1);
+    } else {
+      assert.equal(vm.runInContext("modal.reauthRequired", context), true);
+      assert.equal(vm.runInContext("modal.returnFocus.action", context), "change-password");
+      vm.runInContext("closeModal()", context);
+      assert.equal(invokerFocused, 1);
+    }
+  }
+});
+
+test("Back and browser history scrub rendered password values before dismissing", () => {
+  for (const dismissal of ["back", "popstate"]) {
+    const context = loadContext();
+    const sensitive = [
+      "#change-current-password",
+      "#change-password-nonce",
+      "#change-new-password",
+      "#change-repeat-password"
+    ].map(selector => {
+      const input = { value: `${dismissal}-secret` };
+      context.runtimeNodes.set(selector, input);
+      return input;
+    });
+    vm.runInContext(`
+      render = () => true;
+      nav = [{ name: "workouts" }];
+      modal = { type: "change-password", returnFocus: { action: "change-password" } };
+    `, context);
+
+    if (dismissal === "back") {
+      vm.runInContext("back()", context);
+    } else {
+      context.windowListeners.get("popstate")({
+        state: { gymAppNav: [{ name: "missions" }] }
+      });
+    }
+
+    assert.equal(vm.runInContext("modal", context), null);
+    assert.deepEqual(sensitive.map(input => input.value), ["", "", "", ""]);
+  }
+});
+
+test("modal rerenders preserve the focused descendant and validate inherited return focus", () => {
+  const context = loadContext();
+  const oldField = { id: "friend-detail-filter", dataset: {} };
+  const oldModalElement = {
+    contains: element => element === oldField,
+    querySelectorAll: selector => selector === "[id]" ? [oldField] : [oldField]
+  };
+  context.runtimeNodes.set(".modal", oldModalElement);
+  context.document.activeElement = oldField;
+  vm.runInContext(`
+    modal = {
+      type: "friend-detail",
+      profileId: "p_11111111111111111111111111111111",
+      autoFocus: false,
+      returnFocus: {
+        action: "open-friend",
+        profileId: "p_11111111111111111111111111111111"
+      }
+    };
+    preservedModalFocus = captureModalDescendantFocus();
+    modal = friendDetailModal("p_11111111111111111111111111111111", modal);
+  `, context);
+  assert.equal(vm.runInContext("modal.autoFocus", context), false);
+  assert.equal(vm.runInContext("modal.returnFocus.action", context), "open-friend");
+
+  let restored = false;
+  const newField = {
+    id: "friend-detail-filter",
+    dataset: {},
+    hidden: false,
+    getAttribute: () => null,
+    focus() {
+      restored = true;
+      context.document.activeElement = this;
+    }
+  };
+  const listeners = new Map();
+  const newModalElement = {
+    contains: element => element === newField,
+    querySelectorAll: selector => selector === "[id]" ? [newField] : [newField],
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    getAttribute: () => null,
+    hasAttribute: () => false,
+    setAttribute() {},
+    focus() {}
+  };
+  context.runtimeNodes.set(".modal", newModalElement);
+  context.appNode.children = [newModalElement];
+  vm.runInContext("bindEvents(preservedModalFocus)", context);
+  assert.equal(restored, true);
+  assert.equal(context.document.activeElement, newField);
+
+  let fallbackFocused = false;
+  const enabledClose = {
+    id: "modal-close",
+    dataset: { action: "close-modal" },
+    hidden: false,
+    closest: () => null,
+    getAttribute: () => null,
+    focus() {
+      fallbackFocused = true;
+      context.document.activeElement = this;
+    }
+  };
+  const disabledReplacement = {
+    id: "friend-detail-filter",
+    dataset: { action: "submit-password-change" },
+    disabled: true,
+    hidden: false,
+    closest: () => null,
+    getAttribute: () => null,
+    focus() { throw new Error("a disabled replacement must not receive focus"); }
+  };
+  const disabledModalElement = {
+    contains: element => element === enabledClose || element === disabledReplacement,
+    querySelectorAll: selector => selector === "[data-action]"
+      ? [enabledClose, disabledReplacement]
+      : [enabledClose],
+    addEventListener() {},
+    hasAttribute: () => false,
+    setAttribute() {},
+    focus() {}
+  };
+  context.runtimeNodes.set(".modal", disabledModalElement);
+  context.appNode.children = [disabledModalElement];
+  context.document.activeElement = newField;
+  vm.runInContext(`
+    modal.autoFocus = false;
+    bindEvents({ kind: "id", id: "friend-detail-filter" });
+  `, context);
+  assert.equal(fallbackFocused, true);
+  assert.equal(context.document.activeElement, enabledClose);
+
+  vm.runInContext(`
+    modal = friendDetailModal(
+      "p_11111111111111111111111111111111",
+      { type: "friend-detail", returnFocus: { action: "not-allowed", profileId: "x" } }
+    );
+  `, context);
+  assert.equal(vm.runInContext("Object.hasOwn(modal, 'returnFocus')", context), false);
+});
+
+test("hidden modal inputs never become focus-trap endpoints", () => {
+  const context = loadContext();
+  const closeButton = {
+    hidden: false,
+    getAttribute: () => null,
+    focus() { context.document.activeElement = this; }
+  };
+  const hiddenFileInput = {
+    hidden: true,
+    getAttribute: () => null,
+    focus() { throw new Error("hidden input must not receive focus"); }
+  };
+  context.testModalElement = {
+    contains: element => element === closeButton || element === hiddenFileInput,
+    querySelectorAll: () => [closeButton, hiddenFileInput]
+  };
+  context.document.activeElement = closeButton;
+  for (const shiftKey of [false, true]) {
+    context.testTabEvent = {
+      key: "Tab",
+      shiftKey,
+      prevented: false,
+      preventDefault() { this.prevented = true; }
+    };
+    vm.runInContext("handleDestructiveModalKeydown(testModalElement, testTabEvent)", context);
+    assert.equal(context.testTabEvent.prevented, true);
+    assert.equal(context.document.activeElement, closeButton);
+  }
+});
+
+test("exercise filter and More sheets restore stable invokers, including a nested picker return", async () => {
+  const context = loadContext();
+  let filterFocused = 0;
+  let moreFocused = 0;
+  let sortFocused = 0;
+  let muscleFocused = 0;
+  let resetFocused = 0;
+  const filterTrigger = {
+    dataset: { action: "open-exercise-filters" },
+    focus() { filterFocused += 1; }
+  };
+  const moreTrigger = {
+    dataset: { action: "open-exercise-more", id: "7001" },
+    focus() { moreFocused += 1; }
+  };
+  const sortTrigger = {
+    dataset: { action: "exercise-sort", sort: "most" },
+    focus() { sortFocused += 1; }
+  };
+  const muscleTrigger = {
+    dataset: { action: "exercise-muscle-filter", filter: "chest" },
+    focus() { muscleFocused += 1; }
+  };
+  const resetTrigger = {
+    dataset: { action: "reset-exercise-filters" },
+    focus() { resetFocused += 1; }
+  };
+  context.runtimeLists.set('[data-action="open-exercise-filters"]', [filterTrigger]);
+  context.runtimeLists.set('[data-action="open-exercise-more"]', [moreTrigger]);
+  context.runtimeLists.set('[data-action="exercise-sort"]', [sortTrigger]);
+  context.runtimeLists.set('[data-action="exercise-muscle-filter"]', [muscleTrigger]);
+  context.runtimeLists.set('[data-action="reset-exercise-filters"]', [resetTrigger]);
+  context.filterInvoker = { dataset: { action: "open-exercise-filters" } };
+  context.moreInvoker = { dataset: { action: "open-exercise-more", id: "7001" } };
+  context.sortInvoker = { dataset: { action: "exercise-sort", sort: "most" } };
+  context.muscleInvoker = { dataset: { action: "exercise-muscle-filter", filter: "chest" } };
+  context.resetInvoker = { dataset: { action: "reset-exercise-filters" } };
+  vm.runInContext(`
+    render = () => true;
+    nav = [{ name: "exercises" }];
+    state.exercises = [{ id: 7001, name: "Bench Press" }];
+    saveState({ queueRemote: false, markDirty: false });
+    modal = { type: "workout-exercise-picker", target: "draft-new", autoFocus: true };
+  `, context);
+
+  await vm.runInContext(`handleAction("open-exercise-filters", globalThis.filterInvoker)`, context);
+  assert.equal(vm.runInContext("modal.type", context), "exercise-filters");
+  assert.equal(vm.runInContext("modal.returnModal.type", context), "workout-exercise-picker");
+  assert.equal(vm.runInContext("modal.returnModal.autoFocus", context), false);
+  await vm.runInContext(`handleAction("apply-exercise-filters", { dataset: {} })`, context);
+  assert.equal(vm.runInContext("modal.type", context), "workout-exercise-picker");
+  assert.equal(filterFocused, 1);
+
+  vm.runInContext("modal = { type: 'exercise-filters', autoFocus: false }", context);
+  await vm.runInContext(`handleAction("exercise-sort", globalThis.sortInvoker)`, context);
+  assert.equal(vm.runInContext("exerciseSortMode", context), "most");
+  assert.equal(sortFocused, 1);
+  await vm.runInContext(`handleAction("exercise-muscle-filter", globalThis.muscleInvoker)`, context);
+  assert.equal(vm.runInContext("exerciseMuscleFilter", context), "chest");
+  assert.equal(muscleFocused, 1);
+  await vm.runInContext(`handleAction("reset-exercise-filters", globalThis.resetInvoker)`, context);
+  assert.equal(vm.runInContext("exerciseSortMode", context), "name");
+  assert.equal(vm.runInContext("exerciseMuscleFilter", context), "all");
+  assert.equal(resetFocused, 1);
+
+  vm.runInContext("modal = null", context);
+  await vm.runInContext(`handleAction("open-exercise-more", globalThis.moreInvoker)`, context);
+  assert.equal(vm.runInContext("modal.returnFocus.id", context), 7001);
+  vm.runInContext("closeModal()", context);
+  assert.equal(moreFocused, 1);
+
+  for (const [action, dataset, expectedType] of [
+    ["exercise-history", { id: "7001" }, "history"],
+    ["map-exercise", { name: "Bench Press" }, "map"],
+    ["configure-load-profile", { id: "7001" }, "load-profile"],
+    ["rename-exercise", { id: "7001" }, "rename"]
+  ]) {
+    await vm.runInContext(`handleAction("open-exercise-more", globalThis.moreInvoker)`, context);
+    context.childInvoker = { dataset };
+    await vm.runInContext(`handleAction(${JSON.stringify(action)}, globalThis.childInvoker)`, context);
+    assert.equal(vm.runInContext("modal.type", context), expectedType);
+    assert.equal(vm.runInContext("modal.returnFocus.id", context), 7001);
+    vm.runInContext("closeModal()", context);
+  }
+  assert.equal(moreFocused, 5);
+
+  await vm.runInContext(`handleAction("open-exercise-more", globalThis.moreInvoker)`, context);
+  await vm.runInContext(`handleAction("delete-exercise", { dataset: { id: "7001" } })`, context);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-delete-exercise");
+  assert.equal(vm.runInContext("modal.intent.returnFocus.action", context), "open-exercise-more");
+  vm.runInContext("closeModal()", context);
+  assert.equal(moreFocused, 6);
+});
+
+test("the hidden SVG map has an equivalent localized keyboard muscle selector", async () => {
+  const context = loadContext();
+  const markup = vm.runInContext(`(() => {
+    state.language = "ru";
+    selectedMuscle = "chest";
+    return muscleMapSelectionList([
+      { id: "chest", label: "Грудь", load: 120 },
+      { id: "lats", label: "Широчайшие", load: 80 }
+    ]);
+  })()`, context);
+  assert.match(markup, /role="group" aria-label="Выбрать группу мышц"/);
+  assert.match(markup, /data-action="select-muscle" data-id="chest" aria-pressed="true"/);
+  assert.match(markup, /data-action="select-muscle" data-id="lats" aria-pressed="false"/);
+  vm.runInContext("render = () => true; selectedMuscle = null", context);
+  assert.equal(
+    await vm.runInContext(`handleAction("select-muscle", { dataset: { id: "not-a-muscle" } })`, context),
+    false
+  );
+  assert.equal(vm.runInContext("selectedMuscle", context), null);
 });
 
 test("exercise deletion cancels without persistence and rejects stale account intent", () => {

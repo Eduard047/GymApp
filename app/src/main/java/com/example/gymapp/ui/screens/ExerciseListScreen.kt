@@ -6,10 +6,12 @@ import android.content.ClipData
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.text.format.DateFormat as AndroidDateFormat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -79,8 +81,10 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
@@ -936,8 +940,10 @@ fun ExerciseListScreen(
     onDismissExerciseLoadProfile: () -> Unit,
     onDismissHistory: () -> Unit,
     onToggleFavorite: (ExerciseEntity) -> Unit,
+    onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var isAddExerciseOpen by rememberSaveable { mutableStateOf(false) }
     var pendingAddedName by rememberSaveable { mutableStateOf<String?>(null) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -985,13 +991,40 @@ fun ExerciseListScreen(
         }
     }
 
+    if (uiState.isLoading) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = screenHorizontalPadding),
+            contentAlignment = Alignment.Center
+        ) {
+            LoadingStatePanel(label = stringResource(R.string.exercises_loading))
+        }
+        return
+    }
+    uiState.loadError?.let { error ->
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = screenHorizontalPadding),
+            contentAlignment = Alignment.Center
+        ) {
+            EmptyStatePanel(
+                title = error.asString(),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = onRetryLoad
+            )
+        }
+        return
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize(),
         contentPadding = PaddingValues(
-            start = GymSpacing.ScreenHorizontal,
+            start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,
-            end = GymSpacing.ScreenHorizontal,
+            end = screenHorizontalPadding,
             bottom = GymSpacing.ScreenBottom
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
@@ -2562,11 +2595,13 @@ private fun ExerciseHistoryBottomSheetContent(
     exerciseMediaOwnerKey: String,
     onEditExerciseMapping: () -> Unit
 ) {
-    val locale = Locale.getDefault()
+    val context = LocalContext.current
+    val languageTag = currentAppLanguageTag()
+    val locale = remember(languageTag) { Locale.forLanguageTag(languageTag) }
     val zoneId = ZoneId.systemDefault()
     val monthFormatter = remember(locale) { DateTimeFormatter.ofPattern("LLLL yyyy", locale) }
     val dayFormatter = remember(locale) { DateTimeFormatter.ofPattern("EEEE, d MMMM", locale) }
-    val timeFormatter = remember(locale) { DateTimeFormatter.ofPattern("HH:mm", locale) }
+    val systemTimeFormatter = remember(context) { AndroidDateFormat.getTimeFormat(context) }
 
     val sessionGroups = remember(history) {
         history
@@ -2696,10 +2731,7 @@ private fun ExerciseHistoryBottomSheetContent(
                     items = daySessions,
                     key = { group -> group.sessionId }
                 ) { sessionGroup ->
-                    val timeText = Instant.ofEpochMilli(sessionGroup.sessionDate)
-                        .atZone(zoneId)
-                        .toLocalTime()
-                        .format(timeFormatter)
+                    val timeText = systemTimeFormatter.format(Date(sessionGroup.sessionDate))
                     ExerciseHistorySessionCard(
                         sessionGroup = sessionGroup,
                         timeText = timeText

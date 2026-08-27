@@ -2583,6 +2583,227 @@ final class CoreParityTests: XCTestCase {
         }
     }
 
+    func testLoginPasswordPolicyUsesExactUTF8ByteBoundaryAndLocalizedError() {
+        let exactASCII = String(
+            repeating: "a",
+            count: GymLoginPasswordPolicy.maximumUTF8Bytes
+        )
+        let oversizedASCII = exactASCII + "a"
+        let exactEmoji = String(repeating: "🙂", count: 256)
+        let oversizedEmoji = exactEmoji + "a"
+
+        XCTAssertEqual(exactASCII.utf8.count, 1_024)
+        XCTAssertEqual(exactEmoji.utf8.count, 1_024)
+        XCTAssertTrue(GymLoginPasswordPolicy.accepts(exactASCII))
+        XCTAssertTrue(GymLoginPasswordPolicy.accepts(exactEmoji))
+        XCTAssertFalse(GymLoginPasswordPolicy.accepts(oversizedASCII))
+        XCTAssertFalse(GymLoginPasswordPolicy.accepts(oversizedEmoji))
+        XCTAssertEqual(GymLoginPasswordPolicy.boundedDraft(oversizedASCII), exactASCII)
+        XCTAssertEqual(GymLoginPasswordPolicy.boundedDraft(oversizedEmoji), exactEmoji)
+
+        let cannotSplitFinalCharacter = String(repeating: "a", count: 1_023) + "🙂"
+        let bounded = GymLoginPasswordPolicy.boundedDraft(cannotSplitFinalCharacter)
+        XCTAssertEqual(bounded, String(repeating: "a", count: 1_023))
+        XCTAssertLessThanOrEqual(
+            bounded.utf8.count,
+            GymLoginPasswordPolicy.maximumUTF8Bytes
+        )
+
+        XCTAssertEqual(
+            gymErrorMessage(AuthServiceError.loginPasswordTooLong, languageCode: "en"),
+            "Password is too long."
+        )
+        XCTAssertEqual(
+            gymErrorMessage(AuthServiceError.loginPasswordTooLong, languageCode: "uk"),
+            "Пароль задовгий."
+        )
+        XCTAssertEqual(
+            gymErrorMessage(AuthServiceError.loginPasswordTooLong, languageCode: "ru"),
+            "Пароль слишком длинный."
+        )
+    }
+
+    func testSignInRejectsOversizedUTF8PasswordBeforeNetworkRequest() async {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: session,
+            defaults: temporaryDefaults(named: "oversized-login-password")
+        )
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 500,
+                json: #"{"message":"must not be reached"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            session.invalidateAndCancel()
+        }
+
+        await auth.signIn(
+            email: "athlete@example.com",
+            password: String(repeating: "🙂", count: 257)
+        )
+
+        XCTAssertTrue(recorder.requests.isEmpty)
+        XCTAssertNil(auth.session)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(auth.message, GymLoginPasswordPolicy.errorMessage)
+    }
+
+    func testAuthViewClearsOnlySensitiveDraftsAtCredentialLifecycleBoundaries() throws {
+        var drafts = AuthCredentialDrafts(
+            email: "athlete@example.com",
+            repeatedEmail: "athlete@example.com",
+            password: "login-secret",
+            repeatedPassword: "signup-secret",
+            displayName: "Athlete"
+        )
+
+        drafts.clearSensitiveFields()
+
+        XCTAssertEqual(drafts.email, "athlete@example.com")
+        XCTAssertEqual(drafts.repeatedEmail, "athlete@example.com")
+        XCTAssertEqual(drafts.displayName, "Athlete")
+        XCTAssertEqual(drafts.password, "")
+        XCTAssertEqual(drafts.repeatedPassword, "")
+
+        let source = try iosSource("GymApp/UI/Screens/AuthView.swift")
+        XCTAssertTrue(source.contains(
+            ".onChange(of: mode) { _ in\n            clearSensitiveDrafts()"
+        ))
+        XCTAssertTrue(source.contains(
+            ".onChange(of: authService.pendingConfirmationEmail) { pendingEmail in"
+        ))
+        XCTAssertTrue(source.contains(
+            "if pendingEmail != nil {\n                clearSensitiveDrafts()"
+        ))
+        XCTAssertTrue(source.contains(".onDisappear(perform: clearSensitiveDrafts)"))
+        XCTAssertTrue(source.contains(
+            "offlineMessage = nil\n                    clearSensitiveDrafts()\n                    showOfflineSheet = true"
+        ))
+        XCTAssertTrue(source.contains(
+            "set: { text.wrappedValue = GymLoginPasswordPolicy.boundedDraft($0) }"
+        ))
+        XCTAssertTrue(source.contains(
+            "!GymLoginPasswordPolicy.accepts(drafts.password)"
+        ))
+    }
+
+    func testCurrentPasswordTooLongErrorIsLocalizedInEverySupportedLanguage() {
+        XCTAssertEqual(
+            gymErrorMessage(AuthServiceError.currentPasswordTooLong, languageCode: "en"),
+            "Current password is too long."
+        )
+        XCTAssertEqual(
+            gymErrorMessage(AuthServiceError.currentPasswordTooLong, languageCode: "uk"),
+            "Поточний пароль задовгий."
+        )
+        XCTAssertEqual(
+            gymErrorMessage(AuthServiceError.currentPasswordTooLong, languageCode: "ru"),
+            "Текущий пароль слишком длинный."
+        )
+    }
+
+    func testOversizedCurrentPasswordIsRejectedBeforeUpdateOrDeletionRequests() async throws {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: session,
+            defaults: temporaryDefaults(named: "oversized-current-password")
+        )
+        let cloud = cloudSession(userID: "oversized-current-password-user")
+        try auth.installSessionForTesting(.cloud(cloud))
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 500,
+                json: #"{"message":"must not be reached"}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            session.invalidateAndCancel()
+        }
+        let oversized = String(repeating: "🙂", count: 257)
+
+        let updated = await auth.updatePassword(
+            "UpdatedSecurePass9!",
+            currentPassword: oversized
+        )
+
+        XCTAssertFalse(updated)
+        XCTAssertEqual(auth.message, GymLoginPasswordPolicy.currentPasswordErrorMessage)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertTrue(recorder.requests.isEmpty)
+
+        do {
+            try await auth.deleteCloudAccountOnServer(
+                expectedUserID: cloud.userID,
+                currentPassword: oversized
+            )
+            XCTFail("Oversized current password must stop account deletion before network I/O.")
+        } catch AuthServiceError.currentPasswordTooLong {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected oversized current-password error: \(error)")
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    func testPasswordUpdateAndDeletionClearSensitiveDraftLifecycle() throws {
+        var drafts = PasswordUpdateCredentialDrafts(
+            currentPassword: "current-secret",
+            verificationCode: "123456",
+            password: "new-secret",
+            repeatedPassword: "new-secret"
+        )
+
+        drafts.clearSensitiveFields()
+
+        XCTAssertEqual(drafts.currentPassword, "")
+        XCTAssertEqual(drafts.verificationCode, "")
+        XCTAssertEqual(drafts.password, "")
+        XCTAssertEqual(drafts.repeatedPassword, "")
+
+        let updateView = try iosSource("GymApp/UI/Screens/PasswordUpdateView.swift")
+        XCTAssertTrue(updateView.contains(
+            "set: { source.wrappedValue = GymLoginPasswordPolicy.boundedDraft($0) }"
+        ))
+        XCTAssertTrue(updateView.contains(
+            "!GymLoginPasswordPolicy.accepts(drafts.currentPassword)"
+        ))
+        XCTAssertTrue(updateView.contains(".onDisappear(perform: clearSensitiveDrafts)"))
+        XCTAssertTrue(updateView.contains(
+            "if updated {\n                clearSensitiveDrafts()\n                onDone()"
+        ))
+
+        let accountSettings = try iosSource("GymApp/UI/Screens/AccountSettingsView.swift")
+        XCTAssertTrue(accountSettings.contains(
+            "SecureField(\"Current password\", text: boundedCurrentPassword)"
+        ))
+        XCTAssertTrue(accountSettings.contains(
+            "set: { currentPassword = GymLoginPasswordPolicy.boundedDraft($0) }"
+        ))
+        XCTAssertTrue(accountSettings.contains(
+            "!currentPassword.isEmpty && GymLoginPasswordPolicy.accepts(currentPassword)"
+        ))
+        XCTAssertTrue(accountSettings.contains(".onDisappear { currentPassword = \"\" }"))
+        XCTAssertTrue(accountSettings.contains(
+            "currentPassword = \"\"\n                onDeleted()"
+        ))
+    }
+
     func testSignInAllowsLegacyPasswordWithoutApplyingNewPasswordPolicy() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AuthURLProtocolStub.self]
@@ -16573,7 +16794,11 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertTrue(missionsSource.contains("snapshot.missions.missions(for: period)"))
         XCTAssertFalse(missionsSource.contains("MissionCardModel"))
-        XCTAssertTrue(summarySource.contains("gamification.missions.all"))
+        XCTAssertTrue(summarySource.contains("after.missions.all.filter"))
+        XCTAssertTrue(summarySource.contains("before.missions.all.lazy.filter"))
+        XCTAssertTrue(summarySource.contains("let sessionsThroughCurrent = sessions"))
+        XCTAssertTrue(summarySource.contains("now: current.date"))
+        XCTAssertFalse(summarySource.contains("gamification.unlockedBadges.suffix"))
         XCTAssertFalse(missionsSource.contains("rewardXP"))
         XCTAssertFalse(summarySource.contains("mission.rewardXP"))
         XCTAssertFalse(summarySource.contains("Completed mission rewards"))
@@ -16592,6 +16817,205 @@ final class CoreParityTests: XCTestCase {
         let encoded = try JSONEncoder().encode(missions)
         let contract = try XCTUnwrap(String(data: encoded, encoding: .utf8))
         XCTAssertFalse(contract.contains("rewardXP"))
+    }
+
+    func testPostWorkoutSummaryDoesNotReannounceOldRewards() throws {
+        let calendar = utcCalendar()
+        let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let previous = missionSummary(
+            date: now.addingTimeInterval(-2 * 60 * 60),
+            exerciseCount: 3,
+            setCount: 8
+        )
+        let current = missionSummary(
+            date: now.addingTimeInterval(-60 * 60),
+            exerciseCount: 1,
+            setCount: 1
+        )
+        let before = GamificationEngine.buildSnapshot(
+            sessions: [previous],
+            targetTrainingDays: 4,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(before.missions.all.contains(where: \.completed))
+        XCTAssertEqual(before.unlockedBadges.map(\.id), ["first_workout"])
+
+        let firstWorkoutDelta = postWorkoutRewardDelta(
+            sessions: [previous],
+            workoutID: previous.workoutID,
+            targetTrainingDays: 4,
+            calendar: calendar
+        )
+        XCTAssertEqual(
+            Set(firstWorkoutDelta.completedMissions.map(\.id)),
+            Set(["daily_workout", "daily_sets", "daily_exercises"])
+        )
+        XCTAssertEqual(firstWorkoutDelta.unlockedBadges.map(\.id), ["first_workout"])
+
+        let delta = postWorkoutRewardDelta(
+            sessions: [previous, current],
+            workoutID: current.workoutID,
+            targetTrainingDays: 4,
+            calendar: calendar
+        )
+
+        XCTAssertTrue(delta.completedMissions.isEmpty)
+        XCTAssertTrue(delta.unlockedBadges.isEmpty)
+    }
+
+    func testPostWorkoutSummaryAnchorsOldRewardsBeforeLaterSessions() throws {
+        let calendar = utcCalendar()
+        let oldDate = try utcDate(year: 2026, month: 7, day: 1, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let oldWorkoutID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-4000-8000-000000000002")
+        )
+        let laterSameDateID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-4000-8000-000000000003")
+        )
+        let futureWorkoutID = try XCTUnwrap(
+            UUID(uuidString: "20000000-0000-4000-8000-000000000001")
+        )
+        let oldWorkout = missionSummary(
+            workoutID: oldWorkoutID,
+            date: oldDate,
+            exerciseCount: 1,
+            setCount: 1
+        )
+        let laterSameDateWorkout = missionSummary(
+            workoutID: laterSameDateID,
+            date: oldDate,
+            exerciseCount: 3,
+            setCount: 8
+        )
+        let futureWorkout = missionSummary(
+            workoutID: futureWorkoutID,
+            date: oldDate.addingTimeInterval(14 * 24 * 60 * 60),
+            exerciseCount: 3,
+            setCount: 8
+        )
+
+        let delta = postWorkoutRewardDelta(
+            sessions: [futureWorkout, laterSameDateWorkout, oldWorkout],
+            workoutID: oldWorkoutID,
+            targetTrainingDays: 4,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(delta.unlockedBadges.map(\.id), ["first_workout"])
+        XCTAssertEqual(
+            Set(delta.completedMissions.map(\.id)),
+            Set(["daily_workout"])
+        )
+    }
+
+    func testPostWorkoutAttributionExcludesFutureProgressStreakAndRecords() throws {
+        let calendar = utcCalendar()
+        let firstMonday = try utcDate(year: 2026, month: 8, day: 3, calendar: calendar)
+            .addingTimeInterval(12 * 60 * 60)
+        let previousID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-4000-8000-000000000001")
+        )
+        let currentID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-4000-8000-000000000002")
+        )
+        let sameDateLaterID = try XCTUnwrap(
+            UUID(uuidString: "10000000-0000-4000-8000-000000000003")
+        )
+        let futureMondayID = try XCTUnwrap(
+            UUID(uuidString: "20000000-0000-4000-8000-000000000001")
+        )
+        let futureWednesdayID = try XCTUnwrap(
+            UUID(uuidString: "20000000-0000-4000-8000-000000000002")
+        )
+        let currentDate = firstMonday.addingTimeInterval(2 * 24 * 60 * 60)
+        let previous = missionSummary(
+            workoutID: previousID,
+            date: firstMonday,
+            exerciseCount: 1,
+            setCount: 3
+        )
+        let current = missionSummary(
+            workoutID: currentID,
+            date: currentDate,
+            exerciseCount: 1,
+            setCount: 3
+        )
+        let sameDateLater = missionSummary(
+            workoutID: sameDateLaterID,
+            date: currentDate,
+            exerciseCount: 8,
+            setCount: 24
+        )
+        let futureMonday = missionSummary(
+            workoutID: futureMondayID,
+            date: firstMonday.addingTimeInterval(7 * 24 * 60 * 60),
+            exerciseCount: 8,
+            setCount: 24
+        )
+        let futureWednesday = missionSummary(
+            workoutID: futureWednesdayID,
+            date: firstMonday.addingTimeInterval(9 * 24 * 60 * 60),
+            exerciseCount: 8,
+            setCount: 24
+        )
+        let allSessions = [futureWednesday, sameDateLater, current, futureMonday, previous]
+
+        let attribution = try XCTUnwrap(postWorkoutAttribution(
+            sessions: allSessions,
+            workoutID: currentID,
+            targetTrainingDays: 2,
+            calendar: calendar
+        ))
+
+        XCTAssertEqual(
+            attribution.sessionsThroughCurrent.map(\.workoutID),
+            [previousID, currentID]
+        )
+        XCTAssertEqual(attribution.previousSessions.map(\.workoutID), [previousID])
+        XCTAssertEqual(attribution.weeklyStreakWeeks, 1)
+        XCTAssertEqual(
+            attribution.afterSnapshot.progression.totalXP,
+            GamificationEngine.xpForSession(previous) + GamificationEngine.xpForSession(current)
+        )
+        XCTAssertGreaterThan(
+            allSessions.reduce(0) { $0 + GamificationEngine.xpForSession($1) },
+            attribution.afterSnapshot.progression.totalXP
+        )
+
+        let exerciseID = try XCTUnwrap(
+            UUID(uuidString: "30000000-0000-4000-8000-000000000001")
+        )
+        func history(
+            workoutID: UUID,
+            date: Date,
+            weight: Double
+        ) -> ExerciseHistoryEntry {
+            ExerciseHistoryEntry(
+                setID: UUID(),
+                workoutID: workoutID,
+                sessionDate: date,
+                exerciseID: exerciseID,
+                exerciseName: "Bench Press",
+                exerciseCatalogKey: "bench_press",
+                weight: weight,
+                reps: 8,
+                setOrderIndex: 0
+            )
+        }
+        let previousHistory = postWorkoutPreviousHistory(
+            [
+                history(workoutID: futureMondayID, date: futureMonday.date, weight: 160),
+                history(workoutID: sameDateLaterID, date: currentDate, weight: 140),
+                history(workoutID: currentID, date: currentDate, weight: 90),
+                history(workoutID: previousID, date: firstMonday, weight: 80)
+            ],
+            current: current
+        )
+        XCTAssertEqual(previousHistory.map(\.workoutID), [previousID])
+        XCTAssertEqual(previousHistory.map(\.weight).max(), 80)
     }
 
     func testLiveWorkoutExerciseLanesKeepStablePlanOrderForBothParticipants() {
@@ -16698,13 +17122,387 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(snapshot.exerciseLaneSummaries[1].peerCompleted, [false])
     }
 
+    func testIOSPolishFixesWorkoutVoiceOverFeedbackAndTouchTargets() throws {
+        let workouts = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
+        XCTAssertTrue(workouts.contains("let duration = compactHistoryDuration"))
+        XCTAssertTrue(workouts.contains(#""Garmin free workout, \(duration), no exercises or sets""#))
+        XCTAssertFalse(workouts.contains("Garmin free workout, (compactHistoryDuration"))
+
+        let summary = try iosSource("GymApp/UI/Screens/PostWorkoutSummaryView.swift")
+        XCTAssertFalse(summary.contains("try? store.setWorkoutFeedback"))
+        XCTAssertTrue(summary.contains("GymStatusBanner(message: feedbackErrorMessage, isError: true)"))
+        XCTAssertTrue(summary.contains("saveFeedback(failedFeedback)"))
+        XCTAssertTrue(summary.contains("if dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(summary.contains("minHeight: 44"))
+
+        let auth = try iosSource("GymApp/UI/Screens/AuthView.swift")
+        XCTAssertTrue(auth.contains(".frame(minWidth: 44, minHeight: 44)"))
+
+        let dashboard = try iosSource("GymApp/UI/Components/WorkoutDashboardComponents.swift")
+        XCTAssertEqual(dashboard.components(separatedBy: ".frame(width: 44, height: 44)").count - 1, 2)
+    }
+
+    func testIOSPolishUsesAdaptiveControlsAndSelectedFilterSemantics() throws {
+        let progress = try iosSource("GymApp/UI/Screens/ProgressView.swift")
+        let missions = try iosSource("GymApp/UI/Screens/MissionsView.swift")
+        let activeWorkout = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
+        let exercises = try iosSource("GymApp/UI/Screens/ExercisesView.swift")
+
+        XCTAssertTrue(progress.contains("if dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(progress.contains("private var progressSectionControl"))
+        XCTAssertTrue(missions.contains("if dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(missions.contains("private var missionPeriodControl"))
+        XCTAssertTrue(activeWorkout.contains("if dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(activeWorkout.contains("private func liveSetIndicators"))
+        XCTAssertTrue(exercises.contains(
+            ".accessibilityAddTraits(muscleFilter == nil ? .isSelected : [])"
+        ))
+        XCTAssertTrue(exercises.contains(
+            ".accessibilityAddTraits(muscleFilter == muscle.id ? .isSelected : [])"
+        ))
+    }
+
+    func testIOSActiveWorkoutExposesRecordRestAndUndoLifecycle() throws {
+        let source = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
+
+        for reachableAction in [
+            "recordSet(\n                        set,",
+            "activeRestPanel(draft: draft)",
+            "adjustManualRest(deltaSeconds)",
+            "stopManualRest()",
+            "undoLatestSet(set, draft: draft)"
+        ] {
+            XCTAssertTrue(source.contains(reachableAction), reachableAction)
+        }
+        XCTAssertTrue(source.contains("let isCurrent = currentSetID(in: draft) == set.id"))
+        XCTAssertTrue(source.contains("let isLatestCompleted = draft.undoableSetID == set.id"))
+        XCTAssertTrue(source.contains(".disabled(!isCurrent || draft.commitIntent != nil)"))
+        XCTAssertGreaterThanOrEqual(
+            source.components(separatedBy: "activeWorkoutValueEditorsAreDisabled(").count - 1,
+            3
+        )
+        XCTAssertGreaterThanOrEqual(
+            source.components(separatedBy: "activeWorkoutStructuralActionsAreDisabled(").count - 1,
+            3
+        )
+        XCTAssertTrue(source.contains("let undoableExerciseID = draft.undoableSetID.flatMap"))
+        XCTAssertTrue(source.contains("ViewThatFits(in: .horizontal)"))
+        XCTAssertGreaterThanOrEqual(
+            source.components(separatedBy: "minHeight: 44").count - 1,
+            4
+        )
+
+        for localizedCopy in [
+            "Record set · rest \\(restSeconds) s",
+            "Записати підхід · відпочинок \\(restSeconds) с",
+            "Записать подход · отдых \\(restSeconds) с",
+            "Subtract 15 seconds",
+            "Зменшити на 15 секунд",
+            "Убавить 15 секунд",
+            "Add 15 seconds",
+            "Додати 15 секунд",
+            "Добавить 15 секунд",
+            "Stop rest",
+            "Зупинити відпочинок",
+            "Остановить отдых",
+            "Undo latest set",
+            "Скасувати останній підхід",
+            "Отменить последний подход"
+        ] {
+            XCTAssertTrue(source.contains(localizedCopy), localizedCopy)
+        }
+        XCTAssertTrue(source.contains(".accessibilityValue(Self.clock(TimeInterval(remaining)))"))
+        XCTAssertTrue(source.contains(".accessibilityLabel(\n            deltaSeconds < 0"))
+    }
+
+    func testIOSLiveWorkoutLocksStructureButNotPendingSetValues() {
+        XCTAssertFalse(activeWorkoutValueEditorsAreDisabled(
+            isCompleted: false,
+            hasCommitIntent: false,
+            isLivePlanFrozen: true
+        ))
+        XCTAssertTrue(activeWorkoutValueEditorsAreDisabled(
+            isCompleted: true,
+            hasCommitIntent: false,
+            isLivePlanFrozen: true
+        ))
+        XCTAssertTrue(activeWorkoutValueEditorsAreDisabled(
+            isCompleted: false,
+            hasCommitIntent: true,
+            isLivePlanFrozen: true
+        ))
+
+        XCTAssertTrue(activeWorkoutStructuralActionsAreDisabled(
+            hasStoredExercise: true,
+            hasCommitIntent: false,
+            isLivePlanFrozen: true
+        ))
+        XCTAssertFalse(activeWorkoutStructuralActionsAreDisabled(
+            hasStoredExercise: true,
+            hasCommitIntent: false,
+            isLivePlanFrozen: false
+        ))
+        XCTAssertTrue(activeWorkoutStructuralActionsAreDisabled(
+            hasStoredExercise: false,
+            hasCommitIntent: false,
+            isLivePlanFrozen: false
+        ))
+    }
+
+    func testIOSActiveWorkoutLiveQueueFailureOutranksRestAndSuccess() throws {
+        XCTAssertEqual(
+            activeWorkoutActionStatus(
+                liveQueueFailure: "live queue failed",
+                restProjectionWarning: "rest projection failed",
+                success: "saved"
+            ),
+            ActiveWorkoutActionStatus(message: "live queue failed", isError: true)
+        )
+        XCTAssertEqual(
+            activeWorkoutActionStatus(
+                liveQueueFailure: nil,
+                restProjectionWarning: "rest projection failed",
+                success: "saved"
+            ),
+            ActiveWorkoutActionStatus(message: "rest projection failed", isError: true)
+        )
+        XCTAssertEqual(
+            activeWorkoutActionStatus(
+                liveQueueFailure: nil,
+                restProjectionWarning: nil,
+                success: "saved"
+            ),
+            ActiveWorkoutActionStatus(message: "saved", isError: false)
+        )
+
+        let source = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
+        func section(from startMarker: String, to endMarker: String) throws -> String {
+            let start = try XCTUnwrap(source.range(of: startMarker), startMarker)
+            let tail = source[start.lowerBound...]
+            let end = try XCTUnwrap(tail.range(of: endMarker), endMarker)
+            return String(tail[..<end.lowerBound])
+        }
+        let actions = [
+            (
+                try section(from: "private func recordSet(", to: "private func recordAllSets("),
+                "let updated = try activeWorkoutStore.recordSet(",
+                "try liveWorkoutCoordinator.localSetWasCompleted("
+            ),
+            (
+                try section(from: "private func recordAllSets(", to: "private func undoLatestSet("),
+                "let updated = try activeWorkoutStore.recordAllSets(",
+                "try liveWorkoutCoordinator.localSetsWereCompleted("
+            ),
+            (
+                try section(from: "private func undoLatestSet(", to: "private func startManualRest("),
+                "let updated = try activeWorkoutStore.undoLatestRecordedSet(",
+                "try liveWorkoutCoordinator.localSetWasUndone("
+            )
+        ]
+
+        for (action, localMutation, liveQueueMutation) in actions {
+            let localIndex = try XCTUnwrap(action.range(of: localMutation)?.lowerBound)
+            let liveIndex = try XCTUnwrap(action.range(of: liveQueueMutation)?.lowerBound)
+            XCTAssertLessThan(localIndex, liveIndex, localMutation)
+            XCTAssertTrue(action.contains("var liveQueueFailureMessage: String?"))
+            XCTAssertTrue(action.contains("liveQueueFailureMessage = message"))
+            XCTAssertTrue(action.contains(
+                "liveQueueFailure: liveQueueFailureMessage"
+            ))
+            XCTAssertTrue(action.contains(
+                "showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)"
+            ))
+        }
+    }
+
+    func testIOSPolishMuscleMappingSecondaryLanguageIsIntentional() {
+        XCTAssertEqual(
+            exerciseMuscleMappingSecondaryTitle(
+                english: "Chest",
+                ukrainian: "Груди",
+                languageCode: "en"
+            ),
+            "Груди"
+        )
+        for languageCode in ["uk", "ru"] {
+            XCTAssertEqual(
+                exerciseMuscleMappingSecondaryTitle(
+                    english: "Chest",
+                    ukrainian: "Груди",
+                    languageCode: languageCode
+                ),
+                "Chest"
+            )
+        }
+    }
+
+    func testIOSPolishPasswordUpdateCopyIsLocalized() throws {
+        XCTAssertEqual(
+            PasswordUpdateMode.signedIn.title(languageCode: "uk"),
+            "Зміни пароль"
+        )
+        XCTAssertEqual(
+            PasswordUpdateMode.signedIn.title(languageCode: "ru"),
+            "Измени пароль"
+        )
+        XCTAssertEqual(
+            PasswordUpdateMode.signedIn.navigationTitle(languageCode: "uk"),
+            "Змінити пароль"
+        )
+        XCTAssertEqual(
+            PasswordUpdateMode.signedIn.supportingText(languageCode: "ru"),
+            "Введи текущий пароль, а затем выбери новый пароль для этого аккаунта."
+        )
+
+        let validationCopy: [(String, String, String)] = [
+            (
+                "Passwords do not match.",
+                "Паролі не збігаються.",
+                "Пароли не совпадают."
+            ),
+            (
+                GymPasswordPolicy.errorMessage,
+                "Пароль має містити щонайменше 12 символів, займати не більше 72 байтів у UTF-8 та включати малу й велику латинські літери, цифру й підтримуваний спецсимвол.",
+                "Пароль должен содержать не менее 12 символов, занимать не более 72 байт в UTF-8 и включать строчную и заглавную латинские буквы, цифру и поддерживаемый спецсимвол."
+            ),
+            (
+                PasswordReauthenticationNoncePolicy.errorMessage,
+                "Введи 6–8-значний код підтвердження з листа.",
+                "Введи 6–8-значный код подтверждения из письма."
+            )
+        ]
+        for (english, ukrainian, russian) in validationCopy {
+            XCTAssertEqual(gymLocalized(english, languageCode: "uk"), ukrainian, english)
+            XCTAssertEqual(gymLocalized(english, languageCode: "ru"), russian, english)
+        }
+
+        let source = try iosSource("GymApp/UI/Screens/PasswordUpdateView.swift")
+        XCTAssertFalse(source.contains("localError = \"Passwords do not match.\""))
+        XCTAssertTrue(source.contains("localError = gymLocalized(\n                \"Passwords do not match.\""))
+        XCTAssertTrue(source.contains("localError = gymLocalized(\n                GymPasswordPolicy.errorMessage"))
+        XCTAssertTrue(source.contains("localError = gymLocalized(\n                    PasswordReauthenticationNoncePolicy.errorMessage"))
+        XCTAssertTrue(source.contains("message: gymLocalized(message, languageCode: languageCode)"))
+    }
+
+    func testIOSPolishConfirmedRuntimeCatalogHasUkrainianCopy() throws {
+        let catalogData = Data(try iosSource("GymApp/Resources/Localizable.xcstrings").utf8)
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: catalogData) as? [String: Any]
+        )
+        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let expected: [String: String] = [
+            "A damaged local data file was preserved for recovery. Cloud data will restore after sign-in; offline profiles should contact support before deleting the app.":
+                "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку.",
+            "Built-in": "Вбудована",
+            "By name": "За назвою",
+            "Change password": "Змінити пароль",
+            "Connect this iPhone to Garmin": "Під’єднати цей iPhone до Garmin",
+            "Connected": "Підключено",
+            "Core": "Кор",
+            "Current": "Поточний",
+            "Current password": "Поточний пароль",
+            "Daily": "Щоденні",
+            "Direct iPhone connection": "Пряме підключення iPhone",
+            "Double tap to dismiss": "Торкнися двічі, щоб закрити",
+            "GymApp could not open its protected local storage. Your data was not changed.":
+                "GymApp не вдалося відкрити захищене локальне сховище. Твої дані не змінено.",
+            "GymApp workout": "Тренування GymApp",
+            "Least frequent": "Найрідші",
+            "Locked": "Заблоковано",
+            "Lower body": "Низ тіла",
+            "Mission period": "Період місій",
+            "Monthly": "Щомісячні",
+            "Most frequent": "Найчастіші",
+            "No results": "Немає результатів",
+            "No results for “%@”.": "Немає результатів для «%@».",
+            "OK": "Гаразд",
+            "Offline": "Не в мережі",
+            "Opening this account's protected workout data.":
+                "Відкриваємо захищені дані тренувань цього акаунта.",
+            "Opens a form that requires the current password":
+                "Відкриває форму, для якої потрібен поточний пароль",
+            "Opens Garmin Connect so you can choose which paired watches may send completed workouts to this iPhone":
+                "Відкриває Garmin Connect, де можна вибрати сполучені годинники для надсилання завершених тренувань на цей iPhone",
+            "Preparing account": "Підготовка акаунта",
+            "Ranks": "Ранги",
+            "Rating": "Рейтинг",
+            "Storage unavailable": "Сховище недоступне",
+            "Try again": "Спробувати ще раз",
+            "Try a different filter.": "Спробуй інший фільтр.",
+            "Upper body": "Верх тіла",
+            "Weekly": "Щотижневі"
+        ]
+
+        for (key, expectedValue) in expected {
+            let entry = try XCTUnwrap(strings[key] as? [String: Any], key)
+            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], key)
+            let ukrainian = try XCTUnwrap(localizations["uk"] as? [String: Any], key)
+            let unit = try XCTUnwrap(ukrainian["stringUnit"] as? [String: Any], key)
+            XCTAssertEqual(unit["value"] as? String, expectedValue, key)
+        }
+    }
+
+    func testIOSPolishUkrainianCatalogHasOnlyIntentionalFallbacks() throws {
+        let catalogData = Data(try iosSource("GymApp/Resources/Localizable.xcstrings").utf8)
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: catalogData) as? [String: Any]
+        )
+        let strings = try XCTUnwrap(root["strings"] as? [String: Any])
+        let missingUkrainianKeys = Set(strings.compactMap { key, rawEntry -> String? in
+            guard let entry = rawEntry as? [String: Any],
+                  let localizations = entry["localizations"] as? [String: Any],
+                  localizations["uk"] != nil else {
+                return key
+            }
+            return nil
+        })
+
+        // These extracted templates contain only placeholders, numbers, units, or
+        // compact workout notation. Their Ukrainian rendering intentionally equals
+        // the source template, so catalog fallback does not expose English prose.
+        let localeNeutralTemplates: Set<String> = [
+            "%@ / %@", "%@ %lld", "%@ • %@", "%@ XP", "%@, %@", "%@: %@",
+            "%lld", "+%lld XP", "+2.5", "0", "0:00", "2.5 kg", "5 kg",
+            "S%lld", "Z%lld %lld%@"
+        ]
+        // These must remain exact identities: DELETE is the server confirmation
+        // token, GymApp is the product name, and the remaining values are an email
+        // example or language self-names already suitable for Ukrainian UI.
+        let identityLiterals: Set<String> = [
+            "DELETE", "GymApp", "you@example.com", "Мова", "Русский", "Українська"
+        ]
+        // The old browser-migration notice has no source reference in the current
+        // iOS client and remains in the catalog only as stale extraction history.
+        let staleUnusedKeys: Set<String> = [
+            "Legacy browser cloud data was loaded. Automatic cloud uploads are paused to preserve browser-only profile, language, and mapping fields."
+        ]
+        // Built-in exercise labels use stable catalog identity plus the reviewed
+        // Ukrainian names below, instead of Localizable.xcstrings lookup.
+        let catalogDrivenExerciseNames = Set(
+            BuiltInExerciseCatalog.definitions.map(\.englishName)
+        )
+        for definition in BuiltInExerciseCatalog.definitions {
+            XCTAssertFalse(definition.ukrainianName.trimmingCharacters(in: .whitespaces).isEmpty)
+            XCTAssertNotEqual(definition.ukrainianName, definition.englishName)
+        }
+
+        XCTAssertEqual(
+            missingUkrainianKeys,
+            localeNeutralTemplates
+                .union(identityLiterals)
+                .union(staleUnusedKeys)
+                .union(catalogDrivenExerciseNames)
+        )
+    }
+
     private func missionSummary(
+        workoutID: UUID = UUID(),
         date: Date,
         exerciseCount: Int,
         setCount: Int
     ) -> WorkoutSessionSummary {
         WorkoutSessionSummary(
-            workoutID: UUID(),
+            workoutID: workoutID,
             date: date,
             note: nil,
             exerciseCount: exerciseCount,

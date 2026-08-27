@@ -53,6 +53,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +86,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.gymapp.R
 import com.example.gymapp.auth.AuthUiState
+import com.example.gymapp.auth.MAX_LOGIN_PASSWORD_UTF8_BYTES
 import com.example.gymapp.auth.SavedLocalProfile
 import com.example.gymapp.auth.boundedNewLocalDisplayNameDraft
 import com.example.gymapp.auth.newPasswordCharacterGroupsAreValid
@@ -95,6 +98,30 @@ import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.asString
+
+private const val MAX_AUTH_EMAIL_DRAFT_CHARS = 254
+internal const val MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES = MAX_LOGIN_PASSWORD_UTF8_BYTES
+
+internal fun boundedAuthEmailDraft(value: String): String =
+    value.take(MAX_AUTH_EMAIL_DRAFT_CHARS)
+
+internal fun boundedAuthPasswordDraft(value: String): String {
+    if (value.toByteArray(Charsets.UTF_8).size <= MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES) {
+        return value
+    }
+    val bounded = StringBuilder(minOf(value.length, MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES))
+    var byteCount = 0
+    var index = 0
+    while (index < value.length) {
+        val codePoint = value.codePointAt(index)
+        val encoded = String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8)
+        if (byteCount + encoded.size > MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES) break
+        bounded.appendCodePoint(codePoint)
+        byteCount += encoded.size
+        index += Character.charCount(codePoint)
+    }
+    return bounded.toString()
+}
 
 class AuthDraftViewModel : ViewModel() {
     val email = mutableStateOf("")
@@ -137,6 +164,7 @@ fun AuthScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val localizedLocalDefaultName = stringResource(R.string.auth_local_default_name)
     var email by draft.email
     var password by draft.password
     var signUpEmail by draft.signUpEmail
@@ -154,6 +182,13 @@ fun AuthScreen(
     var localMessage by remember { mutableStateOf<String?>(null) }
     var localProfileMessage by remember(selectedLanguage) { mutableStateOf<String?>(null) }
     val pendingConfirmationEmail = uiState.pendingConfirmationEmail
+
+    DisposableEffect(draft) {
+        onDispose(draft::clearSensitiveFields)
+    }
+    LaunchedEffect(pendingConfirmationEmail) {
+        if (pendingConfirmationEmail != null) draft.clearSensitiveFields()
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -291,6 +326,12 @@ fun AuthScreen(
                         onModeSelected = { signUpSelected ->
                             if (isSignUp != signUpSelected) {
                                 localMessage = null
+                                if (signUpSelected) {
+                                    password = ""
+                                } else {
+                                    signUpPassword = ""
+                                    signUpPasswordConfirm = ""
+                                }
                                 isSignUp = signUpSelected
                             }
                         }
@@ -301,7 +342,11 @@ fun AuthScreen(
                             value = if (isSignUp) signUpEmail else email,
                             onValueChange = {
                                 localMessage = null
-                                if (isSignUp) signUpEmail = it else email = it
+                                if (isSignUp) {
+                                    signUpEmail = boundedAuthEmailDraft(it)
+                                } else {
+                                    email = boundedAuthEmailDraft(it)
+                                }
                             },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text(stringResource(R.string.auth_email)) },
@@ -314,7 +359,7 @@ fun AuthScreen(
                                 value = signUpEmailConfirm,
                                 onValueChange = {
                                     localMessage = null
-                                    signUpEmailConfirm = it
+                                    signUpEmailConfirm = boundedAuthEmailDraft(it)
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text(stringResource(R.string.auth_repeat_email)) },
@@ -480,6 +525,7 @@ fun AuthScreen(
                     OutlinedButton(
                         onClick = {
                             localProfileMessage = null
+                            draft.clearSensitiveFields()
                             showOfflineSheet = true
                         },
                         enabled = !uiState.isLoading,
@@ -562,7 +608,7 @@ fun AuthScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.auth_local_profile_name)) },
-                    placeholder = { Text("Local") },
+                    placeholder = { Text(stringResource(R.string.auth_local_default_name)) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp)
                 )
@@ -574,7 +620,10 @@ fun AuthScreen(
                         val validation = validateLocalAccountInput(localDisplayName)
                         if (validation == null) {
                             localProfileMessage = null
-                            onContinueLocal(localDisplayName.trim().ifBlank { "Local" }, false)
+                            onContinueLocal(
+                                localDisplayName.trim().ifBlank { localizedLocalDefaultName },
+                                false
+                            )
                         } else {
                             localProfileMessage = localizedAuthValidationMessage(context, validation)
                         }
@@ -1171,7 +1220,7 @@ private fun PasswordTextField(
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { onValueChange(boundedAuthPasswordDraft(it)) },
         modifier = modifier.onFocusChanged { state -> onFocusChanged(state.isFocused) },
         label = { Text(label) },
         singleLine = true,
@@ -1200,6 +1249,7 @@ private fun localizedAuthValidationMessage(context: Context, message: String): S
         "Enter your email." -> R.string.auth_error_email_required
         "Enter a valid email address." -> R.string.auth_error_email_invalid
         "Enter your password." -> R.string.auth_error_password_required
+        "Password is too long." -> R.string.auth_error_password_too_long
         "Repeat your email." -> R.string.auth_error_repeat_email
         "Email does not match." -> R.string.auth_error_email_mismatch
         "Display name must be 2-32 characters." -> R.string.auth_error_display_name_length
@@ -1226,6 +1276,8 @@ internal fun validateLoginInput(
         cleanEmail.isBlank() -> "Enter your email."
         !isValidEmail(cleanEmail) -> "Enter a valid email address."
         password.isBlank() -> "Enter your password."
+        password.toByteArray(Charsets.UTF_8).size > MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES ->
+            "Password is too long."
         else -> null
     }
 }
@@ -1268,7 +1320,8 @@ internal fun validateRecoveryEmailInput(email: String): String? {
 }
 
 internal fun validateLocalAccountInput(displayName: String): String? {
-    val candidate = displayName.trim().ifBlank { "Local" }
+    val candidate = displayName.trim()
+    if (candidate.isBlank()) return null
     return if (validatedNewLocalDisplayNameOrNull(candidate) == null) {
         "Display name must be 2–32 characters and use letters, numbers, spaces, dot, dash or underscore."
     } else {

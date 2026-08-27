@@ -39,14 +39,40 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.viewmodel.RankProgressUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
+import com.example.gymapp.util.asString
 
 @Composable
 fun RanksScreen(
     uiState: WorkoutListUiState,
+    onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    if (uiState.isLoading) {
+        Box(
+            modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            LoadingStatePanel(label = stringResource(R.string.workouts_loading))
+        }
+        return
+    }
+    uiState.loadError?.let { error ->
+        Box(
+            modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            EmptyStatePanel(
+                title = error.asString(),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = onRetryLoad
+            )
+        }
+        return
+    }
+
     val totalXp = uiState.soloProgress.totalXp
     val rankTiers = uiState.rankLadder
         .sortedWith(compareBy<RankProgressUiModel> { it.requiredXp }.thenBy { it.levelRequirement })

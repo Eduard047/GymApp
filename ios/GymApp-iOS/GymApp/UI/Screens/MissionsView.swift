@@ -6,6 +6,7 @@ struct MissionsView: View {
     let embedded: Bool
 
     @Environment(\.calendar) private var calendar
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @State private var period: MissionCadence = .daily
 
@@ -46,15 +47,7 @@ struct MissionsView: View {
                 LazyVStack(spacing: 14) {
                     hero
 
-                    Picker(
-                        gymText("Mission period", "Період місій", "Период миссий", languageCode: languageCode),
-                        selection: $period
-                    ) {
-                        ForEach(MissionCadence.allCases) { item in
-                            Text(item.title(languageCode)).tag(item)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    missionPeriodControl
 
                     ForEach(missions) { mission in
                         missionCard(mission)
@@ -80,6 +73,49 @@ struct MissionsView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var missionPeriodControl: some View {
+        let label = gymText(
+            "Mission period",
+            "Період місій",
+            "Период миссий",
+            languageCode: languageCode
+        )
+        if dynamicTypeSize.isAccessibilitySize {
+            Menu {
+                ForEach(MissionCadence.allCases) { item in
+                    Button {
+                        period = item
+                    } label: {
+                        if period == item {
+                            Label(item.title(languageCode), systemImage: "checkmark")
+                        } else {
+                            Text(item.title(languageCode))
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: GymTheme.Spacing.small) {
+                    Text(period.title(languageCode))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: GymTheme.Spacing.small)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .accessibilityHidden(true)
+                }
+            }
+            .buttonStyle(GymSecondaryButtonStyle())
+            .accessibilityLabel(label)
+            .accessibilityValue(period.title(languageCode))
+        } else {
+            Picker(label, selection: $period) {
+                ForEach(MissionCadence.allCases) { item in
+                    Text(item.title(languageCode)).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
         }
     }
 

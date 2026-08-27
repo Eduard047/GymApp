@@ -622,6 +622,191 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(completed.activeElapsedSeconds(at: completedAt.addingTimeInterval(10)), 30)
     }
 
+    func testSaveExerciseAtomicallyCompletesSetsAndRetiresRestProjection() throws {
+        let context = try makeContext(account: "active-save-exercise-rest")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_125)
+        let firstSetID = UUID()
+        let secondSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    sets: [
+                        ActiveWorkoutSet(id: firstSetID, weight: 80, reps: 8),
+                        ActiveWorkoutSet(id: secondSetID, weight: 82.5, reps: 6)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let resting = try context.active.recordSet(
+            draftID: started.id,
+            setID: firstSetID,
+            expectedRevision: started.revision,
+            restSeconds: 90,
+            now: startedAt.addingTimeInterval(20)
+        )
+        XCTAssertEqual(resting.undoableSetID, firstSetID)
+        XCTAssertNotNil(resting.timing?.restingUntil)
+
+        let clock = ActiveWorkoutRestTestClock(startedAt.addingTimeInterval(25))
+        let defaults = makeRestTimerDefaults()
+        let manager = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        manager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: resting,
+                store: context.active,
+                manager: manager,
+                title: "Save exercise test",
+                now: clock.date
+            ),
+            .synchronized
+        )
+        let timerID = ActiveWorkoutRestReconciler.timerID(for: resting.id)
+        XCTAssertNotNil(manager.timers[timerID])
+
+        clock.date = startedAt.addingTimeInterval(35)
+        let completed = try context.active.saveExercise(
+            draftID: resting.id,
+            exerciseBlockID: try XCTUnwrap(resting.exercises.first?.id),
+            expectedRevision: resting.revision,
+            now: clock.date
+        )
+
+        XCTAssertEqual(completed.revision, resting.revision + 1)
+        XCTAssertTrue(completed.exercises[0].sets.allSatisfy(\.isCompleted))
+        XCTAssertNil(completed.undoableSetID)
+        XCTAssertNil(completed.timing?.restingUntil)
+        XCTAssertEqual(completed.timing?.activeSince, clock.date)
+        XCTAssertNotNil(manager.timers[timerID], "projection remains until reconciliation")
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: completed,
+                store: context.active,
+                manager: manager,
+                title: "Save exercise test",
+                now: clock.date
+            ),
+            .synchronized
+        )
+        XCTAssertNil(manager.timers[timerID])
+
+        let reopenedManager = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        reopenedManager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+        XCTAssertNil(reopenedManager.timers[timerID])
+    }
+
+    func testAppendSetAtomicallyRetiresRestProjection() throws {
+        let context = try makeContext(account: "active-append-set-rest")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_225)
+        let firstSetID = UUID()
+        let started = try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    sets: [ActiveWorkoutSet(id: firstSetID, weight: 80, reps: 8)]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+        let resting = try context.active.recordSet(
+            draftID: started.id,
+            setID: firstSetID,
+            expectedRevision: started.revision,
+            restSeconds: 90,
+            now: startedAt.addingTimeInterval(20)
+        )
+
+        let clock = ActiveWorkoutRestTestClock(startedAt.addingTimeInterval(25))
+        let defaults = makeRestTimerDefaults()
+        let manager = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        manager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: resting,
+                store: context.active,
+                manager: manager,
+                title: "Append set test",
+                now: clock.date
+            ),
+            .synchronized
+        )
+        let timerID = ActiveWorkoutRestReconciler.timerID(for: resting.id)
+        XCTAssertNotNil(manager.timers[timerID])
+
+        clock.date = startedAt.addingTimeInterval(35)
+        let updated = try context.active.appendSet(
+            draftID: resting.id,
+            exerciseBlockID: try XCTUnwrap(resting.exercises.first?.id),
+            weight: 82.5,
+            reps: 6,
+            expectedRevision: resting.revision,
+            now: clock.date
+        )
+
+        XCTAssertEqual(updated.revision, resting.revision + 1)
+        XCTAssertEqual(updated.exercises[0].sets.count, 2)
+        XCTAssertFalse(updated.exercises[0].sets[1].isCompleted)
+        XCTAssertNil(updated.undoableSetID)
+        XCTAssertNil(updated.timing?.restingUntil)
+        XCTAssertEqual(updated.timing?.activeSince, clock.date)
+        XCTAssertNotNil(manager.timers[timerID], "projection remains until reconciliation")
+        XCTAssertEqual(
+            try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: context.active,
+                manager: manager,
+                title: "Append set test",
+                now: clock.date
+            ),
+            .synchronized
+        )
+        XCTAssertNil(manager.timers[timerID])
+
+        let reopenedManager = RestTimerManager(
+            notificationCenter: SilentActiveWorkoutRestNotifications(),
+            defaults: defaults,
+            currentDateProvider: { clock.date }
+        )
+        reopenedManager.bindToAccount(
+            ownerFingerprint: RestTimerManager.ownerFingerprint(
+                for: context.history.accountStorageKey
+            )
+        )
+        XCTAssertNil(reopenedManager.timers[timerID])
+    }
+
     func testFinishPersistsWallClockDurationAndFullBackupRoundTripsIt() throws {
         let context = try makeContext(account: "active-duration")
         let startedAt = Date(timeIntervalSince1970: 1_800_000_000)

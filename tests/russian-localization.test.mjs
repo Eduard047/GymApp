@@ -58,7 +58,9 @@ test("Android Russian resources cover every English string with compatible place
   assert.match(addWorkout, /R\.string\.add_workout_active_mode_hint/);
   assert.match(activeWorkout, /R\.string\.active_workout_add_set/);
   assert.match(activeWorkout, /R\.string\.action_save_all_pending_sets/);
-  assert.doesNotMatch(activeWorkout, /R\.string\.action_log_set_and_rest/);
+  assert.match(activeWorkout, /R\.string\.action_log_set_and_rest/);
+  assert.match(activeWorkout, /R\.string\.active_workout_undo_action/);
+  assert.match(activeWorkout, /R\.string\.active_workout_rest_stop/);
   assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_supporting/);
   assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_finish_supporting/);
   assert.equal(english.get("garmin_set_intervals_title"), "Chronological watch sets");
@@ -246,12 +248,12 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.match(indexSource, /russian-text\.v85\.js/);
+  assert.match(indexSource, /russian-text\.v86\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v100\.js/);
-  assert.match(workerSource, /russian-text\.v85\.js/);
+  assert.match(indexSource, /app\.v101\.js/);
+  assert.match(workerSource, /russian-text\.v86\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v100\.js/);
+  assert.match(workerSource, /app\.v101\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });

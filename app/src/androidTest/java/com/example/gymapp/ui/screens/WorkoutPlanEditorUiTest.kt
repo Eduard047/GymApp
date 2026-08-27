@@ -1,6 +1,5 @@
 package com.example.gymapp.ui.screens
 
-import androidx.activity.compose.setContent
 import androidx.compose.runtime.key
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -14,7 +13,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.test.espresso.Espresso.pressBack
-import com.example.gymapp.MainActivity
+import androidx.activity.ComponentActivity
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.SmartWorkoutEffort
 import com.example.gymapp.ui.theme.GymAppTheme
@@ -26,7 +25,7 @@ import org.junit.Test
 
 class WorkoutPlanEditorUiTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
     fun cleanInitialDraftNavigatesToHistoryWithoutDiscarding() {
@@ -218,11 +217,10 @@ class WorkoutPlanEditorUiTest {
         onInteractionLockChanged: (Boolean) -> Unit = {}
     ) {
         val contentKey = System.nanoTime()
-        composeRule.activity.runOnUiThread {
-            composeRule.activity.setContent {
-                key(contentKey) {
-                    GymAppTheme {
-                        AddWorkoutScreen(
+        composeRule.setContent {
+            key(contentKey) {
+                GymAppTheme {
+                    AddWorkoutScreen(
                     uiState = AddWorkoutUiState(
                         isDirty = isDirty,
                         smartWorkoutEffort = SmartWorkoutEffort.Auto,
@@ -267,8 +265,7 @@ class WorkoutPlanEditorUiTest {
                     onExternalCloseRequestHandled = {},
                     onDirtyStateChanged = {},
                     onInteractionLockChanged = onInteractionLockChanged
-                        )
-                    }
+                    )
                 }
             }
         }

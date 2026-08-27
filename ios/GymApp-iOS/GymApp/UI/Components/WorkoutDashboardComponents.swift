@@ -324,7 +324,7 @@ struct WorkoutMonthSwitcher: View {
             HStack(spacing: 8) {
                 Button(action: onPrevious) {
                     Image(systemName: "chevron.left")
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Previous month")
 
@@ -346,7 +346,7 @@ struct WorkoutMonthSwitcher: View {
 
                 Button(action: onNext) {
                     Image(systemName: "chevron.right")
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                 }
                 .disabled(isCurrentMonth)
                 .accessibilityLabel("Next month")

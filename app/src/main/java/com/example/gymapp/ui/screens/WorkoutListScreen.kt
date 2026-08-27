@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
@@ -51,7 +50,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,6 +63,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -86,8 +86,10 @@ import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.MuscleHeatmapCard
+import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SoloProgressHero
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
@@ -100,6 +102,7 @@ import com.example.gymapp.ui.viewmodel.WeeklyTrainingSummaryUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingGoal
+import com.example.gymapp.util.asString
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.format.TextStyle
@@ -123,41 +126,49 @@ fun WorkoutListScreen(
     hasRetainedWorkoutDraft: Boolean = false,
     activeWorkoutProgress: Pair<Int, Int>? = null,
     onDiscardActiveWorkout: () -> Unit = {},
+    onRetryLoad: () -> Unit = {},
     tutorialAnchors: TutorialAnchorRegistry? = null,
     modifier: Modifier = Modifier
 ) {
-    val listState = rememberLazyListState()
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var showActiveWorkoutDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
-    val showTopControls by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 24
+
+    if (uiState.isLoading) {
+        Box(
+            modifier = modifier.fillMaxSize().padding(horizontal = screenHorizontalPadding),
+            contentAlignment = Alignment.Center
+        ) {
+            LoadingStatePanel(label = stringResource(R.string.workouts_loading))
         }
+        return
     }
-    Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (showTopControls) {
-            ScreenHeader(
-                title = stringResource(R.string.today_title),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = GymSpacing.ScreenHorizontal)
-                    .padding(top = GymSpacing.Small)
+    uiState.loadError?.let { error ->
+        Box(
+            modifier = modifier.fillMaxSize().padding(horizontal = screenHorizontalPadding),
+            contentAlignment = Alignment.Center
+        ) {
+            EmptyStatePanel(
+                title = error.asString(),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = onRetryLoad
             )
         }
+        return
+    }
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = GymSpacing.ScreenHorizontal,
-                top = GymSpacing.Small,
-                end = GymSpacing.ScreenHorizontal,
-                bottom = GymSpacing.ScreenBottom
-            ),
-            verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
-        ) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = screenHorizontalPadding,
+            top = GymSpacing.Small,
+            end = screenHorizontalPadding,
+            bottom = GymSpacing.ScreenBottom
+        ),
+        verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+    ) {
+            item {
+                ScreenHeader(title = stringResource(R.string.today_title))
+            }
             if (uiState.showFirstWorkoutActivation && activeWorkoutProgress == null) {
                 item {
                     FirstWorkoutActivationCard(
@@ -321,7 +332,6 @@ fun WorkoutListScreen(
                 }
                 }
             }
-        }
     }
 
     if (showActiveWorkoutDiscardConfirmation) {
@@ -539,6 +549,8 @@ private fun FocusLens(
 ) {
     var showPlanDetails by rememberSaveable { mutableStateOf(false) }
     var showActiveOptions by rememberSaveable { mutableStateOf(false) }
+    val expandedState = stringResource(R.string.state_expanded)
+    val collapsedState = stringResource(R.string.state_collapsed)
     val hasActiveWorkout = activeWorkoutProgress != null
     val shouldContinueRetainedPlan = shouldShowRetainedWorkoutDraftAction(
         hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
@@ -670,7 +682,12 @@ private fun FocusLens(
 
         OutlinedButton(
             onClick = { showPlanDetails = !showPlanDetails },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .semantics {
+                    stateDescription = if (showPlanDetails) expandedState else collapsedState
+                },
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
         ) {
@@ -718,7 +735,12 @@ private fun FocusLens(
             }
             TextButton(
                 onClick = { showActiveOptions = !showActiveOptions },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        stateDescription = if (showActiveOptions) expandedState else collapsedState
+                    }
             ) {
                 Icon(
                     imageVector = if (showActiveOptions) Icons.Default.ExpandLess

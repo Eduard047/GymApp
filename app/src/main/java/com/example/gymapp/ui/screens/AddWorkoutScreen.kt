@@ -73,7 +73,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -93,6 +95,7 @@ import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
@@ -160,6 +163,7 @@ fun AddWorkoutScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val selectedExerciseCount = uiState.exerciseDrafts.count { it.exerciseId != null }
     val primaryAction = workoutPlanPrimaryAction(hasLiveInviteTarget)
     val primaryActionInProgress = uiState.isSaving ||
@@ -191,9 +195,9 @@ fun AddWorkoutScreen(
                 }
             ),
         contentPadding = PaddingValues(
-            start = GymSpacing.ScreenHorizontal,
+            start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,
-            end = GymSpacing.ScreenHorizontal,
+            end = screenHorizontalPadding,
             bottom = GymSpacing.ScreenBottom
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
@@ -366,7 +370,16 @@ fun AddWorkoutScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { secondaryOptionsExpanded = !secondaryOptionsExpanded }
+                        .semantics {
+                            stateDescription = if (secondaryOptionsExpanded) {
+                                context.getString(R.string.state_expanded)
+                            } else {
+                                context.getString(R.string.state_collapsed)
+                            }
+                        }
+                        .clickable(role = Role.Button) {
+                            secondaryOptionsExpanded = !secondaryOptionsExpanded
+                        }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

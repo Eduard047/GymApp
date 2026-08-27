@@ -29,20 +29,47 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gymapp.R
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymDataTypography
 import com.example.gymapp.ui.theme.GymPanelShape
 import com.example.gymapp.ui.theme.GymSpacing
+
+private val DefaultAdaptiveContentWidth = 760.dp
+
+internal fun adaptiveHorizontalPadding(
+    windowWidth: Dp,
+    minimumPadding: Dp = GymSpacing.ScreenHorizontal,
+    maximumContentWidth: Dp = DefaultAdaptiveContentWidth
+): Dp = if (windowWidth > maximumContentWidth + minimumPadding * 2) {
+    (windowWidth - maximumContentWidth) / 2
+} else {
+    minimumPadding
+}
+
+@Composable
+fun adaptiveScreenHorizontalPadding(
+    maximumContentWidth: Dp = DefaultAdaptiveContentWidth
+): Dp = adaptiveHorizontalPadding(
+    windowWidth = LocalConfiguration.current.screenWidthDp.dp,
+    maximumContentWidth = maximumContentWidth
+)
 
 @Composable
 fun AppPanel(
@@ -139,6 +166,7 @@ fun SectionTitle(
         }
         Text(
             text = title,
+            modifier = Modifier.semantics { heading() },
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -260,6 +288,7 @@ fun EmptyStatePanel(
         ) {
             Text(
                 text = title,
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleMedium
             )
             if (!supporting.isNullOrBlank()) {
@@ -295,6 +324,7 @@ fun ScreenHeader(
     ) {
         Text(
             text = title,
+            modifier = Modifier.semantics { heading() },
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -606,10 +636,15 @@ fun LoadingStatePanel(
     modifier: Modifier = Modifier,
     label: String? = null
 ) {
+    val accessibilityLabel = label ?: stringResource(R.string.state_loading)
     AppPanel(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    contentDescription = accessibilityLabel
+                    liveRegion = LiveRegionMode.Polite
+                }
                 .padding(GymSpacing.XLarge),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically

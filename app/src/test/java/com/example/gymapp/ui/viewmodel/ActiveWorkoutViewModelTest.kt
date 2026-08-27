@@ -1,6 +1,8 @@
 package com.example.gymapp.ui.viewmodel
 
+import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
+import com.example.gymapp.data.repository.SaveActiveWorkoutExerciseResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -83,6 +85,70 @@ class ActiveWorkoutViewModelTest {
     }
 
     @Test
+    fun recordThenSaveExerciseStopsTheOwnedRestTimer() = runBlocking {
+        var restRunning = false
+        assertEquals(
+            ActiveWorkoutRecordAndRestResult.RecordedAndTimerStarted,
+            persistActiveWorkoutSetBeforeRest(
+                persist = { RecordActiveWorkoutSetResult.Recorded(revision = 2L) },
+                startRest = { restRunning = true }
+            )
+        )
+
+        val result = persistActiveWorkoutMutationAndReconcileRest<
+            SaveActiveWorkoutExerciseResult
+        >(
+            persist = { SaveActiveWorkoutExerciseResult.Saved(revision = 3L, count = 2) },
+            isCommitted = { it is SaveActiveWorkoutExerciseResult.Saved },
+            stopRest = {
+                val stopped = restRunning
+                restRunning = false
+                stopped
+            }
+        )
+
+        assertTrue(result.repositoryResult is SaveActiveWorkoutExerciseResult.Saved)
+        assertEquals(ActiveWorkoutRestReconciliationStatus.Reconciled, result.restStatus)
+        assertFalse(restRunning)
+    }
+
+    @Test
+    fun recordThenAddSetStopsTheOwnedRestTimer() = runBlocking {
+        var restRunning = false
+        persistActiveWorkoutSetBeforeRest(
+            persist = { RecordActiveWorkoutSetResult.Recorded(revision = 5L) },
+            startRest = { restRunning = true }
+        )
+
+        val result = persistActiveWorkoutMutationAndReconcileRest<AddActiveWorkoutSetResult>(
+            persist = { AddActiveWorkoutSetResult.Added(revision = 6L, setId = "new-set") },
+            isCommitted = { it is AddActiveWorkoutSetResult.Added },
+            stopRest = {
+                val stopped = restRunning
+                restRunning = false
+                stopped
+            }
+        )
+
+        assertTrue(result.repositoryResult is AddActiveWorkoutSetResult.Added)
+        assertEquals(ActiveWorkoutRestReconciliationStatus.Reconciled, result.restStatus)
+        assertFalse(restRunning)
+    }
+
+    @Test
+    fun committedStructuralMutationPreservesCleanupFailureForUserWarning() = runBlocking {
+        val result = persistActiveWorkoutMutationAndReconcileRest<
+            SaveActiveWorkoutExerciseResult
+        >(
+            persist = { SaveActiveWorkoutExerciseResult.Saved(revision = 8L, count = 1) },
+            isCommitted = { it is SaveActiveWorkoutExerciseResult.Saved },
+            stopRest = { false }
+        )
+
+        assertEquals(ActiveWorkoutRestReconciliationStatus.Failed, result.restStatus)
+    }
+
+    @Test
     fun wallClockTotalRunsContinuouslyFromDurableWorkoutStart() {
         val startedAt = 10_000L
 
@@ -109,31 +175,60 @@ class ActiveWorkoutViewModelTest {
     }
 
     @Test
-    fun onlyBulkCompletedDraftRetiresRestDuringRecovery() {
+    fun clearedUndoWithAnyCompletedSetIsDurableRestRecoveryMarker() {
         assertTrue(
-            shouldRetireRestAfterBulkRecord(
+            shouldReconcileRestAfterUndoCleared(
                 undoableSetId = null,
                 setCompletionStates = listOf(true, true)
             )
         )
         assertFalse(
-            shouldRetireRestAfterBulkRecord(
+            shouldReconcileRestAfterUndoCleared(
                 undoableSetId = "last-recorded-set",
                 setCompletionStates = listOf(true, true)
             )
         )
-        assertFalse(
-            shouldRetireRestAfterBulkRecord(
+        assertTrue(
+            shouldReconcileRestAfterUndoCleared(
                 undoableSetId = null,
                 setCompletionStates = listOf(true, false)
             )
         )
         assertFalse(
-            shouldRetireRestAfterBulkRecord(
+            shouldReconcileRestAfterUndoCleared(
                 undoableSetId = null,
                 setCompletionStates = emptyList()
             )
         )
+    }
+
+    @Test
+    fun partialWorkoutRetriesFailedRestCleanupFromTheSameDurableSnapshot() {
+        var stopAttempts = 0
+        val completionStates = listOf(true, false)
+
+        val first = reconcileRestAfterDurableWorkoutSnapshot(
+            undoableSetId = null,
+            setCompletionStates = completionStates,
+            timerReady = true,
+            stopRest = {
+                stopAttempts += 1
+                false
+            }
+        )
+        val retried = reconcileRestAfterDurableWorkoutSnapshot(
+            undoableSetId = null,
+            setCompletionStates = completionStates,
+            timerReady = true,
+            stopRest = {
+                stopAttempts += 1
+                true
+            }
+        )
+
+        assertEquals(ActiveWorkoutRestReconciliationStatus.Failed, first)
+        assertEquals(ActiveWorkoutRestReconciliationStatus.Reconciled, retried)
+        assertEquals(2, stopAttempts)
     }
 
     @Test
@@ -147,6 +242,26 @@ class ActiveWorkoutViewModelTest {
 
         gate.finish("first-set")
         assertTrue(gate.tryStart("second-set"))
+    }
+
+    @Test
+    fun restTimerMutationsAreGatedByEveryWorkoutOperation() {
+        assertFalse(
+            activeWorkoutOperationInProgress(
+                setRecordingsInFlight = emptySet(),
+                isRecordingAll = false,
+                isFinishing = false,
+                isDiscarding = false,
+                undoingSetId = null
+            )
+        )
+        listOf(
+            activeWorkoutOperationInProgress(setOf("set-1"), false, false, false, null),
+            activeWorkoutOperationInProgress(emptySet(), true, false, false, null),
+            activeWorkoutOperationInProgress(emptySet(), false, true, false, null),
+            activeWorkoutOperationInProgress(emptySet(), false, false, true, null),
+            activeWorkoutOperationInProgress(emptySet(), false, false, false, "set-1")
+        ).forEach(::assertTrue)
     }
 
     @Test

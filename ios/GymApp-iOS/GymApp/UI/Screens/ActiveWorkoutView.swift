@@ -7,6 +7,43 @@ enum ActiveWorkoutRestReconciliationOutcome: Equatable {
     case timerCleanupPending
 }
 
+struct ActiveWorkoutActionStatus: Equatable {
+    let message: String
+    let isError: Bool
+}
+
+func activeWorkoutActionStatus(
+    liveQueueFailure: String?,
+    restProjectionWarning: String?,
+    success: String
+) -> ActiveWorkoutActionStatus {
+    if let liveQueueFailure {
+        return ActiveWorkoutActionStatus(message: liveQueueFailure, isError: true)
+    }
+    if let restProjectionWarning {
+        return ActiveWorkoutActionStatus(message: restProjectionWarning, isError: true)
+    }
+    return ActiveWorkoutActionStatus(message: success, isError: false)
+}
+
+func activeWorkoutValueEditorsAreDisabled(
+    isCompleted: Bool,
+    hasCommitIntent: Bool,
+    isLivePlanFrozen _: Bool
+) -> Bool {
+    // A live room freezes the shared plan structure, but each participant must
+    // still be able to enter the weight and reps they actually performed.
+    isCompleted || hasCommitIntent
+}
+
+func activeWorkoutStructuralActionsAreDisabled(
+    hasStoredExercise: Bool,
+    hasCommitIntent: Bool,
+    isLivePlanFrozen: Bool
+) -> Bool {
+    !hasStoredExercise || hasCommitIntent || isLivePlanFrozen
+}
+
 /// The active-workout file owns the rest deadline. RestTimerManager is a
 /// recoverable countdown projection, so a crash between their writes is healed
 /// in this direction only and can never extend the committed rest interval.
@@ -55,6 +92,7 @@ private enum LiveParticipantSelection: String {
 @MainActor
 struct ActiveWorkoutView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
@@ -634,21 +672,40 @@ struct ActiveWorkoutView: View {
         total: Int,
         accent: Color
     ) -> some View {
-        HStack(spacing: GymTheme.Spacing.small) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(GymTheme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(width: 72, alignment: .leading)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: GymTheme.Spacing.xSmall) {
+                    HStack(alignment: .firstTextBaseline, spacing: GymTheme.Spacing.small) {
+                        Text(label)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: GymTheme.Spacing.small)
+                        Text("\(completed)/\(total)")
+                            .font(GymTheme.TypeScale.utility)
+                            .foregroundStyle(GymTheme.textPrimary)
+                    }
+                    ProgressView(value: Double(completed), total: Double(max(1, total)))
+                        .tint(accent)
+                }
+            } else {
+                HStack(spacing: GymTheme.Spacing.small) {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(width: 72, alignment: .leading)
 
-            ProgressView(value: Double(completed), total: Double(max(1, total)))
-                .tint(accent)
+                    ProgressView(value: Double(completed), total: Double(max(1, total)))
+                        .tint(accent)
 
-            Text("\(completed)/\(total)")
-                .font(GymTheme.TypeScale.utility)
-                .foregroundStyle(GymTheme.textPrimary)
-                .frame(minWidth: 42, alignment: .trailing)
+                    Text("\(completed)/\(total)")
+                        .font(GymTheme.TypeScale.utility)
+                        .foregroundStyle(GymTheme.textPrimary)
+                        .frame(minWidth: 42, alignment: .trailing)
+                }
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
@@ -698,60 +755,76 @@ struct ActiveWorkoutView: View {
     }
 
     private func liveSetLane(label: String, completed: [Bool], accent: Color) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(GymTheme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(width: 72, alignment: .leading)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(completed.indices, id: \.self) { index in
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(completed[index] ? accent.opacity(0.14) : GymTheme.surfaceVariant.opacity(0.62))
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(
-                                    completed[index] ? accent.opacity(0.72) : GymTheme.outlineSoft,
-                                    lineWidth: completed[index] ? 1.25 : GymTheme.hairlineWidth
-                                )
-                            if completed[index] {
-                                Image(systemName: "checkmark")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(accent)
-                            } else {
-                                Text("\(index + 1)")
-                                    .font(.caption2.monospacedDigit().weight(.semibold))
-                                    .foregroundStyle(GymTheme.textSecondary)
-                            }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: GymTheme.Spacing.xSmall) {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    liveSetIndicators(completed: completed, accent: accent)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(width: 72, alignment: .leading)
+                    liveSetIndicators(completed: completed, accent: accent)
+                }
+            }
+        }
+    }
+
+    private func liveSetIndicators(completed: [Bool], accent: Color) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(completed.indices, id: \.self) { index in
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(completed[index] ? accent.opacity(0.14) : GymTheme.surfaceVariant.opacity(0.62))
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(
+                                completed[index] ? accent.opacity(0.72) : GymTheme.outlineSoft,
+                                lineWidth: completed[index] ? 1.25 : GymTheme.hairlineWidth
+                            )
+                        if completed[index] {
+                            Image(systemName: "checkmark")
+                                .font(.caption2.bold())
+                                .foregroundStyle(accent)
+                        } else {
+                            Text("\(index + 1)")
+                                .font(.caption2.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(GymTheme.textSecondary)
                         }
-                        .frame(width: 28, height: 25)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(
-                            gymText(
-                                "Set \(index + 1)",
-                                "Підхід \(index + 1)",
-                                "Подход \(index + 1)",
+                    }
+                    .frame(width: 28, height: 25)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        gymText(
+                            "Set \(index + 1)",
+                            "Підхід \(index + 1)",
+                            "Подход \(index + 1)",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                    )
+                    .accessibilityValue(
+                        completed[index]
+                            ? gymText(
+                                "Recorded",
+                                "Записано",
+                                "Записано",
                                 languageCode: gymCurrentLanguageCode()
                             )
-                        )
-                        .accessibilityValue(
-                            completed[index]
-                                ? gymText(
-                                    "Recorded",
-                                    "Записано",
-                                    "Записано",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                                : gymText(
-                                    "Planned",
-                                    "Заплановано",
-                                    "Запланировано",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                        )
-                    }
+                            : gymText(
+                                "Planned",
+                                "Заплановано",
+                                "Запланировано",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                    )
                 }
             }
         }
@@ -866,8 +939,11 @@ struct ActiveWorkoutView: View {
                     }
                     .buttonStyle(GymSecondaryButtonStyle())
                     .disabled(
-                        storedExercise == nil || draft.commitIntent != nil ||
-                            liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                        activeWorkoutStructuralActionsAreDisabled(
+                            hasStoredExercise: storedExercise != nil,
+                            hasCommitIntent: draft.commitIntent != nil,
+                            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                        )
                     )
 
                     Button {
@@ -885,8 +961,11 @@ struct ActiveWorkoutView: View {
                     }
                     .buttonStyle(GymPrimaryButtonStyle())
                     .disabled(
-                        storedExercise == nil || draft.commitIntent != nil ||
-                            liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                        activeWorkoutStructuralActionsAreDisabled(
+                            hasStoredExercise: storedExercise != nil,
+                            hasCommitIntent: draft.commitIntent != nil,
+                            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                        )
                     )
                 }
             }
@@ -900,7 +979,10 @@ struct ActiveWorkoutView: View {
         exerciseName: String,
         draft: ActiveWorkoutDraft
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let isCurrent = currentSetID(in: draft) == set.id
+        let isLatestCompleted = draft.undoableSetID == set.id
+        let restSeconds = restDurationSeconds(for: exercise)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Text(
                     gymText(
@@ -912,6 +994,17 @@ struct ActiveWorkoutView: View {
                 )
                 .font(.subheadline.bold())
                 Spacer(minLength: 8)
+                if isCurrent, !set.isCompleted {
+                    GymInfoPill(
+                        gymText(
+                            "Current",
+                            "Поточний",
+                            "Текущий",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "location.fill"
+                    )
+                }
                 if set.isCompleted {
                     Label(
                         gymText(
@@ -936,6 +1029,66 @@ struct ActiveWorkoutView: View {
                 }
             }
 
+            if !set.isCompleted {
+                Button {
+                    recordSet(
+                        set,
+                        exercise: exercise,
+                        exerciseName: exerciseName,
+                        draft: draft
+                    )
+                } label: {
+                    Label(
+                        gymText(
+                            "Record set · rest \(restSeconds) s",
+                            "Записати підхід · відпочинок \(restSeconds) с",
+                            "Записать подход · отдых \(restSeconds) с",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+                .disabled(!isCurrent || draft.commitIntent != nil)
+                .accessibilityHint(
+                    gymText(
+                        "Saves this set before starting its movement-based rest timer",
+                        "Зберігає цей підхід перед запуском таймера відпочинку для цієї вправи",
+                        "Сохраняет этот подход перед запуском таймера отдыха для этого упражнения",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
+
+            if isLatestCompleted {
+                activeRestPanel(draft: draft)
+
+                Button {
+                    undoLatestSet(set, draft: draft)
+                } label: {
+                    Label(
+                        gymText(
+                            "Undo latest set",
+                            "Скасувати останній підхід",
+                            "Отменить последний подход",
+                            languageCode: gymCurrentLanguageCode()
+                        ),
+                        systemImage: "arrow.uturn.backward.circle"
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(GymSecondaryButtonStyle())
+                .disabled(draft.commitIntent != nil)
+                .accessibilityHint(
+                    gymText(
+                        "Restores the latest recorded set for editing and stops its rest timer",
+                        "Повертає останній записаний підхід до редагування й зупиняє таймер відпочинку",
+                        "Возвращает последний записанный подход к редактированию и останавливает таймер отдыха",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
         }
         .padding(12)
         .background(
@@ -975,7 +1128,11 @@ struct ActiveWorkoutView: View {
             .keyboardType(.decimalPad)
             .gymTextFieldChrome()
             .disabled(
-                draft.commitIntent != nil || liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                activeWorkoutValueEditorsAreDisabled(
+                    isCompleted: set.isCompleted,
+                    hasCommitIntent: draft.commitIntent != nil,
+                    isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                )
             )
         }
         .frame(maxWidth: .infinity)
@@ -1000,10 +1157,112 @@ struct ActiveWorkoutView: View {
             .padding(.vertical, 9)
             .background(GymTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
             .disabled(
-                draft.commitIntent != nil || liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                activeWorkoutValueEditorsAreDisabled(
+                    isCompleted: set.isCompleted,
+                    hasCommitIntent: draft.commitIntent != nil,
+                    isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                )
             )
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func activeRestPanel(draft: ActiveWorkoutDraft) -> some View {
+        if let deadline = draft.timing?.restingUntil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let remaining = max(0, Int(ceil(deadline.timeIntervalSince(context.date))))
+                if remaining > 0 {
+                    GymPanel(highlighted: true) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(
+                                gymText(
+                                    "Set saved. Rest timer",
+                                    "Підхід збережено. Таймер відпочинку",
+                                    "Подход сохранён. Таймер отдыха",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            )
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
+
+                            Text(Self.clock(TimeInterval(remaining)))
+                                .font(.title2.monospacedDigit().bold())
+                                .foregroundStyle(GymTheme.textPrimary)
+
+                            activeRestControls
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(
+                        gymText(
+                            "Rest timer",
+                            "Таймер відпочинку",
+                            "Таймер отдыха",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                    )
+                    .accessibilityValue(Self.clock(TimeInterval(remaining)))
+                }
+            }
+        }
+    }
+
+    private var activeRestControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                restAdjustmentButton(-15)
+                restAdjustmentButton(15)
+                stopRestButton
+            }
+            VStack(spacing: 8) {
+                restAdjustmentButton(-15)
+                restAdjustmentButton(15)
+                stopRestButton
+            }
+        }
+    }
+
+    private func restAdjustmentButton(_ deltaSeconds: Int) -> some View {
+        Button {
+            adjustManualRest(deltaSeconds)
+        } label: {
+            Text(deltaSeconds < 0 ? "−15" : "+15")
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel(
+            deltaSeconds < 0
+                ? gymText(
+                    "Subtract 15 seconds",
+                    "Зменшити на 15 секунд",
+                    "Убавить 15 секунд",
+                    languageCode: gymCurrentLanguageCode()
+                )
+                : gymText(
+                    "Add 15 seconds",
+                    "Додати 15 секунд",
+                    "Добавить 15 секунд",
+                    languageCode: gymCurrentLanguageCode()
+                )
+        )
+    }
+
+    private var stopRestButton: some View {
+        Button {
+            stopManualRest()
+        } label: {
+            Text(
+                gymText(
+                    "Stop rest",
+                    "Зупинити відпочинок",
+                    "Остановить отдых",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
     }
 
     private func finishPanel(_ draft: ActiveWorkoutDraft) -> some View {
@@ -1099,6 +1358,13 @@ struct ActiveWorkoutView: View {
         currentDraft?.exercises.lazy.flatMap(\.sets).first { $0.id == id }
     }
 
+    private func currentSetID(in draft: ActiveWorkoutDraft) -> UUID? {
+        draft.exercises.lazy
+            .flatMap(\.sets)
+            .first(where: { !$0.isCompleted })?
+            .id
+    }
+
     private func updateSet(
         draft: ActiveWorkoutDraft,
         setID: UUID,
@@ -1126,6 +1392,7 @@ struct ActiveWorkoutView: View {
         draft: ActiveWorkoutDraft
     ) {
         let restSeconds = restDurationSeconds(for: exercise)
+        var liveQueueFailureMessage: String?
         do {
             let updated = try activeWorkoutStore.recordSet(
                 draftID: draft.id,
@@ -1140,7 +1407,12 @@ struct ActiveWorkoutView: View {
                     reps: set.reps
                 )
             } catch {
-                reportStatus(gymSafeEnglishErrorMessage(error), true)
+                let message = gymLocalized(
+                    gymSafeEnglishErrorMessage(error),
+                    languageCode: gymCurrentLanguageCode()
+                )
+                liveQueueFailureMessage = message
+                reportStatus(message, true)
             }
             // The active draft owns the exact deadline. The countdown projection
             // can be reconstructed from it after a crash between the two writes.
@@ -1153,7 +1425,9 @@ struct ActiveWorkoutView: View {
             if let updatedExercise = updated.exercises.first(where: { $0.id == exercise.id }),
                updatedExercise.sets.allSatisfy(\.isCompleted) {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    _ = collapsedExerciseIDs.insert(exercise.id)
+                    // Keep the latest completed row expanded so its rest and undo
+                    // controls remain immediately reachable.
+                    collapsedExerciseIDs.remove(exercise.id)
                     if let nextExercise = updated.exercises.first(where: { candidate in
                         candidate.sets.contains(where: { !$0.isCompleted })
                     }) {
@@ -1161,26 +1435,25 @@ struct ActiveWorkoutView: View {
                     }
                 }
             }
-            if restOutcome == .synchronized {
-                statusMessage = gymText(
+            applyActiveWorkoutActionStatus(
+                liveQueueFailure: liveQueueFailureMessage,
+                restProjectionWarning: restOutcome == .synchronized
+                    ? nil
+                    : gymText(
+                        "Set recorded, but the rest timer could not be saved durably. Rest was stopped.",
+                        "Підхід записано, але таймер відпочинку не вдалося надійно зберегти. Відпочинок зупинено.",
+                        "Подход записан, но таймер отдыха не удалось надёжно сохранить. Отдых остановлен.",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                success: gymText(
                     "Set recorded. Rest timer started.",
                     "Підхід записано. Таймер відпочинку запущено.",
                     "Подход записан. Таймер отдыха запущен.",
                     languageCode: gymCurrentLanguageCode()
                 )
-                statusIsError = false
-            } else {
-                showRestProjectionWarning(
-                    gymText(
-                        "Set recorded, but the rest timer could not be saved durably. Rest was stopped.",
-                        "Підхід записано, але таймер відпочинку не вдалося надійно зберегти. Відпочинок зупинено.",
-                        "Подход записан, но таймер отдыха не удалось надёжно сохранить. Отдых остановлен.",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-            }
+            )
         } catch {
-            show(error)
+            showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
         }
     }
 
@@ -1199,6 +1472,7 @@ struct ActiveWorkoutView: View {
         let liveInputs = orderedInputs.map {
             (id: $0.0, weight: $0.1.weight, reps: $0.1.reps)
         }
+        var liveQueueFailureMessage: String?
         do {
             try liveWorkoutCoordinator.preflightLocalSetsCompletion(liveInputs)
             let updated = try activeWorkoutStore.recordAllSets(
@@ -1209,7 +1483,12 @@ struct ActiveWorkoutView: View {
             do {
                 try liveWorkoutCoordinator.localSetsWereCompleted(liveInputs)
             } catch {
-                reportStatus(gymSafeEnglishErrorMessage(error), true)
+                let message = gymLocalized(
+                    gymSafeEnglishErrorMessage(error),
+                    languageCode: gymCurrentLanguageCode()
+                )
+                liveQueueFailureMessage = message
+                reportStatus(message, true)
             }
             // Batch persistence never starts rest. Any older rest is retired only
             // after the one atomic draft revision has succeeded.
@@ -1227,22 +1506,25 @@ struct ActiveWorkoutView: View {
                     }
                 )
             }
-            statusMessage = restCleanupSucceeded
-                ? gymText(
+            applyActiveWorkoutActionStatus(
+                liveQueueFailure: liveQueueFailureMessage,
+                restProjectionWarning: restCleanupSucceeded
+                    ? nil
+                    : gymText(
+                        "Sets were saved, but old local controls could not be fully cleared.",
+                        "Підходи збережено, але старі локальні елементи не вдалося повністю очистити.",
+                        "Подходы сохранены, но старые локальные элементы не удалось полностью очистить.",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                success: gymText(
                     "All sets saved.",
                     "Усі підходи збережено.",
                     "Все подходы сохранены.",
                     languageCode: gymCurrentLanguageCode()
                 )
-                : gymText(
-                    "Sets were saved, but old local controls could not be fully cleared.",
-                    "Підходи збережено, але старі локальні елементи не вдалося повністю очистити.",
-                    "Подходы сохранены, но старые локальные элементы не удалось полностью очистить.",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            statusIsError = !restCleanupSucceeded
+            )
         } catch {
-            show(error)
+            showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
         }
     }
 
@@ -1250,6 +1532,7 @@ struct ActiveWorkoutView: View {
         _ set: ActiveWorkoutSet,
         draft: ActiveWorkoutDraft
     ) {
+        var liveQueueFailureMessage: String?
         do {
             let updated = try activeWorkoutStore.undoLatestRecordedSet(
                 draftID: draft.id,
@@ -1259,7 +1542,12 @@ struct ActiveWorkoutView: View {
             do {
                 try liveWorkoutCoordinator.localSetWasUndone(localSetID: set.id)
             } catch {
-                reportStatus(gymSafeEnglishErrorMessage(error), true)
+                let message = gymLocalized(
+                    gymSafeEnglishErrorMessage(error),
+                    languageCode: gymCurrentLanguageCode()
+                )
+                liveQueueFailureMessage = message
+                reportStatus(message, true)
             }
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
                 draft: updated,
@@ -1267,21 +1555,25 @@ struct ActiveWorkoutView: View {
                 manager: restTimers,
                 title: currentRestExerciseName(updated)
             )
-            statusMessage = gymText(
-                restOutcome == .synchronized
-                    ? "Latest set restored for editing. Rest stopped."
-                    : "Latest set restored, but old rest cleanup must be retried.",
-                restOutcome == .synchronized
-                    ? "Останній підхід повернуто до редагування. Відпочинок зупинено."
-                    : "Останній підхід відновлено, але очищення старого відпочинку треба повторити.",
-                restOutcome == .synchronized
-                    ? "Последний подход возвращён к редактированию. Отдых остановлен."
-                    : "Последний подход восстановлен, но очистку старого отдыха нужно повторить.",
-                languageCode: gymCurrentLanguageCode()
+            applyActiveWorkoutActionStatus(
+                liveQueueFailure: liveQueueFailureMessage,
+                restProjectionWarning: restOutcome == .synchronized
+                    ? nil
+                    : gymText(
+                        "Latest set restored, but old rest cleanup must be retried.",
+                        "Останній підхід відновлено, але очищення старого відпочинку треба повторити.",
+                        "Последний подход восстановлен, но очистку старого отдыха нужно повторить.",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                success: gymText(
+                    "Latest set restored for editing. Rest stopped.",
+                    "Останній підхід повернуто до редагування. Відпочинок зупинено.",
+                    "Последний подход возвращён к редактированию. Отдых остановлен.",
+                    languageCode: gymCurrentLanguageCode()
+                )
             )
-            statusIsError = restOutcome != .synchronized
         } catch {
-            show(error)
+            showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
         }
     }
 
@@ -1442,19 +1734,35 @@ struct ActiveWorkoutView: View {
             return
         }
         do {
-            _ = try activeWorkoutStore.saveExercise(
+            let updated = try activeWorkoutStore.saveExercise(
                 draftID: draft.id,
                 exerciseBlockID: exercise.id,
                 expectedRevision: draft.revision
             )
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
             _ = withAnimation(.easeInOut(duration: 0.2)) {
                 collapsedExerciseIDs.insert(exercise.id)
             }
-            statusMessage = gymText(
-                "Exercise saved.", "Вправу збережено.", "Упражнение сохранено.",
-                languageCode: gymCurrentLanguageCode()
+            applyActiveWorkoutActionStatus(
+                liveQueueFailure: nil,
+                restProjectionWarning: restOutcome == .synchronized
+                    ? nil
+                    : gymText(
+                        "Exercise was saved, but old local rest controls could not be fully cleared.",
+                        "Вправу збережено, але старі локальні елементи відпочинку не вдалося повністю очистити.",
+                        "Упражнение сохранено, но старые локальные элементы отдыха не удалось полностью очистить.",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                success: gymText(
+                    "Exercise saved.", "Вправу збережено.", "Упражнение сохранено.",
+                    languageCode: gymCurrentLanguageCode()
+                )
             )
-            statusIsError = false
         } catch {
             show(error)
         }
@@ -1468,14 +1776,32 @@ struct ActiveWorkoutView: View {
         }
         let source = exercise.sets.last
         do {
-            try activeWorkoutStore.appendSet(
+            let updated = try activeWorkoutStore.appendSet(
                 draftID: draft.id,
                 exerciseBlockID: exercise.id,
                 weight: source?.weight ?? workoutStore.lastWeight(exerciseID: exercise.exerciseID) ?? 0,
                 reps: source?.reps ?? 10,
                 expectedRevision: draft.revision
             )
-            statusMessage = nil
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(
+                    gymText(
+                        "Set added, but old local rest controls could not be fully cleared.",
+                        "Підхід додано, але старі локальні елементи відпочинку не вдалося повністю очистити.",
+                        "Подход добавлен, но старые локальные элементы отдыха не удалось полностью очистить.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+            }
         } catch {
             show(error)
         }
@@ -1562,14 +1888,50 @@ struct ActiveWorkoutView: View {
         statusIsError = true
     }
 
+    private func applyActiveWorkoutActionStatus(
+        liveQueueFailure: String?,
+        restProjectionWarning: String?,
+        success: String
+    ) {
+        let resolved = activeWorkoutActionStatus(
+            liveQueueFailure: liveQueueFailure,
+            restProjectionWarning: restProjectionWarning,
+            success: success
+        )
+        statusMessage = resolved.message
+        statusIsError = resolved.isError
+    }
+
+    private func showActionFailure(
+        _ error: Error,
+        liveQueueFailure: String?
+    ) {
+        guard let liveQueueFailure else {
+            show(error)
+            return
+        }
+        applyActiveWorkoutActionStatus(
+            liveQueueFailure: liveQueueFailure,
+            restProjectionWarning: gymErrorMessage(error),
+            success: ""
+        )
+    }
+
     private func collapseCompletedExercises() {
         guard let draft = currentDraft else { return }
         let currentExerciseID = draft.exercises.first(where: { exercise in
             exercise.sets.contains(where: { !$0.isCompleted })
         })?.id
+        let undoableExerciseID = draft.undoableSetID.flatMap { undoableSetID in
+            draft.exercises.first(where: { exercise in
+                exercise.sets.contains(where: { $0.id == undoableSetID })
+            })?.id
+        }
         collapsedExerciseIDs = Set(
             draft.exercises.compactMap { exercise in
-                exercise.id == currentExerciseID ? nil : exercise.id
+                exercise.id == currentExerciseID || exercise.id == undoableExerciseID
+                    ? nil
+                    : exercise.id
             }
         )
     }

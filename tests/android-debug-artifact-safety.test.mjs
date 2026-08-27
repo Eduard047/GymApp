@@ -8,7 +8,7 @@ const [appBuild, appDebugManifest, releaseScript] = await Promise.all([
   readFile("scripts/publish-debug-release.ps1", "utf8"),
 ]);
 
-test("public debug builds do not package Compose tooling or test activities", () => {
+test("public debug builds do not expose Compose tooling or test activities", () => {
   assert.doesNotMatch(
     appBuild,
     /debugImplementation\(libs\.androidx\.compose\.ui\.tooling\)/,
@@ -23,6 +23,11 @@ test("public debug builds do not package Compose tooling or test activities", ()
     appBuild,
     /implementation\(libs\.androidx\.compose\.ui\.tooling\.preview\)/,
     "phone may retain compile-time preview annotations"
+  );
+  assert.match(
+    appDebugManifest,
+    /android:name="androidx\.activity\.ComponentActivity"[\s\S]*?android:exported="false"/,
+    "the in-process Compose host must remain unreachable outside the debug app"
   );
 });
 

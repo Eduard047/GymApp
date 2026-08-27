@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -42,6 +44,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,12 +68,18 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
+import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
 import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import com.example.gymapp.util.asString
+import com.example.gymapp.util.DateTimeUtils
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Locale
 
 @Composable
 internal fun FriendsScreen(
@@ -101,6 +111,9 @@ internal fun FriendsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
+    val languageTag = currentAppLanguageTag()
+    val locale = remember(languageTag) { Locale.forLanguageTag(languageTag) }
     var friendCode by rememberSaveable { mutableStateOf("") }
     var copiedCode by rememberSaveable { mutableStateOf(false) }
     var inviteToAccept by remember { mutableStateOf<SocialIncomingWorkoutInvite?>(null) }
@@ -142,13 +155,17 @@ internal fun FriendsScreen(
         modifier = modifier.fillMaxSize(),
         state = listState,
         contentPadding = PaddingValues(
-            start = GymSpacing.ScreenHorizontal,
+            start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,
-            end = GymSpacing.ScreenHorizontal,
+            end = screenHorizontalPadding,
             bottom = GymSpacing.ScreenBottom
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
+        item {
+            ScreenHeader(title = stringResource(R.string.friends_hero_title))
+        }
+
         uiState.error?.let { error ->
             item {
                 MessagePanel(
@@ -253,6 +270,7 @@ internal fun FriendsScreen(
                 )
                 IncomingFriendRequestCard(
                     request = request,
+                    locale = locale,
                     highlighted = highlighted,
                     isLoading = "friend-${request.friendshipId}" in uiState.actionsInFlight ||
                         "profile-${request.profileId}" in uiState.actionsInFlight,
@@ -260,14 +278,6 @@ internal fun FriendsScreen(
                     onDecline = { onDeclineFriendRequest(request) },
                     onBlock = { requestToBlock = request },
                     modifier = focusedObjectModifier(highlighted)
-                )
-            }
-        }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.XSmall)) {
-                ScreenHeader(
-                    title = stringResource(R.string.friends_hero_title)
                 )
             }
         }
@@ -503,7 +513,7 @@ internal fun friendsFocusedObjectIndex(
     if (!uiState.isCloudAccount ||
         focusedSocialPush == null && focusedLiveRoomId == null
     ) return null
-    var index = listOf(
+    var index = 1 + listOf(
         uiState.error,
         uiState.notice,
         liveUiState.error,
@@ -543,7 +553,7 @@ internal fun friendsFocusedObjectIndex(
         index += incomingFriendRequests.size
     }
 
-    index += 2 // Friends header and refresh card.
+    index += 1 // Refresh card; the Friends header is always the first slot.
     val dashboard = uiState.dashboard ?: return null
     index += 1 // Ranking heading.
     index += rankedSocialFriends(dashboard.friends).size.coerceAtLeast(1)
@@ -847,6 +857,7 @@ private fun AddFriendCard(
 @Composable
 private fun IncomingFriendRequestCard(
     request: SocialFriendRequest,
+    locale: Locale,
     highlighted: Boolean,
     isLoading: Boolean,
     onAccept: () -> Unit,
@@ -865,7 +876,10 @@ private fun IncomingFriendRequestCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(request.displayName, style = MaterialTheme.typography.titleMedium)
-            Text(request.requestedAt.take(10), style = MaterialTheme.typography.bodySmall)
+            Text(
+                localizedSocialRequestDate(request.requestedAt, locale),
+                style = MaterialTheme.typography.bodySmall
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onAccept, enabled = !isLoading) {
                     Text(stringResource(R.string.action_accept))
@@ -1030,12 +1044,20 @@ private fun PrivacySwitchRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onCheckedChange
+            )
+            .semantics(mergeDescendants = true) {},
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -1190,9 +1212,26 @@ private fun socialInviteStatusLabel(status: String): String = stringResource(
 private fun copyFriendCode(context: Context, value: String): Boolean {
     val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return false
     return runCatching {
-        clipboard.setPrimaryClip(ClipData.newPlainText("GymApp friend code", value))
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                context.getString(R.string.friend_code_clipboard_label),
+                value
+            )
+        )
     }.isSuccess
 }
+
+internal fun localizedSocialRequestDate(
+    requestedAt: String,
+    locale: Locale,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): String = runCatching {
+    DateTimeUtils.formatDate(
+        timestamp = Instant.parse(requestedAt).toEpochMilli(),
+        locale = locale,
+        zoneId = zoneId
+    )
+}.getOrElse { requestedAt }
 
 private fun shareFriendCode(context: Context, value: String) {
     val sendIntent = Intent(Intent.ACTION_SEND).apply {

@@ -490,20 +490,22 @@ class GarminWorkoutReceiptAtomicityTest {
     }
 
     @Test
-    fun rejectedWorkoutDoesNotConsumeDurableRequestId() = runBlocking {
+    fun invalidWorkoutDoesNotConsumeDurableRequestId() = runBlocking {
         withDatabase("garmin-rejected") { database, repository ->
-            val rejected = repository.applyGarminCreateWorkout(
-                ownerBinding = ownerBinding,
-                deviceBinding = deviceBinding,
-                pairingGeneration = pairingGeneration,
-                requestId = requestId,
-                payloadDigest = "f".repeat(64),
-                date = 1_750_000_020_000L,
-                note = null,
-                sets = emptyList()
-            )
+            val rejected = runCatching {
+                repository.applyGarminCreateWorkout(
+                    ownerBinding = ownerBinding,
+                    deviceBinding = deviceBinding,
+                    pairingGeneration = pairingGeneration,
+                    requestId = requestId,
+                    payloadDigest = "f".repeat(64),
+                    date = 1_750_000_020_000L,
+                    note = null,
+                    sets = emptyList()
+                )
+            }
 
-            assertEquals(GarminWorkoutApplyResult.Rejected, rejected)
+            assertTrue(rejected.isFailure)
             assertEquals(0, database.workoutDao().getSessionCount())
             assertEquals(0, database.garminWorkoutReceiptDao().count())
             assertNull(

@@ -6,38 +6,86 @@ enum PasswordUpdateMode: Equatable {
 
     var requiresCurrentPassword: Bool { self == .signedIn }
 
-    var title: String {
+    func title(languageCode: String) -> String {
         switch self {
-        case .recovery: "Choose a new password"
-        case .signedIn: "Change your password"
+        case .recovery:
+            gymText(
+                "Choose a new password",
+                "Створи новий пароль",
+                "Создай новый пароль",
+                languageCode: languageCode
+            )
+        case .signedIn:
+            gymText(
+                "Change your password",
+                "Зміни пароль",
+                "Измени пароль",
+                languageCode: languageCode
+            )
         }
     }
 
-    var supportingText: String {
+    func supportingText(languageCode: String) -> String {
         switch self {
-        case .recovery: "Your recovery link was verified. Set a new password for this account."
-        case .signedIn: "Enter your current password, then choose a new password for this account."
+        case .recovery:
+            gymText(
+                "Your recovery link was verified. Set a new password for this account.",
+                "Посилання для відновлення підтверджено. Встанови новий пароль для цього акаунта.",
+                "Ссылка для восстановления подтверждена. Установи новый пароль для этого аккаунта.",
+                languageCode: languageCode
+            )
+        case .signedIn:
+            gymText(
+                "Enter your current password, then choose a new password for this account.",
+                "Введи поточний пароль, а потім вибери новий пароль для цього акаунта.",
+                "Введи текущий пароль, а затем выбери новый пароль для этого аккаунта.",
+                languageCode: languageCode
+            )
         }
     }
 
-    var navigationTitle: String {
+    func navigationTitle(languageCode: String) -> String {
         switch self {
-        case .recovery: "Password recovery"
-        case .signedIn: "Change password"
+        case .recovery:
+            gymText(
+                "Password recovery",
+                "Відновлення пароля",
+                "Восстановление пароля",
+                languageCode: languageCode
+            )
+        case .signedIn:
+            gymText(
+                "Change password",
+                "Змінити пароль",
+                "Изменить пароль",
+                languageCode: languageCode
+            )
         }
+    }
+}
+
+struct PasswordUpdateCredentialDrafts: Equatable {
+    var currentPassword = ""
+    var verificationCode = ""
+    var password = ""
+    var repeatedPassword = ""
+
+    mutating func clearSensitiveFields() {
+        currentPassword = ""
+        verificationCode = ""
+        password = ""
+        repeatedPassword = ""
     }
 }
 
 @MainActor
 struct PasswordUpdateView: View {
     @ObservedObject var auth: AuthService
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     let mode: PasswordUpdateMode
     let onDone: () -> Void
 
-    @State private var currentPassword = ""
-    @State private var verificationCode = ""
-    @State private var password = ""
-    @State private var repeatedPassword = ""
+    @State private var drafts = PasswordUpdateCredentialDrafts()
     @State private var reveal = false
     @State private var localError: String?
 
@@ -58,9 +106,9 @@ struct PasswordUpdateView: View {
                     VStack(spacing: 16) {
                         GymHeroPanel {
                             VStack(alignment: .leading, spacing: 7) {
-                                Label(mode.title, systemImage: "key.fill")
+                                Label(mode.title(languageCode: languageCode), systemImage: "key.fill")
                                     .font(.title2.bold())
-                                Text(gymLocalized(supportingText))
+                                Text(supportingText)
                                     .font(.subheadline)
                                     .foregroundStyle(Color.white.opacity(0.84))
                             }
@@ -71,9 +119,15 @@ struct PasswordUpdateView: View {
                                 if mode.requiresCurrentPassword {
                                     Group {
                                         if reveal {
-                                            TextField("Current password", text: $currentPassword)
+                                            TextField(
+                                                "Current password",
+                                                text: boundedPasswordBinding($drafts.currentPassword)
+                                            )
                                         } else {
-                                            SecureField("Current password", text: $currentPassword)
+                                            SecureField(
+                                                "Current password",
+                                                text: boundedPasswordBinding($drafts.currentPassword)
+                                            )
                                         }
                                     }
                                     .textContentType(.password)
@@ -81,25 +135,37 @@ struct PasswordUpdateView: View {
                                 }
 
                                 if showsVerificationCode {
-                                    TextField("Verification code", text: $verificationCode)
+                                    TextField("Verification code", text: $drafts.verificationCode)
                                         .textContentType(.oneTimeCode)
                                         .keyboardType(.numberPad)
                                         .gymTextFieldChrome()
-                                        .onChange(of: verificationCode) { value in
+                                        .onChange(of: drafts.verificationCode) { value in
                                             let bounded = String(value.prefix(8))
                                             if bounded != value {
-                                                verificationCode = bounded
+                                                drafts.verificationCode = bounded
                                             }
                                         }
                                 }
 
                                 Group {
                                     if reveal {
-                                        TextField("New password", text: $password)
-                                        TextField("Repeat password", text: $repeatedPassword)
+                                        TextField(
+                                            "New password",
+                                            text: boundedPasswordBinding($drafts.password)
+                                        )
+                                        TextField(
+                                            "Repeat password",
+                                            text: boundedPasswordBinding($drafts.repeatedPassword)
+                                        )
                                     } else {
-                                        SecureField("New password", text: $password)
-                                        SecureField("Repeat password", text: $repeatedPassword)
+                                        SecureField(
+                                            "New password",
+                                            text: boundedPasswordBinding($drafts.password)
+                                        )
+                                        SecureField(
+                                            "Repeat password",
+                                            text: boundedPasswordBinding($drafts.repeatedPassword)
+                                        )
                                     }
                                 }
                                 .textContentType(.newPassword)
@@ -112,7 +178,10 @@ struct PasswordUpdateView: View {
                                     .foregroundStyle(GymTheme.textSecondary)
 
                                 if let message = localError ?? auth.message {
-                                    GymStatusBanner(message: message, isError: localError != nil || auth.messageIsError)
+                                    GymStatusBanner(
+                                        message: gymLocalized(message, languageCode: languageCode),
+                                        isError: localError != nil || auth.messageIsError
+                                    )
                                 }
 
                                 Button {
@@ -121,7 +190,12 @@ struct PasswordUpdateView: View {
                                     if auth.isLoading {
                                         ProgressView().tint(.white)
                                     } else {
-                                        Text(mode == .recovery ? "Update password" : "Change password")
+                                        Text(gymText(
+                                            mode == .recovery ? "Update password" : "Change password",
+                                            mode == .recovery ? "Оновити пароль" : "Змінити пароль",
+                                            mode == .recovery ? "Обновить пароль" : "Изменить пароль",
+                                            languageCode: languageCode
+                                        ))
                                     }
                                 }
                                 .buttonStyle(GymPrimaryButtonStyle())
@@ -132,10 +206,18 @@ struct PasswordUpdateView: View {
                     .padding(16)
                 }
             }
-            .navigationTitle(mode.navigationTitle)
+            .navigationTitle(mode.navigationTitle(languageCode: languageCode))
             .navigationBarTitleDisplayMode(.inline)
         }
         .interactiveDismissDisabled(auth.needsPasswordUpdate)
+        .onDisappear(perform: clearSensitiveDrafts)
+    }
+
+    private func boundedPasswordBinding(_ source: Binding<String>) -> Binding<String> {
+        Binding(
+            get: { source.wrappedValue },
+            set: { source.wrappedValue = GymLoginPasswordPolicy.boundedDraft($0) }
+        )
     }
 
     private var showsVerificationCode: Bool {
@@ -144,42 +226,83 @@ struct PasswordUpdateView: View {
 
     private var supportingText: String {
         if showsVerificationCode {
-            return "A verification code was sent to your email. Enter it together with the new password."
+            return gymText(
+                "A verification code was sent to your email. Enter it together with the new password.",
+                "Код підтвердження надіслано на твою електронну пошту. Введи його разом із новим паролем.",
+                "Код подтверждения отправлен на твою электронную почту. Введи его вместе с новым паролем.",
+                languageCode: languageCode
+            )
         }
-        return mode.supportingText
+        return mode.supportingText(languageCode: languageCode)
     }
 
     private func updatePassword() {
         localError = nil
-        if mode.requiresCurrentPassword && currentPassword.isEmpty {
-            localError = "Enter your current password."
+        if mode.requiresCurrentPassword && drafts.currentPassword.isEmpty {
+            localError = gymText(
+                "Enter your current password.",
+                "Введи поточний пароль.",
+                "Введи текущий пароль.",
+                languageCode: languageCode
+            )
             return
         }
-        guard password == repeatedPassword else {
-            localError = "Passwords do not match."
+        if mode.requiresCurrentPassword,
+           !GymLoginPasswordPolicy.accepts(drafts.currentPassword) {
+            localError = gymLocalized(
+                GymLoginPasswordPolicy.currentPasswordErrorMessage,
+                languageCode: languageCode
+            )
             return
         }
-        guard GymPasswordPolicy.accepts(password) else {
-            localError = GymPasswordPolicy.errorMessage
+        guard drafts.password == drafts.repeatedPassword else {
+            localError = gymLocalized(
+                "Passwords do not match.",
+                languageCode: languageCode
+            )
+            return
+        }
+        guard GymPasswordPolicy.accepts(drafts.password) else {
+            localError = gymLocalized(
+                GymPasswordPolicy.errorMessage,
+                languageCode: languageCode
+            )
             return
         }
         let nonce: String?
         if showsVerificationCode {
-            guard let normalized = PasswordReauthenticationNoncePolicy.normalized(verificationCode) else {
-                localError = PasswordReauthenticationNoncePolicy.errorMessage
+            guard let normalized = PasswordReauthenticationNoncePolicy.normalized(
+                drafts.verificationCode
+            ) else {
+                localError = gymLocalized(
+                    PasswordReauthenticationNoncePolicy.errorMessage,
+                    languageCode: languageCode
+                )
                 return
             }
             nonce = normalized
         } else {
             nonce = nil
         }
+        let submittedPassword = drafts.password
+        let submittedCurrentPassword = mode.requiresCurrentPassword
+            ? drafts.currentPassword
+            : nil
         Task {
             let updated = await auth.updatePassword(
-                password,
-                currentPassword: mode.requiresCurrentPassword ? currentPassword : nil,
+                submittedPassword,
+                currentPassword: submittedCurrentPassword,
                 nonce: nonce
             )
-            if updated { onDone() }
+            if updated {
+                clearSensitiveDrafts()
+                onDone()
+            }
         }
+    }
+
+    private func clearSensitiveDrafts() {
+        drafts.clearSensitiveFields()
+        reveal = false
     }
 }

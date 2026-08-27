@@ -1,15 +1,16 @@
 package com.example.gymapp.ui.screens
 
-import androidx.activity.compose.setContent
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.gymapp.MainActivity
+import androidx.activity.ComponentActivity
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
 import com.example.gymapp.data.repository.SmartWorkoutFocus
@@ -20,15 +21,17 @@ import com.example.gymapp.ui.viewmodel.TodayPlanUiModel
 import com.example.gymapp.ui.viewmodel.WeeklyTrainingDayUiModel
 import com.example.gymapp.ui.viewmodel.WeeklyTrainingSummaryUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
+import com.example.gymapp.util.LocalizedText
 import java.time.LocalDate
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class WorkoutListUiTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
     fun completedTodayShowsWeeklyMetricsAndOnlyQuietCreateAnotherAction() {
@@ -47,10 +50,9 @@ class WorkoutListUiTest {
             estimatedMinutes = 48,
             totalVolume = 640.0
         )
-        composeRule.activity.runOnUiThread {
-            composeRule.activity.setContent {
-                GymAppTheme {
-                    WorkoutListScreen(
+        composeRule.setContent {
+            GymAppTheme {
+                WorkoutListScreen(
                         uiState = WorkoutListUiState(
                             todayPlan = TodayPlanUiModel(
                                 focus = SmartWorkoutFocus.FullBody,
@@ -80,14 +82,16 @@ class WorkoutListUiTest {
                         onStartFirstWorkout = { _, _, _ -> },
                         onEditFirstWorkout = { _, _, _ -> },
                         onSkipFirstWorkout = {}
-                    )
-                }
+                )
             }
         }
 
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.today_workout_completed)
         ).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.focus_lens_details)
+        ).performClick()
 
         val locale = composeRule.activity.resources.configuration.locales[0]
         listOf(
@@ -190,14 +194,57 @@ class WorkoutListUiTest {
         }
     }
 
+    @Test
+    fun loadingAndLoadFailureHaveExplicitRecoverableStates() {
+        val uiState = mutableStateOf(WorkoutListUiState(isLoading = true))
+        var retried = false
+        composeRule.setContent {
+            GymAppTheme {
+                WorkoutListScreen(
+                    uiState = uiState.value,
+                    onSessionClick = {},
+                    onPreviousMonth = {},
+                    onCurrentMonth = {},
+                    onNextMonth = {},
+                    onMuscleMapPeriodSelected = {},
+                    onMuscleSelected = {},
+                    onAddWorkout = {},
+                    onStartPlan = {},
+                    onOpenPlan = {},
+                    onStartFirstWorkout = { _, _, _ -> },
+                    onEditFirstWorkout = { _, _, _ -> },
+                    onSkipFirstWorkout = {},
+                    hasRetainedWorkoutDraft = false,
+                    onRetryLoad = { retried = true }
+                )
+            }
+        }
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.workouts_loading)
+        ).assertIsDisplayed()
+
+        composeRule.runOnIdle {
+            uiState.value = WorkoutListUiState(
+                loadError = LocalizedText(R.string.workouts_load_failed)
+            )
+        }
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.workouts_load_failed)
+        ).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.action_retry)
+        ).performClick()
+        composeRule.runOnIdle { assertTrue(retried) }
+    }
+
     private fun setWorkoutListContent(
         uiState: WorkoutListUiState,
-        hasRetainedWorkoutDraft: Boolean
+        hasRetainedWorkoutDraft: Boolean,
+        onRetryLoad: () -> Unit = {}
     ) {
-        composeRule.activity.runOnUiThread {
-            composeRule.activity.setContent {
-                GymAppTheme {
-                    WorkoutListScreen(
+        composeRule.setContent {
+            GymAppTheme {
+                WorkoutListScreen(
                         uiState = uiState,
                         onSessionClick = {},
                         onPreviousMonth = {},
@@ -211,9 +258,9 @@ class WorkoutListUiTest {
                         onStartFirstWorkout = { _, _, _ -> },
                         onEditFirstWorkout = { _, _, _ -> },
                         onSkipFirstWorkout = {},
-                        hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
-                    )
-                }
+                        hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
+                        onRetryLoad = onRetryLoad
+                )
             }
         }
     }

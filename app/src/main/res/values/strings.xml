@@ -52,6 +52,7 @@
     <string name="friend_code_copied">Copied</string>
     <string name="friend_code_share">Share</string>
     <string name="friend_code_share_subject">GymApp friend code</string>
+    <string name="friend_code_clipboard_label">GymApp friend code</string>
     <string name="friend_code_share_message">Add me in GymApp with this friend code: %1$s</string>
     <string name="friend_code_invalid">Enter a complete GymApp friend code.</string>
     <string name="friend_request_send">Send request</string>
@@ -201,6 +202,9 @@
     <string name="action_save">Save</string>
     <string name="action_close">Close</string>
     <string name="action_retry">Retry</string>
+    <string name="state_loading">Loading</string>
+    <string name="state_expanded">Expanded</string>
+    <string name="state_collapsed">Collapsed</string>
     <string name="action_current_month">Current month</string>
     <string name="action_return_to_current_month">Return to current month</string>
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
@@ -227,6 +231,7 @@
     <string name="auth_continue_offline_supporting">Keep workouts only on this device. You can use “Local” or enter a profile name.</string>
     <string name="auth_offline_consequence">Workouts stay only on this device until you export them; cloud sync and recovery are unavailable.</string>
     <string name="auth_local_profile_name">Profile name</string>
+    <string name="auth_local_default_name">Local</string>
     <string name="auth_local_profile_name_hint">Optional; defaults to Local</string>
     <string name="auth_secure_account">Secure account</string>
     <string name="auth_privacy_policy">Privacy Policy</string>
@@ -270,6 +275,7 @@
     <string name="auth_error_email_required">Enter your email.</string>
     <string name="auth_error_email_invalid">Enter a valid email address.</string>
     <string name="auth_error_password_required">Enter your password.</string>
+    <string name="auth_error_password_too_long">Password is too long.</string>
     <string name="auth_error_repeat_email">Repeat your email.</string>
     <string name="auth_error_email_mismatch">Email does not match.</string>
     <string name="auth_error_display_name_length">Display name must be 2-32 characters.</string>
@@ -438,6 +444,7 @@
     <string name="add_workout_completed_mode_hint">Completed mode: saving writes every planned row immediately to workout history and summary.</string>
     <string name="add_workout_active_mode_hint">Starting saves a durable local plan. A set enters workout history only after you record it and finish the workout.</string>
     <string name="active_workout_title">Active workout</string>
+    <string name="active_workout_loading">Loading your active workout…</string>
     <string name="active_workout_supporting">Record each completed set. It is saved before a movement-aware rest timer starts.</string>
     <string name="active_workout_progress">Completed %1$d of %2$d sets</string>
     <string name="active_workout_total_time">Workout time: %1$s</string>
@@ -461,6 +468,7 @@
     <string name="active_workout_exercise_progress">%1$d of %2$d sets recorded</string>
     <string name="active_workout_exercise_completed_collapsed">All sets recorded. Tap expand to review them or undo the latest set.</string>
     <string name="active_workout_set_completed">Recorded</string>
+    <string name="active_workout_set_current">Do this now</string>
     <string name="active_workout_missing_title">No active workout</string>
     <string name="active_workout_missing">This active workout no longer exists for the current account.</string>
     <string name="active_workout_changed">The active workout changed. The latest saved version is shown; review it before trying again.</string>
@@ -484,6 +492,7 @@
     <string name="active_workout_save_all_supporting">Every pending weight and rep value is validated first, then all remaining sets are saved together without starting another rest.</string>
     <string name="active_workout_all_sets_saved">Saved %1$d remaining sets together.</string>
     <string name="active_workout_all_sets_saved_rest_failed">All sets were saved, but the old rest timer could not be fully stopped.</string>
+    <string name="active_workout_change_saved_rest_failed">The change was saved, but the old rest timer could not be fully stopped.</string>
     <string name="active_workout_draft_title">Continue active workout</string>
     <string name="active_workout_draft_progress">%1$d of %2$d sets recorded</string>
     <string name="note_template_push">Push day</string>
@@ -495,6 +504,10 @@
     <string name="label_exercise_name">Exercise name</string>
     <string name="hint_exercise_name">e.g. Bench Press</string>
     <string name="exercise_rename_title">Rename exercise</string>
+    <string name="exercises_loading">Loading your exercise library…</string>
+    <string name="exercises_load_failed">Could not load your exercise library.</string>
+    <string name="workouts_loading">Loading your workouts…</string>
+    <string name="workouts_load_failed">Could not load your workouts.</string>
     <string name="label_rest_timer">Rest Timer</string>
     <string name="label_rest_timer_shared">Shared Rest Timer</string>
     <string name="label_rest_timer_exercise">Exercise Rest</string>

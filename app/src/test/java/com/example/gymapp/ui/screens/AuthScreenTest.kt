@@ -2,6 +2,7 @@ package com.example.gymapp.ui.screens
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.example.gymapp.auth.boundedNewLocalDisplayNameDraft
 import com.example.gymapp.util.AppLanguage
@@ -67,6 +68,35 @@ class AuthScreenTest {
             validateLoginInput(
                 email = "ed@example.com",
                 password = "legacy1"
+            )
+        )
+    }
+
+    @Test
+    fun authDraftBoundsEmailAndPasswordByTheirTransportLimits() {
+        assertEquals(254, boundedAuthEmailDraft("e".repeat(300)).length)
+        assertEquals(
+            MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES,
+            boundedAuthPasswordDraft("p".repeat(MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES + 1))
+                .toByteArray(Charsets.UTF_8)
+                .size
+        )
+        val unicodeSource = "🏋️".repeat(400)
+        val boundedUnicode = boundedAuthPasswordDraft(unicodeSource)
+        assertTrue(
+            boundedUnicode.toByteArray(Charsets.UTF_8).size <=
+                MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES
+        )
+        assertTrue(boundedUnicode.length < unicodeSource.length)
+    }
+
+    @Test
+    fun loginValidationRejectsPasswordBeyondBackendByteLimit() {
+        assertEquals(
+            "Password is too long.",
+            validateLoginInput(
+                email = "ed@example.com",
+                password = "p".repeat(MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES + 1)
             )
         )
     }

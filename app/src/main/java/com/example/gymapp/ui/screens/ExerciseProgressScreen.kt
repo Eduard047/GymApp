@@ -31,6 +31,7 @@ import com.example.gymapp.ui.components.ExerciseTrendChartsCard
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
@@ -61,6 +62,7 @@ fun ExerciseProgressScreen(
     onNextMonth: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val selectedRawExerciseName = uiState.selectedExerciseName
     val selectedDisplayExerciseName = if (selectedRawExerciseName != null) {
         localizedExerciseName(selectedRawExerciseName)
@@ -99,9 +101,9 @@ fun ExerciseProgressScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = GymSpacing.ScreenHorizontal,
+            start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,
-            end = GymSpacing.ScreenHorizontal,
+            end = screenHorizontalPadding,
             bottom = GymSpacing.ScreenBottom
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)

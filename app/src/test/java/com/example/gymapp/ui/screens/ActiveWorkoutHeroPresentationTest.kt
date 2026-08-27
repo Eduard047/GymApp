@@ -22,7 +22,17 @@ class ActiveWorkoutHeroPresentationTest {
             formatActiveWorkoutStartedAt(
                 timestamp = Instant.parse("2026-08-24T14:05:59Z").toEpochMilli(),
                 locale = Locale.US,
-                zoneId = ZoneOffset.UTC
+                zoneId = ZoneOffset.UTC,
+                is24Hour = true
+            )
+        )
+        assertEquals(
+            "2:05 PM",
+            formatActiveWorkoutStartedAt(
+                timestamp = Instant.parse("2026-08-24T14:05:59Z").toEpochMilli(),
+                locale = Locale.US,
+                zoneId = ZoneOffset.UTC,
+                is24Hour = false
             )
         )
     }
@@ -39,7 +49,7 @@ class ActiveWorkoutHeroPresentationTest {
         assertTrue(hero.contains("R.string.active_workout_completed_label"))
         assertTrue(hero.contains("R.string.active_workout_completed_value"))
         assertTrue(hero.contains("R.string.active_workout_started_at"))
-        assertTrue(hero.contains("formatActiveWorkoutStartedAt(uiState.startedAt, locale)"))
+        assertTrue(hero.contains("AndroidDateFormat.is24HourFormat(context)"))
         assertTrue(hero.contains("LinearProgressIndicator"))
         assertTrue(hero.contains("progressBarRangeInfo = ProgressBarRangeInfo"))
         assertTrue(hero.contains("contentDescription = progressAccessibilityLabel"))

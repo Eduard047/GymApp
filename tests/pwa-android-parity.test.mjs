@@ -137,7 +137,10 @@ test("PWA distinguishes planned rows from durable active and history sets", () =
     appSources[0].source,
     /data-action="\$\{primaryAction\}"[^>]*>[\s\S]*?escapeHtml\(primaryLabel\)/
   );
-  assert.doesNotMatch(appSources[0].source, /data-action="record-active-set"/);
+  assert.match(appSources[0].source, /data-action="record-active-set"/);
+  assert.match(appSources[0].source, /data-action="undo-active-set"/);
+  assert.match(appSources[0].source, /data-action="timer-adjust"/);
+  assert.match(appSources[0].source, /data-action="timer-stop"/);
   assert.match(appSources[0].source, /data-action="add-active-set"/);
   assert.match(appSources[0].source, /data-action="save-active-exercise"/);
   assert.match(appSources[0].source, /data-action="finish-active-workout"/);

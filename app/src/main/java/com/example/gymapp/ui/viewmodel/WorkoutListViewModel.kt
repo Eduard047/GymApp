@@ -8,6 +8,7 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
+import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.ExerciseEntity
@@ -47,6 +48,7 @@ import com.example.gymapp.data.repository.muscleContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.DateTimeUtils
+import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingGuidanceManager
 import com.example.gymapp.util.TrainingProfile
@@ -54,11 +56,14 @@ import com.example.gymapp.util.TrainingProfileManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -264,6 +269,8 @@ data class WeeklyTrainingSummaryUiModel(
 )
 
 data class WorkoutListUiState(
+    val isLoading: Boolean = false,
+    val loadError: LocalizedText? = null,
     val monthOffset: Int = 0,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
     val sessions: List<WorkoutSessionSummary> = emptyList(),
@@ -306,6 +313,9 @@ class WorkoutListViewModel(
     private val selectedMuscleId = MutableStateFlow<String?>(null)
     private val manualMappingExerciseName = MutableStateFlow<String?>(null)
     private val recommendationRefresh = MutableStateFlow(0L)
+    private val loadGeneration = MutableStateFlow(0L)
+    @Volatile
+    private var latestRecommendationContext = WorkoutRecommendationContext()
     private val activationLaunchLock = Any()
     private val recommendedLaunchMutationMutex = Mutex()
     private val activationLaunchMutationMutex = Mutex()
@@ -327,22 +337,12 @@ class WorkoutListViewModel(
     private val exerciseHistoryFlow = repository.observeAllExerciseHistory()
     private val muscleMappingsFlow = repository.observeExerciseMuscleMappings()
 
-    private val recommendationContext = combine(
-        repository.observeExercises(),
-        exerciseHistoryFlow,
-        repository.observeExerciseLoadProfiles(),
-        muscleMappingsFlow
-    ) { exercises, history, loadProfiles, muscleMappings ->
-        WorkoutRecommendationContext(
-            exercises = exercises,
-            history = history,
-            loadProfiles = loadProfiles,
-            muscleMappings = muscleMappings
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = WorkoutRecommendationContext()
+    private val recommendationContextLoad = generationScopedRecommendationContext(
+        loadGeneration = loadGeneration,
+        exercisesSource = repository::observeExercises,
+        historySource = repository::observeAllExerciseHistory,
+        loadProfilesSource = repository::observeExerciseLoadProfiles,
+        muscleMappingsSource = repository::observeExerciseMuscleMappings
     )
 
     private val sourceState = combine(
@@ -374,8 +374,17 @@ class WorkoutListViewModel(
         trainingProfileManager.profile,
         trainingGuidanceManager.activationDismissed,
         trainingGuidanceManager.feedback,
-        recommendationContext
-    ) { profile, activationDismissed, feedback, context ->
+        recommendationContextLoad
+    ) { profile, activationDismissed, feedback, contextLoad ->
+        val context = when (contextLoad) {
+            is WorkoutRecommendationContextLoad.Loaded -> contextLoad.context.also {
+                latestRecommendationContext = it
+            }
+            is WorkoutRecommendationContextLoad.Failed -> {
+                latestRecommendationContext = WorkoutRecommendationContext()
+                throw contextLoad.error
+            }
+        }
         WorkoutExperienceState(profile, activationDismissed, feedback, context)
     }
     private val experienceState = combine(
@@ -383,11 +392,12 @@ class WorkoutListViewModel(
         recommendationRefresh
     ) { state, _ -> state }
 
-    val uiState: StateFlow<WorkoutListUiState> = combine(
-        sourceState,
-        muscleSelection,
-        experienceState
-    ) { source, selection, experience ->
+    val uiState: StateFlow<WorkoutListUiState> = loadGeneration.flatMapLatest {
+        combine(
+            sourceState,
+            muscleSelection,
+            experienceState
+        ) { source, selection, experience ->
         val offset = source.offset
         val sessions = source.sessions
         val dashboardStats = source.dashboardStats
@@ -432,6 +442,7 @@ class WorkoutListViewModel(
             zoneId = zoneId
         )
         WorkoutListUiState(
+            isLoading = false,
             monthOffset = offset,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
             sessions = sessions,
@@ -468,10 +479,19 @@ class WorkoutListViewModel(
                 targetWorkoutsPerWeek = experience.profile.workoutsPerWeek
             )
         )
+        }.catch { error ->
+            if (error is CancellationException) throw error
+            emit(
+                WorkoutListUiState(
+                    isLoading = false,
+                    loadError = LocalizedText(R.string.workouts_load_failed)
+                )
+            )
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = WorkoutListUiState()
+        initialValue = WorkoutListUiState(isLoading = true)
     )
 
     init {
@@ -504,7 +524,7 @@ class WorkoutListViewModel(
         if (trainingGuidanceManager.activeBinding != expectedAccountBinding) return null
         val expectedProfileAccountBinding = profileAccountBinding ?: return null
         if (trainingProfileManager.activeBinding != expectedProfileAccountBinding) return null
-        val context = recommendationContext.value
+        val context = latestRecommendationContext
         val token = buildLaunchToken(
             profile = profile,
             effort = effort.toSmartWorkoutEffort(),
@@ -565,6 +585,11 @@ class WorkoutListViewModel(
         recommendationRefresh.value += 1L
     }
 
+    fun retryLoad() {
+        latestRecommendationContext = WorkoutRecommendationContext()
+        loadGeneration.value += 1L
+    }
+
     internal suspend fun resolveLaunchPlan(encoded: String): SmartWorkoutLaunchPlan? {
         if (!SmartWorkoutLaunchPlanCodec.isTokenShapeValid(encoded)) return null
         val expectedAccountBinding = accountBinding ?: return null
@@ -576,7 +601,7 @@ class WorkoutListViewModel(
         }
         val expectedProfile = pendingBeforeLoad?.targetProfile
             ?: trainingProfileManager.profile.value
-        val context = recommendationContext.value
+        val context = latestRecommendationContext
         if (context.exercises.isEmpty()) {
             return rejectPendingActivation(encoded, pendingBeforeLoad)
         }
@@ -1861,12 +1886,50 @@ private data class WorkoutListSourceState(
     val exerciseHistory: List<ExerciseHistoryEntry>
 )
 
-private data class WorkoutRecommendationContext(
+internal data class WorkoutRecommendationContext(
     val exercises: List<ExerciseEntity> = emptyList(),
     val history: List<ExerciseHistoryEntry> = emptyList(),
     val loadProfiles: Map<Long, ExerciseLoadProfile> = emptyMap(),
     val muscleMappings: List<ExerciseMuscleMappingEntity> = emptyList()
 )
+
+internal sealed interface WorkoutRecommendationContextLoad {
+    data class Loaded(
+        val context: WorkoutRecommendationContext
+    ) : WorkoutRecommendationContextLoad
+
+    data class Failed(
+        val error: Throwable
+    ) : WorkoutRecommendationContextLoad
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun generationScopedRecommendationContext(
+    loadGeneration: Flow<Long>,
+    exercisesSource: () -> Flow<List<ExerciseEntity>>,
+    historySource: () -> Flow<List<ExerciseHistoryEntry>>,
+    loadProfilesSource: () -> Flow<Map<Long, ExerciseLoadProfile>>,
+    muscleMappingsSource: () -> Flow<List<ExerciseMuscleMappingEntity>>
+): Flow<WorkoutRecommendationContextLoad> = loadGeneration.flatMapLatest {
+    combine(
+        exercisesSource(),
+        historySource(),
+        loadProfilesSource(),
+        muscleMappingsSource()
+    ) { exercises, history, loadProfiles, muscleMappings ->
+        WorkoutRecommendationContext(
+            exercises = exercises,
+            history = history,
+            loadProfiles = loadProfiles,
+            muscleMappings = muscleMappings
+        )
+    }.map<WorkoutRecommendationContext, WorkoutRecommendationContextLoad> { context ->
+        WorkoutRecommendationContextLoad.Loaded(context)
+    }.catch { error ->
+        if (error is CancellationException) throw error
+        emit(WorkoutRecommendationContextLoad.Failed(error))
+    }
+}
 
 private fun WorkoutRecommendationContext.fingerprint(
     profile: TrainingProfile

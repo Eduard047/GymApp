@@ -46,7 +46,7 @@ test("profile hub defaults to social training and keeps account controls in a co
 });
 
 test("profile hub tabs support automatic WAI-ARIA keyboard activation with wrapped focus", () => {
-  const binding = sourceBetween("function bindEvents()", "function activateProfileHubTabFromKeyboard");
+  const binding = sourceBetween("function bindEvents(", "function activateProfileHubTabFromKeyboard");
   const handlerSource = sourceBetween(
     "function activateProfileHubTabFromKeyboard",
     "function activateDataActionFromKeyboard"
@@ -197,7 +197,7 @@ test("main empty states explain the next action instead of ending the flow", () 
 
   assert.match(workouts, /empty-state-panel[\s\S]*data-action="open-add"/);
   assert.match(exercises, /empty-state-panel[\s\S]*data-action="reset-exercise-filters"/);
-  assert.match(appSource, /if \(action === "reset-exercise-filters"\)[\s\S]*?exerciseSortMode = "name";\s+return render\(\);/);
+  assert.match(appSource, /if \(action === "reset-exercise-filters"\)[\s\S]*?exerciseSortMode = "name";[\s\S]*?render\(\);\s+restoreStableActionFocus\(focusTarget\);\s+return true;/);
   assert.match(spotlight, /data-action="open-add"/);
   assert.match(missions, /empty-state-panel[\s\S]*data-action="open-add"/);
 });

@@ -304,6 +304,8 @@ private struct PersistedLocalProfileIndex: Codable, Equatable, Sendable {
 enum AuthServiceError: LocalizedError {
     case invalidEmail
     case invalidPassword
+    case loginPasswordTooLong
+    case currentPasswordTooLong
     case invalidPasswordReauthenticationNonce
     case passwordReauthenticationRequired
     case invalidDisplayName
@@ -325,6 +327,9 @@ enum AuthServiceError: LocalizedError {
         switch self {
         case .invalidEmail: return "Enter a valid email address."
         case .invalidPassword: return GymPasswordPolicy.errorMessage
+        case .loginPasswordTooLong: return GymLoginPasswordPolicy.errorMessage
+        case .currentPasswordTooLong:
+            return GymLoginPasswordPolicy.currentPasswordErrorMessage
         case .invalidPasswordReauthenticationNonce:
             return PasswordReauthenticationNoncePolicy.errorMessage
         case .passwordReauthenticationRequired:
@@ -353,6 +358,32 @@ enum AccountDeletionRequestDisposition: Equatable {
     case notDispatched
     case outcomeUnknown
     case definitivelyRejected
+}
+
+enum GymLoginPasswordPolicy {
+    static let maximumUTF8Bytes = 1_024
+    static let errorMessage = "Password is too long."
+    static let currentPasswordErrorMessage = "Current password is too long."
+
+    static func accepts(_ password: String) -> Bool {
+        password.utf8.count <= maximumUTF8Bytes
+    }
+
+    static func boundedDraft(_ value: String) -> String {
+        let byteCount = value.utf8.count
+        guard byteCount > maximumUTF8Bytes else { return value }
+
+        var bounded = ""
+        bounded.reserveCapacity(min(byteCount, maximumUTF8Bytes))
+        var boundedBytes = 0
+        for character in value {
+            let characterBytes = String(character).utf8.count
+            guard boundedBytes + characterBytes <= maximumUTF8Bytes else { break }
+            bounded.append(character)
+            boundedBytes += characterBytes
+        }
+        return bounded
+    }
 }
 
 enum GymPasswordPolicy {
@@ -545,6 +576,9 @@ final class AuthService: ObservableObject {
             let cleanEmail = try self.validatedEmail(email)
             submittedEmail = cleanEmail
             guard !password.isEmpty else { throw AuthServiceError.invalidPassword }
+            guard GymLoginPasswordPolicy.accepts(password) else {
+                throw AuthServiceError.loginPasswordTooLong
+            }
             let object = try await self.requestJSON(
                 path: "/auth/v1/token?grant_type=password",
                 method: "POST",
@@ -702,13 +736,16 @@ final class AuthService: ObservableObject {
         var updated = false
         await perform {
             try self.validatePassword(password)
-            let cloud = try await self.validCloudSession()
-            var body: [String: Any] = ["password": password]
             let isSignedInChange = currentPassword != nil
             if let currentPassword {
                 guard !currentPassword.isEmpty else { throw AuthServiceError.invalidPassword }
-                body["current_password"] = currentPassword
+                guard GymLoginPasswordPolicy.accepts(currentPassword) else {
+                    throw AuthServiceError.currentPasswordTooLong
+                }
             }
+            let cloud = try await self.validCloudSession()
+            var body: [String: Any] = ["password": password]
+            if let currentPassword { body["current_password"] = currentPassword }
 
             let cleanNonce: String?
             if let nonce {
@@ -1014,10 +1051,11 @@ final class AuthService: ObservableObject {
     ) async throws {
         isLoading = true
         defer { isLoading = false }
-        let existing = try await validCloudSession(expectedUserID: expectedUserID)
-        guard !currentPassword.isEmpty, currentPassword.utf8.count <= 1_024 else {
-            throw AuthServiceError.invalidPassword
+        guard !currentPassword.isEmpty else { throw AuthServiceError.invalidPassword }
+        guard GymLoginPasswordPolicy.accepts(currentPassword) else {
+            throw AuthServiceError.currentPasswordTooLong
         }
+        let existing = try await validCloudSession(expectedUserID: expectedUserID)
         let authObject = try await requestJSON(
             path: "/auth/v1/token?grant_type=password",
             method: "POST",
@@ -1327,6 +1365,8 @@ final class AuthService: ObservableObject {
             return status == 408 || (500 ... 599).contains(status)
         case AuthServiceError.invalidEmail,
              AuthServiceError.invalidPassword,
+             AuthServiceError.loginPasswordTooLong,
+             AuthServiceError.currentPasswordTooLong,
              AuthServiceError.invalidPasswordReauthenticationNonce,
              AuthServiceError.passwordReauthenticationRequired,
              AuthServiceError.invalidDisplayName,

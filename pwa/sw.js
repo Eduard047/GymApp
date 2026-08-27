@@ -1,7 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v141";
+const CACHE_VERSION = "v142";
+// v142 is the complete immutable 3.2.2 shell, including the final responsive navigation pass.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const UPDATE_REFRESH_QUERY_KEY = "gymapp_sw_refresh";
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
@@ -38,7 +39,7 @@ const ASSETS = [
   "./confirmed.v57.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v78.css",
+  "./styles.v79.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v72.js",
@@ -49,9 +50,9 @@ const ASSETS = [
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v85.js",
+  "./russian-text.v86.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v100.js",
+  "./app.v101.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
