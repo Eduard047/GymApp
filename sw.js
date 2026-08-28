@@ -1,9 +1,15 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v142";
-// v142 is the complete immutable 3.2.2 shell, including the final responsive navigation pass.
+const CACHE_VERSION = "v144";
+// v144 separates stable media from the immutable application shell and loads
+// the optimized v103 application bundle.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
+const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
+// Exercise demonstrations and install icons are content-versioned separately
+// from the application shell. A shell-only release can therefore reuse the
+// already verified public media cache instead of downloading every image again.
+const MEDIA_CACHE_NAME = `${CACHE_PREFIX}media-${MEDIA_CACHE_VERSION}`;
 const UPDATE_REFRESH_QUERY_KEY = "gymapp_sw_refresh";
 const LEGACY_GITHUB_ORIGIN = "https://eduard047.github.io";
 const LEGACY_GITHUB_SCOPE = `${LEGACY_GITHUB_ORIGIN}/GymApp/`;
@@ -31,7 +37,7 @@ const EXERCISE_MEDIA_KEYS = [
   "french_press", "hyperextension", "side_hyperextension", "plank", "weighted_crunch",
   "hanging_leg_raise", "plate_twist", "weighted_side_bend", "warm_up"
 ];
-const ASSETS = [
+const SHELL_ASSETS = [
   "./",
   "./index.html",
   "./confirmed.html",
@@ -52,15 +58,17 @@ const ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v86.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v101.js",
+  "./app.v103.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
+  "./manifest.webmanifest"
+];
+const MEDIA_ASSETS = [
   ...EXERCISE_MEDIA_KEYS.flatMap(key => [
     `./exercise-media/${key}_0.jpg`,
     `./exercise-media/${key}_1.jpg`
   ]),
-  "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
   "./icon-maskable-192.png",
@@ -68,8 +76,12 @@ const ASSETS = [
   "./apple-touch-icon.png",
   "./favicon-32.png"
 ];
+const ASSETS = [...SHELL_ASSETS, ...MEDIA_ASSETS];
 const STATIC_URLS = new Set(
   ASSETS.map(asset => new URL(asset, self.registration.scope).href)
+);
+const MEDIA_URLS = new Set(
+  MEDIA_ASSETS.map(asset => new URL(asset, self.registration.scope).href)
 );
 const ROOT_PATH = new URL("./", self.registration.scope).pathname;
 const INDEX_PATH = new URL("./index.html", self.registration.scope).pathname;
@@ -173,6 +185,24 @@ function isHandledRequest(request) {
   const url = new URL(request.url);
   if (!isSafeBaseRequest(request, url)) return false;
   return documentPolicy(url) !== null || isCacheableStaticRequest(request);
+}
+
+function reloadRequests(assets) {
+  return assets.map(asset => new Request(
+    new URL(asset, self.registration.scope).href,
+    { cache: "reload" }
+  ));
+}
+
+async function ensureCompleteContentCache(cacheName, requests) {
+  const cache = await caches.open(cacheName);
+  const cachedUrls = new Set((await cache.keys()).map(request => request.url));
+  const missing = requests.filter(request => !cachedUrls.has(request.url));
+  if (missing.length) await cache.addAll(missing);
+}
+
+function staticCacheName(url) {
+  return MEDIA_URLS.has(url.href) ? MEDIA_CACHE_NAME : CACHE_NAME;
 }
 
 function withDocumentSecurityHeaders(response, url, { noStore = false } = {}) {
@@ -501,13 +531,13 @@ if (IS_LEGACY_GITHUB_ORIGIN) {
   });
 
   self.addEventListener("install", event => {
-    const requests = ASSETS.map(asset => new Request(
-      new URL(asset, self.registration.scope).href,
-      { cache: "reload" }
-    ));
+    const shellRequests = reloadRequests(SHELL_ASSETS);
+    const mediaRequests = reloadRequests(MEDIA_ASSETS);
     event.waitUntil(
-      caches.open(CACHE_NAME)
-        .then(cache => cache.addAll(requests))
+      Promise.all([
+        caches.open(CACHE_NAME).then(cache => cache.addAll(shellRequests)),
+        ensureCompleteContentCache(MEDIA_CACHE_NAME, mediaRequests)
+      ])
         .then(() => Promise.resolve(self.skipWaiting()))
     );
   });
@@ -517,7 +547,8 @@ if (IS_LEGACY_GITHUB_ORIGIN) {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .filter(key => key.startsWith(CACHE_PREFIX) &&
+            key !== CACHE_NAME && key !== MEDIA_CACHE_NAME)
           .map(key => caches.delete(key))
       );
       await self.clients.claim();
@@ -561,7 +592,7 @@ if (IS_LEGACY_GITHUB_ORIGIN) {
     }
 
     event.respondWith(
-      caches.open(CACHE_NAME).then(cache =>
+      caches.open(staticCacheName(url)).then(cache =>
         cache.match(event.request)
           .then(cached => cached || fetch(event.request))
           .then(response => withDocumentSecurityHeaders(response, url))

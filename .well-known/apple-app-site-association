@@ -1,0 +1,21 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "XZ84SZH2PV.com.setforge.gymapp.ios"
+        ],
+        "components": [
+          {
+            "/": "/workout/",
+            "comment": "Canonical GymApp shared workout link"
+          },
+          {
+            "/": "/workout/*",
+            "comment": "GymApp shared workout subpaths"
+          }
+        ]
+      }
+    ]
+  }
+}
