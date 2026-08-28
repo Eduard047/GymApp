@@ -10,9 +10,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Eduard047/GymApp/actions/workflows/security.yml">
-    <img src="https://github.com/Eduard047/GymApp/actions/workflows/security.yml/badge.svg?branch=master" alt="Security workflow">
-  </a>
   <a href="https://github.com/Eduard047/GymApp/releases/latest">
     <img src="https://img.shields.io/github/v/release/Eduard047/GymApp?display_name=tag" alt="Latest release">
   </a>
@@ -79,8 +76,6 @@ Connect IQ. The iOS Simulator archive is not an App Store IPA.
 - Core workouts can stay local; cloud login and synchronization are optional.
 - Private backups are separate from redacted diagnostics and support reports.
 - Release assets are checked for identity, signing, contents, and checksums.
-- Gitleaks, Semgrep, CodeQL, dependency scanning, Android, iOS, and contract
-  tests run through the [`Security` workflow](.github/workflows/security.yml).
 
 Please report vulnerabilities through a
 [private security advisory](https://github.com/Eduard047/GymApp/security/advisories/new),
