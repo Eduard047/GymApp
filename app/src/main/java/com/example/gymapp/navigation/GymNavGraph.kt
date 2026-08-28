@@ -597,6 +597,9 @@ internal fun pendingSocialWorkoutInviteBadgeCount(
     dashboardCount: Int?
 ): Int = inboxCount ?: dashboardCount ?: 0
 
+internal fun shouldRefreshSocialSurfacesOnResume(hasObservedInitialResume: Boolean): Boolean =
+    hasObservedInitialResume
+
 internal enum class WorkoutInviteSendFeedback {
     Idle,
     Sending,
@@ -1253,10 +1256,17 @@ internal fun GymAppRoot(
     ) + liveWorkoutState.inbox?.invitations.orEmpty().size).coerceAtMost(99)
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, friendsViewModel, liveWorkoutViewModel) {
+        var hasObservedInitialResume = false
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                friendsViewModel?.refreshAll()
-                liveWorkoutViewModel?.refresh()
+                if (shouldRefreshSocialSurfacesOnResume(hasObservedInitialResume)) {
+                    friendsViewModel?.refreshAll()
+                    liveWorkoutViewModel?.refresh()
+                }
+                // ViewModel init already loads the background badge/inbox surfaces. LifecycleRegistry
+                // can synchronously replay ON_RESUME when this observer is attached to a resumed
+                // owner, so only later foreground resumes need another canonical refresh.
+                hasObservedInitialResume = true
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

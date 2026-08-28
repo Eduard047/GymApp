@@ -35,6 +35,29 @@ class ExerciseMediaStoreTest {
     }
 
     @Test
+    fun bundledFrameCacheKeyIsStableAndSeparatesDecodeSizes() {
+        assertEquals(
+            "exercise-media/bench_press_0.jpg:256x192",
+            ExerciseMediaStore.bundledFrameCacheKey(
+                "exercise-media/bench_press_0.jpg",
+                256,
+                192
+            )
+        )
+        assertFalse(
+            ExerciseMediaStore.bundledFrameCacheKey(
+                "exercise-media/bench_press_0.jpg",
+                256,
+                192
+            ) == ExerciseMediaStore.bundledFrameCacheKey(
+                "exercise-media/bench_press_0.jpg",
+                1_024,
+                768
+            )
+        )
+    }
+
+    @Test
     fun accountCleanupDeletesOnlyTheCapturedOwnersMediaDirectory() {
         val root = createTempDirectory("gymapp-media-cleanup-").toFile()
         try {

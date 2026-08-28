@@ -87,6 +87,21 @@ internal data class LiveWorkoutUiState(
     val notice: LocalizedText? = null
 )
 
+internal const val LIVE_WORKOUT_IDLE_REALTIME_CATCH_UP_CYCLES = 10
+
+internal fun shouldPollLiveWorkout(
+    realtimeConnected: Boolean,
+    state: LiveWorkoutUiState,
+    idleRealtimeCycles: Int
+): Boolean = !realtimeConnected ||
+    state.activeRoomId != null ||
+    state.pendingOperationCount > 0 ||
+    state.confirmedRestoringRoomId != null ||
+    idleRealtimeCycles >= LIVE_WORKOUT_IDLE_REALTIME_CATCH_UP_CYCLES
+
+internal fun shouldCanonicalRefreshLiveWorkout(event: LiveRealtimeEvent): Boolean =
+    event is LiveRealtimeEvent.ChannelReady
+
 private fun Long.nextLiveRefreshGeneration(): Long =
     if (this == Long.MAX_VALUE) 1L else this + 1L
 
@@ -2188,10 +2203,24 @@ internal class LiveWorkoutViewModel(
 
     private fun startPolling() {
         viewModelScope.launch {
+            var idleRealtimeCycles = 0
             while (isActive) {
                 delay(12_000L)
-                refresh()
-                drainQueue()
+                val state = _uiState.value
+                val isHealthyRealtimeIdle = realtimeConnected &&
+                    state.activeRoomId == null &&
+                    state.pendingOperationCount == 0 &&
+                    state.confirmedRestoringRoomId == null
+                idleRealtimeCycles = if (isHealthyRealtimeIdle) {
+                    idleRealtimeCycles + 1
+                } else {
+                    0
+                }
+                if (shouldPollLiveWorkout(realtimeConnected, state, idleRealtimeCycles)) {
+                    idleRealtimeCycles = 0
+                    refresh()
+                    drainQueue()
+                }
             }
         }
     }
@@ -2215,6 +2244,18 @@ internal class LiveWorkoutViewModel(
                                             LiveConnectionMode.Offline
                                         }
                                     )
+                                }
+                            }
+                            LiveRealtimeEvent.ChannelReady -> {
+                                realtimeConnected = true
+                                _uiState.update {
+                                    it.copy(connectionMode = LiveConnectionMode.Realtime)
+                                }
+                                if (shouldCanonicalRefreshLiveWorkout(event)) {
+                                    // Close the initial subscription gap only after the private
+                                    // channel is ready. Transport-level connected events can arrive
+                                    // earlier and intentionally do not trigger this canonical fetch.
+                                    refresh()
                                 }
                             }
                             is LiveRealtimeEvent.Signal -> {

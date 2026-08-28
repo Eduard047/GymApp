@@ -7,9 +7,8 @@ import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.kapt")
+    id("com.android.legacy-kapt")
 }
 
 fun autoVersionCode(): Int {
@@ -317,9 +316,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
         isCoreLibraryDesugaringEnabled = true
-    }
-    kotlinOptions {
-        jvmTarget = "11"
     }
     buildFeatures {
         buildConfig = true

@@ -97,15 +97,16 @@ fun ExerciseMediaPreview(
             if (custom != null) {
                 ExerciseMediaPreviewState(bitmap = custom, hasMedia = true, hasMotion = false)
             } else {
-                val bundled = ExerciseMediaStore.bundledFramePaths(exerciseName).mapNotNull { path ->
+                val bundledPaths = ExerciseMediaStore.bundledFramePaths(exerciseName)
+                val bundledPreview = bundledPaths.asSequence().mapNotNull { path ->
                     runCatching {
                         ExerciseMediaStore.loadBundledFrame(context, path, 256, 192)
                     }.getOrNull()
-                }
+                }.firstOrNull()
                 ExerciseMediaPreviewState(
-                    bitmap = bundled.firstOrNull(),
-                    hasMedia = bundled.isNotEmpty(),
-                    hasMotion = bundled.size > 1
+                    bitmap = bundledPreview,
+                    hasMedia = bundledPreview != null,
+                    hasMotion = bundledPaths.size > 1
                 )
             }
         }

@@ -256,6 +256,7 @@ struct WorkoutDraftExerciseCard: View {
     let onShowSimilar: (() -> Void)?
     let onDeleteExercise: () -> Void
     @State private var showingMedia = false
+    @State private var mediaReloadToken = 0
 
     var body: some View {
         GymPanel(highlighted: true) {
@@ -265,7 +266,8 @@ struct WorkoutDraftExerciseCard: View {
                         rawExerciseName: rawExerciseName,
                         catalogKey: exerciseCatalogKey,
                         exerciseID: exerciseID,
-                        ownerKey: exerciseMediaOwnerKey
+                        ownerKey: exerciseMediaOwnerKey,
+                        reloadToken: mediaReloadToken
                     ) {
                         showingMedia = true
                     }
@@ -362,6 +364,9 @@ struct WorkoutDraftExerciseCard: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .onChange(of: showingMedia) { isShowing in
+            if !isShowing { mediaReloadToken &+= 1 }
+        }
     }
 
     private var displayName: String {
@@ -436,6 +441,7 @@ enum ExerciseMediaPresentation {
     static let thumbnailHeight: CGFloat = 64
     static let thumbnailCornerRadius: CGFloat = 13
     static let playOverlayDiameter: CGFloat = 28
+    static let thumbnailMaximumPixelSize = 256
 
     static func showsPlayOverlay(
         hasCustomImage: Bool,
@@ -568,6 +574,7 @@ struct ExerciseMediaButton: View {
     let ownerKey: String
     var editable = true
     @State private var showingMedia = false
+    @State private var mediaReloadToken = 0
 
     var body: some View {
         ExerciseMediaThumbnail(
@@ -576,6 +583,7 @@ struct ExerciseMediaButton: View {
             exerciseID: exerciseID,
             ownerKey: ownerKey,
             editable: editable,
+            reloadToken: mediaReloadToken,
             action: { showingMedia = true }
         )
         .sheet(isPresented: $showingMedia) {
@@ -589,6 +597,9 @@ struct ExerciseMediaButton: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .onChange(of: showingMedia) { isShowing in
+            if !isShowing { mediaReloadToken &+= 1 }
+        }
     }
 }
 
@@ -598,22 +609,36 @@ struct ExerciseMediaThumbnail: View {
     let exerciseID: UUID
     let ownerKey: String
     var editable = true
+    var reloadToken = 0
     let action: () -> Void
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @State private var loadedIdentity: LoadIdentity?
+    @State private var thumbnailResult: ExerciseMediaThumbnailResult?
+
+    private struct LoadIdentity: Hashable {
+        let rawExerciseName: String
+        let catalogKey: String?
+        let exerciseID: UUID
+        let ownerKey: String
+        let reloadToken: Int
+    }
+
+    private var loadIdentity: LoadIdentity {
+        LoadIdentity(
+            rawExerciseName: rawExerciseName,
+            catalogKey: catalogKey,
+            exerciseID: exerciseID,
+            ownerKey: ownerKey,
+            reloadToken: reloadToken
+        )
+    }
 
     var body: some View {
-        let customImage = ExerciseMediaStore.customImage(
-            ownerKey: ownerKey,
-            exerciseID: exerciseID
-        )
-        let bundledImages = ExerciseMediaStore.bundledImages(
-            catalogKey: catalogKey,
-            rawExerciseName: rawExerciseName
-        )
-        let image = customImage ?? bundledImages.first
+        let currentResult = loadedIdentity == loadIdentity ? thumbnailResult : nil
+        let image = currentResult?.image
         let showsPlayOverlay = ExerciseMediaPresentation.showsPlayOverlay(
-            hasCustomImage: customImage != nil,
-            bundledFrameCount: bundledImages.count
+            hasCustomImage: currentResult?.hasCustomImage ?? false,
+            bundledFrameCount: currentResult?.bundledFrameCount ?? 0
         )
 
         Button {
@@ -674,6 +699,21 @@ struct ExerciseMediaThumbnail: View {
                 languageCode: languageCode
             )
         )
+        .task(id: loadIdentity) {
+            let requestedIdentity = loadIdentity
+            loadedIdentity = nil
+            thumbnailResult = nil
+            let result = await ExerciseMediaStore.thumbnail(
+                ownerKey: ownerKey,
+                exerciseID: exerciseID,
+                catalogKey: catalogKey,
+                rawExerciseName: rawExerciseName,
+                maximumPixelSize: ExerciseMediaPresentation.thumbnailMaximumPixelSize
+            )
+            guard !Task.isCancelled, requestedIdentity == loadIdentity else { return }
+            thumbnailResult = result
+            loadedIdentity = requestedIdentity
+        }
     }
 }
 

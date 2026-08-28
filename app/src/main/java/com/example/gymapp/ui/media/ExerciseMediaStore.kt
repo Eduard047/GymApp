@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.collection.LruCache
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -16,7 +17,13 @@ object ExerciseMediaStore {
     private const val MaxDimension = 8_192
     private const val MaxPixels = 40_000_000L
     private const val MaxSavedDimension = 1_024
+    private const val BundledBitmapCacheBytes = 8 * 1_024 * 1_024
     private val allowedTypes = setOf("image/jpeg", "image/png", "image/webp")
+    // Bundled exercise frames are public, immutable application assets. Keeping only these
+    // bitmaps in a small process cache avoids retaining account-owned custom media after logout.
+    private val bundledBitmapCache = object : LruCache<String, Bitmap>(BundledBitmapCacheBytes) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
 
     fun bundledFramePaths(exerciseName: String): List<String> {
         val key = bundledCatalogKey(exerciseName) ?: return emptyList()
@@ -66,11 +73,26 @@ object ExerciseMediaStore {
         requestedWidth: Int,
         requestedHeight: Int
     ): Bitmap? {
+        val cacheKey = bundledFrameCacheKey(path, requestedWidth, requestedHeight)
+        bundledBitmapCache.get(cacheKey)?.let { cached ->
+            if (!cached.isRecycled) return cached
+            bundledBitmapCache.remove(cacheKey)
+        }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.assets.open(path).use { BitmapFactory.decodeStream(it, null, bounds) }
         val options = sampledOptions(bounds, requestedWidth, requestedHeight)
-        return context.assets.open(path).use { BitmapFactory.decodeStream(it, null, options) }
+        val decoded = context.assets.open(path).use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: return null
+        bundledBitmapCache.put(cacheKey, decoded)
+        return decoded
     }
+
+    internal fun bundledFrameCacheKey(
+        path: String,
+        requestedWidth: Int,
+        requestedHeight: Int
+    ): String = "$path:${requestedWidth.coerceAtLeast(1)}x${requestedHeight.coerceAtLeast(1)}"
 
     fun saveCustom(context: Context, ownerKey: String, exerciseId: Long, uri: Uri) {
         val mime = context.contentResolver.getType(uri)?.lowercase()

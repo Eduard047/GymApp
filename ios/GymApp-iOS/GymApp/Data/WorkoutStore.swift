@@ -242,6 +242,12 @@ public final class WorkoutStore: ObservableObject {
     private var pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
     private var activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
 
+    // These projections are read repeatedly by SwiftUI screens. They are derived only
+    // from the published snapshot and are discarded before every committed publish,
+    // including account switches, so they cannot outlive their owner-bound state.
+    private var cachedWorkoutSummaries: [WorkoutSessionSummary]?
+    private var cachedProgressStatsByExerciseID: [UUID: ExerciseProgressStats] = [:]
+
     public private(set) var accountStorageKey: String
     public private(set) var storageURL: URL
 
@@ -255,10 +261,15 @@ public final class WorkoutStore: ObservableObject {
     }
 
     public var workoutSummaries: [WorkoutSessionSummary] {
-        workouts
+        if let cachedWorkoutSummaries {
+            return cachedWorkoutSummaries
+        }
+        let summaries = workouts
             .filter { $0.setCount > 0 || Self.isActivityOnlyWorkout($0) }
             .map(Self.summary)
             .sorted { $0.date > $1.date }
+        cachedWorkoutSummaries = summaries
+        return summaries
     }
 
     public var latestWorkoutTemplate: WorkoutSession? {
@@ -862,9 +873,12 @@ public final class WorkoutStore: ObservableObject {
     /// Adds every missing public catalog item while preserving custom exercises and history.
     @discardableResult
     public func seedBuiltInExercises() throws -> Int {
+        // A completed catalog is the normal launch path. Avoid validating, encoding and
+        // atomically replacing the whole account envelope when no migration is pending.
+        guard catalogSeedVersion < BuiltInExerciseCatalog.seedVersion else { return 0 }
+
         var inserted = 0
         try mutate { state in
-            guard state.catalogSeedVersion < BuiltInExerciseCatalog.seedVersion else { return }
             let currentSeedVersion = max(0, state.catalogSeedVersion)
             let pendingDefinitions = BuiltInExerciseCatalog.definitions.filter {
                 $0.introducedInSeedVersion > currentSeedVersion
@@ -1637,6 +1651,16 @@ public final class WorkoutStore: ObservableObject {
     /// Explicitly fills only exercises that do not already have a manual mapping.
     @discardableResult
     public func seedDefaultMuscleMappings() throws -> Int {
+        let existingKeys = Set(muscleMappings.map(\.exerciseNameKey))
+        let hasMissingDefaults = exercises.contains { exercise in
+            let key = MuscleMappingEngine.normalizeExerciseName(exercise.name)
+            return !existingKeys.contains(key) &&
+                !MuscleMappingEngine.defaultContributions(for: exercise.name).isEmpty
+        }
+        // Mapping seeding has no persisted version marker. Detect the real no-op before
+        // entering the generic whole-snapshot mutation path.
+        guard hasMissingDefaults else { return 0 }
+
         var inserted = 0
         try mutate { state in
             var existingKeys = Set(state.muscleMappings.map(\.exerciseNameKey))
@@ -1700,8 +1724,11 @@ public final class WorkoutStore: ObservableObject {
     }
 
     public func progressStats(exerciseID: UUID) -> ExerciseProgressStats {
+        if let cached = cachedProgressStatsByExerciseID[exerciseID] {
+            return cached
+        }
         let history = exerciseHistory(exerciseID: exerciseID)
-        return ExerciseProgressStats(
+        let stats = ExerciseProgressStats(
             exerciseID: exerciseID,
             sessionCount: Set(history.map(\.workoutID)).count,
             setCount: history.count,
@@ -1710,6 +1737,8 @@ public final class WorkoutStore: ObservableObject {
             bestEstimatedOneRepMax: history.map(\.estimatedOneRepMax).max() ?? 0,
             latestWeight: lastWeight(exerciseID: exerciseID)
         )
+        cachedProgressStatsByExerciseID[exerciseID] = stats
+        return stats
     }
 
     public func personalRecords(exerciseID: UUID) -> [PersonalRecord] {
@@ -3280,6 +3309,8 @@ public final class WorkoutStore: ObservableObject {
     }
 
     private func publish(_ state: WorkoutDataSnapshot) {
+        cachedWorkoutSummaries = nil
+        cachedProgressStatsByExerciseID.removeAll(keepingCapacity: true)
         exercises = state.exercises
         workouts = state.workouts
         muscleMappings = state.muscleMappings

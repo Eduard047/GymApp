@@ -226,6 +226,34 @@ test("user-opened generic sheets capture and restore their rendered trigger", as
   assert.equal(restoredFocus, true);
 });
 
+test("real app shells reuse one delegated click listener across root renders", async () => {
+  const context = loadContext();
+  let rootClickListener = null;
+  let rootClickBindings = 0;
+  let directClickBindings = 0;
+  const trigger = {
+    dataset: { action: "change-password" },
+    closest(selector) { return selector === "[data-action]" ? this : null; },
+    addEventListener(type) {
+      if (type === "click") directClickBindings += 1;
+    }
+  };
+  context.appNode.addEventListener = (type, listener) => {
+    if (type === "click") {
+      rootClickBindings += 1;
+      rootClickListener = listener;
+    }
+  };
+  context.runtimeLists.set("[data-action]", [trigger]);
+  vm.runInContext("render = () => true; bindEvents(); bindEvents();", context);
+
+  assert.equal(rootClickBindings, 1);
+  assert.equal(directClickBindings, 0);
+  rootClickListener({ target: trigger, stopPropagation() {} });
+  await Promise.resolve();
+  assert.equal(vm.runInContext("modal.type", context), "change-password");
+});
+
 test("async sheets bind return focus before their network work resolves", async () => {
   const context = loadContext();
   let restoredFocus = false;

@@ -223,6 +223,9 @@ internal fun invalidateSelectedFriendDetailsForRefresh(state: FriendsUiState): F
 internal fun invalidateSocialRealtimeSurfaces(state: FriendsUiState): FriendsUiState =
     invalidateSelectedFriendDetailsForRefresh(state).copy(workoutInbox = null)
 
+internal fun shouldRefreshSocialPrivacyInBackground(state: FriendsUiState): Boolean =
+    state.workoutDetailPrivacy != null
+
 internal fun partialPrivacyCommitState(state: FriendsUiState): FriendsUiState = state.copy(
     error = null,
     notice = LocalizedText(R.string.friends_privacy_partially_saved)
@@ -318,7 +321,7 @@ internal class FriendsViewModel(
 
     init {
         if (session != null) {
-            refreshAll()
+            refreshBackgroundSurfaces()
             viewModelScope.launch {
                 while (true) {
                     try {
@@ -326,9 +329,10 @@ internal class FriendsViewModel(
                             detailRequestVersion += 1
                             _uiState.update(::invalidateSocialRealtimeSurfaces)
                             // Relationship/privacy invalidations can revoke workout-inbox access.
-                            // Refresh every bounded social surface instead of leaving stale invite
-                            // actions visible until the next lifecycle or manual refresh.
-                            refreshAll()
+                            // Always refresh badge/inbox data. The separate workout-detail privacy
+                            // RPC is loaded when Profile becomes visible, and remains realtime-fresh
+                            // after it has been loaded once.
+                            refreshBackgroundSurfaces()
                         }
                     } catch (error: CancellationException) {
                         throw error
@@ -337,6 +341,14 @@ internal class FriendsViewModel(
                     }
                 }
             }
+        }
+    }
+
+    private fun refreshBackgroundSurfaces() {
+        refreshDashboard()
+        refreshWorkoutInbox()
+        if (shouldRefreshSocialPrivacyInBackground(_uiState.value)) {
+            refreshWorkoutDetailPrivacy()
         }
     }
 

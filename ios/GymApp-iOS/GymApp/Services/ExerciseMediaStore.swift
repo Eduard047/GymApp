@@ -1,6 +1,59 @@
 import CryptoKit
 import Foundation
+import ImageIO
 import UIKit
+
+struct ExerciseMediaThumbnailResult: @unchecked Sendable {
+    let image: UIImage?
+    let hasCustomImage: Bool
+    let bundledFrameCount: Int
+}
+
+final class ExerciseMediaThumbnailCache: @unchecked Sendable {
+    struct Lookup: @unchecked Sendable {
+        let image: UIImage?
+        let generation: UInt64
+    }
+
+    private let cache = NSCache<NSString, UIImage>()
+    private let lock = NSLock()
+    private var generation: UInt64 = 0
+
+    init(countLimit: Int, totalCostLimit: Int) {
+        cache.countLimit = countLimit
+        cache.totalCostLimit = totalCostLimit
+    }
+
+    func lookup(for key: String) -> Lookup {
+        lock.lock()
+        defer { lock.unlock() }
+        return Lookup(
+            image: cache.object(forKey: key as NSString),
+            generation: generation
+        )
+    }
+
+    @discardableResult
+    func insert(
+        _ image: UIImage,
+        for key: String,
+        ifGeneration expectedGeneration: UInt64
+    ) -> Bool {
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == expectedGeneration else { return false }
+        cache.setObject(image, forKey: key as NSString, cost: cost)
+        return true
+    }
+
+    func removeAll() {
+        lock.lock()
+        defer { lock.unlock() }
+        generation &+= 1
+        cache.removeAllObjects()
+    }
+}
 
 enum ExerciseMediaStore {
     private static let maximumInputBytes = 8 * 1024 * 1024
@@ -9,20 +62,119 @@ enum ExerciseMediaStore {
     private static let maximumPixels: CGFloat = 40_000_000
     private static let maximumSavedDimension: CGFloat = 1_024
     private static let maximumOwnerKeyLength = 128
+    private static let bundledThumbnailCache = ExerciseMediaThumbnailCache(
+        countLimit: 128,
+        totalCostLimit: 24 * 1_024 * 1_024
+    )
+    private static let customThumbnailCache = ExerciseMediaThumbnailCache(
+        countLimit: 64,
+        totalCostLimit: 16 * 1_024 * 1_024
+    )
+
+    private struct SendableImage: @unchecked Sendable {
+        let value: UIImage
+    }
 
     static func bundledImages(catalogKey: String?, rawExerciseName: String) -> [UIImage] {
-        // The persisted raw name remains authoritative for imported and legacy data.
-        // A mismatched catalog key must never make a custom exercise inherit trusted media.
-        guard let key = BuiltInExerciseCatalog.resolvedKey(
+        bundledImageURLs(
             catalogKey: catalogKey,
             name: rawExerciseName
-        ) else { return [] }
-        return (0 ... 1).compactMap { index in
-            Bundle.main.url(
-                forResource: "\(key)_\(index)",
-                withExtension: "jpg"
-            ).flatMap { UIImage(contentsOfFile: $0.path) }
+        ).compactMap {
+            UIImage(contentsOfFile: $0.path)
         }
+    }
+
+    /// Loads the compact list thumbnail off the main thread and bounds decoded pixels.
+    /// Custom cache keys contain the hashed owner directory and are invalidated after
+    /// every file mutation, so an account switch cannot reuse another owner's image.
+    @MainActor
+    static func thumbnail(
+        ownerKey: String,
+        exerciseID: UUID,
+        catalogKey: String?,
+        rawExerciseName: String,
+        maximumPixelSize: Int,
+        mediaDirectoryURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) async -> ExerciseMediaThumbnailResult {
+        let pixelSize = min(max(maximumPixelSize, 32), 2_048)
+        let customTarget = try? customURL(
+            ownerKey: ownerKey,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectoryURL,
+            fileManager: fileManager
+        )
+        let hasCustomImage = customTarget.map {
+            fileManager.fileExists(atPath: $0.path)
+        } ?? false
+        let bundledURLs = bundledImageURLs(
+            catalogKey: catalogKey,
+            name: rawExerciseName
+        )
+        let sourceURL = hasCustomImage ? customTarget : bundledURLs.first
+        let resultWithoutImage = ExerciseMediaThumbnailResult(
+            image: nil,
+            hasCustomImage: hasCustomImage,
+            bundledFrameCount: bundledURLs.count
+        )
+        guard let sourceURL else { return resultWithoutImage }
+
+        let cache = hasCustomImage ? customThumbnailCache : bundledThumbnailCache
+        let cacheScope = hasCustomImage
+            ? "custom:\(ownerFingerprint(ownerKey)):\(exerciseID.uuidString)"
+            : "bundled"
+        let cacheKey = thumbnailCacheKey(
+            scope: cacheScope,
+            sourceURL: sourceURL,
+            maximumPixelSize: pixelSize
+        )
+        let cacheLookup = cache.lookup(for: cacheKey)
+        if let image = cacheLookup.image {
+            return ExerciseMediaThumbnailResult(
+                image: image,
+                hasCustomImage: hasCustomImage,
+                bundledFrameCount: bundledURLs.count
+            )
+        }
+
+        let decodeTask = Task.detached(priority: .utility) { () -> SendableImage? in
+            guard !Task.isCancelled,
+                  let image = downsampledImage(
+                    at: sourceURL,
+                    maximumPixelSize: pixelSize
+                  ),
+                  !Task.isCancelled else { return nil }
+            return SendableImage(value: image)
+        }
+        let decoded = await withTaskCancellationHandler {
+            await decodeTask.value
+        } onCancel: {
+            decodeTask.cancel()
+        }
+        guard !Task.isCancelled, let image = decoded?.value else {
+            return resultWithoutImage
+        }
+        guard cache.insert(
+            image,
+            for: cacheKey,
+            ifGeneration: cacheLookup.generation
+        ) else {
+            // A save/delete/account clear completed while the detached decode was in
+            // flight. Never publish or re-cache the now-stale owner-private bitmap.
+            let currentHasCustomImage = customTarget.map {
+                fileManager.fileExists(atPath: $0.path)
+            } ?? false
+            return ExerciseMediaThumbnailResult(
+                image: nil,
+                hasCustomImage: currentHasCustomImage,
+                bundledFrameCount: bundledURLs.count
+            )
+        }
+        return ExerciseMediaThumbnailResult(
+            image: image,
+            hasCustomImage: hasCustomImage,
+            bundledFrameCount: bundledURLs.count
+        )
     }
 
     static func customImage(
@@ -97,9 +249,11 @@ enum ExerciseMediaStore {
                 options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
             )
             try excludeFromBackup(target)
+            customThumbnailCache.removeAll()
         } catch {
             // Never leave a private photo behind if its backup exclusion could not be proven.
             try? fileManager.removeItem(at: target)
+            customThumbnailCache.removeAll()
             throw MediaError.persistenceFailure
         }
     }
@@ -116,8 +270,17 @@ enum ExerciseMediaStore {
             mediaDirectoryURL: mediaDirectoryURL,
             fileManager: fileManager
         )
-        guard fileManager.fileExists(atPath: target.path) else { return }
-        try fileManager.removeItem(at: target)
+        guard fileManager.fileExists(atPath: target.path) else {
+            customThumbnailCache.removeAll()
+            return
+        }
+        do {
+            try fileManager.removeItem(at: target)
+            customThumbnailCache.removeAll()
+        } catch {
+            customThumbnailCache.removeAll()
+            throw error
+        }
     }
 
     static func clearAccount(
@@ -130,8 +293,71 @@ enum ExerciseMediaStore {
             mediaDirectoryURL: mediaDirectoryURL,
             fileManager: fileManager
         )
-        guard fileManager.fileExists(atPath: ownerDirectory.path) else { return }
-        try fileManager.removeItem(at: ownerDirectory)
+        guard fileManager.fileExists(atPath: ownerDirectory.path) else {
+            customThumbnailCache.removeAll()
+            return
+        }
+        do {
+            try fileManager.removeItem(at: ownerDirectory)
+            customThumbnailCache.removeAll()
+        } catch {
+            customThumbnailCache.removeAll()
+            throw error
+        }
+    }
+
+    private static func bundledImageURLs(
+        catalogKey: String?,
+        name rawExerciseName: String
+    ) -> [URL] {
+        // The persisted raw name remains authoritative for imported and legacy data.
+        // A mismatched catalog key must never make a custom exercise inherit trusted media.
+        guard let key = BuiltInExerciseCatalog.resolvedKey(
+            catalogKey: catalogKey,
+            name: rawExerciseName
+        ) else { return [] }
+        return (0 ... 1).compactMap { index in
+            Bundle.main.url(
+                forResource: "\(key)_\(index)",
+                withExtension: "jpg"
+            )
+        }
+    }
+
+    private static func thumbnailCacheKey(
+        scope: String,
+        sourceURL: URL,
+        maximumPixelSize: Int
+    ) -> String {
+        SHA256.hash(data: Data(
+            "\(scope):\(sourceURL.standardizedFileURL.path):\(maximumPixelSize)".utf8
+        ))
+        .map { String(format: "%02x", $0) }
+        .joined()
+    }
+
+    private static func downsampledImage(
+        at url: URL,
+        maximumPixelSize: Int
+    ) -> UIImage? {
+        let sourceOptions = [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
+            return nil
+        }
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize
+        ] as CFDictionary
+        guard let image = CGImageSourceCreateThumbnailAtIndex(
+            source,
+            0,
+            thumbnailOptions
+        ) else { return nil }
+        return UIImage(cgImage: image)
     }
 
     private static func customURL(

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonObject
 
 internal sealed interface LiveRealtimeEvent {
     data class Connection(val connected: Boolean) : LiveRealtimeEvent
+    data object ChannelReady : LiveRealtimeEvent
     data class Signal(val value: LiveWorkoutRealtimeSignal) : LiveRealtimeEvent
 }
 
@@ -99,7 +100,7 @@ internal class LiveWorkoutRealtimeClient(
         }
         try {
             withTimeout(10_000L) { channel.subscribe(blockUntilSubscribed = true) }
-            send(LiveRealtimeEvent.Connection(true))
+            send(LiveRealtimeEvent.ChannelReady)
             awaitCancellation()
         } finally {
             broadcastJob.cancel()

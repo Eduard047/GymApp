@@ -84,12 +84,21 @@ function fakeIndexedDb(initialBinding = null) {
 
 function loadPwaContext({
   userAgent = "",
+  locationSearch = "?access_token=test",
   push = null,
+  supabase = null,
   fetchImpl = null,
   values = new Map(),
   sessionValues = new Map()
 } = {}) {
   const indexedDB = fakeIndexedDb(push?.binding ?? null);
+  const windowEventListeners = new Map();
+  const documentEventListeners = new Map();
+  const registerEventListener = (listeners, type, listener) => {
+    const callbacks = listeners.get(type) || [];
+    callbacks.push(listener);
+    listeners.set(type, callbacks);
+  };
   const context = {
     console,
     Date,
@@ -107,8 +116,10 @@ function loadPwaContext({
     btoa,
     URLSearchParams,
     window: {
-      location: { search: "?access_token=test", hash: "", replace() {} },
-      addEventListener() {},
+      location: { search: locationSearch, hash: "", pathname: "/", href: `https://example.test/${locationSearch}`, replace() {} },
+      addEventListener(type, listener) {
+        registerEventListener(windowEventListeners, type, listener);
+      },
       indexedDB,
       GymProgressionRules: {
         sessionXP: () => 100,
@@ -122,6 +133,9 @@ function loadPwaContext({
     },
     document: {
       documentElement: { lang: "en" },
+      addEventListener(type, listener) {
+        registerEventListener(documentEventListeners, type, listener);
+      },
       querySelector() {
         return { innerHTML: "", querySelectorAll: () => [], querySelector: () => null };
       }
@@ -146,6 +160,8 @@ function loadPwaContext({
     setInterval,
     fetch: fetchImpl || (() => Promise.reject(new Error("network disabled in tests")))
   };
+  context.windowEventListeners = windowEventListeners;
+  context.documentEventListeners = documentEventListeners;
   if (push) {
     if (typeof push.registration.getNotifications !== "function") {
       push.registration.getNotifications = async () => [];
@@ -164,6 +180,7 @@ function loadPwaContext({
       addEventListener() {}
     };
   }
+  if (supabase) context.window.GYM_SUPABASE = supabase;
   context.window.document = context.document;
   context.window.navigator = context.navigator;
   context.window.history = context.history;
@@ -361,6 +378,82 @@ function testAccessToken(userId, sessionId) {
     exp: 4102444800
   })}.test-signature`;
 }
+
+test("cloud startup fences focus and visibility until one reconciled Social and LIVE batch", async () => {
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const calls = [];
+  let releasePull = null;
+  const pullGate = new Promise(resolve => { releasePull = resolve; });
+  const fetchImpl = (input, init = {}) => {
+    const url = String(input?.url || input);
+    calls.push({ url, body: init.body || "" });
+    if (url.includes("/user_states?") || url.endsWith("/garmin_read_activity_only_workouts")) {
+      return pullGate.then(() => new Response("{}", {
+        status: 503,
+        headers: { "Content-Type": "application/json" }
+      }));
+    }
+    return Promise.resolve(new Response("{}", {
+      status: 503,
+      headers: { "Content-Type": "application/json" }
+    }));
+  };
+  const values = new Map([["gym-pwa-active-account-v1", JSON.stringify({
+    id: `remote-${userId}`,
+    name: "Cloud Owner",
+    email: "owner@example.test",
+    userId,
+    remote: "supabase"
+  })]]);
+  const sessionValues = new Map([["gym-pwa-supabase-session-v1", JSON.stringify({
+    access_token: testAccessToken(userId, sessionId),
+    user: { id: userId, email: "owner@example.test" }
+  })]]);
+  const context = loadPwaContext({
+    values,
+    sessionValues,
+    fetchImpl,
+    locationSearch: "",
+    supabase: {
+      url: "https://project.supabase.co",
+      anonKey: "sb_publishable_test_key"
+    }
+  });
+  vm.runInContext(`
+    globalThis.__startupPushSyncCalls = 0;
+    syncWebPushIfEnabled = () => { globalThis.__startupPushSyncCalls += 1; };
+  `, context);
+  context.document.visibilityState = "visible";
+
+  assert.equal(calls.length, 2, "only the state and activity pull may start before reconciliation");
+  assert.equal(calls.some(call => /social_|social-live-gateway/.test(call.url)), false);
+  for (const listener of context.windowEventListeners.get("focus") || []) {
+    listener({ type: "focus" });
+  }
+  for (const listener of context.documentEventListeners.get("visibilitychange") || []) {
+    listener({ type: "visibilitychange" });
+  }
+  await Promise.resolve();
+
+  assert.equal(calls.length, 2, "focus and visibility must not bypass startup reconciliation");
+  assert.equal(vm.runInContext("globalThis.__startupPushSyncCalls", context), 0);
+
+  // The test covers one-time startup work, not the recurring foreground LIVE
+  // poll. Hide the VM before the failed response can schedule a real timer.
+  context.document.visibilityState = "hidden";
+  context.document.querySelector = () => null;
+  releasePull();
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(calls.filter(call => call.url.endsWith("/social_dashboard")).length, 1);
+  assert.equal(calls.filter(call => {
+    if (!call.url.endsWith("/social-live-gateway")) return false;
+    try { return JSON.parse(call.body).action === "live_inbox"; } catch { return false; }
+  }).length, 1);
+  assert.equal(vm.runInContext("globalThis.__startupPushSyncCalls", context), 1);
+  vm.runInContext("clearTimeout(liveWorkoutPollTimer); liveWorkoutPollTimer = null;", context);
+});
 
 test("activity heatmap cells stay out of the tab order and expose useful labels", () => {
   const context = loadPwaContext();

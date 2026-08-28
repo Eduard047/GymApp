@@ -969,6 +969,12 @@ private fun FriendRankingCard(place: Int, friend: SocialFriend, onOpen: () -> Un
     }
 }
 
+internal fun isWorkoutDetailPrivacyToggleEnabled(
+    savedValue: Boolean?,
+    isLoading: Boolean,
+    isSaving: Boolean
+): Boolean = savedValue != null && !isLoading && !isSaving
+
 @Composable
 private fun PrivacyCard(
     saved: SocialPrivacy,
@@ -1015,7 +1021,12 @@ private fun PrivacyCard(
             PrivacySwitchRow(
                 label = stringResource(R.string.friends_privacy_share_workout_details),
                 checked = workoutDetailsDraft,
-                onCheckedChange = { workoutDetailsDraft = it }
+                onCheckedChange = { workoutDetailsDraft = it },
+                enabled = isWorkoutDetailPrivacyToggleEnabled(
+                    savedValue = shareWorkoutDetails,
+                    isLoading = isWorkoutDetailsLoading,
+                    isSaving = isLoading
+                )
             )
             Text(
                 stringResource(R.string.friends_privacy_share_workout_details_supporting),
@@ -1041,7 +1052,8 @@ private fun PrivacyCard(
 private fun PrivacySwitchRow(
     label: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -1049,6 +1061,7 @@ private fun PrivacySwitchRow(
             .heightIn(min = 48.dp)
             .toggleable(
                 value = checked,
+                enabled = enabled,
                 role = Role.Switch,
                 onValueChange = onCheckedChange
             )
@@ -1057,7 +1070,7 @@ private fun PrivacySwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 

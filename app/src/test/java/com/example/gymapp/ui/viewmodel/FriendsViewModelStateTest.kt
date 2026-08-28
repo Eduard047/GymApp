@@ -12,6 +12,7 @@ import com.example.gymapp.auth.SocialRecentWorkout
 import com.example.gymapp.auth.SocialSelfProfile
 import com.example.gymapp.auth.SocialSharing
 import com.example.gymapp.auth.SocialWorkoutInbox
+import com.example.gymapp.auth.SocialWorkoutDetailPrivacy
 import com.example.gymapp.auth.SocialWorkoutExerciseLabel
 import com.example.gymapp.data.repository.SharedWorkoutExercise
 import com.example.gymapp.data.repository.SharedWorkoutPlan
@@ -171,6 +172,22 @@ class FriendsViewModelStateTest {
         assertNull(invalidated.workoutInbox)
         assertNull(invalidated.selectedFriendDetails)
         assertTrue(invalidated.isDetailsLoading)
+    }
+
+    @Test
+    fun backgroundRefreshDefersPrivacyUntilProfileHasLoadedItOnce() {
+        assertFalse(shouldRefreshSocialPrivacyInBackground(FriendsUiState(isCloudAccount = true)))
+        assertTrue(
+            shouldRefreshSocialPrivacyInBackground(
+                FriendsUiState(
+                    isCloudAccount = true,
+                    workoutDetailPrivacy = SocialWorkoutDetailPrivacy(
+                        shareWorkoutDetails = false,
+                        settingsRevision = 3
+                    )
+                )
+            )
+        )
     }
 
     @Test

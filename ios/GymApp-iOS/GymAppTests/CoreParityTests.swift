@@ -3295,6 +3295,57 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(try reopened.makeBackup().catalogSeedVersion, BuiltInExerciseCatalog.seedVersion)
     }
 
+    func testCompletedBuiltInSeedsDoNotRewriteAccountEnvelope() throws {
+        let store = try WorkoutStore(
+            accountStorageKey: "seed-no-op",
+            directoryURL: try temporaryDirectory(named: "seed-no-op")
+        )
+        XCTAssertGreaterThan(try store.seedBuiltInExercises(), 0)
+        XCTAssertGreaterThan(try store.seedDefaultMuscleMappings(), 0)
+        let persistedBefore = try Data(contentsOf: store.storageURL)
+
+        Thread.sleep(forTimeInterval: 0.02)
+        XCTAssertEqual(try store.seedBuiltInExercises(), 0)
+        XCTAssertEqual(try store.seedDefaultMuscleMappings(), 0)
+
+        XCTAssertEqual(try Data(contentsOf: store.storageURL), persistedBefore)
+    }
+
+    func testDerivedWorkoutCachesInvalidateOnMutationAndAccountSwitch() throws {
+        let store = try WorkoutStore(
+            accountStorageKey: "derived-cache-a",
+            directoryURL: try temporaryDirectory(named: "derived-cache")
+        )
+        let exercise = try store.addExercise(name: "Derived cache press")
+
+        XCTAssertTrue(store.workoutSummaries.isEmpty)
+        XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 0)
+
+        _ = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_780_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: exercise.id,
+                    sets: [
+                        .init(weight: 80, reps: 8),
+                        .init(weight: 85, reps: 6)
+                    ]
+                )
+            ]
+        )
+        XCTAssertEqual(store.workoutSummaries.count, 1)
+        XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 2)
+        XCTAssertEqual(store.progressStats(exerciseID: exercise.id).maxWeight, 85)
+
+        try store.switchAccount(to: "derived-cache-b")
+        XCTAssertTrue(store.workoutSummaries.isEmpty)
+        XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 0)
+
+        try store.switchAccount(to: "derived-cache-a")
+        XCTAssertEqual(store.workoutSummaries.count, 1)
+        XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 2)
+    }
+
     func testAssistedDipLegacyAliasMigratesInPlaceWithoutMergingStandardDips() throws {
         let store = try WorkoutStore(
             accountStorageKey: "assisted-dip-alias",
@@ -5720,6 +5771,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(ExerciseMediaPresentation.thumbnailHeight, 64)
         XCTAssertEqual(ExerciseMediaPresentation.thumbnailCornerRadius, 13)
         XCTAssertEqual(ExerciseMediaPresentation.playOverlayDiameter, 28)
+        XCTAssertEqual(ExerciseMediaPresentation.thumbnailMaximumPixelSize, 256)
         XCTAssertTrue(
             ExerciseMediaPresentation.showsPlayOverlay(
                 hasCustomImage: false,
@@ -5775,6 +5827,93 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertNotNil(ExerciseMediaStore.customImage(ownerKey: ownerA, exerciseID: exerciseID))
         XCTAssertNil(ExerciseMediaStore.customImage(ownerKey: ownerB, exerciseID: exerciseID))
+    }
+
+    func testDownsampledMediaThumbnailIsOwnerScopedAndInvalidatedAfterClear() async throws {
+        let mediaDirectory = try temporaryDirectory(named: "exercise-media-thumbnail-cache")
+        let exerciseID = UUID()
+        let ownerA = "local_\(UUID().uuidString.lowercased())"
+        let ownerB = "local_\(UUID().uuidString.lowercased())"
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 80)).image { context in
+            UIColor.systemBlue.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 160, height: 80))
+        }
+        try ExerciseMediaStore.saveCustomImage(
+            try XCTUnwrap(image.jpegData(compressionQuality: 0.9)),
+            ownerKey: ownerA,
+            exerciseID: exerciseID,
+            mediaDirectoryURL: mediaDirectory
+        )
+
+        let ownerAThumbnail = await ExerciseMediaStore.thumbnail(
+            ownerKey: ownerA,
+            exerciseID: exerciseID,
+            catalogKey: nil,
+            rawExerciseName: "Private thumbnail exercise",
+            maximumPixelSize: 64,
+            mediaDirectoryURL: mediaDirectory
+        )
+        XCTAssertTrue(ownerAThumbnail.hasCustomImage)
+        let cgImage = try XCTUnwrap(ownerAThumbnail.image?.cgImage)
+        XCTAssertLessThanOrEqual(max(cgImage.width, cgImage.height), 64)
+
+        let ownerBThumbnail = await ExerciseMediaStore.thumbnail(
+            ownerKey: ownerB,
+            exerciseID: exerciseID,
+            catalogKey: nil,
+            rawExerciseName: "Private thumbnail exercise",
+            maximumPixelSize: 64,
+            mediaDirectoryURL: mediaDirectory
+        )
+        XCTAssertFalse(ownerBThumbnail.hasCustomImage)
+        XCTAssertNil(ownerBThumbnail.image)
+
+        try ExerciseMediaStore.clearAccount(
+            ownerKey: ownerA,
+            mediaDirectoryURL: mediaDirectory
+        )
+        let clearedThumbnail = await ExerciseMediaStore.thumbnail(
+            ownerKey: ownerA,
+            exerciseID: exerciseID,
+            catalogKey: nil,
+            rawExerciseName: "Private thumbnail exercise",
+            maximumPixelSize: 64,
+            mediaDirectoryURL: mediaDirectory
+        )
+        XCTAssertFalse(clearedThumbnail.hasCustomImage)
+        XCTAssertNil(clearedThumbnail.image)
+    }
+
+    func testThumbnailCacheEpochRejectsDecodeFinishingAfterConcurrentInvalidation() async {
+        let cache = ExerciseMediaThumbnailCache(
+            countLimit: 4,
+            totalCostLimit: 1_024 * 1_024
+        )
+        let cacheKey = "owner-private-thumbnail"
+        // Capturing the generation models a decode that has already started.
+        let decodeStart = cache.lookup(for: cacheKey)
+        let decodedImage = UIGraphicsImageRenderer(
+            size: CGSize(width: 40, height: 40)
+        ).image { context in
+            UIColor.systemPurple.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+
+        // Complete invalidation on another executor before the simulated decode returns.
+        await Task.detached {
+            cache.removeAll()
+        }.value
+
+        XCTAssertFalse(
+            cache.insert(
+                decodedImage,
+                for: cacheKey,
+                ifGeneration: decodeStart.generation
+            )
+        )
+        let afterInvalidation = cache.lookup(for: cacheKey)
+        XCTAssertNotEqual(afterInvalidation.generation, decodeStart.generation)
+        XCTAssertNil(afterInvalidation.image)
     }
 
     func testExerciseMediaAccountClearRemovesOnlyTargetOwnerAndRejectsMalformedOwner() throws {

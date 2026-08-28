@@ -446,6 +446,12 @@ class SocialNavigationTest {
     }
 
     @Test
+    fun lifecycleSkipsSyntheticInitialResumeButRefreshesLaterForegroundEntries() {
+        assertFalse(shouldRefreshSocialSurfacesOnResume(hasObservedInitialResume = false))
+        assertTrue(shouldRefreshSocialSurfacesOnResume(hasObservedInitialResume = true))
+    }
+
+    @Test
     fun addWorkoutShareWaitsForRpcOutcomeBeforeClosingOrReportingSuccess() {
         val profileId = "p_${"a".repeat(32)}"
 
