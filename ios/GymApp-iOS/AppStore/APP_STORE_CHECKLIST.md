@@ -102,7 +102,7 @@ Apple requires a final, fully functional submission, complete metadata, live bac
 - [x] **Digital goods/subscriptions:** not present; the app is free with no IAP, subscriptions, paid unlocks, or external purchase links. Revisit if the business model changes: [App Review 3.1](https://developer.apple.com/app-store/review/guidelines/#business).
 - [x] **Google/Facebook/other social login:** not present; only first-party email/password login is offered, so the Guideline 4.8 alternative-login rule is not triggered by this build.
 - [x] **Protected progress:** current clients expose only the signed-in owner’s row and no longer offer cross-account report/block controls. The production backend now enforces the same boundary for released clients. The private queue and [MODERATION_RUNBOOK.md](MODERATION_RUNBOOK.md) remain only for legacy reports and must stay monitored until those reports are resolved or expire under the retention policy.
-- [x] **Personal data sent to third-party AI:** none. Smart Coach is deterministic on-device logic; no personal data is sent to an AI provider.
+- [x] **Smart Coach data processing:** performed deterministically on-device; no personal data is sent to an external provider.
 - [x] **Kids, medical, regulated health, gambling, finance, or crypto functionality:** none in this build. GymApp is a general workout log and makes no medical claim.
 
 ## 8. Submit

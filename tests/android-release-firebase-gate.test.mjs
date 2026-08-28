@@ -28,7 +28,7 @@ const syntheticFirebaseConfig = Object.freeze({
         mobilesdk_app_id: "1:123456789012:android:0123456789abcdef",
         android_client_info: { package_name: "com.setforge.gymapp" },
       },
-      api_key: [{ current_key: ["AI", "za", "A".repeat(32)].join("") }],
+      api_key: [{ current_key: ["A", "Iza", "A".repeat(32)].join("") }],
     },
   ],
 });
