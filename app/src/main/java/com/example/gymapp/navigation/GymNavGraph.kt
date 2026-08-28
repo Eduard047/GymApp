@@ -48,7 +48,6 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +71,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -146,6 +146,7 @@ import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryViewModel
 import com.example.gymapp.ui.viewmodel.RetainedWorkoutDraftFingerprint
 import com.example.gymapp.ui.viewmodel.durableDigest
 import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
+import com.example.gymapp.ui.viewmodel.WorkoutListSurface
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
 import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.sync.PhoneSyncClient
@@ -675,12 +676,12 @@ internal fun GymAppRoot(
     pushManager: AndroidPushManager,
     pushNavigationInbox: PushNavigationInbox
 ) {
-    val authState by authManager.authState.collectAsState()
+    val authState by authManager.authState.collectAsStateWithLifecycle()
     val uiIsolationKey = accountUiIsolationKey(
         session = authState.session,
         needsPasswordUpdate = authState.needsPasswordUpdate
     )
-    val selectedLanguage by languageManager.selectedLanguage.collectAsState()
+    val selectedLanguage by languageManager.selectedLanguage.collectAsStateWithLifecycle()
     // A new account generation gets a new controller and graph identity. Navigation Compose can
     // otherwise retain equal-route back-stack entries and their repository-bound ViewModelStores.
     // Language is part of the identity too: retained ViewModels can contain already-formatted
@@ -689,16 +690,17 @@ internal fun GymAppRoot(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
-    val activeWorkout by repository.observeActiveWorkout().collectAsState(initial = null)
-    val pendingSharedWorkout by sharedWorkoutInbox.pending.collectAsState()
-    val pendingPushNavigation by pushNavigationInbox.pending.collectAsState()
-    val pushUiState by pushManager.uiState.collectAsState()
+    val activeWorkoutFlow = remember(repository) { repository.observeActiveWorkout() }
+    val activeWorkout by activeWorkoutFlow.collectAsStateWithLifecycle(initialValue = null)
+    val pendingSharedWorkout by sharedWorkoutInbox.pending.collectAsStateWithLifecycle()
+    val pendingPushNavigation by pushNavigationInbox.pending.collectAsStateWithLifecycle()
+    val pushUiState by pushManager.uiState.collectAsStateWithLifecycle()
     val coroutineScope = key(uiIsolationKey) { rememberCoroutineScope() }
     val accountDeletionScope = rememberCoroutineScope()
     val applicationContext = LocalContext.current.applicationContext
     val gymApplication = remember(applicationContext) { applicationContext.gymApplication }
     val trainingGuidanceManager = gymApplication.trainingGuidanceManager
-    val tutorialProgress by trainingGuidanceManager.tutorialProgress.collectAsState()
+    val tutorialProgress by trainingGuidanceManager.tutorialProgress.collectAsStateWithLifecycle()
     val tutorialAnchors = remember(uiIsolationKey) { TutorialAnchorRegistry() }
     var tutorialMode by remember(uiIsolationKey) {
         mutableStateOf<FirstRunTutorialMode?>(null)
@@ -708,6 +710,7 @@ internal fun GymAppRoot(
     var tutorialAccountBinding by remember(uiIsolationKey) { mutableStateOf<String?>(null) }
     var tutorialReplayRequested by remember(uiIsolationKey) { mutableStateOf(false) }
     var tutorialCompletionSaveFailed by remember(uiIsolationKey) { mutableStateOf(false) }
+    val activeTutorialAnchors = tutorialAnchors.takeIf { tutorialMode != null }
     var pendingExactSocialPush by remember(uiIsolationKey) {
         mutableStateOf<PendingSocialPushResolution?>(null)
     }
@@ -892,7 +895,7 @@ internal fun GymAppRoot(
             factory = FriendsViewModel.factory(authManager, cloudSession)
         )
     }
-    val friendsState = friendsViewModel?.uiState?.collectAsState()?.value
+    val friendsState = friendsViewModel?.uiState?.collectAsStateWithLifecycle()?.value
     val liveWorkoutViewModel = rootGraphEntry?.let { owner ->
         viewModel<LiveWorkoutViewModel>(
             viewModelStoreOwner = owner,
@@ -922,7 +925,9 @@ internal fun GymAppRoot(
     val liveWorkoutSidecarStore = remember(applicationContext) {
         LiveWorkoutSidecarStore(applicationContext)
     }
-    val liveWorkoutState = liveWorkoutViewModel?.liveUiState?.collectAsState()?.value
+    val liveWorkoutState = liveWorkoutViewModel?.liveUiState
+        ?.collectAsStateWithLifecycle()
+        ?.value
         ?: LiveWorkoutUiState(isCloudAccount = cloudSession != null)
 
     LaunchedEffect(
@@ -2108,9 +2113,17 @@ internal fun GymAppRoot(
                                             else -> null
                                         }
                                         NavigationBarItem(
-                                            modifier = tutorialTarget?.let { target ->
-                                                Modifier.tutorialAnchor(tutorialAnchors, target)
-                                            } ?: Modifier,
+                                            modifier = if (
+                                                tutorialTarget != null &&
+                                                activeTutorialAnchors != null
+                                            ) {
+                                                Modifier.tutorialAnchor(
+                                                    activeTutorialAnchors,
+                                                    tutorialTarget
+                                                )
+                                            } else {
+                                                Modifier
+                                            },
                                             selected = currentRoute == tab.route,
                                             onClick = {
                                                 // Workouts is the retained start destination. Saving
@@ -2252,7 +2265,7 @@ internal fun GymAppRoot(
                                     trainingProfileManager = application.trainingProfileManager
                                 )
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                             val activeWorkoutSets = activeWorkout?.exercises
                                 .orEmpty()
                                 .flatMap { it.sets }
@@ -2410,7 +2423,7 @@ internal fun GymAppRoot(
                                     }
                                 },
                                 onRetryLoad = viewModel::retryLoad,
-                                tutorialAnchors = tutorialAnchors,
+                                tutorialAnchors = activeTutorialAnchors,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -2421,10 +2434,11 @@ internal fun GymAppRoot(
                                 factory = WorkoutListViewModel.factory(
                                     repository,
                                     application.trainingProfileManager,
-                                    application.trainingGuidanceManager
+                                    application.trainingGuidanceManager,
+                                    surface = WorkoutListSurface.Missions
                                 )
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
                             MissionsScreen(
                                 uiState = uiState,
@@ -2444,10 +2458,11 @@ internal fun GymAppRoot(
                                 factory = WorkoutListViewModel.factory(
                                     repository,
                                     application.trainingProfileManager,
-                                    application.trainingGuidanceManager
+                                    application.trainingGuidanceManager,
+                                    surface = WorkoutListSurface.Ranks
                                 )
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
                             RanksScreen(
                                 uiState = uiState,
@@ -2521,7 +2536,7 @@ internal fun GymAppRoot(
                                     viewModel.openLaunchPlan(token, launchPlanHandoff)
                                 }
                             }
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                             val smartCoachPlanNote = stringResource(R.string.smart_coach_plan_note)
                             val sharedWorkoutImported = stringResource(
                                 R.string.message_shared_workout_imported
@@ -2967,7 +2982,7 @@ internal fun GymAppRoot(
                                     liveSync = liveWorkoutViewModel
                                 )
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
                             LaunchedEffect(
                                 uiState.finishedSessionId,
@@ -3035,7 +3050,7 @@ internal fun GymAppRoot(
                                         .trainingProfileManager
                                 )
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
                             PostWorkoutSummaryScreen(
                                 uiState = uiState,
@@ -3082,7 +3097,7 @@ internal fun GymAppRoot(
                                     sessionId = sessionId
                                 )
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                             var workoutPlanToShare by remember {
                                 mutableStateOf<SharedWorkoutPlan?>(null)
                             }
@@ -3241,7 +3256,7 @@ internal fun GymAppRoot(
                             val viewModel: ExerciseListViewModel = viewModel(
                                 factory = ExerciseListViewModel.factory(repository, authManager)
                             )
-                            val uiState by viewModel.uiState.collectAsState()
+                            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
                             ExerciseListScreen(
                                 uiState = uiState,
@@ -3280,16 +3295,18 @@ internal fun GymAppRoot(
                                 factory = ExerciseProgressViewModel.factory(repository)
                             )
                             val exerciseProgressState by
-                                progressViewModel.uiState.collectAsState()
+                                progressViewModel.uiState.collectAsStateWithLifecycle()
                             val overviewViewModel: WorkoutListViewModel = viewModel(
                                 key = "progress_overview",
                                 factory = WorkoutListViewModel.factory(
                                     repository = repository,
                                     trainingProfileManager = gymApplication.trainingProfileManager,
-                                    trainingGuidanceManager = trainingGuidanceManager
+                                    trainingGuidanceManager = trainingGuidanceManager,
+                                    surface = WorkoutListSurface.Progress
                                 )
                             )
-                            val overviewState by overviewViewModel.uiState.collectAsState()
+                            val overviewState by
+                                overviewViewModel.uiState.collectAsStateWithLifecycle()
 
                             ProgressHubScreen(
                                 overviewState = overviewState,
@@ -3318,7 +3335,8 @@ internal fun GymAppRoot(
                                 key = "profile_account_tools",
                                 factory = ExerciseListViewModel.factory(repository, authManager)
                             )
-                            val profileState by profileViewModel.uiState.collectAsState()
+                            val profileState by
+                                profileViewModel.uiState.collectAsStateWithLifecycle()
                             val socialState = friendsState ?: FriendsUiState(
                                 isCloudAccount = cloudSession != null
                             )
@@ -3751,7 +3769,8 @@ internal fun GymAppRoot(
                                     }
                                 },
                                 garminDeviceState = applicationContext.gymApplication
-                                    .garminSyncManager.deviceUiState.collectAsState().value,
+                                    .garminSyncManager.deviceUiState
+                                    .collectAsStateWithLifecycle().value,
                                 onRefreshGarminDevices = {
                                     applicationContext.gymApplication.garminSyncManager
                                         .refreshGarminDevices()
@@ -3783,7 +3802,7 @@ internal fun GymAppRoot(
                                 ?.firstOrNull { it.profileId == profileId }
                             val savedWorkoutSessions by remember(repository) {
                                 repository.observeSessions()
-                            }.collectAsState(initial = emptyList())
+                            }.collectAsStateWithLifecycle(initialValue = emptyList())
                             var friendShareBinding by remember(uiIsolationKey, profileId) {
                                 mutableStateOf<FriendWorkoutPickerBinding?>(null)
                             }

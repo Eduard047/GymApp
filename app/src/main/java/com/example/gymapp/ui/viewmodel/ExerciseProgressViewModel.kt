@@ -15,12 +15,14 @@ import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.RussianText
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -103,25 +105,10 @@ private data class ExerciseProgressCatalog(
 internal fun progressFrequentExerciseIds(
     history: List<ExerciseHistoryEntry>,
     limit: Int = 12
-): List<Long> {
-    if (limit <= 0) return emptyList()
-    return history
-        .groupBy(ExerciseHistoryEntry::exerciseId)
-        .map { (exerciseId, entries) ->
-            Triple(
-                exerciseId,
-                entries.map(ExerciseHistoryEntry::sessionId).distinct().size,
-                entries.maxOfOrNull(ExerciseHistoryEntry::sessionDate) ?: Long.MIN_VALUE
-            )
-        }
-        .sortedWith(
-            compareByDescending<Triple<Long, Int, Long>> { it.second }
-                .thenByDescending { it.third }
-                .thenBy { it.first }
-        )
-        .take(limit)
-        .map { it.first }
-}
+): List<Long> = frequentExerciseIds(
+    frequencies = exerciseFrequencyByExercise(history),
+    limit = limit
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseProgressViewModel(
@@ -148,10 +135,13 @@ class ExerciseProgressViewModel(
         repository.observeExerciseMuscleMappings()
     ) { exerciseList, history, mappings ->
         val manualMappings = mappings.toManualContributionMap()
+        val exerciseFrequencies = exerciseFrequencyByExercise(history)
         ExerciseProgressCatalog(
             exercises = exerciseList,
-            frequentExerciseIds = progressFrequentExerciseIds(history),
-            workoutCounts = workoutCountByExercise(history),
+            frequentExerciseIds = frequentExerciseIds(exerciseFrequencies),
+            workoutCounts = exerciseFrequencies.mapValues { (_, frequency) ->
+                frequency.workoutCount
+            },
             muscleIdsByName = exerciseList.associate { exercise ->
                 val contributions = manualMappings[exercise.name.normalizedExerciseName()]
                     ?: defaultContributionsForExercise(exercise.name)
@@ -216,11 +206,13 @@ class ExerciseProgressViewModel(
         )
     }
 
-    val uiState: StateFlow<ExerciseProgressUiState> = progressState.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = ExerciseProgressUiState()
-    )
+    val uiState: StateFlow<ExerciseProgressUiState> = progressState
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = ExerciseProgressUiState()
+        )
 
     init {
         viewModelScope.launch {

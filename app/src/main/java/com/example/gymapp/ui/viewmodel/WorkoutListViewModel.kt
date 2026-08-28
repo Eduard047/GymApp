@@ -53,6 +53,7 @@ import com.example.gymapp.util.TrainingGoal
 import com.example.gymapp.util.TrainingGuidanceManager
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.util.TrainingProfileManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,9 +62,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -88,6 +91,13 @@ import kotlin.math.roundToInt
 
 private const val MAX_TODAY_HERO_VOLUME = 1_000_000_000_000_000.0
 internal const val MAX_ESTIMATED_WORKOUT_MINUTES = 90
+private val EMPTY_DASHBOARD_STATS = DashboardStats(
+    workoutCount = 0,
+    totalVolume = 0.0,
+    averageIntensity = 0.0,
+    streakDays = 0,
+    weeklyStreakWeeks = 0
+)
 
 data class SoloProgressUiModel(
     val totalXp: Int = 0,
@@ -298,12 +308,31 @@ data class WorkoutListUiState(
     val achievements: List<AchievementPreviewUiModel> = emptyList()
 )
 
+/**
+ * Each destination owns a separate [WorkoutListViewModel]. Keep its Room subscriptions and
+ * derived projections limited to the content that destination can actually render.
+ */
+enum class WorkoutListSurface {
+    Today,
+    Progress,
+    Missions,
+    Ranks;
+
+    val needsTodayPlan: Boolean get() = this == Today
+    val needsProgressInsights: Boolean get() = this == Progress
+    val needsMissions: Boolean get() = this == Progress || this == Missions
+    val needsSoloProgress: Boolean get() = this != Today
+    val needsRankLadder: Boolean get() = this == Ranks
+    val needsMuscleMappings: Boolean get() = needsTodayPlan || needsProgressInsights
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkoutListViewModel(
     private val repository: GymRepository,
     private val trainingProfileManager: TrainingProfileManager,
     private val trainingGuidanceManager: TrainingGuidanceManager,
-    private val savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle,
+    private val surface: WorkoutListSurface = WorkoutListSurface.Today
 ) : ViewModel() {
     private val accountBinding = trainingGuidanceManager.activeBinding
     private val profileAccountBinding = trainingProfileManager.activeBinding
@@ -321,76 +350,124 @@ class WorkoutListViewModel(
     private val activationLaunchMutationMutex = Mutex()
 
     private val sessionsFlow = monthOffset.flatMapLatest { offset ->
-        repository.observeSessionsForMonth(offset)
-    }
-
-    private val dashboardFlow = combine(
-        monthOffset,
-        trainingProfileManager.profile
-    ) { offset, profile ->
-        offset to profile.workoutsPerWeek.coerceIn(2, 6)
-    }.flatMapLatest { (offset, target) ->
-        repository.observeDashboardStatsForMonth(offset, target)
+        repository.observeSessionsForMonth(offset).map { sessions ->
+            WorkoutMonthSessions(offset = offset, sessions = sessions)
+        }
     }
 
     private val allSessionsFlow = repository.observeSessions()
-    private val exerciseHistoryFlow = repository.observeAllExerciseHistory()
-    private val muscleMappingsFlow = repository.observeExerciseMuscleMappings()
+        .let { sessions ->
+            if (surface.needsTodayPlan) {
+                sessions.onEach { summaries ->
+                    accountBinding?.let { expectedBinding ->
+                        trainingGuidanceManager.pruneFeedback(
+                            ownedSessions = summaries.associate {
+                                it.session.id to it.session.date
+                            },
+                            expectedAccountBinding = expectedBinding
+                        )
+                    }
+                }.flowOn(Dispatchers.Default)
+            } else {
+                sessions
+            }
+        }
 
-    private val recommendationContextLoad = generationScopedRecommendationContext(
-        loadGeneration = loadGeneration,
-        exercisesSource = repository::observeExercises,
-        historySource = repository::observeAllExerciseHistory,
-        loadProfilesSource = repository::observeExerciseLoadProfiles,
-        muscleMappingsSource = repository::observeExerciseMuscleMappings
-    )
+    private val exerciseHistoryFlow: Flow<List<ExerciseHistoryEntry>> =
+        if (surface.needsProgressInsights) {
+            repository.observeAllExerciseHistory()
+        } else {
+            flowOf(emptyList())
+        }
+    private val muscleMappingsFlow: Flow<List<ExerciseMuscleMappingEntity>> =
+        if (surface.needsProgressInsights) {
+            repository.observeExerciseMuscleMappings()
+        } else {
+            flowOf(emptyList())
+        }
+
+    private val recommendationContextLoad: Flow<WorkoutRecommendationContextLoad> =
+        if (surface.needsTodayPlan) {
+            generationScopedRecommendationContext(
+                loadGeneration = loadGeneration,
+                exercisesSource = repository::observeExercises,
+                historySource = repository::observeAllExerciseHistory,
+                loadProfilesSource = repository::observeExerciseLoadProfiles,
+                muscleMappingsSource = repository::observeExerciseMuscleMappings
+            )
+        } else {
+            flowOf(WorkoutRecommendationContextLoad.Loaded(WorkoutRecommendationContext()))
+        }
 
     private val sourceState = combine(
-        monthOffset,
         sessionsFlow,
-        dashboardFlow,
         allSessionsFlow,
         exerciseHistoryFlow
-    ) { offset, sessions, dashboardStats, allSessions, exerciseHistory ->
+    ) { month, allSessions, exerciseHistory ->
         WorkoutListSourceState(
-            offset = offset,
-            sessions = sessions,
-            dashboardStats = dashboardStats,
+            offset = month.offset,
+            sessions = month.sessions,
             allSessions = allSessions,
             exerciseHistory = exerciseHistory
         )
     }
 
-    private val muscleSelection = combine(
-        muscleMapPeriod,
-        selectedMuscleId,
-        manualMappingExerciseName,
-        muscleMappingsFlow
-    ) { period, muscleId, editorName, mappings ->
-        WorkoutMuscleSelection(period, muscleId, editorName, mappings)
-    }
-
-    private val experienceInputs = combine(
-        trainingProfileManager.profile,
-        trainingGuidanceManager.activationDismissed,
-        trainingGuidanceManager.feedback,
-        recommendationContextLoad
-    ) { profile, activationDismissed, feedback, contextLoad ->
-        val context = when (contextLoad) {
-            is WorkoutRecommendationContextLoad.Loaded -> contextLoad.context.also {
-                latestRecommendationContext = it
+    private val muscleSelection: Flow<WorkoutMuscleSelection> =
+        if (surface.needsProgressInsights) {
+            combine(
+                muscleMapPeriod,
+                selectedMuscleId,
+                manualMappingExerciseName,
+                muscleMappingsFlow
+            ) { period, muscleId, editorName, mappings ->
+                WorkoutMuscleSelection(period, muscleId, editorName, mappings)
             }
-            is WorkoutRecommendationContextLoad.Failed -> {
-                latestRecommendationContext = WorkoutRecommendationContext()
-                throw contextLoad.error
+        } else {
+            flowOf(
+                WorkoutMuscleSelection(
+                    period = MuscleMapPeriod.AllTime,
+                    muscleId = null,
+                    editorName = null,
+                    mappings = emptyList()
+                )
+            )
+        }
+
+    private val experienceInputs: Flow<WorkoutExperienceState> =
+        if (surface.needsTodayPlan) {
+            combine(
+                trainingProfileManager.profile,
+                trainingGuidanceManager.activationDismissed,
+                trainingGuidanceManager.feedback,
+                recommendationContextLoad
+            ) { profile, activationDismissed, feedback, contextLoad ->
+                val context = when (contextLoad) {
+                    is WorkoutRecommendationContextLoad.Loaded -> contextLoad.context.also {
+                        latestRecommendationContext = it
+                    }
+                    is WorkoutRecommendationContextLoad.Failed -> {
+                        latestRecommendationContext = WorkoutRecommendationContext()
+                        throw contextLoad.error
+                    }
+                }
+                WorkoutExperienceState(profile, activationDismissed, feedback, context)
+            }
+        } else {
+            trainingProfileManager.profile.map { profile ->
+                WorkoutExperienceState(
+                    profile = profile,
+                    activationDismissed = false,
+                    feedback = emptyMap(),
+                    context = WorkoutRecommendationContext()
+                )
             }
         }
-        WorkoutExperienceState(profile, activationDismissed, feedback, context)
-    }
-    private val experienceState = combine(
-        experienceInputs,
-        recommendationRefresh
-    ) { state, _ -> state }
+    private val experienceState: Flow<WorkoutExperienceState> =
+        if (surface.needsTodayPlan) {
+            combine(experienceInputs, recommendationRefresh) { state, _ -> state }
+        } else {
+            experienceInputs
+        }
 
     val uiState: StateFlow<WorkoutListUiState> = loadGeneration.flatMapLatest {
         combine(
@@ -400,84 +477,141 @@ class WorkoutListViewModel(
         ) { source, selection, experience ->
         val offset = source.offset
         val sessions = source.sessions
-        val dashboardStats = source.dashboardStats
         val allSessions = source.allSessions
         val exerciseHistory = source.exerciseHistory
         val muscleMappings = selection.mappings
-        val missionBoard = AdaptiveMissionBoardSource.build(
-            sessions = allSessions,
-            anchorDate = LocalDate.now(zoneId),
-            zoneId = zoneId
-        )
+        val nowMillis = System.currentTimeMillis()
+        val dashboardStats = if (surface.needsSoloProgress) {
+            buildDashboardStatsForMonth(
+                monthOffset = offset,
+                targetWorkoutsPerWeek = experience.profile.workoutsPerWeek.coerceIn(2, 6),
+                monthSessions = sessions,
+                allSessions = allSessions,
+                nowMillis = nowMillis,
+                zoneId = zoneId
+            )
+        } else {
+            EMPTY_DASHBOARD_STATS
+        }
+        val missionBoard = if (surface.needsMissions) {
+            AdaptiveMissionBoardSource.build(
+                sessions = allSessions,
+                anchorDate = LocalDate.now(zoneId),
+                zoneId = zoneId
+            )
+        } else {
+            AdaptiveMissionBoard(
+                daily = emptyList(),
+                weekly = emptyList(),
+                monthly = emptyList()
+            )
+        }
         val dailyMissions = missionBoard.daily.map(::missionUiModel)
         val weeklyMissions = missionBoard.weekly.map(::missionUiModel)
         val monthlyMissions = missionBoard.monthly.map(::missionUiModel)
-        val soloProgress = buildSoloProgress(
-            allSessions = allSessions,
-            monthSessions = sessions,
-            streakDays = dashboardStats.streakDays,
-            weeklyStreakWeeks = dashboardStats.weeklyStreakWeeks,
-            weeklyTarget = experience.profile.workoutsPerWeek
-        )
-        val todayPlan = buildTodayPlan(
-            allSessions = allSessions,
-            profile = experience.profile,
-            feedback = experience.feedback,
-            context = experience.context
-        )
-        val todayHeroMetrics = buildTodayHeroMetrics(
-            sessions = allSessions,
-            weeklyStreakWeeks = WeeklyStreakCalculator.current(
-                sessionTimestamps = allSessions.map { it.session.date },
-                targetWorkoutsPerWeek = experience.profile.workoutsPerWeek,
-                nowMillis = System.currentTimeMillis(),
+        val soloProgress = if (surface.needsSoloProgress) {
+            buildSoloProgress(
+                allSessions = allSessions,
+                monthSessions = sessions,
+                streakDays = dashboardStats.streakDays,
+                weeklyStreakWeeks = dashboardStats.weeklyStreakWeeks,
+                weeklyTarget = experience.profile.workoutsPerWeek
+            )
+        } else {
+            SoloProgressUiModel()
+        }
+        val todayPlan = if (surface.needsTodayPlan) {
+            buildTodayPlan(
+                allSessions = allSessions,
+                profile = experience.profile,
+                feedback = experience.feedback,
+                context = experience.context
+            )
+        } else {
+            null
+        }
+        val todayHeroMetrics = if (surface.needsTodayPlan) {
+            buildTodayHeroMetrics(
+                sessions = allSessions,
+                weeklyStreakWeeks = WeeklyStreakCalculator.current(
+                    sessionTimestamps = allSessions.map { it.session.date },
+                    targetWorkoutsPerWeek = experience.profile.workoutsPerWeek,
+                    nowMillis = nowMillis,
+                    zoneId = zoneId
+                )
+            )
+        } else {
+            TodayHeroMetricsUiModel()
+        }
+        val weeklyTrainingSummary = if (surface.needsTodayPlan) {
+            buildWeeklyTrainingSummary(
+                sessions = allSessions,
+                targetTrainingDays = experience.profile.workoutsPerWeek,
+                nowMillis = nowMillis,
                 zoneId = zoneId
             )
-        )
-        val nowMillis = System.currentTimeMillis()
-        val weeklyTrainingSummary = buildWeeklyTrainingSummary(
-            sessions = allSessions,
-            targetTrainingDays = experience.profile.workoutsPerWeek,
-            nowMillis = nowMillis,
-            zoneId = zoneId
-        )
+        } else {
+            WeeklyTrainingSummaryUiModel()
+        }
         WorkoutListUiState(
             isLoading = false,
             monthOffset = offset,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
             sessions = sessions,
             hasAnyWorkout = allSessions.isNotEmpty(),
-            showFirstWorkoutActivation = allSessions.isEmpty() && !experience.activationDismissed,
+            showFirstWorkoutActivation = surface.needsTodayPlan &&
+                allSessions.isEmpty() && !experience.activationDismissed,
             todayPlan = todayPlan,
-            hasCompletedWorkoutToday = hasCompletedWorkoutToday(
-                sessions = allSessions,
-                nowMillis = nowMillis,
-                zoneId = zoneId
-            ),
+            hasCompletedWorkoutToday = surface.needsTodayPlan &&
+                hasCompletedWorkoutToday(
+                    sessions = allSessions,
+                    nowMillis = nowMillis,
+                    zoneId = zoneId
+                ),
             weeklyTrainingSummary = weeklyTrainingSummary,
             todayHeroMetrics = todayHeroMetrics,
             dashboardStats = dashboardStats,
             soloProgress = soloProgress,
-            activityHeatmap = buildHeatmap(offset, sessions),
-            muscleHeatmap = buildMuscleHeatmap(
-                exerciseHistory = exerciseHistory,
-                period = selection.period,
-                selectedMuscleId = selection.muscleId,
-                manualEditorExerciseName = selection.editorName,
-                muscleMappings = muscleMappings
-            ),
-            trainingRecommendations = buildTrainingRecommendations(
-                exerciseHistory = exerciseHistory,
-                muscleMappings = muscleMappings
-            ),
+            activityHeatmap = if (surface.needsProgressInsights) {
+                buildHeatmap(offset, sessions)
+            } else {
+                ActivityHeatmapUiModel()
+            },
+            muscleHeatmap = if (surface.needsProgressInsights) {
+                buildMuscleHeatmap(
+                    exerciseHistory = exerciseHistory,
+                    period = selection.period,
+                    selectedMuscleId = selection.muscleId,
+                    manualEditorExerciseName = selection.editorName,
+                    muscleMappings = muscleMappings
+                )
+            } else {
+                MuscleHeatmapUiModel()
+            },
+            trainingRecommendations = if (surface.needsProgressInsights) {
+                buildTrainingRecommendations(
+                    exerciseHistory = exerciseHistory,
+                    muscleMappings = muscleMappings
+                )
+            } else {
+                emptyList()
+            },
             dailyMissions = dailyMissions,
             weeklyMissions = weeklyMissions,
             monthlyMissions = monthlyMissions,
-            rankLadder = buildRankLadder(soloProgress.totalXp),
-            achievements = buildAchievements(
-                allSessions = allSessions,
-                targetWorkoutsPerWeek = experience.profile.workoutsPerWeek
-            )
+            rankLadder = if (surface.needsRankLadder) {
+                buildRankLadder(soloProgress.totalXp)
+            } else {
+                emptyList()
+            },
+            achievements = if (surface.needsMissions) {
+                buildAchievements(
+                    allSessions = allSessions,
+                    targetWorkoutsPerWeek = experience.profile.workoutsPerWeek
+                )
+            } else {
+                emptyList()
+            }
         )
         }.catch { error ->
             if (error is CancellationException) throw error
@@ -488,26 +622,16 @@ class WorkoutListViewModel(
                 )
             )
         }
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = WorkoutListUiState(isLoading = true)
     )
 
     init {
-        viewModelScope.launch {
-            repository.seedDefaultExerciseMuscleMappings()
-        }
-        viewModelScope.launch {
-            allSessionsFlow.collect { sessions ->
-                accountBinding?.let { expectedBinding ->
-                    trainingGuidanceManager.pruneFeedback(
-                        ownedSessions = sessions.associate {
-                            it.session.id to it.session.date
-                        },
-                        expectedAccountBinding = expectedBinding
-                    )
-                }
+        if (surface.needsMuscleMappings) {
+            viewModelScope.launch {
+                repository.seedDefaultExerciseMuscleMappings()
             }
         }
     }
@@ -1755,14 +1879,16 @@ class WorkoutListViewModel(
         fun factory(
             repository: GymRepository,
             trainingProfileManager: TrainingProfileManager,
-            trainingGuidanceManager: TrainingGuidanceManager
+            trainingGuidanceManager: TrainingGuidanceManager,
+            surface: WorkoutListSurface = WorkoutListSurface.Today
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 WorkoutListViewModel(
                     repository = repository,
                     trainingProfileManager = trainingProfileManager,
                     trainingGuidanceManager = trainingGuidanceManager,
-                    savedStateHandle = createSavedStateHandle()
+                    savedStateHandle = createSavedStateHandle(),
+                    surface = surface
                 )
             }
         }
@@ -1781,6 +1907,59 @@ internal fun buildTodayHeroMetrics(
         totalWorkouts = sessions.size,
         weeklyStreakWeeks = weeklyStreakWeeks.coerceAtLeast(0),
         totalVolume = totalVolume
+    )
+}
+
+internal fun buildDashboardStatsForMonth(
+    monthOffset: Int,
+    targetWorkoutsPerWeek: Int,
+    monthSessions: List<WorkoutSessionSummary>,
+    allSessions: List<WorkoutSessionSummary>,
+    nowMillis: Long,
+    zoneId: ZoneId
+): DashboardStats {
+    require(targetWorkoutsPerWeek in 2..6)
+    val totalVolume = monthSessions.sumOf { it.totalVolume }
+    val totalSets = monthSessions.sumOf { it.setCount }
+    val workoutDays = allSessions.asSequence()
+        .map { session ->
+            Instant.ofEpochMilli(session.session.date)
+                .atZone(zoneId)
+                .toLocalDate()
+                .toEpochDay()
+        }
+        .toSet()
+    var cursorDay = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate().toEpochDay()
+    if (cursorDay !in workoutDays) cursorDay -= 1
+    var streakDays = 0
+    while (cursorDay in workoutDays) {
+        streakDays += 1
+        cursorDay -= 1
+    }
+    val sessionTimestamps = allSessions.map { it.session.date }
+    val weeklyStreakWeeks = if (monthOffset == 0) {
+        WeeklyStreakCalculator.current(
+            sessionTimestamps = sessionTimestamps,
+            targetWorkoutsPerWeek = targetWorkoutsPerWeek,
+            nowMillis = nowMillis,
+            zoneId = zoneId
+        )
+    } else {
+        val (periodStartMillis, periodEndMillis) = DateTimeUtils.monthBounds(monthOffset, zoneId)
+        WeeklyStreakCalculator.bestDuringPeriod(
+            sessionTimestamps = sessionTimestamps,
+            targetWorkoutsPerWeek = targetWorkoutsPerWeek,
+            periodStartMillis = periodStartMillis,
+            periodEndMillis = periodEndMillis,
+            zoneId = zoneId
+        )
+    }
+    return DashboardStats(
+        workoutCount = monthSessions.size,
+        totalVolume = totalVolume,
+        averageIntensity = if (totalSets == 0) 0.0 else totalVolume / totalSets,
+        streakDays = streakDays,
+        weeklyStreakWeeks = weeklyStreakWeeks
     )
 }
 
@@ -1878,10 +2057,14 @@ private data class LevelProgress(
     val progressFraction: Float
 )
 
+private data class WorkoutMonthSessions(
+    val offset: Int,
+    val sessions: List<WorkoutSessionSummary>
+)
+
 private data class WorkoutListSourceState(
     val offset: Int,
     val sessions: List<WorkoutSessionSummary>,
-    val dashboardStats: DashboardStats,
     val allSessions: List<WorkoutSessionSummary>,
     val exerciseHistory: List<ExerciseHistoryEntry>
 )

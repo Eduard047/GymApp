@@ -131,6 +131,7 @@ fun WorkoutListScreen(
     modifier: Modifier = Modifier
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     var showActiveWorkoutDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
 
     if (uiState.isLoading) {
@@ -226,9 +227,12 @@ fun WorkoutListScreen(
                 } else {
                 items(
                     items = uiState.sessions,
-                    key = { it.session.id }
+                    key = { it.session.id },
+                    contentType = { "workout-session" }
                 ) { sessionSummary ->
-                    val displayDate = DateTimeUtils.formatDate(sessionSummary.session.date)
+                    val displayDate = remember(sessionSummary.session.date, locale) {
+                        DateTimeUtils.formatDate(sessionSummary.session.date, locale)
+                    }
                     val isActivityOnly = sessionSummary.exerciseCount == 0 &&
                         sessionSummary.setCount == 0 &&
                         sessionSummary.session.durationSeconds?.let { it > 0L } == true
@@ -558,15 +562,17 @@ private fun FocusLens(
     )
     val hasCompletedToday = hasCompletedWorkoutToday && !hasActiveWorkout
     val darkTheme = isSystemInDarkTheme()
-    val lensShape = RoundedCornerShape(28.dp)
-    val lensBrush = if (darkTheme) {
-        Brush.linearGradient(
-            listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B))
-        )
-    } else {
-        Brush.linearGradient(
-            listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD))
-        )
+    val lensShape = remember { RoundedCornerShape(28.dp) }
+    val lensBrush = remember(darkTheme) {
+        if (darkTheme) {
+            Brush.linearGradient(
+                listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B))
+            )
+        } else {
+            Brush.linearGradient(
+                listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD))
+            )
+        }
     }
 
     val focusModifier = if (tutorialAnchors == null) {
@@ -895,6 +901,9 @@ private fun WeeklyTrainingCard(
     val volume = remember(summary.totalVolume, locale) {
         formatTodayHeroVolume(summary.totalVolume, locale)
     }
+    val completedWorkoutCount = remember(summary.completedWorkoutCount, locale) {
+        formatTodayHeroCount(summary.completedWorkoutCount, locale)
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -1002,7 +1011,7 @@ private fun WeeklyTrainingCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 WeeklyTrainingMetric(
-                    value = formatTodayHeroCount(summary.completedWorkoutCount, locale),
+                    value = completedWorkoutCount,
                     label = stringResource(R.string.weekly_training_workouts_label),
                     modifier = Modifier.weight(1f)
                 )
@@ -1182,10 +1191,16 @@ private fun FirstWorkoutActivationCard(
     var effort by rememberSaveable { mutableStateOf(FirstWorkoutEffort.Standard) }
     var showRecommendationOptions by rememberSaveable { mutableStateOf(false) }
     val darkTheme = isSystemInDarkTheme()
-    val brush = if (darkTheme) {
-        Brush.linearGradient(listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B)))
-    } else {
-        Brush.linearGradient(listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD)))
+    val brush = remember(darkTheme) {
+        if (darkTheme) {
+            Brush.linearGradient(
+                listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B))
+            )
+        } else {
+            Brush.linearGradient(
+                listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD))
+            )
+        }
     }
     val focusModifier = if (tutorialAnchors == null) {
         modifier

@@ -1589,7 +1589,11 @@ private struct MainTabShell: View {
                 onDiscardWorkout: {
                     showingActiveDraftDiscardConfirmation = true
                 },
+                tracksTutorialPrimaryActionFrame: appTutorialShouldMeasurePrimaryAction(
+                    target: currentTutorialStep?.target
+                ),
                 onTutorialPrimaryActionFrameChange: { frame in
+                    guard tutorialPrimaryActionGlobalFrame != frame else { return }
                     tutorialPrimaryActionGlobalFrame = frame
                 },
                 onOpenWorkout: { workoutPath.append(.detail($0)) },

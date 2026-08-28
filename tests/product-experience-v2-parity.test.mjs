@@ -30,7 +30,7 @@ const contract = JSON.parse(contractSource);
 
 test("product experience v2 defines one full-client navigation and tutorial", () => {
   assert.equal(contract.schemaVersion, 2);
-  assert.equal(contract.productVersion, "3.2.4");
+  assert.equal(contract.productVersion, "3.2.5");
   assert.deepEqual(contract.fullClients, ["android", "ios", "pwa"]);
   assert.deepEqual(contract.navigation.fullClientTabOrder, [
     "today",

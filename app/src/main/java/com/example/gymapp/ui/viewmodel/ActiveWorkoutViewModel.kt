@@ -27,6 +27,7 @@ import com.example.gymapp.util.activeWorkoutRestSecondsRemaining
 import com.example.gymapp.util.parseWeightInputOrNull
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -394,7 +396,7 @@ class ActiveWorkoutViewModel(
         }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.WhileSubscribed(5_000),
         initialValue = System.currentTimeMillis()
     )
 
@@ -421,13 +423,12 @@ class ActiveWorkoutViewModel(
         )
     }
 
-    val uiState: StateFlow<ActiveWorkoutUiState> = combine(
+    private val contentState = combine(
         sourceState,
         recordGate.inFlight,
-        clockState,
         operationState,
         liveSync?.activeLiveUiState ?: kotlinx.coroutines.flow.flowOf(ActiveLiveWorkoutUiState())
-    ) { source, inFlight, clock, operation, live ->
+    ) { source, inFlight, operation, live ->
         val activeWorkout = source.details
         val exercises = activeWorkout?.exercises.orEmpty().map { exercise ->
             ActiveWorkoutExerciseUiState(
@@ -471,8 +472,8 @@ class ActiveWorkoutViewModel(
             exercises = exercises,
             completedSetCount = allSets.count(ActiveWorkoutSetUiState::isCompleted),
             totalSetCount = allSets.size,
-            workoutElapsedSeconds = clock.workoutElapsedSeconds.coerceAtLeast(0L),
-            restSecondsRemaining = clock.restSecondsRemaining.coerceAtLeast(0),
+            workoutElapsedSeconds = 0L,
+            restSecondsRemaining = 0,
             latestCompletedSetId = latestCompletedSetId,
             setRecordingsInFlight = inFlight,
             undoingSetId = operation.undoingSetId,
@@ -492,6 +493,16 @@ class ActiveWorkoutViewModel(
             liveExerciseLanes = live.exerciseLanes,
             liveConnectionMode = live.connectionMode.takeIf { live.activeRoomId != null },
             livePendingOperationCount = live.pendingOperationCount
+        )
+    }.flowOn(Dispatchers.Default)
+
+    val uiState: StateFlow<ActiveWorkoutUiState> = combine(
+        contentState,
+        clockState
+    ) { content, clock ->
+        content.copy(
+            workoutElapsedSeconds = clock.workoutElapsedSeconds.coerceAtLeast(0L),
+            restSecondsRemaining = clock.restSecondsRemaining.coerceAtLeast(0)
         )
     }.stateIn(
         scope = viewModelScope,

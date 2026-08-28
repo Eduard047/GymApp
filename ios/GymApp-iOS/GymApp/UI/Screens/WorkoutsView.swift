@@ -89,11 +89,132 @@ struct WeeklyTrainingSummary: Equatable {
     }
 }
 
+struct TodayScreenProjection {
+    let accountStorageKey: String
+    let trainingProfile: TrainingProfile
+    let weeklyGuidance: WeeklyTrainingGuidance
+    let weeklySummary: WeeklyTrainingSummary
+    let launchSeed: WorkoutLaunchSeed?
+    let heroMetrics: TodayHeroMetrics
+    let monthWorkouts: [WorkoutSessionSummary]
+}
+
+@MainActor
+final class TodayScreenProjectionCache: ObservableObject {
+    private struct Key: Equatable {
+        let storeIdentity: ObjectIdentifier
+        let accountStorageKey: String
+        let derivedDataRevision: UInt64
+        let referenceDate: Date
+        let calendar: Calendar
+        let trainingProfile: TrainingProfile
+        let monthOffset: Int
+    }
+
+    private var cached: (key: Key, projection: TodayScreenProjection)?
+    private(set) var buildCount = 0
+
+    func projection(
+        store: WorkoutStore,
+        referenceDate: Date,
+        calendar: Calendar,
+        trainingProfile: TrainingProfile,
+        monthOffset: Int
+    ) -> TodayScreenProjection {
+        let key = Key(
+            storeIdentity: ObjectIdentifier(store),
+            accountStorageKey: store.accountStorageKey,
+            derivedDataRevision: store.derivedDataRevision,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            trainingProfile: trainingProfile,
+            monthOffset: monthOffset
+        )
+        if let cached, cached.key == key {
+            return cached.projection
+        }
+
+        let sessions = store.workoutSummaries
+        let history = store.allExerciseHistory()
+        let latestFeedback = store.latestWorkoutFeedbackContext(now: referenceDate)
+        let weeklySummary = WeeklyTrainingSummary(
+            sessions: sessions,
+            now: referenceDate,
+            calendar: calendar
+        )
+        let weeklyGuidance = RecommendationEngine.weeklyTrainingGuidance(
+            history: history,
+            trainingProfile: trainingProfile,
+            latestFeedback: latestFeedback,
+            now: referenceDate,
+            calendar: calendar
+        )
+        let launchSeed: WorkoutLaunchSeed?
+        if weeklySummary.hasCompletedWorkoutToday(now: referenceDate, calendar: calendar) {
+            launchSeed = nil
+        } else {
+            let effort: SmartWorkoutEffort = weeklyGuidance.decision == .train
+                ? .auto
+                : .recovery
+            let plan = RecommendationEngine.buildWorkoutPlan(
+                exercises: store.exercises,
+                history: history,
+                muscleMappings: store.muscleMappings,
+                trainingProfile: trainingProfile,
+                effort: effort,
+                latestFeedback: latestFeedback,
+                now: referenceDate,
+                calendar: calendar
+            )
+            launchSeed = plan.exercises.isEmpty ? nil : WorkoutLaunchSeed(
+                accountStorageKey: store.accountStorageKey,
+                profile: trainingProfile,
+                requestedEffort: effort,
+                plan: plan,
+                catalog: store.exercises,
+                history: history,
+                muscleMappings: store.muscleMappings,
+                createdAt: referenceDate
+            )
+        }
+
+        let weeklyStreakWeeks = WeeklyStreakCalculator.current(
+            sessions: sessions,
+            targetTrainingDays: trainingProfile.workoutsPerWeek,
+            now: referenceDate,
+            calendar: calendar
+        )
+        let selectedMonth = calendar.date(
+            byAdding: .month,
+            value: monthOffset,
+            to: referenceDate
+        ) ?? referenceDate
+        let selectedMonthInterval = calendar.dateInterval(of: .month, for: selectedMonth)
+            ?? DateInterval(start: calendar.startOfDay(for: selectedMonth), duration: 1)
+        let projection = TodayScreenProjection(
+            accountStorageKey: store.accountStorageKey,
+            trainingProfile: trainingProfile,
+            weeklyGuidance: weeklyGuidance,
+            weeklySummary: weeklySummary,
+            launchSeed: launchSeed,
+            heroMetrics: TodayHeroMetrics(
+                sessions: sessions,
+                weeklyStreakWeeks: weeklyStreakWeeks
+            ),
+            monthWorkouts: sessions.filter { selectedMonthInterval.contains($0.date) }
+        )
+        buildCount += 1
+        cached = (key, projection)
+        return projection
+    }
+}
+
 @MainActor
 public struct WorkoutsView: View {
     @Environment(\.calendar) private var calendar
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var store: WorkoutStore
+    @StateObject private var projectionCache = TodayScreenProjectionCache()
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
 
     @State private var referenceDate = Date()
@@ -114,6 +235,7 @@ public struct WorkoutsView: View {
     private let activeWorkoutDraft: ActiveWorkoutDraft?
     private let onContinueWorkout: () -> Void
     private let onDiscardWorkout: () -> Void
+    private let tracksTutorialPrimaryActionFrame: Bool
     private let onTutorialPrimaryActionFrameChange: @MainActor (CGRect?) -> Void
     private let onOpenWorkout: (UUID) -> Void
     private let onOpenRanks: () -> Void
@@ -126,6 +248,7 @@ public struct WorkoutsView: View {
         onAddWorkout: @escaping (WorkoutLaunchSeed?) -> Bool,
         onContinueWorkout: @escaping () -> Void = {},
         onDiscardWorkout: @escaping () -> Void = {},
+        tracksTutorialPrimaryActionFrame: Bool = false,
         onTutorialPrimaryActionFrameChange: @escaping @MainActor (CGRect?) -> Void = { _ in },
         onOpenWorkout: @escaping (UUID) -> Void,
         onOpenRanks: @escaping () -> Void
@@ -137,6 +260,7 @@ public struct WorkoutsView: View {
         self.onAddWorkout = onAddWorkout
         self.onContinueWorkout = onContinueWorkout
         self.onDiscardWorkout = onDiscardWorkout
+        self.tracksTutorialPrimaryActionFrame = tracksTutorialPrimaryActionFrame
         self.onTutorialPrimaryActionFrameChange = onTutorialPrimaryActionFrameChange
         self.onOpenWorkout = onOpenWorkout
         self.onOpenRanks = onOpenRanks
@@ -238,7 +362,10 @@ public struct WorkoutsView: View {
                 }
                 continueRetainedPlanAction
                     .appTutorialPrimaryActionTarget()
-                    .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+                    .appTutorialPrimaryActionFrame(
+                        isEnabled: tracksTutorialPrimaryActionFrame,
+                        onTutorialPrimaryActionFrameChange
+                    )
             } else {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(gymText(
@@ -277,7 +404,10 @@ public struct WorkoutsView: View {
                 }
                 .buttonStyle(.plain)
                 .appTutorialPrimaryActionTarget()
-                .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+                .appTutorialPrimaryActionFrame(
+                    isEnabled: tracksTutorialPrimaryActionFrame,
+                    onTutorialPrimaryActionFrameChange
+                )
 
                 Button(action: createActivationManually) {
                     Text(gymText(
@@ -515,46 +645,15 @@ public struct WorkoutsView: View {
         if committed { activationDismissed = true }
     }
 
-    private var trainingProfile: TrainingProfile {
-        TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
-    }
-
-    private func weeklyGuidance(at now: Date) -> WeeklyTrainingGuidance {
-        RecommendationEngine.weeklyTrainingGuidance(
-            history: store.allExerciseHistory(),
-            trainingProfile: trainingProfile,
-            latestFeedback: store.latestWorkoutFeedbackContext(now: now),
-            now: now,
-            calendar: calendar
-        )
-    }
-
-    private func makeTodayLaunchSeed(
-        guidance: WeeklyTrainingGuidance,
-        now: Date
-    ) -> WorkoutLaunchSeed? {
-        let effort: SmartWorkoutEffort = guidance.decision == .train ? .auto : .recovery
-        let history = store.allExerciseHistory()
-        let plan = RecommendationEngine.buildWorkoutPlan(
-            exercises: store.exercises,
-            history: history,
-            muscleMappings: store.muscleMappings,
-            trainingProfile: trainingProfile,
-            effort: effort,
-            latestFeedback: store.latestWorkoutFeedbackContext(now: now),
-            now: now,
-            calendar: calendar
-        )
-        guard !plan.exercises.isEmpty else { return nil }
-        return WorkoutLaunchSeed(
-            accountStorageKey: store.accountStorageKey,
-            profile: trainingProfile,
-            requestedEffort: effort,
-            plan: plan,
-            catalog: store.exercises,
-            history: history,
-            muscleMappings: store.muscleMappings,
-            createdAt: now
+    private var todayProjection: TodayScreenProjection {
+        projectionCache.projection(
+            store: store,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            trainingProfile: TrainingProfileStore().load(
+                accountStorageKey: store.accountStorageKey
+            ),
+            monthOffset: monthOffset
         )
     }
 
@@ -609,15 +708,14 @@ public struct WorkoutsView: View {
     }
 
     private var focusLens: some View {
-        let guidance = weeklyGuidance(at: referenceDate)
-        let weeklySummary = weeklyTrainingSummary
+        let projection = todayProjection
+        let guidance = projection.weeklyGuidance
+        let weeklySummary = projection.weeklySummary
         let completedToday = weeklySummary.hasCompletedWorkoutToday(
             now: referenceDate,
             calendar: calendar
         )
-        let launchSeed = completedToday
-            ? nil
-            : makeTodayLaunchSeed(guidance: guidance, now: referenceDate)
+        let launchSeed = projection.launchSeed
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(gymText(
@@ -645,17 +743,25 @@ public struct WorkoutsView: View {
             }
 
             if completedToday {
-                focusDetailsDisclosure(weeklySummary)
+                focusDetailsDisclosure(projection)
                 completedTodayAction
             } else if guidance.decision == .train {
                 if let plan = launchSeed?.plan {
                     todayPlanMetrics(plan)
                 }
-                focusDetailsDisclosure(weeklySummary, guidance: guidance, includeManualAction: true)
+                focusDetailsDisclosure(
+                    projection,
+                    guidance: guidance,
+                    includeManualAction: true
+                )
                 focusActionButtons(launchSeed: launchSeed, guidance: guidance)
             } else {
                 recoverySummary(guidance)
-                focusDetailsDisclosure(weeklySummary, guidance: guidance, includeManualAction: true)
+                focusDetailsDisclosure(
+                    projection,
+                    guidance: guidance,
+                    includeManualAction: true
+                )
                 focusActionButtons(launchSeed: launchSeed, guidance: guidance)
             }
         }
@@ -685,7 +791,7 @@ public struct WorkoutsView: View {
     }
 
     private func focusDetailsDisclosure(
-        _ summary: WeeklyTrainingSummary,
+        _ projection: TodayScreenProjection,
         guidance: WeeklyTrainingGuidance? = nil,
         includeManualAction: Bool = false
     ) -> some View {
@@ -699,13 +805,16 @@ public struct WorkoutsView: View {
             isExpanded: $showsFocusDetails
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                weeklyTrainingSummaryView(summary)
+                weeklyTrainingSummaryView(
+                    projection.weeklySummary,
+                    targetTrainingDays: projection.trainingProfile.workoutsPerWeek
+                )
                 if let guidance {
                     Text(todayPlanExplanation(guidance))
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.86))
                 }
-                todayHeroMetricsRow
+                todayHeroMetricsRow(projection.heroMetrics)
                 if includeManualAction {
                     Button {
                         referenceDate = Date()
@@ -730,6 +839,7 @@ public struct WorkoutsView: View {
     }
 
     private var activeFocusLens: some View {
+        let projection = todayProjection
         let draft = activeWorkoutDraft
         let currentExercise = draft?.exercises.first(where: { exercise in
             exercise.sets.contains(where: { !$0.isCompleted })
@@ -780,8 +890,11 @@ public struct WorkoutsView: View {
                 isExpanded: $showsActiveFocusDetails
             ) {
                 VStack(alignment: .leading, spacing: 12) {
-                    weeklyTrainingSummaryView(weeklyTrainingSummary)
-                    todayHeroMetricsRow
+                    weeklyTrainingSummaryView(
+                        projection.weeklySummary,
+                        targetTrainingDays: projection.trainingProfile.workoutsPerWeek
+                    )
+                    todayHeroMetricsRow(projection.heroMetrics)
                 }
                 .padding(.top, 8)
             }
@@ -805,7 +918,10 @@ public struct WorkoutsView: View {
             .buttonStyle(.plain)
             .background(Color.white, in: Capsule())
             .appTutorialPrimaryActionTarget()
-            .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+            .appTutorialPrimaryActionFrame(
+                isEnabled: tracksTutorialPrimaryActionFrame,
+                onTutorialPrimaryActionFrameChange
+            )
 
             DisclosureGroup(
                 gymText(
@@ -925,15 +1041,10 @@ public struct WorkoutsView: View {
         }
     }
 
-    private var weeklyTrainingSummary: WeeklyTrainingSummary {
-        WeeklyTrainingSummary(
-            sessions: store.workoutSummaries,
-            now: referenceDate,
-            calendar: calendar
-        )
-    }
-
-    private func weeklyTrainingSummaryView(_ summary: WeeklyTrainingSummary) -> some View {
+    private func weeklyTrainingSummaryView(
+        _ summary: WeeklyTrainingSummary,
+        targetTrainingDays: Int
+    ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(gymText(
@@ -945,9 +1056,9 @@ public struct WorkoutsView: View {
                 .font(.subheadline.bold())
                 Spacer(minLength: 8)
                 Text(gymText(
-                    "\(summary.completedTrainingDays.count) / \(trainingProfile.workoutsPerWeek) days",
-                    "\(summary.completedTrainingDays.count) / \(trainingProfile.workoutsPerWeek) днів",
-                    "\(summary.completedTrainingDays.count) / \(trainingProfile.workoutsPerWeek) дней",
+                    "\(summary.completedTrainingDays.count) / \(targetTrainingDays) days",
+                    "\(summary.completedTrainingDays.count) / \(targetTrainingDays) днів",
+                    "\(summary.completedTrainingDays.count) / \(targetTrainingDays) дней",
                     languageCode: languageCode
                 ))
                 .font(.caption.monospacedDigit())
@@ -1094,16 +1205,8 @@ public struct WorkoutsView: View {
         }
     }
 
-    private var todayHeroMetrics: TodayHeroMetrics {
-        TodayHeroMetrics(
-            sessions: store.workoutSummaries,
-            weeklyStreakWeeks: weeklyStreakWeeks
-        )
-    }
-
-    private var todayHeroMetricsRow: some View {
-        let metrics = todayHeroMetrics
-        return HStack(alignment: .top, spacing: 8) {
+    private func todayHeroMetricsRow(_ metrics: TodayHeroMetrics) -> some View {
+        HStack(alignment: .top, spacing: 8) {
             todayHeroMetric(
                 value: formattedTodayHeroCount(metrics.totalWorkouts),
                 label: gymText(
@@ -1213,7 +1316,10 @@ public struct WorkoutsView: View {
             if hasRetainedWorkoutDraft {
                 continueRetainedPlanAction
                     .appTutorialPrimaryActionTarget()
-                    .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+                    .appTutorialPrimaryActionFrame(
+                        isEnabled: tracksTutorialPrimaryActionFrame,
+                        onTutorialPrimaryActionFrameChange
+                    )
             } else if let launchSeed {
                 focusActionButton(
                     title: todayPrimaryActionTitle(
@@ -1233,7 +1339,10 @@ public struct WorkoutsView: View {
                     _ = onStartPlan(launchSeed)
                 }
                 .appTutorialPrimaryActionTarget()
-                .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+                .appTutorialPrimaryActionFrame(
+                    isEnabled: tracksTutorialPrimaryActionFrame,
+                    onTutorialPrimaryActionFrameChange
+                )
 
                 focusActionButton(
                     title: gymText(
@@ -1274,7 +1383,10 @@ public struct WorkoutsView: View {
                     _ = onAddWorkout(nil)
                 }
                 .appTutorialPrimaryActionTarget()
-                .appTutorialPrimaryActionFrame(onTutorialPrimaryActionFrameChange)
+                .appTutorialPrimaryActionFrame(
+                    isEnabled: tracksTutorialPrimaryActionFrame,
+                    onTutorialPrimaryActionFrameChange
+                )
             }
         }
     }
@@ -1476,43 +1588,8 @@ public struct WorkoutsView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var selectedMonth: Date {
-        calendar.date(byAdding: .month, value: monthOffset, to: referenceDate) ?? referenceDate
-    }
-
-    private var selectedMonthInterval: DateInterval {
-        calendar.dateInterval(of: .month, for: selectedMonth) ??
-            DateInterval(start: calendar.startOfDay(for: selectedMonth), duration: 1)
-    }
-
     private var monthWorkouts: [WorkoutSessionSummary] {
-        store.workoutSummaries.filter { selectedMonthInterval.contains($0.date) }
-    }
-
-    private var gamification: GamificationSnapshot {
-        store.gamificationSnapshot(now: referenceDate, calendar: calendar)
-    }
-
-    private var monthXP: Int {
-        monthWorkouts.reduce(0) { $0 + GamificationEngine.xpForSession($1) }
-    }
-
-    private var weeklyStreakWeeks: Int {
-        WeeklyStreakCalculator.current(
-            sessions: store.workoutSummaries,
-            targetTrainingDays: trainingProfile.workoutsPerWeek,
-            now: referenceDate,
-            calendar: calendar
-        )
-    }
-
-    private var trainingRecommendations: [WorkoutRecommendationModel] {
-        WorkoutDashboardDataBuilder.recommendations(
-            history: store.allExerciseHistory(),
-            mappings: store.muscleMappings,
-            now: referenceDate,
-            calendar: calendar
-        )
+        todayProjection.monthWorkouts
     }
 
     private func workoutNote(_ workout: WorkoutSessionSummary) -> String {

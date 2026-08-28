@@ -246,7 +246,9 @@ public final class WorkoutStore: ObservableObject {
     // from the published snapshot and are discarded before every committed publish,
     // including account switches, so they cannot outlive their owner-bound state.
     private var cachedWorkoutSummaries: [WorkoutSessionSummary]?
+    private var cachedExerciseHistorySnapshot: [ExerciseHistoryEntry]?
     private var cachedProgressStatsByExerciseID: [UUID: ExerciseProgressStats] = [:]
+    private(set) var derivedDataRevision: UInt64 = 0
 
     public private(set) var accountStorageKey: String
     public private(set) var storageURL: URL
@@ -1428,6 +1430,7 @@ public final class WorkoutStore: ObservableObject {
             workoutFeedbackByID: normalized.values,
             workoutFeedbackSessionDateByID: normalized.sessionDates
         )
+        derivedDataRevision &+= 1
         workoutFeedbackByID = normalized.values
         workoutFeedbackSessionDateByID = normalized.sessionDates
     }
@@ -1688,7 +1691,12 @@ public final class WorkoutStore: ObservableObject {
     // MARK: History, stats and records
 
     public func allExerciseHistory() -> [ExerciseHistoryEntry] {
-        historyEntries(exerciseID: nil, from: nil, through: nil)
+        if let cachedExerciseHistorySnapshot {
+            return cachedExerciseHistorySnapshot
+        }
+        let history = historyEntries(exerciseID: nil, from: nil, through: nil)
+        cachedExerciseHistorySnapshot = history
+        return history
     }
 
     public func exerciseHistory(
@@ -3310,7 +3318,9 @@ public final class WorkoutStore: ObservableObject {
 
     private func publish(_ state: WorkoutDataSnapshot) {
         cachedWorkoutSummaries = nil
+        cachedExerciseHistorySnapshot = nil
         cachedProgressStatsByExerciseID.removeAll(keepingCapacity: true)
+        derivedDataRevision &+= 1
         exercises = state.exercises
         workouts = state.workouts
         muscleMappings = state.muscleMappings

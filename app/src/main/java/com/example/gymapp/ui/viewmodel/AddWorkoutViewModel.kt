@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -595,7 +596,10 @@ class AddWorkoutViewModel internal constructor(
     private val exerciseHistory: StateFlow<List<ExerciseHistoryEntry>> = repository.observeAllExerciseHistory()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.Eagerly,
+            started = SharingStarted.WhileSubscribed(
+                stopTimeoutMillis = 5_000,
+                replayExpirationMillis = 0
+            ),
             initialValue = emptyList()
         )
     private val exerciseCatalogState: StateFlow<ExerciseCatalogState> = combine(
@@ -604,24 +608,12 @@ class AddWorkoutViewModel internal constructor(
         repository.observeExerciseLoadProfiles(),
         repository.observeExerciseMuscleMappings()
     ) { exerciseList, history, loadProfiles, muscleMappings ->
-        val workoutCounts = workoutCountByExercise(history)
+        val exerciseFrequencies = exerciseFrequencyByExercise(history)
+        val workoutCounts = exerciseFrequencies.mapValues { (_, frequency) ->
+            frequency.workoutCount
+        }
         val manualMappings = muscleMappings.toManualContributionMap()
-        val frequentIds = history
-            .groupBy { it.exerciseId }
-            .map { (exerciseId, entries) ->
-                Triple(
-                    exerciseId,
-                    entries.map { it.sessionId }.distinct().size,
-                    entries.maxOfOrNull { it.sessionDate } ?: Long.MIN_VALUE
-                )
-            }
-            .sortedWith(
-                compareByDescending<Triple<Long, Int, Long>> { it.second }
-                    .thenByDescending { it.third }
-                    .thenBy { it.first }
-            )
-            .take(12)
-            .map { it.first }
+        val frequentIds = frequentExerciseIds(exerciseFrequencies)
         ExerciseCatalogState(
             isLoaded = true,
             exercises = exerciseList,
@@ -635,9 +627,12 @@ class AddWorkoutViewModel internal constructor(
             loadProfiles = loadProfiles,
             manualMuscleMappings = manualMappings
         )
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        started = SharingStarted.WhileSubscribed(
+            stopTimeoutMillis = 5_000,
+            replayExpirationMillis = 0
+        ),
         initialValue = ExerciseCatalogState(
             isLoaded = false,
             exercises = emptyList(),
@@ -890,7 +885,10 @@ class AddWorkoutViewModel internal constructor(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.WhileSubscribed(
+            stopTimeoutMillis = 5_000,
+            replayExpirationMillis = 0
+        ),
         initialValue = AddWorkoutUiState()
     )
 

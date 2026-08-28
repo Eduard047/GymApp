@@ -84,6 +84,13 @@ final class ProductExperienceV2Tests: XCTestCase {
         )
     }
 
+    func testTutorialMeasuresPrimaryActionOnlyForItsVisibleStep() {
+        XCTAssertFalse(appTutorialShouldMeasurePrimaryAction(target: nil))
+        XCTAssertFalse(appTutorialShouldMeasurePrimaryAction(target: .todayFocus))
+        XCTAssertFalse(appTutorialShouldMeasurePrimaryAction(target: .exercises))
+        XCTAssertTrue(appTutorialShouldMeasurePrimaryAction(target: .todayPrimaryAction))
+    }
+
     func testTutorialCompletionKeepsCurrentRouteUnlessExternalTargetOwnsNavigation() {
         XCTAssertEqual(
             appTutorialFinishRoute(
@@ -394,5 +401,89 @@ final class ProductExperienceV2Tests: XCTestCase {
             TodayFocusPlanMetrics.estimatedMinutes(exerciseCount: 20, setCount: 100),
             90
         )
+    }
+
+    func testTodayProjectionCacheReusesStableInputsAndRejectsOtherAccountData() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("today-projection-cache-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = try WorkoutStore(
+            accountStorageKey: "today-cache-a",
+            directoryURL: directory
+        )
+        let exercise = try store.addExercise(name: "Today cache press")
+        let referenceDate = Date(timeIntervalSince1970: 1_780_041_600)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let profile = TrainingProfile()
+        let cache = TodayScreenProjectionCache()
+
+        let first = cache.projection(
+            store: store,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            trainingProfile: profile,
+            monthOffset: 0
+        )
+        let repeated = cache.projection(
+            store: store,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            trainingProfile: profile,
+            monthOffset: 0
+        )
+        XCTAssertEqual(cache.buildCount, 1)
+        XCTAssertEqual(first.accountStorageKey, "today-cache-a")
+        XCTAssertEqual(repeated.accountStorageKey, first.accountStorageKey)
+
+        _ = try store.createWorkout(
+            date: referenceDate.addingTimeInterval(-24 * 60 * 60),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: exercise.id,
+                    sets: [.init(weight: 60, reps: 8)]
+                )
+            ]
+        )
+        let afterMutation = cache.projection(
+            store: store,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            trainingProfile: profile,
+            monthOffset: 0
+        )
+        XCTAssertEqual(cache.buildCount, 2)
+        XCTAssertEqual(afterMutation.heroMetrics.totalWorkouts, 1)
+        XCTAssertEqual(afterMutation.monthWorkouts.count, 1)
+
+        try store.switchAccount(to: "today-cache-b")
+        let otherAccount = cache.projection(
+            store: store,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            trainingProfile: profile,
+            monthOffset: 0
+        )
+        XCTAssertEqual(cache.buildCount, 3)
+        XCTAssertEqual(otherAccount.accountStorageKey, "today-cache-b")
+        XCTAssertEqual(otherAccount.heroMetrics.totalWorkouts, 0)
+        XCTAssertTrue(otherAccount.monthWorkouts.isEmpty)
+
+        try store.switchAccount(to: "today-cache-a")
+        let restoredAccount = cache.projection(
+            store: store,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            trainingProfile: profile,
+            monthOffset: 0
+        )
+        XCTAssertEqual(cache.buildCount, 4)
+        XCTAssertEqual(restoredAccount.accountStorageKey, "today-cache-a")
+        XCTAssertEqual(restoredAccount.heroMetrics.totalWorkouts, 1)
     }
 }

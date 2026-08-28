@@ -122,7 +122,13 @@ class TutorialAnchorRegistry {
     internal operator fun get(target: TutorialTarget): Rect? = anchors[target]
 
     internal fun update(target: TutorialTarget, bounds: Rect) {
-        if (bounds.width > 0f && bounds.height > 0f) anchors[target] = bounds
+        if (
+            bounds.width > 0f &&
+            bounds.height > 0f &&
+            anchors[target] != bounds
+        ) {
+            anchors[target] = bounds
+        }
     }
 
     internal fun remove(target: TutorialTarget) {

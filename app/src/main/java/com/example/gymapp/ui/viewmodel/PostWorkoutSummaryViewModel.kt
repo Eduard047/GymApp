@@ -27,9 +27,11 @@ import com.example.gymapp.garmin.toExerciseHistoryEntries
 import com.example.gymapp.util.RussianText
 import com.example.gymapp.util.TrainingGuidanceManager
 import com.example.gymapp.util.TrainingProfileManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -320,7 +322,7 @@ class PostWorkoutSummaryViewModel(
                 newBadges = newBadges
             )
         }
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = PostWorkoutSummaryUiState(sessionId = sessionId)

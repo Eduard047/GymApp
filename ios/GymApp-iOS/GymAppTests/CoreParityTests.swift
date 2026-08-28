@@ -3319,6 +3319,7 @@ final class CoreParityTests: XCTestCase {
         let exercise = try store.addExercise(name: "Derived cache press")
 
         XCTAssertTrue(store.workoutSummaries.isEmpty)
+        XCTAssertTrue(store.allExerciseHistory().isEmpty)
         XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 0)
 
         _ = try store.createWorkout(
@@ -3334,15 +3335,18 @@ final class CoreParityTests: XCTestCase {
             ]
         )
         XCTAssertEqual(store.workoutSummaries.count, 1)
+        XCTAssertEqual(store.allExerciseHistory().map(\.weight), [80, 85])
         XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 2)
         XCTAssertEqual(store.progressStats(exerciseID: exercise.id).maxWeight, 85)
 
         try store.switchAccount(to: "derived-cache-b")
         XCTAssertTrue(store.workoutSummaries.isEmpty)
+        XCTAssertTrue(store.allExerciseHistory().isEmpty)
         XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 0)
 
         try store.switchAccount(to: "derived-cache-a")
         XCTAssertEqual(store.workoutSummaries.count, 1)
+        XCTAssertEqual(store.allExerciseHistory().map(\.exerciseID), [exercise.id, exercise.id])
         XCTAssertEqual(store.progressStats(exerciseID: exercise.id).setCount, 2)
     }
 
@@ -12398,9 +12402,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(source.contains("Stepper(value: $activationDays"))
         XCTAssertFalse(source.contains("Picker(gymLocalized(\"Goal\")"))
         XCTAssertFalse(source.contains("todayReason(for:"))
-        XCTAssertTrue(source.contains(
-            "guidance.decision == .train ? .auto : .recovery"
-        ))
+        XCTAssertTrue(source.contains("weeklyGuidance.decision == .train"))
         for exactCopy in [
             "Use suggested plan", "Використати пораду", "Использовать рекомендацию",
             "Review exercises", "Переглянути вправи", "Посмотреть упражнения",
@@ -12418,8 +12420,8 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(source.contains("\"На этой неделе\""))
         XCTAssertTrue(source.contains("completedToday ? \"Workout complete\""))
         XCTAssertTrue(source.contains("\"Today's work is saved in your history.\""))
-        XCTAssertTrue(source.contains("weeklyTrainingSummaryView(summary)"))
-        XCTAssertTrue(source.contains("todayHeroMetricsRow"))
+        XCTAssertTrue(source.contains("projection.weeklySummary"))
+        XCTAssertTrue(source.contains("todayHeroMetricsRow(projection.heroMetrics)"))
         XCTAssertTrue(source.contains("_ = onStartPlan(launchSeed)"))
         XCTAssertTrue(source.contains("_ = onAddWorkout(launchSeed)"))
         XCTAssertTrue(source.contains("_ = onAddWorkout(nil)"))

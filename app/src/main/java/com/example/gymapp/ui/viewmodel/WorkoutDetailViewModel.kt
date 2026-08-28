@@ -22,6 +22,7 @@ import com.example.gymapp.garmin.toExerciseHistoryEntries
 import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +30,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -88,32 +91,34 @@ class WorkoutDetailViewModel(
 ) : ViewModel() {
     private val setAdditionGate = PerExerciseSetAdditionGate()
     private val exerciseAdditionGate = PerExerciseSetAdditionGate()
-    private val sessionDetailsFlow = repository.observeSessionDetails(sessionId)
+    private val sessionDetailsFlow = repository.observeSessionDetails(sessionId).shareIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(
+            stopTimeoutMillis = 5_000,
+            replayExpirationMillis = 0
+        ),
+        replay = 1
+    )
     private val allExercisesFlow = repository.observeExercises()
-    private val allExerciseHistoryFlow = repository.observeAllExerciseHistory()
+    private val allExerciseHistoryFlow = repository.observeAllExerciseHistory().shareIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(
+            stopTimeoutMillis = 5_000,
+            replayExpirationMillis = 0
+        ),
+        replay = 1
+    )
     private val exerciseCatalogFlow = combine(
         allExercisesFlow,
         allExerciseHistoryFlow,
         repository.observeExerciseMuscleMappings()
     ) { exercises, history, mappings ->
         val manualMappings = mappings.toManualContributionMap()
-        val workoutCounts = workoutCountByExercise(history)
-        val frequentIds = history
-            .groupBy { it.exerciseId }
-            .map { (exerciseId, entries) ->
-                Triple(
-                    exerciseId,
-                    entries.map { it.sessionId }.distinct().size,
-                    entries.maxOfOrNull { it.sessionDate } ?: Long.MIN_VALUE
-                )
-            }
-            .sortedWith(
-                compareByDescending<Triple<Long, Int, Long>> { it.second }
-                    .thenByDescending { it.third }
-                    .thenBy { it.first }
-            )
-            .take(12)
-            .map { it.first }
+        val exerciseFrequencies = exerciseFrequencyByExercise(history)
+        val workoutCounts = exerciseFrequencies.mapValues { (_, frequency) ->
+            frequency.workoutCount
+        }
+        val frequentIds = frequentExerciseIds(exerciseFrequencies)
         WorkoutDetailExerciseCatalog(
             exercises = exercises,
             frequentExerciseIds = frequentIds,
@@ -239,7 +244,7 @@ class WorkoutDetailViewModel(
             exerciseMuscleIds = catalog.muscleIdsByName,
             workoutComparison = sessionContext.comparison
         )
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = WorkoutDetailUiState()

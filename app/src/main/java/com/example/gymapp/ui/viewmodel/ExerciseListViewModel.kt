@@ -23,6 +23,7 @@ import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.LocalizedText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -111,11 +113,56 @@ data class ExerciseMuscleOptionUiModel(
     val isSelected: Boolean
 )
 
+internal data class ExerciseFrequencySummary(
+    val workoutCount: Int,
+    val latestSessionDate: Long
+)
+
+internal fun exerciseFrequencyByExercise(
+    history: List<ExerciseHistoryEntry>
+): Map<Long, ExerciseFrequencySummary> {
+    data class MutableFrequency(
+        val sessionIds: MutableSet<Long> = hashSetOf(),
+        var latestSessionDate: Long = Long.MIN_VALUE
+    )
+
+    val frequencies = linkedMapOf<Long, MutableFrequency>()
+    history.forEach { entry ->
+        val frequency = frequencies.getOrPut(entry.exerciseId) { MutableFrequency() }
+        frequency.sessionIds += entry.sessionId
+        if (entry.sessionDate > frequency.latestSessionDate) {
+            frequency.latestSessionDate = entry.sessionDate
+        }
+    }
+    return frequencies.mapValues { (_, frequency) ->
+        ExerciseFrequencySummary(
+            workoutCount = frequency.sessionIds.size,
+            latestSessionDate = frequency.latestSessionDate
+        )
+    }
+}
+
 internal fun workoutCountByExercise(
     history: List<ExerciseHistoryEntry>
-): Map<Long, Int> = history
-    .groupBy { it.exerciseId }
-    .mapValues { (_, entries) -> entries.map { it.sessionId }.distinct().size }
+): Map<Long, Int> = exerciseFrequencyByExercise(history)
+    .mapValues { (_, frequency) -> frequency.workoutCount }
+
+internal fun frequentExerciseIds(
+    frequencies: Map<Long, ExerciseFrequencySummary>,
+    limit: Int = 12
+): List<Long> {
+    if (limit <= 0) return emptyList()
+    return frequencies.entries
+        .sortedWith(
+            compareByDescending<Map.Entry<Long, ExerciseFrequencySummary>> {
+                it.value.workoutCount
+            }
+                .thenByDescending { it.value.latestSessionDate }
+                .thenBy { it.key }
+        )
+        .take(limit)
+        .map(Map.Entry<Long, ExerciseFrequencySummary>::key)
+}
 
 private data class ExerciseListBaseState(
     val exercises: List<ExerciseEntity>,
@@ -199,6 +246,11 @@ class ExerciseListViewModel(
     private val exerciseDeletionError = MutableStateFlow<LocalizedText?>(null)
     private val loadGeneration = MutableStateFlow(0L)
 
+    private val exercises = repository.observeExercises()
+    private val allExerciseHistory = repository.observeAllExerciseHistory()
+    private val muscleMappings = repository.observeExerciseMuscleMappings()
+    private val loadProfiles = repository.observeExerciseLoadProfiles()
+
     private val selectedExerciseHistory = selectedExerciseId.flatMapLatest { exerciseId ->
         if (exerciseId == null) {
             flowOf(emptyList())
@@ -208,8 +260,8 @@ class ExerciseListViewModel(
     }
 
     private val exerciseLibraryState = combine(
-        repository.observeExercises(),
-        repository.observeAllExerciseHistory()
+        exercises,
+        allExerciseHistory
     ) { exercises, history ->
         ExerciseLibraryState(
             exercises = exercises,
@@ -261,8 +313,8 @@ class ExerciseListViewModel(
     }
 
     private val mappingState = combine(
-        repository.observeExercises(),
-        repository.observeExerciseMuscleMappings(),
+        exercises,
+        muscleMappings,
         mappingEditorExerciseName
     ) { exercises, muscleMappings, editorExerciseName ->
         val manualMap = muscleMappings.toManualContributionMap()
@@ -314,7 +366,7 @@ class ExerciseListViewModel(
     }
 
     private val loadEditorState = combine(
-        repository.observeExerciseLoadProfiles(),
+        loadProfiles,
         loadEditorExercise,
         loadEditorDirection,
         loadEditorWeights,
@@ -385,7 +437,7 @@ class ExerciseListViewModel(
                 loadError = LocalizedText(R.string.exercises_load_failed)
             ))
         }
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = accountOnlyUiState(isLoading = true)

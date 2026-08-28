@@ -46,18 +46,25 @@ extension View {
     }
 
     func appTutorialPrimaryActionFrame(
+        isEnabled: Bool,
         _ onChange: @escaping @MainActor (CGRect?) -> Void
     ) -> some View {
-        background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { onChange(proxy.frame(in: .global)) }
-                    .onChange(of: proxy.frame(in: .global)) { frame in
-                        onChange(frame)
+        Group {
+            if isEnabled {
+                background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { onChange(proxy.frame(in: .global)) }
+                            .onChange(of: proxy.frame(in: .global)) { frame in
+                                onChange(frame)
+                            }
                     }
+                }
+                .onDisappear { onChange(nil) }
+            } else {
+                self
             }
         }
-        .onDisappear { onChange(nil) }
     }
 
     func appTutorialOverlay(
@@ -88,6 +95,10 @@ extension View {
             }
         }
     }
+}
+
+func appTutorialShouldMeasurePrimaryAction(target: AppTutorialTarget?) -> Bool {
+    target == .todayPrimaryAction
 }
 
 enum AppTutorialFinishRoute: Equatable, Sendable {

@@ -150,7 +150,11 @@ test("Today hero has the same ordered concise metrics on both native clients", (
   assert.doesNotMatch(androidToday, /focus_lens_active_workout_supporting/);
   assert.match(androidViewModel, /sessions = allSessions/);
   assert.match(androidWorkoutDao, /HAVING COUNT\(se\.id\) > 0/);
-  assert.match(iosToday, /sessions: store\.workoutSummaries/);
+  assert.match(iosToday, /let sessions = store\.workoutSummaries/);
+  assert.match(
+    iosToday,
+    /heroMetrics: TodayHeroMetrics\(\s*sessions: sessions/
+  );
   assert.match(iosWorkoutStore, /\.filter \{ \$0\.setCount > 0 \}/);
   assert.match(androidViewModel, /MAX_TODAY_HERO_VOLUME = 1_000_000_000_000_000\.0/);
   assert.match(iosToday, /maximumTodayHeroVolume = 1_000_000_000_000_000\.0/);

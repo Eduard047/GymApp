@@ -122,6 +122,36 @@ class TodayHeroMetricsTest {
         )
     }
 
+    @Test
+    fun dashboardStatsReuseLoadedSessionsWithoutChangingCurrentMonthSemantics() {
+        val zoneId = ZoneId.of("UTC")
+        val now = LocalDate.of(2026, 8, 15)
+            .atTime(12, 0)
+            .atZone(zoneId)
+            .toInstant()
+            .toEpochMilli()
+        val sessions = listOf(
+            summary(1, 100.0, LocalDate.of(2026, 8, 15), zoneId, sets = 2),
+            summary(2, 300.0, LocalDate.of(2026, 8, 14), zoneId, sets = 3),
+            summary(3, 200.0, LocalDate.of(2026, 8, 12), zoneId, sets = 1)
+        )
+
+        val stats = buildDashboardStatsForMonth(
+            monthOffset = 0,
+            targetWorkoutsPerWeek = 2,
+            monthSessions = sessions,
+            allSessions = sessions,
+            nowMillis = now,
+            zoneId = zoneId
+        )
+
+        assertEquals(3, stats.workoutCount)
+        assertEquals(600.0, stats.totalVolume, 0.0)
+        assertEquals(100.0, stats.averageIntensity, 0.0)
+        assertEquals(2, stats.streakDays)
+        assertEquals(1, stats.weeklyStreakWeeks)
+    }
+
     private fun summary(
         id: Long,
         volume: Double,

@@ -29,6 +29,14 @@ class WorkoutView extends Ui.View {
     var tutorialStep = 0;
     var screenWidth = 260;
     var screenHeight = 260;
+    (:fullLegacyState)
+    var staticRefreshTicks = 0;
+    (:fullLegacyState)
+    var dashboardProgressSetCount = -1;
+    (:fullLegacyState)
+    var dashboardProgressPlanCount = -1;
+    (:fullLegacyState)
+    var dashboardProgressText = null;
 
     function initialize() {
         View.initialize();
@@ -92,9 +100,11 @@ class WorkoutView extends Ui.View {
         GymStore.save();
     }
 
+    (:fullLegacyState)
     function tick() {
         getApp().pollMailbox();
         maybeRetryPending();
+        var staticSurfaceChanged = false;
         if (syncRequestInFlight && lastSyncRequestAt != null &&
             GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
             // Connect IQ offers no safe cancellation for an outstanding
@@ -103,9 +113,20 @@ class WorkoutView extends Ui.View {
             syncRequestInFlight = false;
             syncRequestTimedOut = true;
             GymStore.status = "REOPEN";
+            staticSurfaceChanged = true;
         }
         if (page == 7 || !GymSession.recording) {
-            Ui.requestUpdate();
+            staticRefreshTicks += 1;
+            if (staticSurfaceChanged || staticRefreshTicks >= 60) {
+                staticRefreshTicks = 0;
+                Ui.requestUpdate();
+            }
+            return;
+        }
+        if (GymSession.paused) {
+            if (staticSurfaceChanged) {
+                Ui.requestUpdate();
+            }
             return;
         }
         GymSession.tick();
@@ -154,7 +175,14 @@ class WorkoutView extends Ui.View {
             requestSyncNow();
         }
         GymStore.checkpointLiveWorkout(false);
-        Ui.requestUpdate();
+        var overlayPending = savedSetFlashStartedAt != null;
+        var overlayActive = isUndoOverlayActive();
+        if (overlayPending && !overlayActive) {
+            dismissSetSavedFlash();
+            Ui.requestUpdate();
+        } else if (page == 0 || page == 4 || overlayActive) {
+            Ui.requestUpdate();
+        }
     }
 
     (:fullLegacyState)
@@ -182,6 +210,68 @@ class WorkoutView extends Ui.View {
         syncRequestInFlight = true;
         lastSyncRequestAt = System.getTimer();
         GymComm.requestSync(method(:onSyncSent));
+    }
+
+    (:compactLegacyState)
+    function tick() {
+        getApp().pollMailbox();
+        maybeRetryPending();
+        if (syncRequestInFlight && lastSyncRequestAt != null &&
+            GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
+            // Keep the released compact control flow lean: these products are
+            // already at their 96/128 KiB loader ceiling.
+            syncRequestInFlight = false;
+            syncRequestTimedOut = true;
+            GymStore.status = "REOPEN";
+        }
+        if (page == 7 || !GymSession.recording) {
+            Ui.requestUpdate();
+            return;
+        }
+        GymSession.tick();
+        if (GymWorkoutMode.allowsDetailedTracking()) {
+            var rest = GymStore.restSeconds();
+            if (GymStore.restStartedAt != null &&
+                GymSession.effortState.equals("SET ACTIVE")) {
+                var remainingRest = GymStore.restDurationMs.toLong() -
+                    GymStore.timerElapsedMs(GymStore.restStartedAt);
+                GymStore.restDurationMs = remainingRest > 0l ? remainingRest.toNumber() : 0;
+                GymStore.restStartedAt = null;
+            }
+            if (GymStore.restDurationMs > 0 && GymStore.restStartedAt == null) {
+                rest = 0;
+                restWasActive = false;
+                dismissSetSavedFlash();
+                GymStore.status = "SET ACTIVE";
+            }
+            if (GymStore.restDurationMs > 0 && GymStore.restStartedAt == null &&
+                !GymSession.activeSetSeen &&
+                !GymSession.autoLogPrompt) {
+                restoreSuspendedRest();
+                rest = GymStore.restSeconds();
+            }
+            var active = rest > 0;
+            if (restWasActive && !active) {
+                Attention.vibrate([new Attention.VibeProfile(100, 500), new Attention.VibeProfile(100, 500)]);
+                GymStore.status = "REST DONE";
+            }
+            restWasActive = active;
+            if (!autoPromptWasActive && GymSession.autoLogPrompt) {
+                page = 0;
+                notifyAutoPrompt();
+            }
+            autoPromptWasActive = GymSession.autoLogPrompt;
+        } else {
+            restWasActive = false;
+            autoPromptWasActive = false;
+        }
+        if (!syncRequestInFlight && !syncRequestTimedOut &&
+            (lastSyncRequestAt == null ||
+            GymStore.timerElapsedMs(lastSyncRequestAt) > 20000l)) {
+            requestSyncNow();
+        }
+        GymStore.checkpointLiveWorkout(false);
+        Ui.requestUpdate();
     }
 
     function restoreSuspendedRest() {
@@ -1344,9 +1434,19 @@ class WorkoutView extends Ui.View {
         if (current > GymStore.maxWorkoutSets) {
             current = GymStore.maxWorkoutSets;
         }
-        if (GymStore.plan.size() > 0) {
-            return GymStore.completedPlannedSetCount().toString() + "/" +
-                GymStore.plan.size().toString();
+        var setCount = GymStore.sets.size();
+        var planCount = GymStore.plan.size();
+        if (planCount > 0) {
+            if (dashboardProgressText == null ||
+                dashboardProgressSetCount != setCount ||
+                dashboardProgressPlanCount != planCount) {
+                dashboardProgressSetCount = setCount;
+                dashboardProgressPlanCount = planCount;
+                dashboardProgressText =
+                    GymStore.completedPlannedSetCount().toString() + "/" +
+                    planCount.toString();
+            }
+            return dashboardProgressText;
         }
         return "SET " + current.toString();
     }
@@ -2166,6 +2266,35 @@ class WorkoutView extends Ui.View {
         return text.substring(0, maxLen - 3) + "...";
     }
 
+    (:fullLegacyState)
+    function fitTextWidth(dc, text, font, maxWidth) {
+        if (text == null) {
+            return "";
+        }
+        var value = text.toString();
+        if (dc.getTextWidthInPixels(value, font) <= maxWidth) {
+            return value;
+        }
+        // Text width grows monotonically with a longer prefix. A binary search
+        // avoids creating and measuring up to 157 temporary strings every
+        // second for a valid 160-character synchronized exercise name.
+        var low = 3;
+        var high = value.length() - 1;
+        var fitted = null;
+        while (low <= high) {
+            var middle = ((low + high) / 2).toNumber();
+            var candidate = value.substring(0, middle) + "...";
+            if (dc.getTextWidthInPixels(candidate, font) <= maxWidth) {
+                fitted = candidate;
+                low = middle + 1;
+            } else {
+                high = middle - 1;
+            }
+        }
+        return fitted == null ? "..." : fitted;
+    }
+
+    (:compactLegacyState)
     function fitTextWidth(dc, text, font, maxWidth) {
         if (text == null) {
             return "";

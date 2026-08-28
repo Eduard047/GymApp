@@ -733,22 +733,35 @@ class GymSession {
             var totalYDelta = 0.0;
             var totalZDelta = 0.0;
             var accepted = 0;
+            // Adjacent pairs share one sample. Carry its validated value into
+            // the next iteration instead of repeating six type/range checks.
+            var previousX = xs[0];
+            var previousY = ys[0];
+            var previousZ = zs[0];
+            var previousSampleValid = isFiniteSensorNumber(previousX) &&
+                isFiniteSensorNumber(previousY) && isFiniteSensorNumber(previousZ);
             for (var i = 1; i < count; i += 1) {
-                if (!isFiniteSensorNumber(xs[i]) || !isFiniteSensorNumber(ys[i]) ||
-                    !isFiniteSensorNumber(zs[i]) || !isFiniteSensorNumber(xs[i - 1]) ||
-                    !isFiniteSensorNumber(ys[i - 1]) || !isFiniteSensorNumber(zs[i - 1])) {
-                    continue;
+                var currentX = xs[i];
+                var currentY = ys[i];
+                var currentZ = zs[i];
+                var currentSampleValid = isFiniteSensorNumber(currentX) &&
+                    isFiniteSensorNumber(currentY) && isFiniteSensorNumber(currentZ);
+                if (previousSampleValid && currentSampleValid) {
+                    var dx = currentX - previousX;
+                    var dy = currentY - previousY;
+                    var dz = currentZ - previousZ;
+                    var adx = absolute(dx);
+                    var ady = absolute(dy);
+                    var adz = absolute(dz);
+                    totalXDelta += adx;
+                    totalYDelta += ady;
+                    totalZDelta += adz;
+                    accepted += 1;
                 }
-                var dx = xs[i] - xs[i - 1];
-                var dy = ys[i] - ys[i - 1];
-                var dz = zs[i] - zs[i - 1];
-                var adx = absolute(dx);
-                var ady = absolute(dy);
-                var adz = absolute(dz);
-                totalXDelta += adx;
-                totalYDelta += ady;
-                totalZDelta += adz;
-                accepted += 1;
+                previousX = currentX;
+                previousY = currentY;
+                previousZ = currentZ;
+                previousSampleValid = currentSampleValid;
             }
             if (accepted > 0) {
                 // Choose one dominant axis for the complete batch. Switching axes
@@ -761,24 +774,26 @@ class GymSession {
                     motionLastAxis = dominantAxis;
                 }
                 var reversals = 0;
+                var previous = dominantAxis == 0 ? xs[0] :
+                    (dominantAxis == 1 ? ys[0] : zs[0]);
+                var previousValid = isFiniteSensorNumber(previous);
                 for (var j = 1; j < count; j += 1) {
                     var current = dominantAxis == 0 ? xs[j] :
                         (dominantAxis == 1 ? ys[j] : zs[j]);
-                    var previous = dominantAxis == 0 ? xs[j - 1] :
-                        (dominantAxis == 1 ? ys[j - 1] : zs[j - 1]);
-                    if (!isFiniteSensorNumber(current) ||
-                        !isFiniteSensorNumber(previous)) {
-                        continue;
-                    }
-                    var dominantDelta = current - previous;
-                    if (absolute(dominantDelta) >= 10) {
-                        var direction = dominantDelta > 0 ? 1 : -1;
-                        if (motionLastDirection != 0 &&
-                            direction != motionLastDirection) {
-                            reversals += 1;
+                    var currentValid = isFiniteSensorNumber(current);
+                    if (previousValid && currentValid) {
+                        var dominantDelta = current - previous;
+                        if (absolute(dominantDelta) >= 10) {
+                            var direction = dominantDelta > 0 ? 1 : -1;
+                            if (motionLastDirection != 0 &&
+                                direction != motionLastDirection) {
+                                reversals += 1;
+                            }
+                            motionLastDirection = direction;
                         }
-                        motionLastDirection = direction;
                     }
+                    previous = current;
+                    previousValid = currentValid;
                 }
                 var sampleScore = (totalXDelta + totalYDelta + totalZDelta) /
                     accepted;
@@ -863,16 +878,29 @@ class GymSession {
         }
         var total = 0.0;
         var accepted = 0;
+        // Gyro batches use the same single-validation walk as accelerometer
+        // batches, without retaining any raw samples beyond this callback.
+        var previousX = xs[0];
+        var previousY = ys[0];
+        var previousZ = zs[0];
+        var previousSampleValid = isFiniteSensorNumber(previousX) &&
+            isFiniteSensorNumber(previousY) && isFiniteSensorNumber(previousZ);
         for (var i = 1; i < count; i += 1) {
-            if (!isFiniteSensorNumber(xs[i]) || !isFiniteSensorNumber(ys[i]) ||
-                !isFiniteSensorNumber(zs[i]) || !isFiniteSensorNumber(xs[i - 1]) ||
-                !isFiniteSensorNumber(ys[i - 1]) || !isFiniteSensorNumber(zs[i - 1])) {
-                continue;
+            var currentX = xs[i];
+            var currentY = ys[i];
+            var currentZ = zs[i];
+            var currentSampleValid = isFiniteSensorNumber(currentX) &&
+                isFiniteSensorNumber(currentY) && isFiniteSensorNumber(currentZ);
+            if (previousSampleValid && currentSampleValid) {
+                total += absolute(currentX - previousX);
+                total += absolute(currentY - previousY);
+                total += absolute(currentZ - previousZ);
+                accepted += 1;
             }
-            total += absolute(xs[i] - xs[i - 1]);
-            total += absolute(ys[i] - ys[i - 1]);
-            total += absolute(zs[i] - zs[i - 1]);
-            accepted += 1;
+            previousX = currentX;
+            previousY = currentY;
+            previousZ = currentZ;
+            previousSampleValid = currentSampleValid;
         }
         return accepted > 0 ? total / accepted : null;
     }
