@@ -39,6 +39,12 @@ final class AppState: ObservableObject {
         case uploading
     }
 
+    private struct ManualCloudSyncLease: Equatable {
+        let accountGeneration: UInt64
+        let storageKey: String
+        let userID: String
+    }
+
     struct CloudWorkoutIdentity: Hashable {
         /// Catalog position is not semantic. Sorting preserves duplicate multiplicity while
         /// avoiding dictionary overwrite behavior for attacker-controlled backup entries.
@@ -117,6 +123,7 @@ final class AppState: ObservableObject {
     private var cloudSavePhase = CloudSavePhase.idle
     private var cloudSaveQueued = false
     private var cloudSaveGeneration: UInt64 = 0
+    private var manualCloudSyncLease: ManualCloudSyncLease?
     private var accountActivationTask: Task<Void, Never>?
     private var accountActivationGeneration: UInt64 = 0
     private var accountDeletionTask: Task<Void, Error>?
@@ -543,6 +550,7 @@ final class AppState: ObservableObject {
             clearRestTimersForAccountTransition(to: nextOwnerFingerprint)
         }
         accountActivationGeneration &+= 1
+        manualCloudSyncLease = nil
         abandonPendingCloudSave()
         cloudSync.resetForAccountTransition()
         socialReconciliationTask?.cancel()
@@ -1148,6 +1156,36 @@ final class AppState: ObservableObject {
             show(message: "Cloud sync is available after signing in.", isError: true)
             return
         }
+        // A zero-delay canonical save can still be in flight immediately after account
+        // activation. Let that request establish (or reject) its CAS revision before a
+        // user-requested sync begins. Store mutations that arrive while either request is
+        // awaiting the network are queued and serialized behind the manual reconciliation.
+        guard manualCloudSyncLease == nil else { return }
+        let manualLease = ManualCloudSyncLease(
+            accountGeneration: accountActivationGeneration,
+            storageKey: session.storageKey,
+            userID: cloud.userID
+        )
+        manualCloudSyncLease = manualLease
+        defer { finishManualCloudSyncScheduling(lease: manualLease) }
+
+        let scheduledSave = pendingCloudSave
+        if cloudSavePhase == .debouncing {
+            scheduledSave?.cancel()
+        }
+        await scheduledSave?.value
+        guard manualCloudSyncLease == manualLease else { return }
+        // Any mutation observed while the older save was settling is part of the fresh
+        // store snapshot below. Newer mutations will set this flag again at the next await.
+        cloudSaveQueued = false
+
+        guard isAccountReady,
+              accountActivationGeneration == manualLease.accountGeneration,
+              workoutStore.accountStorageKey == session.storageKey,
+              auth.session?.storageKey == session.storageKey,
+              auth.session?.cloud?.userID == cloud.userID else {
+            return
+        }
         guard cloudWritableAccountStorageKey == session.storageKey else {
             if cloudReconciliationRequiredStorageKey == session.storageKey {
                 await reconcileStaleManualSync(
@@ -1167,9 +1205,6 @@ final class AppState: ObservableObject {
             )
             return
         }
-        if cloudSavePhase == .debouncing {
-            abandonPendingCloudSave()
-        }
         let store = workoutStore
         let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
         do {
@@ -1183,7 +1218,9 @@ final class AppState: ObservableObject {
                 )
             }
             guard self.isAccountReady,
+                  self.accountActivationGeneration == manualLease.accountGeneration,
                   self.workoutStore === store,
+                  self.auth.session?.storageKey == session.storageKey,
                   self.auth.session?.cloud?.userID == cloud.userID else {
                 throw AuthServiceError.sessionChanged
             }
@@ -1196,8 +1233,32 @@ final class AppState: ObservableObject {
                 owner: owner
             )
         } catch {
+            guard accountActivationGeneration == manualLease.accountGeneration,
+                  auth.session?.storageKey == session.storageKey,
+                  auth.session?.cloud?.userID == cloud.userID else {
+                return
+            }
             cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
             show(error: error)
+        }
+    }
+
+    private func finishManualCloudSyncScheduling(lease: ManualCloudSyncLease) {
+        guard manualCloudSyncLease == lease else { return }
+        let shouldRunQueuedSave = cloudSaveQueued &&
+            !isSigningOut &&
+            isAccountReady &&
+            accountActivationGeneration == lease.accountGeneration &&
+            auth.session?.storageKey == lease.storageKey &&
+            auth.session?.cloud?.userID == lease.userID &&
+            cloudWritableAccountStorageKey == lease.storageKey &&
+            pendingCloudSyncConflict == nil &&
+            cloudSyncConflict == nil &&
+            cloudSyncStatus != .conflict
+        cloudSaveQueued = false
+        manualCloudSyncLease = nil
+        if shouldRunQueuedSave {
+            scheduleCloudSave()
         }
     }
 
@@ -1314,16 +1375,16 @@ final class AppState: ObservableObject {
 
             if baselineDigest == Self.cloudIdentityDigest(localIdentity) {
                 // Only the cloud changed. This is a whole-state fast-forward, not a merge.
-                applyingRemoteState = true
-                defer { applyingRemoteState = false }
-                _ = try store.restoreBackup(data: prepared.data, activeOwner: owner)
-                _ = try store.seedBuiltInExercises()
-                _ = try store.seedDefaultMuscleMappings()
-                let postRestoreActivityItems = try store.activityOnlyCloudSnapshotItems()
-                _ = try store.applyActivityOnlyCloudItems(
-                    activityItemsBeforeCore,
-                    expectedLocalItems: postRestoreActivityItems
-                )
+                try performCloudStoreMutation {
+                    _ = try store.restoreBackup(data: prepared.data, activeOwner: owner)
+                    _ = try store.seedBuiltInExercises()
+                    _ = try store.seedDefaultMuscleMappings()
+                    let postRestoreActivityItems = try store.activityOnlyCloudSnapshotItems()
+                    _ = try store.applyActivityOnlyCloudItems(
+                        activityItemsBeforeCore,
+                        expectedLocalItems: postRestoreActivityItems
+                    )
+                }
                 recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
                 try await finishManualActivityOnlyCloudSync(
                     store: store,
@@ -2427,12 +2488,25 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func performCloudStoreMutation<T>(
+        _ mutation: () throws -> T
+    ) rethrows -> T {
+        let wasApplyingRemoteState = applyingRemoteState
+        applyingRemoteState = true
+        defer { applyingRemoteState = wasApplyingRemoteState }
+        return try mutation()
+    }
+
     private func scheduleCloudSave(delay: Duration = .milliseconds(1_500)) {
         guard !isSigningOut,
               isAccountReady,
               let session = auth.session,
-              let cloud = session.cloud,
-              cloudWritableAccountStorageKey == session.storageKey else { return }
+              let cloud = session.cloud else { return }
+        if manualCloudSyncLease != nil {
+            cloudSaveQueued = true
+            return
+        }
+        guard cloudWritableAccountStorageKey == session.storageKey else { return }
         if cloudSavePhase == .uploading {
             // Let the in-flight request establish its returned CAS revision, then
             // serialize the newer snapshot behind it.
@@ -2714,10 +2788,12 @@ final class AppState: ObservableObject {
                     store.workouts
                 )
             )
-            _ = try store.applyActivityOnlyCloudItems(
-                reconciled.outbound,
-                expectedLocalItems: localItems
-            )
+            _ = try performCloudStoreMutation {
+                try store.applyActivityOnlyCloudItems(
+                    reconciled.outbound,
+                    expectedLocalItems: localItems
+                )
+            }
             try ensureCurrentActivityOnlyOwner(
                 store: store,
                 storageKey: storageKey,

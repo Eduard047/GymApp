@@ -11190,6 +11190,7 @@ final class CoreParityTests: XCTestCase {
         let directory = try temporaryDirectory(named: "manual-sync-three-way")
         let defaults = temporaryDefaults(named: "manual-sync-three-way")
         let recorder = AuthRequestRecorder()
+        let patchProbe = BlockingPatchConcurrencyProbe()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AuthURLProtocolStub.self]
         let urlSession = URLSession(configuration: configuration)
@@ -11240,6 +11241,12 @@ final class CoreParityTests: XCTestCase {
             case ("/rest/v1/user_states", "PATCH"):
                 // A successful HTTP response with no returned row means the CAS predicate
                 // no longer matched and must trigger a fresh GET.
+                let requestNumber = patchProbe.beginRequest()
+                defer { patchProbe.finishRequest() }
+                if requestNumber == 1,
+                   !patchProbe.waitForFirstRequestRelease() {
+                    throw URLError(.timedOut)
+                }
                 return try AuthURLProtocolStub.response(for: request, json: "[]")
             default:
                 XCTFail("Unexpected manual three-way request: \(request.url?.absoluteString ?? "nil")")
@@ -11251,6 +11258,7 @@ final class CoreParityTests: XCTestCase {
             }
         }
         defer {
+            patchProbe.releaseFirstRequest()
             AuthURLProtocolStub.handler = nil
             urlSession.invalidateAndCancel()
         }
@@ -11264,20 +11272,35 @@ final class CoreParityTests: XCTestCase {
         try auth.installSessionForTesting(session)
         let accountBecameReady = await waitUntil { appState.isAccountReady }
         XCTAssertTrue(accountBecameReady)
+        let automaticSaveStarted = await waitUntil { patchProbe.requestCount == 1 }
+        guard automaticSaveStarted else {
+            XCTFail("The activation save did not start.")
+            return
+        }
+        let manualSync = Task { await appState.forceCloudSync() }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(patchProbe.maximumConcurrentRequestCount, 1)
         _ = try appState.workoutStore.addExercise(name: "This Device Exercise")
-
-        await appState.forceCloudSync()
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(patchProbe.maximumConcurrentRequestCount, 1)
+        patchProbe.releaseFirstRequest()
+        await manualSync.value
         try await Task.sleep(for: .seconds(2))
 
         XCTAssertNotNil(appState.cloudSyncConflict)
         XCTAssertEqual(appState.cloudSyncStatus, .conflict)
         XCTAssertEqual(getCount, 2)
-        XCTAssertEqual(
-            recorder.requests.filter {
-                $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
-            }.count,
-            1
+        let patchRequests = recorder.requests.filter {
+            $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
+        }
+        XCTAssertEqual(patchRequests.count, 2)
+        let manualPatchBody = String(
+            decoding: try XCTUnwrap(patchRequests.last?.httpBody),
+            as: UTF8.self
         )
+        XCTAssertTrue(manualPatchBody.contains("This Device Exercise"))
+        XCTAssertEqual(patchProbe.requestCount, 2)
+        XCTAssertEqual(patchProbe.maximumConcurrentRequestCount, 1)
         XCTAssertTrue(customExerciseNames(in: appState.workoutStore).contains("This Device Exercise"))
         XCTAssertFalse(customExerciseNames(in: appState.workoutStore).contains("Other Device Exercise"))
     }
@@ -17962,6 +17985,56 @@ private final class AuthRequestRecorder: @unchecked Sendable {
 
     func append(_ request: URLRequest) {
         lock.withLock { storedRequests.append(request) }
+    }
+}
+
+private final class BlockingPatchConcurrencyProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let firstRequestRelease = DispatchSemaphore(value: 0)
+    private var storedRequestCount = 0
+    private var inFlightRequestCount = 0
+    private var storedMaximumConcurrentRequestCount = 0
+    private var firstRequestWasReleased = false
+
+    var requestCount: Int {
+        lock.withLock { storedRequestCount }
+    }
+
+    var maximumConcurrentRequestCount: Int {
+        lock.withLock { storedMaximumConcurrentRequestCount }
+    }
+
+    func beginRequest() -> Int {
+        lock.withLock {
+            storedRequestCount += 1
+            inFlightRequestCount += 1
+            storedMaximumConcurrentRequestCount = max(
+                storedMaximumConcurrentRequestCount,
+                inFlightRequestCount
+            )
+            return storedRequestCount
+        }
+    }
+
+    func finishRequest() {
+        lock.withLock {
+            inFlightRequestCount -= 1
+        }
+    }
+
+    func waitForFirstRequestRelease() -> Bool {
+        firstRequestRelease.wait(timeout: .now() + 10) == .success
+    }
+
+    func releaseFirstRequest() {
+        let shouldSignal = lock.withLock {
+            guard !firstRequestWasReleased else { return false }
+            firstRequestWasReleased = true
+            return true
+        }
+        if shouldSignal {
+            firstRequestRelease.signal()
+        }
     }
 }
 
