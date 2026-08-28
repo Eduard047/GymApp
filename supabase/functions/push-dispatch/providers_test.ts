@@ -324,7 +324,8 @@ Deno.test("dispatcher ingress key stays separate from the Supabase service key",
 Deno.test("modern Supabase secret keys never enter the JWT Authorization header", async () => {
   const captures: Headers[] = [];
   const baseFetch: typeof fetch = (_input, init) => {
-    captures.push(new Headers(init?.headers));
+    const initHeaders = init && "headers" in init ? init.headers : undefined;
+    captures.push(new Headers(initHeaders));
     return Promise.resolve(new Response("{}", { status: 200 }));
   };
   const modern = `sb_secret_${"a".repeat(48)}`;

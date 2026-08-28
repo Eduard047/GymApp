@@ -464,9 +464,8 @@ export function serviceRoleFetch(
     const headers = new Headers(
       input instanceof Request ? input.headers : undefined,
     );
-    new Headers(init?.headers).forEach((value, name) =>
-      headers.set(name, value)
-    );
+    const initHeaders = init && "headers" in init ? init.headers : undefined;
+    new Headers(initHeaders).forEach((value, name) => headers.set(name, value));
     headers.set("apikey", serviceKey);
     if (secretKey) headers.delete("Authorization");
     return baseFetch(input, { ...init, headers });

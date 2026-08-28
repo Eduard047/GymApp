@@ -95,7 +95,7 @@ function legacyFixture() {
 test("root restores the installable first-party workout application", () => {
   const scripts = [...rootHtml.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]);
   assert.equal(scripts[0], "./frame-guard.v56.js");
-  assert.ok(scripts.includes("./app.v102.js"));
+  assert.ok(scripts.includes("./app.v103.js"));
   assert.ok(scripts.includes("./garmin-cloud-sync.v57.js"));
   assert.ok(scripts.includes("./supabase-realtime.v1.js"));
   assert.ok(scripts.includes("./live-workout.v3.js"));
@@ -334,8 +334,8 @@ test("push unsubscribe failure cannot preserve the exact retired worker or touch
 test("active worker replaces the retirement worker without touching workout storage", () => {
   assert.match(workerSource, /self\.skipWaiting\(\)/);
   assert.match(workerSource, /caches\.open\(CACHE_NAME\)/);
-  assert.match(workerSource, /CACHE_VERSION = "v143"/);
-  assert.match(workerSource, /\.\/app\.v102\.js/);
+  assert.match(workerSource, /CACHE_VERSION = "v144"/);
+  assert.match(workerSource, /\.\/app\.v103\.js/);
   assert.match(workerSource, /\.\/manifest\.webmanifest/);
   assert.match(workerSource, /\.\/confirmed\.html/);
   assert.match(workerSource, /\.\/workout\//);

@@ -196,7 +196,8 @@ Deno.test("session id is read only from a structurally valid JWT payload after A
 Deno.test("service RPC transport treats sb_secret as apikey-only", async () => {
   const captures: Headers[] = [];
   const baseFetch: typeof fetch = (_input, init) => {
-    captures.push(new Headers(init?.headers));
+    const initHeaders = init && "headers" in init ? init.headers : undefined;
+    captures.push(new Headers(initHeaders));
     return Promise.resolve(new Response("{}", { status: 200 }));
   };
   const modern = `sb_secret_${"a".repeat(48)}`;

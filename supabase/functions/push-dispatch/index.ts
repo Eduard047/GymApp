@@ -86,9 +86,8 @@ export function serviceRoleFetch(
     const headers = new Headers(
       input instanceof Request ? input.headers : undefined,
     );
-    new Headers(init?.headers).forEach((value, name) =>
-      headers.set(name, value)
-    );
+    const initHeaders = init && "headers" in init ? init.headers : undefined;
+    new Headers(initHeaders).forEach((value, name) => headers.set(name, value));
     headers.set("apikey", serviceKey);
     // Modern sb_secret keys are gateway API keys, not JWTs. supabase-js adds
     // its key as a Bearer token by default, which PostgREST rejects as an

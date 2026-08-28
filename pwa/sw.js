@@ -1,9 +1,9 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v143";
-// v143 separates stable media from the immutable application shell and loads
-// the optimized v102 application bundle.
+const CACHE_VERSION = "v144";
+// v144 separates stable media from the immutable application shell and loads
+// the optimized v103 application bundle.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
 // Exercise demonstrations and install icons are content-versioned separately
@@ -58,7 +58,7 @@ const SHELL_ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v86.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v102.js",
+  "./app.v103.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",

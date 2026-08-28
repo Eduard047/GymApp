@@ -7251,14 +7251,15 @@ final class CoreParityTests: XCTestCase {
                 )
                 XCTAssertEqual(body["action"] as? String, "createDeviceIdempotent")
                 XCTAssertEqual(body["displayName"] as? String, "Gym Watch")
-                XCTAssertEqual(body["capabilityVersion"] as? Int, 2)
+                XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
                 let createRequestID = try XCTUnwrap(body["requestId"] as? String)
                 let deviceID = try XCTUnwrap(body["deviceId"] as? String)
                 let rawToken = try XCTUnwrap(body["deviceNonce"] as? String)
+                let capability = garminTestV3Capability(deviceID: deviceID, nonce: rawToken)
                 return try AuthURLProtocolStub.response(
                     for: request,
                     json: """
-                    {"status":"created","requestId":"\(createRequestID)","device":{"id":"\(deviceID)","device_token":"\(rawToken)","display_name":"Gym Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    {"status":"created","requestId":"\(createRequestID)","device":{"id":"\(deviceID)","device_token":"\(capability)","display_name":"Gym Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1},"capabilityVersion":3}
                     """
                 )
             }
@@ -7292,7 +7293,13 @@ final class CoreParityTests: XCTestCase {
             JSONSerialization.jsonObject(with: try XCTUnwrap(createRequest.httpBody)) as? [String: Any]
         )
         XCTAssertEqual(credential.id, createBody["deviceId"] as? String)
-        XCTAssertEqual(credential.deviceToken, createBody["deviceNonce"] as? String)
+        XCTAssertEqual(
+            credential.deviceToken,
+            garminTestV3Capability(
+                deviceID: try XCTUnwrap(createBody["deviceId"] as? String),
+                nonce: try XCTUnwrap(createBody["deviceNonce"] as? String)
+            )
+        )
         XCTAssertEqual(garmin.selectedDevice?.userID, userID)
         XCTAssertEqual(garmin.selectedDevice?.deviceID, credential.id)
         XCTAssertFalse(bindingKeychain.allData.contains {
@@ -7372,11 +7379,120 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(garminTestUUIDv4(deviceID))
         XCTAssertTrue(nonce.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil)
         XCTAssertEqual(credential.id, deviceID)
-        XCTAssertEqual(credential.deviceToken, nonce)
+        XCTAssertEqual(
+            credential.deviceToken,
+            garminTestV3Capability(deviceID: deviceID, nonce: nonce)
+        )
         XCTAssertNil(try bindingStore.pendingCreation(for: userID))
         XCTAssertFalse(keychain.allData.contains {
             String(decoding: $0, as: UTF8.self).contains(nonce)
         })
+    }
+
+    func testGarminIdempotentCreateRejectsWrongNonceDeviceAndMalformedV3Capabilities() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let wrongDeviceID = "00000000-0000-4000-8000-0000000000d2"
+        let wrongNonce = String(repeating: "c", count: 64)
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-create-v3-validation")
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+        let bindingStore = GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try garminRequestBody(request)
+            XCTAssertEqual(body["action"] as? String, "createDeviceIdempotent")
+            XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
+            let requestID = try XCTUnwrap(body["requestId"] as? String)
+            let requestedDeviceID = try XCTUnwrap(body["deviceId"] as? String)
+            let requestedNonce = try XCTUnwrap(body["deviceNonce"] as? String)
+            let mismatchedNonce = requestedNonce == wrongNonce
+                ? String(repeating: "d", count: 64)
+                : wrongNonce
+            let responseDeviceID: String
+            let capability: String
+            switch recorder.requests.count {
+            case 1:
+                responseDeviceID = requestedDeviceID
+                capability = garminTestV3Capability(
+                    deviceID: requestedDeviceID,
+                    nonce: mismatchedNonce
+                )
+            case 2:
+                responseDeviceID = wrongDeviceID
+                capability = garminTestV3Capability(
+                    deviceID: wrongDeviceID,
+                    nonce: requestedNonce
+                )
+            case 3:
+                responseDeviceID = requestedDeviceID
+                capability = garminTestV3Capability(
+                    deviceID: wrongDeviceID,
+                    nonce: requestedNonce
+                )
+            case 4:
+                responseDeviceID = requestedDeviceID
+                capability = garminTestV3Capability(
+                    deviceID: requestedDeviceID,
+                    nonce: requestedNonce
+                ) + ".extra"
+            case 5:
+                responseDeviceID = requestedDeviceID
+                capability = garminTestV3Capability(
+                    deviceID: requestedDeviceID,
+                    nonce: requestedNonce,
+                    accountBinding: String(repeating: "a", count: 63)
+                )
+            case 6:
+                responseDeviceID = requestedDeviceID
+                capability = garminTestV3Capability(
+                    deviceID: requestedDeviceID,
+                    nonce: requestedNonce,
+                    accountBinding: String(repeating: "c", count: 64)
+                )
+            default:
+                responseDeviceID = requestedDeviceID
+                capability = requestedNonce
+            }
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: """
+                {"status":"already_created","requestId":"\(requestID)","device":{"id":"\(responseDeviceID)","device_token":"\(capability)","display_name":"Strict v3 Watch","created_at":"2026-08-10T12:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1},"capabilityVersion":3}
+                """
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        for _ in 0..<7 {
+            do {
+                _ = try await garmin.createDevice(displayName: "Strict v3 Watch")
+                XCTFail("A mismatched, malformed, or downgraded v3 response must fail closed.")
+            } catch GarminCloudError.invalidResponse {
+                // Expected.
+            } catch {
+                XCTFail("Unexpected v3 create validation error: \(error)")
+            }
+        }
+
+        XCTAssertEqual(recorder.requests.count, 7)
+        XCTAssertNil(garmin.selectedDevice)
+        XCTAssertNil(try bindingStore.binding(for: userID))
+        XCTAssertNotNil(try bindingStore.pendingCreation(for: userID))
     }
 
     func testGarminCreateResumesExactKeychainRequestAfterRestart() async throws {
@@ -7439,7 +7555,10 @@ final class CoreParityTests: XCTestCase {
             XCTAssertEqual(body["deviceNonce"] as? String, pending.deviceToken)
         }
         XCTAssertEqual(credential.id, pending.deviceID)
-        XCTAssertEqual(credential.deviceToken, pending.deviceToken)
+        XCTAssertEqual(
+            credential.deviceToken,
+            garminTestV3Capability(deviceID: pending.deviceID, nonce: pending.deviceToken)
+        )
         XCTAssertNil(try bindingStore.pendingCreation(for: userID))
     }
 
@@ -7466,6 +7585,9 @@ final class CoreParityTests: XCTestCase {
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
             let body = try garminRequestBody(request)
+            if body["action"] as? String != "listDevices" {
+                XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
+            }
             if body["action"] as? String == "createDeviceIdempotent" {
                 return try AuthURLProtocolStub.response(
                     for: request,
@@ -7547,6 +7669,7 @@ final class CoreParityTests: XCTestCase {
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
             let body = try garminRequestBody(request)
+            XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
             switch body["action"] as? String {
             case "createDeviceIdempotent":
                 return try AuthURLProtocolStub.response(
@@ -7621,6 +7744,10 @@ final class CoreParityTests: XCTestCase {
         AuthURLProtocolStub.handler = { request in
             recorder.append(request)
             let body = try garminRequestBody(request)
+            if body["action"] as? String == "createDeviceIdempotent" ||
+                body["action"] as? String == "createDevice" {
+                XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
+            }
             switch body["action"] as? String {
             case "createDeviceIdempotent":
                 return try AuthURLProtocolStub.response(
@@ -8511,10 +8638,11 @@ final class CoreParityTests: XCTestCase {
                 let createRequestID = try XCTUnwrap(body["requestId"] as? String)
                 let deviceID = try XCTUnwrap(body["deviceId"] as? String)
                 let rawToken = try XCTUnwrap(body["deviceNonce"] as? String)
+                let capability = garminTestV3Capability(deviceID: deviceID, nonce: rawToken)
                 return try AuthURLProtocolStub.response(
                     for: request,
                     json: """
-                    {"status":"created","requestId":"\(createRequestID)","device":{"id":"\(deviceID)","device_token":"\(rawToken)","display_name":"Watch A","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    {"status":"created","requestId":"\(createRequestID)","device":{"id":"\(deviceID)","device_token":"\(capability)","display_name":"Watch A","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1},"capabilityVersion":3}
                     """
                 )
             }
@@ -8595,10 +8723,11 @@ final class CoreParityTests: XCTestCase {
                 let createRequestID = try XCTUnwrap(body["requestId"] as? String)
                 let deviceID = try XCTUnwrap(body["deviceId"] as? String)
                 let rawToken = try XCTUnwrap(body["deviceNonce"] as? String)
+                let capability = garminTestV3Capability(deviceID: deviceID, nonce: rawToken)
                 return try AuthURLProtocolStub.response(
                     for: request,
                     json: """
-                    {"status":"created","requestId":"\(createRequestID)","device":{"id":"\(deviceID)","device_token":"\(rawToken)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1}}
+                    {"status":"created","requestId":"\(createRequestID)","device":{"id":"\(deviceID)","device_token":"\(capability)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":1},"capabilityVersion":3}
                     """
                 )
             }
@@ -8678,8 +8807,9 @@ final class CoreParityTests: XCTestCase {
             XCTAssertEqual(body["action"] as? String, "rotateDeviceToken")
             XCTAssertEqual(body["deviceId"] as? String, deviceID)
             XCTAssertEqual(body["expectedTokenRevision"] as? Int, 7)
-            XCTAssertEqual(body["capabilityVersion"] as? Int, 2)
-            let replacement = try XCTUnwrap(body["replacementToken"] as? String)
+            XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
+            XCTAssertNil(body["replacementToken"])
+            let replacement = try XCTUnwrap(body["replacementNonce"] as? String)
             let rotationCount = recorder.requests.filter { request in
                 guard let data = request.httpBody,
                       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -8696,7 +8826,7 @@ final class CoreParityTests: XCTestCase {
             return try AuthURLProtocolStub.response(
                 for: request,
                 json: """
-                {"status":"already_rotated","device":{"id":"\(deviceID)","device_token":"\(replacement)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":8}}
+                {"status":"already_rotated","device":{"id":"\(deviceID)","device_token":"\(garminTestV3Capability(deviceID: deviceID, nonce: replacement))","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":8},"capabilityVersion":3}
                 """
             )
         }
@@ -8710,10 +8840,10 @@ final class CoreParityTests: XCTestCase {
         let credential = try await garmin.rotateSelectedDeviceToken()
 
         XCTAssertEqual(credential.id, deviceID)
-        XCTAssertEqual(credential.deviceToken.utf8.count, 64)
+        XCTAssertEqual(credential.deviceToken.utf8.count, 234)
         XCTAssertNotNil(
             credential.deviceToken.range(
-                of: #"^[0-9a-f]{64}$"#,
+                of: #"^g3\.[0-9a-f]{64}\.[0-9a-f-]{36}\.[0-9a-f]{64}\.[0-9a-f]{64}$"#,
                 options: .regularExpression
             )
         )
@@ -8727,13 +8857,130 @@ final class CoreParityTests: XCTestCase {
         }
         XCTAssertEqual(rotationBodies.count, 2)
         XCTAssertEqual(
-            rotationBodies[0]["replacementToken"] as? String,
-            rotationBodies[1]["replacementToken"] as? String
+            rotationBodies[0]["replacementNonce"] as? String,
+            rotationBodies[1]["replacementNonce"] as? String
         )
         XCTAssertEqual(garmin.availableDevices.first?.tokenRevision, 8)
         XCTAssertFalse(bindingKeychain.allData.contains {
             String(decoding: $0, as: UTF8.self).contains(credential.deviceToken)
         })
+    }
+
+    func testGarminRotationRejectsWrongNonceDeviceAndMalformedV3Capabilities() async throws {
+        let userID = "00000000-0000-4000-8000-0000000000a1"
+        let deviceID = "00000000-0000-4000-8000-0000000000d1"
+        let wrongDeviceID = "00000000-0000-4000-8000-0000000000d2"
+        let wrongNonce = String(repeating: "d", count: 64)
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "garmin-rotation-v3-validation")
+        )
+        let bindingStore = GarminDeviceBindingStore(keychain: InMemoryKeychainStore())
+        let garmin = GarminCloudService(
+            auth: auth,
+            urlSession: urlSession,
+            bindingStore: bindingStore
+        )
+        try auth.installSessionForTesting(.cloud(cloudSession(userID: userID)))
+
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            let body = try garminRequestBody(request)
+            if body["action"] as? String == "listDevices" {
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: """
+                    {"devices":[{"id":"\(deviceID)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":7}]}
+                    """
+                )
+            }
+
+            XCTAssertEqual(body["action"] as? String, "rotateDeviceToken")
+            XCTAssertEqual(body["deviceId"] as? String, deviceID)
+            XCTAssertEqual(body["expectedTokenRevision"] as? Int, 7)
+            XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
+            XCTAssertNil(body["replacementToken"])
+            let requestedNonce = try XCTUnwrap(body["replacementNonce"] as? String)
+            let mismatchedNonce = requestedNonce == wrongNonce
+                ? String(repeating: "c", count: 64)
+                : wrongNonce
+            let rotationCount = recorder.requests.count - 1
+            let responseDeviceID: String
+            let capability: String
+            switch rotationCount {
+            case 1:
+                responseDeviceID = deviceID
+                capability = garminTestV3Capability(deviceID: deviceID, nonce: mismatchedNonce)
+            case 2:
+                responseDeviceID = wrongDeviceID
+                capability = garminTestV3Capability(
+                    deviceID: wrongDeviceID,
+                    nonce: requestedNonce
+                )
+            case 3:
+                responseDeviceID = deviceID
+                capability = garminTestV3Capability(
+                    deviceID: wrongDeviceID,
+                    nonce: requestedNonce
+                )
+            case 4:
+                responseDeviceID = deviceID
+                capability = garminTestV3Capability(
+                    deviceID: deviceID,
+                    nonce: requestedNonce
+                ) + ".extra"
+            case 5:
+                responseDeviceID = deviceID
+                capability = garminTestV3Capability(
+                    deviceID: deviceID,
+                    nonce: requestedNonce,
+                    tag: String(repeating: "B", count: 64)
+                )
+            case 6:
+                responseDeviceID = deviceID
+                capability = garminTestV3Capability(
+                    deviceID: deviceID,
+                    nonce: requestedNonce,
+                    accountBinding: String(repeating: "c", count: 64)
+                )
+            default:
+                responseDeviceID = deviceID
+                capability = requestedNonce
+            }
+            return try AuthURLProtocolStub.response(
+                for: request,
+                json: """
+                {"status":"already_rotated","device":{"id":"\(responseDeviceID)","device_token":"\(capability)","display_name":"Watch","created_at":"2026-07-14T01:00:00Z","last_seen_at":null,"binding_version":2,"token_revision":8},"capabilityVersion":3}
+                """
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        try await garmin.refreshDevices()
+        try garmin.selectDevice(try XCTUnwrap(garmin.availableDevices.first))
+        for _ in 0..<7 {
+            do {
+                _ = try await garmin.rotateSelectedDeviceToken()
+                XCTFail("A mismatched, malformed, or downgraded rotation response must fail closed.")
+            } catch GarminCloudError.invalidResponse {
+                // Expected.
+            } catch {
+                XCTFail("Unexpected v3 rotation validation error: \(error)")
+            }
+        }
+
+        XCTAssertEqual(recorder.requests.count, 8)
+        XCTAssertEqual(garmin.selectedDevice?.deviceID, deviceID)
+        XCTAssertEqual(garmin.availableDevices.first?.tokenRevision, 7)
+        XCTAssertEqual(try bindingStore.binding(for: userID)?.deviceID, deviceID)
     }
 
     func testGarminRotationConflictRefreshesRevisionWithoutExposingReplacementToken() async throws {
@@ -8807,7 +9054,7 @@ final class CoreParityTests: XCTestCase {
                       body["action"] as? String == "rotateDeviceToken" else {
                     return nil
                 }
-                return body["replacementToken"] as? String
+                return body["replacementNonce"] as? String
             }.first
         )
         XCTAssertFalse(bindingKeychain.allData.contains {
@@ -17945,12 +18192,26 @@ private func garminTestUUIDv4(_ value: String) -> Bool {
     ) != nil
 }
 
+private func garminTestV3Capability(
+    deviceID: String,
+    nonce: String,
+    accountBinding: String? = nil,
+    tag: String = String(repeating: "b", count: 64)
+) -> String {
+    let owner = "00000000-0000-4000-8000-0000000000a1"
+    let resolvedBinding = accountBinding ?? SHA256.hash(data: Data(owner.utf8))
+        .map { String(format: "%02x", $0) }
+        .joined()
+    return "g3.\(resolvedBinding).\(deviceID).\(nonce).\(tag)"
+}
+
 private func garminIdempotentCreateResponse(
     for request: URLRequest,
     status: String
 ) throws -> (HTTPURLResponse, Data) {
     let body = try garminRequestBody(request)
     XCTAssertEqual(body["action"] as? String, "createDeviceIdempotent")
+    XCTAssertEqual(body["capabilityVersion"] as? Int, 3)
     let requestID = try XCTUnwrap(body["requestId"] as? String)
     let deviceID = try XCTUnwrap(body["deviceId"] as? String)
     let deviceNonce = try XCTUnwrap(body["deviceNonce"] as? String)
@@ -17960,13 +18221,14 @@ private func garminIdempotentCreateResponse(
         "requestId": requestID,
         "device": [
             "id": deviceID,
-            "device_token": deviceNonce,
+            "device_token": garminTestV3Capability(deviceID: deviceID, nonce: deviceNonce),
             "display_name": displayName,
             "created_at": "2026-08-10T12:00:00Z",
             "last_seen_at": NSNull(),
             "binding_version": 2,
             "token_revision": 1
-        ]
+        ],
+        "capabilityVersion": 3
     ]
     let data = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
     return try AuthURLProtocolStub.response(

@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 import Security
 
@@ -32,9 +33,9 @@ struct GarminDeviceSummary: Equatable, Identifiable, Sendable {
     let tokenRevision: Int
 }
 
-/// One-time credential returned to the UI. Deliberately not Codable: the raw
-/// token is persisted only inside a bounded, expiring Keychain retry record and
-/// is removed before successful pairing returns to the caller.
+/// One-time credential returned to the UI. Deliberately not Codable: pending
+/// creation persists only the bounded random nonce needed for an exact retry,
+/// while the returned v3 capability is never written to app storage.
 struct GarminPairingCredential: Equatable, Identifiable, Sendable {
     let id: String
     let deviceToken: String
@@ -413,6 +414,79 @@ private func isLowercaseHexToken(_ value: String) -> Bool {
     }
 }
 
+private enum GarminPairingCapability {
+    case legacyNonce(String)
+    case version3(accountBinding: String, deviceID: String, nonce: String)
+
+    var version: Int {
+        switch self {
+        case .legacyNonce: return 2
+        case .version3: return 3
+        }
+    }
+
+    var nonce: String {
+        switch self {
+        case .legacyNonce(let nonce), .version3(_, _, let nonce): return nonce
+        }
+    }
+
+    var deviceID: String? {
+        guard case .version3(_, let deviceID, _) = self else { return nil }
+        return deviceID
+    }
+
+    var accountBinding: String? {
+        guard case .version3(let accountBinding, _, _) = self else { return nil }
+        return accountBinding
+    }
+}
+
+private func parseGarminPairingCapability(_ value: String) -> GarminPairingCapability? {
+    // Keep the released watch/backend token parser for the explicit legacy
+    // creation fallback. New issuer paths require the v3 case at their callsite.
+    if isLowercaseHexToken(value) {
+        return .legacyNonce(value)
+    }
+
+    guard value.utf8.count == 234 else { return nil }
+    let components = value.split(separator: ".", omittingEmptySubsequences: false)
+    guard components.count == 5,
+          components[0] == "g3" else { return nil }
+
+    let accountBinding = String(components[1])
+    let deviceID = String(components[2])
+    let nonce = String(components[3])
+    let tag = String(components[4])
+    guard isLowercaseHexToken(accountBinding),
+          canonicalGarminCapabilityDeviceID(deviceID) == deviceID,
+          isLowercaseHexToken(nonce),
+          isLowercaseHexToken(tag) else { return nil }
+    return .version3(
+        accountBinding: accountBinding,
+        deviceID: deviceID,
+        nonce: nonce
+    )
+}
+
+private func garminAccountBinding(for canonicalUserID: String) -> String? {
+    guard canonicalGarminCapabilityDeviceID(canonicalUserID) == canonicalUserID else {
+        return nil
+    }
+    return SHA256.hash(data: Data(canonicalUserID.utf8))
+        .map { String(format: "%02x", $0) }
+        .joined()
+}
+
+private func canonicalGarminCapabilityDeviceID(_ value: String) -> String? {
+    guard let canonical = canonicalUUID(value) else { return nil }
+    let versionIndex = canonical.index(canonical.startIndex, offsetBy: 14)
+    let variantIndex = canonical.index(canonical.startIndex, offsetBy: 19)
+    guard "12345".contains(canonical[versionIndex]),
+          "89ab".contains(canonical[variantIndex]) else { return nil }
+    return canonical
+}
+
 enum GarminPlanValidator {
     static let maximumExercises = 60
     static let maximumTotalSets = 60
@@ -773,10 +847,16 @@ final class GarminCloudService: ObservableObject {
         if resultObject.idempotent {
             guard let status = resultObject.object["status"] as? String,
                   status == "created" || status == "already_created",
+                  exactInteger(resultObject.object["capabilityVersion"]) == 3,
                   resultObject.object["requestId"] as? String == creation.requestID,
                   result.summary.id == creation.deviceID,
                   result.summary.tokenRevision == 1,
-                  result.credential.deviceToken == creation.deviceToken,
+                  result.capability.version == 3,
+                  result.capability.accountBinding == garminAccountBinding(
+                      for: identity.canonicalUserID
+                  ),
+                  result.capability.deviceID == creation.deviceID,
+                  result.capability.nonce == creation.deviceToken,
                   result.credential.displayName == creation.displayName else {
                 throw GarminCloudError.invalidResponse
             }
@@ -808,13 +888,13 @@ final class GarminCloudService: ObservableObject {
         let session = try await auth.validCloudSession(expectedUserID: identity.rawUserID)
         try ensureIdentityIsCurrent(identity)
         try await recoverPendingRevocation(identity: identity, token: session.accessToken)
-        let replacementToken = try generateDeviceToken()
+        let replacementNonce = try generateDeviceToken()
         let requestBody: [String: Any] = [
             "action": "rotateDeviceToken",
             "deviceId": binding.deviceID,
-            "replacementToken": replacementToken,
+            "replacementNonce": replacementNonce,
             "expectedTokenRevision": selectedSummary.tokenRevision,
-            "capabilityVersion": 2
+            "capabilityVersion": 3
         ]
         let object: [String: Any]
         do {
@@ -828,13 +908,19 @@ final class GarminCloudService: ObservableObject {
             throw GarminCloudError.rotationConflict
         }
         guard let status = object["status"] as? String,
-              status == "rotated" || status == "already_rotated" else {
+              status == "rotated" || status == "already_rotated",
+              exactInteger(object["capabilityVersion"]) == 3 else {
             throw GarminCloudError.invalidResponse
         }
         let result = try parsePairingCredential(object)
         guard result.summary.id == binding.deviceID,
               result.summary.tokenRevision == selectedSummary.tokenRevision + 1,
-              result.credential.deviceToken == replacementToken else {
+              result.capability.version == 3,
+              result.capability.accountBinding == garminAccountBinding(
+                  for: identity.canonicalUserID
+              ),
+              result.capability.deviceID == binding.deviceID,
+              result.capability.nonce == replacementNonce else {
             throw GarminCloudError.invalidResponse
         }
         try ensureIdentityIsCurrent(identity)
@@ -952,6 +1038,7 @@ final class GarminCloudService: ObservableObject {
     private struct ParsedPairingResult {
         let summary: GarminDeviceSummary
         let credential: GarminPairingCredential
+        let capability: GarminPairingCapability
     }
 
     private struct DeviceCreationResponse {
@@ -1102,7 +1189,7 @@ final class GarminCloudService: ObservableObject {
             "deviceId": creation.deviceID,
             "deviceNonce": creation.deviceToken,
             "displayName": creation.displayName,
-            "capabilityVersion": 2
+            "capabilityVersion": 3
         ]
 
         do {
@@ -1149,7 +1236,7 @@ final class GarminCloudService: ObservableObject {
                     body: [
                         "action": "createDevice",
                         "displayName": creation.displayName,
-                        "capabilityVersion": 2
+                        "capabilityVersion": 3
                     ]
                 )
             } catch let error as GarminCloudError {
@@ -1536,21 +1623,22 @@ final class GarminCloudService: ObservableObject {
     private func parsePairingCredential(_ object: [String: Any]) throws -> ParsedPairingResult {
         guard let raw = object["device"] as? [String: Any],
               let token = raw["device_token"] as? String,
-              token.utf8.count == 64,
-              token.unicodeScalars.allSatisfy({ scalar in
-                  let value = Int(scalar.value)
-                  return (48 ... 57).contains(value) || (97 ... 102).contains(value)
-              }) else {
+              let capability = parseGarminPairingCapability(token) else {
             throw GarminCloudError.invalidResponse
         }
         let summary = try parseDeviceSummary(raw)
+        if let capabilityDeviceID = capability.deviceID,
+           capabilityDeviceID != summary.id {
+            throw GarminCloudError.invalidResponse
+        }
         return ParsedPairingResult(
             summary: summary,
             credential: GarminPairingCredential(
                 id: summary.id,
                 deviceToken: token,
                 displayName: summary.displayName
-            )
+            ),
+            capability: capability
         )
     }
 

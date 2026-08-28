@@ -14,7 +14,7 @@ Before merging or releasing:
 2. Review Gitleaks, Semgrep, CodeQL, and Trivy output. Any exception must be narrowly scoped, documented, and reviewed; never allowlist a whole source or test directory.
 3. Review the generated CycloneDX SBOM and investigate new high or critical dependency findings.
 4. Keep GitHub Actions pinned to full commit SHAs and review every Dependabot update before merging.
-5. Enable GitHub secret scanning, push protection, Dependabot alerts, and Supabase leaked-password protection in their respective service settings.
+5. Enable GitHub secret scanning, push protection, and Dependabot alerts. On Supabase Free, keep the server password minimum at 12 and enable available character-class requirements; verify those settings directly before release. Supabase leaked-password protection is optional paid defense in depth, not a release requirement. Never send passwords or password-derived material from a client to a third-party breach service.
 6. Deploy ordered database migrations and the Edge Function to a non-production Supabase project first. Verify anonymous, owner, other-user, revoked-device, replay, and concurrent-request behavior against the hosted service before production deployment.
 7. Configure the PWA host to return `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`. Do not cache authenticated responses or user data.
 8. Build Android production artifacts only through the signed release process. Never publish debug APKs, debug components, diagnostics, local databases, backups, or signing material.

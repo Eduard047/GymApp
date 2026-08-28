@@ -58,3 +58,39 @@ updates:
       edge-security:
         applies-to: security-updates
         patterns: ["*"]
+
+  - package-ecosystem: deno
+    directory: /supabase/functions/social-live-gateway
+    schedule:
+      interval: monthly
+      time: "06:45"
+      timezone: Europe/Kyiv
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+    groups:
+      edge-versions:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [major, minor, patch]
+      edge-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: deno
+    directory: /supabase/functions/push-dispatch
+    schedule:
+      interval: monthly
+      time: "07:00"
+      timezone: Europe/Kyiv
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+    groups:
+      edge-versions:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [major, minor, patch]
+      edge-security:
+        applies-to: security-updates
+        patterns: ["*"]

@@ -295,8 +295,18 @@ jobs:
           deno-version: 2.8.1
           cache: true
 
-      - name: Audit locked Deno dependencies
+      - name: Audit Garmin Edge dependencies
         working-directory: supabase/functions/garmin-sync
+        shell: bash
+        run: deno audit --frozen --level=high
+
+      - name: Audit social Edge dependencies
+        working-directory: supabase/functions/social-live-gateway
+        shell: bash
+        run: deno audit --frozen --level=high
+
+      - name: Audit push Edge dependencies
+        working-directory: supabase/functions/push-dispatch
         shell: bash
         run: deno audit --frozen --level=high
 
@@ -417,20 +427,56 @@ jobs:
           deno-version: 2.8.1
           cache: true
 
-      - name: Check and format Edge Function sources
+      - name: Check Garmin Edge Function sources
+        working-directory: supabase/functions/garmin-sync
         shell: bash
         run: |
-          deno check \
-            --config supabase/functions/garmin-sync/deno.json \
-            supabase/functions/garmin-sync/index.ts \
+          deno check --frozen --config deno.json \
+            index.ts \
+            ../_shared/garmin-capability.ts \
+            ../_shared/garmin-plan-contract.ts \
+            ../_shared/garmin-telemetry.ts
+
+      - name: Check social Edge Function sources
+        working-directory: supabase/functions/social-live-gateway
+        shell: bash
+        run: |
+          deno check --frozen --config deno.json \
+            index.ts \
+            ../_shared/preauth-budget.ts
+
+      - name: Check push Edge Function sources
+        working-directory: supabase/functions/push-dispatch
+        shell: bash
+        run: |
+          deno check --frozen --config deno.json \
+            index.ts \
+            providers.ts
+
+      - name: Check lock-free account deletion Edge Function
+        shell: bash
+        run: |
+          deno check --no-config --no-lock \
             supabase/functions/delete-account/index.ts \
-            supabase/functions/_shared/garmin-capability.ts \
-            supabase/functions/_shared/garmin-plan-contract.ts
-          deno fmt --check \
-            supabase/functions/garmin-sync/index.ts \
-            supabase/functions/delete-account/index.ts \
-            supabase/functions/_shared/garmin-capability.ts \
-            supabase/functions/_shared/garmin-plan-contract.ts
+            supabase/functions/_shared/preauth-budget.ts
+
+      - name: Check Edge Function formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          find supabase/functions -type f -name '*.ts' -print0 \
+            | sort -z \
+            | xargs -0 deno fmt --check
+
+      - name: Test social Edge Function contracts without runtime permissions
+        working-directory: supabase/functions/social-live-gateway
+        shell: bash
+        run: deno test --frozen --config deno.json index_test.ts
+
+      - name: Test push provider contracts without runtime permissions
+        working-directory: supabase/functions/push-dispatch
+        shell: bash
+        run: deno test --frozen --config deno.json providers_test.ts
 
   android-tests:
     name: Regression / Android

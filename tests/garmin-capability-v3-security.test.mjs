@@ -147,7 +147,7 @@ test("retained browser source preserves released watches while the future binary
     readFile("garmin/resources/settings/properties.xml", "utf8"),
     readFile("pwa/sw.js", "utf8"),
   ]);
-  assert.match(app, /const GARMIN_CAPABILITY_VERSION = 2/);
+  assert.match(app, /const GARMIN_CAPABILITY_VERSION = 3/);
   assert.match(app, /const capabilityMigration = value\?\.version !== GARMIN_CAPABILITY_VERSION/);
   assert.match(app, /version: GARMIN_CAPABILITY_VERSION/);
   assert.match(app, /GARMIN_CAPABILITY_VERSION === 3[\s\S]*replacementNonce/);
@@ -156,7 +156,7 @@ test("retained browser source preserves released watches while the future binary
   assert.match(app, /capabilityVersion: GARMIN_CAPABILITY_VERSION/);
   assert.match(app, /GARMIN_CAPABILITY_PATTERN\.exec\(token\)/);
   assert.match(worker, /self\.skipWaiting\(\)/);
-  assert.match(worker, /app\.v102\.js/);
+  assert.match(worker, /app\.v103\.js/);
   assert.match(worker, /garmin-cloud-sync\.v57\.js/);
   assert.doesNotMatch(worker, /GARMIN_CAPABILITY_VERSION|app\.v85\.js/);
 

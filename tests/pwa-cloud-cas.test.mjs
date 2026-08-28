@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { webcrypto } from "node:crypto";
+import { createHash, webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
@@ -32,14 +32,22 @@ function deletionPreparation() {
   };
 }
 
-function garminTestCapability(_deviceId, nonce = "b".repeat(64)) {
-  return nonce;
+function garminTestAccountBinding(userId = ACTIVE_USER_ID) {
+  return createHash("sha256").update(userId.toLowerCase()).digest("hex");
 }
 
-function garminTestCreatedDevice(deviceId, deviceToken) {
+function garminTestCapability(
+  deviceId,
+  nonce = "b".repeat(64),
+  accountBinding = garminTestAccountBinding()
+) {
+  return `g3.${accountBinding}.${deviceId.toLowerCase()}.${nonce}.${"c".repeat(64)}`;
+}
+
+function garminTestCreatedDevice(deviceId, deviceNonce) {
   return {
     id: deviceId,
-    device_token: deviceToken,
+    device_token: garminTestCapability(deviceId, deviceNonce),
     display_name: "Garmin watch",
     created_at: "2026-07-14T00:00:00+00:00",
     last_seen_at: null,
@@ -158,6 +166,7 @@ function loadContext(fetchImpl, {
     querySelector: () => null
   };
   const runtimeNodes = new Map();
+  const windowListeners = new Map();
   const context = {
     AbortController,
     atob,
@@ -240,7 +249,7 @@ function loadContext(fetchImpl, {
         bestWeeklyStreakDuring: () => 0
       },
       location: { search: locationSearch, hash: "", pathname: "/", replace() {} },
-      addEventListener() {}
+      addEventListener(type, listener) { windowListeners.set(type, listener); }
     }
   };
   context.window.document = context.document;
@@ -287,6 +296,7 @@ function loadContext(fetchImpl, {
   };`, context);
   context.appNode = appNode;
   context.runtimeNodes = runtimeNodes;
+  context.windowListeners = windowListeners;
   context.storageValues = values;
   context.sessionValues = sessionValues;
   return context;
@@ -2235,7 +2245,7 @@ test("oversized account marker clears both the marker and legacy persistent sess
 test("account transitions clear timers while durable Garmin revocation stays explicit", () => {
   assert.match(appSource, /clearTimeout\(remoteSaveTimer\);[\s\S]*remoteStateSync = \{ userId: null, exists: false, revision: null \}/);
   assert.ok(
-    (appSource.match(/activeAccount = account;\s*exerciseRestTimerLedger = null;/g) || []).length >= 3
+    (appSource.match(/activeAccount = account;\s*(?:if \(authOperation\) advanceAuthOperationAccount\(authOperation, account\);\s*)?exerciseRestTimerLedger = null;/g) || []).length >= 3
   );
   assert.ok(
     (appSource.match(/activeAccount = null;\s*exerciseRestTimerLedger = null;\s*state = loadState\(\);/g) || []).length >= 3
@@ -2243,6 +2253,7 @@ test("account transitions clear timers while durable Garmin revocation stays exp
   const logoutSource = appSource.slice(appSource.indexOf("async function logoutAccount"), appSource.indexOf("async function unpairGarmin"));
   const unpairSource = appSource.slice(appSource.indexOf("async function unpairGarmin"), appSource.indexOf("function accountPanel"));
   assert.doesNotMatch(logoutSource, /revokeGarminBinding/);
+  assert.match(logoutSource, /invalidatePendingAuthOperation\(\);\s*accountTransitionInProgress = true;/);
   assert.match(
     logoutSource,
     /promoteGarminCreateRequestToCleanup[\s\S]*revokeGarminDeviceById[\s\S]*forgetGarminPendingRevocation/
@@ -2277,7 +2288,7 @@ test("ordinary sign-out preserves a working Garmin device identity for the next 
   };
   vm.runInContext(`
     localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
-    saveGarminBinding({ version: 2, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
+    saveGarminBinding({ version: 3, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
   `, context);
 
   await vm.runInContext("logoutAccount()", context);
@@ -2310,7 +2321,7 @@ test("ordinary sign-out preserves a working Garmin device identity for the next 
   assert.equal(requests.length, 1, "durable binding reuse must not create or rotate a device");
 });
 
-test("production v2 Garmin bindings stay paired while embedded legacy secrets are stripped", () => {
+test("production v2 Garmin bindings stay paired while local metadata migrates and legacy secrets are stripped", () => {
   const context = loadContext(async () => {
     throw new Error("binding migration must not use the network");
   });
@@ -2328,9 +2339,9 @@ test("production v2 Garmin bindings stay paired while embedded legacy secrets ar
     `garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)})`,
     context,
   );
-  assert.equal(migrated.version, 2);
+  assert.equal(migrated.version, 3);
   assert.equal(migrated.deviceId, deviceId);
-  assert.equal(Object.hasOwn(migrated, "recoveryPending"), false);
+  assert.equal(migrated.recoveryPending, true, "the stable watch UUID must rotate once before issuing v3");
   const persisted = context.localStorage.getItem(
     "gym-pwa-garmin-device-bindings-v2",
   );
@@ -2474,7 +2485,7 @@ test("explicit Garmin unpair revokes the server device but keeps the cloud login
   const deviceId = "00000000-0000-4000-8000-000000000078";
   context.window.confirm = () => true;
   vm.runInContext(`
-    saveGarminBinding({ version: 2, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
+    saveGarminBinding({ version: 3, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
   `, context);
 
   await vm.runInContext("unpairGarmin()", context);
@@ -2491,7 +2502,7 @@ test("failed or cancelled explicit Garmin unpair preserves the working binding",
   });
   const deviceId = "00000000-0000-4000-8000-000000000079";
   vm.runInContext(`
-    saveGarminBinding({ version: 2, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
+    saveGarminBinding({ version: 3, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
   `, context);
 
   context.window.confirm = () => false;
@@ -2884,7 +2895,7 @@ test("Garmin binding is persisted before the one-time token is shown", async () 
       : garminIdempotentCreatePayload(body);
     if (body.action === "createDeviceIdempotent") {
       deviceId = body.deviceId;
-      token = body.deviceNonce;
+      token = payload.device.device_token;
     }
     return new Response(JSON.stringify(payload), {
       status: 200,
@@ -3000,7 +3011,8 @@ test("cancelled Garmin token prompt stays recoverable when revocation fails", as
 test("lost browser binding recovers an existing watch by rotating its token without changing UUID", async () => {
   const deviceId = "00000000-0000-4000-8000-000000000083";
   const actions = [];
-  let replacementToken = null;
+  let replacementNonce = null;
+  let replacementCapability = null;
   const context = loadContext(async (_url, options) => {
     const body = JSON.parse(options.body);
     actions.push(body.action);
@@ -3018,14 +3030,16 @@ test("lost browser binding recovers an existing watch by rotating its token with
     }
     assert.equal(body.deviceId, deviceId);
     assert.equal(body.expectedTokenRevision, 7);
-    assert.equal(body.capabilityVersion, 2);
-    assert.match(body.replacementToken, /^[a-f0-9]{64}$/);
-    replacementToken = body.replacementToken;
+    assert.equal(body.capabilityVersion, 3);
+    assert.match(body.replacementNonce, /^[a-f0-9]{64}$/);
+    assert.equal(Object.hasOwn(body, "replacementToken"), false);
+    replacementNonce = body.replacementNonce;
+    replacementCapability = garminTestCapability(deviceId, replacementNonce);
     return new Response(JSON.stringify({
       status: "rotated",
       device: {
         id: deviceId,
-        device_token: replacementToken,
+        device_token: replacementCapability,
         display_name: "Fenix 8",
         created_at: "2026-07-14T00:00:00+00:00",
         last_seen_at: null,
@@ -3036,11 +3050,12 @@ test("lost browser binding recovers an existing watch by rotating its token with
   });
   context.window.confirm = () => true;
   context.window.prompt = (_message, shownToken) => {
-    assert.equal(shownToken, replacementToken);
+    assert.equal(shownToken, replacementCapability);
     const binding = JSON.parse(context.localStorage.getItem("gym-pwa-garmin-device-bindings-v2"));
     assert.equal(binding[ACTIVE_USER_ID].deviceId, deviceId, "stable UUID must be durable before token rotation is revealed");
     assert.equal(binding[ACTIVE_USER_ID].recoveryPending, true);
-    assert.equal(JSON.stringify(binding).includes(replacementToken), false);
+    assert.equal(JSON.stringify(binding).includes(replacementCapability), false);
+    assert.equal(JSON.stringify(binding).includes(replacementNonce), false);
     return "saved";
   };
 
@@ -3055,6 +3070,98 @@ test("lost browser binding recovers an existing watch by rotating its token with
     false
   );
   assert.equal(context.localStorage.getItem("gym-pwa-supabase-session-v1"), null);
+});
+
+test("Garmin v3 create rejects a capability bound to another account", async () => {
+  let promptCalls = 0;
+  const context = loadContext(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    if (body.action === "listDevices") {
+      return new Response(JSON.stringify({ devices: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    const payload = garminIdempotentCreatePayload(body);
+    payload.device.device_token = garminTestCapability(
+      body.deviceId,
+      body.deviceNonce,
+      "f".repeat(64)
+    );
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  });
+  context.window.confirm = () => true;
+  context.window.prompt = () => {
+    promptCalls += 1;
+    return "saved";
+  };
+
+  await assert.rejects(
+    vm.runInContext("ensureGarminDeviceBinding(loadRemoteSession())", context),
+    /binding was not created/
+  );
+  assert.equal(promptCalls, 0);
+  assert.equal(
+    vm.runInContext(`garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)})`, context),
+    null
+  );
+});
+
+test("Garmin v3 rotation rejects a wrong account, device, nonce, or malformed capability", async () => {
+  const deviceId = "00000000-0000-4000-8000-000000000094";
+  const wrongDeviceId = "00000000-0000-4000-8000-000000000095";
+  const scenarios = [
+    {
+      name: "wrong device",
+      token: body => garminTestCapability(wrongDeviceId, body.replacementNonce)
+    },
+    {
+      name: "wrong nonce",
+      token: () => garminTestCapability(deviceId, "f".repeat(64))
+    },
+    {
+      name: "wrong account",
+      token: body => garminTestCapability(
+        deviceId,
+        body.replacementNonce,
+        "f".repeat(64)
+      )
+    },
+    {
+      name: "malformed",
+      token: () => "g3.invalid"
+    }
+  ];
+  for (const scenario of scenarios) {
+    const context = loadContext(async (_url, options) => {
+      const body = JSON.parse(options.body);
+      assert.equal(body.capabilityVersion, 3);
+      assert.match(body.replacementNonce, /^[a-f0-9]{64}$/);
+      return new Response(JSON.stringify({
+        status: "rotated",
+        device: {
+          id: deviceId,
+          device_token: scenario.token(body),
+          display_name: "Fenix rejected",
+          created_at: "2026-07-14T00:00:00+00:00",
+          last_seen_at: null,
+          binding_version: 2,
+          token_revision: 2
+        }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    await assert.rejects(
+      vm.runInContext(`rotateGarminDeviceToken(loadRemoteSession(), {
+        id: ${JSON.stringify(deviceId)},
+        tokenRevision: 1
+      })`, context),
+      /invalid device/,
+      scenario.name
+    );
+  }
 });
 
 test("lost Garmin rotation response remains retryable for the same UUID", async () => {
@@ -3086,7 +3193,7 @@ test("lost Garmin rotation response remains retryable for the same UUID", async 
       status: "rotated",
       device: {
         id: deviceId,
-        device_token: body.replacementToken,
+        device_token: garminTestCapability(deviceId, body.replacementNonce),
         display_name: "Fenix retry",
         created_at: "2026-07-14T00:00:00+00:00",
         last_seen_at: null,
@@ -3099,7 +3206,7 @@ test("lost Garmin rotation response remains retryable for the same UUID", async 
   context.window.prompt = (_message, shownToken) => {
     assert.equal(
       shownToken,
-      rotationBodies[2].replacementToken,
+      garminTestCapability(deviceId, rotationBodies[2].replacementNonce),
     );
     return "saved";
   };
@@ -3117,9 +3224,11 @@ test("lost Garmin rotation response remains retryable for the same UUID", async 
 
   assert.deepEqual(actions, ["listDevices", "rotateDeviceToken", "rotateDeviceToken", "listDevices", "rotateDeviceToken"]);
   assert.deepEqual(rotationBodies[0], rotationBodies[1], "transport retry must replay the exact CAS request");
+  assert.equal(rotationBodies[0].capabilityVersion, 3);
+  assert.equal(Object.hasOwn(rotationBodies[0], "replacementToken"), false);
   assert.equal(rotationBodies[0].expectedTokenRevision, 3);
   assert.equal(rotationBodies[2].expectedTokenRevision, 4);
-  assert.notEqual(rotationBodies[2].replacementToken, rotationBodies[0].replacementToken);
+  assert.notEqual(rotationBodies[2].replacementNonce, rotationBodies[0].replacementNonce);
   assert.equal(result.binding.deviceId, deviceId);
   assert.equal(result.rotated, true);
   assert.equal(
@@ -3154,7 +3263,7 @@ test("outcome-unknown Garmin rotation accepts exact already_rotated replay", asy
       status: "already_rotated",
       device: {
         id: deviceId,
-        device_token: body.replacementToken,
+        device_token: garminTestCapability(deviceId, body.replacementNonce),
         display_name: "Fenix replay",
         created_at: "2026-07-14T00:00:00+00:00",
         last_seen_at: null,
@@ -3168,7 +3277,7 @@ test("outcome-unknown Garmin rotation accepts exact already_rotated replay", asy
     promptCalls += 1;
     assert.equal(
       shownToken,
-      rotationBodies[0].replacementToken,
+      garminTestCapability(deviceId, rotationBodies[0].replacementNonce),
     );
     return "saved";
   };
@@ -3188,7 +3297,7 @@ test("stale account transition never reveals a rotated Garmin token", async () =
   const deviceId = "00000000-0000-4000-8000-000000000086";
   let context;
   let promptCalls = 0;
-  let replacementToken = null;
+  let replacementNonce = null;
   context = loadContext(async (_url, options) => {
     const body = JSON.parse(options.body);
     if (body.action === "listDevices") {
@@ -3203,13 +3312,13 @@ test("stale account transition never reveals a rotated Garmin token", async () =
         }]
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    replacementToken = body.replacementToken;
+    replacementNonce = body.replacementNonce;
     vm.runInContext("accountEpoch += 1; activeAccount = null; clearRemoteSession();", context);
     return new Response(JSON.stringify({
       status: "rotated",
       device: {
         id: deviceId,
-        device_token: body.replacementToken,
+        device_token: garminTestCapability(deviceId, body.replacementNonce),
         display_name: "Fenix stale",
         created_at: "2026-07-14T00:00:00+00:00",
         last_seen_at: null,
@@ -3233,7 +3342,7 @@ test("stale account transition never reveals a rotated Garmin token", async () =
   const stored = JSON.parse(context.localStorage.getItem("gym-pwa-garmin-device-bindings-v2"));
   assert.equal(stored[ACTIVE_USER_ID].deviceId, deviceId);
   assert.equal(stored[ACTIVE_USER_ID].recoveryPending, true);
-  assert.equal(JSON.stringify(stored).includes(replacementToken), false);
+  assert.equal(JSON.stringify(stored).includes(replacementNonce), false);
 });
 
 test("stale account after device listing cannot prompt, create, or rotate", async () => {
@@ -3270,7 +3379,7 @@ test("Garmin token revision conflict refreshes metadata and fails closed", async
   const deviceId = "00000000-0000-4000-8000-000000000088";
   const actions = [];
   let listCalls = 0;
-  let replacementToken = null;
+  let replacementNonce = null;
   let promptCalls = 0;
   const context = loadContext(async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -3288,7 +3397,8 @@ test("Garmin token revision conflict refreshes metadata and fails closed", async
         }]
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    replacementToken = body.replacementToken;
+    replacementNonce = body.replacementNonce;
+    assert.equal(body.capabilityVersion, 3);
     assert.equal(body.expectedTokenRevision, 9);
     return new Response(JSON.stringify({
       error: "Device token rotation conflict",
@@ -3311,7 +3421,7 @@ test("Garmin token revision conflict refreshes metadata and fails closed", async
   assert.equal(promptCalls, 0);
   const stored = JSON.parse(context.localStorage.getItem("gym-pwa-garmin-device-bindings-v2"));
   assert.equal(stored[ACTIVE_USER_ID].recoveryPending, true);
-  assert.equal(JSON.stringify(stored).includes(replacementToken), false);
+  assert.equal(JSON.stringify(stored).includes(replacementNonce), false);
 });
 
 test("concurrent Garmin sync clicks run one list-create-queue path", async () => {
@@ -3839,6 +3949,205 @@ test("a verified PKCE session survives a transient cloud-load failure and resume
   assert.equal(secondRequests.filter(request => request.url.includes("grant_type=pkce")).length, 0);
   assert.equal(vm.runInContext("loadRemoteSession().activation_pending", second), undefined);
   assert.equal(vm.runInContext("activeAccount.userId", second), ACTIVE_USER_ID);
+});
+
+test("a late password-login response cannot replace an explicitly resumed offline profile", async () => {
+  const requests = [];
+  let resolveToken;
+  const tokenResponse = new Promise(resolve => { resolveToken = resolve; });
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("grant_type=password")) return tokenResponse;
+    throw new Error(`unexpected request: ${url}`);
+  });
+  const offline = {
+    id: `local-v2-${"ab".repeat(16)}`,
+    name: "Offline owner",
+    localIdVersion: 2
+  };
+  context.__offline = offline;
+  vm.runInContext(`
+    localStorage.setItem(activeStorageKey(globalThis.__offline), JSON.stringify(defaultAppState()));
+    saveAccountList([globalThis.__offline]);
+    activeAccount = null;
+    localStorage.removeItem(AUTH_KEY);
+    clearRemoteSession();
+    state = defaultAppState();
+  `, context);
+  context.runtimeNodes.set("#login-email", { value: "owner@example.com" });
+  context.runtimeNodes.set("#login-password", { value: "StrongPass123!" });
+
+  const login = vm.runInContext("remoteLogin(false)", context);
+  await Promise.resolve();
+  assert.equal(requests.length, 1);
+  assert.equal(await vm.runInContext(
+    `resumeOfflineAccount(${JSON.stringify(offline.id)})`,
+    context
+  ), true);
+  const navigationAfterChoice = vm.runInContext("JSON.stringify(nav)", context);
+
+  resolveToken(new Response(JSON.stringify({
+    access_token: unsignedJwtFor(ACTIVE_USER_ID),
+    refresh_token: "late-login-refresh-token",
+    user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  await login;
+
+  assert.equal(vm.runInContext("activeAccount.id", context), offline.id);
+  assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-active-account-v1")).id, offline.id);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
+  assert.equal(vm.runInContext("JSON.stringify(nav)", context), navigationAfterChoice);
+  assert.equal(vm.runInContext("authRequestInProgress", context), false);
+  assert.equal(requests.filter(request => request.url.includes("/rest/v1/user_states")).length, 0);
+});
+
+test("an AUTH_KEY storage event supersedes an in-flight login from another tab", async () => {
+  const requests = [];
+  let resolveToken;
+  const tokenResponse = new Promise(resolve => { resolveToken = resolve; });
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("grant_type=password")) return tokenResponse;
+    throw new Error(`unexpected request: ${url}`);
+  });
+  context.runtimeNodes.set("#login-email", { value: "owner@example.com" });
+  context.runtimeNodes.set("#login-password", { value: "StrongPass123!" });
+  vm.runInContext("render = () => {};", context);
+  const priorTabSession = context.sessionStorage.getItem("gym-pwa-supabase-session-v1");
+
+  const login = vm.runInContext("remoteLogin(false)", context);
+  await Promise.resolve();
+  assert.equal(requests.length, 1);
+  const newerOwner = {
+    id: `local-v2-${"ef".repeat(16)}`,
+    name: "Other-tab owner",
+    localIdVersion: 2
+  };
+  context.localStorage.setItem("gym-pwa-active-account-v1", JSON.stringify(newerOwner));
+  context.windowListeners.get("storage")({ key: "gym-pwa-active-account-v1" });
+
+  resolveToken(new Response(JSON.stringify({
+    access_token: unsignedJwtFor(ACTIVE_USER_ID),
+    refresh_token: "late-other-tab-refresh-token",
+    user: { id: ACTIVE_USER_ID, email: "owner@example.com" }
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  await login;
+
+  assert.deepEqual(
+    JSON.parse(context.localStorage.getItem("gym-pwa-active-account-v1")),
+    newerOwner
+  );
+  assert.equal(
+    context.sessionStorage.getItem("gym-pwa-supabase-session-v1"),
+    priorTabSession,
+    "the late login must not replace this tab's prior transient session"
+  );
+  assert.equal(requests.filter(request => request.url.includes("/rest/v1/user_states")).length, 0);
+  assert.equal(vm.runInContext("authRequestInProgress", context), false);
+});
+
+test("a late PKCE exchange preserves a newer transaction and the chosen offline owner", async () => {
+  const requests = [];
+  let resolveToken;
+  const tokenResponse = new Promise(resolve => { resolveToken = resolve; });
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("grant_type=pkce")) return tokenResponse;
+    throw new Error(`unexpected request: ${url}`);
+  });
+  const offline = {
+    id: `local-v2-${"cd".repeat(16)}`,
+    name: "Explicit offline owner",
+    localIdVersion: 2
+  };
+  const original = {
+    version: 1,
+    purpose: "signup",
+    state: "O".repeat(32),
+    verifier: "v".repeat(43),
+    email: "owner@example.com",
+    createdAt: Date.now()
+  };
+  const newer = {
+    ...original,
+    state: "N".repeat(32),
+    verifier: "w".repeat(43),
+    createdAt: Date.now() + 1
+  };
+  context.__offline = offline;
+  vm.runInContext(`
+    localStorage.setItem(activeStorageKey(globalThis.__offline), JSON.stringify(defaultAppState()));
+    saveAccountList([globalThis.__offline]);
+    activeAccount = null;
+    localStorage.removeItem(AUTH_KEY);
+    clearRemoteSession();
+    state = defaultAppState();
+  `, context);
+  context.localStorage.setItem("gym-pwa-auth-transaction-v1", JSON.stringify(original));
+  const code = "55e770dd-9ff9-416c-87fa-43b31d7ef225";
+  const callback = vm.runInContext(
+    `completeAuthCallback(new URLSearchParams(${JSON.stringify(`platform=web&state=${original.state}&purpose=signup&code=${code}`)}))`,
+    context
+  );
+  await Promise.resolve();
+  assert.equal(await vm.runInContext(
+    `resumeOfflineAccount(${JSON.stringify(offline.id)})`,
+    context
+  ), true);
+  context.localStorage.setItem("gym-pwa-auth-transaction-v1", JSON.stringify(newer));
+
+  resolveToken(new Response(JSON.stringify({
+    access_token: unsignedJwtFor(ACTIVE_USER_ID),
+    refresh_token: "late-pkce-refresh-token",
+    user: { id: ACTIVE_USER_ID, email: original.email }
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  await callback;
+
+  assert.equal(vm.runInContext("activeAccount.id", context), offline.id);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
+  assert.deepEqual(JSON.parse(context.localStorage.getItem("gym-pwa-auth-transaction-v1")), newer);
+  assert.equal(requests.filter(request => request.url.includes("/rest/v1/user_states")).length, 0);
+});
+
+test("retrying a pending activation cannot hydrate after the user chooses another owner", async () => {
+  const requests = [];
+  let resolveCloudState;
+  const cloudStateResponse = new Promise(resolve => { resolveCloudState = resolve; });
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/rest/v1/user_states")) return cloudStateResponse;
+    throw new Error(`unexpected request: ${url}`);
+  });
+  const offline = {
+    id: `local-v2-${"ef".repeat(16)}`,
+    name: "Retry escape owner",
+    localIdVersion: 2
+  };
+  context.__offline = offline;
+  vm.runInContext(`
+    const pending = loadRemoteSession();
+    pending.activation_pending = "login";
+    saveDurableRemoteSession(pending);
+    localStorage.setItem(activeStorageKey(globalThis.__offline), JSON.stringify(defaultAppState()));
+    saveAccountList([activeAccount, globalThis.__offline]);
+  `, context);
+
+  const retry = vm.runInContext("retryPendingRemoteActivation()", context);
+  await Promise.resolve();
+  assert.equal(await vm.runInContext(
+    `resumeOfflineAccount(${JSON.stringify(offline.id)})`,
+    context
+  ), true);
+  resolveCloudState(new Response("[]", {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  }));
+  await retry;
+
+  assert.equal(vm.runInContext("activeAccount.id", context), offline.id);
+  assert.equal(context.sessionStorage.getItem("gym-pwa-supabase-session-v1"), null);
+  assert.equal(vm.runInContext("state.sessions.length", context), 0);
+  assert.equal(vm.runInContext("authRequestInProgress", context), false);
 });
 
 test("web auth callback state mismatch does not exchange a code or erase the active transaction", async () => {

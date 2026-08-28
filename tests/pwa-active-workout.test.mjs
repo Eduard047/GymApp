@@ -46,10 +46,38 @@ function createWebLocks() {
   };
 }
 
-function loadContext({ localStorage = createStorage(), locks = createWebLocks() } = {}) {
+function loadContext({
+  localStorage = createStorage(),
+  locks = createWebLocks(),
+  trackTimers = false
+} = {}) {
   const sessionStorage = createStorage();
   const runtimeNodes = new Map();
   const windowListeners = new Map();
+  const timerHandles = new Set();
+  const scheduleTimeout = trackTimers
+    ? (callback, delay, ...args) => {
+      const handle = setTimeout(() => {
+        timerHandles.delete(handle);
+        callback(...args);
+      }, delay);
+      timerHandles.add(handle);
+      return handle;
+    }
+    : setTimeout;
+  const scheduleInterval = trackTimers
+    ? (callback, delay, ...args) => {
+      const handle = setInterval(callback, delay, ...args);
+      timerHandles.add(handle);
+      return handle;
+    }
+    : setInterval;
+  const cancelTimer = trackTimers
+    ? handle => {
+      timerHandles.delete(handle);
+      clearTimeout(handle);
+    }
+    : clearTimeout;
   const appNode = {
     innerHTML: "",
     children: [],
@@ -75,8 +103,8 @@ function loadContext({ localStorage = createStorage(), locks = createWebLocks() 
     AbortController,
     atob,
     btoa,
-    clearInterval,
-    clearTimeout,
+    clearInterval: cancelTimer,
+    clearTimeout: cancelTimer,
     console,
     crypto: webcrypto,
     CSS: { escape: String },
@@ -97,8 +125,8 @@ function loadContext({ localStorage = createStorage(), locks = createWebLocks() 
     Response,
     sessionStorage,
     Set,
-    setInterval,
-    setTimeout,
+    setInterval: scheduleInterval,
+    setTimeout: scheduleTimeout,
     TextDecoder,
     TextEncoder,
     URL,
@@ -149,7 +177,11 @@ function loadContext({ localStorage = createStorage(), locks = createWebLocks() 
     startupActiveWorkout,
     startupState,
     startupWorkoutDraft,
-    windowListeners
+    windowListeners,
+    disposeTimers() {
+      for (const handle of timerHandles) clearTimeout(handle);
+      timerHandles.clear();
+    }
   };
 }
 
@@ -176,6 +208,10 @@ function activeUndoStorageKey(context) {
   return vm.runInContext("activeWorkoutAccountDescriptor().undoKey", context);
 }
 
+function activeInputDraftStorageKey(context) {
+  return vm.runInContext("activeWorkoutAccountDescriptor().inputDraftKey", context);
+}
+
 function activeTimingStorageKey(context) {
   return vm.runInContext("activeWorkoutAccountDescriptor().timingKey", context);
 }
@@ -186,6 +222,12 @@ function activeRestTransitionStorageKey(context) {
 
 function activeBulkCleanupStorageKey(context) {
   return vm.runInContext("activeWorkoutAccountDescriptor().bulkCleanupKey", context);
+}
+
+function unsignedLiveJwt(userId, sessionId) {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ sub: userId, session_id: sessionId })).toString("base64url");
+  return `${header}.${payload}.test-signature`;
 }
 
 async function awaitActiveControlReconciliation(context) {
@@ -226,6 +268,298 @@ test("starting creates one account-scoped local active draft without changing hi
   assert.equal(vm.runInContext("activeWorkout.blocks[0].sets.length", context), 2);
   assert.match(vm.runInContext("focusLensCard([])", context), /continue-active-workout/);
   assert.match(vm.runInContext("focusLensCard([])", context), /discard-active-workout/);
+});
+
+test("unfinished set input survives reload exactly without entering backups or cloud state", async () => {
+  const sharedStorage = createStorage();
+  const first = loadContext({ localStorage: sharedStorage });
+  await startTwoSetWorkout(first.context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", first.context);
+
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(setId))}, activeField: "weight" },
+    value: "81,"
+  })`, first.context), true);
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(setId))}, activeField: "reps" },
+    value: "07"
+  })`, first.context), true);
+
+  const inputKey = activeInputDraftStorageKey(first.context);
+  const stored = JSON.parse(sharedStorage.getItem(inputKey));
+  assert.equal(stored.owner, `local:${LOCAL_ACCOUNT.id}`);
+  assert.equal(stored.workoutId, vm.runInContext("activeWorkout.id", first.context));
+  assert.deepEqual(stored.entries, [{ setId, weight: "81,", reps: "07" }]);
+  assert.equal(Object.hasOwn(JSON.parse(vm.runInContext("exportPayload(false)", first.context)), "activeWorkoutInputDraft"), false);
+  assert.equal(Object.hasOwn(vm.runInContext(
+    `remoteStateCore(state, "00000000-0000-4000-8000-000000000001")`,
+    first.context
+  ), "activeWorkoutInputDraft"), false);
+
+  const second = loadContext({ localStorage: sharedStorage });
+  vm.runInContext("reloadActiveWorkoutContext()", second.context);
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "weight"
+  )`, second.context), "81,");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "reps"
+  )`, second.context), "07");
+  const markup = vm.runInContext("activeWorkoutScreen()", second.context);
+  assert.match(markup, /data-active-field="weight"[^>]*maxlength="64"[^>]*value="81,"/);
+  assert.match(markup, /data-active-field="reps"[^>]*maxlength="64"[^>]*value="07"/);
+  second.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "81," });
+  second.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "07" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, second.context), true);
+  assert.equal(sharedStorage.getItem(inputKey), null, "completed set input must be retired durably");
+});
+
+test("live-room input is restored after an old-session binding is rebound", async () => {
+  const runtime = loadContext({ trackTimers: true });
+  const { context, localStorage } = runtime;
+  const userId = "00000000-0000-4000-8000-0000000000a1";
+  const previousSessionId = "11111111-1111-4111-8111-111111111111";
+  const currentSessionId = "22222222-2222-4222-8222-222222222222";
+  const roomId = "lw_11111111111111111111111111111111";
+  context.__remoteAccount = {
+    id: `remote-${userId}`,
+    name: "Live owner",
+    userId,
+    remote: "supabase"
+  };
+  context.__liveSession = {
+    access_token: unsignedLiveJwt(userId, currentSessionId),
+    refresh_token: "opaque-refresh-token",
+    user: { id: userId, email: "owner@example.com" }
+  };
+  vm.runInContext(`
+    activeAccount = globalThis.__remoteAccount;
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveAccountList([activeAccount]);
+    sessionStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify(globalThis.__liveSession));
+    state = defaultAppState();
+    clearActiveWorkoutMemory();
+    saveState({ queueRemote: false, markDirty: false });
+  `, context);
+  await startTwoSetWorkout(context);
+  const workoutId = vm.runInContext("activeWorkout.id", context);
+  const firstSetId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const oldBinding = {
+    version: 3,
+    userId,
+    sessionId: previousSessionId,
+    roomId,
+    localWorkoutId: workoutId,
+    role: "owner",
+    peerProfileId: "p_22222222222222222222222222222222",
+    peerDisplayName: "Peer",
+    roomRevision: 1,
+    membershipRevision: 1,
+    progressRevision: 0,
+    pendingOperations: [],
+    serverToLocalSetIds: {}
+  };
+  context.__oldBinding = oldBinding;
+  vm.runInContext(`liveWorkoutBinding = globalThis.__oldBinding;`, context);
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(firstSetId))}, activeField: "weight" },
+    value: "81,"
+  })`, context), true);
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(firstSetId))}, activeField: "reps" },
+    value: "07"
+  })`, context), true);
+
+  const bindingKey = `gym-pwa-live-workout-v1:${userId}`;
+  localStorage.setItem(bindingKey, JSON.stringify(oldBinding));
+  vm.runInContext(`
+    clearLiveWorkoutBinding({ erase: false });
+    localWorkoutMatchesLiveBinding = () => true;
+    window.GymLiveWorkoutState = {
+      decode: raw => JSON.parse(raw),
+      encode: value => JSON.stringify(value),
+      normalize: value => value
+    };
+  `, context);
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "weight"
+  )`, context), "80", "the room-scoped input stays hidden until authoritative rebind");
+
+  context.__identity = { userId, sessionId: currentSessionId };
+  context.__inbox = { rooms: [{ roomId, status: "active", memberState: "joined" }] };
+  context.__snapshot = {
+    room: { roomId, status: "active", roomRevision: 2 },
+    participants: [
+      { isSelf: true, role: "owner", membershipRevision: 2, progress: { revision: 0 } },
+      {
+        isSelf: false,
+        profile: {
+          profileId: "p_22222222222222222222222222222222",
+          displayName: "Peer"
+        }
+      }
+    ]
+  };
+  assert.equal(vm.runInContext(`rebindStoredLiveWorkoutBindingToCurrentSession(
+    globalThis.__identity,
+    globalThis.__inbox,
+    globalThis.__snapshot,
+    accountEpoch
+  )`, context), true);
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "weight"
+  )`, context), "81,");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "reps"
+  )`, context), "07");
+
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(firstSetId))}, activeField: "weight" },
+    value: "82.50"
+  })`, context), true);
+  const stored = JSON.parse(localStorage.getItem(activeInputDraftStorageKey(context)));
+  assert.deepEqual(stored.entries, [{ setId: firstSetId, weight: "82.50", reps: "07" }]);
+  runtime.disposeTimers();
+});
+
+test("detaching a live workout preserves every raw field under the standalone scope", async () => {
+  const { context, localStorage } = loadContext();
+  await startTwoSetWorkout(context);
+  const workoutId = vm.runInContext("activeWorkout.id", context);
+  const firstSetId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const secondSetId = vm.runInContext("activeWorkout.blocks[0].sets[1].id", context);
+  const roomId = "lw_33333333333333333333333333333333";
+  context.__detachedBinding = {
+    userId: "00000000-0000-4000-8000-0000000000a1",
+    roomId,
+    localWorkoutId: workoutId
+  };
+  vm.runInContext("liveWorkoutBinding = globalThis.__detachedBinding", context);
+
+  for (const [setId, field, value] of [
+    [firstSetId, "weight", "81,"],
+    [firstSetId, "reps", "07"],
+    [secondSetId, "weight", "42.50"]
+  ]) {
+    context.__input = {
+      dataset: { activeSetId: String(setId), activeField: field },
+      value
+    };
+    assert.equal(vm.runInContext("rememberActiveLiveDraftInput(globalThis.__input)", context), true);
+  }
+
+  const inputKey = activeInputDraftStorageKey(context);
+  assert.equal(JSON.parse(localStorage.getItem(inputKey)).inputScope, roomId);
+  assert.equal(vm.runInContext("clearLiveWorkoutBinding()", context), true);
+  assert.equal(vm.runInContext("liveWorkoutBinding", context), null);
+  assert.equal(vm.runInContext("activeLiveDraftInputs.roomId", context), "standalone");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "weight"
+  )`, context), "81,");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "reps"
+  )`, context), "07");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[1], "weight"
+  )`, context), "42.50");
+
+  let stored = JSON.parse(localStorage.getItem(inputKey));
+  assert.equal(stored.inputScope, "standalone");
+  const expectedEntries = firstWeight => [
+    { setId: firstSetId, weight: firstWeight, reps: "07" },
+    { setId: secondSetId, weight: "42.50" }
+  ].sort((left, right) => left.setId - right.setId);
+  assert.deepEqual(stored.entries, expectedEntries("81,"));
+
+  context.__input = {
+    dataset: { activeSetId: String(firstSetId), activeField: "weight" },
+    value: "82.25"
+  };
+  assert.equal(vm.runInContext("rememberActiveLiveDraftInput(globalThis.__input)", context), true);
+  stored = JSON.parse(localStorage.getItem(inputKey));
+  assert.deepEqual(stored.entries, expectedEntries("82.25"));
+
+  vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "reps"
+  )`, context), "07");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[1], "weight"
+  )`, context), "42.50");
+});
+
+test("a failed live-detach draft rewrite keeps sibling fields for the next safe retry", async () => {
+  const { context, localStorage } = loadContext();
+  await startTwoSetWorkout(context);
+  const workoutId = vm.runInContext("activeWorkout.id", context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const roomId = "lw_44444444444444444444444444444444";
+  context.__detachedBinding = {
+    userId: "00000000-0000-4000-8000-0000000000a1",
+    roomId,
+    localWorkoutId: workoutId
+  };
+  vm.runInContext("liveWorkoutBinding = globalThis.__detachedBinding", context);
+  for (const [field, value] of [["weight", "81,"], ["reps", "07"]]) {
+    context.__input = {
+      dataset: { activeSetId: String(setId), activeField: field },
+      value
+    };
+    assert.equal(vm.runInContext("rememberActiveLiveDraftInput(globalThis.__input)", context), true);
+  }
+
+  const inputKey = activeInputDraftStorageKey(context);
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = (key, value) => {
+    if (key === inputKey) throw new Error("simulated input sidecar failure");
+    originalSetItem(key, value);
+  };
+  assert.equal(vm.runInContext("clearLiveWorkoutBinding()", context), false);
+  assert.equal(vm.runInContext("activeLiveDraftInputs.roomId", context), "standalone");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(
+    activeWorkout.blocks[0].sets[0], "reps"
+  )`, context), "07");
+
+  localStorage.setItem = originalSetItem;
+  context.__input = {
+    dataset: { activeSetId: String(setId), activeField: "weight" },
+    value: "82.25"
+  };
+  assert.equal(vm.runInContext("rememberActiveLiveDraftInput(globalThis.__input)", context), true);
+  const stored = JSON.parse(localStorage.getItem(inputKey));
+  assert.equal(stored.inputScope, "standalone");
+  assert.deepEqual(stored.entries, [{ setId, weight: "82.25", reps: "07" }]);
+});
+
+test("active set input sidecar rejects foreign, stale, malformed, and oversized data", async () => {
+  const { context, localStorage } = loadContext();
+  await startTwoSetWorkout(context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const inputKey = activeInputDraftStorageKey(context);
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(setId))}, activeField: "weight" },
+    value: "82.50"
+  })`, context), true);
+  const valid = JSON.parse(localStorage.getItem(inputKey));
+
+  const rejected = [
+    { ...valid, owner: "local:another-owner" },
+    { ...valid, workoutId: valid.workoutId + 1 },
+    { ...valid, entries: [{ setId: setId + 1000, weight: "999" }] },
+    { ...valid, entries: [{ setId, weight: "<script>" }] }
+  ];
+  for (const candidate of rejected) {
+    localStorage.setItem(inputKey, JSON.stringify(candidate));
+    vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
+    assert.equal(vm.runInContext("activeLiveDraftInputs.values.size", context), 0);
+    assert.equal(vm.runInContext(
+      `activeLiveDraftInputValue(activeWorkout.blocks[0].sets[0], "weight")`,
+      context
+    ), "80");
+  }
+
+  localStorage.setItem(inputKey, "x".repeat(32 * 1024 + 1));
+  vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
+  assert.equal(vm.runInContext("activeLiveDraftInputs.values.size", context), 0);
 });
 
 test("startup consumes only a same-account pre-start draft behind a valid active workout", async () => {
@@ -1605,7 +1939,14 @@ test("a browser without Web Locks fails closed without changing the draft", asyn
 test("finish commits only recorded sets and clears the local active draft without duplication", async () => {
   const { context, localStorage, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
-  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const [setId, unfinishedSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    context
+  ));
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(unfinishedSetId))}, activeField: "reps" },
+    value: "6"
+  })`, context), true);
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "85" });
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "5" });
   await vm.runInContext(`recordActiveSet(${setId})`, context);
@@ -1620,6 +1961,7 @@ test("finish commits only recorded sets and clears the local active draft withou
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(localStorage.getItem(activeStorageKey(context)), null);
   assert.equal(localStorage.getItem(activeUndoStorageKey(context)), null);
+  assert.equal(localStorage.getItem(activeInputDraftStorageKey(context)), null);
   assert.equal(localStorage.getItem(activeTimingStorageKey(context)), null);
   assert.equal(localStorage.getItem(vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context)), null);
 
@@ -1754,7 +2096,14 @@ test("discard requires confirmation and removes only the local active draft", as
   const { context, localStorage, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
   const key = activeStorageKey(context);
-  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const [setId, unfinishedSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    context
+  ));
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(unfinishedSetId))}, activeField: "weight" },
+    value: "82.5"
+  })`, context), true);
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "80" });
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "8" });
   assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, context), true);
@@ -1767,6 +2116,7 @@ test("discard requires confirmation and removes only the local active draft", as
   await vm.runInContext("confirmDiscardActiveWorkout()", context);
   assert.equal(localStorage.getItem(key), null);
   assert.equal(localStorage.getItem(activeUndoStorageKey(context)), null);
+  assert.equal(localStorage.getItem(activeInputDraftStorageKey(context)), null);
   assert.equal(localStorage.getItem(activeTimingStorageKey(context)), null);
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(vm.runInContext("state.sessions.length", context), 0);
@@ -1811,19 +2161,29 @@ test("account switching clears active memory without exposing or deleting the ow
   const { context, localStorage, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
   const key = activeStorageKey(context);
-  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const [setId, unfinishedSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    context
+  ));
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(unfinishedSetId))}, activeField: "reps" },
+    value: "06"
+  })`, context), true);
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "80" });
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "8" });
   assert.equal(await vm.runInContext(`recordActiveSet(${setId})`, context), true);
   const undoKey = activeUndoStorageKey(context);
+  const inputKey = activeInputDraftStorageKey(context);
   const raw = localStorage.getItem(key);
   const undoRaw = localStorage.getItem(undoKey);
+  const inputRaw = localStorage.getItem(inputKey);
 
   await vm.runInContext("logoutAccount()", context);
   assert.equal(vm.runInContext("activeAccount", context), null);
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(localStorage.getItem(key), raw, "ordinary account switching keeps the owner's recoverable draft");
   assert.equal(localStorage.getItem(undoKey), undoRaw, "ordinary account switching keeps its one-step Undo marker");
+  assert.equal(localStorage.getItem(inputKey), inputRaw, "ordinary account switching keeps exact unfinished input");
 
   vm.runInContext(`
     activeAccount = ${JSON.stringify(LOCAL_ACCOUNT)};
@@ -1833,6 +2193,10 @@ test("account switching clears active memory without exposing or deleting the ow
   `, context);
   assert.equal(vm.runInContext("activeWorkout.owner", context), `local:${LOCAL_ACCOUNT.id}`);
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), setId);
+  assert.equal(vm.runInContext(
+    `activeLiveDraftInputValue(activeWorkout.blocks[0].sets[1], "reps")`,
+    context
+  ), "06");
 });
 
 test("active mutation refuses a stale in-memory account after its auth marker changes", async () => {
@@ -1860,7 +2224,14 @@ test("account deletion serialized ahead of a record cannot leave an orphan draft
   const deleter = loadContext({ localStorage: sharedStorage, locks: sharedLocks });
   await startTwoSetWorkout(recorder.context);
   vm.runInContext("reloadActiveWorkoutContext()", deleter.context);
-  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", recorder.context);
+  const [setId, unfinishedSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    recorder.context
+  ));
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(unfinishedSetId))}, activeField: "reps" },
+    value: "11"
+  })`, recorder.context), true);
   recorder.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "100" });
   recorder.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "2" });
   deleter.context.window.confirm = () => true;
@@ -1875,6 +2246,7 @@ test("account deletion serialized ahead of a record cannot leave an orphan draft
   assert.equal(sharedStorage.getItem(descriptor.recoveryKey), null);
   assert.equal(sharedStorage.getItem(descriptor.commitKey), null);
   assert.equal(sharedStorage.getItem(descriptor.undoKey), null);
+  assert.equal(sharedStorage.getItem(descriptor.inputDraftKey), null);
   assert.equal(sharedStorage.getItem(descriptor.timingKey), null);
   assert.equal(sharedStorage.getItem(descriptor.restTransitionKey), null);
   assert.equal(sharedStorage.getItem(descriptor.bulkCleanupKey), null);
@@ -1995,6 +2367,7 @@ test("active parser rejects wrong owners, non-finite values, oversized rows, and
   const recoveryKey = vm.runInContext("activeWorkoutAccountDescriptor().recoveryKey", context);
   const commitKey = vm.runInContext("activeWorkoutAccountDescriptor().commitKey", context);
   const undoKey = activeUndoStorageKey(context);
+  const inputKey = activeInputDraftStorageKey(context);
   const timingKey = activeTimingStorageKey(context);
   const restTransitionKey = activeRestTransitionStorageKey(context);
   const bulkCleanupKey = activeBulkCleanupStorageKey(context);
@@ -2011,6 +2384,7 @@ test("active parser rejects wrong owners, non-finite values, oversized rows, and
     workoutRevision: candidate.revision,
     setId: null
   }));
+  localStorage.setItem(inputKey, "pending-account-bound-input");
   localStorage.setItem(restTransitionKey, "pending-account-bound-cleanup");
   localStorage.setItem(bulkCleanupKey, "pending-bulk-cleanup");
 
@@ -2021,6 +2395,7 @@ test("active parser rejects wrong owners, non-finite values, oversized rows, and
   assert.equal(localStorage.getItem(recoveryKey), null);
   assert.equal(localStorage.getItem(commitKey), null);
   assert.equal(localStorage.getItem(undoKey), null);
+  assert.equal(localStorage.getItem(inputKey), null);
   assert.equal(localStorage.getItem(timingKey), null);
   assert.equal(localStorage.getItem(restTransitionKey), null);
   assert.equal(localStorage.getItem(bulkCleanupKey), null);

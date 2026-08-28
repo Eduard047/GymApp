@@ -41,12 +41,16 @@ async function identityHash(
     false,
     ["sign"],
   );
-  const digest = new Uint8Array(await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${route}\n${verifiedIdentity.toLowerCase()}`),
-  ));
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const digest = new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(`${route}\n${verifiedIdentity.toLowerCase()}`),
+    ),
+  );
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 export async function debitVerifiedIdentityBudget(
