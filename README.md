@@ -81,7 +81,6 @@ Developer setup and operational details live outside the landing page:
 - [Deployment and release boundaries](docs/OPERATIONS.md)
 - [Garmin build guide](garmin/README.md)
 - [iOS build and App Store checklist](ios/GymApp-iOS/README.md)
-- [Security policy](.github/SECURITY.md)
 
 ## Quick start
 
