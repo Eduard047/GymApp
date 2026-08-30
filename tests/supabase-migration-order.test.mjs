@@ -6,8 +6,8 @@ const migrationsDirectory = "supabase/migrations";
 const migrationNamePattern = /^(\d{14})_([a-z0-9_]+)\.sql$/;
 
 const productionFirstRecordedVersion = "20260629115900";
-const productionLastRecordedVersion = "20260825105114";
-const productionMigrationCount = 58;
+const productionLastRecordedVersion = "20260830171312";
+const productionMigrationCount = 60;
 const reviewedForwardMigrations = [];
 
 function migrationVersion(fileName) {
