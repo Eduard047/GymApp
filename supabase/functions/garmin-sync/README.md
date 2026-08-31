@@ -1,5 +1,28 @@
 # Garmin capability rollout
 
+## Active deployment: v3 only
+
+Legacy capability support was retired on 2026-08-31 after usage review and
+release-owner approval. Keep `GARMIN_LEGACY_CAPABILITY_MODE=disabled` in the
+production Edge environment. Re-enabling it restores the unauthenticated
+token-hash lookup path and requires a new security and compatibility review.
+
+Retirement does not delete devices, pending plans, or workout history. An old
+64-character token receives `426`; its owner must use device recovery in a
+current client and transfer the replacement signed capability to a compatible
+Garmin app. Recovery retains the device UUID. Never copy another account's
+token or bypass the owner-authenticated recovery operation.
+
+Verify retirement with both paths: raw tokens and v2 create/rotate requests
+must return `426`, forged v3 signatures must fail before database access, and
+a dedicated test account must still complete v3 create, enqueue, fetch, ACK
+replay, rotation, and revocation. The executable handler regressions live in
+`tests/garmin-legacy-retirement.test.mjs`; server smoke tests remain necessary
+because unit tests cannot prove deployment configuration or database ACLs.
+
+The phases below document the historical rollout and the gates for any
+separately approved compatibility window.
+
 The gateway supports two explicit protocol versions during a bounded migration:
 
 - `v2`: the released Connect IQ binaries send the existing 64-character random
