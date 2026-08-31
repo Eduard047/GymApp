@@ -87,9 +87,17 @@
         "authoritativeRpcFailure",
         "declineOrCancelOrLeave",
         "expired",
-        "roomClosed"
+        "roomClosed",
+        "authoritativeSelfFinished"
       ],
       "unrelatedLocalActiveWorkout": "neverOverwrite"
+    },
+    "finishedParticipant": {
+      "activeRoomWithFinishedSelf": "readOnlyTwoNicknameTabs",
+      "reopenCreatesLocalDraft": false,
+      "refreshAndCancelOrLeave": "remainAvailableUntilRoomCloses",
+      "savedHistoryAndPendingReceipts": "preserve",
+      "authorization": "freshAccountBoundSnapshot"
     },
     "invitationAccept": {
       "visibleAction": {

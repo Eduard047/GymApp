@@ -4,6 +4,58 @@ import XCTest
 
 @MainActor
 final class LiveWorkoutContractTests: XCTestCase {
+    func testFinishedSelfCanRepeatedlyOpenAnActiveRoomWithoutCreatingDraftOrReservation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suiteName = "FinishedLiveTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        defer {
+            LiveGatewayURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let auth = AuthService(keychain: LiveWorkoutTestKeychain(), urlSession: urlSession, defaults: defaults)
+        try auth.installSessionForTesting(.cloud(CloudAccountSession(
+            userID: liveUserID, email: "finished@example.invalid", displayName: "Finished Tester",
+            accessToken: try liveSyntheticJWT(sessionID: liveSessionID),
+            refreshToken: "synthetic-refresh-token", expiresAt: Date().addingTimeInterval(3_600)
+        )))
+        let storageKey = try XCTUnwrap(auth.session?.storageKey)
+        let workoutStore = try WorkoutStore(accountStorageKey: storageKey, directoryURL: root)
+        let activeStore = ActiveWorkoutStore(accountStorageKey: storageKey, workoutStorageURL: workoutStore.storageURL)
+        var object = liveSnapshotObject()
+        var participants = try XCTUnwrap(object["participants"] as? [[String: Any]])
+        participants[0]["state"] = "finished"
+        participants[0]["finishedAt"] = liveFinishedAt
+        var progress = try XCTUnwrap(participants[0]["progress"] as? [String: Any])
+        progress["finishedAt"] = liveFinishedAt
+        progress["undoableSetId"] = NSNull()
+        participants[0]["progress"] = progress
+        object["participants"] = participants
+        let responseData = try liveJSONData(["version": 1, "result": object])
+        LiveGatewayURLProtocolStub.handler = { request in
+            XCTAssertEqual(try LiveGatewayURLProtocolStub.requestObject(request)["action"] as? String, "live_snapshot")
+            return try LiveGatewayURLProtocolStub.response(for: request, jsonData: responseData)
+        }
+        let coordinator = LiveWorkoutCoordinator(auth: auth, workoutStore: workoutStore, activeWorkoutStore: activeStore, urlSession: urlSession)
+        defer { coordinator.stopMonitoring() }
+        for _ in 0..<3 {
+            try await coordinator.openRoom(liveRoomID)
+            XCTAssertEqual(coordinator.snapshot?.room.status, .active)
+            XCTAssertEqual(coordinator.snapshot?.peerParticipant?.state, .joined)
+            XCTAssertEqual(coordinator.snapshot?.allowsFinishedViewing, true)
+            XCTAssertNil(coordinator.lastError)
+            XCTAssertNil(activeStore.draft)
+            XCTAssertNil(activeStore.liveSlotReservationStore.reservation)
+            XCTAssertNil(coordinator.sidecar.attachment)
+        }
+        XCTAssertFalse(try LiveWorkoutPayloadParser.snapshot(from: liveJSONData(liveSnapshotObject())).allowsFinishedViewing)
+    }
+
     func testCanonicalActiveSnapshotAndGatewayEnvelopeAreAccepted() throws {
         let rawSnapshot = liveSnapshotObject()
         let snapshot = try LiveWorkoutPayloadParser.snapshot(from: liveJSONData(rawSnapshot))

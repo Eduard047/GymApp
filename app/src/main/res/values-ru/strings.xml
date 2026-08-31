@@ -1212,6 +1212,8 @@
     <string name="live_workout_peer_progress">Прогресс друга: %1$d из %2$d подходов</string>
     <string name="live_workout_peer_finished">Друг уже завершил тренировку.</string>
     <string name="live_workout_peer_read_only">Прогресс live · только просмотр</string>
+    <string name="live_workout_member_finished">Завершено</string>
+    <string name="live_workout_set_not_recorded">Не записано</string>
     <string name="live_workout_peer_set_completed">%1$s кг × %2$d</string>
     <string name="live_workout_peer_set_pending">Не записан · план %1$s кг × %2$d</string>
     <string name="live_workout_two_lanes_title">ПОДХОД ЗА ПОДХОДОМ · ОБА ТЕЛЕФОНА</string>

@@ -556,6 +556,7 @@ final class LiveWorkoutCoordinator: ObservableObject {
     func openRoom(_ roomID: String) async throws {
         let context = try await gateway.currentContext(expectedUserID: expectedUserID)
         try await refreshSnapshot(roomID: roomID, context: context, materializeWhenActive: true)
+        lastError = nil
     }
 
     func cancelRoom() async throws {
@@ -1027,6 +1028,7 @@ final class LiveWorkoutCoordinator: ObservableObject {
             // A current authenticated inbox can recover a crash that happened after the
             // server mutation but before the local reservation was rebound to its room.
             guard openRooms.count == 1, let room = openRooms.first,
+                  room.memberState != .finished,
                   activeWorkoutStore.draft == nil else { return }
             let createdAt = try LiveWorkoutPayloadParser.validatedDate(from: room.createdAt)
             let expiresAt = try room.activeExpiresAt.map {
@@ -1235,6 +1237,19 @@ final class LiveWorkoutCoordinator: ObservableObject {
         for fresh: LiveWorkoutSnapshot,
         context: LiveWorkoutSessionContext
     ) throws {
+        // A finished member can still observe/close an active room while the
+        // other member trains. Viewing must never reserve or recreate a draft.
+        if fresh.allowsFinishedViewing {
+            if let current = try slotReservation.current(context: context),
+               current.roomID == fresh.room.roomID {
+                try slotReservation.clear(
+                    operationID: current.operationID,
+                    roomID: fresh.room.roomID,
+                    context: context
+                )
+            }
+            return
+        }
         guard fresh.room.status == .active,
               let participant = fresh.currentParticipant,
               participant.state == .joined,

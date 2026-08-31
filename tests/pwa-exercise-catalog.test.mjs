@@ -3515,6 +3515,82 @@ test("a precise live push opens only a server-visible room and fences a late acc
   assert.equal(vm.runInContext("modal", context), null);
 });
 
+test("finished self can refresh and reopen an active room without recreating a workout", async () => {
+  const context = loadPwaContext();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const roomId = `lr_${"c".repeat(32)}`;
+  const raw = activeLiveSnapshotFixture(roomId);
+  const self = raw.participants.find(row => row.isSelf);
+  self.state = "finished";
+  self.finishedAt = "2026-08-10T08:10:00Z";
+  self.progress.finishedAt = self.finishedAt;
+  self.progress.completedSets = [{setId: "s_01_01", weight: 82.5, reps: 7, completedAt: "2026-08-10T08:09:00Z"}];
+  const inbox = activeLiveInboxFixture(roomId);
+  inbox.rooms[0].memberState = "finished";
+  vm.runInContext(`
+    activeAccount = { id: "remote-${userId}", userId: "${userId}", remote: "supabase", name: "Owner" };
+    localStorage.setItem(AUTH_KEY, JSON.stringify(activeAccount));
+    saveRemoteSession({ access_token: ${JSON.stringify(testAccessToken(userId, sessionId))},
+      refresh_token: "refresh-test", user: { id: "${userId}" } });
+    state = defaultAppState();
+    activeWorkout = null;
+    activeWorkoutStorageRaw = null;
+    workoutDraft = null;
+    liveWorkoutBinding = null;
+    const finishedSnapshot = window.GymLiveWorkout.snapshot(${JSON.stringify(raw)});
+    let finishedInbox = window.GymLiveWorkout.inbox(${JSON.stringify(inbox)});
+    let finishedCalls = [];
+    liveGateway = async (action, payload) => {
+      finishedCalls.push(action);
+      if (action === "live_inbox") return finishedInbox;
+      if (action === "live_snapshot" && payload.roomId === "${roomId}") return finishedSnapshot;
+      if (action === "live_leave" && payload.roomId === "${roomId}") {
+        finishedInbox = {version: 1, rooms: [], invitations: []};
+        return {result: "left", roomId: "${roomId}", status: "cancelled"};
+      }
+      throw new Error("unexpected mutation");
+    };
+    withActiveWorkoutMutationLock = async (_descriptor, operation) => ({acquired: true, value: await operation()});
+    ensureLiveWorkoutRealtime = async () => false;
+    syncWebPushIfEnabled = () => {};
+    scheduleLiveWorkoutPoll = () => {};
+    drainLiveWorkoutOperations = async () => true;
+    render = () => {};
+    showToast = () => {};
+  `, context);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    assert.equal(await vm.runInContext("refreshLiveWorkoutData(true, null)", context), true);
+    assert.equal(await vm.runInContext(`openLiveWorkoutRoom("${roomId}")`, context), true);
+    assert.equal(vm.runInContext("activeWorkout", context), null);
+    assert.equal(vm.runInContext("liveWorkoutBinding", context), null);
+    assert.equal(vm.runInContext("readLiveWorkoutReservation(liveSessionIdentity()).status", context), "absent");
+    assert.equal(vm.runInContext("liveWorkoutState.error", context), "");
+  }
+  const markup = vm.runInContext("liveWorkoutRoomMarkup()", context);
+  const beforeRerender = vm.runInContext("finishedCalls.length", context);
+  assert.equal(await vm.runInContext("refreshLiveWorkoutData()", context), true);
+  assert.equal(vm.runInContext("finishedCalls.length", context), beforeRerender,
+    "a loaded-screen render must not recursively issue another request");
+  assert.equal((markup.match(/role="tab"/g) || []).length, 2);
+  assert.match(markup, /82\.5 kg × 7/);
+  assert.match(markup, /Read only/);
+  assert.doesNotMatch(markup, /data-action="(?:attach-live-room|finish-active-workout|complete-active-set)"/);
+  vm.runInContext('modal.participant = "peer"', context);
+  assert.match(vm.runInContext("liveWorkoutRoomMarkup()", context), /Not recorded/);
+
+  // An unrelated active workout is neither opened nor replaced by a finished room.
+  vm.runInContext('activeWorkout = {id: 987654, blocks: []}', context);
+  assert.equal(await vm.runInContext(`openLiveWorkoutRoom("${roomId}")`, context), true);
+  assert.equal(vm.runInContext("activeWorkout.id", context), 987654);
+  vm.runInContext("liveWorkoutState.inbox.rooms[0].membershipRevision = 1", context);
+  assert.equal(await vm.runInContext(`closeLiveWorkoutRoom({dataset: {
+    roomId: "${roomId}", membershipRevision: "2", roomRevision: "3"
+  }}, "leave")`, context), true);
+  assert.equal(vm.runInContext("activeWorkout.id", context), 987654);
+  assert.equal(vm.runInContext("liveWorkoutState.inbox.rooms.length", context), 0);
+});
+
 test("an accepted room discovered as active auto-attaches and opens its frozen workout", async () => {
   const context = loadPwaContext();
   const userId = "11111111-1111-4111-8111-111111111111";

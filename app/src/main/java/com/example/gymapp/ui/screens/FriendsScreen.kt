@@ -28,6 +28,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +60,7 @@ import com.example.gymapp.auth.SocialOutgoingWorkoutInvite
 import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.LiveInvitation
 import com.example.gymapp.auth.LiveInboxRoom
+import com.example.gymapp.auth.LiveWorkoutSnapshot
 import com.example.gymapp.auth.formatSocialFriendCode
 import com.example.gymapp.auth.hasAnotherBoundedPage
 import com.example.gymapp.auth.rankedSocialFriends
@@ -80,6 +83,55 @@ import com.example.gymapp.util.DateTimeUtils
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
+
+@Composable
+internal fun FinishedLiveWorkoutDialog(
+    snapshot: LiveWorkoutSnapshot,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var showsPeer by remember(snapshot.room.roomId) { mutableStateOf(false) }
+    val participant = if (showsPeer) snapshot.peer else snapshot.self
+    val completed = participant.progress?.completedSets.orEmpty().associateBy { it.setId }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.live_workout_peer_read_only)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TabRow(selectedTabIndex = if (showsPeer) 1 else 0) {
+                    Tab(selected = !showsPeer, onClick = { showsPeer = false },
+                        text = { Text(snapshot.self.profile.displayName) })
+                    Tab(selected = showsPeer, onClick = { showsPeer = true },
+                        text = { Text(snapshot.peer.profile.displayName) })
+                }
+                if (participant.state == "finished") {
+                    Text(stringResource(R.string.live_workout_member_finished))
+                }
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(snapshot.plan.exercises, key = { it.exerciseId }) { exercise ->
+                        AppPanel(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(localizedExerciseName(exercise.name), style = MaterialTheme.typography.titleSmall)
+                                exercise.sets.forEachIndexed { index, planned ->
+                                    val actual = completed[planned.setId]
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(stringResource(R.string.label_set, index + 1))
+                                        Text(if (actual != null) stringResource(
+                                            R.string.live_workout_peer_set_completed,
+                                            actual.weight.toString(), actual.reps
+                                        ) else stringResource(R.string.live_workout_set_not_recorded))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onRefresh) { Text(stringResource(R.string.action_refresh)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
+    )
+}
 
 @Composable
 internal fun FriendsScreen(

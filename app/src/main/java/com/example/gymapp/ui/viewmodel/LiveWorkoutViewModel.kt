@@ -81,6 +81,7 @@ internal data class LiveWorkoutUiState(
     val peerProgress: LivePeerProgressUiState? = null,
     val pendingOperationCount: Int = 0,
     val shouldOpenActiveWorkout: Boolean = false,
+    val readOnlyRoomId: String? = null,
     val confirmedRestoringRoomId: String? = null,
     val inboxRefreshGeneration: Long = 0L,
     val error: LocalizedText? = null,
@@ -88,6 +89,10 @@ internal data class LiveWorkoutUiState(
 )
 
 internal const val LIVE_WORKOUT_IDLE_REALTIME_CATCH_UP_CYCLES = 10
+
+internal fun finishedLiveWorkoutMayBeViewed(snapshot: LiveWorkoutSnapshot): Boolean =
+    snapshot.room.status in setOf("active", "completed") &&
+        snapshot.self.state == "finished" && snapshot.self.progress?.finishedAt != null
 
 internal fun shouldPollLiveWorkout(
     realtimeConnected: Boolean,
@@ -864,7 +869,7 @@ internal class LiveWorkoutViewModel(
         }
     }
 
-    fun refreshRoom(roomId: String) {
+    fun refreshRoom(roomId: String, openWorkout: Boolean = false) {
         val cloudSession = session ?: return
         viewModelScope.launch {
             refreshMutex.withLock {
@@ -874,6 +879,21 @@ internal class LiveWorkoutViewModel(
                 }
                 try {
                     refreshSnapshotLocked(roomId)
+                    val fresh = _uiState.value.snapshot?.takeIf { it.room.roomId == roomId }
+                    val canOpenDraft = fresh?.room?.status == "active" &&
+                        fresh.self.state == "joined" &&
+                        sidecarStore.load(cloudSession)?.roomId == roomId &&
+                        repository.getActiveWorkoutSnapshot() != null
+                    _uiState.update {
+                        it.copy(
+                            error = null,
+                            readOnlyRoomId = if (openWorkout && fresh != null && finishedLiveWorkoutMayBeViewed(fresh)) {
+                                roomId
+                            } else it.readOnlyRoomId,
+                            shouldOpenActiveWorkout = it.shouldOpenActiveWorkout ||
+                                (openWorkout && canOpenDraft)
+                        )
+                    }
                     if (!realtimeConnected) {
                         _uiState.update { it.copy(connectionMode = LiveConnectionMode.Polling) }
                     }
@@ -1173,19 +1193,23 @@ internal class LiveWorkoutViewModel(
 
     fun cancelOrLeaveRoom(room: LiveInboxRoom) {
         launchAction("close-${room.roomId}", R.string.live_workout_action_failed) { cloudSession ->
-            if (room.role == "owner") {
+            val fresh = authManager.loadLiveWorkoutSnapshot(cloudSession, room.roomId)
+            check(authManager.isLiveSessionActive(cloudSession)) { "Cloud session is no longer active." }
+            check(fresh.room.roomId == room.roomId && fresh.self.role == room.role &&
+                fresh.self.state in setOf("joined", "finished")) { "Live room is no longer available." }
+            if (fresh.self.role == "owner") {
                 authManager.cancelLiveWorkout(
                     cloudSession,
                     room.roomId,
                     UUID.randomUUID().toString(),
-                    room.roomRevision
+                    fresh.room.roomRevision
                 )
             } else {
                 authManager.leaveLiveWorkout(
                     cloudSession,
                     room.roomId,
                     UUID.randomUUID().toString(),
-                    room.membershipRevision
+                    fresh.self.membershipRevision
                 )
             }
             sidecarStore.reservation(cloudSession)?.takeIf { it.roomId == room.roomId }?.let {
@@ -1206,6 +1230,10 @@ internal class LiveWorkoutViewModel(
 
     fun consumeActiveWorkoutNavigation() {
         _uiState.update { it.copy(shouldOpenActiveWorkout = false) }
+    }
+
+    fun closeReadOnlyRoom() {
+        _uiState.update { it.copy(readOnlyRoomId = null) }
     }
 
     override suspend fun prepareLocalSetCompleted(
@@ -1978,6 +2006,7 @@ internal class LiveWorkoutViewModel(
         }
         if (current == null) {
             val room = openRooms.singleOrNull() ?: return blockedStaleRoomId
+            if (room.memberState == "finished") return blockedStaleRoomId
             val createdAt = liveTimestampMillis(room.createdAt)
             val expiresAt = room.activeExpiresAt?.let(::liveTimestampMillis)
                 ?: createdAt + LIVE_INVITATION_RESERVATION_MILLIS
@@ -2068,6 +2097,17 @@ internal class LiveWorkoutViewModel(
         cloudSession: AccountSession.Cloud,
         snapshot: LiveWorkoutSnapshot
     ) {
+        // Finished members retain room access, but no longer need a draft slot.
+        if (finishedLiveWorkoutMayBeViewed(snapshot)) {
+            sidecarStore.reservation(cloudSession)?.takeIf {
+                it.roomId == snapshot.room.roomId
+            }?.let {
+                check(sidecarStore.clearReservation(cloudSession, it.operationId, it.roomId)) {
+                    "Live workout reservation could not be released."
+                }
+            }
+            return
+        }
         check(snapshot.room.status == "active" && snapshot.self.state == "joined") {
             "Live workout cannot reserve an inactive room."
         }
@@ -2165,6 +2205,7 @@ internal class LiveWorkoutViewModel(
                 peerProgress = null,
                 pendingOperationCount = 0,
                 shouldOpenActiveWorkout = false,
+                readOnlyRoomId = it.readOnlyRoomId?.takeUnless { viewed -> viewed == roomId },
                 confirmedRestoringRoomId = it.confirmedRestoringRoomId
                     ?.takeUnless { restoringRoomId -> restoringRoomId == roomId }
             )

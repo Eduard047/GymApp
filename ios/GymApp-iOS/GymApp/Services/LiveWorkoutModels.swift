@@ -107,6 +107,11 @@ struct LiveWorkoutRoom: Equatable, Sendable {
 }
 
 struct LiveWorkoutSnapshot: Equatable, Sendable {
+    var allowsFinishedViewing: Bool {
+        (room.status == .active || room.status == .completed)
+            && currentParticipant?.state == .finished
+            && currentParticipant?.progress?.finishedAt != nil
+    }
     let room: LiveWorkoutRoom
     let plan: LiveWorkoutPlan
     let participants: [LiveWorkoutParticipant]

@@ -37,6 +37,18 @@ import org.junit.Test
 
 class LiveWorkoutQueueReconcileTest {
     @Test
+    fun `finished self in active room is read only while peer is joined`() {
+        val finished = snapshot(3, emptyList(), null, "finished", LATER)
+        assertTrue(finishedLiveWorkoutMayBeViewed(finished))
+        assertEquals("joined", finished.peer.state)
+        assertTrue(!finishedLiveWorkoutMayBeViewed(snapshot(1, emptyList(), null)))
+        assertTrue(!finishedLiveWorkoutMayBeViewed(finished.copy(
+            room = finished.room.copy(status = "cancelled")
+        )))
+        assertTrue(!finishedLiveWorkoutMayBeViewed(snapshot(3, emptyList(), null, "finished", null)))
+    }
+
+    @Test
     fun `restart receipt requires exact current friendship and sent draft binding`() {
         val receipt = draftSendReceipt()
         val session = AccountSession.Cloud(

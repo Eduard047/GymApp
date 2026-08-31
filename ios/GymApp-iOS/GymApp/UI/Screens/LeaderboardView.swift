@@ -1,6 +1,92 @@
 import SwiftUI
 import UIKit
 
+/// A finished lane is a projection of an authorized room, never a new draft.
+@MainActor
+private struct FinishedLiveWorkoutView: View {
+    @ObservedObject var coordinator: LiveWorkoutCoordinator
+    let roomID: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var showsPeer = false
+    @State private var refreshError: String?
+
+    var body: some View {
+        NavigationStack {
+            GymBackground {
+                ScrollView {
+                    VStack(spacing: GymTheme.contentSpacing) {
+                        if let error = refreshError ?? coordinator.lastError {
+                            GymStatusBanner(message: error, isError: true)
+                        } else if let snapshot = coordinator.snapshot,
+                                  snapshot.room.roomID == roomID,
+                                  snapshot.allowsFinishedViewing,
+                                  let current = snapshot.currentParticipant,
+                                  let peer = snapshot.peerParticipant {
+                            Picker(t("Live workout participants", "Учасники live-тренування", "Участники live-тренировки"), selection: $showsPeer) {
+                                Text(current.profile.displayName).tag(false)
+                                Text(peer.profile.displayName).tag(true)
+                            }
+                            .pickerStyle(.segmented)
+                            Text(t("Live progress · Read only", "Live-прогрес · Лише перегляд", "Live-прогресс · Только просмотр"))
+                                .font(.subheadline)
+                                .foregroundStyle(GymTheme.textSecondary)
+                            let participant = showsPeer ? peer : current
+                            if participant.state == .finished {
+                                Label(t("Finished", "Завершено", "Завершено"), systemImage: "checkmark.circle")
+                            }
+                            ForEach(snapshot.plan.exercises, id: \.exerciseID) { exercise in
+                                GymPanel {
+                                    VStack(alignment: .leading, spacing: GymTheme.Spacing.medium) {
+                                        Text(BuiltInExerciseCatalog.displayName(
+                                            catalogKey: exercise.catalogKey,
+                                            rawName: exercise.name,
+                                            languageCode: gymCurrentLanguageCode()
+                                        )).font(.headline)
+                                        ForEach(Array(exercise.sets.enumerated()), id: \.element.setID) { index, planned in
+                                            let actual = participant.progress?.completedSets.first { $0.setID == planned.setID }
+                                            HStack {
+                                                Text(t("Set", "Підхід", "Подход") + " \(index + 1)")
+                                                Spacer()
+                                                Text(actual.map {
+                                                    "\($0.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \($0.reps)"
+                                                } ?? t("Not recorded", "Не записано", "Не записано"))
+                                                .monospacedDigit()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(t("Room unavailable", "Кімната недоступна", "Комната недоступна"))
+                        }
+                        Button(t("Refresh", "Оновити", "Обновить")) {
+                            Task {
+                                do {
+                                    try await coordinator.openRoom(roomID)
+                                    refreshError = nil
+                                } catch { refreshError = gymSafeEnglishErrorMessage(error) }
+                            }
+                        }
+                        .buttonStyle(GymSecondaryButtonStyle())
+                    }
+                    .padding(GymTheme.screenHorizontalInset)
+                }
+            }
+            .navigationTitle("LIVE")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(t("Close", "Закрити", "Закрыть")) { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func t(_ en: String, _ uk: String, _ ru: String) -> String {
+        gymText(en, uk, ru, languageCode: gymCurrentLanguageCode())
+    }
+}
+
 enum SocialActivityPresentationState: Equatable {
     case privateData
     case temporarilyUnavailable
@@ -84,6 +170,7 @@ struct FriendsView: View {
     @State private var workoutDetailPrivacyDraft: Bool?
     @State private var workoutDetailPrivacyIsDirty = false
     @State private var confirmation: FriendsConfirmation?
+    @State private var readOnlyLiveRoomID: String?
 
     init(
         appState: AppState,
@@ -161,6 +248,14 @@ struct FriendsView: View {
             Task { await refreshAll(force: true) }
         }
         .alert(item: $confirmation, content: confirmationAlert)
+        .sheet(isPresented: Binding(
+            get: { readOnlyLiveRoomID != nil },
+            set: { if !$0 { readOnlyLiveRoomID = nil } }
+        )) {
+            if let roomID = readOnlyLiveRoomID {
+                FinishedLiveWorkoutView(coordinator: liveWorkoutCoordinator, roomID: roomID)
+            }
+        }
     }
 
     private var isCloudAccount: Bool {
@@ -1046,6 +1141,10 @@ struct FriendsView: View {
         defer { activeActionID = nil }
         do {
             try await liveWorkoutCoordinator.openRoom(room.roomID)
+            if liveWorkoutCoordinator.snapshot?.allowsFinishedViewing == true {
+                readOnlyLiveRoomID = room.roomID
+                return
+            }
             guard liveWorkoutCoordinator.isAttachedToCurrentDraft else {
                 throw LiveWorkoutSidecarError.invalidState
             }

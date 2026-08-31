@@ -125,6 +125,7 @@ import com.example.gymapp.ui.screens.ExerciseProgressScreen
 import com.example.gymapp.ui.screens.GymBackground
 import com.example.gymapp.ui.screens.MissionsScreen
 import com.example.gymapp.ui.screens.ProfileScreen
+import com.example.gymapp.ui.screens.FinishedLiveWorkoutDialog
 import com.example.gymapp.ui.screens.ProgressHubScreen
 import com.example.gymapp.ui.screens.RanksScreen
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
@@ -1292,6 +1293,18 @@ internal fun GymAppRoot(
             }
             liveWorkoutViewModel?.consumeActiveWorkoutNavigation()
         }
+    }
+
+    liveWorkoutState.snapshot?.takeIf {
+        it.room.roomId == liveWorkoutState.readOnlyRoomId &&
+            it.self.state == "finished" && liveWorkoutState.error == null &&
+            liveWorkoutState.isCloudAccount
+    }?.let { snapshot ->
+        FinishedLiveWorkoutDialog(
+            snapshot = snapshot,
+            onRefresh = { liveWorkoutViewModel?.refreshRoom(snapshot.room.roomId) },
+            onDismiss = { liveWorkoutViewModel?.closeReadOnlyRoom() }
+        )
     }
 
     fun updateCloudSyncPhase(session: AccountSession.Cloud, phase: CloudSyncPhase) {
@@ -3448,13 +3461,7 @@ internal fun GymAppRoot(
                                     liveWorkoutViewModel?.cancelOrLeaveRoom(room)
                                 },
                                 onOpenLiveRoom = { room ->
-                                    if (activeWorkout != null) {
-                                        navController.navigate(AppDestination.ActiveWorkout.route) {
-                                            launchSingleTop = true
-                                        }
-                                    } else {
-                                        liveWorkoutViewModel?.refreshRoom(room.roomId)
-                                    }
+                                    liveWorkoutViewModel?.refreshRoom(room.roomId, openWorkout = true)
                                 },
                                 onClearLiveMessages = {
                                     liveWorkoutViewModel?.clearMessages()

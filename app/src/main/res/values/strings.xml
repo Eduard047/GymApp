@@ -1206,6 +1206,8 @@
     <string name="live_workout_peer_progress">Friend progress: %1$d of %2$d sets</string>
     <string name="live_workout_peer_finished">Your friend has finished.</string>
     <string name="live_workout_peer_read_only">Live progress · read only</string>
+    <string name="live_workout_member_finished">Finished</string>
+    <string name="live_workout_set_not_recorded">Not recorded</string>
     <string name="live_workout_peer_set_completed">%1$s kg × %2$d</string>
     <string name="live_workout_peer_set_pending">Not logged · planned %1$s kg × %2$d</string>
     <string name="live_workout_two_lanes_title">SET-BY-SET · BOTH PHONES</string>
