@@ -171,6 +171,8 @@ struct FriendsView: View {
     @State private var workoutDetailPrivacyIsDirty = false
     @State private var confirmation: FriendsConfirmation?
     @State private var readOnlyLiveRoomID: String?
+    @State private var showsAddFriend = false
+    @State private var privacyExpanded = false
 
     init(
         appState: AppState,
@@ -197,22 +199,25 @@ struct FriendsView: View {
             if !isCloudAccount {
                 localAccountState
             } else {
-                hero
-
                 if let errorMessage {
-                    GymStatusBanner(message: errorMessage, isError: true)
+                    refreshErrorPanel(errorMessage)
                 }
                 if let statusMessage {
                     GymStatusBanner(message: statusMessage, isError: false)
                 }
 
                 if let dashboard = appState.socialDashboard {
-                    liveWorkoutCard
-                    workoutInvitesCard
-                    requestsCard(dashboard)
+                    if hasLiveActivity {
+                        liveWorkoutCard
+                    }
+                    if hasWorkoutInvites {
+                        workoutInvitesCard
+                    }
+                    if hasFriendRequests(dashboard) {
+                        requestsCard(dashboard)
+                    }
                     friendsRankingCard(dashboard)
-                    addFriendCard
-                    friendCodeCard(dashboard)
+                    connectionCard(dashboard)
                     privacyCard(dashboard)
                     blockedCard(dashboard)
                 } else if isLoading {
@@ -256,10 +261,105 @@ struct FriendsView: View {
                 FinishedLiveWorkoutView(coordinator: liveWorkoutCoordinator, roomID: roomID)
             }
         }
+        .sheet(isPresented: $showsAddFriend) {
+            addFriendSheet
+        }
     }
 
     private var isCloudAccount: Bool {
         auth.session?.cloud != nil
+    }
+
+    private var hasLiveActivity: Bool {
+        let invitations = liveWorkoutCoordinator.inbox?.invitations ?? []
+        let rooms = liveWorkoutCoordinator.inbox?.rooms ?? []
+        return !invitations.isEmpty || !rooms.isEmpty ||
+            liveWorkoutCoordinator.lastError != nil || liveWorkoutCoordinator.lastStatus != nil
+    }
+
+    private var hasWorkoutInvites: Bool {
+        guard let inbox = appState.socialWorkoutInbox else { return false }
+        return !inbox.incoming.isEmpty || !inbox.outgoing.isEmpty || inbox.nextCursor != nil
+    }
+
+    private func hasFriendRequests(_ dashboard: SocialDashboard) -> Bool {
+        !dashboard.incoming.isEmpty || !dashboard.outgoing.isEmpty
+    }
+
+    private func refreshErrorPanel(_ message: String) -> some View {
+        GymPanel {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                    .foregroundStyle(GymTheme.error)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(t("Friends were not refreshed", "Друзів не оновлено", "Друзья не обновлены"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(
+                        appState.socialDashboard == nil
+                            ? message
+                            : t(
+                                "Showing the last saved list. Try again when convenient.",
+                                "Показуємо останній збережений список. Спробуй ще раз, коли буде зручно.",
+                                "Показываем последний сохранённый список. Повтори, когда будет удобно."
+                            )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                Button(t("Retry", "Повторити", "Повторить")) {
+                    Task { await refreshAll(force: true) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isLoading)
+            }
+        }
+    }
+
+    private var addFriendSheet: some View {
+        NavigationStack {
+            GymBackground {
+                VStack(alignment: .leading, spacing: 16) {
+                    GymScreenHeader(
+                        eyebrow: t("Friends", "Друзі", "Друзья"),
+                        title: t("Add a friend", "Додати друга", "Добавить друга"),
+                        supporting: t(
+                            "Enter the private code shared with you.",
+                            "Введи приватний код, яким із тобою поділилися.",
+                            "Введи приватный код, которым с тобой поделились."
+                        )
+                    )
+                    TextField(t("Friend code", "Код друга", "Код друга"), text: $friendCode)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.body.monospaced())
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        Task {
+                            await sendFriendRequest()
+                            if errorMessage == nil { showsAddFriend = false }
+                        }
+                    } label: {
+                        Label(t("Send request", "Надіслати запит", "Отправить запрос"), systemImage: "person.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GymPrimaryButtonStyle())
+                    .disabled(activeActionID != nil || !validEnteredFriendCode)
+                    Spacer()
+                }
+                .padding(GymTheme.screenHorizontalInset)
+            }
+            .navigationTitle(t("Friend code", "Код друга", "Код друга"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(t("Close", "Закрити", "Закрыть")) { showsAddFriend = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     private var localAccountState: some View {
@@ -295,102 +395,53 @@ struct FriendsView: View {
         }
     }
 
-    private var hero: some View {
-        GymHeroPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    Label(t("Friends", "Друзі", "Друзья"), systemImage: "person.2.fill")
-                        .font(.title2.bold())
-                    Spacer(minLength: 8)
-                    if let dashboard = appState.socialDashboard,
-                       dashboard.currentUser.statsAvailable,
-                       let xp = dashboard.currentUser.xp,
-                       let level = dashboard.currentUser.level {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("\(xp) XP").font(.title3.bold().monospacedDigit())
-                            Text("\(t("Level", "Рівень", "Уровень")) \(level)")
-                                .font(.caption)
-                                .foregroundStyle(Color.white.opacity(0.76))
-                        }
-                    }
-                }
-                Button {
-                    Task { await refreshAll(force: true) }
-                } label: {
-                    Label(
-                        isLoading
-                            ? t("Refreshing…", "Оновлюємо…", "Обновляем…")
-                            : t("Refresh Friends", "Оновити друзів", "Обновить друзей"),
-                        systemImage: "arrow.clockwise"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .tint(.white)
-                .disabled(isLoading)
-            }
-        }
-    }
-
-    private func friendCodeCard(_ dashboard: SocialDashboard) -> some View {
+    private func connectionCard(_ dashboard: SocialDashboard) -> some View {
         let canonicalCode = appState.socialFriendCode ?? dashboard.currentUser.friendCode
         let displayCode = SocialFriendCode.display(canonicalCode)
         return GymPanel {
             VStack(alignment: .leading, spacing: 10) {
                 GymSectionTitle(
-                    title: t("Your friend code", "Твій код друга", "Твой код друга")
+                    eyebrow: t("Add friends", "Додати друзів", "Добавить друзей"),
+                    title: t("Connect by friend code", "З’єднатися за кодом друга", "Связаться по коду друга")
                 )
-                Text(displayCode)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Text(displayCode)
+                        .font(.caption.monospaced().weight(.semibold))
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
                     Button {
                         UIPasteboard.general.string = displayCode
                         statusMessage = t("Friend code copied.", "Код друга скопійовано.", "Код друга скопирован.")
                     } label: {
-                        Label(t("Copy", "Копіювати", "Копировать"), systemImage: "doc.on.doc")
+                        Image(systemName: "doc.on.doc")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel(t("Copy friend code", "Копіювати код друга", "Копировать код друга"))
                     ShareLink(
                         item: displayCode,
                         subject: Text(t("GymApp friend code", "Код друга GymApp", "Код друга GymApp")),
-                        message: Text(
-                            t(
-                                "Add me in GymApp with this friend code.",
-                                "Додай мене в GymApp за цим кодом друга.",
-                                "Добавь меня в GymApp по этому коду друга."
-                            )
-                        )
+                        message: Text(t(
+                            "Add me in GymApp with this friend code.",
+                            "Додай мене в GymApp за цим кодом друга.",
+                            "Добавь меня в GymApp по этому коду друга."
+                        ))
                     ) {
-                        Label(t("Share", "Поділитися", "Поделиться"), systemImage: "square.and.arrow.up")
+                        Image(systemName: "square.and.arrow.up")
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel(t("Share friend code", "Поділитися кодом друга", "Поделиться кодом друга"))
                 }
-            }
-        }
-    }
+                .padding(10)
+                .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
 
-    private var addFriendCard: some View {
-        GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                GymSectionTitle(
-                    title: t("Add a friend", "Додати друга", "Добавить друга")
-                )
-                TextField(t("Friend code", "Код друга", "Код друга"), text: $friendCode)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.body.monospaced())
-                    .textFieldStyle(.roundedBorder)
                 Button {
-                    Task { await sendFriendRequest() }
+                    showsAddFriend = true
                 } label: {
-                    Label(t("Send request", "Надіслати запит", "Отправить запрос"), systemImage: "person.badge.plus")
+                    Label(t("Add a friend", "Додати друга", "Добавить друга"), systemImage: "person.badge.plus")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(GymPrimaryButtonStyle())
-                .disabled(activeActionID != nil || !validEnteredFriendCode)
+                .buttonStyle(GymSecondaryButtonStyle())
             }
         }
     }
@@ -780,9 +831,55 @@ struct FriendsView: View {
         let unranked = dashboard.friends.filter { !$0.statsAvailable }
         return GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: t("Friends ranking", "Рейтинг друзів", "Рейтинг друзей")
-                )
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(t("Your training circle", "Твоє тренувальне коло", "Твой тренировочный круг"))
+                            .font(GymTheme.TypeScale.sectionTitle)
+                        Text(
+                            dashboard.friends.isEmpty
+                                ? t(
+                                    "Add your first confirmed friend.",
+                                    "Додай першого підтвердженого друга.",
+                                    "Добавь первого подтверждённого друга."
+                                )
+                                : t(
+                                    "\(dashboard.friends.count) confirmed friends",
+                                    "\(dashboard.friends.count) підтверджених друзів",
+                                    "\(dashboard.friends.count) подтверждённых друзей"
+                                )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                    }
+                    Spacer(minLength: 4)
+                    Button {
+                        Task { await refreshAll(force: true) }
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading)
+                    .accessibilityLabel(t("Refresh friends", "Оновити друзів", "Обновить друзей"))
+                }
+
+                if dashboard.currentUser.statsAvailable {
+                    HStack(spacing: 8) {
+                        compactSocialMetric("XP", dashboard.currentUser.xp.map { String($0) } ?? "—")
+                        compactSocialMetric(
+                            t("Level", "Рівень", "Уровень"),
+                            dashboard.currentUser.level.map { String($0) } ?? "—"
+                        )
+                        compactSocialMetric(
+                            t("Workouts", "Тренування", "Тренировки"),
+                            dashboard.currentUser.workouts.map { String($0) } ?? "—"
+                        )
+                    }
+                }
                 if dashboard.friends.isEmpty {
                     empty(t("Add a friend to start comparing progress.", "Додай друга, щоб порівнювати прогрес.", "Добавь друга, чтобы сравнивать прогресс."))
                 }
@@ -822,6 +919,23 @@ struct FriendsView: View {
                 }
             }
         }
+    }
+
+    private func compactSocialMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.subheadline.weight(.bold).monospacedDigit())
+                .foregroundStyle(GymTheme.textPrimary)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
     }
 
     private func rankedRow(_ item: RankedSocialProfile, place: Int) -> some View {
@@ -881,68 +995,75 @@ struct FriendsView: View {
     private func privacyCard(_ dashboard: SocialDashboard) -> some View {
         let draft = privacyDraft ?? dashboard.currentUser.privacy
         return GymPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                GymSectionTitle(
-                    title: t("What friends can see", "Що бачать друзі", "Что видят друзья"),
-                    supporting: t(
-                        "Changes apply server-side to every accepted friend.",
-                        "Зміни застосовуються на сервері для всіх прийнятих друзів.",
-                        "Изменения применяются на сервере для всех принятых друзей."
+            DisclosureGroup(isExpanded: $privacyExpanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    privacyToggle(
+                        t("Allow new friend requests", "Дозволити нові запити в друзі", "Разрешить новые запросы в друзья"),
+                        value: draft.allowRequests,
+                        keyPath: \.allowRequests
                     )
-                )
-                privacyToggle(
-                    t("Allow new friend requests", "Дозволити нові запити в друзі", "Разрешить новые запросы в друзья"),
-                    value: draft.allowRequests,
-                    keyPath: \.allowRequests
-                )
-                privacyToggle(
-                    t("Share XP, level and workout count", "Показувати XP, рівень і кількість тренувань", "Показывать XP, уровень и число тренировок"),
-                    value: draft.shareProgress,
-                    keyPath: \.shareProgress
-                )
-                privacyToggle(
-                    t("Share five recent workout summaries", "Показувати п’ять останніх тренувань", "Показывать пять последних тренировок"),
-                    value: draft.shareRecentWorkouts,
-                    keyPath: \.shareRecentWorkouts
-                )
-                privacyToggle(
-                    t("Share exercise records", "Показувати рекорди у вправах", "Показывать рекорды в упражнениях"),
-                    value: draft.shareRecords,
-                    keyPath: \.shareRecords
-                )
-                Toggle(
-                    t(
-                        "Share exercises, weights, and reps",
-                        "Показувати вправи, вагу й повтори",
-                        "Показывать упражнения, вес и повторения"
-                    ),
-                    isOn: Binding(
-                        get: {
-                            workoutDetailPrivacyDraft ??
-                                appState.socialWorkoutDetailPrivacy?.shareWorkoutDetails ?? false
-                        },
-                        set: { value in
-                            workoutDetailPrivacyDraft = value
-                            workoutDetailPrivacyIsDirty = true
-                        }
+                    privacyToggle(
+                        t("Share XP, level and workout count", "Показувати XP, рівень і кількість тренувань", "Показывать XP, уровень и число тренировок"),
+                        value: draft.shareProgress,
+                        keyPath: \.shareProgress
                     )
-                )
-                .disabled(appState.socialWorkoutDetailPrivacy == nil)
-                Text(t(
-                    "Off by default. Friends can open exact sets only when this is enabled.",
-                    "Вимкнено за замовчуванням. Друзі зможуть відкрити точні підходи лише після ввімкнення.",
-                    "По умолчанию выключено. Друзья смогут открыть точные подходы только после включения."
-                ))
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
-                Button {
-                    Task { await savePrivacy() }
-                } label: {
-                    Label(t("Save privacy", "Зберегти приватність", "Сохранить приватность"), systemImage: "lock.shield")
-                        .frame(maxWidth: .infinity)
+                    privacyToggle(
+                        t("Share five recent workout summaries", "Показувати п’ять останніх тренувань", "Показывать пять последних тренировок"),
+                        value: draft.shareRecentWorkouts,
+                        keyPath: \.shareRecentWorkouts
+                    )
+                    privacyToggle(
+                        t("Share exercise records", "Показувати рекорди у вправах", "Показывать рекорды в упражнениях"),
+                        value: draft.shareRecords,
+                        keyPath: \.shareRecords
+                    )
+                    Toggle(
+                        t(
+                            "Share exercises, weights, and reps",
+                            "Показувати вправи, вагу й повтори",
+                            "Показывать упражнения, вес и повторения"
+                        ),
+                        isOn: Binding(
+                            get: {
+                                workoutDetailPrivacyDraft ??
+                                    appState.socialWorkoutDetailPrivacy?.shareWorkoutDetails ?? false
+                            },
+                            set: { value in
+                                workoutDetailPrivacyDraft = value
+                                workoutDetailPrivacyIsDirty = true
+                            }
+                        )
+                    )
+                    .disabled(appState.socialWorkoutDetailPrivacy == nil)
+                    Text(t(
+                        "Off by default. Friends can open exact sets only when this is enabled.",
+                        "Вимкнено за замовчуванням. Друзі зможуть відкрити точні підходи лише після ввімкнення.",
+                        "По умолчанию выключено. Друзья смогут открыть точные подходы только после включения."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    Button {
+                        Task { await savePrivacy() }
+                    } label: {
+                        Label(t("Save privacy", "Зберегти приватність", "Сохранить приватность"), systemImage: "lock.shield")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .disabled((!privacyIsDirty && !workoutDetailPrivacyIsDirty) || activeActionID != nil)
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .disabled((!privacyIsDirty && !workoutDetailPrivacyIsDirty) || activeActionID != nil)
+                .padding(.top, 12)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(t("Privacy", "Приватність", "Конфиденциальность"))
+                        .font(.headline)
+                    Text(t(
+                        "Choose what confirmed friends can see.",
+                        "Обери, що бачать підтверджені друзі.",
+                        "Выбери, что видят подтверждённые друзья."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                }
             }
         }
     }

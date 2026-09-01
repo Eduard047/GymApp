@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
@@ -29,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -172,6 +174,17 @@ internal fun ProfileScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
+        val pendingAttentionCount = (friendsState.dashboard?.incoming?.size ?: 0) +
+            (friendsState.workoutInbox?.pendingIncomingCount ?: 0) +
+            (liveWorkoutState.inbox?.invitations?.size ?: 0)
+        ProfileIdentityHeader(
+            label = accountState.accountLabel.ifBlank {
+                stringResource(R.string.title_profile)
+            },
+            isCloudAccount = accountState.isCloudAccount,
+            friendCount = friendsState.dashboard?.friends?.size ?: 0,
+            pendingCount = pendingAttentionCount
+        )
         ProfileSectionSwitcher(
             selected = selectedSection,
             onSelected = { selectedSection = it }
@@ -347,6 +360,69 @@ internal fun ProfileScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ProfileIdentityHeader(
+    label: String,
+    isCloudAccount: Boolean,
+    friendCount: Int,
+    pendingCount: Int
+) {
+    val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
+    AppPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = screenHorizontalPadding,
+                top = GymSpacing.Small,
+                end = screenHorizontalPadding
+            ),
+        highlighted = true
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1
+                )
+                Text(
+                    text = if (isCloudAccount) {
+                        stringResource(R.string.profile_cloud_friend_count, friendCount)
+                    } else {
+                        stringResource(R.string.profile_local_storage_status)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Text(
+                text = if (pendingCount > 0) {
+                    stringResource(R.string.profile_attention_count, pendingCount)
+                } else {
+                    stringResource(R.string.profile_up_to_date)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = if (pendingCount > 0) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
+            )
+        }
     }
 }
 
@@ -562,25 +638,49 @@ private fun LocalProfileActionsCard(
     enabled: Boolean,
     onDeleteProfile: () -> Unit
 ) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = stringResource(R.string.local_profile_delete_title),
-                style = MaterialTheme.typography.titleLarge
-            )
-            Button(
-                onClick = onDeleteProfile,
-                enabled = enabled,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
-                )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(stringResource(R.string.local_profile_delete_action))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.account_management_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.profile_local_manage_supporting),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.action_hide_details
+                            else R.string.action_show_details
+                        )
+                    )
+                }
+            }
+            if (expanded) {
+                Button(
+                    onClick = onDeleteProfile,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text(stringResource(R.string.local_profile_delete_action))
+                }
             }
         }
     }
@@ -820,33 +920,56 @@ private fun CloudAccountActionsCard(
     onChangePassword: () -> Unit,
     onDeleteAccount: () -> Unit
 ) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.account_management_eyebrow),
-                title = stringResource(R.string.account_management_title),
-                supporting = stringResource(R.string.account_management_supporting)
-            )
-            OutlinedButton(
-                onClick = onChangePassword,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.account_change_password))
-            }
-            Button(
-                onClick = onDeleteAccount,
-                enabled = enabled,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
-                )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(stringResource(R.string.account_delete_action))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.account_management_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.profile_account_manage_supporting),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.action_hide_details
+                            else R.string.action_show_details
+                        )
+                    )
+                }
+            }
+            if (expanded) {
+                OutlinedButton(
+                    onClick = onChangePassword,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.account_change_password))
+                }
+                Button(
+                    onClick = onDeleteAccount,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text(stringResource(R.string.account_delete_action))
+                }
             }
         }
     }

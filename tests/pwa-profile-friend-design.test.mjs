@@ -141,6 +141,33 @@ test("urgent live, workout, and friend requests render before the friend list an
   assert.ok(urgentStart < circleStart && circleStart < listStart && listStart < codeStart && codeStart < privacyStart);
 });
 
+test("profile keeps routine and dangerous controls behind compact disclosures", () => {
+  const account = sourceBetween("function accountPanel()", "function cloudSyncStatusSnapshot");
+  const data = sourceBetween("function profileDataPanel()", "function garminProfilePanel");
+  const friends = sourceBetween("function friendsPanel()", "function friendsProfileScreen()");
+
+  assert.match(account, /<details class="account-management-details">/);
+  assert.match(account, /<summary>[\s\S]*Manage account/);
+  assert.match(data, /<details class="profile-data-details">/);
+  assert.match(friends, /<details class="friend-connect-details">/);
+  assert.match(friends, /friends-circle-card[\s\S]*friend-circle-list[\s\S]*<\/section>/);
+  assert.match(stylesSource, /\.account-management-details > summary/);
+  assert.match(stylesSource, /\.friend-connect-details > summary/);
+  assert.match(stylesSource, /\.profile-data-details > summary/);
+});
+
+test("Friends refresh stays independent from workout-state synchronization", () => {
+  const refresh = sourceBetween("async function refreshSocialData", "function currentLiveRoomId");
+
+  assert.doesNotMatch(refresh, /flushPendingRemoteSave/);
+  assert.doesNotMatch(refresh, /setCloudSyncUi/);
+  assert.doesNotMatch(refresh, /workoutSyncError/);
+  assert.match(refresh, /workoutDetailPrivacySupported: workoutDetailPrivacy !== null,\s+error: ""/);
+  assert.match(refresh, /const cachedDashboard = socialState\.source === source \? socialState\.dashboard : null/);
+  assert.match(refresh, /status: cachedDashboard \? "loaded" : "error"/);
+  assert.match(refresh, /Showing the last saved friend list/);
+});
+
 test("friend workout preference is explicit, account-fenced, escaped, and cleared with its modal", () => {
   const intent = sourceBetween("function preferredFriendShareIntent", "function openFriendWorkoutPicker");
   const picker = sourceBetween("function openFriendWorkoutPicker", "function socialWorkoutInviteBanner");

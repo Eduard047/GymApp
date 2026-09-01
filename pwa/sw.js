@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v148";
-// v148 unifies Today week/month history and restores confirmed saved-plan cancellation.
+const CACHE_VERSION = "v149";
+// v149 compacts Profile and keeps Friends reads independent from workout-state synchronization.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -45,7 +45,7 @@ const SHELL_ASSETS = [
   "./confirmed.v57.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v82.css",
+  "./styles.v83.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v72.js",
@@ -56,9 +56,9 @@ const SHELL_ASSETS = [
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v86.js",
+  "./russian-text.v87.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v106.js",
+  "./app.v107.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",

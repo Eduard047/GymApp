@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.auth.SocialBlockedProfile
+import com.example.gymapp.auth.SocialDashboard
 import com.example.gymapp.auth.SocialFriend
 import com.example.gymapp.auth.SocialFriendRequest
 import com.example.gymapp.auth.SocialIncomingWorkoutInvite
@@ -69,7 +71,6 @@ import com.example.gymapp.push.SocialPushType
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.LoadingStatePanel
-import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
@@ -168,6 +169,7 @@ internal fun FriendsScreen(
     val locale = remember(languageTag) { Locale.forLanguageTag(languageTag) }
     var friendCode by rememberSaveable { mutableStateOf("") }
     var copiedCode by rememberSaveable { mutableStateOf(false) }
+    var showAddFriendDialog by rememberSaveable { mutableStateOf(false) }
     var inviteToAccept by remember { mutableStateOf<SocialIncomingWorkoutInvite?>(null) }
     var requestToBlock by remember { mutableStateOf<SocialFriendRequest?>(null) }
     val listState = rememberLazyListState()
@@ -214,16 +216,14 @@ internal fun FriendsScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
-        item {
-            ScreenHeader(title = stringResource(R.string.friends_hero_title))
-        }
-
         uiState.error?.let { error ->
             item {
                 MessagePanel(
                     message = error.asString(),
                     isError = true,
-                    onDismiss = onClearMessages
+                    onDismiss = onClearMessages,
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = onRefresh
                 )
             }
         }
@@ -334,71 +334,40 @@ internal fun FriendsScreen(
             }
         }
 
-        item {
-            RefreshSocialCard(
-                isLoading = uiState.isDashboardLoading || uiState.isInboxLoading,
-                pendingInvites = dashboard?.pendingWorkoutInviteCount ?: 0,
-                onRefresh = onRefresh
-            )
-        }
-
         if (dashboard == null) {
+            item {
+                RefreshSocialCard(
+                    isLoading = uiState.isDashboardLoading || uiState.isInboxLoading,
+                    pendingInvites = 0,
+                    onRefresh = onRefresh
+                )
+            }
             if (uiState.isDashboardLoading) {
                 item { LoadingStatePanel() }
             }
             return@LazyColumn
         }
 
-        item {
-            SectionTitle(
-                eyebrow = stringResource(R.string.friends_ranking_eyebrow),
-                title = stringResource(R.string.friends_ranking_title)
-            )
-        }
         val rankedFriends = rankedSocialFriends(dashboard.friends)
-        if (rankedFriends.isEmpty()) {
-            item {
-                EmptyStatePanel(
-                    title = stringResource(R.string.friends_empty_title),
-                    supporting = stringResource(R.string.friends_empty_supporting),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        } else {
-            items(rankedFriends, key = { it.friendshipId }) { friend ->
-                FriendRankingCard(
-                    place = rankedFriends.indexOf(friend) + 1,
-                    friend = friend,
-                    onOpen = { onOpenFriend(friend) }
-                )
-            }
-        }
-
         item {
-            AddFriendCard(
-                friendCode = friendCode,
-                onFriendCodeChange = {
-                    friendCode = it.take(64)
-                    copiedCode = false
-                },
-                isLoading = "send-friend" in uiState.actionsInFlight,
-                onSend = { onSendFriendRequest(friendCode) }
+            TrainingCircleCard(
+                dashboard = dashboard,
+                rankedFriends = rankedFriends,
+                isLoading = uiState.isDashboardLoading || uiState.isInboxLoading,
+                onRefresh = onRefresh,
+                onOpenFriend = onOpenFriend
             )
         }
 
         item {
-            FriendCodeCard(
-                displayName = dashboard.self.displayName,
+            FriendConnectionCard(
                 friendCode = displayedFriendCode,
-                xp = dashboard.self.xp,
-                level = dashboard.self.level,
-                workouts = dashboard.self.workouts,
-                statsAvailable = dashboard.self.statsAvailable,
                 copied = copiedCode,
                 onCopy = {
                     copiedCode = copyFriendCode(context, displayedFriendCode)
                 },
-                onShare = { shareFriendCode(context, displayedFriendCode) }
+                onShare = { shareFriendCode(context, displayedFriendCode) },
+                onAddFriend = { showAddFriendDialog = true }
             )
         }
 
@@ -539,6 +508,22 @@ internal fun FriendsScreen(
             }
         )
     }
+
+    if (showAddFriendDialog) {
+        AddFriendDialog(
+            friendCode = friendCode,
+            onFriendCodeChange = {
+                friendCode = it.take(64)
+                copiedCode = false
+            },
+            isLoading = "send-friend" in uiState.actionsInFlight,
+            onDismiss = { showAddFriendDialog = false },
+            onSend = {
+                onSendFriendRequest(friendCode)
+                showAddFriendDialog = false
+            }
+        )
+    }
 }
 
 internal fun socialPushTargetsFriendRequest(
@@ -565,7 +550,7 @@ internal fun friendsFocusedObjectIndex(
     if (!uiState.isCloudAccount ||
         focusedSocialPush == null && focusedLiveRoomId == null
     ) return null
-    var index = 1 + listOf(
+    var index = listOf(
         uiState.error,
         uiState.notice,
         liveUiState.error,
@@ -605,11 +590,8 @@ internal fun friendsFocusedObjectIndex(
         index += incomingFriendRequests.size
     }
 
-    index += 1 // Refresh card; the Friends header is always the first slot.
     val dashboard = uiState.dashboard ?: return null
-    index += 1 // Ranking heading.
-    index += rankedSocialFriends(dashboard.friends).size.coerceAtLeast(1)
-    index += 3 // Add friend, own code, and privacy.
+    index += 3 // Training circle, friend connection, and privacy.
 
     if (dashboard.outgoing.isNotEmpty()) {
         index += 1 // Outgoing friend heading.
@@ -812,41 +794,139 @@ private fun RefreshSocialCard(isLoading: Boolean, pendingInvites: Int, onRefresh
 }
 
 @Composable
-private fun FriendCodeCard(
-    displayName: String,
-    friendCode: String,
-    xp: Int?,
-    level: Int?,
-    workouts: Int?,
-    statsAvailable: Boolean,
-    copied: Boolean,
-    onCopy: () -> Unit,
-    onShare: () -> Unit
+private fun TrainingCircleCard(
+    dashboard: SocialDashboard,
+    rankedFriends: List<SocialFriend>,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    onOpenFriend: (SocialFriend) -> Unit
 ) {
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
+    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(displayName, style = MaterialTheme.typography.titleLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.friends_hero_title),
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Text(
+                        text = stringResource(R.string.friends_confirmed_count, dashboard.friends.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                OutlinedButton(onClick = onRefresh, enabled = !isLoading) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(stringResource(R.string.action_refresh))
+                    }
+                }
+            }
+
+            Text(dashboard.self.displayName, style = MaterialTheme.typography.titleMedium)
             Text(
-                text = if (statsAvailable) {
+                text = if (dashboard.self.statsAvailable) {
                     stringResource(
                         R.string.friend_stats_summary,
-                        xp ?: 0,
-                        level ?: 1,
-                        workouts ?: 0
+                        dashboard.self.xp ?: 0,
+                        dashboard.self.level ?: 1,
+                        dashboard.self.workouts ?: 0
                     )
                 } else {
                     stringResource(R.string.friend_stats_private)
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                text = stringResource(R.string.friend_code_label),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (rankedFriends.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.friends_empty_supporting),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                rankedFriends.forEachIndexed { index, friend ->
+                    if (index > 0) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                    TextButton(
+                        onClick = { onOpenFriend(friend) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "#${index + 1}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = friend.displayName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = if (friend.statsAvailable) {
+                                        stringResource(
+                                            R.string.friend_stats_summary,
+                                            friend.xp ?: 0,
+                                            friend.level ?: 1,
+                                            friend.workouts ?: 0
+                                        )
+                                    } else {
+                                        stringResource(R.string.friend_stats_private)
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = stringResource(R.string.friend_open_short),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FriendConnectionCard(
+    friendCode: String,
+    copied: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onAddFriend: () -> Unit
+) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SectionTitle(
+                eyebrow = stringResource(R.string.friends_add_eyebrow),
+                title = stringResource(R.string.friends_connect_title),
+                supporting = stringResource(R.string.friends_connect_supporting)
             )
             Text(
                 text = friendCode,
@@ -860,50 +940,61 @@ private fun FriendCodeCard(
                         else stringResource(R.string.friend_code_copy)
                     )
                 }
-                Button(onClick = onShare, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onShare, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.friend_code_share))
                 }
+            }
+            Button(onClick = onAddFriend, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.friends_add_action))
             }
         }
     }
 }
 
 @Composable
-private fun AddFriendCard(
+private fun AddFriendDialog(
     friendCode: String,
     onFriendCodeChange: (String) -> Unit,
     isLoading: Boolean,
+    onDismiss: () -> Unit,
     onSend: () -> Unit
 ) {
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.friends_add_eyebrow),
-                title = stringResource(R.string.friends_add_title),
-                supporting = stringResource(R.string.friends_add_supporting)
-            )
-            OutlinedTextField(
-                value = friendCode,
-                onValueChange = onFriendCodeChange,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text(stringResource(R.string.friend_code_label)) }
-            )
-            Button(
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.friends_add_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(R.string.friends_add_supporting),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = friendCode,
+                    onValueChange = onFriendCodeChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.friend_code_label)) }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
                 onClick = onSend,
-                enabled = friendCode.isNotBlank() && !isLoading,
-                modifier = Modifier.fillMaxWidth()
+                enabled = friendCode.isNotBlank() && !isLoading
             ) {
                 Text(
                     if (isLoading) stringResource(R.string.friend_request_sending)
                     else stringResource(R.string.friend_request_send)
                 )
             }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isLoading) {
+                Text(stringResource(R.string.action_cancel))
+            }
         }
-    }
+    )
 }
 
 @Composable
@@ -1040,61 +1131,84 @@ private fun PrivacyCard(
     var workoutDetailsDraft by remember(shareWorkoutDetails) {
         mutableStateOf(shareWorkoutDetails ?: false)
     }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.friends_privacy_eyebrow),
-                title = stringResource(R.string.friends_privacy_title),
-                supporting = stringResource(R.string.friends_privacy_supporting)
-            )
-            PrivacySwitchRow(
-                label = stringResource(R.string.friends_privacy_allow_requests),
-                checked = draft.allowRequests,
-                onCheckedChange = { draft = draft.copy(allowRequests = it) }
-            )
-            PrivacySwitchRow(
-                label = stringResource(R.string.friends_privacy_share_progress),
-                checked = draft.shareProgress,
-                onCheckedChange = { draft = draft.copy(shareProgress = it) }
-            )
-            PrivacySwitchRow(
-                label = stringResource(R.string.friends_privacy_share_workouts),
-                checked = draft.shareRecentWorkouts,
-                onCheckedChange = { draft = draft.copy(shareRecentWorkouts = it) }
-            )
-            PrivacySwitchRow(
-                label = stringResource(R.string.friends_privacy_share_records),
-                checked = draft.shareRecords,
-                onCheckedChange = { draft = draft.copy(shareRecords = it) }
-            )
-            PrivacySwitchRow(
-                label = stringResource(R.string.friends_privacy_share_workout_details),
-                checked = workoutDetailsDraft,
-                onCheckedChange = { workoutDetailsDraft = it },
-                enabled = isWorkoutDetailPrivacyToggleEnabled(
-                    savedValue = shareWorkoutDetails,
-                    isLoading = isWorkoutDetailsLoading,
-                    isSaving = isLoading
-                )
-            )
-            Text(
-                stringResource(R.string.friends_privacy_share_workout_details_supporting),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Button(
-                onClick = {
-                    onSave(draft, shareWorkoutDetails?.let { workoutDetailsDraft })
-                },
-                enabled = (draft != saved ||
-                    shareWorkoutDetails != null && workoutDetailsDraft != shareWorkoutDetails) &&
-                    !isLoading && !isWorkoutDetailsLoading,
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(stringResource(R.string.action_save))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.friends_privacy_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.friends_privacy_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.action_hide_details
+                            else R.string.action_show_details
+                        )
+                    )
+                }
+            }
+            if (expanded) {
+                PrivacySwitchRow(
+                    label = stringResource(R.string.friends_privacy_allow_requests),
+                    checked = draft.allowRequests,
+                    onCheckedChange = { draft = draft.copy(allowRequests = it) }
+                )
+                PrivacySwitchRow(
+                    label = stringResource(R.string.friends_privacy_share_progress),
+                    checked = draft.shareProgress,
+                    onCheckedChange = { draft = draft.copy(shareProgress = it) }
+                )
+                PrivacySwitchRow(
+                    label = stringResource(R.string.friends_privacy_share_workouts),
+                    checked = draft.shareRecentWorkouts,
+                    onCheckedChange = { draft = draft.copy(shareRecentWorkouts = it) }
+                )
+                PrivacySwitchRow(
+                    label = stringResource(R.string.friends_privacy_share_records),
+                    checked = draft.shareRecords,
+                    onCheckedChange = { draft = draft.copy(shareRecords = it) }
+                )
+                PrivacySwitchRow(
+                    label = stringResource(R.string.friends_privacy_share_workout_details),
+                    checked = workoutDetailsDraft,
+                    onCheckedChange = { workoutDetailsDraft = it },
+                    enabled = isWorkoutDetailPrivacyToggleEnabled(
+                        savedValue = shareWorkoutDetails,
+                        isLoading = isWorkoutDetailsLoading,
+                        isSaving = isLoading
+                    )
+                )
+                Text(
+                    stringResource(R.string.friends_privacy_share_workout_details_supporting),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    onClick = {
+                        onSave(draft, shareWorkoutDetails?.let { workoutDetailsDraft })
+                    },
+                    enabled = (draft != saved ||
+                        shareWorkoutDetails != null && workoutDetailsDraft != shareWorkoutDetails) &&
+                        !isLoading && !isWorkoutDetailsLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.action_save))
+                }
             }
         }
     }
@@ -1244,7 +1358,13 @@ private fun BlockedProfileCard(
 }
 
 @Composable
-private fun MessagePanel(message: String, isError: Boolean, onDismiss: () -> Unit) {
+private fun MessagePanel(
+    message: String,
+    isError: Boolean,
+    onDismiss: () -> Unit,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
     AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = !isError) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1256,8 +1376,15 @@ private fun MessagePanel(message: String, isError: Boolean, onDismiss: () -> Uni
                 color = if (isError) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onSurface
             )
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_dismiss))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (actionLabel != null && onAction != null) {
+                    Button(onClick = onAction) {
+                        Text(actionLabel)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.action_dismiss))
+                }
             }
         }
     }

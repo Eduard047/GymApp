@@ -1384,6 +1384,56 @@ final class SocialContractTests: XCTestCase {
         }
     }
 
+    func testDashboardRefreshDoesNotWriteWorkoutStateBeforeReadingFriends() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GymAppFriendReadOnlyRefresh", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = SocialRequestRecorder()
+        let (auth, urlSession, defaults, suiteName) = try authenticatedServiceDependencies()
+        let dashboardData = try jsonData(dashboardObject())
+        defer {
+            SocialURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        SocialURLProtocolStub.handler = { request in
+            recorder.append(request)
+            if let response = try self.baseCloudStateResponse(for: request) { return response }
+            if request.url?.path == "/rest/v1/rpc/social_dashboard" {
+                return try SocialURLProtocolStub.response(for: request, jsonData: dashboardData)
+            }
+            return try SocialURLProtocolStub.response(
+                for: request,
+                statusCode: 404,
+                json: "{}"
+            )
+        }
+        let appState = try AppState(
+            auth: auth,
+            defaults: defaults,
+            workoutDirectoryURL: directory,
+            cloudURLSession: urlSession,
+            garminBindingStore: GarminDeviceBindingStore(keychain: SocialTestKeychain())
+        )
+        let accountBecameReady = await waitUntil { appState.isAccountReady }
+        XCTAssertTrue(accountBecameReady)
+        let initialRequestsSettled = await waitUntilRequestCountSettles(recorder)
+        XCTAssertTrue(initialRequestsSettled)
+        let requestCountBeforeRefresh = recorder.requests.count
+
+        let dashboard = try await appState.refreshSocialDashboard()
+
+        XCTAssertEqual(dashboard.currentUser.profileID, profileID(1))
+        let refreshRequests = Array(recorder.requests.dropFirst(requestCountBeforeRefresh))
+        XCTAssertTrue(refreshRequests.contains { $0.url?.path == "/rest/v1/rpc/social_dashboard" })
+        XCTAssertFalse(refreshRequests.contains {
+            $0.url?.path == "/rest/v1/user_states" &&
+                ["POST", "PATCH"].contains($0.httpMethod ?? "")
+        })
+    }
+
     func testShortCode503AndMalformedResponsesDoNotPublishDashboardOrFallback() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("GymAppFriendCodeFailure", isDirectory: true)
@@ -3218,6 +3268,27 @@ final class SocialContractTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(20))
         }
         return condition()
+    }
+
+    private func waitUntilRequestCountSettles(
+        _ recorder: SocialRequestRecorder,
+        timeout: TimeInterval = 3,
+        stableFor: TimeInterval = 0.2
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        var stableSince = Date()
+        var previousCount = recorder.requests.count
+        while Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+            let currentCount = recorder.requests.count
+            if currentCount != previousCount {
+                previousCount = currentCount
+                stableSince = Date()
+            } else if Date().timeIntervalSince(stableSince) >= stableFor {
+                return true
+            }
+        }
+        return false
     }
 }
 

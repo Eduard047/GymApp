@@ -1427,8 +1427,6 @@ final class AppState: ObservableObject {
         }
         let generation = accountActivationGeneration
         let cacheGeneration = socialCacheGeneration
-        let store = workoutStore
-        let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
         defer {
             // Every completed refresh attempt invalidates an open detail, including a
             // failed foreground refresh. The detail surface then refetches or clears.
@@ -1440,16 +1438,9 @@ final class AppState: ObservableObject {
             }
         }
         return try await cloudSync.withSyncIndicator {
-            // An unsupported future row is intentionally read-only: fetching standings
-            // must never become an alternate path that overwrites its unknown core fields.
-            if cloudWritableAccountStorageKey == session.storageKey {
-                try await self.uploadCurrentState(
-                    from: store,
-                    owner: owner,
-                    expectedStorageKey: session.storageKey,
-                    expectedUserID: cloud.userID
-                )
-            }
+            // Friends is a read-only surface. Workout-state uploads have their own
+            // account-bound sync lifecycle and must not block this refresh when a
+            // second client has already advanced the cloud CAS revision.
             guard self.socialCacheGeneration == cacheGeneration else {
                 throw AuthServiceError.sessionChanged
             }
@@ -1470,7 +1461,6 @@ final class AppState: ObservableObject {
             try Task.checkCancellation()
             guard self.isAccountReady,
                   self.accountActivationGeneration == generation,
-                  self.workoutStore === store,
                   self.auth.session?.storageKey == session.storageKey,
                   self.auth.session?.cloud?.userID == cloud.userID,
                   self.socialCacheGeneration == cacheGeneration else {

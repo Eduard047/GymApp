@@ -24,6 +24,13 @@
     <string name="profile_section_training">Друзья и live</string>
     <string name="profile_section_settings">Аккаунт и устройства</string>
     <string name="profile_pending_training_count">Ожидает: %1$d</string>
+    <string name="profile_cloud_friend_count">Защищено облаком · Друзья: %1$d</string>
+    <string name="profile_local_storage_status">Хранится на этом устройстве</string>
+    <string name="profile_attention_count">Требуют внимания: %1$d</string>
+    <string name="profile_up_to_date">Всё актуально</string>
+    <string name="profile_account_manage_supporting">Пароль и удаление скрыты, пока они не понадобятся.</string>
+    <string name="profile_local_manage_supporting">Удаление локального профиля скрыто, пока оно не понадобится.</string>
+    <string name="profile_backup_compact_supporting">Экспорт, импорт или приватный отчёт для поддержки.</string>
     <string name="leaderboard_hero_title">Рейтинг пока недоступен</string>
     <string name="leaderboard_hero_supporting">Сейчас тренировки оцениваются на устройстве, поэтому публичный рейтинг отключён, а не поставлен в очередь на проверку. Он появится только после будущего обновления приложения и сервера с проверяемым подсчётом; даты выпуска пока нет. Твой приватный прогресс остаётся доступным.</string>
     <string name="leaderboard_your_xp">Твои XP</string>
@@ -67,6 +74,11 @@
     <string name="friends_ranking_eyebrow">ДРУЗЬЯ</string>
     <string name="friends_ranking_title">Прогресс среди друзей</string>
     <string name="friends_ranking_supporting">Сначала показаны друзья с открытым синхронизированным XP. Это не проверенный общий рейтинг.</string>
+    <string name="friends_confirmed_count">Подтверждённых друзей: %1$d</string>
+    <string name="friend_open_short">Открыть</string>
+    <string name="friends_connect_title">Твой код друга</string>
+    <string name="friends_connect_supporting">Скопируй или отправь его либо добавь друга по его приватному коду.</string>
+    <string name="friends_add_action">Добавить друга</string>
     <string name="friends_empty_title">Друзей пока нет</string>
     <string name="friends_empty_supporting">Поделись своим кодом или отправь заявку по коду друга.</string>
     <string name="friend_stats_summary">%1$d XP · уровень %2$d · %3$d тренировок</string>
@@ -91,6 +103,7 @@
     <string name="friends_privacy_eyebrow">ПРИВАТНОСТЬ</string>
     <string name="friends_privacy_title">Что видят друзья</string>
     <string name="friends_privacy_supporting">Эти настройки применяет сервер. Удаление или блокировка друга отзывает доступ.</string>
+    <string name="friends_privacy_summary">Выбери, что видят подтверждённые друзья.</string>
     <string name="friends_privacy_allow_requests">Разрешить новые заявки в друзья</string>
     <string name="friends_privacy_share_progress">Показывать XP, уровень и число тренировок</string>
     <string name="friends_privacy_share_workouts">Показывать пять последних тренировок</string>
@@ -1292,6 +1305,8 @@
     <string name="profile_settings_data">Данные</string>
     <string name="profile_settings_help_support">Помощь и поддержка</string>
     <string name="profile_support_action">Поддержка</string>
+    <string name="action_show_details">Показать</string>
+    <string name="action_hide_details">Скрыть</string>
     <string name="post_workout_metric_duration">Время</string>
     <string name="duration_minutes_compact">%1$d мин</string>
     <string name="duration_hours_compact">%1$d ч</string>

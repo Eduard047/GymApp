@@ -31,7 +31,7 @@ class FriendsPushViewportTest {
     }
 
     @Test
-    fun exactOutgoingWorkoutTargetResolvesToItsLowerLazyListSlot() {
+    fun exactOutgoingWorkoutTargetResolvesAfterTheCompactFriendsOverview() {
         val outgoing = (1..3).map(::outgoingInvite)
         val state = FriendsUiState(
             isCloudAccount = true,
@@ -49,7 +49,7 @@ class FriendsPushViewportTest {
         )
 
         assertEquals(
-            21,
+            6,
             friendsFocusedObjectIndex(state, LiveWorkoutUiState(), target, null)
         )
         assertNull(

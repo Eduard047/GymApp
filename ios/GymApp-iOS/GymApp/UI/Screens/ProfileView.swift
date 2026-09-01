@@ -54,6 +54,7 @@ struct ProfileView: View {
     @State private var fulfilledNativePushRequestID: UUID?
     @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
     @State private var selectedSection: ProfileSection = .friends
+    @State private var backupExpanded = false
     private let canAcceptWorkoutInvites: Bool
     private let nativePushRequest: NativePushProfileRequest?
     private let onShowTutorial: () -> Void
@@ -268,9 +269,78 @@ struct ProfileView: View {
     }
 
     private var header: some View {
-        GymScreenHeader(
-            title: auth.session?.displayName ?? "GymApp athlete"
-        )
+        let friendCount = appState.socialDashboard?.friends.count ?? 0
+        let pendingCount = (appState.socialDashboard?.incoming.count ?? 0)
+            + (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0)
+            + liveWorkoutCoordinator.pendingInvitationCount
+        return GymPanel(highlighted: true) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: 48, height: 48)
+                    .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 16))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(gymText("Profile", "Профіль", "Профиль", languageCode: languageCode))
+                        .font(GymTheme.TypeScale.utility)
+                        .foregroundStyle(GymTheme.primary)
+                        .textCase(.uppercase)
+                    Text(auth.session?.displayName ?? gymText(
+                        "GymApp athlete",
+                        "Атлет GymApp",
+                        "Атлет GymApp",
+                        languageCode: languageCode
+                    ))
+                        .font(GymTheme.TypeScale.heroTitle)
+                        .lineLimit(1)
+                    Text(
+                        isCloudAccount
+                            ? gymText(
+                                "Cloud protected · Friends: \(friendCount)",
+                                "Захищено хмарою · Друзі: \(friendCount)",
+                                "Защищено облаком · Друзья: \(friendCount)",
+                                languageCode: languageCode
+                            )
+                            : gymText(
+                                "Stored on this iPhone",
+                                "Збережено на цьому iPhone",
+                                "Сохранено на этом iPhone",
+                                languageCode: languageCode
+                            )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+                if pendingCount > 0 {
+                    GymInfoPill(
+                        "\(min(pendingCount, 99))",
+                        systemImage: "bell.fill",
+                        accent: GymTheme.error
+                    )
+                    .accessibilityLabel(gymText(
+                        "Needs attention: \(pendingCount)",
+                        "Потребують уваги: \(pendingCount)",
+                        "Требуют внимания: \(pendingCount)",
+                        languageCode: languageCode
+                    ))
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(GymTheme.secondary)
+                        .accessibilityLabel(gymText(
+                            "Profile is up to date",
+                            "Профіль оновлено",
+                            "Профиль обновлён",
+                            languageCode: languageCode
+                        ))
+                }
+            }
+        }
     }
 
     private var sectionPicker: some View {
@@ -365,34 +435,52 @@ struct ProfileView: View {
                 Button {
                     showsAccountSettings = true
                 } label: {
-                    Label("Account, privacy & deletion", systemImage: "gearshape")
+                    Label(
+                        gymText(
+                            "Manage account",
+                            "Керувати акаунтом",
+                            "Управлять аккаунтом",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "gearshape"
+                    )
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Opens account settings, Garmin, support, sign out, and account deletion")
+                .accessibilityHint(gymText(
+                    "Opens identity, privacy, support, sign out, and account deletion.",
+                    "Відкриває профіль, приватність, підтримку, вихід і видалення акаунта.",
+                    "Открывает профиль, конфиденциальность, поддержку, выход и удаление аккаунта.",
+                    languageCode: languageCode
+                ))
             }
         }
     }
 
     private var helpCard: some View {
         GymPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText("Help", "Допомога", "Помощь", languageCode: languageCode)
-                )
-                Button(action: onShowTutorial) {
-                    Label(
-                        gymText(
-                            "Show tutorial",
-                            "Показати навчання",
-                            "Показать обучение",
-                            languageCode: languageCode
-                        ),
-                        systemImage: "questionmark.circle"
-                    )
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 12) {
+                Image(systemName: "questionmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gymText("Help", "Допомога", "Помощь", languageCode: languageCode))
+                        .font(.headline)
+                    Text(gymText(
+                        "Replay the quick GymApp tour.",
+                        "Повтори короткий огляд GymApp.",
+                        "Повтори короткий обзор GymApp.",
+                        languageCode: languageCode
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
+                Spacer(minLength: 6)
+                Button(action: onShowTutorial) {
+                    Text(gymText("Show", "Показати", "Показать", languageCode: languageCode))
+                }
+                .buttonStyle(.bordered)
             }
         }
     }
@@ -489,67 +577,102 @@ struct ProfileView: View {
     private var accountSubtitle: String {
         if auth.session?.cloud != nil {
             return gymText(
-                "Protected workout synchronization is active. Open settings to manage identity and privacy.",
-                "Захищена синхронізація тренувань активна. Відкрий налаштування, щоб керувати профілем і приватністю.",
-                "Защищённая синхронизация тренировок активна. Открой настройки, чтобы управлять профилем и конфиденциальностью.",
+                "Workout sync is active.",
+                "Синхронізація тренувань активна.",
+                "Синхронизация тренировок активна.",
                 languageCode: languageCode
             )
         }
         return gymText(
-            "Workout data is stored on this device. Export a backup before changing devices.",
-            "Дані тренувань зберігаються на цьому пристрої. Експортуй резервну копію перед зміною пристрою.",
-            "Данные тренировок хранятся на этом устройстве. Экспортируй резервную копию перед сменой устройства.",
+            "Workout data stays on this device.",
+            "Дані тренувань залишаються на цьому пристрої.",
+            "Данные тренировок остаются на этом устройстве.",
             languageCode: languageCode
         )
     }
 
     private var backupCard: some View {
         GymPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                GymSectionTitle(
-                    title: "Backup & diagnostics",
-                    supporting: "Backups merge into the current profile and skip duplicate sessions."
-                )
-
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        exportBackupButton
-                        importBackupButton
+            DisclosureGroup(isExpanded: $backupExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 10) {
+                            exportBackupButton
+                            importBackupButton
+                        }
+                        VStack(spacing: 10) {
+                            exportBackupButton
+                            importBackupButton
+                        }
                     }
-                    VStack(spacing: 10) {
-                        exportBackupButton
-                        importBackupButton
-                    }
-                }
 
-                Menu {
-                    Button {
-                        prepareDiagnosticsJSON()
+                    Menu {
+                        Button {
+                            prepareDiagnosticsJSON()
+                        } label: {
+                            Label(
+                                gymText("Diagnostics JSON", "Діагностика JSON", "Диагностика JSON", languageCode: languageCode),
+                                systemImage: "curlybraces"
+                            )
+                        }
+
+                        Button {
+                            prepareDiagnosticsPDF()
+                        } label: {
+                            Label(
+                                gymText("Diagnostics PDF", "Діагностика PDF", "Диагностика PDF", languageCode: languageCode),
+                                systemImage: "doc.richtext"
+                            )
+                        }
                     } label: {
-                        Label("Diagnostics JSON", systemImage: "curlybraces")
+                        Label(
+                            gymText(
+                                "Export diagnostics",
+                                "Експортувати діагностику",
+                                "Экспортировать диагностику",
+                                languageCode: languageCode
+                            ),
+                            systemImage: "stethoscope"
+                        )
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(GymSecondaryButtonStyle())
+                    .accessibilityHint(gymText(
+                        "Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens and workout details.",
+                        "Діагностика містить лише метадані застосунку та загальні підсумки, без токенів і деталей тренувань.",
+                        "Диагностика содержит только метаданные приложения и общие итоги, без токенов и деталей тренировок.",
+                        languageCode: languageCode
+                    ))
 
-                    Button {
-                        prepareDiagnosticsPDF()
-                    } label: {
-                        Label("Diagnostics PDF", systemImage: "doc.richtext")
-                    }
-                } label: {
-                    Label("Export diagnostics", systemImage: "stethoscope")
-                        .frame(maxWidth: .infinity)
+                    Text(gymText(
+                        "Backups contain private workout details. Diagnostics contain only app metadata and aggregate counts.",
+                        "Резервні копії містять приватні деталі тренувань. Діагностика — лише метадані та загальні підсумки.",
+                        "Резервные копии содержат личные детали тренировок. Диагностика — только метаданные и общие итоги.",
+                        languageCode: languageCode
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens, account identifiers, exercise names, workout dates, notes, and set values.")
-
-                Text("A JSON backup contains your exercise names, workout dates, sets, notes, and account ownership metadata. Share it only with people you trust.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text("Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens, account identifiers, exercise names, workout dates, notes, and set values.")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 12)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(gymText(
+                        "Backup & diagnostics",
+                        "Резервна копія та діагностика",
+                        "Резервная копия и диагностика",
+                        languageCode: languageCode
+                    ))
+                        .font(.headline)
+                    Text(gymText(
+                        "Export, import, or prepare a private support report.",
+                        "Експорт, імпорт або приватний звіт для підтримки.",
+                        "Экспорт, импорт или приватный отчёт для поддержки.",
+                        languageCode: languageCode
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
             }
         }
     }
@@ -558,22 +681,38 @@ struct ProfileView: View {
         Button {
             prepareBackupJSON()
         } label: {
-            Label("Export backup", systemImage: "square.and.arrow.up")
+            Label(
+                gymText("Export backup", "Експортувати копію", "Экспортировать копию", languageCode: languageCode),
+                systemImage: "square.and.arrow.up"
+            )
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(GymSecondaryButtonStyle())
-        .accessibilityHint("Saves a GymApp JSON backup using the Files picker")
+        .accessibilityHint(gymText(
+            "Saves a GymApp JSON backup using the Files picker.",
+            "Зберігає резервну копію GymApp JSON через вибір файлу.",
+            "Сохраняет резервную копию GymApp JSON через выбор файла.",
+            languageCode: languageCode
+        ))
     }
 
     private var importBackupButton: some View {
         Button {
             showsImporter = true
         } label: {
-            Label("Import backup", systemImage: "square.and.arrow.down")
+            Label(
+                gymText("Import backup", "Імпортувати копію", "Импортировать копию", languageCode: languageCode),
+                systemImage: "square.and.arrow.down"
+            )
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(GymSecondaryButtonStyle())
-        .accessibilityHint("Selects a GymApp JSON backup to merge into this profile")
+        .accessibilityHint(gymText(
+            "Selects a GymApp JSON backup to merge into this profile.",
+            "Вибирає резервну копію GymApp JSON для об'єднання з цим профілем.",
+            "Выбирает резервную копию GymApp JSON для объединения с этим профилем.",
+            languageCode: languageCode
+        ))
     }
 
     private func makeAlert(_ alert: ActiveAlert) -> Alert {

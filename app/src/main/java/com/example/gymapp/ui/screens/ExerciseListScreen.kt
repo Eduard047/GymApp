@@ -51,6 +51,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1916,46 +1917,36 @@ internal fun BackupToolsCard(
     onExportDiagnostics: () -> Unit,
     onOpenImport: () -> Unit
 ) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.backup_tools_eyebrow),
-                title = stringResource(R.string.backup_tools_title),
-                supporting = stringResource(R.string.backup_tools_supporting)
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(
-                    onClick = onExportBackup,
-                    modifier = Modifier.weight(1f)
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.backup_export_json),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = stringResource(R.string.backup_tools_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.profile_backup_compact_supporting),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                OutlinedButton(
-                    onClick = onOpenImport,
-                    modifier = Modifier.weight(1f)
-                ) {
+                TextButton(onClick = { expanded = !expanded }) {
                     Text(
-                        text = stringResource(R.string.backup_import_json),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        stringResource(
+                            if (expanded) R.string.action_hide_details
+                            else R.string.action_show_details
+                        )
                     )
                 }
-            }
-            OutlinedButton(
-                onClick = onExportDiagnostics,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.backup_export_diagnostics))
             }
             if (message != null) {
                 Text(
@@ -1963,6 +1954,39 @@ internal fun BackupToolsCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            if (expanded) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onExportBackup,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.backup_export_json),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onOpenImport,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.backup_import_json),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = onExportDiagnostics,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.backup_export_diagnostics))
+                }
             }
         }
     }

@@ -248,12 +248,12 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
-  assert.match(indexSource, /russian-text\.v86\.js/);
+  assert.match(indexSource, /russian-text\.v87\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v106\.js/);
-  assert.match(workerSource, /russian-text\.v86\.js/);
+  assert.match(indexSource, /app\.v107\.js/);
+  assert.match(workerSource, /russian-text\.v87\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v106\.js/);
+  assert.match(workerSource, /app\.v107\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });
@@ -289,7 +289,7 @@ test("runtime language switches invalidate cached labels on every client", async
   assert.match(iosWorkouts, /"Редактировать план"/);
   assert.doesNotMatch(iosWorkouts, /"Начать рекомендованное"/);
   assert.match(iosWorkouts, /"Сегодня отдых"/);
-  assert.match(iosProfile, /"Защищённая синхронизация тренировок активна\./);
+  assert.match(iosProfile, /"Синхронизация тренировок активна\./);
   assert.match(iosProgress, /"Журнал тренировок"/);
   assert.doesNotMatch(iosProgress, /Compare strength, volume, and consistency for each exercise\./);
   assert.doesNotMatch(iosProgress, /Порівнюй силу, обсяг і регулярність окремо для кожної вправи\./);

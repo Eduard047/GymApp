@@ -1870,6 +1870,74 @@ test("dashboard refresh invalidates and refetches an open friend detail after pr
   assert.doesNotMatch(JSON.stringify(value), /stale private row/);
 });
 
+test("friends refresh does not dispatch a pending workout save and retains a cached dashboard on read failure", async () => {
+  const dashboard = socialDashboardFixture();
+  dashboard.pendingWorkoutInviteCount = 0;
+  const expectedUserId = "11111111-1111-4111-8111-111111111111";
+  const successfulContext = loadPwaContext();
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${expectedUserId}",
+      userId: "${expectedUserId}",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 31;
+    remoteAuthEnabled = () => true;
+    loadRemoteSession = () => ({ user: { id: "${expectedUserId}" } });
+    remoteStateSync.userId = "${expectedUserId}";
+    globalThis.friendRefreshWorkoutFlushCount = 0;
+    flushPendingRemoteSave = async () => {
+      friendRefreshWorkoutFlushCount += 1;
+      throw new Error("stale workout revision");
+    };
+    socialRpc = async name => {
+      if (name === "social_dashboard") return ${JSON.stringify(dashboard)};
+      if (name === "social_my_friend_code") return { version: 1, friendCode: "g_a1b2c3d4e5f6" };
+      if (name === "social_workout_detail_privacy") return {
+        version: 1, shareWorkoutDetails: false, settingsRevision: 1
+      };
+      if (name === "social_workout_inbox_page") return ${JSON.stringify(emptySocialWorkoutInboxPage())};
+      throw new Error("unexpected RPC");
+    };
+    render = () => {};
+  `, successfulContext);
+  await vm.runInContext("refreshSocialData(true)", successfulContext);
+  assert.equal(vm.runInContext("socialState.status", successfulContext), "loaded");
+  assert.equal(vm.runInContext("socialState.error", successfulContext), "");
+  assert.equal(vm.runInContext("socialState.dashboard.self.displayName", successfulContext), dashboard.self.displayName);
+  assert.equal(vm.runInContext("friendRefreshWorkoutFlushCount", successfulContext), 0);
+
+  const cachedContext = loadPwaContext();
+  vm.runInContext(`
+    activeAccount = {
+      id: "remote-${expectedUserId}",
+      userId: "${expectedUserId}",
+      remote: "supabase",
+      name: "Owner"
+    };
+    accountEpoch = 32;
+    remoteAuthEnabled = () => true;
+    loadRemoteSession = () => ({ user: { id: "${expectedUserId}" } });
+    socialState = {
+      ...socialState,
+      status: "loaded",
+      source: socialSourceKey(),
+      dashboard: parseSocialDashboard(${JSON.stringify(dashboard)}),
+      inbox: ${JSON.stringify(emptySocialWorkoutInboxPage())},
+      friendCode: "g_a1b2c3d4e5f6",
+      error: ""
+    };
+    flushPendingRemoteSave = async () => {};
+    socialRpc = async () => { throw new Error("temporary network failure"); };
+    render = () => {};
+  `, cachedContext);
+  await vm.runInContext("refreshSocialData(true)", cachedContext);
+  assert.equal(vm.runInContext("socialState.status", cachedContext), "loaded");
+  assert.equal(vm.runInContext("socialState.dashboard.self.displayName", cachedContext), dashboard.self.displayName);
+  assert.match(vm.runInContext("socialState.error", cachedContext), /last saved friend list/);
+});
+
 test("friend-code refresh falls back only for validated missing-function errors and drops late account results", async () => {
   const dashboard = socialDashboardFixture();
   dashboard.pendingWorkoutInviteCount = 0;

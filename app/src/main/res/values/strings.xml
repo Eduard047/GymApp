@@ -24,6 +24,13 @@
     <string name="profile_section_training">Friends &amp; live</string>
     <string name="profile_section_settings">Account &amp; devices</string>
     <string name="profile_pending_training_count">%1$d waiting</string>
+    <string name="profile_cloud_friend_count">Cloud protected · Friends: %1$d</string>
+    <string name="profile_local_storage_status">Stored on this device</string>
+    <string name="profile_attention_count">Needs attention: %1$d</string>
+    <string name="profile_up_to_date">Up to date</string>
+    <string name="profile_account_manage_supporting">Password and deletion stay tucked away until needed.</string>
+    <string name="profile_local_manage_supporting">Local profile deletion stays tucked away until needed.</string>
+    <string name="profile_backup_compact_supporting">Export, import, or prepare a private support report.</string>
     <string name="leaderboard_hero_title">Rating not available yet</string>
     <string name="leaderboard_hero_supporting">Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.</string>
     <string name="leaderboard_your_xp">Your XP</string>
@@ -67,6 +74,11 @@
     <string name="friends_ranking_eyebrow">FRIENDS</string>
     <string name="friends_ranking_title">Progress among friends</string>
     <string name="friends_ranking_supporting">Friends with shared synced XP appear first. This is not a verified global rating.</string>
+    <string name="friends_confirmed_count">%1$d confirmed friends</string>
+    <string name="friend_open_short">Open</string>
+    <string name="friends_connect_title">Your friend code</string>
+    <string name="friends_connect_supporting">Copy or share it, or add someone with their private code.</string>
+    <string name="friends_add_action">Add a friend</string>
     <string name="friends_empty_title">No friends yet</string>
     <string name="friends_empty_supporting">Share your code or send a request with a friend code.</string>
     <string name="friend_stats_summary">%1$d XP · level %2$d · %3$d workouts</string>
@@ -91,6 +103,7 @@
     <string name="friends_privacy_eyebrow">PRIVACY</string>
     <string name="friends_privacy_title">What friends can see</string>
     <string name="friends_privacy_supporting">These choices are enforced by the server. Removing or blocking a friend revokes access.</string>
+    <string name="friends_privacy_summary">Choose what confirmed friends can see.</string>
     <string name="friends_privacy_allow_requests">Allow new friend requests</string>
     <string name="friends_privacy_share_progress">Share XP, level, and workout count</string>
     <string name="friends_privacy_share_workouts">Share five recent workout summaries</string>
@@ -1284,6 +1297,8 @@
     <string name="profile_settings_data">Data</string>
     <string name="profile_settings_help_support">Help &amp; support</string>
     <string name="profile_support_action">Support</string>
+    <string name="action_show_details">Show</string>
+    <string name="action_hide_details">Hide</string>
     <string name="post_workout_metric_duration">Duration</string>
     <string name="duration_minutes_compact">%1$d min</string>
     <string name="duration_hours_compact">%1$dh</string>
