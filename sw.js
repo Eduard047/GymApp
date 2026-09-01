@@ -1,9 +1,9 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v144";
-// v144 separates stable media from the immutable application shell and loads
-// the optimized v103 application bundle.
+const CACHE_VERSION = "v147";
+// v147 adds cross-client Today week history and compact navigation polish.
+// Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
 // Exercise demonstrations and install icons are content-versioned separately
@@ -45,7 +45,7 @@ const SHELL_ASSETS = [
   "./confirmed.v57.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v79.css",
+  "./styles.v81.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v72.js",
@@ -58,7 +58,7 @@ const SHELL_ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v86.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v103.js",
+  "./app.v105.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
