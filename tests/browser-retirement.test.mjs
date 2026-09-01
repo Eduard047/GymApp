@@ -95,13 +95,13 @@ function legacyFixture() {
 test("root restores the installable first-party workout application", () => {
   const scripts = [...rootHtml.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]);
   assert.equal(scripts[0], "./frame-guard.v56.js");
-  assert.ok(scripts.includes("./app.v104.js"));
+  assert.ok(scripts.includes("./app.v105.js"));
   assert.ok(scripts.includes("./garmin-cloud-sync.v57.js"));
   assert.ok(scripts.includes("./supabase-realtime.v1.js"));
   assert.ok(scripts.includes("./live-workout.v3.js"));
   assert.match(rootHtml, /rel="manifest" href="\.\/manifest\.webmanifest"/);
   assert.match(rootHtml, /apple-mobile-web-app-capable/);
-  assert.match(rootHtml, /styles\.v79\.css/);
+  assert.match(rootHtml, /styles\.v81\.css/);
   assert.match(rootHtml, /connect-src 'self' https:\/\/owrcbsrectdgaotndtxy\.supabase\.co/);
   assert.doesNotMatch(rootHtml, /retirement\.v1\.(?:js|css)/);
 });
@@ -334,8 +334,8 @@ test("push unsubscribe failure cannot preserve the exact retired worker or touch
 test("active worker replaces the retirement worker without touching workout storage", () => {
   assert.match(workerSource, /self\.skipWaiting\(\)/);
   assert.match(workerSource, /caches\.open\(CACHE_NAME\)/);
-  assert.match(workerSource, /CACHE_VERSION = "v145"/);
-  assert.match(workerSource, /\.\/app\.v104\.js/);
+  assert.match(workerSource, /CACHE_VERSION = "v147"/);
+  assert.match(workerSource, /\.\/app\.v105\.js/);
   assert.match(workerSource, /\.\/manifest\.webmanifest/);
   assert.match(workerSource, /\.\/confirmed\.html/);
   assert.match(workerSource, /\.\/workout\//);

@@ -82,6 +82,40 @@ class TodayHeroMetricsTest {
     }
 
     @Test
+    fun weeklySummarySelectsHistoricalWeekAndClampsFutureOffsetsToCurrentWeek() {
+        val zoneId = ZoneId.of("UTC")
+        val now = LocalDate.of(2026, 8, 15).atTime(12, 0).atZone(zoneId).toInstant().toEpochMilli()
+        val sessions = listOf(
+            summary(1, 100.0, LocalDate.of(2026, 8, 5), zoneId),
+            summary(2, 200.0, LocalDate.of(2026, 8, 12), zoneId),
+            summary(3, 300.0, LocalDate.of(2026, 8, 15), zoneId, hour = 18)
+        )
+
+        val previousWeek = buildWeeklyTrainingSummary(
+            sessions = sessions,
+            targetTrainingDays = 4,
+            nowMillis = now,
+            zoneId = zoneId,
+            weekOffset = -1
+        )
+        val futureRequest = buildWeeklyTrainingSummary(
+            sessions = sessions,
+            targetTrainingDays = 4,
+            nowMillis = now,
+            zoneId = zoneId,
+            weekOffset = 1
+        )
+
+        assertEquals(LocalDate.of(2026, 8, 3), previousWeek.days.first().date)
+        assertEquals(LocalDate.of(2026, 8, 9), previousWeek.days.last().date)
+        assertEquals(listOf(1L), previousWeek.workouts.map { it.session.id })
+        assertEquals(1, previousWeek.completedTrainingDays)
+        assertFalse(previousWeek.days.any { it.isToday })
+        assertEquals(LocalDate.of(2026, 8, 10), futureRequest.days.first().date)
+        assertEquals(listOf(2L), futureRequest.workouts.map { it.session.id })
+    }
+
+    @Test
     fun todayCompletionIgnoresFutureRowsAndDurationEstimateIsBounded() {
         val zoneId = ZoneId.of("UTC")
         val today = LocalDate.of(2026, 8, 15)

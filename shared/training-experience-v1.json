@@ -38,6 +38,13 @@
   "weeklyRhythm": {
     "weekStartsOn": "monday",
     "countingUnit": "distinctLocalTrainingDay",
+    "todayHistoryNavigation": {
+      "range": "currentOrPastWeekOnly",
+      "controls": ["previous", "current", "next", "swipe"],
+      "selectedWeekIncludesSavedWorkoutLinks": true,
+      "futureWeekDisabled": true,
+      "accountBoundPresentationState": true
+    },
     "decisions": [
       "train",
       "recovery",

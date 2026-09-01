@@ -271,6 +271,7 @@ data class WeeklyTrainingDayUiModel(
 
 data class WeeklyTrainingSummaryUiModel(
     val days: List<WeeklyTrainingDayUiModel> = emptyList(),
+    val workouts: List<WorkoutSessionSummary> = emptyList(),
     val completedWorkoutCount: Int = 0,
     val completedTrainingDays: Int = 0,
     val targetTrainingDays: Int = 0,
@@ -282,6 +283,7 @@ data class WorkoutListUiState(
     val isLoading: Boolean = false,
     val loadError: LocalizedText? = null,
     val monthOffset: Int = 0,
+    val weekOffset: Int = 0,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
     val sessions: List<WorkoutSessionSummary> = emptyList(),
     val hasAnyWorkout: Boolean = false,
@@ -338,6 +340,7 @@ class WorkoutListViewModel(
     private val profileAccountBinding = trainingProfileManager.activeBinding
     private val zoneId = ZoneId.systemDefault()
     private val monthOffset = MutableStateFlow(0)
+    private val weekOffset = MutableStateFlow(0)
     private val muscleMapPeriod = MutableStateFlow(MuscleMapPeriod.AllTime)
     private val selectedMuscleId = MutableStateFlow<String?>(null)
     private val manualMappingExerciseName = MutableStateFlow<String?>(null)
@@ -402,10 +405,12 @@ class WorkoutListViewModel(
     private val sourceState = combine(
         sessionsFlow,
         allSessionsFlow,
-        exerciseHistoryFlow
-    ) { month, allSessions, exerciseHistory ->
+        exerciseHistoryFlow,
+        weekOffset
+    ) { month, allSessions, exerciseHistory, selectedWeekOffset ->
         WorkoutListSourceState(
             offset = month.offset,
+            weekOffset = selectedWeekOffset,
             sessions = month.sessions,
             allSessions = allSessions,
             exerciseHistory = exerciseHistory
@@ -476,6 +481,7 @@ class WorkoutListViewModel(
             experienceState
         ) { source, selection, experience ->
         val offset = source.offset
+        val selectedWeekOffset = source.weekOffset
         val sessions = source.sessions
         val allSessions = source.allSessions
         val exerciseHistory = source.exerciseHistory
@@ -548,7 +554,8 @@ class WorkoutListViewModel(
                 sessions = allSessions,
                 targetTrainingDays = experience.profile.workoutsPerWeek,
                 nowMillis = nowMillis,
-                zoneId = zoneId
+                zoneId = zoneId,
+                weekOffset = selectedWeekOffset
             )
         } else {
             WeeklyTrainingSummaryUiModel()
@@ -556,6 +563,7 @@ class WorkoutListViewModel(
         WorkoutListUiState(
             isLoading = false,
             monthOffset = offset,
+            weekOffset = selectedWeekOffset,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
             sessions = sessions,
             hasAnyWorkout = allSessions.isNotEmpty(),
@@ -1060,6 +1068,18 @@ class WorkoutListViewModel(
 
     fun currentMonth() {
         monthOffset.value = 0
+    }
+
+    fun previousWeek() {
+        weekOffset.value = (weekOffset.value - 1).coerceAtLeast(-5_200)
+    }
+
+    fun nextWeek() {
+        weekOffset.value = (weekOffset.value + 1).coerceAtMost(0)
+    }
+
+    fun currentWeek() {
+        weekOffset.value = 0
     }
 
     fun selectMuscleMapPeriod(period: MuscleMapPeriod) {
@@ -2000,10 +2020,12 @@ internal fun buildWeeklyTrainingSummary(
     sessions: List<WorkoutSessionSummary>,
     targetTrainingDays: Int,
     nowMillis: Long,
-    zoneId: ZoneId
+    zoneId: ZoneId,
+    weekOffset: Int = 0
 ): WeeklyTrainingSummaryUiModel {
     val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
-    val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val selectedDate = today.plusWeeks(weekOffset.coerceIn(-5_200, 0).toLong())
+    val weekStart = selectedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
     val weekEndExclusive = weekStart.plusDays(7)
     val currentWeekSessions = sessions.asSequence()
         .take(WorkoutDataLimits.MAX_SESSIONS)
@@ -2042,6 +2064,9 @@ internal fun buildWeeklyTrainingSummary(
                 isToday = date == today
             )
         },
+        workouts = currentWeekSessions
+            .map { it.second }
+            .sortedByDescending { it.session.date },
         completedWorkoutCount = currentWeekSessions.size,
         completedTrainingDays = completedDates.size,
         targetTrainingDays = targetTrainingDays.coerceIn(2, 6),
@@ -2064,6 +2089,7 @@ private data class WorkoutMonthSessions(
 
 private data class WorkoutListSourceState(
     val offset: Int,
+    val weekOffset: Int,
     val sessions: List<WorkoutSessionSummary>,
     val allSessions: List<WorkoutSessionSummary>,
     val exerciseHistory: List<ExerciseHistoryEntry>

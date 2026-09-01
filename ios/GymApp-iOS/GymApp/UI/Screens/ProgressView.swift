@@ -124,6 +124,14 @@ struct ProgressHubView: View {
     private var overview: some View {
         ScrollView {
             LazyVStack(spacing: GymTheme.contentSpacing) {
+                WorkoutMonthSwitcher(
+                    month: selectedMonth,
+                    isCurrentMonth: monthOffset == 0,
+                    onPrevious: { monthOffset -= 1 },
+                    onCurrent: { monthOffset = 0 },
+                    onNext: { monthOffset = min(0, monthOffset + 1) }
+                )
+
                 WorkoutProgressHero(
                     snapshot: gamification,
                     monthXP: monthXP,
@@ -133,14 +141,6 @@ struct ProgressHubView: View {
                 )
 
                 lifetimeMetricsCard
-
-                WorkoutMonthSwitcher(
-                    month: selectedMonth,
-                    isCurrentMonth: monthOffset == 0,
-                    onPrevious: { monthOffset -= 1 },
-                    onCurrent: { monthOffset = 0 },
-                    onNext: { monthOffset = min(0, monthOffset + 1) }
-                )
 
                 WorkoutActivityHeatmap(
                     month: selectedMonth,

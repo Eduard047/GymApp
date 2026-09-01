@@ -889,6 +889,38 @@ test("PWA weekly rhythm counts distinct local days across daylight-saving change
   }
 });
 
+test("PWA Today weekly rhythm selects past weeks and clamps future navigation", () => {
+  const context = loadPwaContext();
+  const now = new Date(2026, 7, 15, 12, 0, 0).getTime();
+  const august5 = new Date(2026, 7, 5, 8, 0, 0).getTime();
+  const august12 = new Date(2026, 7, 12, 8, 0, 0).getTime();
+  const futureToday = new Date(2026, 7, 15, 18, 0, 0).getTime();
+  const result = vm.runInContext(`(() => {
+    state = defaultAppState();
+    const set = (id, exerciseName) => ({ id, exerciseName, weight: 50, reps: 8, orderIndex: 0 });
+    state.sessions = [
+      { id: 1, startedAt: ${august5}, note: "", sets: [set(11, "Bench Press")] },
+      { id: 2, startedAt: ${august12}, note: "", sets: [set(21, "Cable Row")] },
+      { id: 3, startedAt: ${futureToday}, note: "", sets: [set(31, "Squat")] }
+    ];
+    const historical = currentWeekWorkoutSummary(${now}, state.sessions, -1);
+    const futureRequest = currentWeekWorkoutSummary(${now}, state.sessions, 1);
+    return {
+      historicalStart: historical.days[0].timestamp,
+      historicalIds: historical.workouts.map(item => item.id),
+      historicalTrainingDays: historical.completedTrainingDays,
+      futureStart: futureRequest.days[0].timestamp,
+      futureIds: futureRequest.workouts.map(item => item.id)
+    };
+  })()`, context);
+
+  assert.equal(result.historicalStart, new Date(2026, 7, 3).getTime());
+  assert.deepEqual([...result.historicalIds], [1]);
+  assert.equal(result.historicalTrainingDays, 1);
+  assert.equal(result.futureStart, new Date(2026, 7, 10).getTime());
+  assert.deepEqual([...result.futureIds], [2]);
+});
+
 test("PWA Auto selects recovery from recent target-muscle work and never promotes Hard", () => {
   const context = loadPwaContext();
   const profile = { split: "Full Body", days: 3, goal: "Balanced", calories: "Maintenance" };

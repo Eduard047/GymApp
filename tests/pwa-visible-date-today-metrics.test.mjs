@@ -200,7 +200,7 @@ test("Today plan metrics are history-only, finite, bounded, zero-safe, and order
   }
 });
 
-test("Today shows lifetime and weekly metrics once in every state", () => {
+test("Today separates plan metrics from the weekly summary and keeps completion compact", () => {
   assert.match(stylesSource, /\.focus-lens-plan-metrics \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics strong \{[\s\S]*white-space: nowrap/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics span \{[\s\S]*font-size: 12px[\s\S]*-webkit-line-clamp: 2/);
@@ -211,13 +211,22 @@ test("Today shows lifetime and weekly metrics once in every state", () => {
   const detailsEnd = appSource.indexOf("\nfunction focusLensCard(", details);
   const detailsBody = appSource.slice(details, detailsEnd);
   assert.equal((detailsBody.match(/todayPlanMetricsMarkup\(\)/g) || []).length, 1);
-  assert.equal((detailsBody.match(/weeklyWorkoutSummaryMarkup\(weeklySummary\)/g) || []).length, 1);
-  assert.equal((focusBody.match(/focusLensDetailsMarkup\(weeklySummary/g) || []).length, 3);
+  assert.doesNotMatch(detailsBody, /weeklyWorkoutSummaryMarkup/);
+  const workouts = appSource.indexOf("function workoutsScreen()");
+  const workoutsEnd = appSource.indexOf("\nfunction overviewCards(", workouts);
+  const workoutsBody = appSource.slice(workouts, workoutsEnd);
+  const focusOverview = workoutsBody.indexOf("${focusOverview(sessions)}");
+  const weeklySummary = workoutsBody.indexOf("${weeklyWorkoutSummaryMarkup()}");
+  const monthControls = workoutsBody.indexOf("${monthSwitcher()}");
+  assert.ok(focusOverview >= 0 && focusOverview < weeklySummary && weeklySummary < monthControls);
+  assert.equal((workoutsBody.match(/weeklyWorkoutSummaryMarkup\(\)/g) || []).length, 1);
+  assert.equal((focusBody.match(/focusLensDetailsMarkup\(/g) || []).length, 2);
   const completedStart = focusBody.indexOf("const completedToday");
   const completedEnd = focusBody.indexOf("const decision", completedStart);
   const completedBranch = focusBody.slice(completedStart, completedEnd);
   assert.match(completedBranch, /data-action="open-blank-add"/);
   assert.equal((completedBranch.match(/data-action=/g) || []).length, 1);
+  assert.doesNotMatch(completedBranch, /focusLensDetailsMarkup|todayPlanMetricsMarkup/);
   assert.doesNotMatch(completedBranch, /start-recommended|edit-recommended|Train anyway|open-add/);
   const progress = appSource.indexOf("function progressScreen()");
   const progressEnd = appSource.indexOf("function exerciseProgressPanel()", progress);

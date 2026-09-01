@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,6 +38,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.automirrored.filled.NavigateBefore
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -106,7 +111,9 @@ import com.example.gymapp.util.asString
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.format.TextStyle
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
 
 @Composable
 fun WorkoutListScreen(
@@ -115,6 +122,9 @@ fun WorkoutListScreen(
     onPreviousMonth: () -> Unit,
     onCurrentMonth: () -> Unit,
     onNextMonth: () -> Unit,
+    onPreviousWeek: () -> Unit,
+    onCurrentWeek: () -> Unit,
+    onNextWeek: () -> Unit,
     onMuscleMapPeriodSelected: (MuscleMapPeriod) -> Unit,
     onMuscleSelected: (String) -> Unit,
     onAddWorkout: () -> Unit,
@@ -186,7 +196,6 @@ fun WorkoutListScreen(
                     FocusLens(
                         todayPlan = uiState.todayPlan,
                         hasCompletedWorkoutToday = uiState.hasCompletedWorkoutToday,
-                        weeklyTrainingSummary = uiState.weeklyTrainingSummary,
                         todayHeroMetrics = uiState.todayHeroMetrics,
                         hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
                         activeWorkoutProgress = activeWorkoutProgress,
@@ -203,45 +212,56 @@ fun WorkoutListScreen(
 
             if (uiState.hasAnyWorkout) {
                 item {
-                MonthSwitcher(
-                    monthLabel = uiState.monthLabel,
-                    isCurrentMonth = uiState.monthOffset == 0,
-                    onPreviousMonth = onPreviousMonth,
-                    onCurrentMonth = onCurrentMonth,
-                    onNextMonth = onNextMonth
-                )
-                }
-
-            item {
-                WorkoutSectionHeader(sessionCount = uiState.sessions.size)
-            }
-
-                if (uiState.sessions.isEmpty()) {
-                item {
-                    EmptyStatePanel(
-                        title = stringResource(R.string.empty_workouts),
-                        actionLabel = stringResource(R.string.action_add_workout),
-                        onAction = onAddWorkout
+                    WeeklyTrainingCard(
+                        summary = uiState.weeklyTrainingSummary,
+                        weekOffset = uiState.weekOffset,
+                        onPreviousWeek = onPreviousWeek,
+                        onCurrentWeek = onCurrentWeek,
+                        onNextWeek = onNextWeek,
+                        onSessionClick = onSessionClick
                     )
                 }
-                } else {
-                items(
-                    items = uiState.sessions,
-                    key = { it.session.id },
-                    contentType = { "workout-session" }
-                ) { sessionSummary ->
-                    val displayDate = remember(sessionSummary.session.date, locale) {
-                        DateTimeUtils.formatDate(sessionSummary.session.date, locale)
+
+                item {
+                    MonthSwitcher(
+                        monthLabel = uiState.monthLabel,
+                        isCurrentMonth = uiState.monthOffset == 0,
+                        onPreviousMonth = onPreviousMonth,
+                        onCurrentMonth = onCurrentMonth,
+                        onNextMonth = onNextMonth
+                    )
+                }
+
+                item {
+                    WorkoutSectionHeader(sessionCount = uiState.sessions.size)
+                }
+
+                if (uiState.sessions.isEmpty()) {
+                    item {
+                        EmptyStatePanel(
+                            title = stringResource(R.string.empty_workouts),
+                            actionLabel = stringResource(R.string.action_add_workout),
+                            onAction = onAddWorkout
+                        )
                     }
-                    val isActivityOnly = sessionSummary.exerciseCount == 0 &&
-                        sessionSummary.setCount == 0 &&
-                        sessionSummary.session.durationSeconds?.let { it > 0L } == true
-                    AppPanel(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSessionClick(sessionSummary.session.id) },
-                        highlighted = true
-                    ) {
+                } else {
+                    items(
+                        items = uiState.sessions,
+                        key = { it.session.id },
+                        contentType = { "workout-session" }
+                    ) { sessionSummary ->
+                        val displayDate = remember(sessionSummary.session.date, locale) {
+                            DateTimeUtils.formatDate(sessionSummary.session.date, locale)
+                        }
+                        val isActivityOnly = sessionSummary.exerciseCount == 0 &&
+                            sessionSummary.setCount == 0 &&
+                            sessionSummary.session.durationSeconds?.let { it > 0L } == true
+                        AppPanel(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSessionClick(sessionSummary.session.id) },
+                            highlighted = true
+                        ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -540,7 +560,6 @@ private fun WorkoutSectionHeader(
 private fun FocusLens(
     todayPlan: TodayPlanUiModel?,
     hasCompletedWorkoutToday: Boolean,
-    weeklyTrainingSummary: WeeklyTrainingSummaryUiModel,
     todayHeroMetrics: TodayHeroMetricsUiModel,
     hasRetainedWorkoutDraft: Boolean,
     activeWorkoutProgress: Pair<Int, Int>?,
@@ -591,7 +610,7 @@ private fun FocusLens(
             .fillMaxWidth()
             .clip(lensShape)
             .background(lensBrush)
-            .padding(22.dp),
+            .padding(if (hasCompletedToday) 18.dp else 22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -607,7 +626,11 @@ private fun FocusLens(
                     shouldContinueRetainedPlan -> stringResource(R.string.title_workout_plan)
                     else -> stringResource(R.string.action_start_workout)
                 },
-                style = MaterialTheme.typography.headlineLarge,
+                style = if (hasCompletedToday) {
+                    MaterialTheme.typography.headlineMedium
+                } else {
+                    MaterialTheme.typography.headlineLarge
+                },
                 color = Color.White,
                 fontWeight = FontWeight.Bold
             )
@@ -676,47 +699,40 @@ private fun FocusLens(
                     modifier = Modifier.weight(1f)
                 )
             }
-            FocusLensMetric(
-                label = stringResource(R.string.today_weekly_rhythm),
-                value = stringResource(
-                    R.string.today_weekly_value,
-                    todayPlan.rhythm.completedTrainingDays,
-                    todayPlan.rhythm.targetTrainingDays
-                )
-            )
         }
 
-        OutlinedButton(
-            onClick = { showPlanDetails = !showPlanDetails },
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .semantics {
-                    stateDescription = if (showPlanDetails) expandedState else collapsedState
-                },
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
-        ) {
-            Icon(
-                imageVector = if (showPlanDetails) Icons.Default.ExpandLess
-                else Icons.Default.ExpandMore,
-                contentDescription = null
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.focus_lens_details))
-        }
-        if (showPlanDetails) {
-            WeeklyTrainingCard(summary = weeklyTrainingSummary)
-            TodayHeroMetricsRow(metrics = todayHeroMetrics)
-            if (!hasActiveWorkout && !hasCompletedToday) {
-                TextButton(
-                    onClick = onStartWorkout,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) {
-                    Text(
-                        stringResource(R.string.activation_build_manually),
-                        color = Color.White
-                    )
+        if (!hasCompletedToday) {
+            OutlinedButton(
+                onClick = { showPlanDetails = !showPlanDetails },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        stateDescription = if (showPlanDetails) expandedState else collapsedState
+                    },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+            ) {
+                Icon(
+                    imageVector = if (showPlanDetails) Icons.Default.ExpandLess
+                    else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.focus_lens_details))
+            }
+            if (showPlanDetails) {
+                TodayHeroMetricsRow(metrics = todayHeroMetrics)
+                if (!hasActiveWorkout) {
+                    TextButton(
+                        onClick = onStartWorkout,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        Text(
+                            stringResource(R.string.activation_build_manually),
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }
@@ -895,27 +911,55 @@ internal fun shouldShowRetainedWorkoutDraftAction(
 @Composable
 private fun WeeklyTrainingCard(
     summary: WeeklyTrainingSummaryUiModel,
+    weekOffset: Int,
+    onPreviousWeek: () -> Unit,
+    onCurrentWeek: () -> Unit,
+    onNextWeek: () -> Unit,
+    onSessionClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val rangeFormatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM", locale) }
+    val weekRange = remember(summary.days, rangeFormatter) {
+        val first = summary.days.firstOrNull()?.date
+        val last = summary.days.lastOrNull()?.date
+        if (first == null || last == null) "" else {
+            "${first.format(rangeFormatter)} – ${last.format(rangeFormatter)}"
+        }
+    }
     val volume = remember(summary.totalVolume, locale) {
         formatTodayHeroVolume(summary.totalVolume, locale)
     }
     val completedWorkoutCount = remember(summary.completedWorkoutCount, locale) {
         formatTodayHeroCount(summary.completedWorkoutCount, locale)
     }
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = Color.White.copy(alpha = 0.12f),
-        contentColor = Color.White,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
+    AppPanel(
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(weekOffset) {
+                var horizontalDrag = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { horizontalDrag = 0f },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        horizontalDrag += dragAmount
+                    },
+                    onDragEnd = {
+                        if (abs(horizontalDrag) >= 80f) {
+                            if (horizontalDrag > 0f) {
+                                onPreviousWeek()
+                            } else if (weekOffset < 0) {
+                                onNextWeek()
+                            }
+                        }
+                    },
+                    onDragCancel = { horizontalDrag = 0f }
+                )
+            }
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -923,7 +967,7 @@ private fun WeeklyTrainingCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.weekly_training_summary_title),
+                    text = stringResource(R.string.today_weekly_rhythm),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -934,8 +978,63 @@ private fun WeeklyTrainingCard(
                         summary.completedTrainingDays,
                         summary.targetTrainingDays
                     ),
-                    accent = Color.White
+                    accent = MaterialTheme.colorScheme.primary
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                IconButton(
+                    onClick = onPreviousWeek,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.NavigateBefore,
+                        contentDescription = stringResource(R.string.cd_previous_week)
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clickable(enabled = weekOffset != 0, onClick = onCurrentWeek)
+                        .padding(horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = weekRange,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = stringResource(
+                            if (weekOffset == 0) {
+                                R.string.weekly_training_summary_title
+                            } else {
+                                R.string.action_return_to_current_week
+                            }
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
+                    )
+                }
+                IconButton(
+                    onClick = onNextWeek,
+                    enabled = weekOffset != 0,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.NavigateNext,
+                        contentDescription = stringResource(R.string.cd_next_week)
+                    )
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -972,7 +1071,7 @@ private fun WeeklyTrainingCard(
                                 .getDisplayName(TextStyle.NARROW, locale)
                                 .uppercase(locale),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.72f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Box(
                             modifier = Modifier
@@ -985,9 +1084,9 @@ private fun WeeklyTrainingCard(
                                     .clip(CircleShape)
                                     .background(
                                         if (day.isCompleted) {
-                                            Color(0xFF7DEFC7)
+                                            MaterialTheme.colorScheme.secondary
                                         } else {
-                                            Color.White.copy(alpha = 0.24f)
+                                            MaterialTheme.colorScheme.surfaceVariant
                                         }
                                     )
                             )
@@ -997,7 +1096,7 @@ private fun WeeklyTrainingCard(
                                         .size(18.dp)
                                         .border(
                                             width = 1.dp,
-                                            color = Color.White.copy(alpha = 0.92f),
+                                            color = MaterialTheme.colorScheme.primary,
                                             shape = CircleShape
                                         )
                                 )
@@ -1029,6 +1128,66 @@ private fun WeeklyTrainingCard(
                     modifier = Modifier.weight(1f)
                 )
             }
+
+            if (weekOffset != 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                Text(
+                    text = stringResource(R.string.weekly_training_sessions_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                if (summary.workouts.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.weekly_training_sessions_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    summary.workouts.take(14).forEach { workout ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onSessionClick(workout.session.id) },
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = DateTimeUtils.formatLongDate(workout.session.date, locale),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.stats_exercises,
+                                            workout.exerciseCount
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.NavigateNext,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1055,7 +1214,7 @@ private fun WeeklyTrainingMetric(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.72f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )

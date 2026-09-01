@@ -2312,6 +2312,9 @@ internal fun GymAppRoot(
                                 onPreviousMonth = viewModel::previousMonth,
                                 onCurrentMonth = viewModel::currentMonth,
                                 onNextMonth = viewModel::nextMonth,
+                                onPreviousWeek = viewModel::previousWeek,
+                                onCurrentWeek = viewModel::currentWeek,
+                                onNextWeek = viewModel::nextWeek,
                                 onMuscleMapPeriodSelected = viewModel::selectMuscleMapPeriod,
                                 onMuscleSelected = viewModel::selectMuscle,
                                 onAddWorkout = {

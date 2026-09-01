@@ -1,11 +1,12 @@
 {
   "schemaVersion": 2,
-  "productVersion": "3.2.7",
+  "productVersion": "3.2.8",
   "fullClients": ["android", "ios", "pwa"],
   "wearableClient": "garmin",
   "terminology": {
     "navigation": ["today", "exercises", "progress", "profile"],
     "progressSections": ["overview", "exercises", "goals"],
+    "profileSections": ["friendsAndLive", "accountAndDevices"],
     "missionsPlacement": "progress.goals",
     "firstPlanAction": {
       "en": "Use suggested plan",
@@ -46,7 +47,7 @@
   "todayFocusLens": {
     "states": ["recommendedPlan", "activeWorkout", "completedToday", "recovery"],
     "recommendedPlan": {
-      "contentOrder": ["focus", "exerciseAndSetCount", "estimatedDuration", "weeklyRhythm"],
+      "contentOrder": ["focus", "exerciseAndSetCount", "estimatedDuration"],
       "actionsInOrder": ["startPlan", "editPlan", "details.createManually"]
     },
     "retainedDraftOverride": {
@@ -80,7 +81,7 @@
     },
     "completedToday": {
       "source": "completedCanonicalHistoryInCurrentLocalCalendarDay",
-      "contentOrder": ["completionConfirmation", "weeklySummary"],
+      "contentOrder": ["completionConfirmation"],
       "suppresses": ["recovery", "recommendedPlan"],
       "actionsInOrder": ["createAnotherWorkout"]
     },
@@ -88,15 +89,24 @@
       "contentOrder": ["reason", "nextRecommendedDay"],
       "actionsInOrder": ["trainAnyway", "editPlan"]
     },
-    "weeklySummaryPlacement": "today.progressiveDisclosure.belowCurrentState",
+    "weeklySummaryPlacement": "today.alwaysVisibleBelowCurrentActionBeforeHistory",
     "weeklySummary": ["sevenDayCircles", "completedTrainingDaysVsTarget", "completedWorkouts", "trainingMinutes", "totalVolume"],
+    "weeklyHistoryNavigation": {
+      "controls": ["previousWeek", "returnToCurrentWeek", "nextWeek", "horizontalSwipe"],
+      "minimumWeekOffset": -5200,
+      "maximumWeekOffset": 0,
+      "futureNavigationDisabled": true,
+      "selectedWeekShowsSavedWorkouts": true,
+      "todayActionRemainsBoundToCurrentLocalDay": true,
+      "resetsOnAccountChange": true
+    },
     "lifetimeMetricsPlacement": "today.heroAndProgress.overview",
     "heatmapPlacement": "progress.overview",
     "muscleLoadPlacement": "progress.overview",
     "recommendationExplanation": "progressiveDisclosureWhyThisPlan",
     "progressiveDisclosure": {
-      "defaultVisible": ["currentState", "primaryAction", "secondaryPlanAction"],
-      "details": ["weeklySummary", "lifetimeMetrics", "createManually"],
+      "defaultVisible": ["currentState", "primaryAction", "secondaryPlanAction", "weeklySummary"],
+      "details": ["lifetimeMetrics", "createManually"],
       "activeWorkoutExercises": {
         "current": "expanded",
         "completed": "collapsed",

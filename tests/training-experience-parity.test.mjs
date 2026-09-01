@@ -67,6 +67,13 @@ test("training experience v1 fixes one canonical cross-platform contract", () =>
   });
   assert.equal(contract.weeklyRhythm.primaryHabitMetric, "profileTargetWeeklyStreak");
   assert.deepEqual(contract.weeklyRhythm.streakAchievementWeeks, [2, 4, 8]);
+  assert.deepEqual(contract.weeklyRhythm.todayHistoryNavigation, {
+    range: "currentOrPastWeekOnly",
+    controls: ["previous", "current", "next", "swipe"],
+    selectedWeekIncludesSavedWorkoutLinks: true,
+    futureWeekDisabled: true,
+    accountBoundPresentationState: true
+  });
 });
 
 test("Android and iOS retain the same missing-profile defaults", () => {

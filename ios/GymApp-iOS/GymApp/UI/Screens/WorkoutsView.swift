@@ -42,7 +42,21 @@ struct WeeklyTrainingSummary: Equatable {
         now: Date,
         calendar: Calendar
     ) {
-        let start = calendar.gymMondayStart(of: now)
+        self.init(
+            sessions: sessions,
+            weekContaining: now,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    init(
+        sessions: [WorkoutSessionSummary],
+        weekContaining referenceDate: Date,
+        now: Date,
+        calendar: Calendar
+    ) {
+        let start = calendar.gymMondayStart(of: referenceDate)
         let end = calendar.date(byAdding: .day, value: 7, to: start)
             ?? start.addingTimeInterval(7 * 24 * 60 * 60)
         let weeklySessions = sessions.filter { session in
@@ -94,6 +108,8 @@ struct TodayScreenProjection {
     let trainingProfile: TrainingProfile
     let weeklyGuidance: WeeklyTrainingGuidance
     let weeklySummary: WeeklyTrainingSummary
+    let historyWeekSummary: WeeklyTrainingSummary
+    let historyWeekWorkouts: [WorkoutSessionSummary]
     let launchSeed: WorkoutLaunchSeed?
     let heroMetrics: TodayHeroMetrics
     let monthWorkouts: [WorkoutSessionSummary]
@@ -109,6 +125,7 @@ final class TodayScreenProjectionCache: ObservableObject {
         let calendar: Calendar
         let trainingProfile: TrainingProfile
         let monthOffset: Int
+        let weekOffset: Int
     }
 
     private var cached: (key: Key, projection: TodayScreenProjection)?
@@ -119,8 +136,10 @@ final class TodayScreenProjectionCache: ObservableObject {
         referenceDate: Date,
         calendar: Calendar,
         trainingProfile: TrainingProfile,
-        monthOffset: Int
+        monthOffset: Int,
+        weekOffset: Int = 0
     ) -> TodayScreenProjection {
+        let boundedWeekOffset = min(0, max(-5_200, weekOffset))
         let key = Key(
             storeIdentity: ObjectIdentifier(store),
             accountStorageKey: store.accountStorageKey,
@@ -128,7 +147,8 @@ final class TodayScreenProjectionCache: ObservableObject {
             referenceDate: referenceDate,
             calendar: calendar,
             trainingProfile: trainingProfile,
-            monthOffset: monthOffset
+            monthOffset: monthOffset,
+            weekOffset: boundedWeekOffset
         )
         if let cached, cached.key == key {
             return cached.projection
@@ -142,6 +162,29 @@ final class TodayScreenProjectionCache: ObservableObject {
             now: referenceDate,
             calendar: calendar
         )
+        let selectedWeekReferenceDate = calendar.date(
+            byAdding: .day,
+            value: boundedWeekOffset * 7,
+            to: referenceDate
+        ) ?? referenceDate
+        let historyWeekSummary = WeeklyTrainingSummary(
+            sessions: sessions,
+            weekContaining: selectedWeekReferenceDate,
+            now: referenceDate,
+            calendar: calendar
+        )
+        let historyWeekEnd = calendar.date(
+            byAdding: .day,
+            value: 7,
+            to: historyWeekSummary.weekStart
+        ) ?? historyWeekSummary.weekStart.addingTimeInterval(7 * 24 * 60 * 60)
+        let historyWeekWorkouts = sessions
+            .filter { session in
+                session.date >= historyWeekSummary.weekStart &&
+                    session.date < historyWeekEnd &&
+                    session.date <= referenceDate
+            }
+            .sorted { $0.date > $1.date }
         let weeklyGuidance = RecommendationEngine.weeklyTrainingGuidance(
             history: history,
             trainingProfile: trainingProfile,
@@ -196,6 +239,8 @@ final class TodayScreenProjectionCache: ObservableObject {
             trainingProfile: trainingProfile,
             weeklyGuidance: weeklyGuidance,
             weeklySummary: weeklySummary,
+            historyWeekSummary: historyWeekSummary,
+            historyWeekWorkouts: historyWeekWorkouts,
             launchSeed: launchSeed,
             heroMetrics: TodayHeroMetrics(
                 sessions: sessions,
@@ -219,6 +264,7 @@ public struct WorkoutsView: View {
 
     @State private var referenceDate = Date()
     @State private var monthOffset = 0
+    @State private var weekOffset = 0
     @State private var historyReturnWorkoutID: UUID?
     @State private var activationGoal: TrainingGoal = .aestheticFatLoss
     @State private var activationDays = 4
@@ -287,6 +333,7 @@ public struct WorkoutsView: View {
                             focusLens
                         }
                         if !store.workoutSummaries.isEmpty {
+                            weeklyHistoryPanel
                             workoutListContent
                         }
                     }
@@ -313,6 +360,18 @@ public struct WorkoutsView: View {
         }
         .onAppear { referenceDate = Date() }
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
+        .onChange(of: store.accountStorageKey) { storageKey in
+            referenceDate = Date()
+            monthOffset = 0
+            weekOffset = 0
+            historyReturnWorkoutID = nil
+            showsFocusDetails = false
+            showsActiveFocusDetails = false
+            showsActiveMoreActions = false
+            activationDismissed = TrainingProfileStore().activationDismissed(
+                accountStorageKey: storageKey
+            )
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active { referenceDate = Date() }
         }
@@ -653,7 +712,8 @@ public struct WorkoutsView: View {
             trainingProfile: TrainingProfileStore().load(
                 accountStorageKey: store.accountStorageKey
             ),
-            monthOffset: monthOffset
+            monthOffset: monthOffset,
+            weekOffset: weekOffset
         )
     }
 
@@ -724,7 +784,11 @@ public struct WorkoutsView: View {
                     completedToday ? "Тренировка завершена" : todayTitle(guidance: guidance, plan: launchSeed?.plan),
                     languageCode: languageCode
                 ))
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .font(.system(
+                    completedToday ? .title : .largeTitle,
+                    design: .rounded,
+                    weight: .bold
+                ))
                 .tracking(-0.8)
                 .foregroundStyle(Color.white)
                 .fixedSize(horizontal: false, vertical: true)
@@ -743,7 +807,6 @@ public struct WorkoutsView: View {
             }
 
             if completedToday {
-                focusDetailsDisclosure(projection)
                 completedTodayAction
             } else if guidance.decision == .train {
                 if let plan = launchSeed?.plan {
@@ -765,7 +828,7 @@ public struct WorkoutsView: View {
                 focusActionButtons(launchSeed: launchSeed, guidance: guidance)
             }
         }
-        .padding(22)
+        .padding(completedToday ? 18 : 22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             UnevenRoundedRectangle(
@@ -797,18 +860,14 @@ public struct WorkoutsView: View {
     ) -> some View {
         DisclosureGroup(
             gymText(
-                "Week and plan details",
-                "Тиждень і деталі плану",
-                "Неделя и детали плана",
+                "Plan details",
+                "Деталі плану",
+                "Детали плана",
                 languageCode: languageCode
             ),
             isExpanded: $showsFocusDetails
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                weeklyTrainingSummaryView(
-                    projection.weeklySummary,
-                    targetTrainingDays: projection.trainingProfile.workoutsPerWeek
-                )
                 if let guidance {
                     Text(todayPlanExplanation(guidance))
                         .font(.caption)
@@ -882,18 +941,14 @@ public struct WorkoutsView: View {
 
             DisclosureGroup(
                 gymText(
-                    "Week and plan details",
-                    "Тиждень і деталі плану",
-                    "Неделя и детали плана",
+                    "Plan details",
+                    "Деталі плану",
+                    "Детали плана",
                     languageCode: languageCode
                 ),
                 isExpanded: $showsActiveFocusDetails
             ) {
                 VStack(alignment: .leading, spacing: 12) {
-                    weeklyTrainingSummaryView(
-                        projection.weeklySummary,
-                        targetTrainingDays: projection.trainingProfile.workoutsPerWeek
-                    )
                     todayHeroMetricsRow(projection.heroMetrics)
                 }
                 .padding(.top, 8)
@@ -1041,28 +1096,111 @@ public struct WorkoutsView: View {
         }
     }
 
+    private var weeklyHistoryPanel: some View {
+        let projection = todayProjection
+        return GymPanel {
+            weeklyTrainingSummaryView(
+                projection.historyWeekSummary,
+                workouts: projection.historyWeekWorkouts,
+                targetTrainingDays: projection.trainingProfile.workoutsPerWeek
+            )
+        }
+        .id("weekly-history")
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 40).onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else {
+                    return
+                }
+                if value.translation.width < 0, weekOffset < 0 {
+                    weekOffset = min(0, weekOffset + 1)
+                } else if value.translation.width > 0 {
+                    weekOffset = max(-5_200, weekOffset - 1)
+                }
+            }
+        )
+    }
+
     private func weeklyTrainingSummaryView(
         _ summary: WeeklyTrainingSummary,
+        workouts: [WorkoutSessionSummary],
         targetTrainingDays: Int
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 10) {
                 Text(gymText(
-                    "This week",
-                    "Цього тижня",
-                    "На этой неделе",
+                    "Weekly rhythm",
+                    "Ритм тижня",
+                    "Ритм недели",
                     languageCode: languageCode
                 ))
-                .font(.subheadline.bold())
+                .font(GymTheme.TypeScale.sectionTitle)
+                .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
-                Text(gymText(
-                    "\(summary.completedTrainingDays.count) / \(targetTrainingDays) days",
-                    "\(summary.completedTrainingDays.count) / \(targetTrainingDays) днів",
-                    "\(summary.completedTrainingDays.count) / \(targetTrainingDays) дней",
-                    languageCode: languageCode
-                ))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(Color.white.opacity(0.76))
+                GymInfoPill(
+                    gymText(
+                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) days",
+                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) днів",
+                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) дней",
+                        languageCode: languageCode
+                    ),
+                    systemImage: "figure.strengthtraining.traditional"
+                )
+            }
+
+            HStack(spacing: 8) {
+                weekNavigationButton(
+                    systemImage: "chevron.left",
+                    label: gymText(
+                        "Previous week",
+                        "Попередній тиждень",
+                        "Предыдущая неделя",
+                        languageCode: languageCode
+                    )
+                ) {
+                    weekOffset = max(-5_200, weekOffset - 1)
+                }
+
+                Button {
+                    weekOffset = 0
+                } label: {
+                    VStack(spacing: 2) {
+                        Text(weeklyRangeTitle(summary))
+                            .font(.subheadline.bold())
+                            .foregroundStyle(GymTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.74)
+                        Text(weekOffset == 0
+                            ? gymText(
+                                "This week", "Цього тижня", "На этой неделе",
+                                languageCode: languageCode
+                            )
+                            : gymText(
+                                "Return to this week",
+                                "Повернутися до цього тижня",
+                                "Вернуться к этой неделе",
+                                languageCode: languageCode
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(weekOffset == 0)
+
+                weekNavigationButton(
+                    systemImage: "chevron.right",
+                    label: gymText(
+                        "Next week",
+                        "Наступний тиждень",
+                        "Следующая неделя",
+                        languageCode: languageCode
+                    ),
+                    disabled: weekOffset == 0
+                ) {
+                    weekOffset = min(0, weekOffset + 1)
+                }
             }
 
             HStack(spacing: 8) {
@@ -1073,26 +1211,22 @@ public struct WorkoutsView: View {
                         to: summary.weekStart
                     ) ?? summary.weekStart
                     let completed = summary.hasWorkout(on: day, calendar: calendar)
-                    VStack(spacing: 5) {
+                    VStack(spacing: 6) {
                         Text(weeklyDaySymbol(day))
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(0.74))
+                            .foregroundStyle(GymTheme.textSecondary)
                         Circle()
-                            .fill(
-                                completed
-                                    ? Color(red: 0.49, green: 0.94, blue: 0.78)
-                                    : Color.white.opacity(0.24)
-                            )
-                            .frame(width: 12, height: 12)
+                            .fill(completed ? GymTheme.secondary : GymTheme.surfaceVariant)
+                            .frame(width: 14, height: 14)
                             .overlay {
                                 if calendar.isDate(day, inSameDayAs: referenceDate) {
                                     Circle()
-                                        .stroke(Color.white.opacity(0.72), lineWidth: 2)
+                                        .stroke(GymTheme.primary, lineWidth: 2)
                                         .padding(-4)
                                 }
                             }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(
                         gymFormattedDate(day, date: .long, time: .omitted, languageCode: languageCode)
@@ -1129,10 +1263,105 @@ public struct WorkoutsView: View {
                     label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
                 )
             }
+
+            if weekOffset != 0 {
+                Divider().overlay(GymTheme.outlineSoft)
+                historicalWeekWorkouts(workouts)
+            }
         }
-        .foregroundStyle(Color.white)
-        .padding(12)
-        .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func weekNavigationButton(
+        systemImage: String,
+        label: String,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.subheadline.bold())
+                .frame(width: 44, height: 44)
+                .background(GymTheme.surfaceVariant, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityLabel(label)
+    }
+
+    private func weeklyRangeTitle(_ summary: WeeklyTrainingSummary) -> String {
+        let end = calendar.date(byAdding: .day, value: 6, to: summary.weekStart)
+            ?? summary.weekStart
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        let style = Date.FormatStyle.dateTime.day().month(.abbreviated).locale(locale)
+        return "\(summary.weekStart.formatted(style)) – \(end.formatted(style))"
+    }
+
+    @ViewBuilder
+    private func historicalWeekWorkouts(_ workouts: [WorkoutSessionSummary]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(gymText(
+                    "Workouts this week",
+                    "Тренування цього тижня",
+                    "Тренировки за неделю",
+                    languageCode: languageCode
+                ))
+                .font(.subheadline.bold())
+                Spacer(minLength: 8)
+                Text(workouts.count.formatted())
+                    .font(.caption.bold().monospacedDigit())
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+
+            if workouts.isEmpty {
+                Text(gymText(
+                    "No workouts were saved in this week.",
+                    "Цього тижня тренувань не збережено.",
+                    "На этой неделе тренировок не сохранено.",
+                    languageCode: languageCode
+                ))
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+            } else {
+                ForEach(Array(workouts.prefix(14))) { workout in
+                    Button {
+                        historyReturnWorkoutID = workout.id
+                        onOpenWorkout(workout.id)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "dumbbell.fill")
+                                .foregroundStyle(GymTheme.primary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(gymFormattedDate(
+                                    workout.date,
+                                    date: .abbreviated,
+                                    time: .omitted,
+                                    languageCode: languageCode
+                                ))
+                                .font(.subheadline.bold())
+                                Text(gymCount(
+                                    workout.exerciseCount,
+                                    englishOne: "exercise",
+                                    englishMany: "exercises",
+                                    ukrainianOne: "вправа",
+                                    ukrainianFew: "вправи",
+                                    ukrainianMany: "вправ",
+                                    languageCode: languageCode
+                                ))
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.bold())
+                                .foregroundStyle(GymTheme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 
     private func weeklyDaySymbol(_ date: Date) -> String {
@@ -1148,7 +1377,7 @@ public struct WorkoutsView: View {
                 .minimumScaleFactor(0.68)
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(Color.white.opacity(0.74))
+                .foregroundStyle(GymTheme.textSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1438,9 +1667,22 @@ public struct WorkoutsView: View {
 
     @ViewBuilder
     private var workoutListContent: some View {
+        WorkoutMonthSwitcher(
+            month: selectedMonth,
+            isCurrentMonth: monthOffset == 0,
+            onPrevious: { monthOffset = max(-1_200, monthOffset - 1) },
+            onCurrent: { monthOffset = 0 },
+            onNext: { monthOffset = min(0, monthOffset + 1) }
+        )
+
         GymPanel(highlighted: true) {
             HStack(alignment: .center, spacing: 12) {
-                Text("Saved workouts")
+                Text(gymText(
+                    "Saved workouts",
+                    "Збережені тренування",
+                    "Сохранённые тренировки",
+                    languageCode: languageCode
+                ))
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
@@ -1462,11 +1704,27 @@ public struct WorkoutsView: View {
         if monthWorkouts.isEmpty {
             GymPanel {
                 GymContentUnavailableView {
-                    Label("No workouts this month", systemImage: "calendar.badge.plus")
+                    Label(
+                        gymText(
+                            "No workouts this month",
+                            "Цього місяця тренувань немає",
+                            "В этом месяце тренировок нет",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "calendar.badge.plus"
+                    )
                 } description: {
-                    Text("Use Add workout when you are ready to log your first session.")
+                    Text(gymText(
+                        "Use Add workout when you are ready to log a session.",
+                        "Натисни «Додати тренування», коли будеш готовий записати сесію.",
+                        "Нажми «Добавить тренировку», когда будешь готов записать сессию.",
+                        languageCode: languageCode
+                    ))
                 } actions: {
-                    Button("Add workout") { _ = onAddWorkout(nil) }
+                    Button(gymText(
+                        "Add workout", "Додати тренування", "Добавить тренировку",
+                        languageCode: languageCode
+                    )) { _ = onAddWorkout(nil) }
                         .buttonStyle(GymPrimaryButtonStyle())
                 }
                 .frame(maxWidth: .infinity)
@@ -1590,6 +1848,10 @@ public struct WorkoutsView: View {
 
     private var monthWorkouts: [WorkoutSessionSummary] {
         todayProjection.monthWorkouts
+    }
+
+    private var selectedMonth: Date {
+        calendar.date(byAdding: .month, value: monthOffset, to: referenceDate) ?? referenceDate
     }
 
     private func workoutNote(_ workout: WorkoutSessionSummary) -> String {

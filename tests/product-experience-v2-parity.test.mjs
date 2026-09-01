@@ -10,6 +10,8 @@ const [
   iosTutorialSource,
   iosWorkoutsSource,
   iosActiveWorkoutSource,
+  androidTodaySource,
+  androidTodayViewModel,
   androidActiveWorkoutSource,
   androidEnglish,
   androidUkrainian,
@@ -21,6 +23,8 @@ const [
   readFile(new URL("ios/GymApp-iOS/GymApp/UI/Components/AppTutorialOverlay.swift", root), "utf8"),
   readFile(new URL("ios/GymApp-iOS/GymApp/UI/Screens/WorkoutsView.swift", root), "utf8"),
   readFile(new URL("ios/GymApp-iOS/GymApp/UI/Screens/ActiveWorkoutView.swift", root), "utf8"),
+  readFile(new URL("app/src/main/java/com/example/gymapp/ui/screens/WorkoutListScreen.kt", root), "utf8"),
+  readFile(new URL("app/src/main/java/com/example/gymapp/ui/viewmodel/WorkoutListViewModel.kt", root), "utf8"),
   readFile(new URL("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt", root), "utf8"),
   readFile(new URL("app/src/main/res/values/strings.xml", root), "utf8"),
   readFile(new URL("app/src/main/res/values-uk/strings.xml", root), "utf8"),
@@ -30,7 +34,7 @@ const contract = JSON.parse(contractSource);
 
 test("product experience v2 defines one full-client navigation and tutorial", () => {
   assert.equal(contract.schemaVersion, 2);
-  assert.equal(contract.productVersion, "3.2.7");
+  assert.equal(contract.productVersion, "3.2.8");
   assert.deepEqual(contract.fullClients, ["android", "ios", "pwa"]);
   assert.deepEqual(contract.navigation.fullClientTabOrder, [
     "today",
@@ -42,6 +46,10 @@ test("product experience v2 defines one full-client navigation and tutorial", ()
     contract.navigation.profile,
     "friendsLiveWorkoutsAccountProfilesDevicesSettingsAndHelp"
   );
+  assert.deepEqual(contract.terminology.profileSections, [
+    "friendsAndLive",
+    "accountAndDevices"
+  ]);
   assert.deepEqual(
     contract.tutorial.steps.map(step => step.id),
     ["todayFocus", "todayPrimaryAction", "exercises", "progress", "profile"]
@@ -72,12 +80,21 @@ test("today, first workout, and progress use the same information architecture",
   ]);
   assert.equal(
     contract.todayFocusLens.weeklySummaryPlacement,
-    "today.progressiveDisclosure.belowCurrentState"
+    "today.alwaysVisibleBelowCurrentActionBeforeHistory"
   );
   assert.deepEqual(contract.todayFocusLens.weeklySummary, [
     "sevenDayCircles", "completedTrainingDaysVsTarget", "completedWorkouts",
     "trainingMinutes", "totalVolume"
   ]);
+  assert.deepEqual(contract.todayFocusLens.weeklyHistoryNavigation, {
+    controls: ["previousWeek", "returnToCurrentWeek", "nextWeek", "horizontalSwipe"],
+    minimumWeekOffset: -5200,
+    maximumWeekOffset: 0,
+    futureNavigationDisabled: true,
+    selectedWeekShowsSavedWorkouts: true,
+    todayActionRemainsBoundToCurrentLocalDay: true,
+    resetsOnAccountChange: true
+  });
   assert.equal(contract.todayFocusLens.completedToday.suppresses.includes("recovery"), true);
   assert.deepEqual(contract.todayFocusLens.completedToday.actionsInOrder, ["createAnotherWorkout"]);
   assert.deepEqual(contract.todayFocusLens.retainedDraftOverride, {
@@ -106,6 +123,24 @@ test("today, first workout, and progress use the same information architecture",
     "collapsedBehindMoreOptions"
   );
   assert.equal(contract.terminology.missionsPlacement, "progress.goals");
+});
+
+test("Today exposes bounded historical week navigation on every full client", () => {
+  assert.match(pwaSource, /data-action="week-prev"/);
+  assert.match(pwaSource, /data-action="week-current"/);
+  assert.match(pwaSource, /data-action="week-next"/);
+  assert.match(pwaSource, /Math\.max\(-5200, workoutWeekOffset - 1\)/);
+  assert.match(pwaSource, /weekly-session-row/);
+
+  assert.match(iosWorkoutsSource, /@State private var weekOffset = 0/);
+  assert.match(iosWorkoutsSource, /weekOffset = max\(-5_200, weekOffset - 1\)/);
+  assert.match(iosWorkoutsSource, /historyWeekWorkouts/);
+
+  assert.match(androidTodaySource, /WeeklyTrainingCard\(/);
+  assert.match(androidTodaySource, /onPreviousWeek/);
+  assert.match(androidTodayViewModel, /fun previousWeek\(\)/);
+  assert.match(androidTodayViewModel, /coerceAtLeast\(-5_200\)/);
+  assert.match(androidTodayViewModel, /workouts = currentWeekSessions/);
 });
 
 test("live mutation recovery and push navigation preserve confirmed server work", () => {

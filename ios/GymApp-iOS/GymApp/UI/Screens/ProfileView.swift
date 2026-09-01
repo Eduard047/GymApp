@@ -39,6 +39,7 @@ struct ProfileView: View {
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var focusedProfilePushTarget: NativePushProfileFocus?
 
     @State private var activeAlert: ActiveAlert?
@@ -281,17 +282,57 @@ struct ProfileView: View {
                 trailing: 7
             )
         ) {
-            Picker(
-                gymText("Profile section", "Розділ профілю", "Раздел профиля", languageCode: languageCode),
-                selection: $selectedSection
-            ) {
-                Text(gymText("Friends", "Друзі", "Друзья", languageCode: languageCode))
-                    .tag(ProfileSection.friends)
-                Text(gymText("Settings", "Налаштування", "Настройки", languageCode: languageCode))
-                    .tag(ProfileSection.settings)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 8) {
+                        profileSectionButton(.friends)
+                        profileSectionButton(.settings)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        profileSectionButton(.friends)
+                        profileSectionButton(.settings)
+                    }
+                }
             }
-            .pickerStyle(.segmented)
         }
+    }
+
+    private func profileSectionButton(_ section: ProfileSection) -> some View {
+        let isSelected = selectedSection == section
+        let title = section == .friends
+            ? gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode)
+            : gymText("Account & devices", "Акаунт і пристрої", "Аккаунт и устройства", languageCode: languageCode)
+        let icon = section == .friends ? "person.2.fill" : "applewatch"
+        return Button {
+            selectedSection = section
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 8)
+            .foregroundStyle(isSelected ? Color.white : GymTheme.textSecondary)
+            .background(
+                isSelected ? GymTheme.primary : Color.clear,
+                in: RoundedRectangle(cornerRadius: 14)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(
+                        isSelected ? GymTheme.primary : GymTheme.outlineSoft,
+                        lineWidth: 1
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var accountCard: some View {

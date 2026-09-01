@@ -37,6 +37,17 @@ test("exercise density, active workout disclosure, and empty progress remain acc
   assert.match(styles, /@media \(max-width: 460px\) and \(max-height: 640px\)/);
 });
 
+test("progress grids stay inside narrow mobile viewports", () => {
+  assert.match(
+    styles,
+    /\.progress-hub,\s*\.progress-hub-panel\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?min-width:\s*0;/
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 460px\)[\s\S]*?\.solo-progress-hero \.metric-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/
+  );
+});
+
 test("each full-screen account state and logged route exposes one meaningful H1", () => {
   assert.match(app, /<h1 class="auth-wordmark">GymApp<\/h1>/);
   assert.match(app, /<h1>\$\{titleForRoute\(current\)\}<\/h1>/);
@@ -62,9 +73,9 @@ test("install metadata and immutable PWA entrypoints are one coherent GymApp rel
   assert.equal(Object.hasOwn(manifest, "orientation"), false);
   assert.match(index, /<title>GymApp — Workout Tracker<\/title>/);
   assert.match(index, /apple-mobile-web-app-title" content="GymApp"/);
-  for (const asset of ["styles.v79.css", "russian-text.v86.js", "app.v104.js"]) {
+  for (const asset of ["styles.v81.css", "russian-text.v86.js", "app.v105.js"]) {
     assert.ok(index.includes(`./${asset}`), `index references ${asset}`);
     assert.ok(worker.includes(`"./${asset}"`), `service worker caches ${asset}`);
   }
-  assert.match(worker, /const CACHE_VERSION = "v145";/);
+  assert.match(worker, /const CACHE_VERSION = "v147";/);
 });

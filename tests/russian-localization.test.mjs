@@ -250,10 +250,10 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
   assert.match(indexSource, /russian-text\.v86\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v104\.js/);
+  assert.match(indexSource, /app\.v105\.js/);
   assert.match(workerSource, /russian-text\.v86\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v104\.js/);
+  assert.match(workerSource, /app\.v105\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });

@@ -376,7 +376,7 @@ struct WorkoutProgressHero: View {
 
     var body: some View {
         GymHeroPanel {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text("SOLO PROGRESS")
                     .font(.caption.weight(.bold))
                     .tracking(0.7)

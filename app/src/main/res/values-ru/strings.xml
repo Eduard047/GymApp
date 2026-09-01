@@ -753,7 +753,12 @@
     <string name="today_add_another_workout">Добавить ещё одну тренировку</string>
     <string name="today_continue_plan">Продолжить план</string>
     <string name="weekly_training_summary_title">На этой неделе</string>
-    <string name="focus_lens_details">Неделя и детали плана</string>
+    <string name="cd_previous_week">Предыдущая неделя</string>
+    <string name="cd_next_week">Следующая неделя</string>
+    <string name="action_return_to_current_week">Вернуться к этой неделе</string>
+    <string name="weekly_training_sessions_title">Тренировки за неделю</string>
+    <string name="weekly_training_sessions_empty">На этой неделе тренировок не сохранено.</string>
+    <string name="focus_lens_details">Детали плана</string>
     <string name="weekly_training_day_completed">тренировка выполнена</string>
     <string name="weekly_training_day_not_completed">без тренировки</string>
     <string name="weekly_training_day_today">сегодня</string>

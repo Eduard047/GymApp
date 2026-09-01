@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,7 +55,7 @@ fun SoloProgressHero(
     modifier: Modifier = Modifier
 ) {
     HeroPanel(modifier = modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 text = stringResource(R.string.solo_progress_eyebrow),
                 style = MaterialTheme.typography.labelLarge,
@@ -141,30 +142,62 @@ fun SoloProgressHero(
                 trackColor = Color.White.copy(alpha = 0.2f)
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SoloHeroStat(
-                    label = stringResource(R.string.solo_month_xp_label),
-                    value = stringResource(R.string.solo_month_xp_value, progress.monthXp),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
-                )
-                SoloHeroStat(
-                    label = stringResource(R.string.solo_streak_label),
-                    value = stringResource(
-                        R.string.solo_weekly_rhythm_value,
-                        progress.weeklyStreakWeeks,
-                        progress.weeklyTarget
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-                SoloHeroStat(
-                    label = stringResource(R.string.solo_next_title_label),
-                    value = progress.nextTitle,
-                    modifier = Modifier.weight(1f)
-                )
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth < 360.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SoloHeroStat(
+                                label = stringResource(R.string.solo_month_xp_label),
+                                value = stringResource(R.string.solo_month_xp_value, progress.monthXp),
+                                modifier = Modifier.weight(1f),
+                                emphasized = true
+                            )
+                            SoloHeroStat(
+                                label = stringResource(R.string.solo_streak_label),
+                                value = stringResource(
+                                    R.string.solo_weekly_rhythm_value,
+                                    progress.weeklyStreakWeeks,
+                                    progress.weeklyTarget
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        SoloHeroStat(
+                            label = stringResource(R.string.solo_next_title_label),
+                            value = progress.nextTitle,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SoloHeroStat(
+                            label = stringResource(R.string.solo_month_xp_label),
+                            value = stringResource(R.string.solo_month_xp_value, progress.monthXp),
+                            modifier = Modifier.weight(1f),
+                            emphasized = true
+                        )
+                        SoloHeroStat(
+                            label = stringResource(R.string.solo_streak_label),
+                            value = stringResource(
+                                R.string.solo_weekly_rhythm_value,
+                                progress.weeklyStreakWeeks,
+                                progress.weeklyTarget
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        SoloHeroStat(
+                            label = stringResource(R.string.solo_next_title_label),
+                            value = progress.nextTitle,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             Text(
@@ -558,15 +591,15 @@ private fun SoloHeroStat(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
                 color = Color.White.copy(alpha = 0.72f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 2,
+                overflow = TextOverflow.Clip
             )
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 2,
+                overflow = TextOverflow.Clip
             )
         }
     }

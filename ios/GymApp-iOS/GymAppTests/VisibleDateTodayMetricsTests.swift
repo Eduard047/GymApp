@@ -122,6 +122,38 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
         )
     }
 
+    func testWeeklySummaryCanAnchorHistoricalWeekWithoutIncludingCurrentOrFutureSessions() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = date(2026, 8, 15, hour: 12, calendar: calendar)
+        let sessions = [
+            summary(date: date(2026, 8, 5, hour: 8, calendar: calendar), volume: 100),
+            summary(date: date(2026, 8, 12, hour: 8, calendar: calendar), volume: 200),
+            summary(date: date(2026, 8, 15, hour: 18, calendar: calendar), volume: 300)
+        ]
+
+        let historical = WeeklyTrainingSummary(
+            sessions: sessions,
+            weekContaining: date(2026, 8, 5, calendar: calendar),
+            now: now,
+            calendar: calendar
+        )
+        let current = WeeklyTrainingSummary(
+            sessions: sessions,
+            weekContaining: date(2026, 8, 15, calendar: calendar),
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(historical.weekStart, date(2026, 8, 3, calendar: calendar))
+        XCTAssertEqual(historical.completedSessionCount, 1)
+        XCTAssertEqual(historical.totalVolume, 100)
+        XCTAssertFalse(historical.hasCompletedWorkoutToday(now: now, calendar: calendar))
+        XCTAssertEqual(current.completedSessionCount, 1)
+        XCTAssertEqual(current.totalVolume, 200)
+    }
+
     func testWeeklyDurationPrefersNativeMeasurementAndFallsBackWithoutIt() {
         XCTAssertEqual(
             WeeklyTrainingSummary.durationMinutes(

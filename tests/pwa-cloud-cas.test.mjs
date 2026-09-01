@@ -2245,10 +2245,10 @@ test("oversized account marker clears both the marker and legacy persistent sess
 test("account transitions clear timers while durable Garmin revocation stays explicit", () => {
   assert.match(appSource, /clearTimeout\(remoteSaveTimer\);[\s\S]*remoteStateSync = \{ userId: null, exists: false, revision: null \}/);
   assert.ok(
-    (appSource.match(/activeAccount = account;\s*(?:if \(authOperation\) advanceAuthOperationAccount\(authOperation, account\);\s*)?exerciseRestTimerLedger = null;/g) || []).length >= 3
+    (appSource.match(/activeAccount = account;\s*resetPeriodNavigation\(\);\s*(?:if \(authOperation\) advanceAuthOperationAccount\(authOperation, account\);\s*)?exerciseRestTimerLedger = null;/g) || []).length >= 3
   );
   assert.ok(
-    (appSource.match(/activeAccount = null;\s*exerciseRestTimerLedger = null;\s*state = loadState\(\);/g) || []).length >= 3
+    (appSource.match(/activeAccount = null;\s*resetPeriodNavigation\(\);\s*exerciseRestTimerLedger = null;\s*state = loadState\(\);/g) || []).length >= 3
   );
   const logoutSource = appSource.slice(appSource.indexOf("async function logoutAccount"), appSource.indexOf("async function unpairGarmin"));
   const unpairSource = appSource.slice(appSource.indexOf("async function unpairGarmin"), appSource.indexOf("function accountPanel"));
