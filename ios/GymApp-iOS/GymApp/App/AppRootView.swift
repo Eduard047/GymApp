@@ -1589,6 +1589,20 @@ private struct MainTabShell: View {
                 onDiscardWorkout: {
                     showingActiveDraftDiscardConfirmation = true
                 },
+                onCancelPlan: {
+                    guard appState.activeAccountStorageKey == store.accountStorageKey,
+                          workoutEditorDraft == nil
+                            || workoutEditorDraft?.belongs(to: store.accountStorageKey) == true else {
+                        return
+                    }
+                    workoutEditorDraft = nil
+                    workoutEditorLiveRecipient = nil
+                    sharedWorkoutDraftSeed = []
+                    workoutLaunchSeed = nil
+                    workoutLaunchConsumerID = nil
+                    workoutLaunchDrafts = nil
+                    showsAddWorkout = false
+                },
                 tracksTutorialPrimaryActionFrame: appTutorialShouldMeasurePrimaryAction(
                     target: currentTutorialStep?.target
                 ),

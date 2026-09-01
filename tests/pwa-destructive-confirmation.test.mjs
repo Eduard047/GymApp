@@ -143,6 +143,7 @@ test("destructive controls use explicit accessible in-app confirmation markup", 
   assert.match(appSource, /aria-describedby=/);
   assert.match(appSource, /delete-exercise-confirm-target delete-exercise-confirm-description/);
   assert.match(appSource, /delete-set-confirm-target delete-set-confirm-detail delete-set-confirm-description/);
+  assert.match(appSource, /inertModalBackground\(modalElement\)/);
   assert.match(appSource, /element\.inert = true/);
   assert.match(appSource, /focusStableScreenContext\(\)/);
   assert.match(appSource, /formatLocalizedSetWeight\(location\.set\.weight\)/);
@@ -153,10 +154,53 @@ test("destructive controls use explicit accessible in-app confirmation markup", 
   assert.equal(labelledDeleteSets.length, 1, "saved-set deletion must exist only in detail edit mode");
 });
 
+test("Today can confirm cancelling its retained plan without deleting workout history", () => {
+  const context = loadContext();
+  vm.runInContext(`
+    state.sessions = [{
+      id: 41,
+      startedAt: Date.UTC(2026, 7, 26, 12),
+      blocks: [{ exerciseName: "Bench Press", sets: [{ weight: 50, reps: 10 }] }]
+    }];
+    saveState({ queueRemote: false, markDirty: false });
+    workoutDraft = createDraft();
+    workoutDraft.blocks = [{ exerciseName: "Squat", sets: [{ weight: "", reps: "8" }] }];
+    persistWorkoutDraft();
+    nav = [{ name: "workouts" }];
+    render = () => true;
+  `, context);
+
+  assert.equal(vm.runInContext(`requestDiscardWorkoutDraft({ action: "cancel-retained-plan" }, "today")`, context), true);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-discard-plan");
+  assert.equal(vm.runInContext("modal.intent.routeName", context), "workouts");
+  assert.equal(vm.runInContext("confirmDiscardWorkoutDraft()", context), true);
+  assert.equal(vm.runInContext("workoutDraft", context), null);
+  assert.equal(vm.runInContext("state.sessions.length", context), 1);
+  assert.equal(vm.runInContext("state.sessions[0].id", context), 41);
+});
+
+test("saved-plan cancellation stays bound to the route that requested it", () => {
+  const context = loadContext();
+  vm.runInContext(`
+    workoutDraft = createDraft();
+    workoutDraft.blocks = [{ exerciseName: "Squat", sets: [{ weight: "", reps: "8" }] }];
+    persistWorkoutDraft();
+    nav = [{ name: "workouts" }];
+    render = () => true;
+    requestDiscardWorkoutDraft({ action: "cancel-retained-plan" }, "today");
+    nav = [{ name: "workouts" }, { name: "add" }];
+  `, context);
+
+  assert.equal(vm.runInContext("confirmDiscardWorkoutDraft()", context), false);
+  assert.notEqual(vm.runInContext("workoutDraft", context), null);
+});
+
 test("ordinary dialogs focus an internal control, close on Escape, and restore their invoker", () => {
   const context = loadContext();
   let restoredFocus = false;
-  const background = { inert: false };
+  const screenBackground = { inert: false };
+  const header = { inert: false };
+  const navigation = { inert: false };
   const invoker = {
     dataset: { action: "open-exercise-more", id: "7001" },
     focus() {
@@ -179,7 +223,15 @@ test("ordinary dialogs focus an internal control, close on Escape, and restore t
     querySelectorAll() { return [focusTarget]; },
     setAttribute() {}
   };
-  context.appNode.children = [background, modalElement];
+  const screen = { children: [screenBackground, modalElement] };
+  const shell = { children: [header, screen, navigation] };
+  modalElement.parentElement = screen;
+  screenBackground.parentElement = screen;
+  screen.parentElement = shell;
+  header.parentElement = shell;
+  navigation.parentElement = shell;
+  shell.parentElement = context.appNode;
+  context.appNode.children = [shell];
   context.runtimeNodes.set(".modal", modalElement);
   context.runtimeLists.set('[data-action="open-exercise-more"]', [invoker]);
   vm.runInContext(`
@@ -191,7 +243,12 @@ test("ordinary dialogs focus an internal control, close on Escape, and restore t
     bindEvents();
   `, context);
 
-  assert.equal(background.inert, true);
+  assert.equal(screenBackground.inert, true);
+  assert.equal(header.inert, true);
+  assert.equal(navigation.inert, true);
+  assert.notEqual(modalElement.inert, true);
+  assert.notEqual(screen.inert, true);
+  assert.notEqual(shell.inert, true);
   assert.equal(context.document.activeElement, focusTarget);
   const escapeEvent = {
     key: "Escape",

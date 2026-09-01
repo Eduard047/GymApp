@@ -109,7 +109,7 @@
     "actionsInOrder": ["startPlan", "editPlan", "createManually"],
     "retainedDraftPrecedence": {
       "appliesToStates": ["recommendedPlan", "restOrRecovery", "completedToday", "firstWorkoutActivation"],
-      "actionsInOrder": ["continuePlan"],
+      "actionsInOrder": ["continuePlan", "cancelPlan"],
       "opens": "sameAccountRetainedPlanEditorState",
       "mayReplaceDraft": false,
       "mayCreateActiveWorkout": false,
@@ -288,6 +288,19 @@
       "action": "continuePlan",
       "to": "samePlanEditorState",
       "mutations": []
+    },
+    {
+      "from": "todayAnyStateWithRetainedDraft",
+      "action": "cancelPlan",
+      "to": "confirmationRequired",
+      "mutations": []
+    },
+    {
+      "from": "confirmationRequired",
+      "action": "confirmCancelPlan",
+      "to": "todayWithoutRetainedDraft",
+      "mutations": ["removeSameAccountRetainedDraft", "removeSelectedLiveRecipient"],
+      "preserves": ["workoutHistory", "activeWorkout"]
     },
     {
       "from": "todayRecommended",

@@ -752,6 +752,22 @@
     <string name="today_workout_completed_supporting">Сьогоднішнє тренування збережено в історії.</string>
     <string name="today_add_another_workout">Додати ще одне тренування</string>
     <string name="today_continue_plan">Продовжити план</string>
+    <string name="today_cancel_plan">Скасувати план</string>
+    <string name="today_cancel_plan_title">Скасувати збережений план?</string>
+    <string name="today_cancel_plan_message">Збережений план і вибраний отримувач LIVE будуть видалені. Історія та активне тренування залишаться.</string>
+    <string name="today_cancel_plan_keep">Залишити план</string>
+    <string name="today_cancel_plan_confirm">Скасувати план</string>
+    <string name="training_history_title">Історія тренувань</string>
+    <string name="training_history_week">Тиждень</string>
+    <string name="training_history_month">Місяць</string>
+    <plurals name="training_history_active_days">
+        <item quantity="one">%1$d день</item>
+        <item quantity="few">%1$d дні</item>
+        <item quantity="many">%1$d днів</item>
+        <item quantity="other">%1$d дня</item>
+    </plurals>
+    <string name="training_history_empty_week">Цього тижня тренувань поки немає.</string>
+    <string name="training_history_empty_month">Цього місяця тренувань поки немає.</string>
     <string name="weekly_training_summary_title">Цього тижня</string>
     <string name="cd_previous_week">Попередній тиждень</string>
     <string name="cd_next_week">Наступний тиждень</string>

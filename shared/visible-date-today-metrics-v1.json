@@ -61,9 +61,13 @@
     "completedTodaySuppresses": ["recoveryCard", "trainAnyway", "recommendedPlanActions"],
     "completedTodayActionsInOrder": ["createAnotherWorkout"],
     "retainedDraftActionOverride": {
-      "actionsInOrder": ["continuePlan"],
+      "actionsInOrder": ["continuePlan", "cancelPlan"],
       "createAnotherWorkoutSuppressed": true,
-      "opensSameAccountRetainedDraft": true
+      "opensSameAccountRetainedDraft": true,
+      "cancelPlanVisibleWithoutOverflow": true,
+      "cancelPlanRequiresConfirmation": true,
+      "cancelPlanRemoves": ["sameAccountRetainedDraft", "selectedLiveRecipient"],
+      "cancelPlanPreserves": ["completedWorkoutHistory", "activeWorkout"]
     },
     "completedTodayCopy": {
       "title": {
@@ -78,11 +82,11 @@
       }
     }
   },
-  "weeklySummary": {
-    "calendar": "localMondayStartSevenDayWeek",
-    "dayMarkers": 7,
-    "trainedDayMarker": "filledCircleWhenAtLeastOneCompletedSessionExists",
-    "headerMetric": "completedTrainingDaysVsProfileTarget",
+  "trainingHistory": {
+    "periodsInOrder": ["week", "month"],
+    "defaultPeriod": "week",
+    "singleSurface": true,
+    "oneWorkoutListFilteredToSelectedPeriod": true,
     "metricsInOrder": ["completedWorkouts", "trainingMinutes", "totalVolume"],
     "metricValueStyle": "localizedWholeNumberWithoutRepeatedUnitSuffix",
     "labels": {
@@ -102,6 +106,17 @@
         "ru": "Объём"
       }
     },
+    "week": {
+      "calendar": "localMondayStartSevenDayWeek",
+      "dayMarkers": 7,
+      "trainedDayMarker": "filledCircleWhenAtLeastOneCompletedSessionExists",
+      "headerMetric": "completedTrainingDaysVsProfileTarget"
+    },
+    "month": {
+      "calendar": "localMondayFirstMonthGrid",
+      "trainedDayMarker": "highlightedDayWhenAtLeastOneCompletedSessionExists",
+      "headerMetric": "completedTrainingDays"
+    },
     "completedHistoryOnly": true,
     "activeDraftCounted": false,
     "trainingMinutes": {
@@ -116,10 +131,10 @@
     }
   },
   "pwaReleaseCoupling": {
-    "appBundle": "app.v105.js",
-    "styleBundle": "styles.v81.css",
+    "appBundle": "app.v106.js",
+    "styleBundle": "styles.v82.css",
     "russianBundle": "russian-text.v86.js",
     "liveWorkoutBundle": "live-workout.v3.js",
-    "serviceWorkerCache": "gym-pwa-v147"
+    "serviceWorkerCache": "gym-pwa-v148"
   }
 }

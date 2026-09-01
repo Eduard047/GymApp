@@ -103,6 +103,52 @@ struct WeeklyTrainingSummary: Equatable {
     }
 }
 
+enum TrainingHistoryPeriod: String, CaseIterable, Identifiable {
+    case week
+    case month
+
+    var id: String { rawValue }
+}
+
+struct MonthlyTrainingSummary: Equatable {
+    let monthStart: Date
+    let completedSessionCount: Int
+    let completedTrainingDays: Set<Int64>
+    let totalMinutes: Int
+    let totalVolume: Double
+
+    init(
+        sessions: [WorkoutSessionSummary],
+        monthContaining referenceDate: Date,
+        now: Date,
+        calendar: Calendar
+    ) {
+        let interval = calendar.dateInterval(of: .month, for: referenceDate)
+            ?? DateInterval(start: calendar.startOfDay(for: referenceDate), duration: 1)
+        let monthlySessions = sessions.filter { session in
+            interval.contains(session.date) && session.date <= now
+        }
+        monthStart = interval.start
+        completedSessionCount = monthlySessions.count
+        completedTrainingDays = Set(
+            monthlySessions.map { calendar.gymEpochDay(for: $0.date) }
+        )
+        totalMinutes = monthlySessions.reduce(0) { running, session in
+            let minutes = WeeklyTrainingSummary.durationMinutes(for: session)
+            guard running <= Int.max - minutes else { return Int.max }
+            return running + minutes
+        }
+        totalVolume = monthlySessions.reduce(0.0) { running, session in
+            guard session.totalVolume.isFinite, session.totalVolume >= 0 else { return running }
+            return min(maximumTodayHeroVolume, running + session.totalVolume)
+        }
+    }
+
+    func hasWorkout(on date: Date, calendar: Calendar) -> Bool {
+        completedTrainingDays.contains(calendar.gymEpochDay(for: date))
+    }
+}
+
 struct TodayScreenProjection {
     let accountStorageKey: String
     let trainingProfile: TrainingProfile
@@ -110,6 +156,7 @@ struct TodayScreenProjection {
     let weeklySummary: WeeklyTrainingSummary
     let historyWeekSummary: WeeklyTrainingSummary
     let historyWeekWorkouts: [WorkoutSessionSummary]
+    let monthSummary: MonthlyTrainingSummary
     let launchSeed: WorkoutLaunchSeed?
     let heroMetrics: TodayHeroMetrics
     let monthWorkouts: [WorkoutSessionSummary]
@@ -140,6 +187,7 @@ final class TodayScreenProjectionCache: ObservableObject {
         weekOffset: Int = 0
     ) -> TodayScreenProjection {
         let boundedWeekOffset = min(0, max(-5_200, weekOffset))
+        let boundedMonthOffset = min(0, max(-1_200, monthOffset))
         let key = Key(
             storeIdentity: ObjectIdentifier(store),
             accountStorageKey: store.accountStorageKey,
@@ -147,7 +195,7 @@ final class TodayScreenProjectionCache: ObservableObject {
             referenceDate: referenceDate,
             calendar: calendar,
             trainingProfile: trainingProfile,
-            monthOffset: monthOffset,
+            monthOffset: boundedMonthOffset,
             weekOffset: boundedWeekOffset
         )
         if let cached, cached.key == key {
@@ -229,11 +277,14 @@ final class TodayScreenProjectionCache: ObservableObject {
         )
         let selectedMonth = calendar.date(
             byAdding: .month,
-            value: monthOffset,
+            value: boundedMonthOffset,
             to: referenceDate
         ) ?? referenceDate
         let selectedMonthInterval = calendar.dateInterval(of: .month, for: selectedMonth)
             ?? DateInterval(start: calendar.startOfDay(for: selectedMonth), duration: 1)
+        let monthWorkouts = sessions
+            .filter { selectedMonthInterval.contains($0.date) && $0.date <= referenceDate }
+            .sorted { $0.date > $1.date }
         let projection = TodayScreenProjection(
             accountStorageKey: store.accountStorageKey,
             trainingProfile: trainingProfile,
@@ -241,12 +292,18 @@ final class TodayScreenProjectionCache: ObservableObject {
             weeklySummary: weeklySummary,
             historyWeekSummary: historyWeekSummary,
             historyWeekWorkouts: historyWeekWorkouts,
+            monthSummary: MonthlyTrainingSummary(
+                sessions: monthWorkouts,
+                monthContaining: selectedMonth,
+                now: referenceDate,
+                calendar: calendar
+            ),
             launchSeed: launchSeed,
             heroMetrics: TodayHeroMetrics(
                 sessions: sessions,
                 weeklyStreakWeeks: weeklyStreakWeeks
             ),
-            monthWorkouts: sessions.filter { selectedMonthInterval.contains($0.date) }
+            monthWorkouts: monthWorkouts
         )
         buildCount += 1
         cached = (key, projection)
@@ -265,6 +322,7 @@ public struct WorkoutsView: View {
     @State private var referenceDate = Date()
     @State private var monthOffset = 0
     @State private var weekOffset = 0
+    @State private var historyPeriod: TrainingHistoryPeriod = .week
     @State private var historyReturnWorkoutID: UUID?
     @State private var activationGoal: TrainingGoal = .aestheticFatLoss
     @State private var activationDays = 4
@@ -274,6 +332,7 @@ public struct WorkoutsView: View {
     @State private var showsActiveFocusDetails = false
     @State private var showsActiveMoreActions = false
     @State private var showsActivationOptions = false
+    @State private var showsRetainedPlanCancelConfirmation = false
 
     private let onStartPlan: (WorkoutLaunchSeed) -> Bool
     private let onAddWorkout: (WorkoutLaunchSeed?) -> Bool
@@ -281,6 +340,7 @@ public struct WorkoutsView: View {
     private let activeWorkoutDraft: ActiveWorkoutDraft?
     private let onContinueWorkout: () -> Void
     private let onDiscardWorkout: () -> Void
+    private let onCancelPlan: () -> Void
     private let tracksTutorialPrimaryActionFrame: Bool
     private let onTutorialPrimaryActionFrameChange: @MainActor (CGRect?) -> Void
     private let onOpenWorkout: (UUID) -> Void
@@ -294,6 +354,7 @@ public struct WorkoutsView: View {
         onAddWorkout: @escaping (WorkoutLaunchSeed?) -> Bool,
         onContinueWorkout: @escaping () -> Void = {},
         onDiscardWorkout: @escaping () -> Void = {},
+        onCancelPlan: @escaping () -> Void = {},
         tracksTutorialPrimaryActionFrame: Bool = false,
         onTutorialPrimaryActionFrameChange: @escaping @MainActor (CGRect?) -> Void = { _ in },
         onOpenWorkout: @escaping (UUID) -> Void,
@@ -306,6 +367,7 @@ public struct WorkoutsView: View {
         self.onAddWorkout = onAddWorkout
         self.onContinueWorkout = onContinueWorkout
         self.onDiscardWorkout = onDiscardWorkout
+        self.onCancelPlan = onCancelPlan
         self.tracksTutorialPrimaryActionFrame = tracksTutorialPrimaryActionFrame
         self.onTutorialPrimaryActionFrameChange = onTutorialPrimaryActionFrameChange
         self.onOpenWorkout = onOpenWorkout
@@ -333,8 +395,7 @@ public struct WorkoutsView: View {
                             focusLens
                         }
                         if !store.workoutSummaries.isEmpty {
-                            weeklyHistoryPanel
-                            workoutListContent
+                            trainingHistoryPanel
                         }
                     }
                     .padding(.horizontal, GymTheme.screenHorizontalInset)
@@ -364,6 +425,7 @@ public struct WorkoutsView: View {
             referenceDate = Date()
             monthOffset = 0
             weekOffset = 0
+            historyPeriod = .week
             historyReturnWorkoutID = nil
             showsFocusDetails = false
             showsActiveFocusDetails = false
@@ -374,6 +436,33 @@ public struct WorkoutsView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active { referenceDate = Date() }
+        }
+        .alert(
+            gymText(
+                "Cancel saved plan?",
+                "Скасувати збережений план?",
+                "Отменить сохранённый план?",
+                languageCode: languageCode
+            ),
+            isPresented: $showsRetainedPlanCancelConfirmation
+        ) {
+            Button(gymText(
+                "Keep plan", "Залишити план", "Оставить план",
+                languageCode: languageCode
+            ), role: .cancel) {}
+            Button(gymText(
+                "Cancel plan", "Скасувати план", "Отменить план",
+                languageCode: languageCode
+            ), role: .destructive) {
+                onCancelPlan()
+            }
+        } message: {
+            Text(gymText(
+                "The saved plan and its selected LIVE recipient will be removed. Workout history and any active workout will stay.",
+                "Збережений план і вибраний отримувач LIVE будуть видалені. Історія та активне тренування залишаться.",
+                "Сохранённый план и выбранный получатель LIVE будут удалены. История и активная тренировка останутся.",
+                languageCode: languageCode
+            ))
         }
     }
 
@@ -1096,28 +1185,431 @@ public struct WorkoutsView: View {
         }
     }
 
-    private var weeklyHistoryPanel: some View {
+    private var trainingHistoryPanel: some View {
         let projection = todayProjection
+        let weekly = projection.historyWeekSummary
+        let monthly = projection.monthSummary
+        let workouts = historyPeriod == .week
+            ? projection.historyWeekWorkouts
+            : projection.monthWorkouts
+        let completedSessionCount = historyPeriod == .week
+            ? weekly.completedSessionCount
+            : monthly.completedSessionCount
+        let completedTrainingDays = historyPeriod == .week
+            ? weekly.completedTrainingDays.count
+            : monthly.completedTrainingDays.count
+        let totalMinutes = historyPeriod == .week ? weekly.totalMinutes : monthly.totalMinutes
+        let totalVolume = historyPeriod == .week ? weekly.totalVolume : monthly.totalVolume
         return GymPanel {
-            weeklyTrainingSummaryView(
-                projection.historyWeekSummary,
-                workouts: projection.historyWeekWorkouts,
-                targetTrainingDays: projection.trainingProfile.workoutsPerWeek
-            )
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 10) {
+                    Text(gymText(
+                        "Training history",
+                        "Історія тренувань",
+                        "История тренировок",
+                        languageCode: languageCode
+                    ))
+                    .font(GymTheme.TypeScale.sectionTitle)
+                    .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 8)
+                    GymInfoPill(
+                        historyPeriod == .week
+                            ? gymText(
+                                "\(completedTrainingDays) / \(projection.trainingProfile.workoutsPerWeek) days",
+                                "\(completedTrainingDays) / \(projection.trainingProfile.workoutsPerWeek) днів",
+                                "\(completedTrainingDays) / \(projection.trainingProfile.workoutsPerWeek) дней",
+                                languageCode: languageCode
+                            )
+                            : gymCount(
+                                completedTrainingDays,
+                                englishOne: "day",
+                                englishMany: "days",
+                                ukrainianOne: "день",
+                                ukrainianFew: "дні",
+                                ukrainianMany: "днів",
+                                languageCode: languageCode
+                            ),
+                        systemImage: "figure.strengthtraining.traditional"
+                    )
+                }
+
+                Picker(
+                    gymText(
+                        "History period", "Період історії", "Период истории",
+                        languageCode: languageCode
+                    ),
+                    selection: $historyPeriod
+                ) {
+                    Text(gymText("Week", "Тиждень", "Неделя", languageCode: languageCode))
+                        .tag(TrainingHistoryPeriod.week)
+                    Text(gymText("Month", "Місяць", "Месяц", languageCode: languageCode))
+                        .tag(TrainingHistoryPeriod.month)
+                }
+                .pickerStyle(.segmented)
+
+                HStack(spacing: 8) {
+                    weekNavigationButton(
+                        systemImage: "chevron.left",
+                        label: historyPeriod == .week
+                            ? gymText(
+                                "Previous week", "Попередній тиждень", "Предыдущая неделя",
+                                languageCode: languageCode
+                            )
+                            : gymText(
+                                "Previous month", "Попередній місяць", "Предыдущий месяц",
+                                languageCode: languageCode
+                            ),
+                        action: moveHistoryBackward
+                    )
+                    Button(action: returnToCurrentHistoryPeriod) {
+                        VStack(spacing: 2) {
+                            Text(historyPeriodTitle(weeklySummary: weekly))
+                                .font(.subheadline.bold())
+                                .foregroundStyle(GymTheme.textPrimary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                            Text(historyPeriodSubtitle)
+                                .font(.caption)
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedHistoryOffset == 0)
+                    weekNavigationButton(
+                        systemImage: "chevron.right",
+                        label: historyPeriod == .week
+                            ? gymText(
+                                "Next week", "Наступний тиждень", "Следующая неделя",
+                                languageCode: languageCode
+                            )
+                            : gymText(
+                                "Next month", "Наступний місяць", "Следующий месяц",
+                                languageCode: languageCode
+                            ),
+                        disabled: selectedHistoryOffset == 0,
+                        action: moveHistoryForward
+                    )
+                }
+
+                if historyPeriod == .week {
+                    weeklyTrainingDayStrip(weekly)
+                } else {
+                    monthlyTrainingCalendar(monthly)
+                }
+
+                HStack(alignment: .top, spacing: 8) {
+                    weeklyTrainingMetric(
+                        value: completedSessionCount.formatted(),
+                        label: gymText(
+                            "Workouts", "Тренування", "Тренировки",
+                            languageCode: languageCode
+                        )
+                    )
+                    weeklyTrainingMetric(
+                        value: totalMinutes.formatted(),
+                        label: gymText(
+                            "Minutes", "Хвилини", "Минуты",
+                            languageCode: languageCode
+                        )
+                    )
+                    weeklyTrainingMetric(
+                        value: formattedTodayHeroVolume(totalVolume),
+                        label: gymText(
+                            "Volume", "Обсяг", "Объём",
+                            languageCode: languageCode
+                        )
+                    )
+                }
+
+                Divider().overlay(GymTheme.outlineSoft)
+                if workouts.isEmpty {
+                    Text(historyPeriod == .week
+                        ? gymText(
+                            "No workouts in this week yet.",
+                            "Цього тижня тренувань поки немає.",
+                            "На этой неделе тренировок пока нет.",
+                            languageCode: languageCode
+                        )
+                        : gymText(
+                            "No workouts in this month yet.",
+                            "Цього місяця тренувань поки немає.",
+                            "В этом месяце тренировок пока нет.",
+                            languageCode: languageCode
+                        ))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                } else {
+                    ForEach(Array(workouts.enumerated()), id: \.element.id) { index, workout in
+                        if index > 0 { Divider().overlay(GymTheme.outlineSoft) }
+                        trainingHistoryRow(workout)
+                    }
+                }
+            }
         }
-        .id("weekly-history")
+        .id("workout-history")
         .simultaneousGesture(
             DragGesture(minimumDistance: 40).onEnded { value in
                 guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else {
                     return
                 }
-                if value.translation.width < 0, weekOffset < 0 {
-                    weekOffset = min(0, weekOffset + 1)
+                if value.translation.width < 0, selectedHistoryOffset < 0 {
+                    moveHistoryForward()
                 } else if value.translation.width > 0 {
-                    weekOffset = max(-5_200, weekOffset - 1)
+                    moveHistoryBackward()
                 }
             }
         )
+    }
+
+    private var selectedHistoryOffset: Int {
+        historyPeriod == .week ? weekOffset : monthOffset
+    }
+
+    private var historyPeriodSubtitle: String {
+        guard selectedHistoryOffset != 0 else {
+            return historyPeriod == .week
+                ? gymText(
+                    "This week", "Цього тижня", "На этой неделе",
+                    languageCode: languageCode
+                )
+                : gymText(
+                    "Current month", "Поточний місяць", "Текущий месяц",
+                    languageCode: languageCode
+                )
+        }
+        return historyPeriod == .week
+            ? gymText(
+                "Return to this week",
+                "Повернутися до цього тижня",
+                "Вернуться к этой неделе",
+                languageCode: languageCode
+            )
+            : gymText(
+                "Return to current month",
+                "Повернутися до поточного місяця",
+                "Вернуться к текущему месяцу",
+                languageCode: languageCode
+            )
+    }
+
+    private func historyPeriodTitle(weeklySummary: WeeklyTrainingSummary) -> String {
+        if historyPeriod == .week { return weeklyRangeTitle(weeklySummary) }
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        return selectedMonth.formatted(.dateTime.month(.wide).year().locale(locale))
+    }
+
+    private func moveHistoryBackward() {
+        if historyPeriod == .week {
+            weekOffset = max(-5_200, weekOffset - 1)
+        } else {
+            monthOffset = max(-1_200, monthOffset - 1)
+        }
+    }
+
+    private func moveHistoryForward() {
+        if historyPeriod == .week {
+            weekOffset = min(0, weekOffset + 1)
+        } else {
+            monthOffset = min(0, monthOffset + 1)
+        }
+    }
+
+    private func returnToCurrentHistoryPeriod() {
+        if historyPeriod == .week { weekOffset = 0 } else { monthOffset = 0 }
+    }
+
+    private func weeklyTrainingDayStrip(_ summary: WeeklyTrainingSummary) -> some View {
+        HStack(spacing: 8) {
+            ForEach(0 ..< 7, id: \.self) { offset in
+                let day = calendar.date(
+                    byAdding: .day,
+                    value: offset,
+                    to: summary.weekStart
+                ) ?? summary.weekStart
+                let completed = summary.hasWorkout(on: day, calendar: calendar)
+                VStack(spacing: 6) {
+                    Text(weeklyDaySymbol(day))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                    Circle()
+                        .fill(completed ? GymTheme.secondary : GymTheme.surfaceVariant)
+                        .frame(width: 14, height: 14)
+                        .overlay {
+                            if calendar.isDate(day, inSameDayAs: referenceDate) {
+                                Circle()
+                                    .stroke(GymTheme.primary, lineWidth: 2)
+                                    .padding(-4)
+                            }
+                        }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    gymFormattedDate(
+                        day,
+                        date: .long,
+                        time: .omitted,
+                        languageCode: languageCode
+                    )
+                )
+                .accessibilityValue(completed
+                    ? gymText(
+                        "Workout completed", "Тренування виконано", "Тренировка выполнена",
+                        languageCode: languageCode
+                    )
+                    : gymText(
+                        "No completed workout",
+                        "Немає виконаного тренування",
+                        "Нет выполненной тренировки",
+                        languageCode: languageCode
+                    ))
+            }
+        }
+    }
+
+    private func monthlyTrainingCalendar(_ summary: MonthlyTrainingSummary) -> some View {
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        var localizedCalendar = calendar
+        localizedCalendar.locale = locale
+        let symbols = localizedCalendar.veryShortStandaloneWeekdaySymbols
+        let mondayFirstSymbols = Array(symbols.dropFirst()) + Array(symbols.prefix(1))
+        let dayCount = calendar.range(of: .day, in: .month, for: summary.monthStart)?.count ?? 0
+        let leading = (calendar.component(.weekday, from: summary.monthStart) + 5) % 7
+        let columns = Array(repeating: GridItem(.flexible(minimum: 24), spacing: 4), count: 7)
+        return VStack(spacing: 5) {
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(Array(mondayFirstSymbols.enumerated()), id: \.offset) { _, symbol in
+                    Text(symbol.uppercased(with: locale))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(0 ..< (leading + dayCount), id: \.self) { index in
+                    if index < leading {
+                        Color.clear.frame(height: 32)
+                    } else {
+                        let dayNumber = index - leading + 1
+                        let day = calendar.date(
+                            byAdding: .day,
+                            value: dayNumber - 1,
+                            to: summary.monthStart
+                        ) ?? summary.monthStart
+                        let completed = summary.hasWorkout(on: day, calendar: calendar)
+                        Text(dayNumber.formatted())
+                            .font(.caption.weight(completed ? .bold : .regular).monospacedDigit())
+                            .foregroundStyle(
+                                completed ? GymTheme.textPrimary : GymTheme.textSecondary
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 32)
+                            .background(
+                                completed ? GymTheme.secondary.opacity(0.18) : Color.clear,
+                                in: Circle()
+                            )
+                            .overlay {
+                                if calendar.isDate(day, inSameDayAs: referenceDate) {
+                                    Circle().stroke(GymTheme.primary, lineWidth: 1.5)
+                                }
+                            }
+                            .accessibilityLabel(
+                                gymFormattedDate(
+                                    day,
+                                    date: .long,
+                                    time: .omitted,
+                                    languageCode: languageCode
+                                )
+                            )
+                            .accessibilityValue(completed
+                                ? gymText(
+                                    "Workout completed",
+                                    "Тренування виконано",
+                                    "Тренировка выполнена",
+                                    languageCode: languageCode
+                                )
+                                : gymText(
+                                    "No completed workout",
+                                    "Немає виконаного тренування",
+                                    "Нет выполненной тренировки",
+                                    languageCode: languageCode
+                                ))
+                    }
+                }
+            }
+        }
+    }
+
+    private func trainingHistoryRow(_ workout: WorkoutSessionSummary) -> some View {
+        let activityOnly = isActivityOnly(workout)
+        let exerciseLabel = gymCount(
+            workout.exerciseCount,
+            englishOne: "exercise",
+            englishMany: "exercises",
+            ukrainianOne: "вправа",
+            ukrainianFew: "вправи",
+            ukrainianMany: "вправ",
+            languageCode: languageCode
+        )
+        let setLabel = gymCount(
+            workout.setCount,
+            englishOne: "set",
+            englishMany: "sets",
+            ukrainianOne: "підхід",
+            ukrainianFew: "підходи",
+            ukrainianMany: "підходів",
+            languageCode: languageCode
+        )
+        let supporting = activityOnly
+            ? gymText(
+                "Garmin free workout",
+                "Вільне тренування Garmin",
+                "Свободная тренировка Garmin",
+                languageCode: languageCode
+            )
+            : "\(exerciseLabel) · \(setLabel)"
+        return Button {
+            historyReturnWorkoutID = workout.workoutID
+            onOpenWorkout(workout.workoutID)
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gymFormattedDate(
+                        workout.date,
+                        date: .long,
+                        time: .omitted,
+                        languageCode: languageCode
+                    ))
+                    .font(.subheadline.bold())
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .lineLimit(1)
+                    Text(supporting)
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                GymInfoPill(
+                    activityOnly
+                        ? compactHistoryDuration(workout.durationSeconds ?? 0)
+                        : formattedTodayHeroVolume(workout.totalVolume)
+                )
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .id(workout.workoutID)
+        .accessibilityHint(gymText(
+            "Opens workout details",
+            "Відкриває деталі тренування",
+            "Открывает детали тренировки",
+            languageCode: languageCode
+        ))
     }
 
     private func weeklyTrainingSummaryView(
@@ -1413,24 +1905,44 @@ public struct WorkoutsView: View {
     }
 
     private var continueRetainedPlanAction: some View {
-        focusActionButton(
-            title: gymText(
-                "Continue plan",
-                "Продовжити план",
-                "Продолжить план",
-                languageCode: languageCode
-            ),
-            systemImage: "pencil",
-            primary: true,
-            accessibilityHint: gymText(
-                "Opens your saved workout plan",
-                "Відкриває збережений план тренування",
-                "Открывает сохранённый план тренировки",
-                languageCode: languageCode
-            )
-        ) {
-            referenceDate = Date()
-            _ = onAddWorkout(nil)
+        VStack(spacing: 10) {
+            focusActionButton(
+                title: gymText(
+                    "Continue plan",
+                    "Продовжити план",
+                    "Продолжить план",
+                    languageCode: languageCode
+                ),
+                systemImage: "pencil",
+                primary: true,
+                accessibilityHint: gymText(
+                    "Opens your saved workout plan",
+                    "Відкриває збережений план тренування",
+                    "Открывает сохранённый план тренировки",
+                    languageCode: languageCode
+                )
+            ) {
+                referenceDate = Date()
+                _ = onAddWorkout(nil)
+            }
+            focusActionButton(
+                title: gymText(
+                    "Cancel plan",
+                    "Скасувати план",
+                    "Отменить план",
+                    languageCode: languageCode
+                ),
+                systemImage: "xmark",
+                primary: false,
+                accessibilityHint: gymText(
+                    "Asks before removing this saved plan",
+                    "Запитує підтвердження перед видаленням збереженого плану",
+                    "Запрашивает подтверждение перед удалением сохранённого плана",
+                    languageCode: languageCode
+                )
+            ) {
+                showsRetainedPlanCancelConfirmation = true
+            }
         }
     }
 

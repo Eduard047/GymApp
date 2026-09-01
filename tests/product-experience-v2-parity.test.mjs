@@ -78,29 +78,36 @@ test("today, first workout, and progress use the same information architecture",
     "completedToday",
     "recovery"
   ]);
-  assert.equal(
-    contract.todayFocusLens.weeklySummaryPlacement,
-    "today.alwaysVisibleBelowCurrentActionBeforeHistory"
-  );
-  assert.deepEqual(contract.todayFocusLens.weeklySummary, [
-    "sevenDayCircles", "completedTrainingDaysVsTarget", "completedWorkouts",
-    "trainingMinutes", "totalVolume"
+  assert.deepEqual(contract.todayFocusLens.trainingHistory.periodsInOrder, ["week", "month"]);
+  assert.equal(contract.todayFocusLens.trainingHistory.defaultPeriod, "week");
+  assert.equal(contract.todayFocusLens.trainingHistory.singleSurface, true);
+  assert.equal(contract.todayFocusLens.trainingHistory.oneNavigatorForSelectedPeriod, true);
+  assert.equal(contract.todayFocusLens.trainingHistory.oneWorkoutListFilteredToSelectedPeriod, true);
+  assert.equal(contract.todayFocusLens.trainingHistory.separateWeeklyAndSavedWorkoutSections, false);
+  assert.deepEqual(contract.todayFocusLens.trainingHistory.sharedMetricsInOrder, [
+    "completedWorkouts", "trainingMinutes", "totalVolume"
   ]);
-  assert.deepEqual(contract.todayFocusLens.weeklyHistoryNavigation, {
-    controls: ["previousWeek", "returnToCurrentWeek", "nextWeek", "horizontalSwipe"],
-    minimumWeekOffset: -5200,
-    maximumWeekOffset: 0,
-    futureNavigationDisabled: true,
-    selectedWeekShowsSavedWorkouts: true,
-    todayActionRemainsBoundToCurrentLocalDay: true,
-    resetsOnAccountChange: true
-  });
+  assert.deepEqual(contract.todayFocusLens.trainingHistory.week.controls, [
+    "previousWeek", "returnToCurrentWeek", "nextWeek", "horizontalSwipe"
+  ]);
+  assert.deepEqual(contract.todayFocusLens.trainingHistory.month.controls, [
+    "previousMonth", "returnToCurrentMonth", "nextMonth", "horizontalSwipe"
+  ]);
+  assert.equal(contract.todayFocusLens.trainingHistory.week.minimumOffset, -5200);
+  assert.equal(contract.todayFocusLens.trainingHistory.month.minimumOffset, -1200);
+  assert.equal(contract.todayFocusLens.trainingHistory.futureNavigationDisabled, true);
   assert.equal(contract.todayFocusLens.completedToday.suppresses.includes("recovery"), true);
   assert.deepEqual(contract.todayFocusLens.completedToday.actionsInOrder, ["createAnotherWorkout"]);
   assert.deepEqual(contract.todayFocusLens.retainedDraftOverride, {
     appliesToStates: ["recommendedPlan", "completedToday", "recovery", "firstWorkoutActivation"],
-    actionsInOrder: ["continuePlan"],
-    outcome: "openSameAccountRetainedDraftWithoutReplacement"
+    actionsInOrder: ["continuePlan", "cancelPlan"],
+    continueOutcome: "openSameAccountRetainedDraftWithoutReplacement",
+    cancelPlan: {
+      visibleWithoutOverflow: true,
+      confirmationRequired: true,
+      removes: ["sameAccountRetainedDraft", "selectedLiveRecipient"],
+      preserves: ["completedWorkoutHistory", "activeWorkout"]
+    }
   });
   assert.equal(contract.todayFocusLens.lifetimeMetricsPlacement, "today.heroAndProgress.overview");
   assert.equal(contract.todayFocusLens.heatmapPlacement, "progress.overview");
@@ -125,22 +132,43 @@ test("today, first workout, and progress use the same information architecture",
   assert.equal(contract.terminology.missionsPlacement, "progress.goals");
 });
 
-test("Today exposes bounded historical week navigation on every full client", () => {
-  assert.match(pwaSource, /data-action="week-prev"/);
-  assert.match(pwaSource, /data-action="week-current"/);
-  assert.match(pwaSource, /data-action="week-next"/);
+test("Today exposes one bounded week or month history surface on every full client", () => {
+  assert.match(pwaSource, /data-action="history-period" data-period="week"/);
+  assert.match(pwaSource, /data-action="history-period" data-period="month"/);
+  assert.match(pwaSource, /data-action="\$\{period\}-prev"/);
+  assert.match(pwaSource, /data-action="\$\{period\}-current"/);
+  assert.match(pwaSource, /data-action="\$\{period\}-next"/);
   assert.match(pwaSource, /Math\.max\(-5200, workoutWeekOffset - 1\)/);
-  assert.match(pwaSource, /weekly-session-row/);
+  assert.match(pwaSource, /Math\.max\(-1200, monthOffsets\.workouts - 1\)/);
+  assert.match(pwaSource, /training-history-list/);
+  assert.match(pwaSource, /training-history-row/);
 
   assert.match(iosWorkoutsSource, /@State private var weekOffset = 0/);
+  assert.match(iosWorkoutsSource, /@State private var historyPeriod: TrainingHistoryPeriod = \.week/);
   assert.match(iosWorkoutsSource, /weekOffset = max\(-5_200, weekOffset - 1\)/);
-  assert.match(iosWorkoutsSource, /historyWeekWorkouts/);
+  assert.match(iosWorkoutsSource, /monthOffset = max\(-1_200, monthOffset - 1\)/);
+  assert.match(iosWorkoutsSource, /private var trainingHistoryPanel: some View/);
+  assert.match(iosWorkoutsSource, /let workouts = historyPeriod == \.week/);
 
-  assert.match(androidTodaySource, /WeeklyTrainingCard\(/);
+  assert.match(androidTodaySource, /TrainingHistoryPanel\(/);
+  assert.match(androidTodaySource, /TrainingHistoryPeriod\.Week/);
+  assert.match(androidTodaySource, /TrainingHistoryPeriod\.Month/);
+  assert.match(androidTodaySource, /val historyWorkouts = when/);
   assert.match(androidTodaySource, /onPreviousWeek/);
   assert.match(androidTodayViewModel, /fun previousWeek\(\)/);
+  assert.match(androidTodayViewModel, /fun previousMonth\(\)/);
   assert.match(androidTodayViewModel, /coerceAtLeast\(-5_200\)/);
-  assert.match(androidTodayViewModel, /workouts = currentWeekSessions/);
+  assert.match(androidTodayViewModel, /coerceAtLeast\(-1_200\)/);
+  assert.match(androidTodayViewModel, /monthlyTrainingSummary = monthlyTrainingSummary/);
+});
+
+test("retained plans expose a confirmed, history-preserving cancel action on every full client", () => {
+  assert.match(pwaSource, /data-action="cancel-retained-plan"/);
+  assert.match(pwaSource, /requestDiscardWorkoutDraft\([\s\S]*"today"/);
+  assert.match(iosWorkoutsSource, /onCancelPlan/);
+  assert.match(iosWorkoutsSource, /showsRetainedPlanCancelConfirmation/);
+  assert.match(androidTodaySource, /onCancelRetainedPlan/);
+  assert.match(androidTodaySource, /today_cancel_plan_title/);
 });
 
 test("live mutation recovery and push navigation preserve confirmed server work", () => {

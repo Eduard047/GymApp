@@ -279,11 +279,32 @@ data class WeeklyTrainingSummaryUiModel(
     val totalVolume: Double = 0.0
 )
 
+enum class TrainingHistoryPeriod {
+    Week,
+    Month
+}
+
+data class MonthlyTrainingDayUiModel(
+    val date: LocalDate,
+    val isCompleted: Boolean,
+    val isToday: Boolean
+)
+
+data class MonthlyTrainingSummaryUiModel(
+    val days: List<MonthlyTrainingDayUiModel> = emptyList(),
+    val workouts: List<WorkoutSessionSummary> = emptyList(),
+    val completedWorkoutCount: Int = 0,
+    val completedTrainingDays: Int = 0,
+    val estimatedMinutes: Int = 0,
+    val totalVolume: Double = 0.0
+)
+
 data class WorkoutListUiState(
     val isLoading: Boolean = false,
     val loadError: LocalizedText? = null,
     val monthOffset: Int = 0,
     val weekOffset: Int = 0,
+    val historyPeriod: TrainingHistoryPeriod = TrainingHistoryPeriod.Week,
     val monthLabel: String = DateTimeUtils.monthLabel(0),
     val sessions: List<WorkoutSessionSummary> = emptyList(),
     val hasAnyWorkout: Boolean = false,
@@ -291,6 +312,7 @@ data class WorkoutListUiState(
     val todayPlan: TodayPlanUiModel? = null,
     val hasCompletedWorkoutToday: Boolean = false,
     val weeklyTrainingSummary: WeeklyTrainingSummaryUiModel = WeeklyTrainingSummaryUiModel(),
+    val monthlyTrainingSummary: MonthlyTrainingSummaryUiModel = MonthlyTrainingSummaryUiModel(),
     val todayHeroMetrics: TodayHeroMetricsUiModel = TodayHeroMetricsUiModel(),
     val dashboardStats: DashboardStats = DashboardStats(
         workoutCount = 0,
@@ -341,6 +363,7 @@ class WorkoutListViewModel(
     private val zoneId = ZoneId.systemDefault()
     private val monthOffset = MutableStateFlow(0)
     private val weekOffset = MutableStateFlow(0)
+    private val historyPeriod = MutableStateFlow(TrainingHistoryPeriod.Week)
     private val muscleMapPeriod = MutableStateFlow(MuscleMapPeriod.AllTime)
     private val selectedMuscleId = MutableStateFlow<String?>(null)
     private val manualMappingExerciseName = MutableStateFlow<String?>(null)
@@ -406,11 +429,13 @@ class WorkoutListViewModel(
         sessionsFlow,
         allSessionsFlow,
         exerciseHistoryFlow,
-        weekOffset
-    ) { month, allSessions, exerciseHistory, selectedWeekOffset ->
+        weekOffset,
+        historyPeriod
+    ) { month, allSessions, exerciseHistory, selectedWeekOffset, selectedHistoryPeriod ->
         WorkoutListSourceState(
             offset = month.offset,
             weekOffset = selectedWeekOffset,
+            historyPeriod = selectedHistoryPeriod,
             sessions = month.sessions,
             allSessions = allSessions,
             exerciseHistory = exerciseHistory
@@ -482,6 +507,7 @@ class WorkoutListViewModel(
         ) { source, selection, experience ->
         val offset = source.offset
         val selectedWeekOffset = source.weekOffset
+        val selectedHistoryPeriod = source.historyPeriod
         val sessions = source.sessions
         val allSessions = source.allSessions
         val exerciseHistory = source.exerciseHistory
@@ -560,10 +586,21 @@ class WorkoutListViewModel(
         } else {
             WeeklyTrainingSummaryUiModel()
         }
+        val monthlyTrainingSummary = if (surface.needsTodayPlan) {
+            buildMonthlyTrainingSummary(
+                sessions = sessions,
+                monthOffset = offset,
+                nowMillis = nowMillis,
+                zoneId = zoneId
+            )
+        } else {
+            MonthlyTrainingSummaryUiModel()
+        }
         WorkoutListUiState(
             isLoading = false,
             monthOffset = offset,
             weekOffset = selectedWeekOffset,
+            historyPeriod = selectedHistoryPeriod,
             monthLabel = DateTimeUtils.monthLabel(offset, currentLocale(), zoneId),
             sessions = sessions,
             hasAnyWorkout = allSessions.isNotEmpty(),
@@ -577,6 +614,7 @@ class WorkoutListViewModel(
                     zoneId = zoneId
                 ),
             weeklyTrainingSummary = weeklyTrainingSummary,
+            monthlyTrainingSummary = monthlyTrainingSummary,
             todayHeroMetrics = todayHeroMetrics,
             dashboardStats = dashboardStats,
             soloProgress = soloProgress,
@@ -1059,11 +1097,11 @@ class WorkoutListViewModel(
         trainingGuidanceManager.activationDismissed.value
 
     fun previousMonth() {
-        monthOffset.value -= 1
+        monthOffset.value = (monthOffset.value - 1).coerceAtLeast(-1_200)
     }
 
     fun nextMonth() {
-        monthOffset.value += 1
+        monthOffset.value = (monthOffset.value + 1).coerceAtMost(0)
     }
 
     fun currentMonth() {
@@ -1080,6 +1118,10 @@ class WorkoutListViewModel(
 
     fun currentWeek() {
         weekOffset.value = 0
+    }
+
+    fun selectHistoryPeriod(period: TrainingHistoryPeriod) {
+        historyPeriod.value = period
     }
 
     fun selectMuscleMapPeriod(period: MuscleMapPeriod) {
@@ -2075,6 +2117,60 @@ internal fun buildWeeklyTrainingSummary(
     )
 }
 
+internal fun buildMonthlyTrainingSummary(
+    sessions: List<WorkoutSessionSummary>,
+    monthOffset: Int,
+    nowMillis: Long,
+    zoneId: ZoneId
+): MonthlyTrainingSummaryUiModel {
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    val selectedMonth = YearMonth.from(today).plusMonths(monthOffset.coerceIn(-1_200, 0).toLong())
+    val monthSessions = sessions.asSequence()
+        .take(WorkoutDataLimits.MAX_SESSIONS)
+        .filter {
+            WorkoutDataLimits.isValidTimestamp(it.session.date) &&
+                it.session.date <= nowMillis
+        }
+        .mapNotNull { session ->
+            val date = runCatching {
+                Instant.ofEpochMilli(session.session.date).atZone(zoneId).toLocalDate()
+            }.getOrNull() ?: return@mapNotNull null
+            session.takeIf { YearMonth.from(date) == selectedMonth }?.let { date to it }
+        }
+        .toList()
+    val completedDates = monthSessions.mapTo(linkedSetOf()) { it.first }
+    val estimatedMinutes = monthSessions.fold(0L) { total, (_, session) ->
+        val measuredDurationSeconds = session.session.durationSeconds
+            ?: session.session.note?.let(::parseGarminWorkoutMetrics)?.durationSeconds
+        (total + estimateWorkoutMinutes(
+            exerciseCount = session.exerciseCount,
+            setCount = session.setCount,
+            measuredDurationSeconds = measuredDurationSeconds
+        )).coerceAtMost(Int.MAX_VALUE.toLong())
+    }.toInt()
+    val totalVolume = monthSessions.fold(0.0) { total, (_, session) ->
+        val volume = session.totalVolume.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        (total + volume).coerceAtMost(MAX_TODAY_HERO_VOLUME)
+    }
+    return MonthlyTrainingSummaryUiModel(
+        days = (1..selectedMonth.lengthOfMonth()).map { dayOfMonth ->
+            val date = selectedMonth.atDay(dayOfMonth)
+            MonthlyTrainingDayUiModel(
+                date = date,
+                isCompleted = date in completedDates,
+                isToday = date == today
+            )
+        },
+        workouts = monthSessions
+            .map { it.second }
+            .sortedByDescending { it.session.date },
+        completedWorkoutCount = monthSessions.size,
+        completedTrainingDays = completedDates.size,
+        estimatedMinutes = estimatedMinutes,
+        totalVolume = totalVolume
+    )
+}
+
 private data class LevelProgress(
     val level: Int,
     val currentLevelXp: Int,
@@ -2090,6 +2186,7 @@ private data class WorkoutMonthSessions(
 private data class WorkoutListSourceState(
     val offset: Int,
     val weekOffset: Int,
+    val historyPeriod: TrainingHistoryPeriod,
     val sessions: List<WorkoutSessionSummary>,
     val allSessions: List<WorkoutSessionSummary>,
     val exerciseHistory: List<ExerciseHistoryEntry>

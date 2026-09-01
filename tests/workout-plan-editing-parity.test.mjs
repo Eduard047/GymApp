@@ -192,7 +192,7 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
       appliesToStates: [
         "recommendedPlan", "restOrRecovery", "completedToday", "firstWorkoutActivation"
       ],
-      actionsInOrder: ["continuePlan"],
+      actionsInOrder: ["continuePlan", "cancelPlan"],
       opens: "sameAccountRetainedPlanEditorState",
       mayReplaceDraft: false,
       mayCreateActiveWorkout: false,
@@ -356,6 +356,8 @@ test("workout-plan editing v1 defines one exact three-client flow", () => {
     contract.transitions.map(({ from, action, to }) => [from, action, to]),
     [
       ["todayAnyStateWithRetainedDraft", "continuePlan", "samePlanEditorState"],
+      ["todayAnyStateWithRetainedDraft", "cancelPlan", "confirmationRequired"],
+      ["confirmationRequired", "confirmCancelPlan", "todayWithoutRetainedDraft"],
       ["todayRecommended", "startPlan", "activeWorkout"],
       ["todayRecommended", "editPlan", "planEditorClean"],
       ["todayRecommended", "createManually", "planEditorEmptyClean"],

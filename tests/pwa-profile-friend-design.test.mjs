@@ -191,11 +191,13 @@ test("Fluid Focus interaction contract keeps choices, navigation, and touch targ
 
 test("main empty states explain the next action instead of ending the flow", () => {
   const workouts = sourceBetween("function workoutsScreen()", "function overviewCards");
+  const activation = sourceBetween("function activationCard()", "function workoutItem");
   const exercises = sourceBetween("function exercisesScreen()", "function exerciseFilterControls");
   const spotlight = sourceBetween("function spotlight(", "function progressChartPoints");
   const missions = sourceBetween("function missionsScreen()", "function missionGroups");
 
-  assert.match(workouts, /empty-state-panel[\s\S]*data-action="open-add"/);
+  assert.match(workouts, /activationCard\(\)/);
+  assert.match(activation, /data-action="activation-start"[\s\S]*data-action="activation-manual"/);
   assert.match(exercises, /empty-state-panel[\s\S]*data-action="reset-exercise-filters"/);
   assert.match(appSource, /if \(action === "reset-exercise-filters"\)[\s\S]*?exerciseSortMode = "name";[\s\S]*?render\(\);\s+restoreStableActionFocus\(focusTarget\);\s+return true;/);
   assert.match(spotlight, /data-action="open-add"/);
@@ -211,7 +213,8 @@ test("root navigation has four parity tabs and Progress exposes the shared Goals
   assert.doesNotMatch(nav, /\["missions"/);
   assert.match(stylesSource, /\.bottom-nav\s*\{[\s\S]*grid-template-columns:\s*repeat\(4,/);
   assert.doesNotMatch(workouts, /overviewCards\(/);
-  assert.match(workouts, /focusOverview\(sessions\)[\s\S]*monthSwitcher\(\)[\s\S]*workout-list-section/);
+  assert.match(workouts, /focusOverview\(sessions\)[\s\S]*trainingHistoryMarkup\(\)/);
+  assert.match(appSource, /function trainingHistoryMarkup\(\)[\s\S]*id="workout-list-section"[\s\S]*data-action="history-period" data-period="week"[\s\S]*data-action="history-period" data-period="month"/);
   assert.match(progress, /overviewCards\(selectedMonthSessions\(\)\)/);
   assert.match(progress, /exerciseProgressPanel\(\)/);
   assert.match(progress, /missionsScreen\(\)/);

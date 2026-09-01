@@ -752,6 +752,22 @@
     <string name="today_workout_completed_supporting">Сегодняшняя тренировка сохранена в истории.</string>
     <string name="today_add_another_workout">Добавить ещё одну тренировку</string>
     <string name="today_continue_plan">Продолжить план</string>
+    <string name="today_cancel_plan">Отменить план</string>
+    <string name="today_cancel_plan_title">Отменить сохранённый план?</string>
+    <string name="today_cancel_plan_message">Сохранённый план и выбранный получатель LIVE будут удалены. История и активная тренировка останутся.</string>
+    <string name="today_cancel_plan_keep">Оставить план</string>
+    <string name="today_cancel_plan_confirm">Отменить план</string>
+    <string name="training_history_title">История тренировок</string>
+    <string name="training_history_week">Неделя</string>
+    <string name="training_history_month">Месяц</string>
+    <plurals name="training_history_active_days">
+        <item quantity="one">%1$d день</item>
+        <item quantity="few">%1$d дня</item>
+        <item quantity="many">%1$d дней</item>
+        <item quantity="other">%1$d дня</item>
+    </plurals>
+    <string name="training_history_empty_week">На этой неделе тренировок пока нет.</string>
+    <string name="training_history_empty_month">В этом месяце тренировок пока нет.</string>
     <string name="weekly_training_summary_title">На этой неделе</string>
     <string name="cd_previous_week">Предыдущая неделя</string>
     <string name="cd_next_week">Следующая неделя</string>

@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -82,6 +83,7 @@ import com.example.gymapp.data.repository.FirstWorkoutEffort
 import com.example.gymapp.data.repository.SmartWorkoutFocus
 import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
 import com.example.gymapp.data.repository.WeeklyTrainingDecision
+import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
@@ -100,6 +102,8 @@ import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
+import com.example.gymapp.ui.viewmodel.MonthlyTrainingSummaryUiModel
+import com.example.gymapp.ui.viewmodel.TrainingHistoryPeriod
 import com.example.gymapp.ui.viewmodel.TrainingRecommendationUiModel
 import com.example.gymapp.ui.viewmodel.TodayPlanUiModel
 import com.example.gymapp.ui.viewmodel.TodayHeroMetricsUiModel
@@ -125,6 +129,7 @@ fun WorkoutListScreen(
     onPreviousWeek: () -> Unit,
     onCurrentWeek: () -> Unit,
     onNextWeek: () -> Unit,
+    onHistoryPeriodSelected: (TrainingHistoryPeriod) -> Unit,
     onMuscleMapPeriodSelected: (MuscleMapPeriod) -> Unit,
     onMuscleSelected: (String) -> Unit,
     onAddWorkout: () -> Unit,
@@ -136,6 +141,7 @@ fun WorkoutListScreen(
     hasRetainedWorkoutDraft: Boolean = false,
     activeWorkoutProgress: Pair<Int, Int>? = null,
     onDiscardActiveWorkout: () -> Unit = {},
+    onCancelRetainedPlan: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
     tutorialAnchors: TutorialAnchorRegistry? = null,
     modifier: Modifier = Modifier
@@ -143,6 +149,11 @@ fun WorkoutListScreen(
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     var showActiveWorkoutDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showRetainedPlanCancelConfirmation by rememberSaveable { mutableStateOf(false) }
+    val historyWorkouts = when (uiState.historyPeriod) {
+        TrainingHistoryPeriod.Week -> uiState.weeklyTrainingSummary.workouts
+        TrainingHistoryPeriod.Month -> uiState.monthlyTrainingSummary.workouts
+    }
 
     if (uiState.isLoading) {
         Box(
@@ -185,6 +196,7 @@ fun WorkoutListScreen(
                     FirstWorkoutActivationCard(
                         hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
                         onContinuePlan = onAddWorkout,
+                        onCancelPlan = { showRetainedPlanCancelConfirmation = true },
                         onStart = onStartFirstWorkout,
                         onEdit = onEditFirstWorkout,
                         onCreateManually = onSkipFirstWorkout,
@@ -205,6 +217,9 @@ fun WorkoutListScreen(
                         onDiscardWorkout = {
                             showActiveWorkoutDiscardConfirmation = true
                         },
+                        onCancelRetainedPlan = {
+                            showRetainedPlanCancelConfirmation = true
+                        },
                         tutorialAnchors = tutorialAnchors
                     )
                 }
@@ -212,148 +227,23 @@ fun WorkoutListScreen(
 
             if (uiState.hasAnyWorkout) {
                 item {
-                    WeeklyTrainingCard(
-                        summary = uiState.weeklyTrainingSummary,
+                    TrainingHistoryPanel(
+                        period = uiState.historyPeriod,
+                        weeklySummary = uiState.weeklyTrainingSummary,
+                        monthlySummary = uiState.monthlyTrainingSummary,
                         weekOffset = uiState.weekOffset,
+                        monthOffset = uiState.monthOffset,
+                        monthLabel = uiState.monthLabel,
+                        onPeriodSelected = onHistoryPeriodSelected,
                         onPreviousWeek = onPreviousWeek,
                         onCurrentWeek = onCurrentWeek,
                         onNextWeek = onNextWeek,
-                        onSessionClick = onSessionClick
-                    )
-                }
-
-                item {
-                    MonthSwitcher(
-                        monthLabel = uiState.monthLabel,
-                        isCurrentMonth = uiState.monthOffset == 0,
                         onPreviousMonth = onPreviousMonth,
                         onCurrentMonth = onCurrentMonth,
-                        onNextMonth = onNextMonth
+                        onNextMonth = onNextMonth,
+                        workouts = historyWorkouts,
+                        onSessionClick = onSessionClick
                     )
-                }
-
-                item {
-                    WorkoutSectionHeader(sessionCount = uiState.sessions.size)
-                }
-
-                if (uiState.sessions.isEmpty()) {
-                    item {
-                        EmptyStatePanel(
-                            title = stringResource(R.string.empty_workouts),
-                            actionLabel = stringResource(R.string.action_add_workout),
-                            onAction = onAddWorkout
-                        )
-                    }
-                } else {
-                    items(
-                        items = uiState.sessions,
-                        key = { it.session.id },
-                        contentType = { "workout-session" }
-                    ) { sessionSummary ->
-                        val displayDate = remember(sessionSummary.session.date, locale) {
-                            DateTimeUtils.formatDate(sessionSummary.session.date, locale)
-                        }
-                        val isActivityOnly = sessionSummary.exerciseCount == 0 &&
-                            sessionSummary.setCount == 0 &&
-                            sessionSummary.session.durationSeconds?.let { it > 0L } == true
-                        AppPanel(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSessionClick(sessionSummary.session.id) },
-                            highlighted = true
-                        ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.session_item_title,
-                                        displayDate
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                InfoPill(
-                                    text = if (isActivityOnly) {
-                                        formatWorkoutDuration(
-                                            checkNotNull(sessionSummary.session.durationSeconds)
-                                        )
-                                    } else {
-                                        stringResource(R.string.stats_sets, sessionSummary.setCount)
-                                    }
-                                )
-                            }
-
-                            Text(
-                                text = if (isActivityOnly) {
-                                    stringResource(R.string.garmin_free_workout_title)
-                                } else {
-                                    sessionSummary.session.note
-                                        ?.takeIf { it.isNotBlank() }
-                                        ?.let { stringResource(R.string.details_note, it) }
-                                        ?: stringResource(R.string.details_no_note)
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            if (isActivityOnly) {
-                                Text(
-                                    text = stringResource(R.string.garmin_free_workout_summary),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = stringResource(
-                                            R.string.stats_exercises,
-                                            sessionSummary.exerciseCount
-                                        ),
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = stringResource(
-                                            R.string.stats_sets,
-                                            sessionSummary.setCount
-                                        ),
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = stringResource(
-                                            R.string.stats_volume,
-                                            sessionSummary.totalVolume
-                                        ),
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
                 }
             }
     }
@@ -376,6 +266,28 @@ fun WorkoutListScreen(
             dismissButton = {
                 TextButton(onClick = { showActiveWorkoutDiscardConfirmation = false }) {
                     Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+    if (showRetainedPlanCancelConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showRetainedPlanCancelConfirmation = false },
+            title = { Text(stringResource(R.string.today_cancel_plan_title)) },
+            text = { Text(stringResource(R.string.today_cancel_plan_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRetainedPlanCancelConfirmation = false
+                        onCancelRetainedPlan()
+                    }
+                ) {
+                    Text(stringResource(R.string.today_cancel_plan_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRetainedPlanCancelConfirmation = false }) {
+                    Text(stringResource(R.string.today_cancel_plan_keep))
                 }
             }
         )
@@ -567,6 +479,7 @@ private fun FocusLens(
     onStartPlan: (String) -> Unit,
     onOpenPlan: (String) -> Unit,
     onDiscardWorkout: () -> Unit,
+    onCancelRetainedPlan: () -> Unit,
     tutorialAnchors: TutorialAnchorRegistry?,
     modifier: Modifier = Modifier
 ) {
@@ -804,6 +717,14 @@ private fun FocusLens(
                     fontWeight = FontWeight.Bold
                 )
             }
+            OutlinedButton(
+                onClick = onCancelRetainedPlan,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+            ) {
+                Text(stringResource(R.string.today_cancel_plan))
+            }
         } else if (hasCompletedToday) {
             OutlinedButton(
                 onClick = onStartWorkout,
@@ -909,34 +830,55 @@ internal fun shouldShowRetainedWorkoutDraftAction(
 ): Boolean = hasRetainedWorkoutDraft && !hasActiveWorkout
 
 @Composable
-private fun WeeklyTrainingCard(
-    summary: WeeklyTrainingSummaryUiModel,
+private fun TrainingHistoryPanel(
+    period: TrainingHistoryPeriod,
+    weeklySummary: WeeklyTrainingSummaryUiModel,
+    monthlySummary: MonthlyTrainingSummaryUiModel,
     weekOffset: Int,
+    monthOffset: Int,
+    monthLabel: String,
+    onPeriodSelected: (TrainingHistoryPeriod) -> Unit,
     onPreviousWeek: () -> Unit,
     onCurrentWeek: () -> Unit,
     onNextWeek: () -> Unit,
+    onPreviousMonth: () -> Unit,
+    onCurrentMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    workouts: List<WorkoutSessionSummary>,
     onSessionClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     val rangeFormatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM", locale) }
-    val weekRange = remember(summary.days, rangeFormatter) {
-        val first = summary.days.firstOrNull()?.date
-        val last = summary.days.lastOrNull()?.date
+    val weekRange = remember(weeklySummary.days, rangeFormatter) {
+        val first = weeklySummary.days.firstOrNull()?.date
+        val last = weeklySummary.days.lastOrNull()?.date
         if (first == null || last == null) "" else {
             "${first.format(rangeFormatter)} – ${last.format(rangeFormatter)}"
         }
     }
-    val volume = remember(summary.totalVolume, locale) {
-        formatTodayHeroVolume(summary.totalVolume, locale)
+    val completedWorkoutCountValue = when (period) {
+        TrainingHistoryPeriod.Week -> weeklySummary.completedWorkoutCount
+        TrainingHistoryPeriod.Month -> monthlySummary.completedWorkoutCount
     }
-    val completedWorkoutCount = remember(summary.completedWorkoutCount, locale) {
-        formatTodayHeroCount(summary.completedWorkoutCount, locale)
+    val estimatedMinutes = when (period) {
+        TrainingHistoryPeriod.Week -> weeklySummary.estimatedMinutes
+        TrainingHistoryPeriod.Month -> monthlySummary.estimatedMinutes
+    }
+    val totalVolume = when (period) {
+        TrainingHistoryPeriod.Week -> weeklySummary.totalVolume
+        TrainingHistoryPeriod.Month -> monthlySummary.totalVolume
+    }
+    val volume = remember(totalVolume, locale) {
+        formatTodayHeroVolume(totalVolume, locale)
+    }
+    val completedWorkoutCount = remember(completedWorkoutCountValue, locale) {
+        formatTodayHeroCount(completedWorkoutCountValue, locale)
     }
     AppPanel(
         modifier = modifier
             .fillMaxWidth()
-            .pointerInput(weekOffset) {
+            .pointerInput(period, weekOffset, monthOffset) {
                 var horizontalDrag = 0f
                 detectHorizontalDragGestures(
                     onDragStart = { horizontalDrag = 0f },
@@ -947,9 +889,20 @@ private fun WeeklyTrainingCard(
                     onDragEnd = {
                         if (abs(horizontalDrag) >= 80f) {
                             if (horizontalDrag > 0f) {
-                                onPreviousWeek()
-                            } else if (weekOffset < 0) {
-                                onNextWeek()
+                                if (period == TrainingHistoryPeriod.Week) {
+                                    onPreviousWeek()
+                                } else {
+                                    onPreviousMonth()
+                                }
+                            } else if (
+                                (period == TrainingHistoryPeriod.Week && weekOffset < 0) ||
+                                (period == TrainingHistoryPeriod.Month && monthOffset < 0)
+                            ) {
+                                if (period == TrainingHistoryPeriod.Week) {
+                                    onNextWeek()
+                                } else {
+                                    onNextMonth()
+                                }
                             }
                         }
                     },
@@ -967,45 +920,88 @@ private fun WeeklyTrainingCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.today_weekly_rhythm),
+                    text = stringResource(R.string.training_history_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
                 InfoPill(
-                    text = stringResource(
-                        R.string.today_weekly_value,
-                        summary.completedTrainingDays,
-                        summary.targetTrainingDays
-                    ),
+                    text = if (period == TrainingHistoryPeriod.Week) {
+                        stringResource(
+                            R.string.today_weekly_value,
+                            weeklySummary.completedTrainingDays,
+                            weeklySummary.targetTrainingDays
+                        )
+                    } else {
+                        pluralStringResource(
+                            R.plurals.training_history_active_days,
+                            monthlySummary.completedTrainingDays,
+                            monthlySummary.completedTrainingDays
+                        )
+                    },
                     accent = MaterialTheme.colorScheme.primary
                 )
             }
+            GymSegmentedControl(
+                items = listOf(
+                    GymSegmentItem(
+                        TrainingHistoryPeriod.Week,
+                        stringResource(R.string.training_history_week)
+                    ),
+                    GymSegmentItem(
+                        TrainingHistoryPeriod.Month,
+                        stringResource(R.string.training_history_month)
+                    )
+                ),
+                selected = period,
+                onSelected = onPeriodSelected
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 IconButton(
-                    onClick = onPreviousWeek,
+                    onClick = if (period == TrainingHistoryPeriod.Week) {
+                        onPreviousWeek
+                    } else {
+                        onPreviousMonth
+                    },
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.NavigateBefore,
-                        contentDescription = stringResource(R.string.cd_previous_week)
+                        contentDescription = stringResource(
+                            if (period == TrainingHistoryPeriod.Week) {
+                                R.string.cd_previous_week
+                            } else {
+                                R.string.cd_prev_month
+                            }
+                        )
                     )
                 }
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
-                        .clickable(enabled = weekOffset != 0, onClick = onCurrentWeek)
+                        .clickable(
+                            enabled = if (period == TrainingHistoryPeriod.Week) {
+                                weekOffset != 0
+                            } else {
+                                monthOffset != 0
+                            },
+                            onClick = if (period == TrainingHistoryPeriod.Week) {
+                                onCurrentWeek
+                            } else {
+                                onCurrentMonth
+                            }
+                        )
                         .padding(horizontal = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = weekRange,
+                        text = if (period == TrainingHistoryPeriod.Week) weekRange else monthLabel,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
@@ -1013,10 +1009,14 @@ private fun WeeklyTrainingCard(
                     )
                     Text(
                         text = stringResource(
-                            if (weekOffset == 0) {
+                            if (period == TrainingHistoryPeriod.Week && weekOffset == 0) {
                                 R.string.weekly_training_summary_title
-                            } else {
+                            } else if (period == TrainingHistoryPeriod.Month && monthOffset == 0) {
+                                R.string.action_current_month
+                            } else if (period == TrainingHistoryPeriod.Week) {
                                 R.string.action_return_to_current_week
+                            } else {
+                                R.string.action_return_to_current_month
                             }
                         ),
                         style = MaterialTheme.typography.bodySmall,
@@ -1026,84 +1026,34 @@ private fun WeeklyTrainingCard(
                     )
                 }
                 IconButton(
-                    onClick = onNextWeek,
-                    enabled = weekOffset != 0,
+                    onClick = if (period == TrainingHistoryPeriod.Week) {
+                        onNextWeek
+                    } else {
+                        onNextMonth
+                    },
+                    enabled = if (period == TrainingHistoryPeriod.Week) {
+                        weekOffset != 0
+                    } else {
+                        monthOffset != 0
+                    },
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.NavigateNext,
-                        contentDescription = stringResource(R.string.cd_next_week)
+                        contentDescription = stringResource(
+                            if (period == TrainingHistoryPeriod.Week) {
+                                R.string.cd_next_week
+                            } else {
+                                R.string.cd_next_month
+                            }
+                        )
                     )
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                summary.days.forEach { day ->
-                    val weekday = day.date.dayOfWeek.getDisplayName(TextStyle.FULL, locale)
-                    val status = stringResource(
-                        if (day.isCompleted) {
-                            R.string.weekly_training_day_completed
-                        } else {
-                            R.string.weekly_training_day_not_completed
-                        }
-                    )
-                    val todayStatus = if (day.isToday) {
-                        stringResource(R.string.weekly_training_day_today)
-                    } else {
-                        ""
-                    }
-                    val description = listOf(
-                        "$weekday ${day.date.dayOfMonth}",
-                        status,
-                        todayStatus
-                    ).filter { it.isNotBlank() }.joinToString(", ")
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clearAndSetSemantics { contentDescription = description },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = day.date.dayOfWeek
-                                .getDisplayName(TextStyle.NARROW, locale)
-                                .uppercase(locale),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (day.isCompleted) {
-                                            MaterialTheme.colorScheme.secondary
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                        }
-                                    )
-                            )
-                            if (day.isToday) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .border(
-                                            width = 1.dp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            shape = CircleShape
-                                        )
-                                )
-                            }
-                        }
-                    }
-                }
+            if (period == TrainingHistoryPeriod.Week) {
+                TrainingHistoryWeekStrip(summary = weeklySummary, locale = locale)
+            } else {
+                TrainingHistoryMonthGrid(summary = monthlySummary, locale = locale)
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1117,7 +1067,7 @@ private fun WeeklyTrainingCard(
                 WeeklyTrainingMetric(
                     value = stringResource(
                         R.string.weekly_training_minutes_value,
-                        summary.estimatedMinutes
+                        estimatedMinutes
                     ),
                     label = stringResource(R.string.weekly_training_minutes_label),
                     modifier = Modifier.weight(1f)
@@ -1129,59 +1079,206 @@ private fun WeeklyTrainingCard(
                 )
             }
 
-            if (weekOffset != 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+            if (workouts.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.weekly_training_sessions_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    text = stringResource(
+                        if (period == TrainingHistoryPeriod.Week) {
+                            R.string.training_history_empty_week
+                        } else {
+                            R.string.training_history_empty_month
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (summary.workouts.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.weekly_training_sessions_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    summary.workouts.take(14).forEach { workout ->
-                        Surface(
+            } else {
+                workouts.forEachIndexed { index, session ->
+                    if (index > 0) {
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { onSessionClick(workout.session.id) },
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = DateTimeUtils.formatLongDate(workout.session.date, locale),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = stringResource(
-                                            R.string.stats_exercises,
-                                            workout.exerciseCount
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                .height(1.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant)
+                        )
+                    }
+                    TrainingHistoryRow(
+                        session = session,
+                        onClick = { onSessionClick(session.session.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrainingHistoryWeekStrip(
+    summary: WeeklyTrainingSummaryUiModel,
+    locale: Locale,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        summary.days.forEach { day ->
+            val weekday = day.date.dayOfWeek.getDisplayName(TextStyle.FULL, locale)
+            val status = stringResource(
+                if (day.isCompleted) {
+                    R.string.weekly_training_day_completed
+                } else {
+                    R.string.weekly_training_day_not_completed
+                }
+            )
+            val todayStatus = if (day.isToday) {
+                stringResource(R.string.weekly_training_day_today)
+            } else {
+                ""
+            }
+            val description = listOf(
+                "$weekday ${day.date.dayOfMonth}",
+                status,
+                todayStatus
+            ).filter { it.isNotBlank() }.joinToString(", ")
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clearAndSetSemantics { contentDescription = description },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = day.date.dayOfWeek
+                        .getDisplayName(TextStyle.NARROW, locale)
+                        .uppercase(locale),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Box(
+                    modifier = Modifier.size(22.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (day.isCompleted) {
+                                    MaterialTheme.colorScheme.secondary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
                                 }
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.NavigateNext,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                    )
+                    if (day.isToday) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrainingHistoryMonthGrid(
+    summary: MonthlyTrainingSummaryUiModel,
+    locale: Locale,
+    modifier: Modifier = Modifier
+) {
+    val leadingEmpty = summary.days.firstOrNull()?.date?.dayOfWeek?.value?.minus(1) ?: 0
+    val unpaddedCells = List(leadingEmpty) { null } + summary.days.map { it }
+    val trailingEmpty = (7 - unpaddedCells.size % 7) % 7
+    val cells = unpaddedCells + List(trailingEmpty) { null }
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            (1..7).forEach { dayNumber ->
+                Text(
+                    text = java.time.DayOfWeek.of(dayNumber)
+                        .getDisplayName(TextStyle.NARROW, locale)
+                        .uppercase(locale),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        cells.chunked(7).forEach { week ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                week.forEach { day ->
+                    if (day == null) {
+                        Spacer(modifier = Modifier.weight(1f).height(34.dp))
+                    } else {
+                        val weekday = day.date.dayOfWeek.getDisplayName(TextStyle.FULL, locale)
+                        val status = stringResource(
+                            if (day.isCompleted) {
+                                R.string.weekly_training_day_completed
+                            } else {
+                                R.string.weekly_training_day_not_completed
+                            }
+                        )
+                        val description = "$weekday ${day.date.dayOfMonth}, $status"
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(34.dp)
+                                .clearAndSetSemantics { contentDescription = description },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (day.isCompleted) {
+                                            MaterialTheme.colorScheme.secondaryContainer
+                                        } else {
+                                            Color.Transparent
+                                        }
+                                    )
+                                    .then(
+                                        if (day.isToday) {
+                                            Modifier.border(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.primary,
+                                                CircleShape
+                                            )
+                                        } else {
+                                            Modifier
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = day.date.dayOfMonth.toString(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (day.isCompleted) {
+                                        FontWeight.Bold
+                                    } else {
+                                        FontWeight.Normal
+                                    },
+                                    color = if (day.isCompleted) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
                                 )
                             }
                         }
@@ -1189,6 +1286,66 @@ private fun WeeklyTrainingCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TrainingHistoryRow(
+    session: WorkoutSessionSummary,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val isActivityOnly = session.exerciseCount == 0 &&
+        session.setCount == 0 &&
+        session.session.durationSeconds?.let { it > 0L } == true
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = DateTimeUtils.formatLongDate(session.session.date, locale),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = if (isActivityOnly) {
+                    stringResource(R.string.garmin_free_workout_title)
+                } else {
+                    listOf(
+                        stringResource(R.string.stats_exercises, session.exerciseCount),
+                        stringResource(R.string.stats_sets, session.setCount)
+                    ).joinToString(" · ")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        InfoPill(
+            text = if (isActivityOnly) {
+                formatWorkoutDuration(checkNotNull(session.session.durationSeconds))
+            } else {
+                formatTodayHeroVolume(session.totalVolume, locale)
+            }
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.NavigateNext,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1339,6 +1496,7 @@ internal fun formatTodayHeroVolume(value: Double, locale: Locale): String {
 private fun FirstWorkoutActivationCard(
     hasRetainedWorkoutDraft: Boolean,
     onContinuePlan: () -> Unit,
+    onCancelPlan: () -> Unit,
     onStart: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
     onEdit: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
     onCreateManually: () -> Unit,
@@ -1401,6 +1559,14 @@ private fun FirstWorkoutActivationCard(
                     stringResource(R.string.today_continue_plan),
                     fontWeight = FontWeight.Bold
                 )
+            }
+            OutlinedButton(
+                onClick = onCancelPlan,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+            ) {
+                Text(stringResource(R.string.today_cancel_plan))
             }
         } else {
             Text(

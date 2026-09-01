@@ -186,6 +186,53 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
         )
     }
 
+    func testMonthlySummaryUsesSelectedMonthDistinctDaysAndExcludesFutureSessions() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = date(2026, 8, 15, hour: 12, calendar: calendar)
+        let sessions = [
+            summary(
+                date: date(2026, 7, 2, hour: 8, calendar: calendar),
+                exerciseCount: 2,
+                setCount: 3,
+                volume: 100
+            ),
+            summary(
+                date: date(2026, 7, 20, hour: 8, calendar: calendar),
+                durationSeconds: 61,
+                volume: 200
+            ),
+            summary(
+                date: date(2026, 7, 20, hour: 10, calendar: calendar),
+                volume: .nan
+            ),
+            summary(date: date(2026, 8, 10, hour: 8, calendar: calendar), volume: 300),
+            summary(date: date(2026, 8, 15, hour: 18, calendar: calendar), volume: 500)
+        ]
+
+        let july = MonthlyTrainingSummary(
+            sessions: sessions,
+            monthContaining: date(2026, 7, 10, calendar: calendar),
+            now: now,
+            calendar: calendar
+        )
+        let august = MonthlyTrainingSummary(
+            sessions: sessions,
+            monthContaining: now,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(july.monthStart, date(2026, 7, 1, calendar: calendar))
+        XCTAssertEqual(july.completedSessionCount, 3)
+        XCTAssertEqual(july.completedTrainingDays.count, 2)
+        XCTAssertEqual(july.totalMinutes, 24)
+        XCTAssertEqual(july.totalVolume, 300)
+        XCTAssertEqual(august.completedSessionCount, 1)
+        XCTAssertEqual(august.totalVolume, 300)
+    }
+
     private func summary(
         date: Date = Date(timeIntervalSince1970: 1_786_588_800),
         note: String? = nil,

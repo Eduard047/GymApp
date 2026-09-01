@@ -68,12 +68,17 @@ class WorkoutListUiTest {
                                 trainAnywayLaunchToken = "synthetic-recovery-token"
                             ),
                             hasCompletedWorkoutToday = true,
+                            hasAnyWorkout = true,
                             weeklyTrainingSummary = weeklySummary
                         ),
                         onSessionClick = {},
                         onPreviousMonth = {},
                         onCurrentMonth = {},
                         onNextMonth = {},
+                        onPreviousWeek = {},
+                        onCurrentWeek = {},
+                        onNextWeek = {},
+                        onHistoryPeriodSelected = {},
                         onMuscleMapPeriodSelected = {},
                         onMuscleSelected = {},
                         onAddWorkout = {},
@@ -89,9 +94,6 @@ class WorkoutListUiTest {
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.today_workout_completed)
         ).assertIsDisplayed()
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.focus_lens_details)
-        ).performClick()
 
         val locale = composeRule.activity.resources.configuration.locales[0]
         listOf(
@@ -123,7 +125,8 @@ class WorkoutListUiTest {
     }
 
     @Test
-    fun completedTodayKeepsItsCopyButRetainedDraftReplacesAllActions() {
+    fun completedTodayRetainedDraftOffersContinueAndConfirmedCancelOnly() {
+        var cancelled = false
         setWorkoutListContent(
             uiState = WorkoutListUiState(
                 todayPlan = TodayPlanUiModel(
@@ -141,7 +144,8 @@ class WorkoutListUiTest {
                 ),
                 hasCompletedWorkoutToday = true
             ),
-            hasRetainedWorkoutDraft = true
+            hasRetainedWorkoutDraft = true,
+            onCancelRetainedPlan = { cancelled = true }
         )
 
         composeRule.onNodeWithText(
@@ -154,6 +158,14 @@ class WorkoutListUiTest {
         val continuePlan = composeRule.activity.getString(R.string.today_continue_plan)
         composeRule.onNodeWithText(continuePlan).performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText(continuePlan).assertCountEquals(1)
+        val cancelPlan = composeRule.activity.getString(R.string.today_cancel_plan)
+        composeRule.onNodeWithText(cancelPlan).performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.today_cancel_plan_title)
+        ).assertIsDisplayed()
+        composeRule.onAllNodesWithText(cancelPlan).assertCountEquals(2)
+        composeRule.onAllNodesWithText(cancelPlan)[1].performClick()
+        composeRule.runOnIdle { assertTrue(cancelled) }
         listOf(
             R.string.today_add_another_workout,
             R.string.today_train_anyway,
@@ -168,7 +180,7 @@ class WorkoutListUiTest {
     }
 
     @Test
-    fun firstActivationWithRetainedDraftShowsOnlyContinuePlan() {
+    fun firstActivationWithRetainedDraftShowsContinueAndCancelPlan() {
         setWorkoutListContent(
             uiState = WorkoutListUiState(showFirstWorkoutActivation = true),
             hasRetainedWorkoutDraft = true
@@ -180,6 +192,9 @@ class WorkoutListUiTest {
         val continuePlan = composeRule.activity.getString(R.string.today_continue_plan)
         composeRule.onNodeWithText(continuePlan).assertIsDisplayed()
         composeRule.onAllNodesWithText(continuePlan).assertCountEquals(1)
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.today_cancel_plan)
+        ).assertIsDisplayed()
         listOf(
             R.string.activation_goal,
             R.string.activation_days,
@@ -206,6 +221,10 @@ class WorkoutListUiTest {
                     onPreviousMonth = {},
                     onCurrentMonth = {},
                     onNextMonth = {},
+                    onPreviousWeek = {},
+                    onCurrentWeek = {},
+                    onNextWeek = {},
+                    onHistoryPeriodSelected = {},
                     onMuscleMapPeriodSelected = {},
                     onMuscleSelected = {},
                     onAddWorkout = {},
@@ -240,7 +259,8 @@ class WorkoutListUiTest {
     private fun setWorkoutListContent(
         uiState: WorkoutListUiState,
         hasRetainedWorkoutDraft: Boolean,
-        onRetryLoad: () -> Unit = {}
+        onRetryLoad: () -> Unit = {},
+        onCancelRetainedPlan: () -> Unit = {}
     ) {
         composeRule.setContent {
             GymAppTheme {
@@ -250,6 +270,10 @@ class WorkoutListUiTest {
                         onPreviousMonth = {},
                         onCurrentMonth = {},
                         onNextMonth = {},
+                        onPreviousWeek = {},
+                        onCurrentWeek = {},
+                        onNextWeek = {},
+                        onHistoryPeriodSelected = {},
                         onMuscleMapPeriodSelected = {},
                         onMuscleSelected = {},
                         onAddWorkout = {},
@@ -259,6 +283,7 @@ class WorkoutListUiTest {
                         onEditFirstWorkout = { _, _, _ -> },
                         onSkipFirstWorkout = {},
                         hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
+                        onCancelRetainedPlan = onCancelRetainedPlan,
                         onRetryLoad = onRetryLoad
                 )
             }

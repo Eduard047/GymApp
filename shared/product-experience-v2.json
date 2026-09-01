@@ -52,8 +52,14 @@
     },
     "retainedDraftOverride": {
       "appliesToStates": ["recommendedPlan", "completedToday", "recovery", "firstWorkoutActivation"],
-      "actionsInOrder": ["continuePlan"],
-      "outcome": "openSameAccountRetainedDraftWithoutReplacement"
+      "actionsInOrder": ["continuePlan", "cancelPlan"],
+      "continueOutcome": "openSameAccountRetainedDraftWithoutReplacement",
+      "cancelPlan": {
+        "visibleWithoutOverflow": true,
+        "confirmationRequired": true,
+        "removes": ["sameAccountRetainedDraft", "selectedLiveRecipient"],
+        "preserves": ["completedWorkoutHistory", "activeWorkout"]
+      }
     },
     "activeWorkout": {
       "contentOrder": ["currentExercise", "currentSet", "completedProgress", "restOrNextAction"],
@@ -89,14 +95,31 @@
       "contentOrder": ["reason", "nextRecommendedDay"],
       "actionsInOrder": ["trainAnyway", "editPlan"]
     },
-    "weeklySummaryPlacement": "today.alwaysVisibleBelowCurrentActionBeforeHistory",
-    "weeklySummary": ["sevenDayCircles", "completedTrainingDaysVsTarget", "completedWorkouts", "trainingMinutes", "totalVolume"],
-    "weeklyHistoryNavigation": {
-      "controls": ["previousWeek", "returnToCurrentWeek", "nextWeek", "horizontalSwipe"],
-      "minimumWeekOffset": -5200,
-      "maximumWeekOffset": 0,
+    "trainingHistory": {
+      "placement": "today.alwaysVisibleBelowCurrentAction",
+      "singleSurface": true,
+      "title": "trainingHistory",
+      "periodsInOrder": ["week", "month"],
+      "defaultPeriod": "week",
+      "sharedMetricsInOrder": ["completedWorkouts", "trainingMinutes", "totalVolume"],
+      "oneNavigatorForSelectedPeriod": true,
+      "oneWorkoutListFilteredToSelectedPeriod": true,
+      "separateWeeklyAndSavedWorkoutSections": false,
+      "week": {
+        "visualization": "sevenDayCircles",
+        "headerMetric": "completedTrainingDaysVsTarget",
+        "controls": ["previousWeek", "returnToCurrentWeek", "nextWeek", "horizontalSwipe"],
+        "minimumOffset": -5200,
+        "maximumOffset": 0
+      },
+      "month": {
+        "visualization": "mondayFirstCalendarWithWorkoutDays",
+        "headerMetric": "completedTrainingDays",
+        "controls": ["previousMonth", "returnToCurrentMonth", "nextMonth", "horizontalSwipe"],
+        "minimumOffset": -1200,
+        "maximumOffset": 0
+      },
       "futureNavigationDisabled": true,
-      "selectedWeekShowsSavedWorkouts": true,
       "todayActionRemainsBoundToCurrentLocalDay": true,
       "resetsOnAccountChange": true
     },
@@ -105,7 +128,7 @@
     "muscleLoadPlacement": "progress.overview",
     "recommendationExplanation": "progressiveDisclosureWhyThisPlan",
     "progressiveDisclosure": {
-      "defaultVisible": ["currentState", "primaryAction", "secondaryPlanAction", "weeklySummary"],
+      "defaultVisible": ["currentState", "primaryAction", "secondaryPlanAction", "trainingHistory"],
       "details": ["lifetimeMetrics", "createManually"],
       "activeWorkoutExercises": {
         "current": "expanded",

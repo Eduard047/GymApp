@@ -116,6 +116,34 @@ class TodayHeroMetricsTest {
     }
 
     @Test
+    fun monthlySummaryUsesSelectedMonthAndExcludesFutureOrMalformedMetrics() {
+        val zoneId = ZoneId.of("UTC")
+        val now = LocalDate.of(2026, 8, 15).atTime(12, 0).atZone(zoneId).toInstant().toEpochMilli()
+        val sessions = listOf(
+            summary(1, 100.0, LocalDate.of(2026, 7, 2), zoneId, exercises = 2, sets = 3),
+            summary(2, 200.0, LocalDate.of(2026, 7, 20), zoneId, durationSeconds = 61L),
+            summary(3, 300.0, LocalDate.of(2026, 8, 10), zoneId),
+            summary(4, Double.NaN, LocalDate.of(2026, 7, 20), zoneId),
+            summary(5, 500.0, LocalDate.of(2026, 8, 15), zoneId, hour = 18)
+        )
+
+        val july = buildMonthlyTrainingSummary(sessions, -1, now, zoneId)
+        val futureRequest = buildMonthlyTrainingSummary(sessions, 1, now, zoneId)
+
+        assertEquals(31, july.days.size)
+        assertEquals(LocalDate.of(2026, 7, 1), july.days.first().date)
+        assertEquals(LocalDate.of(2026, 7, 31), july.days.last().date)
+        assertEquals(listOf(2L, 4L, 1L), july.workouts.map { it.session.id })
+        assertEquals(3, july.completedWorkoutCount)
+        assertEquals(2, july.completedTrainingDays)
+        assertEquals(24, july.estimatedMinutes)
+        assertEquals(300.0, july.totalVolume, 0.0)
+        assertEquals(31, futureRequest.days.size)
+        assertEquals(LocalDate.of(2026, 8, 1), futureRequest.days.first().date)
+        assertEquals(listOf(3L), futureRequest.workouts.map { it.session.id })
+    }
+
+    @Test
     fun todayCompletionIgnoresFutureRowsAndDurationEstimateIsBounded() {
         val zoneId = ZoneId.of("UTC")
         val today = LocalDate.of(2026, 8, 15)

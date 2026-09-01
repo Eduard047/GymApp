@@ -2279,6 +2279,8 @@ internal fun GymAppRoot(
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                            val addWorkoutDraftUiState by addWorkoutDraftViewModel.uiState
+                                .collectAsStateWithLifecycle()
                             val activeWorkoutSets = activeWorkout?.exercises
                                 .orEmpty()
                                 .flatMap { it.sets }
@@ -2290,7 +2292,9 @@ internal fun GymAppRoot(
                                 R.string.active_workout_discard_failed
                             )
                             val hasRetainedWorkoutDraft = shouldResumeRetainedWorkoutDraft(
-                                hasEditorDraft = addWorkoutDraftViewModel.hasRetainedDraft(),
+                                hasEditorDraft = addWorkoutDraftUiState.isDirty ||
+                                    addWorkoutDraftUiState.exerciseDrafts.isNotEmpty() ||
+                                    addWorkoutDraftUiState.note.isNotBlank(),
                                 hasLiveTarget = hasSavedLiveWorkoutDraftTarget
                             )
                             val resumeRetainedWorkoutEditor: () -> Boolean = {
@@ -2315,6 +2319,7 @@ internal fun GymAppRoot(
                                 onPreviousWeek = viewModel::previousWeek,
                                 onCurrentWeek = viewModel::currentWeek,
                                 onNextWeek = viewModel::nextWeek,
+                                onHistoryPeriodSelected = viewModel::selectHistoryPeriod,
                                 onMuscleMapPeriodSelected = viewModel::selectMuscleMapPeriod,
                                 onMuscleSelected = viewModel::selectMuscle,
                                 onAddWorkout = {
@@ -2437,6 +2442,10 @@ internal fun GymAppRoot(
                                             }
                                         }
                                     }
+                                },
+                                onCancelRetainedPlan = {
+                                    addWorkoutDraftViewModel.discardDraft()
+                                    setLiveWorkoutDraftTarget(null)
                                 },
                                 onRetryLoad = viewModel::retryLoad,
                                 tutorialAnchors = activeTutorialAnchors,

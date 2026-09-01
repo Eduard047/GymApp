@@ -200,7 +200,7 @@ test("Today plan metrics are history-only, finite, bounded, zero-safe, and order
   }
 });
 
-test("Today separates plan metrics from the weekly summary and keeps completion compact", () => {
+test("Today keeps plan metrics separate and renders one compact training history surface", () => {
   assert.match(stylesSource, /\.focus-lens-plan-metrics \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics strong \{[\s\S]*white-space: nowrap/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics span \{[\s\S]*font-size: 12px[\s\S]*-webkit-line-clamp: 2/);
@@ -216,10 +216,10 @@ test("Today separates plan metrics from the weekly summary and keeps completion 
   const workoutsEnd = appSource.indexOf("\nfunction overviewCards(", workouts);
   const workoutsBody = appSource.slice(workouts, workoutsEnd);
   const focusOverview = workoutsBody.indexOf("${focusOverview(sessions)}");
-  const weeklySummary = workoutsBody.indexOf("${weeklyWorkoutSummaryMarkup()}");
-  const monthControls = workoutsBody.indexOf("${monthSwitcher()}");
-  assert.ok(focusOverview >= 0 && focusOverview < weeklySummary && weeklySummary < monthControls);
-  assert.equal((workoutsBody.match(/weeklyWorkoutSummaryMarkup\(\)/g) || []).length, 1);
+  const trainingHistory = workoutsBody.indexOf("${trainingHistoryMarkup()}");
+  assert.ok(focusOverview >= 0 && focusOverview < trainingHistory);
+  assert.equal((workoutsBody.match(/trainingHistoryMarkup\(\)/g) || []).length, 1);
+  assert.doesNotMatch(workoutsBody, /weeklyWorkoutSummaryMarkup\(\)|\$\{monthSwitcher\(\)\}/);
   assert.equal((focusBody.match(/focusLensDetailsMarkup\(/g) || []).length, 2);
   const completedStart = focusBody.indexOf("const completedToday");
   const completedEnd = focusBody.indexOf("const decision", completedStart);
@@ -317,9 +317,42 @@ test("retained drafts visibly override every Today and first-activation new-plan
 
   for (const markup of [result.completed, result.recommended, result.activation]) {
     assert.match(markup, /Continue plan/);
-    assert.equal((markup.match(/data-action=/g) || []).length, 1);
+    assert.match(markup, /Cancel plan/);
+    assert.match(markup, /data-action="cancel-retained-plan"/);
+    assert.equal((markup.match(/data-action=/g) || []).length, 2);
     assert.doesNotMatch(markup, /Add another workout|Start plan|Train anyway|Create manually/);
   }
+});
+
+test("training history switches between one weekly and one monthly filtered list", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    const now = new Date(2026, 7, 15, 12, 0, 0).getTime();
+    const set = (id, exerciseName) => ({ id, exerciseName, weight: 50, reps: 8, orderIndex: 0 });
+    state.sessions = [
+      { id: 1, startedAt: new Date(2026, 6, 30, 8).getTime(), note: "", sets: [set(11, "Squat")] },
+      { id: 2, startedAt: new Date(2026, 7, 5, 8).getTime(), note: "", sets: [set(21, "Bench Press")] },
+      { id: 3, startedAt: new Date(2026, 7, 12, 8).getTime(), note: "", sets: [set(31, "Cable Row")] },
+      { id: 4, startedAt: new Date(2026, 7, 15, 18).getTime(), note: "", sets: [set(41, "Future")] }
+    ];
+    const week = currentWeekWorkoutSummary(now, state.sessions, -1);
+    const month = currentMonthWorkoutSummary(now, state.sessions, 0);
+    return {
+      weekIds: week.workouts.map(item => item.id),
+      monthIds: month.workouts.map(item => item.id),
+      monthDays: month.completedTrainingDays,
+      monthCells: month.days.length
+    };
+  })()`, sandbox));
+
+  assert.deepEqual(result.weekIds, [2]);
+  assert.deepEqual(result.monthIds, [3, 2]);
+  assert.equal(result.monthDays, 2);
+  assert.ok(result.monthCells >= 28 && result.monthCells <= 42);
+  assert.match(appSource, /data-action="history-period" data-period="week"/);
+  assert.match(appSource, /data-action="history-period" data-period="month"/);
+  assert.match(stylesSource, /\.training-history-list/);
+  assert.match(stylesSource, /\.training-history-row/);
 });
 
 test("pre-start draft storage is bounded, exact, account/session-bound, and fail-closed", () => {

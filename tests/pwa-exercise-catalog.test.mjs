@@ -4849,12 +4849,20 @@ test("Discard plan is localized, exact, and distinct from clearing editor conten
     restoredDiscardDraft = loadStoredWorkoutDraftRecord();
     workoutDraft = restoredDiscardDraft.draft;
     workoutDraftLiveRecipient = restoredDiscardDraft.liveRecipient;
+    state.sessions = [{ id: 42, startedAt: Date.now(), note: "history", sets: [] }];
+    activeWorkout = { id: "active-preserved", blocks: [] };
+    nav = [{ name: "workouts" }];
   `, context);
-  assert.equal(vm.runInContext("requestDiscardWorkoutDraft()", context), true);
+  assert.equal(vm.runInContext("requestDiscardWorkoutDraft(null, 'today')", context), true);
+  assert.match(vm.runInContext("modalMarkup()", context), /Cancel saved plan\?/);
+  assert.match(vm.runInContext(`state.language = "uk"; modalMarkup()`, context), /Скасувати збережений план\?/);
+  assert.match(vm.runInContext(`state.language = "ru"; modalMarkup()`, context), /Отменить сохранённый план\?/);
   assert.equal(vm.runInContext("confirmDiscardWorkoutDraft()", context), true);
   assert.equal(context.localStorage.getItem(draftKey), null);
   assert.equal(vm.runInContext("workoutDraft", context), null);
   assert.equal(vm.runInContext("workoutDraftLiveRecipient", context), null);
+  assert.equal(vm.runInContext("state.sessions[0].id", context), 42);
+  assert.equal(vm.runInContext("activeWorkout.id", context), "active-preserved");
   assert.equal(vm.runInContext("route().name", context), "workouts");
 });
 

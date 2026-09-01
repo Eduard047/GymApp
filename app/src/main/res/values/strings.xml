@@ -746,6 +746,20 @@
     <string name="today_workout_completed_supporting">Today\'s work is saved in your history.</string>
     <string name="today_add_another_workout">Add another workout</string>
     <string name="today_continue_plan">Continue plan</string>
+    <string name="today_cancel_plan">Cancel plan</string>
+    <string name="today_cancel_plan_title">Cancel saved plan?</string>
+    <string name="today_cancel_plan_message">The saved plan and its selected LIVE recipient will be removed. Workout history and any active workout will stay.</string>
+    <string name="today_cancel_plan_keep">Keep plan</string>
+    <string name="today_cancel_plan_confirm">Cancel plan</string>
+    <string name="training_history_title">Training history</string>
+    <string name="training_history_week">Week</string>
+    <string name="training_history_month">Month</string>
+    <plurals name="training_history_active_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <string name="training_history_empty_week">No workouts in this week yet.</string>
+    <string name="training_history_empty_month">No workouts in this month yet.</string>
     <string name="weekly_training_summary_title">This week</string>
     <string name="cd_previous_week">Previous week</string>
     <string name="cd_next_week">Next week</string>
