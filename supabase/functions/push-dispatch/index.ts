@@ -165,7 +165,8 @@ export function loadDispatchCredentials(
   for (const credential of serviceCredentials.credentials) {
     const serverCollision = constantTimeEqual(dispatchServerKey, credential);
     const tokenCollision = constantTimeEqual(dispatchToken, credential);
-    credentialCollision = credentialCollision || serverCollision || tokenCollision;
+    credentialCollision = credentialCollision || serverCollision ||
+      tokenCollision;
   }
   if (credentialCollision) return null;
   return {
