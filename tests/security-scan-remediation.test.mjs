@@ -11,7 +11,7 @@ const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, c
     readFile("supabase/migrations/20260823161839_fix_edge_preauth_service_wrapper.sql", "utf8"),
     readFile("supabase/migrations/20260823162119_fix_security_hardening_coalesce_calls.sql", "utf8"),
     readFile("supabase/migrations/20260825105114_isolate_verified_edge_rate_limits.sql", "utf8"),
-    readFile("supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql", "utf8"),
+    readFile("supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql", "utf8"),
     readFile("supabase/functions/_shared/preauth-budget.ts", "utf8"),
     readFile("supabase/functions/delete-account/index.ts", "utf8"),
     readFile("supabase/functions/social-live-gateway/index.ts", "utf8"),

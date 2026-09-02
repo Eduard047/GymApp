@@ -7,7 +7,7 @@
   "repositorySharedSource": "supabase/functions/_shared/preauth-budget.ts",
   "repositorySharedSourceSha256": "5add1a69abf91b4e7e7929c6298546f53c6e51b7b4069bc26557cd87f5e87ddc",
   "requiredMigration": "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql",
-  "identityBudgetMigration": "supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql",
+  "identityBudgetMigration": "supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql",
   "knownProduction": {
     "projectRef": "owrcbsrectdgaotndtxy",
     "observedAt": "2026-08-28",

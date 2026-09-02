@@ -5,7 +5,7 @@ import test from "node:test";
 const [isolation, migration, hardening, fixture] = await Promise.all([
   readFile("supabase/migrations/20260825105114_isolate_verified_edge_rate_limits.sql", "utf8"),
   readFile("supabase/migrations/20260830164651_fix_verified_edge_budget_coalesce.sql", "utf8"),
-  readFile("supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql", "utf8"),
+  readFile("supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql", "utf8"),
   readFile("supabase/tests/verified_edge_budget_coalesce.sql", "utf8"),
 ]);
 const body = isolation.match(/as \$function\$\s*([\s\S]*?)\$function\$;/)?.[1];

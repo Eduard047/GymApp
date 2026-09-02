@@ -18,7 +18,7 @@ const migration = await readFile(
   "utf8",
 );
 const deepHardeningMigration = await readFile(
-  `${migrationDirectory}/20260901215530_harden_deep_scan_boundaries.sql`,
+  `${migrationDirectory}/20260902084252_harden_deep_scan_boundaries.sql`,
   "utf8",
 );
 

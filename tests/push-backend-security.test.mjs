@@ -26,7 +26,7 @@ const schedulerFixMigrationPath = new URL(
   import.meta.url,
 );
 const deepHardeningMigrationPath = new URL(
-  "../supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql",
+  "../supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql",
   import.meta.url,
 );
 

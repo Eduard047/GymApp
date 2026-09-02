@@ -7,7 +7,7 @@ const activationPath =
 const durableDebitPath =
   "supabase/migrations/20260810003804_persist_social_rate_debits_on_domain_errors.sql";
 const deepHardeningPath =
-  "supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql";
+  "supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql";
 
 const sharedGatewayActions = [
   ["dashboard", "social_dashboard"],

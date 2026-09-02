@@ -8,7 +8,7 @@ const edgePath = "supabase/functions/delete-account/index.ts";
 const migrationPath =
   "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql";
 const hardeningMigrationPath =
-  "supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql";
+  "supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql";
 const projectUrl = "https://project.example";
 const publishableKey = "sb_publishable_delete_account_test";
 const administrativeKey = "test-administrative-key";
