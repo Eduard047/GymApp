@@ -6,16 +6,15 @@ static notification through FCM HTTP v1, APNs, or Web Push, and then atomically
 records success, retry, permanent failure, or invalid-registration revocation.
 It is not a browser/client API.
 
-A production metadata readback after the approved 2026-08-24 database rollout
-found `push-dispatch` version 5 `ACTIVE` with `verify_jwt=false` and 57
-migrations through `20260824180727`. The configured Vault/provider and
-successful dispatcher/monitor empty-queue evidence was observed on 2026-08-10
-against version 4; it
-was not rerun merely because later metadata was read. The production tables then
-contained no registered installations or queued deliveries, so that evidence
-proved only the authenticated empty-queue path. Physical APNs/FCM/Web Push
-receipt, account switching, revocation, and tap routing remain release-device
-checks.
+Last observed production deployment: version 10 was `ACTIVE` with
+`verify_jwt=false` in project `owrcbsrectdgaotndtxy` on 2026-09-02. All
+three deployed files matched the repository byte-for-byte, the atomic
+send-authorization migration and compatibility RPC were present, an
+unauthorized request failed closed with `401`, and the existing authenticated
+scheduler invoked version 10 successfully with `200`. This proves the live
+dispatcher boundary and scheduled path, but not physical APNs/FCM/Web Push
+receipt, account switching, revocation, or notification tap routing; those
+remain release-device checks.
 
 ## Required server secrets
 
@@ -47,9 +46,9 @@ checks.
   internal credentials into Vault or a scheduler request header.
 
 Provider configuration is loaded only for the providers actually present in a
-claimed batch. A missing APNs or FCM setup therefore cannot block configured
-Web Push deliveries (and vice versa); rows for the unavailable provider receive
-a bounded retry without exposing configuration details.
+claimed batch. A missing APNs or FCM setup therefore cannot block configured Web
+Push deliveries (and vice versa); rows for the unavailable provider receive a
+bounded retry without exposing configuration details.
 
 ## Scheduled request
 
@@ -62,8 +61,8 @@ credential are equal. A malformed named-key set also fails closed instead of
 silently falling back to another credential. The Vault values are:
 
 - `gymapp_push_dispatch_url`: the exact HTTPS function URL;
-- `gymapp_push_dispatch_server_key`: the dedicated
-  `PUSH_DISPATCH_SERVER_KEY`, not any Supabase API key;
+- `gymapp_push_dispatch_server_key`: the dedicated `PUSH_DISPATCH_SERVER_KEY`,
+  not any Supabase API key;
 - `gymapp_push_dispatch_token`: the independent `PUSH_DISPATCH_TOKEN`.
 
 The scheduled call does not send an `Authorization` header because gateway JWT
@@ -81,17 +80,23 @@ Content-Type: application/json
 
 Invoke once per minute and alert on non-2xx responses. A batch is capped at ten
 deliveries and processed by one global five-worker pool; its 240-second database
-lease exceeds the scheduler's 120-second HTTP timeout. Database leases and
-provider collapse keys make overlap/retry safe, but provider delivery is still
-at-least-once. The bundled cron migration also re-enables/repairs the named job
-deterministically and deletes at most 5,000 history rows older than seven days
-per maintenance run.
+lease exceeds the scheduler's 120-second HTTP timeout. Immediately before
+provider I/O, the dispatcher atomically authorizes that exact delivery lease
+under a `SHARE` lock on the bound Auth session and row locks on the delivery,
+outbox, and installation revision. Session revocation that commits first blocks
+the send. Once authorization commits, one minimal already-authorized
+notification may finish even if revocation commits afterward; this is the
+documented external-side-effect boundary, not a claim that network I/O is
+transactional. Database leases and provider collapse keys make overlap/retry
+safe, but provider delivery remains at-least-once. The bundled cron migration
+also re-enables/repairs the named job deterministically and deletes at most
+5,000 history rows older than seven days per maintenance run.
 
 The scheduler stores only request ID, timestamps, final status class, and HTTP
-status in the RLS-enabled private `gymapp_private.push_dispatch_requests`
-table. A second minute job resolves at most 100 asynchronous `pg_net` results;
-requests without a response after five minutes are marked `missing`. No URL,
-header, token, request/response body, or provider error string is copied. After
+status in the RLS-enabled private `gymapp_private.push_dispatch_requests` table.
+A second minute job resolves at most 100 asynchronous `pg_net` results; requests
+without a response after five minutes are marked `missing`. No URL, header,
+token, request/response body, or provider error string is copied. After
 deployment, alert from trusted database monitoring on recent `failed`,
 `timed_out`, or `missing` rows; a successful `cron.job_run_details` row alone
 only proves that the asynchronous request was queued.
@@ -100,8 +105,8 @@ only proves that the asynchronous request was queued.
 
 The provider-visible data is deliberately opaque:
 
-- live: `{version:1,bindingId,kind,roomId,roomRevision}` where `kind` is one of `invite`,
-  `joined`, `started`, `participant_finished`, `room_closed`;
+- live: `{version:1,bindingId,kind,roomId,roomRevision}` where `kind` is one of
+  `invite`, `joined`, `started`, `participant_finished`, `room_closed`;
 - other social events: `{version:1,bindingId,type,objectId,objectRevision}`.
 
 `bindingId` is a random, revocable installation generation, not an account or
@@ -140,10 +145,9 @@ success are not APNs delivery proof.
 
 The PWA implements user-triggered `PushManager.subscribe`, account-bound
 registration/revocation, strict service-worker `push` validation, and an
-allowlisted same-origin `notificationclick` route. The reviewed public VAPID
-key must match the private Edge secret before deployment. Subscription material
-and authenticated registration responses are never cached by the service
-worker.
+allowlisted same-origin `notificationclick` route. The reviewed public VAPID key
+must match the private Edge secret before deployment. Subscription material and
+authenticated registration responses are never cached by the service worker.
 
 Update the privacy policy/store disclosures before release to state that push
 delivery addresses are processed by Google, Apple, Mozilla/Microsoft/browser

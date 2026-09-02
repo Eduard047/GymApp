@@ -255,12 +255,12 @@ async function markResult(
   }
 }
 
-async function deliveryStillCurrent(
+async function authorizeDeliverySend(
   client: RpcClient,
   delivery: ClaimedDelivery,
 ): Promise<"current" | "stale" | "unavailable"> {
   try {
-    const checked = await client.rpc("push_delivery_is_current", {
+    const checked = await client.rpc("push_authorize_delivery_send", {
       p_delivery_id: delivery.delivery_id,
       p_lease_token: delivery.lease_token,
     }).abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
@@ -302,7 +302,12 @@ async function dispatchBatch(
       nextIndex += 1;
       if (index >= deliveries.length) return;
       const delivery = deliveries[index];
-      const current = await deliveryStillCurrent(client, delivery);
+      // This RPC is the linearization point immediately before provider I/O.
+      // It serializes with exact Auth-session revocation and records the one
+      // send authorization for this lease. Revocation that commits first
+      // blocks the send; revocation after this commit cannot cancel an
+      // already-starting external side effect.
+      const current = await authorizeDeliverySend(client, delivery);
       const result: DeliveryResult = current === "current"
         ? await sendDelivery(delivery, providerConfigFor(delivery))
         : current === "stale"
@@ -312,12 +317,12 @@ async function dispatchBatch(
           // registration invalid; otherwise a valid address could be
           // revoked because of ordinary delivery lifecycle timing.
           outcome: "permanent",
-          errorCode: "delivery_changed_before_send",
+          errorCode: "delivery_not_authorized",
           providerStatus: null,
         }
         : {
           outcome: "retry",
-          errorCode: "registration_check_unavailable",
+          errorCode: "send_authorization_unavailable",
           providerStatus: null,
           retryAfterSeconds: 60,
         };

@@ -103,3 +103,106 @@ export async function debitVerifiedIdentityBudget(
     return unavailable("rpc_transport_error");
   }
 }
+
+export type GarminGatewayBudgetLane = "jwt" | "capability";
+
+const GARMIN_GATEWAY_ACTIONS = new Set([
+  "createDeviceIdempotent",
+  "createDevice",
+  "listDevices",
+  "rotateDeviceToken",
+  "revokeDevice",
+  "fetchPlan",
+  "ackPlan",
+]);
+
+function garminUnavailable(code: string): VerifiedIdentityBudgetResult {
+  const safeCode = /^[a-z0-9_]{1,64}$/.test(code) ? code : "rpc_rejected";
+  console.warn("Garmin gateway budget unavailable", { code: safeCode });
+  return { status: "unavailable", reason: safeCode };
+}
+
+function garminGatewayShard(
+  lane: GarminGatewayBudgetLane,
+  action: string,
+  sourceHint: string,
+): number | null {
+  if (
+    !GARMIN_GATEWAY_ACTIONS.has(action) || sourceHint.length > 4_096 ||
+    sourceHint.length === 0
+  ) {
+    return null;
+  }
+  // FNV-1a is deliberately only a cheap fixed-shard selector. No raw bearer
+  // or capability crosses the database boundary, and the independent global
+  // lane bounds total work even when an attacker deliberately spreads shards.
+  let hash = 0x811c9dc5;
+  const input = `${lane}\n${action}\n${sourceHint}`;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash % 64;
+}
+
+export async function debitGarminGatewayBudget(
+  lane: GarminGatewayBudgetLane,
+  action: string,
+  sourceHint: string,
+  projectUrl: string,
+  administrativeKey: string,
+): Promise<VerifiedIdentityBudgetResult> {
+  const shard = garminGatewayShard(lane, action, sourceHint);
+  if (shard === null) return garminUnavailable("invalid_source_hint");
+
+  const headers: Record<string, string> = {
+    apikey: administrativeKey,
+    "Content-Type": "application/json",
+  };
+  if (!administrativeKey.startsWith("sb_secret_")) {
+    headers.Authorization = `Bearer ${administrativeKey}`;
+  }
+
+  try {
+    const response = await fetch(
+      `${projectUrl}/rest/v1/rpc/garmin_gateway_preauth_debit`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ p_lane: lane, p_shard: shard }),
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    if (!response.ok) {
+      const errorBody = await response.clone().json().catch(() => null) as
+        | Record<string, unknown>
+        | null;
+      const responseCode = typeof errorBody?.code === "string" &&
+          /^[A-Za-z0-9]{1,16}$/.test(errorBody.code)
+        ? errorBody.code.toLowerCase()
+        : "unknown";
+      return garminUnavailable(`rpc_${response.status}_${responseCode}`);
+    }
+
+    const result = await response.json() as Record<string, unknown>;
+    if (
+      result.version === 1 && result.allowed === true &&
+      result.retryAfter === 0
+    ) {
+      return { status: "allowed" };
+    }
+    if (
+      result.version === 1 && result.allowed === false &&
+      Number.isInteger(result.retryAfter) && Number(result.retryAfter) >= 1 &&
+      Number(result.retryAfter) <= 60
+    ) {
+      return {
+        status: "rate_limited",
+        retryAfter: Number(result.retryAfter),
+      };
+    }
+    return garminUnavailable("invalid_rpc_response");
+  } catch {
+    return garminUnavailable("rpc_transport_error");
+  }
+}
