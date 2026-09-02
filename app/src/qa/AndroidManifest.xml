@@ -3,7 +3,9 @@
 
     <application>
         <!-- QA is test-signed and deliberately cannot claim production HTTPS links. -->
-        <activity android:name=".MainActivity">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
