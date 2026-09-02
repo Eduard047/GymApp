@@ -329,7 +329,7 @@ final class BoundedHTTPTests: XCTestCase {
         let oversizedPadding = String(repeating: "a", count: 8 * 1_024 + 1)
         let callback = try XCTUnwrap(
             URL(
-                string: "com.setforge.gymapp.ios://auth/callback/\(state)?code=test-auth-code&padding=\(oversizedPadding)"
+                string: "https://gymapptracker.com/auth/ios-callback.html?state=\(state)&purpose=recovery&code=test-auth-code&padding=\(oversizedPadding)"
             )
         )
         XCTAssertGreaterThan(callback.absoluteString.utf8.count, 8 * 1_024)

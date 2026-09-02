@@ -6,6 +6,7 @@ const [
   phoneBuild,
   mainManifest,
   debugManifest,
+  qaManifest,
   mainActivity,
   cloudAuth,
   phoneReleaseScript,
@@ -16,6 +17,7 @@ const [
   readFile("app/build.gradle.kts", "utf8"),
   readFile("app/src/main/AndroidManifest.xml", "utf8"),
   readFile("app/src/debug/AndroidManifest.xml", "utf8"),
+  readFile("app/src/qa/AndroidManifest.xml", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/MainActivity.kt", "utf8"),
   readFile("app/src/main/java/com/example/gymapp/auth/CloudAuthManager.kt", "utf8"),
   readFile("scripts/build-phone-release-apk.ps1", "utf8"),
@@ -48,13 +50,24 @@ test("the QA source set does not inherit the phone debug receiver", () => {
   assert.doesNotMatch(phoneBuild, /sourceSets[\s\S]*?qa[\s\S]*?src\/debug/i);
 });
 
-test("QA authentication callbacks cannot be claimed by the production app", () => {
+test("production Auth uses an exact HTTPS App Link while QA stays isolated", () => {
   const qa = qaBlock(phoneBuild);
-  assert.match(mainManifest, /android:scheme="\$\{authCallbackScheme\}"/);
+  assert.match(
+    mainManifest,
+    /android:host="gymapptracker\.com"\s+android:path="\/auth\/android-callback\.html"\s+android:scheme="https"/,
+  );
+  assert.doesNotMatch(mainManifest, /android:host="auth"/);
+  for (const sourceSetManifest of [debugManifest, qaManifest]) {
+    assert.match(sourceSetManifest, /android:host="auth"/);
+    assert.match(sourceSetManifest, /android:path="\/callback"/);
+    assert.match(sourceSetManifest, /android:scheme="\$\{authCallbackScheme\}"/);
+  }
   assert.match(qa, /authCallbackScheme"\]\s*=\s*"com\.setforge\.gymapp\.dev"/);
   assert.match(qa, /AUTH_CALLBACK_SCHEME[\s\S]*?com\.setforge\.gymapp\.dev/);
   assert.match(qa, /AUTH_BRIDGE_VARIANT_QUERY[\s\S]*?variant=qa/);
-  assert.match(mainActivity, /BuildConfig\.AUTH_CALLBACK_SCHEME/);
+  assert.match(mainActivity, /BuildConfig\.APPLICATION_ID != "com\.setforge\.gymapp"/);
+  assert.match(mainActivity, /uri\.path == "\/auth\/android-callback\.html"/);
+  assert.match(cloudAuth, /"https:\/\/gymapptracker\.com\/auth\/android-callback\.html"/);
   assert.match(cloudAuth, /BuildConfig\.AUTH_BRIDGE_VARIANT_QUERY/);
 });
 

@@ -7,6 +7,8 @@ import test, { after } from "node:test";
 const edgePath = "supabase/functions/delete-account/index.ts";
 const migrationPath =
   "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql";
+const hardeningMigrationPath =
+  "supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql";
 const projectUrl = "https://project.example";
 const publishableKey = "sb_publishable_delete_account_test";
 const administrativeKey = "test-administrative-key";
@@ -77,9 +79,10 @@ async function withFetchMock(mock, operation) {
 }
 
 test("account deletion RPC derives and binds a current signed session with least privilege", async () => {
-  const [edge, sql] = await Promise.all([
+  const [edge, sql, hardeningSql] = await Promise.all([
     readFile(edgePath, "utf8"),
     readFile(migrationPath, "utf8"),
+    readFile(hardeningMigrationPath, "utf8"),
   ]);
 
   const authUserCall = edge.indexOf("/auth/v1/user");
@@ -105,6 +108,10 @@ test("account deletion RPC derives and binds a current signed session with least
     sql,
     /create or replace function public\.prepare_account_deletion\(\)\s+returns jsonb/,
   );
+  assert.match(hardeningSql, /account_deletion_grants_one_owner_purpose_idx/);
+  assert.match(hardeningSql, /delete from gymapp_private\.account_deletion_grants as deletion_grant[\s\S]*deletion_grant\.user_id = caller_user_id/);
+  assert.match(hardeningSql, /edge_preauth_debit\([\s\S]*'delete_account'/);
+  assert.match(hardeningSql, /limit 64[\s\S]*for update skip locked/);
   assert.match(sql, /security definer\s+set search_path = ''/);
   assert.match(sql, /current_password_auth_is_recent\(interval '5 minutes'\)/);
   assert.match(sql, /method\.value->>'method' = 'password'/);
@@ -141,7 +148,7 @@ test("fresh preparation returns only a bounded one-time grant", async () => {
   assert.deepEqual(await response.json(), { grant: deletionGrant, expiresAt });
 });
 
-test("verified-identity exhaustion is checked only after Auth validation", async () => {
+test("database-enforced preparation exhaustion is surfaced after Auth validation", async () => {
   let authAttempted = false;
   let preparationAttempted = false;
   const response = await withFetchMock(async (input) => {
@@ -150,11 +157,9 @@ test("verified-identity exhaustion is checked only after Auth validation", async
       authAttempted = true;
       return Response.json({ id: userId });
     }
-    if (url.endsWith("/rest/v1/rpc/edge_preauth_debit")) {
-      return Response.json({ allowed: false, retryAfter: 60 });
-    }
     if (url.endsWith("/rest/v1/rpc/prepare_account_deletion")) {
       preparationAttempted = true;
+      return Response.json({ version: 1, error: "rate_limited", retryAfter: 60 });
     }
     throw new Error(`Unexpected request: ${url}`);
   }, () => edgeHandler(prepareRequest()));
@@ -162,7 +167,7 @@ test("verified-identity exhaustion is checked only after Auth validation", async
   assert.equal(response.status, 429);
   assert.equal(response.headers.get("retry-after"), "60");
   assert.equal(authAttempted, true);
-  assert.equal(preparationAttempted, false);
+  assert.equal(preparationAttempted, true);
 });
 
 test("an invalid bearer cannot debit any verified account budget", async () => {

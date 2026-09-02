@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v149";
-// v149 compacts Profile and keeps Friends reads independent from workout-state synchronization.
+const CACHE_VERSION = "v150";
+// v150 moves production native PKCE callbacks to exclusive HTTPS app links.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -42,7 +42,10 @@ const SHELL_ASSETS = [
   "./index.html",
   "./confirmed.html",
   "./confirmed.v56.css",
-  "./confirmed.v57.js",
+  "./confirmed.v58.js",
+  "./auth/android-callback.html",
+  "./auth/ios-callback.html",
+  "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
   "./styles.v83.css",
@@ -86,12 +89,23 @@ const MEDIA_URLS = new Set(
 const ROOT_PATH = new URL("./", self.registration.scope).pathname;
 const INDEX_PATH = new URL("./index.html", self.registration.scope).pathname;
 const CONFIRMATION_PATH = new URL("./confirmed.html", self.registration.scope).pathname;
+const ANDROID_AUTH_CALLBACK_PATH = new URL(
+  "./auth/android-callback.html", self.registration.scope
+).pathname;
+const IOS_AUTH_CALLBACK_PATH = new URL(
+  "./auth/ios-callback.html", self.registration.scope
+).pathname;
+const NATIVE_AUTH_CALLBACK_PATHS = new Set([
+  ANDROID_AUTH_CALLBACK_PATH,
+  IOS_AUTH_CALLBACK_PATH
+]);
 const WORKOUT_PATH = new URL("./workout/", self.registration.scope).pathname;
 const WORKOUT_INDEX_PATH = new URL("./workout/index.html", self.registration.scope).pathname;
 const DOCUMENT_PATHS = new Set([
   ROOT_PATH,
   INDEX_PATH,
   CONFIRMATION_PATH,
+  ...NATIVE_AUTH_CALLBACK_PATHS,
   WORKOUT_PATH,
   WORKOUT_INDEX_PATH
 ]);
@@ -100,6 +114,11 @@ const SENSITIVE_QUERY_KEYS = new Set([
   "refresh_token",
   "token",
   "code",
+  "state",
+  "purpose",
+  "error",
+  "error_code",
+  "error_description",
   "apikey",
   "api_key"
 ]);
@@ -156,7 +175,9 @@ function isSafeBaseRequest(request, url) {
 }
 
 function documentPolicy(url) {
-  if (url.pathname === CONFIRMATION_PATH) return CONFIRMATION_CSP;
+  if (url.pathname === CONFIRMATION_PATH || NATIVE_AUTH_CALLBACK_PATHS.has(url.pathname)) {
+    return CONFIRMATION_CSP;
+  }
   if (url.pathname === WORKOUT_PATH || url.pathname === WORKOUT_INDEX_PATH) return WORKOUT_CSP;
   if (url.pathname === ROOT_PATH || url.pathname === INDEX_PATH) return INDEX_CSP;
   return null;

@@ -55,26 +55,46 @@ function jsonResponse(
   });
 }
 
-function parseNamedKeySet(raw: string | undefined): string | null {
-  if (!raw) return null;
+function parseNamedKeySet(raw: string | undefined): {
+  preferred: string | null;
+  credentials: string[];
+} | null {
+  if (!raw?.trim()) return { preferred: null, credentials: [] };
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed)) return null;
-    if (typeof parsed.default === "string" && parsed.default.trim()) {
-      return parsed.default.trim();
+    const credentials: string[] = [];
+    for (const value of Object.values(parsed)) {
+      if (typeof value !== "string") return null;
+      const credential = value.trim();
+      if (credential) credentials.push(credential);
     }
-    return Object.values(parsed).find((value): value is string =>
-      typeof value === "string" && value.trim().length > 0
-    )?.trim() ?? null;
+    const defaultCredential = typeof parsed.default === "string"
+      ? parsed.default.trim()
+      : "";
+    return {
+      preferred: defaultCredential || credentials[0] || null,
+      credentials,
+    };
   } catch {
     return null;
   }
 }
 
-function getServiceKey(readEnv: ReadEnv): string | null {
-  return readEnv("SUPABASE_SECRET_KEY")?.trim() ||
-    parseNamedKeySet(readEnv("SUPABASE_SECRET_KEYS")) ||
-    readEnv("SUPABASE_SERVICE_ROLE_KEY")?.trim() || null;
+function getServiceCredentials(readEnv: ReadEnv): {
+  serviceKey: string;
+  credentials: string[];
+} | null {
+  const direct = readEnv("SUPABASE_SECRET_KEY")?.trim() ?? "";
+  const named = parseNamedKeySet(readEnv("SUPABASE_SECRET_KEYS"));
+  const legacy = readEnv("SUPABASE_SERVICE_ROLE_KEY")?.trim() ?? "";
+  if (!named) return null;
+  const serviceKey = direct || named.preferred || legacy;
+  if (!serviceKey) return null;
+  return {
+    serviceKey,
+    credentials: [direct, ...named.credentials, legacy].filter(Boolean),
+  };
 }
 
 export function serviceRoleFetch(
@@ -125,16 +145,34 @@ export function constantTimeEqual(left: string, right: string): boolean {
 
 export function loadDispatchCredentials(
   readEnv: ReadEnv,
-): { serviceKey: string; dispatchServerKey: string } | null {
-  const serviceKey = getServiceKey(readEnv);
+): {
+  serviceKey: string;
+  dispatchServerKey: string;
+  dispatchToken: string;
+} | null {
+  const serviceCredentials = getServiceCredentials(readEnv);
   const dispatchServerKey = readEnv("PUSH_DISPATCH_SERVER_KEY")?.trim() ?? "";
+  const dispatchToken = readEnv("PUSH_DISPATCH_TOKEN")?.trim() ?? "";
   if (
-    !serviceKey || !HIGH_ENTROPY_SECRET_PATTERN.test(dispatchServerKey) ||
-    constantTimeEqual(dispatchServerKey, serviceKey)
+    !serviceCredentials ||
+    !HIGH_ENTROPY_SECRET_PATTERN.test(dispatchServerKey) ||
+    !HIGH_ENTROPY_SECRET_PATTERN.test(dispatchToken) ||
+    constantTimeEqual(dispatchToken, dispatchServerKey)
   ) {
     return null;
   }
-  return { serviceKey, dispatchServerKey };
+  let credentialCollision = false;
+  for (const credential of serviceCredentials.credentials) {
+    const serverCollision = constantTimeEqual(dispatchServerKey, credential);
+    const tokenCollision = constantTimeEqual(dispatchToken, credential);
+    credentialCollision = credentialCollision || serverCollision || tokenCollision;
+  }
+  if (credentialCollision) return null;
+  return {
+    serviceKey: serviceCredentials.serviceKey,
+    dispatchServerKey,
+    dispatchToken,
+  };
 }
 
 async function readRequestBody(req: Request): Promise<unknown> {
@@ -313,7 +351,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (!credentials) {
     return jsonResponse(503, { error: "service_unavailable" });
   }
-  const { serviceKey, dispatchServerKey } = credentials;
+  const { serviceKey, dispatchServerKey, dispatchToken } = credentials;
   const suppliedDispatchServerKey = req.headers.get("apikey") ?? "";
   if (
     suppliedDispatchServerKey.length > 512 ||
@@ -321,14 +359,11 @@ export async function handleRequest(req: Request): Promise<Response> {
   ) {
     return jsonResponse(401, { error: "invalid_authorization" });
   }
-  const configuredDispatchToken = Deno.env.get("PUSH_DISPATCH_TOKEN")?.trim() ??
-    "";
   const suppliedDispatchToken =
     req.headers.get("x-gymapp-push-dispatch-token") ?? "";
   if (
-    !HIGH_ENTROPY_SECRET_PATTERN.test(configuredDispatchToken) ||
     suppliedDispatchToken.length > 512 ||
-    !constantTimeEqual(suppliedDispatchToken, configuredDispatchToken)
+    !constantTimeEqual(suppliedDispatchToken, dispatchToken)
   ) {
     return jsonResponse(401, { error: "invalid_authorization" });
   }

@@ -13,6 +13,10 @@
           {
             "/": "/workout/*",
             "comment": "GymApp shared workout subpaths"
+          },
+          {
+            "/": "/auth/ios-callback.html",
+            "comment": "Exclusive GymApp iOS PKCE callback"
           }
         ]
       }

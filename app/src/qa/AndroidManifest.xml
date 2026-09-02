@@ -2,12 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
-        <!-- In-process Compose test host. It has no intent filter and is never externally reachable. -->
-        <activity
-            android:name="androidx.activity.ComponentActivity"
-            android:exported="false" />
-
-        <!-- Debug builds cannot use the production Play-signing App Link. -->
+        <!-- QA is test-signed and deliberately cannot claim production HTTPS links. -->
         <activity android:name=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -19,13 +14,6 @@
                     android:scheme="${authCallbackScheme}" />
             </intent-filter>
         </activity>
-
-        <receiver
-            android:name=".garmin.GarminDebugReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.setforge.gymapp.DEBUG_GARMIN_SYNC" />
-            </intent-filter>
-        </receiver>
     </application>
+
 </manifest>

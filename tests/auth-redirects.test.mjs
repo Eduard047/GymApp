@@ -90,20 +90,16 @@ test("Android rejects legacy implicit bearer signup callbacks", () => {
   assert.deepEqual(explicit.assigned, []);
 });
 
-test("Android signup forwards only a state-bound PKCE code after user action", () => {
+test("retired Android production bridge never forwards a PKCE code to a custom scheme", () => {
   const state = "S".repeat(32);
   const code = "34e770dd-9ff9-416c-87fa-43b31d7ef225";
   const url = `https://gymapptracker.com/confirmed.html?platform=android&state=${state}&purpose=signup&code=${code}`;
   const result = runCallback(url);
-  const expected = `com.setforge.gymapp://auth/callback?state=${state}&purpose=signup&code=${code}`;
-
-  assert.equal(result.button.getAttribute("href"), expected);
-  assert.doesNotMatch(result.button.getAttribute("href"), /access_token|refresh_token/i);
-  assert.equal(result.button.textContent, "Open GymApp");
-  assert.match(result.title.textContent, /email confirmed/i);
-  assert.match(result.message.textContent, /where registration started/i);
+  assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.doesNotMatch(result.button.getAttribute("href"), /token|auth\/callback/i);
+  assert.match(result.title.textContent, /update required/i);
   assert.deepEqual(result.assigned, []);
-  assert.deepEqual(result.scrubbed, []);
+  assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
 });
 
 test("Android QA callbacks use only the non-production package scheme", () => {
@@ -136,7 +132,7 @@ test("authentication bridge rejects duplicate, unknown, and cross-platform varia
     const result = runCallback(`https://gymapptracker.com/confirmed.html${suffix}`);
     assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/", suffix);
     assert.doesNotMatch(result.button.getAttribute("href"), /auth\/callback/i, suffix);
-    assert.match(result.title.textContent, /unavailable/i, suffix);
+    assert.match(result.title.textContent, /unavailable|update required/i, suffix);
     assert.deepEqual(result.assigned, [], suffix);
     assert.deepEqual(result.scrubbed, ["/confirmed.html"], suffix);
   }
@@ -155,22 +151,16 @@ test("Android recovery rejects legacy implicit tokens instead of forwarding them
   assert.deepEqual(result.assigned, []);
 });
 
-test("Android recovery forwards only a state-bound PKCE code and retains the fallback", () => {
+test("retired Android recovery bridge scrubs the code and requires an update", () => {
   const state = "A".repeat(32);
   const code = "4be36bc9-5ee4-40f3-a674-5ebf01b53ac8";
   const url = `https://gymapptracker.com/confirmed.html?platform=android&state=${state}&purpose=recovery&code=${code}`;
   const result = runCallback(url);
-  const restored = runCallback(url);
-  const expected = `com.setforge.gymapp://auth/callback?state=${state}&purpose=recovery&code=${code}`;
-
-  assert.equal(result.button.getAttribute("href"), expected);
-  assert.doesNotMatch(result.button.getAttribute("href"), /access_token|refresh_token/i);
-  assert.equal(result.button.textContent, "Open GymApp to reset password");
-  assert.match(result.title.textContent, /password reset verified/i);
+  assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.doesNotMatch(result.button.getAttribute("href"), /token|auth\/callback/i);
+  assert.match(result.title.textContent, /update required/i);
   assert.deepEqual(result.assigned, []);
-  assert.deepEqual(result.scrubbed, []);
-  assert.equal(restored.button.getAttribute("href"), expected);
-  assert.deepEqual(restored.assigned, []);
+  assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
 });
 
 test("Android PKCE recovery fails closed for state mismatch shapes and token injection", () => {
@@ -302,55 +292,41 @@ test("web PKCE bridge discards expired browser transactions and never forwards t
   assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
 });
 
-test("iOS bridge forwards only one PKCE code under the exact state-bound callback", () => {
+test("retired iOS bridge never forwards a PKCE code to a custom scheme", () => {
   const state = "AbCdEf0123456789_-AbCdEf01234567";
   const code = "34e770dd-9ff9-416c-87fa-43b31d7ef225";
   const result = runCallback(
     `https://gymapptracker.com/confirmed.html?platform=ios&state=${state}&code=${code}&type=signup`
   );
 
-  assert.equal(
-    result.button.getAttribute("href"),
-    `com.setforge.gymapp.ios://auth/callback/${state}?code=${code}`
-  );
-  assert.equal(result.button.textContent, "Open GymApp for iOS");
-  assert.deepEqual(result.assigned, [result.button.getAttribute("href")]);
-  assert.deepEqual(result.scrubbed, []);
+  assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.doesNotMatch(result.button.getAttribute("href"), /auth\/callback|code=/i);
+  assert.match(result.title.textContent, /update required/i);
+  assert.deepEqual(result.assigned, []);
+  assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
 });
 
-test("iOS recovery bridge launches the app, keeps a reload fallback, and uses recovery copy", () => {
+test("retired iOS recovery bridge fails closed and scrubs browser history", () => {
   const state = "R".repeat(32);
   const code = "single-use-pkce-code";
   const url = `https://gymapptracker.com/confirmed.html?platform=ios&state=${state}&purpose=recovery&code=${code}`;
   const first = runCallback(url);
-  const restored = runCallback(url);
-  const expected = `com.setforge.gymapp.ios://auth/callback/${state}?code=${code}`;
-
-  assert.equal(first.button.getAttribute("href"), expected);
-  assert.equal(first.button.textContent, "Open GymApp to reset password");
-  assert.match(first.title.textContent, /password reset verified/i);
-  assert.match(first.message.textContent, /choose a new password/i);
-  assert.deepEqual(first.assigned, [expected]);
-  assert.deepEqual(first.scrubbed, []);
-
-  assert.equal(restored.button.getAttribute("href"), expected);
-  assert.deepEqual(restored.assigned, [expected]);
-  assert.deepEqual(restored.scrubbed, []);
+  assert.equal(first.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.match(first.title.textContent, /update required/i);
+  assert.deepEqual(first.assigned, []);
+  assert.deepEqual(first.scrubbed, ["/confirmed.html"]);
 });
 
-test("iOS bridge forwards only bounded error fields", () => {
+test("retired iOS error bridge never exposes error fields in a custom URL", () => {
   const state = "Z".repeat(32);
   const result = runCallback(
     `https://gymapptracker.com/confirmed.html?platform=ios&state=${state}&error=access_denied&error_description=User%20cancelled&type=signup`
   );
 
-  assert.equal(
-    result.button.getAttribute("href"),
-    `com.setforge.gymapp.ios://auth/callback/${state}?error=access_denied&error_description=User+cancelled`
-  );
-  assert.doesNotMatch(result.button.getAttribute("href"), /type=signup/);
-  assert.deepEqual(result.assigned, [result.button.getAttribute("href")]);
-  assert.deepEqual(result.scrubbed, []);
+  assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/");
+  assert.doesNotMatch(result.button.getAttribute("href"), /auth\/callback|access_denied/i);
+  assert.deepEqual(result.assigned, []);
+  assert.deepEqual(result.scrubbed, ["/confirmed.html"]);
 });
 
 test("iOS bridge fails closed for implicit tokens, fragments, duplicates, and invalid state", () => {
@@ -375,7 +351,7 @@ test("iOS bridge fails closed for implicit tokens, fragments, duplicates, and in
     const result = runCallback(`https://gymapptracker.com/confirmed.html${suffix}`);
     assert.equal(result.button.getAttribute("href"), "https://gymapptracker.com/", suffix);
     assert.doesNotMatch(result.button.getAttribute("href"), /secret|auth\/callback/i, suffix);
-    assert.match(result.title.textContent, /unavailable/i, suffix);
+    assert.match(result.title.textContent, /unavailable|update required/i, suffix);
     assert.deepEqual(result.assigned, [], suffix);
     assert.deepEqual(result.scrubbed, ["/confirmed.html"], suffix);
   }
@@ -391,11 +367,12 @@ test("unknown platform never becomes a custom-scheme redirect", () => {
 });
 
 test("client auth, public metadata, and compatibility docs use the intended domains", async () => {
-  const [android, pwa, index, confirmation, cname, operations, redirectContractText] = await Promise.all([
+  const [android, pwa, index, confirmation, nativeFallback, cname, operations, redirectContractText] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/auth/CloudAuthManager.kt", "utf8"),
     readFile("pwa/app.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/confirmed.html", "utf8"),
+    readFile("pwa/auth/native-auth-callback.v1.js", "utf8"),
     readFile("pwa/CNAME", "utf8"),
     readFile("docs/OPERATIONS.md", "utf8"),
     readFile("supabase/auth-redirect-allowlist.json", "utf8")
@@ -410,7 +387,7 @@ test("client auth, public metadata, and compatibility docs use the intended doma
     android.indexOf("suspend fun requestPasswordReset")
   );
 
-  assert.ok(android.includes("https://gymapptracker.com/confirmed.html?platform=android"));
+  assert.ok(android.includes("https://gymapptracker.com/auth/android-callback.html"));
   assert.match(android, /AUTH_BRIDGE_VARIANT_QUERY/);
   assert.match(android, /\/auth\/v1\/resend\?redirect_to=/);
   assert.match(signUpSource, /purpose=signup/);
@@ -436,32 +413,28 @@ test("client auth, public metadata, and compatibility docs use the intended doma
   assert.match(confirmation, /Content-Security-Policy/);
   assert.match(confirmation, /name="referrer" content="no-referrer"/);
   assert.doesNotMatch(confirmation, /<script[^>]+src="https?:\/\//i);
+  assert.doesNotMatch(nativeFallback, /com\.setforge\.gymapp|auth\/callback/i);
+  assert.match(nativeFallback, /history\.replaceState/);
   assert.equal(cname, "gymapptracker.com\n");
   assert.ok(operations.includes("https://eduard047.github.io/GymApp/confirmed.html"));
   assert.equal(redirectContract.siteUrl, "https://gymapptracker.com/");
-  assert.ok(
-    redirectContract.redirectUrls.includes(
-      "https://gymapptracker.com/confirmed.html?platform=android"
-    )
-  );
-  assert.ok(
-    redirectContract.redirectUrls.includes(
-      "https://gymapptracker.com/confirmed.html?platform=android&state=*"
-    )
-  );
-  assert.ok(
-    redirectContract.redirectUrls.includes(
-      "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*"
-    )
-  );
-  assert.ok(
-    operations.includes(
-      "https://gymapptracker.com/confirmed.html?platform=android&state=*"
-    )
-  );
-  assert.ok(
-    operations.includes(
-      "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*"
-    )
+  for (const purpose of ["signup", "recovery"]) {
+    assert.ok(redirectContract.redirectUrls.includes(
+      `https://gymapptracker.com/auth/android-callback.html?state=*&purpose=${purpose}`
+    ));
+    assert.ok(redirectContract.redirectUrls.includes(
+      `https://gymapptracker.com/auth/ios-callback.html?state=*&purpose=${purpose}`
+    ));
+    assert.ok(
+      redirectContract.redirectUrls.includes(
+        `https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*&purpose=${purpose}`
+      )
+    );
+  }
+  assert.equal(
+    redirectContract.redirectUrls.some(url =>
+      url.includes("platform=ios") || url === "com.setforge.gymapp.ios://auth/callback/*"
+    ),
+    false
   );
 });

@@ -31,7 +31,7 @@ function infoPlistStrings(source) {
   return Object.fromEntries(entries);
 }
 
-test("AASA and the signed entitlement bind only GymApp workout routes to the exact iOS app", async () => {
+test("AASA binds exact workout and native-auth routes to the exact iOS app", async () => {
   const aasa = JSON.parse(aasaSource);
   assert.deepEqual(Object.keys(aasa), ["applinks"]);
   assert.deepEqual(Object.keys(aasa.applinks), ["details"]);
@@ -40,7 +40,8 @@ test("AASA and the signed entitlement bind only GymApp workout routes to the exa
   assert.deepEqual(detail.appIDs, ["XZ84SZH2PV.com.setforge.gymapp.ios"]);
   assert.deepEqual(detail.components.map(component => component["/"]), [
     "/workout/",
-    "/workout/*"
+    "/workout/*",
+    "/auth/ios-callback.html"
   ]);
   assert.equal(detail.components.some(component => ["/", "/confirmed.html", "/auth/*"].includes(component["/"])), false);
 
@@ -50,6 +51,10 @@ test("AASA and the signed entitlement bind only GymApp workout routes to the exa
   assert.match(project, /DEVELOPMENT_TEAM = XZ84SZH2PV;/);
   assert.match(project, /PRODUCT_BUNDLE_IDENTIFIER = com\.setforge\.gymapp\.ios;/);
   assert.match(appSource, /\.onContinueUserActivity\(NSUserActivityTypeBrowsingWeb\)/);
+  assert.match(
+    await readFile(`${root}/Services/AuthService.swift`, "utf8"),
+    /https:\/\/gymapptracker\.com\/auth\/ios-callback\.html/
+  );
   assert.match(sharedLinkSource, /percentEncodedPath == "\/workout\/"/);
   assert.match(sharedLinkSource, /com\.setforge\.gymapp\.ios:\/\/workout\/#workout=/);
   await access("pwa/.nojekyll");

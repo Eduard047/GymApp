@@ -17,6 +17,10 @@ const migration = await readFile(
   `${migrationDirectory}/${matchingMigrations[0]}`,
   "utf8",
 );
+const deepHardeningMigration = await readFile(
+  `${migrationDirectory}/20260901215530_harden_deep_scan_boundaries.sql`,
+  "utf8",
+);
 
 function functionBody(sql, signature) {
   const start = sql.indexOf(`create or replace function ${signature}`);
@@ -80,4 +84,52 @@ test("the compatibility hotfix changes no table, policy, or client grant", () =>
   assert.doesNotMatch(migration, /\bgrant\s+[^;]*\bon\s+table\b/i);
   assert.doesNotMatch(migration, /\b(?:insert|update|delete)\s+(?:into|from\s+)?auth\.sessions\b/i);
   assert.match(migration, /notify pgrst, 'reload schema';/);
+});
+
+test("the shared user/session predicate locks every read-write authorization through commit", () => {
+  const body = functionBody(
+    deepHardeningMigration,
+    "gymapp_private.has_current_auth_session(\n  p_user_id uuid\n)",
+  );
+  const readOnlyBranch = body.indexOf(
+    "if pg_catalog.current_setting('transaction_read_only')::boolean then",
+  );
+  const readOnlyEnd = body.indexOf("end if;", readOnlyBranch);
+  const writeLock = body.indexOf("for key share;", readOnlyEnd);
+
+  assert.ok(readOnlyBranch >= 0);
+  assert.ok(readOnlyEnd > readOnlyBranch);
+  assert.ok(writeLock > readOnlyEnd);
+  assert.match(body.slice(readOnlyBranch, readOnlyEnd), /return exists \(/);
+  assert.doesNotMatch(body.slice(readOnlyBranch, readOnlyEnd), /for key share/i);
+  assert.match(body.slice(readOnlyEnd), /for key share/i);
+  assert.equal(
+    (body.match(/session\.id = session_id_text::uuid/g) ?? []).length,
+    2,
+  );
+  assert.equal(
+    (body.match(/session\.user_id = p_user_id/g) ?? []).length,
+    2,
+  );
+  assert.equal(
+    (body.match(/session\.not_after > pg_catalog\.clock_timestamp\(\)/g) ?? [])
+      .length,
+    2,
+  );
+  assert.match(body, /volatile\s+security definer\s+set search_path = ''/);
+  assert.match(
+    deepHardeningMigration,
+    /revoke all on function gymapp_private\.has_current_auth_session\(uuid\)\s+from public, anon, authenticated, service_role;/,
+  );
+  for (const signature of [
+    "public.garmin_list_devices()",
+    "public.require_live_session_for_account_deletion()",
+    "gymapp_private.realtime_has_current_auth_session()",
+  ]) {
+    assert.match(
+      deepHardeningMigration,
+      new RegExp(`alter function ${signature.replace(/[().]/g, "\\$&")} volatile;`),
+      `${signature} must not suppress the write-side session lock`,
+    );
+  }
 });

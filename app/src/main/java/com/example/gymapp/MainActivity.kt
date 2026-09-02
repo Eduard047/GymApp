@@ -106,10 +106,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleAuthRedirect(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme != BuildConfig.AUTH_CALLBACK_SCHEME ||
-            uri.host != "auth" ||
-            uri.path != "/callback"
-        ) {
+        val productionHttpsCallback = uri.scheme.equals("https", ignoreCase = true) &&
+            uri.host.equals("gymapptracker.com", ignoreCase = true) &&
+            uri.port == -1 && uri.userInfo == null &&
+            uri.path == "/auth/android-callback.html"
+        val nonProductionCallback = BuildConfig.APPLICATION_ID != "com.setforge.gymapp" &&
+            uri.scheme == BuildConfig.AUTH_CALLBACK_SCHEME &&
+            uri.host == "auth" && uri.path == "/callback"
+        if (!productionHttpsCallback && !nonProductionCallback) {
             return
         }
         // Do not retain token-bearing implicit callback data on the Activity intent.

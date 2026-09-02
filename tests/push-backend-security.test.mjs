@@ -25,13 +25,18 @@ const schedulerFixMigrationPath = new URL(
   "../supabase/migrations/20260810092029_fix_push_dispatch_token_validation.sql",
   import.meta.url,
 );
+const deepHardeningMigrationPath = new URL(
+  "../supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql",
+  import.meta.url,
+);
 
-const [pushSql, perimeterSql, schedulerBaseSql, schedulerFixSql, gateway, gatewayDeno, dispatcher, providers, dispatcherDeno, dispatcherReadme, config] =
+const [pushSql, perimeterSql, schedulerBaseSql, schedulerFixSql, deepHardeningSql, gateway, gatewayDeno, dispatcher, providers, dispatcherDeno, dispatcherReadme, config] =
   await Promise.all([
     readFile(pushMigrationPath, "utf8"),
     readFile(perimeterMigrationPath, "utf8"),
     readFile(schedulerMigrationPath, "utf8"),
     readFile(schedulerFixMigrationPath, "utf8"),
+    readFile(deepHardeningMigrationPath, "utf8"),
     readFile(gatewayPath, "utf8"),
     readFile(gatewayDenoPath, "utf8"),
     readFile(dispatcherPath, "utf8"),
@@ -41,7 +46,7 @@ const [pushSql, perimeterSql, schedulerBaseSql, schedulerFixSql, gateway, gatewa
     readFile(configPath, "utf8"),
   ]);
 
-const schedulerSql = `${schedulerBaseSql}\n${schedulerFixSql}`;
+const schedulerSql = `${schedulerBaseSql}\n${schedulerFixSql}\n${deepHardeningSql}`;
 const newSocialSql = `${pushSql}\n${perimeterSql}\n${schedulerSql}`;
 
 test("new social migrations avoid schema-qualified PostgreSQL special forms", () => {
@@ -156,11 +161,27 @@ test("durable push hooks cover lifecycle events but never enqueue set progress",
 });
 
 test("gateway re-verifies Auth, commits the durable perimeter debit, then validates and routes", () => {
+  const bodyDecode = gateway.indexOf("rawBody = await readJsonBody(req)");
   const getUser = gateway.indexOf("auth.getUser(token)");
-  const debit = gateway.indexOf('rpc("social_live_gateway_debit"');
-  const detailedArgs = gateway.indexOf("args = route.args", debit);
+  const perimeterDebit = gateway.indexOf(
+    'rpc("social_gateway_perimeter_debit"',
+  );
+  const semanticValidation = gateway.indexOf(
+    "parseGatewayRequest(rawBody)",
+    perimeterDebit,
+  );
+  const actionDebit = gateway.indexOf(
+    'rpc("social_live_gateway_debit"',
+    semanticValidation,
+  );
+  const detailedArgs = gateway.indexOf("args = route.args", actionDebit);
   const domain = gateway.indexOf("domainClient.rpc", detailedArgs);
-  assert.ok(getUser > 0 && debit > getUser && detailedArgs > debit && domain > detailedArgs);
+  assert.ok(
+    getUser > 0 && perimeterDebit > getUser && bodyDecode > perimeterDebit &&
+      semanticValidation > bodyDecode && actionDebit > semanticValidation &&
+      detailedArgs > actionDebit && domain > detailedArgs,
+  );
+  assert.match(gateway, /rpc\("social_gateway_perimeter_debit"[\s\S]*p_user_id: userId,[\s\S]*p_session_id: sessionId/);
   assert.match(gateway, /p_user_id: userId,[\s\S]*p_session_id: sessionId,[\s\S]*p_action: parsed\.action/);
   assert.match(gateway, /route\.serviceOnly\s*\? serviceClient\s*: userClient/);
   assert.match(gateway, /status === 409\s*\? "conflict"/);
@@ -172,9 +193,13 @@ test("gateway re-verifies Auth, commits the durable perimeter debit, then valida
 test("dispatcher is server-only, dependency-pinned, and keeps provider payload opaque", () => {
   assert.match(dispatcher, /PUSH_DISPATCH_SERVER_KEY/);
   assert.match(dispatcher, /PUSH_DISPATCH_TOKEN/);
-  assert.match(dispatcher, /constantTimeEqual\(suppliedDispatchToken, configuredDispatchToken\)/);
+  assert.match(dispatcher, /constantTimeEqual\(suppliedDispatchToken, dispatchToken\)/);
   assert.match(dispatcher, /constantTimeEqual\(suppliedDispatchServerKey, dispatchServerKey\)/);
-  assert.match(dispatcher, /constantTimeEqual\(dispatchServerKey, serviceKey\)/);
+  assert.match(dispatcher, /serviceCredentials\.credentials/);
+  assert.match(dispatcher, /for \(const credential of serviceCredentials\.credentials\)/);
+  assert.match(dispatcher, /constantTimeEqual\(dispatchServerKey, credential\)/);
+  assert.match(dispatcher, /constantTimeEqual\(dispatchToken, credential\)/);
+  assert.match(dispatcher, /constantTimeEqual\(dispatchToken, dispatchServerKey\)/);
   assert.doesNotMatch(dispatcher, /constantTimeEqual\(suppliedDispatchServerKey, serviceKey\)/);
   assert.doesNotMatch(dispatcher, /req\.headers\.get\("authorization"\)/i);
   assert.match(dispatcher, /global: \{ fetch: serviceRoleFetch\(serviceKey\) \}/);
@@ -232,6 +257,7 @@ test("push dispatch has a dormant Vault-backed minute scheduler with no public e
   assert.match(schedulerSql, /'X-GymApp-Push-Dispatch-Token', dispatch_token/);
   assert.match(schedulerFixSql, /octet_length\(dispatch_token\) not between 43 and 256/);
   assert.match(schedulerFixSql, /dispatch_token !~ '\^\[A-Za-z0-9_-\]\+\$'/);
+  assert.match(deepHardeningSql, /server_key = dispatch_token/);
   assert.doesNotMatch(
     sqlFunction(schedulerFixSql, "gymapp_private.dispatch_push_notifications"),
     /\{43,256\}/,

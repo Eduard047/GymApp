@@ -13,7 +13,7 @@ declare
   stored_count integer;
 begin
   for route_row in select * from (values
-    ('social_live', 180), ('delete_account', 12), ('garmin_legacy', 90)
+    ('social_live', 180), ('social_gateway', 180), ('delete_account', 12)
   ) as routes(route, allowance) loop
     -- Avoid the opportunistic cleanup branch: touch only our synthetic rows.
     loop
@@ -83,6 +83,11 @@ begin
   begin
     perform public.edge_preauth_debit('invalid_route', test_source_hash);
     raise exception 'Unknown route was accepted.';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.edge_preauth_debit('garmin_legacy', test_source_hash);
+    raise exception 'Retired Garmin legacy route was accepted.';
   exception when invalid_parameter_value then null;
   end;
 

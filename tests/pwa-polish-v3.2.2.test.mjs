@@ -77,5 +77,5 @@ test("install metadata and immutable PWA entrypoints are one coherent GymApp rel
     assert.ok(index.includes(`./${asset}`), `index references ${asset}`);
     assert.ok(worker.includes(`"./${asset}"`), `service worker caches ${asset}`);
   }
-  assert.match(worker, /const CACHE_VERSION = "v149";/);
+  assert.match(worker, /const CACHE_VERSION = "v150";/);
 });

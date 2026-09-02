@@ -277,19 +277,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
     }
 
-    const identityBudget = await debitVerifiedIdentityBudget(
-      `account:${authenticatedUser.id.toLowerCase()}`,
-      "delete_account",
-      projectUrl,
-      administrativeKey,
-    );
-    if (identityBudget.status === "rate_limited") {
-      return jsonResponse(req, 429, { error: "rate_limited" }, {
-        "Retry-After": String(identityBudget.retryAfter),
-      });
-    }
-    if (identityBudget.status !== "allowed") {
-      return jsonResponse(req, 503, { error: "service_unavailable" });
+    if (deletionRequest.action === "delete") {
+      const identityBudget = await debitVerifiedIdentityBudget(
+        `account:${authenticatedUser.id.toLowerCase()}`,
+        "delete_account",
+        projectUrl,
+        administrativeKey,
+      );
+      if (identityBudget.status === "rate_limited") {
+        return jsonResponse(req, 429, { error: "rate_limited" }, {
+          "Retry-After": String(identityBudget.retryAfter),
+        });
+      }
+      if (identityBudget.status !== "allowed") {
+        return jsonResponse(req, 503, { error: "service_unavailable" });
+      }
     }
 
     if (deletionRequest.action === "prepare") {
@@ -312,6 +314,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
         });
       }
       const prepared = await prepareResponse.json() as JsonRecord;
+      if (
+        prepared.version === 1 && prepared.error === "rate_limited" &&
+        Number.isInteger(prepared.retryAfter) &&
+        Number(prepared.retryAfter) >= 1 && Number(prepared.retryAfter) <= 3_600
+      ) {
+        return jsonResponse(req, 429, { error: "rate_limited" }, {
+          "Retry-After": String(prepared.retryAfter),
+        });
+      }
       if (
         prepared.version !== 1 || !isUuid(prepared.grant) ||
         typeof prepared.expiresAt !== "string" || prepared.expiresAt.length > 64

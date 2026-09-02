@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
-const [isolation, migration, fixture] = await Promise.all([
+const [isolation, migration, hardening, fixture] = await Promise.all([
   readFile("supabase/migrations/20260825105114_isolate_verified_edge_rate_limits.sql", "utf8"),
   readFile("supabase/migrations/20260830164651_fix_verified_edge_budget_coalesce.sql", "utf8"),
+  readFile("supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql", "utf8"),
   readFile("supabase/tests/verified_edge_budget_coalesce.sql", "utf8"),
 ]);
 const body = isolation.match(/as \$function\$\s*([\s\S]*?)\$function\$;/)?.[1];
@@ -53,6 +54,26 @@ test("later limiter redefinitions cannot reintroduce qualified conditional expre
   assert.doesNotMatch(effectiveBody, /pg_catalog\.(?:coalesce|greatest|least|nullif)\s*\(/i);
 });
 
+test("current expiry maintenance is indexed, leased, bounded, and skipped for denied callers", () => {
+  const currentBody = hardening.match(
+    /create or replace function gymapp_private\.edge_preauth_debit\([\s\S]*?as \$function\$\s*([\s\S]*?)\$function\$;/i,
+  )?.[1];
+  assert.ok(currentBody);
+  const deniedReturn = currentBody.indexOf(
+    "if not coalesce(source_allowed, false) then",
+  );
+  const cleanupLease = currentBody.indexOf("pg_try_advisory_xact_lock(");
+  assert.ok(deniedReturn >= 0 && cleanupLease > deniedReturn);
+  assert.match(currentBody, /limit 128\s+for update skip locked/);
+  assert.match(currentBody, /\('social_gateway', 180\)/);
+  assert.match(currentBody, /order by budget\.window_started_at, budget\.route, budget\.source_hash/);
+  assert.match(
+    hardening,
+    /create index if not exists edge_preauth_windows_expiry_idx\s+on gymapp_private\.edge_preauth_windows \(window_started_at, route, source_hash\);/,
+  );
+  assert.doesNotMatch(currentBody, /garmin_legacy/);
+});
+
 test("repair checks owner, ACL, search path, security mode, and wrapper preservation", () => {
   assert.match(migration, /p\.proowner, p\.proacl, p\.proconfig, p\.prosecdef, p\.provolatile/);
   assert.match(migration, /current_security is distinct from original_security/);
@@ -64,12 +85,14 @@ test("repair checks owner, ACL, search path, security mode, and wrapper preserva
 });
 
 test("runtime regression covers allowed, exhausted, isolated, reset, invalid, and denied paths", () => {
+  assert.match(fixture, /\('social_gateway', 180\)/);
   assert.match(fixture, /First request failed/);
   assert.match(fixture, /Last allowed request failed/);
   assert.match(fixture, /Exhausted request did not fail closed/);
   assert.match(fixture, /One identity consumed another identity budget/);
   assert.match(fixture, /Expired window did not reset/);
   assert.match(fixture, /exception when invalid_parameter_value then null/);
+  assert.match(fixture, /Retired Garmin legacy route was accepted/);
   for (const role of ["anon", "authenticated", "service_role"]) {
     assert.ok(fixture.includes(`set local role ${role};`));
   }

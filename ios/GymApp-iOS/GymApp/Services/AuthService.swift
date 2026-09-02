@@ -8,8 +8,9 @@ enum GymAppConfiguration {
     static let supabaseURL = URL(string: "https://owrcbsrectdgaotndtxy.supabase.co") ?? invalidURL
     // A Supabase publishable key is intentionally public. Authorization is enforced by RLS.
     static let supabasePublishableKey = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
-    static let authCallbackBase = "com.setforge.gymapp.ios://auth/callback"
-    static let authWebCallbackURL = URL(string: "https://gymapptracker.com/confirmed.html") ?? invalidURL
+    static let authWebCallbackURL = URL(
+        string: "https://gymapptracker.com/auth/ios-callback.html"
+    ) ?? invalidURL
     static let privacyPolicyURL = URL(string: "https://gymapptracker.com/privacy-policy.html") ?? invalidURL
     static let supportURL = URL(string: "https://gymapptracker.com/support.html") ?? invalidURL
 }
@@ -34,7 +35,6 @@ enum AuthCallbackRouting {
             resolvingAgainstBaseURL: false
         )
         components?.queryItems = [
-            URLQueryItem(name: "platform", value: "ios"),
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "purpose", value: purpose.rawValue)
         ]
@@ -51,43 +51,48 @@ enum AuthCallbackRouting {
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.forEach {
             result[$0.name] = $0.value
         }
-        if let fragment = url.fragment {
-            URLComponents(string: "?\(fragment)")?.queryItems?.forEach {
-                result[$0.name] = $0.value
-            }
-        }
         return result
     }
 
     static func isAuthDestination(_ url: URL) -> Bool {
-        let scheme = url.scheme?.lowercased()
-        if scheme == "com.setforge.gymapp.ios", url.host?.lowercased() == "auth" {
-            return true
-        }
-        return scheme == "https"
+        return url.scheme?.lowercased() == "https"
             && url.host?.lowercased() == "gymapptracker.com"
-            && url.path == "/confirmed.html"
+            && url.port == nil
+            && url.user == nil
+            && url.password == nil
+            && url.path == "/auth/ios-callback.html"
     }
 
     static func isExpectedCallback(
         _ url: URL,
         state: String,
+        purpose: AuthCallbackPurpose,
         values: [String: String]
     ) -> Bool {
-        guard !rawTokenKeys.contains(where: { values[$0]?.isEmpty == false }) else {
+        let queryItems = URLComponents(
+            url: url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems ?? []
+        let allowedKeys = Set([
+            "state", "purpose", "code", "error", "error_description", "error_code"
+        ])
+        let queryNames = queryItems.map(\.name)
+        guard url.fragment == nil,
+              queryItems.allSatisfy({ allowedKeys.contains($0.name) }),
+              Set(queryNames).count == queryNames.count,
+              !rawTokenKeys.contains(where: { values[$0]?.isEmpty == false }),
+              values["state"] == state,
+              values["purpose"] == purpose.rawValue else {
             return false
         }
-
-        if url.scheme?.lowercased() == "com.setforge.gymapp.ios" {
-            return url.host?.lowercased() == "auth"
-                && url.pathComponents == ["/", "callback", state]
-        }
-
-        return url.scheme?.lowercased() == "https"
-            && url.host?.lowercased() == "gymapptracker.com"
-            && url.path == "/confirmed.html"
-            && values["platform"] == "ios"
-            && values["state"] == state
+        let code = values["code"]?.isEmpty == false
+        let error = values["error"]?.isEmpty == false
+        let description = values["error_description"]
+        let errorCode = values["error_code"]
+        return isAuthDestination(url)
+            && code != error
+            && (description == nil || (error && description?.isEmpty == false))
+            && (errorCode == nil || (error && errorCode?.isEmpty == false))
     }
 }
 
@@ -881,6 +886,7 @@ final class AuthService: ObservableObject {
                   AuthCallbackRouting.isExpectedCallback(
                     url,
                     state: transaction.state,
+                    purpose: transaction.kind == .recovery ? .recovery : .signup,
                     values: values
                   ) else {
                 throw AuthServiceError.callbackNotExpected

@@ -43,7 +43,6 @@ type RequestBody = {
   capabilityVersion?: unknown;
   deviceToken?: unknown;
   deviceId?: unknown;
-  replacementToken?: unknown;
   replacementNonce?: unknown;
   expectedTokenRevision?: unknown;
   requestId?: unknown;
@@ -54,7 +53,7 @@ type RequestBody = {
 };
 
 type GarminCapabilityContext = {
-  version: 2 | 3;
+  version: 3;
   nonce: string;
   accountBinding?: string;
   deviceId?: string;
@@ -102,9 +101,8 @@ function requiredEnv(name: string) {
 }
 
 function requestedCapabilityVersion(value: unknown): 2 | 3 | null {
-  // A missing version is the released v2 browser contract. Keep it during the
-  // bounded compatibility window so an Edge-first rollout cannot strand
-  // already-installed watches.
+  // Missing or explicit v2 identifies a retired client and is rejected before
+  // authentication or database access. Only signed v3 pairing can proceed.
   if (value === undefined || value === 2) return 2;
   if (value === 3) return 3;
   return null;
@@ -265,9 +263,8 @@ async function capabilityRpc(
   if (!primary.error || primary.error.code !== "42501") return primary;
 
   // Deployment compatibility only: before the ACL migration, the established
-  // wrapper is anon-only. This fallback is reached only after an HMAC-valid v3
-  // envelope or a flag-admitted, format-valid legacy nonce, and disappears
-  // automatically when that migration revokes anon execution.
+  // wrapper is anon-only. This fallback is reachable only after an HMAC-valid
+  // v3 envelope and disappears when that migration revokes anon execution.
   const transitionalClient = createClient(supabaseUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -277,7 +274,6 @@ async function capabilityRpc(
 async function resolveGarminCapability(
   value: unknown,
   hmacSecret: string,
-  legacyEnabled: boolean,
 ): Promise<GarminCapabilityContext | null> {
   const signed = await verifyGarminCapability(value, hmacSecret);
   if (signed) {
@@ -287,12 +283,6 @@ async function resolveGarminCapability(
       accountBinding: signed.accountBinding,
       deviceId: signed.deviceId,
     };
-  }
-  if (
-    legacyEnabled && typeof value === "string" &&
-    DEVICE_NONCE_PATTERN.test(value)
-  ) {
-    return { version: 2, nonce: value };
   }
   return null;
 }
@@ -337,22 +327,14 @@ Deno.serve(async (request) => {
   let anonKey: string;
   let databaseSecretKey: string;
   let capabilityHmacSecret: string;
-  let legacyCapabilitiesEnabled: boolean;
   try {
     supabaseUrl = requiredEnv("SUPABASE_URL");
     anonKey = requiredEnv("SUPABASE_ANON_KEY");
     databaseSecretKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
     capabilityHmacSecret = requiredEnv("GARMIN_CAPABILITY_HMAC_SECRET");
-    const legacyCapabilityMode = requiredEnv(
-      "GARMIN_LEGACY_CAPABILITY_MODE",
-    );
     if (!CAPABILITY_HMAC_SECRET_PATTERN.test(capabilityHmacSecret)) {
       throw new Error("Invalid Garmin capability configuration");
     }
-    if (!["enabled", "disabled"].includes(legacyCapabilityMode)) {
-      throw new Error("Invalid Garmin legacy capability mode");
-    }
-    legacyCapabilitiesEnabled = legacyCapabilityMode === "enabled";
   } catch {
     return json({ error: "Server configuration error" }, 500);
   }
@@ -367,7 +349,7 @@ Deno.serve(async (request) => {
     if (!capabilityVersion) {
       return json({ error: "Unsupported Garmin capability version" }, 400);
     }
-    if (capabilityVersion === 2 && !legacyCapabilitiesEnabled) {
+    if (capabilityVersion === 2) {
       return json({ error: "Garmin client upgrade required" }, 426);
     }
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
@@ -377,10 +359,7 @@ Deno.serve(async (request) => {
     if (userError || !userData.user) {
       return json({ error: "Unauthorized" }, 401);
     }
-    if (
-      capabilityVersion === 3 &&
-      !await deriveGarminAccountBinding(userData.user.id)
-    ) {
+    if (!await deriveGarminAccountBinding(userData.user.id)) {
       return json({ error: "Invalid account identity" }, 500);
     }
 
@@ -445,14 +424,12 @@ Deno.serve(async (request) => {
     ) {
       return json({ error: "Device creation failed" }, 500);
     }
-    const deviceToken = capabilityVersion === 3
-      ? await createGarminCapability({
-        userId: userData.user.id,
-        deviceId: device.id,
-        nonce: device.device_token,
-        secretHex: capabilityHmacSecret,
-      })
-      : device.device_token;
+    const deviceToken = await createGarminCapability({
+      userId: userData.user.id,
+      deviceId: device.id,
+      nonce: device.device_token,
+      secretHex: capabilityHmacSecret,
+    });
     if (!deviceToken) {
       // The retry key still owns the row. Do not revoke an exact replay or
       // create an outcome-dependent second identity; the caller can retry.
@@ -477,7 +454,7 @@ Deno.serve(async (request) => {
     if (!capabilityVersion) {
       return json({ error: "Unsupported Garmin capability version" }, 400);
     }
-    if (capabilityVersion === 2 && !legacyCapabilitiesEnabled) {
+    if (capabilityVersion === 2) {
       return json({ error: "Garmin client upgrade required" }, 426);
     }
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
@@ -487,10 +464,7 @@ Deno.serve(async (request) => {
     if (userError || !userData.user) {
       return json({ error: "Unauthorized" }, 401);
     }
-    if (
-      capabilityVersion === 3 &&
-      !await deriveGarminAccountBinding(userData.user.id)
-    ) {
+    if (!await deriveGarminAccountBinding(userData.user.id)) {
       return json({ error: "Invalid account identity" }, 500);
     }
     const displayName = typeof body.displayName === "string"
@@ -517,14 +491,12 @@ Deno.serve(async (request) => {
     if (error || data?.error || !device) {
       return json({ error: "Device creation failed" }, 500);
     }
-    const deviceToken = capabilityVersion === 3
-      ? await createGarminCapability({
-        userId: userData.user.id,
-        deviceId: device.id,
-        nonce: device.device_token,
-        secretHex: capabilityHmacSecret,
-      })
-      : device.device_token;
+    const deviceToken = await createGarminCapability({
+      userId: userData.user.id,
+      deviceId: device.id,
+      nonce: device.device_token,
+      secretHex: capabilityHmacSecret,
+    });
     if (!deviceToken) {
       await userClient.rpc("garmin_revoke_device", { p_device_id: device.id });
       return json({ error: "Device capability creation failed" }, 500);
@@ -574,7 +546,7 @@ Deno.serve(async (request) => {
     if (!capabilityVersion) {
       return json({ error: "Unsupported Garmin capability version" }, 400);
     }
-    if (capabilityVersion === 2 && !legacyCapabilitiesEnabled) {
+    if (capabilityVersion === 2) {
       return json({ error: "Garmin client upgrade required" }, 426);
     }
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
@@ -587,12 +559,8 @@ Deno.serve(async (request) => {
     const deviceId = typeof body.deviceId === "string"
       ? body.deviceId.trim().toLowerCase()
       : "";
-    const replacementNonce = typeof (
-        capabilityVersion === 3 ? body.replacementNonce : body.replacementToken
-      ) === "string"
-      ? (capabilityVersion === 3
-        ? body.replacementNonce as string
-        : body.replacementToken as string)
+    const replacementNonce = typeof body.replacementNonce === "string"
+      ? body.replacementNonce
       : "";
     const expectedTokenRevision = body.expectedTokenRevision;
     if (
@@ -655,14 +623,12 @@ Deno.serve(async (request) => {
     ) {
       return json({ error: "Invalid token rotation response" }, 500);
     }
-    const deviceToken = capabilityVersion === 3
-      ? await createGarminCapability({
-        userId: userData.user.id,
-        deviceId: device.id,
-        nonce: replacementNonce,
-        secretHex: capabilityHmacSecret,
-      })
-      : replacementNonce;
+    const deviceToken = await createGarminCapability({
+      userId: userData.user.id,
+      deviceId: device.id,
+      nonce: replacementNonce,
+      secretHex: capabilityHmacSecret,
+    });
     if (!deviceToken) {
       return json({ error: "Device capability rotation failed" }, 500);
     }
@@ -706,7 +672,7 @@ Deno.serve(async (request) => {
     const deviceToken = typeof body.deviceToken === "string"
       ? body.deviceToken
       : "";
-    if (!legacyCapabilitiesEnabled && DEVICE_NONCE_PATTERN.test(deviceToken)) {
+    if (DEVICE_NONCE_PATTERN.test(deviceToken)) {
       return json(
         { error: "Garmin client upgrade required" },
         426,
@@ -716,7 +682,6 @@ Deno.serve(async (request) => {
     const capability = await resolveGarminCapability(
       deviceToken,
       capabilityHmacSecret,
-      legacyCapabilitiesEnabled,
     );
     if (!capability) {
       return json({ error: "Invalid deviceToken" }, 400);
@@ -857,7 +822,7 @@ Deno.serve(async (request) => {
     ) {
       return json({ error: "Invalid plan acknowledgement" }, 400);
     }
-    if (!legacyCapabilitiesEnabled && DEVICE_NONCE_PATTERN.test(deviceToken)) {
+    if (DEVICE_NONCE_PATTERN.test(deviceToken)) {
       return json(
         { error: "Garmin client upgrade required" },
         426,
@@ -867,7 +832,6 @@ Deno.serve(async (request) => {
     const capability = await resolveGarminCapability(
       deviceToken,
       capabilityHmacSecret,
-      legacyCapabilitiesEnabled,
     );
     if (!capability) {
       return json({ error: "Invalid plan acknowledgement" }, 400);

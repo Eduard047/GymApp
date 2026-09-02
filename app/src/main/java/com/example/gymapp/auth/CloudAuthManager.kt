@@ -54,8 +54,11 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal const val SUPABASE_URL = "https://owrcbsrectdgaotndtxy.supabase.co"
 internal const val SUPABASE_KEY = "sb_publishable_vvOMzx6V_sPBpD-b3VZfzg_y14u8kIg"
-private val AUTH_REDIRECT_URL =
+private val AUTH_REDIRECT_URL = if (BuildConfig.APPLICATION_ID == "com.setforge.gymapp") {
+    "https://gymapptracker.com/auth/android-callback.html"
+} else {
     "https://gymapptracker.com/confirmed.html?platform=android${BuildConfig.AUTH_BRIDGE_VARIANT_QUERY}"
+}
 private const val NEEDS_PASSWORD_UPDATE_KEY = "needs_password_update"
 private const val PENDING_SIGNUP_KEY = "pending_signup_confirmation"
 private const val PENDING_RECOVERY_KEY = "pending_password_recovery"
@@ -299,13 +302,18 @@ internal fun isStructurallySafePKCECallback(
     purposes: List<String>,
     codes: List<String>,
     errors: List<String>,
-    descriptions: List<String>
+    descriptions: List<String>,
+    errorCodes: List<String> = emptyList()
 ): Boolean {
-    val allowedKeys = setOf("state", "purpose", "code", "error", "error_description")
+    val allowedKeys = setOf(
+        "state", "purpose", "code", "error", "error_description", "error_code"
+    )
     val hasCode = codes.size == 1 && isValidPKCEAuthCode(codes.single())
     val hasError = errors.size == 1 && isSafeCallbackValue(errors.single(), 128)
     val hasDescription = descriptions.isEmpty() ||
         (descriptions.size == 1 && isSafeCallbackValue(descriptions.single(), 1_024))
+    val hasSafeErrorCode = errorCodes.isEmpty() ||
+        (hasError && errorCodes.size == 1 && isSafeCallbackValue(errorCodes.single(), 128))
     return !hasFragment &&
         queryKeys.all { it in allowedKeys && !it.contains("token", ignoreCase = true) } &&
         receivedStates.size == 1 &&
@@ -313,6 +321,7 @@ internal fun isStructurallySafePKCECallback(
         purposes.size == 1 && purposes.single() in setOf("signup", "recovery") &&
         hasCode != hasError &&
         hasDescription &&
+        hasSafeErrorCode &&
         (descriptions.isEmpty() || hasError)
 }
 
@@ -814,7 +823,9 @@ class CloudAuthManager internal constructor(
             email = cleanEmail,
             expectedAuthMutationVersion = authAttempt
         )
-        val redirectURL = "$AUTH_REDIRECT_URL&state=${transaction.state}&purpose=signup"
+        val redirectSeparator = if (AUTH_REDIRECT_URL.contains('?')) '&' else '?'
+        val redirectURL = "$AUTH_REDIRECT_URL$redirectSeparator" +
+            "state=${transaction.state}&purpose=signup"
         return try {
             authenticate(
                 path = "/auth/v1/signup?redirect_to=${java.net.URLEncoder.encode(redirectURL, "UTF-8")}",
@@ -846,7 +857,9 @@ class CloudAuthManager internal constructor(
             expectedAuthMutationVersion = authMutationSnapshot()
         )
         val transaction = transactionSelection.transaction
-        val redirectURL = "$AUTH_REDIRECT_URL&state=${transaction.state}&purpose=signup"
+        val redirectSeparator = if (AUTH_REDIRECT_URL.contains('?')) '&' else '?'
+        val redirectURL = "$AUTH_REDIRECT_URL$redirectSeparator" +
+            "state=${transaction.state}&purpose=signup"
         try {
             request(
                 path = "/auth/v1/resend?redirect_to=${java.net.URLEncoder.encode(redirectURL, "UTF-8")}",
@@ -874,7 +887,9 @@ class CloudAuthManager internal constructor(
             email = cleanEmail,
             expectedAuthMutationVersion = authMutationSnapshot()
         )
-        val redirectURL = "$AUTH_REDIRECT_URL&state=${transaction.state}&purpose=recovery"
+        val redirectSeparator = if (AUTH_REDIRECT_URL.contains('?')) '&' else '?'
+        val redirectURL = "$AUTH_REDIRECT_URL$redirectSeparator" +
+            "state=${transaction.state}&purpose=recovery"
         try {
             request(
                 path = "/auth/v1/recover?redirect_to=${java.net.URLEncoder.encode(redirectURL, "UTF-8")}",
@@ -1239,6 +1254,7 @@ class CloudAuthManager internal constructor(
         val codeValues = uri.getQueryParameters("code")
         val errorValues = uri.getQueryParameters("error")
         val descriptionValues = uri.getQueryParameters("error_description")
+        val errorCodeValues = uri.getQueryParameters("error_code")
         require(
             isStructurallySafePKCECallback(
                 queryKeys = uri.queryParameterNames,
@@ -1247,7 +1263,8 @@ class CloudAuthManager internal constructor(
                 purposes = purposeValues,
                 codes = codeValues,
                 errors = errorValues,
-                descriptions = descriptionValues
+                descriptions = descriptionValues,
+                errorCodes = errorCodeValues
             )
         ) {
             "Authentication rejected an unsafe or malformed callback. Request a new email."

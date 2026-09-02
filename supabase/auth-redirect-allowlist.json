@@ -3,10 +3,11 @@
   "redirectUrls": [
     "https://eduard047.github.io/GymApp/confirmed.html",
     "https://gymapptracker.com/confirmed.html?platform=web",
-    "https://gymapptracker.com/confirmed.html?platform=android",
-    "https://gymapptracker.com/confirmed.html?platform=android&state=*",
-    "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*",
-    "https://gymapptracker.com/confirmed.html?platform=ios&state=*",
-    "com.setforge.gymapp.ios://auth/callback/*"
+    "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*&purpose=signup",
+    "https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*&purpose=recovery",
+    "https://gymapptracker.com/auth/android-callback.html?state=*&purpose=signup",
+    "https://gymapptracker.com/auth/android-callback.html?state=*&purpose=recovery",
+    "https://gymapptracker.com/auth/ios-callback.html?state=*&purpose=signup",
+    "https://gymapptracker.com/auth/ios-callback.html?state=*&purpose=recovery"
   ]
 }

@@ -6,6 +6,24 @@ const activationPath =
   "supabase/migrations/20260809202432_activate_friend_social_api.sql";
 const durableDebitPath =
   "supabase/migrations/20260810003804_persist_social_rate_debits_on_domain_errors.sql";
+const deepHardeningPath =
+  "supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql";
+
+const sharedGatewayActions = [
+  ["dashboard", "social_dashboard"],
+  ["friend_details", "social_friend_details"],
+  ["send_friend", "social_send_friend_request"],
+  ["respond_friend", "social_respond_friend_request"],
+  ["cancel_friend", "social_cancel_friend_request"],
+  ["remove_friend", "social_remove_friend"],
+  ["block_profile", "social_block_profile"],
+  ["unblock_profile", "social_unblock_profile"],
+  ["update_privacy", "social_update_privacy"],
+  ["workout_inbox", "social_workout_inbox"],
+  ["send_workout", "social_send_workout_invite"],
+  ["respond_workout", "social_respond_workout_invite"],
+  ["cancel_workout", "social_cancel_workout_invite"],
+];
 
 const protectedRpcs = [
   ["social_friend_details", "friend_details", "text"],
@@ -32,7 +50,8 @@ const protectedRpcs = [
 ];
 
 function functionBody(sql, qualifiedName) {
-  const start = sql.indexOf(`create or replace function ${qualifiedName}(`);
+  let start = sql.indexOf(`create or replace function ${qualifiedName}(`);
+  if (start < 0) start = sql.indexOf(`create function ${qualifiedName}(`);
   assert.ok(start >= 0, `${qualifiedName} must exist`);
   const end = sql.indexOf("\n$function$;", start);
   assert.ok(end > start, `${qualifiedName} must use a bounded function body`);
@@ -160,14 +179,243 @@ test("domain responses preserve PostgREST status/body behavior without catching 
     assert.match(
       durableDebit,
       new RegExp(
-        `revoke all on function public\\.${name}\\(${escapedSignature}\\)\\s+from public, anon, authenticated, service_role`,
+        `revoke all on function public\\.${name}\\(\\s*${escapedSignature}\\s*\\)\\s+from public, anon, authenticated, service_role`,
       ),
     );
     assert.match(
       durableDebit,
       new RegExp(
-        `grant execute on function public\\.${name}\\(${escapedSignature}\\)\\s+to authenticated`,
+        `grant execute on function public\\.${name}\\(\\s*${escapedSignature}\\s*\\)\\s+to authenticated`,
       ),
     );
   }
+});
+
+test("direct social RPCs and service-only live routes share the same aggregate and action buckets", async () => {
+  const hardening = await readFile(deepHardeningPath, "utf8");
+  const sessionHash = functionBody(
+    hardening,
+    "gymapp_private.social_session_budget_hash",
+  );
+  const aggregateDebit = functionBody(
+    hardening,
+    "gymapp_private.social_session_aggregate_debit",
+  );
+  const sharedDebit = functionBody(
+    hardening,
+    "gymapp_private.social_live_debit_budget",
+  );
+  const directBoundary = functionBody(
+    hardening,
+    "gymapp_private.social_require_caller",
+  );
+  const serviceWrapper = functionBody(
+    hardening,
+    "public.social_live_gateway_debit",
+  );
+  const perimeterWrapper = functionBody(
+    hardening,
+    "public.social_gateway_perimeter_debit",
+  );
+
+  const sessionLock = aggregateDebit.indexOf("live_gateway_require_session(");
+  const aggregate = aggregateDebit.indexOf("edge_preauth_debit(");
+  const actionBucket = sharedDebit.indexOf(
+    "social_live_gateway_debit_storage_v1(",
+  );
+  assert.ok(sessionLock >= 0 && sessionLock < aggregate);
+  assert.ok(
+    sharedDebit.indexOf("social_session_aggregate_debit(") >= 0 &&
+      sharedDebit.indexOf("social_session_aggregate_debit(") < actionBucket,
+  );
+  assert.match(aggregateDebit, /p_route not in \('social_live', 'social_gateway'\)/);
+  assert.match(sharedDebit, /'social_live'/);
+  assert.match(sessionHash, /'session:' \|\| p_session_id::text/);
+  assert.match(serviceWrapper, /social_live_debit_budget\(/);
+  assert.doesNotMatch(serviceWrapper, /social_live_gateway_debit_storage_v1\(/);
+  assert.match(perimeterWrapper, /social_session_aggregate_debit\(\s*'social_gateway'/);
+
+  for (const [domainAction, gatewayAction] of sharedGatewayActions) {
+    assert.match(
+      directBoundary,
+      new RegExp(`\\('${domainAction}', '${gatewayAction}'\\)`),
+    );
+  }
+  assert.match(directBoundary, /social_live_debit_budget\(/);
+  assert.match(directBoundary, /consume_social_rate_limit\(caller_user_id, p_action\)/);
+  assert.match(directBoundary, /errcode = 'PT429'/);
+  assert.match(
+    directBoundary,
+    /consume_social_rate_limit\([\s\S]*when sqlstate 'P0001' then[\s\S]*errcode = 'PT429'/,
+  );
+  assert.match(
+    hardening,
+    /revoke all on function public\.social_live_gateway_debit\(uuid, uuid, text\)[\s\S]*grant execute on function public\.social_live_gateway_debit\(uuid, uuid, text\)\s+to service_role;/,
+  );
+  assert.match(
+    hardening,
+    /revoke all on function public\.social_gateway_perimeter_debit\(uuid, uuid\)[\s\S]*grant execute on function public\.social_gateway_perimeter_debit\(uuid, uuid\)\s+to service_role;/,
+  );
+});
+
+test("later direct social RPCs durably restore aggregate, mapped-action, and domain debits on rejection", async () => {
+  const hardening = await readFile(deepHardeningPath, "utf8");
+  const beginDirect = functionBody(
+    hardening,
+    "gymapp_private.social_begin_direct_request",
+  );
+  const commitRejection = functionBody(
+    hardening,
+    "gymapp_private.social_commit_direct_rejection",
+  );
+  const friendPageStorage = functionBody(
+    hardening,
+    "gymapp_private.social_friend_workout_page_storage_v2",
+  );
+  const laterRpcs = [
+    ["social_update_workout_detail_privacy", "update_privacy"],
+    ["social_friend_workout_detail_capability", "friend_details"],
+    ["social_friend_workout_page", "friend_details"],
+    ["social_workout_inbox_page", "workout_inbox"],
+  ];
+
+  assert.match(beginDirect, /social_session_aggregate_debit\(/);
+  assert.match(beginDirect, /request_count = budget\.request_count - 1/);
+  assert.match(commitRejection, /social_live_debit_budget\(/);
+  assert.match(
+    hardening,
+    /alter function public\.social_friend_workout_page_base_v1\([\s\S]*set schema gymapp_private/,
+  );
+  assert.match(
+    friendPageStorage,
+    /gymapp_private\.social_friend_workout_page_base_storage_v1\(/,
+  );
+  assert.doesNotMatch(friendPageStorage, /public\.social_friend_workout_page_base_v1/);
+  assert.ok(
+    commitRejection.indexOf("social_live_debit_budget(") <
+      commitRejection.indexOf("perform gymapp_private.consume_social_rate_limit("),
+  );
+  assert.match(
+    commitRejection,
+    /begin[\s\S]*consume_social_rate_limit\([\s\S]*exception\s+when sqlstate 'P0001' then[\s\S]*'allowed', false/,
+  );
+  for (const [domainAction, gatewayAction] of sharedGatewayActions) {
+    assert.match(
+      commitRejection,
+      new RegExp(`\\('${domainAction}', '${gatewayAction}'\\)`),
+    );
+  }
+
+  for (const [name, action] of laterRpcs) {
+    const wrapper = functionBody(hardening, `public.${name}`);
+    const reservation = wrapper.indexOf("social_begin_direct_request()");
+    const worker = wrapper.indexOf(`gymapp_private.${name}_storage_`);
+    assert.ok(reservation >= 0 && worker > reservation);
+    assert.match(wrapper, /when sqlstate 'PT429' then/);
+    assert.match(
+      wrapper,
+      /when sqlstate '22023' or sqlstate 'P0001' or sqlstate 'P0002' then/,
+    );
+    assert.equal(
+      (wrapper.match(
+        new RegExp(`social_commit_direct_rejection\\(\\s*'${action}'`, "g"),
+      ) ?? []).length,
+      2,
+      `${name} must durably restore both rate-limit and domain rejections`,
+    );
+    assert.match(
+      wrapper,
+      /rejection_result ->> 'allowed' <> 'true'[\s\S]*social_rate_limit_response/,
+    );
+    assert.doesNotMatch(wrapper, /when\s+others/i);
+  }
+
+  assert.match(
+    hardening,
+    /revoke all on function gymapp_private\.social_commit_direct_rejection\(text\)\s+from public, anon, authenticated, service_role/,
+  );
+});
+
+test("every remaining public social_require_caller route uses the durable direct dispatcher", async () => {
+  const hardening = await readFile(deepHardeningPath, "utf8");
+  const dispatcher = functionBody(
+    hardening,
+    "gymapp_private.social_execute_direct_worker",
+  );
+  const routes = [
+    ["social_dashboard", "dashboard", ""],
+    ["social_friend_details", "friend_details", "text"],
+    ["social_send_friend_request", "send_friend", "text"],
+    ["social_respond_friend_request", "respond_friend", "text, text, bigint"],
+    ["social_cancel_friend_request", "cancel_friend", "text, bigint"],
+    ["social_remove_friend", "remove_friend", "text, bigint"],
+    ["social_block_profile", "block_profile", "text"],
+    ["social_unblock_profile", "unblock_profile", "text"],
+    [
+      "social_update_privacy",
+      "update_privacy",
+      "boolean, boolean, boolean, boolean, bigint",
+    ],
+    ["social_send_workout_invite", "send_workout", "text, uuid, jsonb"],
+    ["social_workout_inbox", "workout_inbox", ""],
+    [
+      "social_respond_workout_invite",
+      "respond_workout",
+      "text, text, bigint",
+    ],
+    ["social_cancel_workout_invite", "cancel_workout", "text, bigint"],
+    ["social_workout_detail_privacy", "update_privacy", ""],
+    ["social_workout_invite_plan", "workout_inbox", "text, bigint"],
+  ];
+
+  assert.ok(
+    dispatcher.indexOf("social_begin_direct_request()") <
+      dispatcher.indexOf("case p_worker"),
+  );
+  assert.match(dispatcher, /when sqlstate 'PT429' then/);
+  assert.match(
+    dispatcher,
+    /when sqlstate '22023' or sqlstate 'P0001' or sqlstate 'P0002' then/,
+  );
+  assert.equal(
+    (dispatcher.match(/social_commit_direct_rejection\(/g) ?? []).length,
+    2,
+  );
+  assert.doesNotMatch(dispatcher, /when\s+others/i);
+
+  for (const [name, action, signature] of routes) {
+    assert.match(
+      dispatcher,
+      new RegExp(`\\('${name}', '${action}'\\)`),
+    );
+    assert.match(
+      dispatcher,
+      new RegExp(`${name}_direct_storage_v1\\(`),
+    );
+    const wrapper = functionBody(hardening, `public.${name}`);
+    assert.match(
+      wrapper,
+      new RegExp(`social_execute_direct_worker\\(\\s*'${name}'`),
+    );
+    assert.doesNotMatch(wrapper, /social_require_caller\(/);
+    const escapedSignature = signature.replaceAll(", ", ",\\s*");
+    const renderedSignature = `\\(\\s*${escapedSignature}\\s*\\)`;
+    assert.match(
+      hardening,
+      new RegExp(
+        `revoke all on function public\\.${name}${renderedSignature}\\s+from public, anon, authenticated, service_role`,
+      ),
+    );
+    assert.match(
+      hardening,
+      new RegExp(
+        `grant execute on function public\\.${name}${renderedSignature}\\s+to authenticated`,
+      ),
+    );
+  }
+
+  assert.match(
+    hardening,
+    /revoke all on function gymapp_private\.social_execute_direct_worker\(text, jsonb\)\s+from public, anon, authenticated, service_role/,
+  );
 });

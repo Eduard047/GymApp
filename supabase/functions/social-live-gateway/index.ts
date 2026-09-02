@@ -1,5 +1,4 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { debitVerifiedIdentityBudget } from "../_shared/preauth-budget.ts";
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const MAX_BODY_BYTES = 48 * 1024;
@@ -566,9 +565,11 @@ async function readJsonBody(req: Request): Promise<unknown> {
 
 function rpcErrorStatus(error: { code?: string } | null): number {
   if (error?.code === "42501") return 401;
+  if (error?.code === "PT429") return 429;
+  if (error?.code === "54000") return 413;
   if (error?.code === "P0002") return 404;
   if (error?.code === "P0001") return 409;
-  if (error?.code === "22023" || error?.code === "54000") return 400;
+  if (error?.code === "22023") return 400;
   return 502;
 }
 
@@ -605,23 +606,6 @@ export async function handleRequest(req: Request): Promise<Response> {
   const token = bearerToken(req);
   if (!token) return jsonResponse(req, 401, { error: "invalid_authorization" });
 
-  let parsed: ParsedGatewayRequest;
-  try {
-    parsed = parseGatewayRequest(await readJsonBody(req));
-  } catch (error) {
-    return jsonResponse(
-      req,
-      error instanceof DOMException && error.name === "QuotaExceededError"
-        ? 413
-        : 400,
-      {
-        error: error instanceof DOMException
-          ? "request_too_large"
-          : "invalid_request",
-      },
-    );
-  }
-
   const projectUrl = normalizeProjectUrl(
     Deno.env.get("SUPABASE_URL")?.trim() ?? "",
   );
@@ -656,52 +640,37 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
   }
 
-  const identityBudget = await debitVerifiedIdentityBudget(
-    `session:${sessionId.toLowerCase()}`,
-    "social_live",
-    projectUrl,
-    serviceKey,
-  );
-  if (identityBudget.status === "rate_limited") {
-    return jsonResponse(req, 429, { error: "rate_limited" }, {
-      "Retry-After": String(identityBudget.retryAfter),
-    });
-  }
-  if (identityBudget.status !== "allowed") {
-    return jsonResponse(req, 503, { error: "service_unavailable" });
-  }
-
-  const route = ROUTES[parsed.action];
-  // This service-only RPC is intentionally awaited before the domain call.
-  // PostgREST commits the bounded debit in a separate transaction, so a later
-  // validation/domain failure cannot roll it back.
-  const debit = await serviceClient.rpc("social_live_gateway_debit", {
+  // Charge the authenticated gateway perimeter before detailed route payload
+  // validation. This transaction is independent from the domain RPC, so a
+  // malformed or rejected body cannot roll its debit back.
+  const perimeter = await serviceClient.rpc("social_gateway_perimeter_debit", {
     p_user_id: userId,
     p_session_id: sessionId,
-    p_action: parsed.action,
   }).abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS)).then(
     (result) => result,
     () => null,
   );
-  if (!debit) {
+  if (!perimeter) {
     return jsonResponse(req, 503, { error: "service_unavailable" });
   }
-  if (debit.error) {
-    return jsonResponse(req, debit.error.code === "42501" ? 401 : 503, {
-      error: debit.error.code === "42501"
+  if (perimeter.error) {
+    return jsonResponse(req, perimeter.error.code === "42501" ? 401 : 503, {
+      error: perimeter.error.code === "42501"
         ? "invalid_or_expired_token"
         : "service_unavailable",
     });
   }
   if (
-    !isRecord(debit.data) || debit.data.version !== 1 ||
-    typeof debit.data.allowed !== "boolean"
+    !isRecord(perimeter.data) || perimeter.data.version !== 1 ||
+    typeof perimeter.data.allowed !== "boolean"
   ) {
     return jsonResponse(req, 503, { error: "service_unavailable" });
   }
-  if (!debit.data.allowed) {
-    const retryAfter = Number(debit.data.retryAfter);
-    if (!Number.isInteger(retryAfter) || retryAfter < 1 || retryAfter > 3_600) {
+  if (!perimeter.data.allowed) {
+    const retryAfter = Number(perimeter.data.retryAfter);
+    if (
+      !Number.isInteger(retryAfter) || retryAfter < 1 || retryAfter > 3_600
+    ) {
       return jsonResponse(req, 503, { error: "service_unavailable" });
     }
     return jsonResponse(req, 429, { error: "rate_limited", retryAfter }, {
@@ -709,9 +678,78 @@ export async function handleRequest(req: Request): Promise<Response> {
     });
   }
 
-  // A recognized action consumes its perimeter token even when its detailed
-  // payload is malformed. This keeps body-validation spam bounded while the
-  // top-level envelope remains cheap to reject before authentication work.
+  // Read and decode the bounded body only after the durable authenticated
+  // perimeter debit. Syntax errors, invalid UTF-8, over-size/chunk abuse, and
+  // semantic route/payload rejections therefore all consume the same budget.
+  let rawBody: unknown;
+  try {
+    rawBody = await readJsonBody(req);
+  } catch (error) {
+    return jsonResponse(
+      req,
+      error instanceof DOMException && error.name === "QuotaExceededError"
+        ? 413
+        : 400,
+      {
+        error: error instanceof DOMException
+          ? "request_too_large"
+          : "invalid_request",
+      },
+    );
+  }
+
+  let parsed: ParsedGatewayRequest;
+  try {
+    parsed = parseGatewayRequest(rawBody);
+  } catch {
+    return jsonResponse(req, 400, { error: "invalid_request" });
+  }
+
+  const route = ROUTES[parsed.action];
+  if (route.serviceOnly) {
+    // Live RPCs run with service authority, so their database boundary debits
+    // the same session aggregate and action bucket used by direct compatible
+    // social RPCs. The debit commits before the separate domain transaction.
+    const debit = await serviceClient.rpc("social_live_gateway_debit", {
+      p_user_id: userId,
+      p_session_id: sessionId,
+      p_action: parsed.action,
+    }).abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS)).then(
+      (result) => result,
+      () => null,
+    );
+    if (!debit) {
+      return jsonResponse(req, 503, { error: "service_unavailable" });
+    }
+    if (debit.error) {
+      return jsonResponse(req, debit.error.code === "42501" ? 401 : 503, {
+        error: debit.error.code === "42501"
+          ? "invalid_or_expired_token"
+          : "service_unavailable",
+      });
+    }
+    if (
+      !isRecord(debit.data) || debit.data.version !== 1 ||
+      typeof debit.data.allowed !== "boolean"
+    ) {
+      return jsonResponse(req, 503, { error: "service_unavailable" });
+    }
+    if (!debit.data.allowed) {
+      const retryAfter = Number(debit.data.retryAfter);
+      if (
+        !Number.isInteger(retryAfter) || retryAfter < 1 || retryAfter > 3_600
+      ) {
+        return jsonResponse(req, 503, { error: "service_unavailable" });
+      }
+      return jsonResponse(req, 429, { error: "rate_limited", retryAfter }, {
+        "Retry-After": String(retryAfter),
+      });
+    }
+  }
+
+  // Every route already consumed the gateway-validation perimeter. Service-only
+  // live actions also consumed the shared domain aggregate above; compatible
+  // social routes consume it inside their user-context RPC.
   let args: JsonRecord;
   try {
     args = route.args(parsed.payload, { userId, sessionId });
@@ -735,6 +773,10 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse(req, status, {
       error: status === 401
         ? "invalid_or_expired_token"
+        : status === 429
+        ? "rate_limited"
+        : status === 413
+        ? "request_too_large"
         : status === 404
         ? "resource_unavailable"
         : status === 409

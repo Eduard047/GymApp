@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "functionName": "delete-account",
-  "repositoryContractVersion": 5,
+  "repositoryContractVersion": 6,
   "repositorySource": "supabase/functions/delete-account/index.ts",
-  "repositorySourceSha256": "a90be7db99f47a8a96a9bb0ba4b7c76a9a38b65db9ae3d6f825a2ec94952ccc4",
+  "repositorySourceSha256": "e6352f00f812f9d77387c193761de3c6aded58622c5b19dc86d29f443403a11f",
   "repositorySharedSource": "supabase/functions/_shared/preauth-budget.ts",
   "repositorySharedSourceSha256": "5add1a69abf91b4e7e7929c6298546f53c6e51b7b4069bc26557cd87f5e87ddc",
   "requiredMigration": "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql",
-  "identityBudgetMigration": "supabase/migrations/20260825105114_isolate_verified_edge_rate_limits.sql",
+  "identityBudgetMigration": "supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql",
   "knownProduction": {
     "projectRef": "owrcbsrectdgaotndtxy",
     "observedAt": "2026-08-28",
@@ -17,11 +17,11 @@
     "sharedSourceSha256": "5add1a69abf91b4e7e7929c6298546f53c6e51b7b4069bc26557cd87f5e87ddc",
     "verifyJwt": true,
     "requiredMigrationApplied": true,
-    "identityBudgetMigrationApplied": true
+    "identityBudgetMigrationApplied": false
   },
   "releaseGate": {
-    "deploymentRequired": false,
-    "minimumProductionFunctionVersion": 16,
-    "reason": "Production function source and shared dependency were read back and matched the canonical repository hashes on 2026-08-28."
+    "deploymentRequired": true,
+    "minimumProductionFunctionVersion": 17,
+    "reason": "Apply the required migration and deploy the canonical repository source, then read back the production function and configuration before release."
   }
 }

@@ -45,9 +45,12 @@ python3 -m http.server 4173 --directory pwa
 Open <http://127.0.0.1:4173>. The root intentionally has no workout or
 authentication runtime. It exposes verified app links, legal/support links, and
 a bounded local export only when legacy workout data is detected. `/workout/`
-remains a validated native-app handoff and `confirmed.html` remains the native
-authentication callback. Browser storage, legacy backups, exercise names, and
-query parameters must always be treated as untrusted input.
+remains a validated native-app handoff and `confirmed.html` remains the browser
+authentication callback. `/auth/android-callback.html` and
+`/auth/ios-callback.html` are exact production native App/Universal Links whose
+browser fallbacks scrub callback data and never construct a custom-scheme URL.
+Browser storage, legacy backups, exercise names, and query parameters must
+always be treated as untrusted input.
 
 ## Android release artifacts
 

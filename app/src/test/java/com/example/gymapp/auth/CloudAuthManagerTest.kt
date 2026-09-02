@@ -551,7 +551,8 @@ class CloudAuthManagerTest {
             purposes: List<String> = listOf("signup"),
             codes: List<String> = listOf(authCode),
             errors: List<String> = emptyList(),
-            descriptions: List<String> = emptyList()
+            descriptions: List<String> = emptyList(),
+            errorCodes: List<String> = emptyList()
         ): Boolean {
             val keys = buildSet {
                 if (states.isNotEmpty()) add("state")
@@ -559,6 +560,7 @@ class CloudAuthManagerTest {
                 if (codes.isNotEmpty()) add("code")
                 if (errors.isNotEmpty()) add("error")
                 if (descriptions.isNotEmpty()) add("error_description")
+                if (errorCodes.isNotEmpty()) add("error_code")
             }
             return isStructurallySafePKCECallback(
                 queryKeys = keys,
@@ -567,7 +569,8 @@ class CloudAuthManagerTest {
                 purposes = purposes,
                 codes = codes,
                 errors = errors,
-                descriptions = descriptions
+                descriptions = descriptions,
+                errorCodes = errorCodes
             )
         }
 
@@ -584,7 +587,20 @@ class CloudAuthManagerTest {
             isSafe(
                 codes = emptyList(),
                 errors = listOf("access_denied"),
-                descriptions = listOf("Cancelled")
+                descriptions = listOf("Cancelled"),
+                errorCodes = listOf("otp_expired")
+            )
+        )
+        assertEquals(
+            false,
+            isSafe(codes = emptyList(), errorCodes = listOf("otp_expired"))
+        )
+        assertEquals(
+            false,
+            isSafe(
+                codes = emptyList(),
+                errors = listOf("access_denied"),
+                errorCodes = listOf("one", "two")
             )
         )
         assertEquals(

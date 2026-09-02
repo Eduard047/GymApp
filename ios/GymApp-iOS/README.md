@@ -58,11 +58,14 @@ xcodebuild \
 
 1. Open `GymApp.xcodeproj`, select your Apple Developer Team, and confirm the final bundle identifier.
 2. Keep every canonical migration from the repository-root `supabase/migrations/` directory and every repository-root Edge Function synchronized in each environment. An approved 2026-08-24 rollout and readback found 57 production migrations through `20260824180727`; the read-only exact-session hotfix, activity-only workout sidecar, and remaining boundary hardening are deployed. `garmin-sync` version 12, `delete-account` version 14, `social-live-gateway` version 6, and `push-dispatch` version 5 remain active. The 2026-07-22 valid-device and deletion E2E below remains historical evidence, not proof for later function versions; rerun the applicable current Auth, Garmin, deletion, and physical-device gates before submission. Evidence and scope are recorded in [PRODUCTION_BACKEND_VERIFICATION.md](AppStore/PRODUCTION_BACKEND_VERIFICATION.md) and [OPERATIONS.md](../../docs/OPERATIONS.md).
-3. Keep `https://gymapptracker.com/confirmed.html?platform=ios&state=*` and
-   `com.setforge.gymapp.ios://auth/callback/*` in the Supabase Auth redirect
-   allowlist. The first-party HTTPS page accepts only a PKCE `code` plus the
-   exact per-request state, then opens the custom-scheme callback after a user
-   tap. Do not change the flow back to implicit access/refresh tokens.
+3. Keep the exact native callback
+   `https://gymapptracker.com/auth/ios-callback.html?state=*&purpose=signup`
+   and the matching `purpose=recovery` pattern in the Supabase Auth redirect
+   allowlist, and publish the matching AASA entry before
+   releasing the client. The universal link opens the associated app directly;
+   the hosted fallback scrubs the callback and never forwards a PKCE code to a
+   custom URL scheme. Do not change the flow back to implicit access/refresh
+   tokens.
 4. Use `https://gymapptracker.com/support.html` and
    `https://gymapptracker.com/privacy-policy.html` in App Store Connect. Both
    English/Ukrainian/Russian pages are live over enforced HTTPS and were
@@ -97,10 +100,11 @@ account-deletion behavior were reverified on 2026-07-22:
 - the 37 existing states have 37 revision-bound projections, zero quarantined
   rows, and zero profile/projection mismatches.
 
-The custom-domain iOS bridge and custom-scheme fallback are allowlisted in Auth.
-The previous GitHub Pages callback remains allowlisted for older clients and
-already-sent messages. Same-device signup confirmation and password recovery
-still need final testing with the signed build on a physical iPhone.
+The exact custom-domain iOS universal-link callback is the production native
+Auth route. The previous GitHub Pages browser callback remains allowlisted for
+browser-only compatibility, while the old production iOS custom-scheme Auth
+bridge is retired. Same-device signup confirmation and password recovery still
+need final testing with the signed build on a physical iPhone.
 
 The custom-domain site and combined privacy policy were published from GitHub
 Pages commit `0147bade…`; the public HTTPS responses matched the reviewed local

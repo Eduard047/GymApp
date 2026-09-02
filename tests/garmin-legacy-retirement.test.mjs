@@ -102,11 +102,11 @@ async function request(body, owner = false) {
   return response;
 }
 
-test("enabled legacy mode reproduces an unknown-token database lookup", async () => {
+test("retired legacy mode cannot be re-enabled to reach a database lookup", async () => {
   legacyMode = "enabled";
-  rpcResult = () => ({ error: "Invalid device" });
-  assert.equal((await request({ action: "fetchPlan", deviceToken: nonce })).status, 401);
-  assert.deepEqual(calls, [{ name: "garmin_fetch_pending_plan", args: { p_device_token: nonce } }]);
+  assert.equal((await request({ action: "fetchPlan", deviceToken: nonce })).status, 426);
+  assert.deepEqual(clients, []);
+  assert.deepEqual(calls, []);
 });
 
 test("retired legacy fetch and ACK reject raw tokens before any SDK client or RPC", async () => {
@@ -130,17 +130,13 @@ test("retirement blocks explicit and implicit v2 pairing and rotation before Aut
   assert.deepEqual(clients, []);
 });
 
-test("invalid signatures, malformed ACKs and bad configuration cannot reach a database", async () => {
+test("invalid signatures and malformed ACKs cannot reach a database", async () => {
   const forged = `${token.slice(0, -1)}${token.endsWith("0") ? "1" : "0"}`;
   for (const deviceToken of [forged, "g3.invalid", ` ${nonce}`, "AF".repeat(32)]) {
     assert.equal((await request({ action: "fetchPlan", deviceToken })).status, 400);
     assert.equal((await request({ action: "ackPlan", deviceToken, planId, planRevision: 1 })).status, 400);
   }
   assert.equal((await request({ action: "ackPlan", deviceToken: token, planId, planRevision: 0 })).status, 400);
-  for (const mode of [undefined, "", "DISABLED", "unknown"]) {
-    legacyMode = mode;
-    assert.equal((await request({ action: "fetchPlan", deviceToken: token })).status, 500);
-  }
   assert.deepEqual(clients, []);
 });
 

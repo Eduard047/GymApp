@@ -1011,15 +1011,15 @@ final class CoreParityTests: XCTestCase {
 
         XCTAssertEqual(components.scheme, "https")
         XCTAssertEqual(components.host, "gymapptracker.com")
-        XCTAssertEqual(components.path, "/confirmed.html")
-        XCTAssertEqual(components.queryItems?.first(where: { $0.name == "platform" })?.value, "ios")
+        XCTAssertEqual(components.path, "/auth/ios-callback.html")
+        XCTAssertNil(components.queryItems?.first(where: { $0.name == "platform" }))
         XCTAssertEqual(components.queryItems?.first(where: { $0.name == "state" })?.value, state)
         XCTAssertEqual(components.queryItems?.first(where: { $0.name == "purpose" })?.value, "recovery")
 
         let encoded = AuthCallbackRouting.percentEncodedQueryValue(redirect)
         XCTAssertFalse(encoded.contains("?"))
         XCTAssertFalse(encoded.contains("&"))
-        XCTAssertTrue(encoded.contains("%3A%2F%2Fgymapptracker.com%2Fconfirmed.html%3F"))
+        XCTAssertTrue(encoded.contains("%3A%2F%2Fgymapptracker.com%2Fauth%2Fios-callback.html%3F"))
     }
 
     func testIOSAuthAcceptsOnlyExpectedCodeCallbacksAndRejectsRawTokens() {
@@ -1028,19 +1028,20 @@ final class CoreParityTests: XCTestCase {
             string: "com.setforge.gymapp.ios://auth/callback/\(state)?code=one-time-code"
         )!
         let universal = URL(
-            string: "https://gymapptracker.com/confirmed.html?platform=ios&state=\(state)&code=one-time-code"
+            string: "https://gymapptracker.com/auth/ios-callback.html?state=\(state)&purpose=signup&code=one-time-code"
         )!
         let rawToken = URL(
             string: "com.setforge.gymapp.ios://auth/callback/\(state)?access_token=unsafe&refresh_token=unsafe"
         )!
         let wrongState = URL(
-            string: "https://gymapptracker.com/confirmed.html?platform=ios&state=attacker&code=one-time-code"
+            string: "https://gymapptracker.com/auth/ios-callback.html?state=attacker&purpose=signup&code=one-time-code"
         )!
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             AuthCallbackRouting.isExpectedCallback(
                 custom,
                 state: state,
+                purpose: .signup,
                 values: AuthCallbackRouting.callbackValues(custom)
             )
         )
@@ -1048,6 +1049,7 @@ final class CoreParityTests: XCTestCase {
             AuthCallbackRouting.isExpectedCallback(
                 universal,
                 state: state,
+                purpose: .signup,
                 values: AuthCallbackRouting.callbackValues(universal)
             )
         )
@@ -1055,6 +1057,7 @@ final class CoreParityTests: XCTestCase {
             AuthCallbackRouting.isExpectedCallback(
                 rawToken,
                 state: state,
+                purpose: .signup,
                 values: AuthCallbackRouting.callbackValues(rawToken)
             )
         )
@@ -1062,7 +1065,19 @@ final class CoreParityTests: XCTestCase {
             AuthCallbackRouting.isExpectedCallback(
                 wrongState,
                 state: state,
+                purpose: .signup,
                 values: AuthCallbackRouting.callbackValues(wrongState)
+            )
+        )
+        let expectedError = URL(
+            string: "https://gymapptracker.com/auth/ios-callback.html?state=\(state)&purpose=signup&error=access_denied&error_code=otp_expired&error_description=Expired"
+        )!
+        XCTAssertTrue(
+            AuthCallbackRouting.isExpectedCallback(
+                expectedError,
+                state: state,
+                purpose: .signup,
+                values: AuthCallbackRouting.callbackValues(expectedError)
             )
         )
     }
@@ -1357,19 +1372,33 @@ final class CoreParityTests: XCTestCase {
     }
 
     func testUnsolicitedAuthCallbackIsRejectedWithoutNetworkAccess() async {
+        let recorder = AuthRequestRecorder()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
         let keychain = InMemoryKeychainStore()
-        let auth = AuthService(keychain: keychain)
+        let auth = AuthService(keychain: keychain, urlSession: urlSession)
+        AuthURLProtocolStub.handler = { request in
+            recorder.append(request)
+            return try AuthURLProtocolStub.response(for: request, json: "{}")
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+            try? auth.clearSession()
+        }
         try? auth.clearSession()
         let callback = URL(
             string: "com.setforge.gymapp.ios://auth/callback/attacker?access_token=fake&refresh_token=fake"
         )!
 
-        XCTAssertTrue(AuthCallbackRouting.isAuthDestination(callback))
+        XCTAssertFalse(AuthCallbackRouting.isAuthDestination(callback))
         await auth.handleOpenURL(callback)
 
+        XCTAssertEqual(recorder.requests.count, 0)
         XCTAssertNil(auth.session)
         XCTAssertTrue(auth.messageIsError)
-        XCTAssertEqual(auth.message, AuthServiceError.callbackNotExpected.errorDescription)
+        XCTAssertNil(auth.message)
     }
 
     func testPasswordRecoveryCompletesPKCEExchangeAndUpdatesPassword() async throws {
@@ -1419,7 +1448,7 @@ final class CoreParityTests: XCTestCase {
         let redirectComponents = try XCTUnwrap(URLComponents(string: redirect))
         let state = try XCTUnwrap(redirectComponents.queryItems?.first(where: { $0.name == "state" })?.value)
         XCTAssertEqual(state.count, 32)
-        XCTAssertEqual(redirectComponents.queryItems?.first(where: { $0.name == "platform" })?.value, "ios")
+        XCTAssertNil(redirectComponents.queryItems?.first(where: { $0.name == "platform" }))
         XCTAssertEqual(redirectComponents.queryItems?.first(where: { $0.name == "purpose" })?.value, "recovery")
 
         let recoverBody = try jsonObject(from: recoverRequest)
@@ -1428,7 +1457,9 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(recoverBody["code_challenge_method"] as? String, "s256")
 
         let callback = try XCTUnwrap(
-            URL(string: "com.setforge.gymapp.ios://auth/callback/\(state)?code=test-auth-code")
+            URL(
+                string: "https://gymapptracker.com/auth/ios-callback.html?state=\(state)&purpose=recovery&code=test-auth-code"
+            )
         )
         await auth.handleOpenURL(callback)
 
@@ -3004,7 +3035,9 @@ final class CoreParityTests: XCTestCase {
             redirectComponents.queryItems?.first(where: { $0.name == "state" })?.value
         )
         let callback = try XCTUnwrap(
-            URL(string: "com.setforge.gymapp.ios://auth/callback/\(state)?code=confirmation-code")
+            URL(
+                string: "https://gymapptracker.com/auth/ios-callback.html?state=\(state)&purpose=signup&code=confirmation-code"
+            )
         )
 
         await afterResendRelaunch.handleOpenURL(callback)

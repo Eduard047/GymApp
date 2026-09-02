@@ -68,7 +68,7 @@ test("invalid capability configuration and identifiers fail closed", async () =>
   assert.equal(await verifyGarminCapability("g3.invalid", SECRET), null);
 });
 
-test("the Edge gateway fast-authenticates v3 and bounds the legacy transition", async () => {
+test("the Edge gateway accepts only signed v3 and has no deployable legacy mode", async () => {
   const edge = await readFile("supabase/functions/garmin-sync/index.ts", "utf8");
   const fetchStart = edge.indexOf('if (body.action === "fetchPlan")');
   const ackStart = edge.indexOf('if (body.action === "ackPlan")');
@@ -84,12 +84,12 @@ test("the Edge gateway fast-authenticates v3 and bounds the legacy transition", 
   assert.match(ack, /p_device_token: capability\.nonce/);
   assert.match(edge, /requiredEnv\("GARMIN_CAPABILITY_HMAC_SECRET"\)/);
   assert.match(edge, /requiredEnv\("SUPABASE_SERVICE_ROLE_KEY"\)/);
-  assert.match(edge, /requiredEnv\([\s\S]*"GARMIN_LEGACY_CAPABILITY_MODE"/);
+  assert.doesNotMatch(edge, /GARMIN_LEGACY_CAPABILITY_MODE/);
   assert.match(edge, /if \(value === undefined \|\| value === 2\) return 2/);
-  assert.match(edge, /legacyEnabled && typeof value === "string"/);
+  assert.doesNotMatch(edge, /legacyEnabled|legacyCapabilitiesEnabled/);
   assert.match(edge, /verifyGarminCapability\(value, hmacSecret\)/);
   assert.match(edge, /candidate\?\.error !== "Invalid device"[\s\S]*scheduleCapabilityUse/);
-  assert.match(fetch, /!legacyCapabilitiesEnabled && DEVICE_NONCE_PATTERN\.test\(deviceToken\)[\s\S]*426/);
+  assert.match(fetch, /if \(DEVICE_NONCE_PATTERN\.test\(deviceToken\)\)[\s\S]*426/);
   assert.doesNotMatch(fetch, /p_device_token: deviceToken/);
   assert.doesNotMatch(ack, /p_device_token: deviceToken/);
 });

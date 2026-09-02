@@ -7,21 +7,23 @@ second function copy under a platform directory. The machine-readable
 [deployment contract](deployment-contract.json) pins the reviewed source hash,
 the last observed production version, and the release gate.
 
-Last observed production deployment: version 15 was `ACTIVE` with
-`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-25. Its deployed
+Last observed production deployment: version 16 was `ACTIVE` with
+`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-28. Its deployed
 source byte-for-byte matched repository contract 5 with canonical SHA-256
 `a90be7db99f47a8a96a9bb0ba4b7c76a9a38b65db9ae3d6f825a2ec94952ccc4`;
-the deployment contract release gate is open. The one-time reauthentication
-grant, durable verified-identity budget, HMAC secret, and service-only wrapper
-were applied and read back before the function deployment.
+repository contract 6 and its database-enforced preparation budget are newer,
+so the deployment contract release gate is closed until an explicitly approved
+deployment and readback. The earlier one-time reauthentication grant, durable
+verified-identity budget, HMAC secret, and service-only wrapper were applied and
+read back before the observed function deployment.
 
 Security properties:
 
 - accepts only `POST` with `Content-Type: application/json`;
 - accepts only the exact prepare body `{ "action": "prepare" }` or delete body `{ "action": "delete", "confirmation": "DELETE", "grant": "<uuid>" }`;
 - verifies the caller's bearer token and current Auth user with `GET /auth/v1/user` using a publishable/anon key;
-- after Auth validation, durably meters requests by an HMAC-pseudonymized account identity, so one account cannot consume another account's allowance;
-- preparation requires a password-authenticated JWT no older than five minutes and issues a five-minute capability bound to the exact user and Auth session;
+- after Auth validation, durably meters final deletion by an HMAC-pseudonymized account identity, so one account cannot consume another account's allowance;
+- preparation is independently rate-limited at the database boundary, requires a password-authenticated JWT no older than five minutes, and replaces the caller's sole five-minute capability bound to the exact user and Auth session;
 - deletion atomically consumes that one-time capability while locking and validating the same live Auth session;
 - requires the Auth user UUID and consumed-grant RPC UUID to match exactly before deletion;
 - hard-deletes that exact user through `DELETE /auth/v1/admin/users/{id}` with a new Supabase secret key or the legacy `SUPABASE_SERVICE_ROLE_KEY`;

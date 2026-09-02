@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, coalesceFixSql, identityIsolationSql, identityBudgetSource, deleteSource, socialSource, garminSource, pwaSource, stateSource, androidStore] =
+const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, coalesceFixSql, identityIsolationSql, hardeningSql, identityBudgetSource, deleteSource, socialSource, garminSource, pwaSource, stateSource, androidStore] =
   await Promise.all([
     readFile("supabase/migrations/20260823160702_harden_live_sessions_and_push_ownership.sql", "utf8"),
     readFile("supabase/migrations/20260823160703_bound_workout_duration_sync.sql", "utf8"),
@@ -11,6 +11,7 @@ const [sessionSql, durationSql, deletionSql, preauthSql, preauthWrapperFixSql, c
     readFile("supabase/migrations/20260823161839_fix_edge_preauth_service_wrapper.sql", "utf8"),
     readFile("supabase/migrations/20260823162119_fix_security_hardening_coalesce_calls.sql", "utf8"),
     readFile("supabase/migrations/20260825105114_isolate_verified_edge_rate_limits.sql", "utf8"),
+    readFile("supabase/migrations/20260901215530_harden_deep_scan_boundaries.sql", "utf8"),
     readFile("supabase/functions/_shared/preauth-budget.ts", "utf8"),
     readFile("supabase/functions/delete-account/index.ts", "utf8"),
     readFile("supabase/functions/social-live-gateway/index.ts", "utf8"),
@@ -89,16 +90,42 @@ test("public Edge rate limits use verified identities without a shared global bu
   );
 
   const deleteAuth = deleteSource.indexOf("/auth/v1/user");
-  const deleteBudget = deleteSource.indexOf("debitVerifiedIdentityBudget(");
-  assert.ok(deleteAuth >= 0 && deleteAuth < deleteBudget);
+  const deleteOnlyBudget = deleteSource.indexOf(
+    'if (deletionRequest.action === "delete")',
+  );
+  const deleteBudget = deleteSource.indexOf(
+    "debitVerifiedIdentityBudget(",
+    deleteOnlyBudget,
+  );
+  assert.ok(
+    deleteAuth >= 0 && deleteAuth < deleteOnlyBudget &&
+      deleteOnlyBudget < deleteBudget,
+  );
   assert.match(deleteSource, /`account:\$\{authenticatedUser\.id\.toLowerCase\(\)\}`/);
+  assert.match(deleteSource, /prepared\.error === "rate_limited"/);
 
   const socialAuth = socialSource.indexOf("userClient.auth.getUser(token)");
-  const socialBudget = socialSource.indexOf("debitVerifiedIdentityBudget(");
+  const socialBudget = socialSource.indexOf(
+    'serviceClient.rpc("social_live_gateway_debit"',
+  );
   assert.ok(socialAuth >= 0 && socialAuth < socialBudget);
-  assert.match(socialSource, /`session:\$\{sessionId\.toLowerCase\(\)\}`/);
+  assert.doesNotMatch(socialSource, /preauth-budget|debitVerifiedIdentityBudget/);
+  assert.match(socialSource, /route\.serviceOnly/);
+
+  assert.match(hardeningSql, /social_live_debit_budget\(/);
+  assert.match(hardeningSql, /social_require_caller\(p_action text\)[\s\S]*social_live_debit_budget\(/);
+  assert.match(hardeningSql, /\('delete_account', 12\)/);
+  assert.match(hardeningSql, /\('social_live', 180\)/);
+  assert.match(hardeningSql, /\('social_gateway', 180\)/);
+  const hardenedLimiter = hardeningSql.match(
+    /create or replace function gymapp_private\.edge_preauth_debit\([\s\S]*?\n\$function\$;/,
+  )?.[0];
+  assert.ok(hardenedLimiter);
+  assert.doesNotMatch(hardenedLimiter, /garmin_legacy/);
+  assert.match(hardenedLimiter, /limit 128[\s\S]*for update skip locked/);
 
   assert.doesNotMatch(garminSource, /preauth-budget|debitVerifiedIdentityBudget/);
+  assert.doesNotMatch(garminSource, /GARMIN_LEGACY_CAPABILITY_MODE/);
   assert.match(garminSource, /"garmin_fetch_pending_plan"/);
   assert.match(garminSource, /"garmin_ack_plan"/);
 });

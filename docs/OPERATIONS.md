@@ -21,30 +21,47 @@ is deployment infrastructure and must not be deleted as stale source work.
 
 ## Authentication redirects
 
-Production authentication uses the first-party HTTPS bridge at
-`https://gymapptracker.com/confirmed.html`. Native callbacks accept a bounded,
-state-bound PKCE code; reusable access or refresh tokens must never be placed in
-a custom-scheme URL.
+Browser authentication uses the first-party HTTPS page at
+`https://gymapptracker.com/confirmed.html?platform=web`. Production native
+authentication uses separately claimed HTTPS callbacks:
+`https://gymapptracker.com/auth/android-callback.html` and
+`https://gymapptracker.com/auth/ios-callback.html`. Native handlers accept only
+their exact host/path plus a bounded, state-bound PKCE code. Reusable access or
+refresh tokens and production authorization codes must never be placed in a
+custom-scheme URL.
 
 The required hosted Supabase Site URL and redirect allowlist are source-controlled
-in `supabase/auth-redirect-allowlist.json`. In particular, Android needs both
-`https://gymapptracker.com/confirmed.html?platform=android&state=*` and
-`https://gymapptracker.com/confirmed.html?platform=android&variant=qa&state=*`.
-The wildcard retains the per-request PKCE state plus the bounded `purpose` and
-one-time `code` that Supabase appends; an exact `?platform=android` entry does not
-cover those URLs.
+in `supabase/auth-redirect-allowlist.json`. Production needs the exact Android
+and iOS HTTPS callback patterns recorded there, with separate `signup` and
+`recovery` purposes. The Android QA build remains
+test-signed and uses only the explicit `.dev` custom-scheme bridge; it cannot
+claim the production App Link. A wildcard retains the per-request PKCE state,
+bounded `purpose`, and one-time `code` that Supabase appends.
 
-The production Dashboard allowlist was updated and read back on 2026-07-22. It
-contains the legacy GitHub callback, the iOS custom-scheme callback, exact web
-and legacy Android callbacks, and the iOS, Android production, and Android QA
-state wildcards (seven URLs total). Registration with a state-bound Android PKCE
-redirect was accepted by the live Auth service. Recheck the final handoff on
-physical production and QA builds before release.
+Use a two-phase cutover. First publish and read back only the new callback pages
+and association files while the old production bridge still works; temporarily
+add the new HTTPS patterns alongside the old live Supabase Auth entries. Then
+ship and verify signed native clients. Only after both new clients claim their
+HTTPS callbacks should the final phase publish `confirmed.v58.js`, remove the
+old production custom-scheme entries from the live allowlist, and verify that
+old bridge URLs fail closed with the update-required response. Do not publish a
+client that points at a callback absent from the live allowlist, and do not ship
+the final source state as an undifferentiated one-step PWA/Auth cutover. The JSON
+file records the desired final contract, not the temporary rollout state or
+proof that the Dashboard setting was changed.
 
-The legacy callback at
+The production Dashboard allowlist last read back on 2026-07-22 contained the
+legacy custom-scheme/native bridge entries. The source contract now retires
+those production entries, but this repository change does not alter the hosted
+setting. Recheck and update that setting before release, then validate the final
+handoff on a Play-signed Android build and a signed physical iPhone.
+
+The legacy browser callback at
 `https://eduard047.github.io/GymApp/confirmed.html` remains an intentional
-compatibility entry for older released clients and previously sent emails.
-Removing it requires a separately reviewed client and session migration.
+web compatibility entry. Production `platform=android` and `platform=ios`
+bridges fail closed with an update-required message and never translate a code
+to a custom scheme. The test-only Android QA bridge remains isolated to the
+`.dev` package and scheme.
 
 ## Supabase
 

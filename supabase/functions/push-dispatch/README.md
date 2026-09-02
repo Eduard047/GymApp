@@ -27,7 +27,9 @@ checks.
 - `PUSH_DISPATCH_TOKEN`: 32 or more random bytes encoded base64url (43-256
   characters). Store the same independent value in Vault as
   `gymapp_push_dispatch_token`; the scheduler sends it only in
-  `X-GymApp-Push-Dispatch-Token`. Never put it in a client or URL.
+  `X-GymApp-Push-Dispatch-Token`. It must differ from both
+  `PUSH_DISPATCH_SERVER_KEY` and every Supabase secret/service-role key. Never
+  put it in a client or URL.
 - `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`: Firebase project ID
   and a narrowly managed service-account identity/private PKCS#8 PEM capable of
   Firebase Cloud Messaging HTTP v1. Enable the Firebase Cloud Messaging API.
@@ -54,8 +56,10 @@ a bounded retry without exposing configuration details.
 Supabase `verify_jwt=false` is intentional for this server-only function. The
 function itself compares the exact `apikey` to `PUSH_DISPATCH_SERVER_KEY` and
 independently compares the dispatcher token in constant time before parsing or
-claiming work. It fails closed if the dedicated server key is missing, malformed,
-or equal to the internal Supabase service key. The Vault values are:
+claiming work. It fails closed if any two of the server key, dispatcher token,
+and any active direct, named/rotating, or legacy internal Supabase service
+credential are equal. A malformed named-key set also fails closed instead of
+silently falling back to another credential. The Vault values are:
 
 - `gymapp_push_dispatch_url`: the exact HTTPS function URL;
 - `gymapp_push_dispatch_server_key`: the dedicated

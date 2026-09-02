@@ -293,16 +293,26 @@ Deno.test("dispatcher secret comparison handles equal, unequal, and different-le
   );
 });
 
-Deno.test("dispatcher ingress key stays separate from the Supabase service key", () => {
+Deno.test("dispatcher ingress keys stay separate from every active Supabase service key", () => {
   const serviceKey = `sb_secret_${"s".repeat(48)}`;
+  const namedDefaultKey = `sb_secret_${"n".repeat(48)}`;
+  const rotatingKey = `sb_secret_${"r".repeat(48)}`;
+  const legacyServiceKey = "l".repeat(64);
   const dispatchServerKey = "d".repeat(43);
+  const dispatchToken = "t".repeat(43);
   const env = new Map<string, string>([
-    ["SUPABASE_SECRET_KEYS", JSON.stringify({ default: serviceKey })],
+    ["SUPABASE_SECRET_KEY", serviceKey],
+    [
+      "SUPABASE_SECRET_KEYS",
+      JSON.stringify({ default: namedDefaultKey, rotating: rotatingKey }),
+    ],
+    ["SUPABASE_SERVICE_ROLE_KEY", legacyServiceKey],
     ["PUSH_DISPATCH_SERVER_KEY", dispatchServerKey],
+    ["PUSH_DISPATCH_TOKEN", dispatchToken],
   ]);
   assertEquals(
     loadDispatchCredentials((name) => env.get(name)),
-    { serviceKey, dispatchServerKey },
+    { serviceKey, dispatchServerKey, dispatchToken },
     "dedicated ingress and internal service credentials",
   );
 
@@ -318,6 +328,45 @@ Deno.test("dispatcher ingress key stays separate from the Supabase service key",
     loadDispatchCredentials((name) => env.get(name)),
     null,
     "missing dedicated ingress key must fail closed",
+  );
+
+  env.set("PUSH_DISPATCH_SERVER_KEY", dispatchServerKey);
+  env.set("PUSH_DISPATCH_TOKEN", dispatchServerKey);
+  assertEquals(
+    loadDispatchCredentials((name) => env.get(name)),
+    null,
+    "dispatch token reuse must fail closed",
+  );
+
+  env.set("PUSH_DISPATCH_TOKEN", serviceKey);
+  assertEquals(
+    loadDispatchCredentials((name) => env.get(name)),
+    null,
+    "service key reuse as the dispatch token must fail closed",
+  );
+
+  env.set("PUSH_DISPATCH_TOKEN", dispatchToken);
+  env.set("PUSH_DISPATCH_SERVER_KEY", rotatingKey);
+  assertEquals(
+    loadDispatchCredentials((name) => env.get(name)),
+    null,
+    "a non-selected rotating service key must not be reused as ingress",
+  );
+
+  env.set("PUSH_DISPATCH_SERVER_KEY", dispatchServerKey);
+  env.set("PUSH_DISPATCH_TOKEN", legacyServiceKey);
+  assertEquals(
+    loadDispatchCredentials((name) => env.get(name)),
+    null,
+    "the legacy fallback service key must not be reused as the dispatch token",
+  );
+
+  env.set("PUSH_DISPATCH_TOKEN", dispatchToken);
+  env.set("SUPABASE_SECRET_KEYS", "{malformed");
+  assertEquals(
+    loadDispatchCredentials((name) => env.get(name)),
+    null,
+    "a malformed active-key set must fail closed even when a direct key exists",
   );
 });
 
