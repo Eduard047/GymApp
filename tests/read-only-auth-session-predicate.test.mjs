@@ -126,9 +126,9 @@ test("the shared user/session predicate locks every read-write authorization thr
     "public.require_live_session_for_account_deletion()",
     "gymapp_private.realtime_has_current_auth_session()",
   ]) {
-    assert.match(
-      deepHardeningMigration,
-      new RegExp(`alter function ${signature.replace(/[().]/g, "\\$&")} volatile;`),
+    assert.equal(
+      deepHardeningMigration.includes(`alter function ${signature} volatile;`),
+      true,
       `${signature} must not suppress the write-side session lock`,
     );
   }

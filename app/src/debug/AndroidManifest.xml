@@ -8,7 +8,9 @@
             android:exported="false" />
 
         <!-- Debug builds cannot use the production Play-signing App Link. -->
-        <activity android:name=".MainActivity">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

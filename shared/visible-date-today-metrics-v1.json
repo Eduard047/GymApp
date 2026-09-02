@@ -135,6 +135,6 @@
     "styleBundle": "styles.v83.css",
     "russianBundle": "russian-text.v87.js",
     "liveWorkoutBundle": "live-workout.v3.js",
-    "serviceWorkerCache": "gym-pwa-v149"
+    "serviceWorkerCache": "gym-pwa-v150"
   }
 }

@@ -51,9 +51,10 @@ test("AASA binds exact workout and native-auth routes to the exact iOS app", asy
   assert.match(project, /DEVELOPMENT_TEAM = XZ84SZH2PV;/);
   assert.match(project, /PRODUCT_BUNDLE_IDENTIFIER = com\.setforge\.gymapp\.ios;/);
   assert.match(appSource, /\.onContinueUserActivity\(NSUserActivityTypeBrowsingWeb\)/);
-  assert.match(
-    await readFile(`${root}/Services/AuthService.swift`, "utf8"),
-    /https:\/\/gymapptracker\.com\/auth\/ios-callback\.html/
+  assert.equal(
+    (await readFile(`${root}/Services/AuthService.swift`, "utf8"))
+      .includes("https://gymapptracker.com/auth/ios-callback.html"),
+    true,
   );
   assert.match(sharedLinkSource, /percentEncodedPath == "\/workout\/"/);
   assert.match(sharedLinkSource, /com\.setforge\.gymapp\.ios:\/\/workout\/#workout=/);
