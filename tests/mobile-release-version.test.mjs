@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expected = Object.freeze({
-  marketingVersion: "3.2.11",
-  androidVersionCode: "2000320908",
-  iosBuildNumber: "44",
-  garminVersion: "3.2.11",
+  marketingVersion: "3.3.0",
+  androidVersionCode: "2000320909",
+  iosBuildNumber: "45",
+  garminVersion: "3.3.0",
   pwaBundle: "app.v107.js",
   pwaStyleBundle: "styles.v83.css",
   pwaRussianBundle: "russian-text.v87.js",
@@ -50,7 +50,7 @@ function matches(source, pattern) {
   return [...source.matchAll(pattern)].map((match) => match[1]);
 }
 
-test("Android release metadata remains aligned with GymApp 3.2.11", () => {
+test("Android release metadata remains aligned with GymApp 3.3.0", () => {
   assert.match(
     gradleProperties,
     new RegExp(`^appVersionName=${expected.marketingVersion.replaceAll(".", "\\.")}$`, "m")
@@ -80,7 +80,7 @@ test("iOS app target and archive defaults agree on release version and build", (
   );
 });
 
-test("Garmin, iOS, Android, and PWA remain aligned for 3.2.11", () => {
+test("Garmin, iOS, Android, and PWA remain aligned for 3.3.0", () => {
   assert.match(
     garminManifest,
     new RegExp(`\\bversion="${expected.garminVersion.replaceAll(".", "\\.")}"`)
