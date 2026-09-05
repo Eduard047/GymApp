@@ -25,6 +25,8 @@
     <exclude domain="sharedpref" path="gym_training_profile.xml.bak" />
     <exclude domain="sharedpref" path="gym_training_profiles.xml" />
     <exclude domain="sharedpref" path="gym_training_profiles.xml.bak" />
+    <exclude domain="sharedpref" path="training-program-v1.xml" />
+    <exclude domain="sharedpref" path="training-program-v1.xml.bak" />
     <exclude domain="sharedpref" path="gym_training_guidance_v1.xml" />
     <exclude domain="sharedpref" path="gym_training_guidance_v1.xml.bak" />
     <exclude domain="sharedpref" path="gym_cloud_sync_baselines.xml" />

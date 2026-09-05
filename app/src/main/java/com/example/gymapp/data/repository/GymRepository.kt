@@ -123,6 +123,13 @@ sealed interface UndoActiveWorkoutSetResult {
     data object TargetChanged : UndoActiveWorkoutSetResult
 }
 
+sealed interface ApplyActiveWorkoutAdaptationResult {
+    data class Applied(val revision: Long) : ApplyActiveWorkoutAdaptationResult
+    data object Missing : ApplyActiveWorkoutAdaptationResult
+    data object Stale : ApplyActiveWorkoutAdaptationResult
+    data object LivePlanFrozen : ApplyActiveWorkoutAdaptationResult
+}
+
 sealed interface FinishActiveWorkoutResult {
     data class Finished(val sessionId: Long) : FinishActiveWorkoutResult
     data object Missing : FinishActiveWorkoutResult
@@ -2348,6 +2355,37 @@ class GymRepository(
             FinishActiveWorkoutResult.Finished(sessionId)
         }
         result
+    }
+
+    internal suspend fun applyActiveWorkoutAdaptation(
+        source: ActiveWorkoutDetails,
+        candidate: ActiveWorkoutDetails
+    ): ApplyActiveWorkoutAdaptationResult = activeWorkoutMutationMutex.withLock {
+        require(source.activeWorkout.revision in 0 until Long.MAX_VALUE)
+        require(source.activeWorkout == candidate.activeWorkout)
+        require(source.activeWorkout.id == ACTIVE_WORKOUT_ID)
+        requireValidStoredActiveWorkout(source)
+        requireValidStoredActiveWorkout(candidate)
+        val completed = { value: ActiveWorkoutDetails ->
+            value.exercises.flatMap { block -> block.sets.filter { it.completedAt != null }.map { Triple(block.activeWorkoutExercise.exerciseName, block.activeWorkoutExercise.catalogKey, it.copy(orderIndex = 0)) } }
+        }
+        require(completed(source) == completed(candidate)) { "Completed sets changed during adaptation." }
+        val sidecar = liveWorkoutSidecarStore
+        val userId = liveReservationUserId
+        if (sidecar != null && userId != null && sidecar.hasActiveBinding(userId, source.activeWorkout.startedAt)) {
+            return@withLock ApplyActiveWorkoutAdaptationResult.LivePlanFrozen
+        }
+        database.withTransaction {
+            val stored = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)?.sortedActiveWorkout()
+                ?: return@withTransaction ApplyActiveWorkoutAdaptationResult.Missing
+            if (stored != source) return@withTransaction ApplyActiveWorkoutAdaptationResult.Stale
+            val revision = source.activeWorkout.revision + 1
+            check(activeWorkoutDao.deleteIfRevisionMatches(ACTIVE_WORKOUT_ID, source.activeWorkout.revision) == 1)
+            activeWorkoutDao.insert(candidate.activeWorkout.copy(revision = revision))
+            activeWorkoutDao.insertExercises(candidate.exercises.map { it.activeWorkoutExercise })
+            activeWorkoutDao.insertSets(candidate.exercises.flatMap { it.sets })
+            ApplyActiveWorkoutAdaptationResult.Applied(revision)
+        }
     }
 
     suspend fun discardActiveWorkout(

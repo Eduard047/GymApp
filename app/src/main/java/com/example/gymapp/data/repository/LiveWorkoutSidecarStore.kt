@@ -785,6 +785,17 @@ internal class LiveWorkoutSidecarStore(context: Context) {
         return binding
     }
 
+    /** Fail closed when any current-generation binding is unreadable. */
+    @Synchronized
+    fun hasActiveBinding(userId: String, workoutStartedAt: Long): Boolean {
+        val prefix = "$LIVE_BINDING_KEY_PREFIX$userId:"
+        return preferences.all.filterKeys { it.startsWith(prefix) }.values.any { raw ->
+            val binding = (raw as? String)?.let { runCatching { LiveWorkoutSidecarCodec.decode(it) }.getOrNull() }
+                ?: return@any true
+            binding.userId != userId || binding.workoutStartedAt == workoutStartedAt
+        }
+    }
+
     @Synchronized
     fun sessionMismatchedBinding(
         session: AccountSession.Cloud

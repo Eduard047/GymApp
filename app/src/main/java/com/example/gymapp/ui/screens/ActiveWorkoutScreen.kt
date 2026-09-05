@@ -1,6 +1,8 @@
 package com.example.gymapp.ui.screens
 
 import android.text.format.DateFormat as AndroidDateFormat
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -104,6 +106,9 @@ fun ActiveWorkoutScreen(
     onFinishWorkout: () -> Unit,
     onDiscardWorkout: () -> Unit,
     onDismissMessage: () -> Unit,
+    onPreviewAdaptation: (String, Int, Long?) -> Unit = { _, _, _ -> },
+    onApplyAdaptation: () -> Unit = {},
+    onDismissAdaptation: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
@@ -236,6 +241,20 @@ fun ActiveWorkoutScreen(
                         )
                         TextButton(onClick = onDismissMessage) {
                             Text(text = stringResource(R.string.action_close))
+                        }
+                    }
+                }
+            }
+        }
+
+        if (uiState.liveConnectionMode == null && uiState.completedSetCount < uiState.totalSetCount) {
+            item {
+                AppPanel(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.training_adapt_workout), style = MaterialTheme.typography.titleMedium)
+                        listOf("equipmentUnavailable" to R.string.training_equipment_busy,
+                            "timeCut" to R.string.training_short_time, "tooHard" to R.string.training_too_hard).forEach { (reason, label) ->
+                            OutlinedButton(onClick = { onPreviewAdaptation(reason, if (reason == "timeCut") 0 else 20, null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(label)) }
                         }
                     }
                 }
@@ -394,6 +413,31 @@ fun ActiveWorkoutScreen(
                 LivePeerExerciseCard(exercise)
             }
         }
+    }
+
+    uiState.adaptation?.let { adaptation ->
+        AlertDialog(onDismissRequest = onDismissAdaptation,
+            title = { Text(stringResource(when (adaptation.reason) { "equipmentUnavailable" -> R.string.training_equipment_busy; "timeCut" -> R.string.training_short_time; else -> R.string.training_too_hard })) },
+            text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (adaptation.reason == "timeCut" && !adaptation.hasPreview) Row { listOf(10,20,30).forEach { minutes ->
+                    TextButton(onClick = { onPreviewAdaptation(adaptation.reason, minutes, null) }) { Text("$minutes") }
+                } }
+                if (adaptation.reason == "equipmentUnavailable" && !adaptation.hasPreview) adaptation.choices.forEach { choice ->
+                    TextButton(onClick = { onPreviewAdaptation(adaptation.reason, 20, choice.exerciseId) }) { Text(localizedExerciseName(choice.name)) }
+                }
+                if (!adaptation.hasPreview && adaptation.choices.isEmpty() && adaptation.reason == "equipmentUnavailable") Text(stringResource(R.string.training_no_alternative))
+                if (adaptation.hasPreview) {
+                    Text(stringResource(R.string.training_remaining_sets, adaptation.beforePending, adaptation.afterPending))
+                    if (adaptation.reason == "timeCut") Text(stringResource(R.string.training_time_estimate))
+                    adaptation.previewLines.forEach { line ->
+                        val name = localizedExerciseName(line.name)
+                        val before = if (line.previousName.isNotEmpty() && line.previousName != line.name) localizedExerciseName(line.previousName) + " → " else ""
+                        Text("$before$name: ${line.values}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            } },
+            confirmButton = { if (adaptation.hasPreview) TextButton(onClick = onApplyAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.training_apply_changes)) } },
+            dismissButton = { TextButton(onClick = onDismissAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.action_cancel)) } })
     }
 
     if (showDiscardConfirmation) {
@@ -874,6 +918,32 @@ private fun ActiveWorkoutSetRow(
                         onRepsChanged = onRepsChanged,
                         modifier = Modifier.weight(1f)
                     )
+                }
+            }
+        }
+        if (!set.isCompleted && isCurrent) {
+            set.previousWeight?.let { previous ->
+                Text(stringResource(R.string.training_previous_result, previous, set.previousReps ?: 0),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(-1, 1).forEach { direction ->
+                    OutlinedButton(onClick = {
+                        val current = com.example.gymapp.util.parseWeightInputOrNull(set.weightInput)
+                        if (current != null && current.isFinite() && current in 0.0..1_000_000.0) {
+                            onWeightChanged(com.example.gymapp.data.repository.TrainingTools.stepWeight(current, direction, set.allowedWeights).toString())
+                        }
+                    }, enabled = editable && !operationInProgress, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                        Text(stringResource(if (direction < 0) R.string.training_less_weight else R.string.training_more_weight))
+                    }
+                }
+            }
+            if (set.repeatWeight != null && set.repeatReps != null) {
+                TextButton(onClick = {
+                    onWeightChanged(set.repeatWeight.toString())
+                    onRepsChanged(set.repeatReps.toString())
+                }, enabled = editable && !operationInProgress, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.training_repeat_values))
                 }
             }
         }

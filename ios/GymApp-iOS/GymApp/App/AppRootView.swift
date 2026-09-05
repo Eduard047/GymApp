@@ -1652,7 +1652,26 @@ private struct MainTabShell: View {
         NavigationStack(path: $missionPath) {
             ProgressHubView(
                 store: store,
-                onOpenRanks: { missionPath.append(.ranks) }
+                onOpenRanks: { missionPath.append(.ranks) },
+                onPrepareProgram: {
+                    if activeWorkoutStore.draft != nil { showsActiveWorkout = true }
+                    else {
+                        if workoutEditorDraft == nil && workoutEditorLiveRecipient == nil && sharedWorkoutDraftSeed.isEmpty {
+                            let profile = TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
+                            let plan = RecommendationEngine.buildWorkoutPlan(
+                                exercises: store.exercises, history: store.allExerciseHistory(),
+                                muscleMappings: store.muscleMappings, trainingProfile: profile,
+                                effort: .auto, latestFeedback: store.latestWorkoutFeedbackContext()
+                            )
+                            sharedWorkoutDraftSeed = plan.exercises.map { item in
+                                WorkoutExerciseDraft(exerciseID: item.exercise.id, sets: item.recommendation.sets.map {
+                                    WorkoutSetDraft(weight: $0.weight ?? 0, reps: $0.reps)
+                                })
+                            }
+                        }
+                        showsAddWorkout = true
+                    }
+                }
             )
                 .gymLanguageToolbar()
                 .navigationDestination(for: MissionRoute.self) { route in

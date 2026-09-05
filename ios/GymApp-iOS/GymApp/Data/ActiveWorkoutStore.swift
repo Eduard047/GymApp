@@ -268,6 +268,19 @@ final class ActiveWorkoutStore: ObservableObject {
     }
 
     @discardableResult
+    func applyAdaptation(source: ActiveWorkoutDraft, candidate: ActiveWorkoutDraft, isSolo: () -> Bool) throws -> ActiveWorkoutDraft {
+        guard isSolo(), source.id == candidate.id, source.startedAt == candidate.startedAt,
+              source.workoutDate == candidate.workoutDate, source.note == candidate.note,
+              candidate.commitIntent == nil, source.undoableSetID == candidate.undoableSetID,
+              WorkoutAdaptation.preservesCompleted(source, candidate) else { throw ActiveWorkoutStoreError.invalidDraft }
+        try liveSlotReservationStore.assertOrdinaryStartAllowed()
+        guard draft == source else { throw ActiveWorkoutStoreError.staleDraft }
+        return try mutate(draftID: source.id, expectedRevision: source.revision, now: Date()) { current in
+            current.exercises = candidate.exercises
+        }
+    }
+
+    @discardableResult
     func updateSet(
         draftID: UUID,
         setID: UUID,

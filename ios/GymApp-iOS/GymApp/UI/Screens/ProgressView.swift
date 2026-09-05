@@ -7,6 +7,7 @@ struct ProgressHubView: View {
         case overview
         case exercises
         case goals
+        case program
 
         var id: String { rawValue }
 
@@ -18,6 +19,8 @@ struct ProgressHubView: View {
                 gymText("Exercises", "Вправи", "Упражнения", languageCode: languageCode)
             case .goals:
                 gymText("Goals", "Цілі", "Цели", languageCode: languageCode)
+            case .program:
+                gymText("Program", "Програма", "Программа", languageCode: languageCode)
             }
         }
     }
@@ -34,10 +37,12 @@ struct ProgressHubView: View {
     @State private var selectedMuscleID: String?
 
     private let onOpenRanks: () -> Void
+    private let onPrepareProgram: () -> Void
 
-    init(store: WorkoutStore, onOpenRanks: @escaping () -> Void) {
+    init(store: WorkoutStore, onOpenRanks: @escaping () -> Void, onPrepareProgram: @escaping () -> Void = {}) {
         self.store = store
         self.onOpenRanks = onOpenRanks
+        self.onPrepareProgram = onPrepareProgram
     }
 
     var body: some View {
@@ -63,6 +68,8 @@ struct ProgressHubView: View {
                     ExerciseProgressView(store: store, showsHeader: false)
                 case .goals:
                     MissionsView(store: store, onOpenRanks: onOpenRanks, embedded: true)
+                case .program:
+                    TrainingProgramView(workouts: store, onPrepare: onPrepareProgram)
                 }
             }
         }
@@ -139,6 +146,8 @@ struct ProgressHubView: View {
                     weeklyTarget: trainingProfile.workoutsPerWeek,
                     onOpenRanks: onOpenRanks
                 )
+
+                WeeklyReviewCard(store: store)
 
                 lifetimeMetricsCard
 

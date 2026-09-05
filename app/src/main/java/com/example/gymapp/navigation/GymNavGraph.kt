@@ -3004,7 +3004,8 @@ internal fun GymAppRoot(
                                     timerAccountKey = checkNotNull(
                                         restTimerAccountKey(authState.session)
                                     ),
-                                    liveSync = liveWorkoutViewModel
+                                    liveSync = liveWorkoutViewModel,
+                                    currentTrainingProfile = { applicationContext.gymApplication.trainingProfileManager.profile.value }
                                 )
                             )
                             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -3048,6 +3049,9 @@ internal fun GymAppRoot(
                                 onRecordSet = viewModel::recordSet,
                                 onRecordAllPendingSets = viewModel::recordAllPendingSets,
                                 onUndoLatestSet = viewModel::undoLatestSet,
+                                onPreviewAdaptation = viewModel::previewAdaptation,
+                                onApplyAdaptation = viewModel::applyAdaptation,
+                                onDismissAdaptation = viewModel::dismissAdaptation,
                                 onAdjustRestTimer = viewModel::adjustRestTimer,
                                 onStopRestTimer = viewModel::stopRestTimer,
                                 onFinishWorkout = viewModel::finishWorkout,
@@ -3333,7 +3337,22 @@ internal fun GymAppRoot(
                             val overviewState by
                                 overviewViewModel.uiState.collectAsStateWithLifecycle()
 
+                            val weeklyHistory by remember(repository) { repository.observeAllExerciseHistory() }
+                                .collectAsStateWithLifecycle(initialValue = emptyList())
+                            val programSessions by remember(repository) { repository.observeSessions() }
+                                .collectAsStateWithLifecycle(initialValue = emptyList())
+                            val weeklyProfile by gymApplication.trainingProfileManager.profile.collectAsStateWithLifecycle()
                             ProgressHubScreen(
+                                weeklyHistory = weeklyHistory,
+                                weeklyTarget = weeklyProfile.workoutsPerWeek,
+                                onOpenWorkout = { navController.navigate(AppDestination.workoutDetailRoute(it)) },
+                                programOwnerKey = checkNotNull(authState.session).databaseName(),
+                                programSessions = programSessions,
+                                programProfile = weeklyProfile,
+                                onPrepareProgramWorkout = {
+                                    if (activeWorkout == null && !hasSavedLiveWorkoutDraftTarget) rootAddWorkoutViewModel?.prepareProgramWorkout()
+                                    navController.navigate(if (activeWorkout != null) AppDestination.ActiveWorkout.route else AppDestination.AddWorkout.route)
+                                },
                                 overviewState = overviewState,
                                 exerciseState = exerciseProgressState,
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
@@ -3643,9 +3662,14 @@ internal fun GymAppRoot(
                                                             )
                                                         },
                                                         clearTrainingProfile = {
-                                                            applicationContext.gymApplication
+                                                            val profileCleared = applicationContext.gymApplication
                                                                 .trainingProfileManager
                                                                 .clearAccount(deletedSession)
+                                                            val programCleared = com.example.gymapp.util.TrainingProgramStore(
+                                                                applicationContext,
+                                                                deletedSession.databaseName()
+                                                            ).clear()
+                                                            profileCleared && programCleared
                                                         },
                                                         clearTrainingGuidance = {
                                                             applicationContext.gymApplication

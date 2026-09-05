@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "clients": ["android", "ios", "pwa"],
+  "quickEntry": {
+    "defaultWeightStepKg": 2.5,
+    "configuredWeights": "nearestStrictlyDirectionalValueOrCurrent",
+    "previousResult": "sameExerciseLatestEarlierSessionSameSetIndexElseLastSet",
+    "repeatValues": "previousCompletedSetInThisExerciseElsePreviousResult",
+    "completedSetsEditable": false
+  },
+  "adaptation": {
+    "scope": "soloPendingSetsOnly",
+    "reasons": ["equipmentUnavailable", "timeCut", "tooHard"],
+    "requiresPreviewAndExplicitApply": true,
+    "binds": ["account", "workout", "revision", "catalog", "history"],
+    "preserves": ["completedSets", "history", "otherAccounts", "liveFrozenPlan"],
+    "timeMinutes": [10, 20, 30],
+    "timeEstimate": "oneMinutePerSetPlusExerciseRestBetweenRemainingSets",
+    "timeIsEstimate": true,
+    "tooHard": "oneEasierAvailableWeightStepOrOneFewerRepAtBodyweight",
+    "replacement": "ownHistoryAndLoadProfileOnly"
+  },
+  "weeklyReview": {
+    "weekStartsOn": "monday",
+    "timezone": "local",
+    "goalUnit": "distinctTrainingDay",
+    "comparison": "previousCalendarWeekSameExerciseAndExactWeightBestReps",
+    "maximumInsights": 3,
+    "evidence": "bothSavedSessions",
+    "partialWeekLabelRequired": true,
+    "missingComparison": "insufficientHistory"
+  },
+  "program": {
+    "weeks": 4,
+    "trainingDaysPerWeek": { "minimum": 2, "maximum": 6 },
+    "states": ["active", "paused", "completed"],
+    "controls": ["startNext", "rescheduleNext", "pause", "resume", "finish"],
+    "loadTargets": "recalculateFromCurrentHistoryBeforeStart",
+    "completion": "linkedSavedWorkoutOnly",
+    "storage": "accountBoundLocalPlan",
+    "coreHistoryAndCloudFormats": "preserved"
+  }
+}

@@ -8,6 +8,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ActiveWorkoutDetails
+import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
+import com.example.gymapp.data.repository.WorkoutAdaptation
+import com.example.gymapp.data.repository.toManualContributionMap
+import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.ActiveWorkoutSetUpdate
 import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
@@ -50,7 +54,12 @@ data class ActiveWorkoutSetUiState(
     val weightInput: String,
     val repsInput: String,
     val isCompleted: Boolean,
-    val completedAt: Long?
+    val completedAt: Long?,
+    val previousWeight: Double? = null,
+    val previousReps: Int? = null,
+    val repeatWeight: Double? = null,
+    val repeatReps: Int? = null,
+    val allowedWeights: List<Double> = emptyList()
 )
 
 data class ActiveWorkoutExerciseUiState(
@@ -60,6 +69,27 @@ data class ActiveWorkoutExerciseUiState(
     val orderIndex: Int,
     val restDurationSeconds: Int,
     val sets: List<ActiveWorkoutSetUiState>
+)
+
+data class ActiveWorkoutAdaptationLine(val name: String, val previousName: String, val values: String)
+data class ActiveWorkoutAdaptationChoice(val exerciseId: Long, val name: String)
+data class ActiveWorkoutAdaptationUiState(
+    val reason: String,
+    val choices: List<ActiveWorkoutAdaptationChoice> = emptyList(),
+    val hasPreview: Boolean = false,
+    val beforePending: Int = 0,
+    val afterPending: Int = 0,
+    val previewLines: List<ActiveWorkoutAdaptationLine> = emptyList(),
+    val isApplying: Boolean = false
+)
+private data class ActiveWorkoutAdaptationRequest(
+    val reason: String, val source: ActiveWorkoutDetails, val candidate: ActiveWorkoutDetails? = null,
+    val catalog: List<ExerciseEntity>, val history: List<com.example.gymapp.data.entity.ExerciseHistoryEntry>,
+    val profiles: Map<Long, com.example.gymapp.data.repository.ExerciseLoadProfile>,
+    val choices: List<com.example.gymapp.data.repository.SmartWorkoutAlternative> = emptyList(), val isApplying: Boolean = false,
+    val previewSource: ActiveWorkoutDetails = source,
+    val trainingProfile: TrainingProfile = TrainingProfile(),
+    val mappings: List<com.example.gymapp.data.entity.ExerciseMuscleMappingEntity> = emptyList()
 )
 
 data class ActiveWorkoutUiState(
@@ -92,7 +122,8 @@ data class ActiveWorkoutUiState(
     val livePeerExercises: List<LivePeerExerciseSummary> = emptyList(),
     val liveExerciseLanes: List<LiveExerciseLaneSummary> = emptyList(),
     val liveConnectionMode: LiveConnectionMode? = null,
-    val livePendingOperationCount: Int = 0
+    val livePendingOperationCount: Int = 0,
+    val adaptation: ActiveWorkoutAdaptationUiState? = null
 )
 
 internal fun activeWorkoutOperationInProgress(
@@ -113,7 +144,9 @@ private data class ActiveWorkoutSourceState(
     val details: ActiveWorkoutDetails?,
     val inputs: Map<String, ActiveWorkoutInput>,
     val exercises: List<ExerciseEntity>,
-    val hasLoaded: Boolean
+    val hasLoaded: Boolean,
+    val history: List<com.example.gymapp.data.entity.ExerciseHistoryEntry>,
+    val loadProfiles: Map<Long, com.example.gymapp.data.repository.ExerciseLoadProfile>
 )
 
 private data class ActiveWorkoutOperationState(
@@ -124,7 +157,8 @@ private data class ActiveWorkoutOperationState(
     val message: LocalizedText? = null,
     val messageSetId: String? = null,
     val finishedSessionId: Long? = null,
-    val wasDiscarded: Boolean = false
+    val wasDiscarded: Boolean = false,
+    val adaptation: ActiveWorkoutAdaptationRequest? = null
 )
 
 private data class ActiveWorkoutClockUiState(
@@ -320,7 +354,8 @@ class ActiveWorkoutViewModel(
     private val repository: GymRepository,
     private val restTimerController: RestTimerController,
     private val timerAccountKey: String,
-    private val liveSync: ActiveLiveWorkoutSync? = null
+    private val liveSync: ActiveLiveWorkoutSync? = null,
+    private val currentTrainingProfile: () -> TrainingProfile = { TrainingProfile() }
 ) : ViewModel() {
     private val inputs = MutableStateFlow<Map<String, ActiveWorkoutInput>>(emptyMap())
     private val hasLoaded = MutableStateFlow(false)
@@ -383,11 +418,16 @@ class ActiveWorkoutViewModel(
     private val sourceState = combine(
         details,
         inputs,
-        repository.observeExercises(),
+        combine(repository.observeExercises(), repository.observeAllExerciseHistory(), repository.observeExerciseLoadProfiles()) {
+            catalog, history, profiles -> Triple(catalog, history, profiles)
+        },
         hasLoaded
-    ) { workout, setInputs, exercises, loaded ->
-        ActiveWorkoutSourceState(workout, setInputs, exercises, loaded)
-    }
+    ) { workout, setInputs, data, loaded ->
+        ActiveWorkoutSourceState(workout, setInputs, data.first, loaded, data.second, data.third)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ActiveWorkoutSourceState(null, emptyMap(), emptyList(), false, emptyList(), emptyMap()))
+
+    private val adaptationMappings = repository.observeExerciseMuscleMappings()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val clockNow = flow {
         while (true) {
@@ -431,6 +471,11 @@ class ActiveWorkoutViewModel(
     ) { source, inFlight, operation, live ->
         val activeWorkout = source.details
         val exercises = activeWorkout?.exercises.orEmpty().map { exercise ->
+            val resolvedId = resolveActiveWorkoutExerciseId(source.exercises,
+                exercise.activeWorkoutExercise.exerciseName, exercise.activeWorkoutExercise.catalogKey)
+            val history = source.history.filter { it.exerciseId == resolvedId && it.sessionDate < (activeWorkout?.activeWorkout?.startedAt ?: 0L) }
+            val latestSession = history.maxWithOrNull(compareBy<com.example.gymapp.data.entity.ExerciseHistoryEntry> { it.sessionDate }.thenBy { it.sessionId })?.sessionId
+            val previous = history.filter { it.sessionId == latestSession }.sortedBy { it.setOrderIndex }
             ActiveWorkoutExerciseUiState(
                 id = exercise.activeWorkoutExercise.id,
                 exerciseId = resolveActiveWorkoutExerciseId(
@@ -445,13 +490,20 @@ class ActiveWorkoutViewModel(
                 ),
                 sets = exercise.sets.map { set ->
                     val input = source.inputs[set.id]
+                    val last = previous.firstOrNull { it.setOrderIndex == set.orderIndex } ?: previous.lastOrNull()
+                    val preceding = exercise.sets.lastOrNull { it.orderIndex < set.orderIndex && it.completedAt != null }
                     ActiveWorkoutSetUiState(
                         id = set.id,
                         orderIndex = set.orderIndex,
                         weightInput = input?.weight ?: formatActiveWeight(set.weight),
                         repsInput = input?.reps ?: set.reps.toString(),
                         isCompleted = set.completedAt != null,
-                        completedAt = set.completedAt
+                        completedAt = set.completedAt,
+                        previousWeight = last?.weight,
+                        previousReps = last?.reps,
+                        repeatWeight = preceding?.weight ?: last?.weight,
+                        repeatReps = preceding?.reps ?: last?.reps,
+                        allowedWeights = source.loadProfiles[resolvedId]?.allowedWeightsKg.orEmpty()
                     )
                 }
             )
@@ -492,7 +544,17 @@ class ActiveWorkoutViewModel(
             livePeerExercises = live.peerExercises,
             liveExerciseLanes = live.exerciseLanes,
             liveConnectionMode = live.connectionMode.takeIf { live.activeRoomId != null },
-            livePendingOperationCount = live.pendingOperationCount
+            livePendingOperationCount = live.pendingOperationCount,
+            adaptation = operation.adaptation?.let { request ->
+                val before = request.source.exercises.sumOf { b -> b.sets.count { it.completedAt == null } }
+                val after = request.candidate?.exercises?.sumOf { b -> b.sets.count { it.completedAt == null } } ?: 0
+                ActiveWorkoutAdaptationUiState(request.reason,
+                    request.choices.map { ActiveWorkoutAdaptationChoice(it.exercise.id, it.exercise.name) }, request.candidate != null,
+                    before, after, request.candidate?.exercises?.flatMap { b -> b.sets.filter { it.completedAt == null }.map { set -> val oldBlock = request.previewSource.exercises.firstOrNull { block -> block.sets.any { it.id == set.id } }
+                        val old = oldBlock?.sets?.firstOrNull { it.id == set.id }
+                        ActiveWorkoutAdaptationLine(b.activeWorkoutExercise.exerciseName, oldBlock?.activeWorkoutExercise?.exerciseName.orEmpty(),
+                            (old?.let { "${formatActiveWeight(it.weight)} kg × ${it.reps} → " } ?: "") + "${formatActiveWeight(set.weight)} kg × ${set.reps}") } }.orEmpty(), request.isApplying)
+            }
         )
     }.flowOn(Dispatchers.Default)
 
@@ -899,6 +961,55 @@ class ActiveWorkoutViewModel(
         }
     }
 
+    fun previewAdaptation(reason: String, minutes: Int = 20, replacementId: Long? = null) {
+        if (activeWorkoutOperationInProgress() || reason !in setOf("equipmentUnavailable", "timeCut", "tooHard") || liveSync?.activeLiveUiState?.value?.activeRoomId != null) return
+        val source = sourceState.value
+        val workout = source.details ?: return
+        val values = source.inputs.mapValues { (_, input) -> parseActiveWorkoutSetInput(input.weight, input.reps) }
+        if (workout.exercises.flatMap { it.sets }.any { it.completedAt == null && values[it.id] == null }) return
+        val hydrated = workout.copy(exercises = workout.exercises.map { b -> b.copy(sets = b.sets.map { set ->
+            if (set.completedAt != null) set else values.getValue(set.id)!!.let { set.copy(weight = it.weight, reps = it.reps) }
+        }) })
+        val current = hydrated.exercises.firstOrNull { it.sets.any { set -> set.completedAt == null } }
+        val currentId = current?.let { resolveActiveWorkoutExerciseId(source.exercises, it.activeWorkoutExercise.exerciseName, it.activeWorkoutExercise.catalogKey) }
+        val alternatives = if (reason == "equipmentUnavailable" && currentId != null) WorkoutRecommendationEngine.findAlternatives(
+            currentId, hydrated.exercises.mapNotNull { resolveActiveWorkoutExerciseId(source.exercises, it.activeWorkoutExercise.exerciseName, it.activeWorkoutExercise.catalogKey) }.toSet(),
+            source.exercises, source.history, trainingProfile = currentTrainingProfile(), loadProfiles = source.loadProfiles,
+            manualMuscleMappings = adaptationMappings.value.toManualContributionMap(), hardSetEligible = false, limit = 6) else emptyList()
+        val selected = replacementId?.let { id -> alternatives.firstOrNull { it.exercise.id == id } }
+        val candidate = if ((reason == "equipmentUnavailable" && selected == null) || (reason == "timeCut" && minutes == 0)) null else WorkoutAdaptation.build(hydrated, reason, minutes, source.loadProfiles,
+            exerciseId = { block -> resolveActiveWorkoutExerciseId(source.exercises, block.exerciseName, block.catalogKey) }, replacement = selected)
+        operationState.update { it.copy(adaptation = ActiveWorkoutAdaptationRequest(reason, workout, candidate,
+            source.exercises, source.history, source.loadProfiles, alternatives, previewSource = hydrated,
+            trainingProfile = currentTrainingProfile(), mappings = adaptationMappings.value), message = null, messageSetId = null) }
+    }
+
+    fun dismissAdaptation() { operationState.update { it.copy(adaptation = null) } }
+
+    fun applyAdaptation() {
+        val request = operationState.value.adaptation ?: return
+        val candidate = request.candidate ?: return
+        if (request.isApplying) return
+        operationState.update { it.copy(adaptation = request.copy(isApplying = true)) }
+        viewModelScope.launch {
+            val latest = sourceState.value
+            val result = if (latest.exercises != request.catalog || latest.history != request.history || latest.loadProfiles != request.profiles ||
+                request.trainingProfile != currentTrainingProfile() || request.mappings != adaptationMappings.value ||
+                liveSync?.activeLiveUiState?.value?.activeRoomId != null) ApplyActiveWorkoutAdaptationResult.Stale
+            else runCatching { repository.applyActiveWorkoutAdaptation(request.source, candidate) }.getOrDefault(ApplyActiveWorkoutAdaptationResult.Stale)
+            if (result is ApplyActiveWorkoutAdaptationResult.Applied) {
+                inputs.value = candidate.exercises.flatMap { it.sets }.associate { set ->
+                    set.id to ActiveWorkoutInput(formatActiveWeight(set.weight), set.reps.toString())
+                }
+            }
+            operationState.update { state -> when (result) {
+                is ApplyActiveWorkoutAdaptationResult.Applied -> state.copy(adaptation = null, message = null)
+                ApplyActiveWorkoutAdaptationResult.LivePlanFrozen -> state.copy(adaptation = null, message = LocalizedText(R.string.training_adaptation_live_blocked))
+                else -> state.copy(adaptation = null, message = LocalizedText(R.string.active_workout_changed))
+            } }
+        }
+    }
+
     fun undoLatestSet(setId: String) {
         val snapshot = details.value ?: return
         if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isRecordingAll ||
@@ -1206,10 +1317,11 @@ class ActiveWorkoutViewModel(
             repository: GymRepository,
             restTimerController: RestTimerController,
             timerAccountKey: String,
-            liveSync: ActiveLiveWorkoutSync? = null
+            liveSync: ActiveLiveWorkoutSync? = null,
+            currentTrainingProfile: () -> TrainingProfile = { TrainingProfile() }
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                ActiveWorkoutViewModel(repository, restTimerController, timerAccountKey, liveSync)
+                ActiveWorkoutViewModel(repository, restTimerController, timerAccountKey, liveSync, currentTrainingProfile)
             }
         }
     }

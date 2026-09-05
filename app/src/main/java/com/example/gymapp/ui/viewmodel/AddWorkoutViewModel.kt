@@ -1075,6 +1075,14 @@ class AddWorkoutViewModel internal constructor(
         smartAlternativePicker.value = null
     }
 
+    fun prepareProgramWorkout() {
+        viewModelScope.launch {
+            durableDraftLoaded.first { it }
+            exerciseCatalogState.first { it.isLoaded }
+            if (!hasRetainedDraft()) generateSmartWorkout("")
+        }
+    }
+
     fun generateSmartWorkout(defaultNote: String) {
         val catalog = exerciseCatalogState.value
         val currentProfile = trainingProfileManager.profile.value

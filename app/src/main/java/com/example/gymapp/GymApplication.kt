@@ -98,7 +98,11 @@ class GymApplication : Application() {
                             val guidanceCleared = guidanceManager.clearAccountByDatabaseName(
                                 record.databaseName
                             )
-                            profileCleared && guidanceCleared
+                            val programCleared = com.example.gymapp.util.TrainingProgramStore(
+                                this@GymApplication,
+                                record.databaseName
+                            ).clear()
+                            profileCleared && guidanceCleared && programCleared
                         },
                         clearSyncStatus = { syncStatusStore.clear(record.userId) },
                         clearCustomMedia = {
@@ -193,7 +197,11 @@ class GymApplication : Application() {
             deleteDatabase(captured.physicalDatabaseName) ||
                 !getDatabasePath(captured.physicalDatabaseName).exists()
         },
-        clearTrainingProfile = trainingProfileManager::clearAccountByDatabaseName,
+        clearTrainingProfile = { owner ->
+            val profileCleared = trainingProfileManager.clearAccountByDatabaseName(owner)
+            val programCleared = com.example.gymapp.util.TrainingProgramStore(this, owner).clear()
+            profileCleared && programCleared
+        },
         clearTrainingGuidance = trainingGuidanceManager::clearAccountByDatabaseName,
         clearCustomMedia = { owner -> ExerciseMediaStore.clearOwner(this, owner) },
         clearBackupShares = { owner ->

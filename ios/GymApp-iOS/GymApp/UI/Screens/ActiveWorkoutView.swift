@@ -104,6 +104,7 @@ struct ActiveWorkoutView: View {
     private let onDiscarded: () -> Void
     private let reportStatus: (String, Bool) -> Void
 
+    @State private var adaptationRequest: WorkoutAdaptationRequest?
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var showingDiscardConfirmation = false
@@ -144,6 +145,16 @@ struct ActiveWorkoutView: View {
                         if !liveWorkoutCoordinator.isAttachedToCurrentDraft ||
                             liveParticipantSelection == .current {
                             progressPanel(draft)
+                            if !liveWorkoutCoordinator.planIsFrozenForCurrentDraft, draft.commitIntent == nil,
+                               draft.exercises.contains(where: { $0.sets.contains(where: { !$0.isCompleted }) }) {
+                                DisclosureGroup(gymText("Adapt workout", "Адаптувати тренування", "Адаптировать тренировку", languageCode: languageCode)) {
+                                    ForEach(["equipmentUnavailable", "timeCut", "tooHard"], id: \.self) { reason in
+                                        Button(WorkoutAdaptationRequest.title(reason)) {
+                                            adaptationRequest = WorkoutAdaptationRequest(source: draft, reason: reason, store: workoutStore)
+                                        }.buttonStyle(GymSecondaryButtonStyle()).frame(minHeight: 48)
+                                    }
+                                }
+                            }
 
                             if let statusMessage {
                                 GymStatusBanner(message: statusMessage, isError: statusIsError)
@@ -191,6 +202,10 @@ struct ActiveWorkoutView: View {
                     )
                 }
             }
+        }
+        .sheet(item: $adaptationRequest) { request in
+            WorkoutAdaptationSheet(request: request, workoutStore: workoutStore, activeStore: activeWorkoutStore,
+                coordinator: liveWorkoutCoordinator)
         }
         .navigationTitle(
             gymText(
@@ -1029,6 +1044,10 @@ struct ActiveWorkoutView: View {
                 }
             }
 
+            if isCurrent, !set.isCompleted {
+                quickSetControls(set: set, exercise: exercise, position: position, draft: draft)
+            }
+
             if !set.isCompleted {
                 Button {
                     recordSet(
@@ -1102,6 +1121,41 @@ struct ActiveWorkoutView: View {
                     lineWidth: set.isCompleted ? 1.5 : 0
                 )
         }
+    }
+
+    private func quickSetControls(set: ActiveWorkoutSet, exercise: ActiveWorkoutExercise, position: Int, draft: ActiveWorkoutDraft) -> some View {
+        let history = workoutStore.exerciseHistory(exerciseID: exercise.exerciseID).filter { $0.sessionDate < draft.startedAt }
+        let latestID = history.sorted { $0.sessionDate == $1.sessionDate ? $0.workoutID.uuidString > $1.workoutID.uuidString : $0.sessionDate > $1.sessionDate }.first?.workoutID
+        let previous = history.filter { $0.workoutID == latestID }.sorted { $0.setOrderIndex < $1.setOrderIndex }
+        let last = previous.first(where: { $0.setOrderIndex == position }) ?? previous.last
+        let preceding = exercise.sets.prefix(position).last(where: { $0.isCompleted })
+        let repeatWeight = preceding?.weight ?? last?.weight
+        let repeatReps = preceding?.reps ?? last?.reps
+        let allowed = workoutStore.exercise(id: exercise.exerciseID)?.machineLoadProfile?.allowedWeightsKg ?? []
+        return VStack(alignment: .leading, spacing: 8) {
+            if let last {
+                Text(gymText("Previous", "Минулого разу", "В прошлый раз", languageCode: gymCurrentLanguageCode()) + ": \(last.weight.formatted()) kg × \(last.reps)")
+                    .font(.caption).foregroundStyle(GymTheme.textSecondary)
+            }
+            HStack {
+                ForEach([-1, 1], id: \.self) { direction in
+                    Button {
+                        updateSet(draft: draft, setID: set.id, weight: TrainingTools.stepWeight(set.weight, direction: direction, allowed: allowed), reps: set.reps)
+                    } label: {
+                        Text((direction < 0 ? "− " : "+ ") + gymText("Weight", "Вага", "Вес", languageCode: gymCurrentLanguageCode()))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(GymSecondaryButtonStyle())
+                }
+            }
+            if let repeatWeight, let repeatReps {
+                Button {
+                    updateSet(draft: draft, setID: set.id, weight: repeatWeight, reps: repeatReps)
+                } label: {
+                    Text(gymText("Repeat previous values", "Повторити попередні значення", "Повторить предыдущие значения", languageCode: gymCurrentLanguageCode()))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }.buttonStyle(GymSecondaryButtonStyle())
+            }
+        }.disabled(draft.commitIntent != nil)
     }
 
     @ViewBuilder

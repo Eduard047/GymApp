@@ -791,6 +791,9 @@ public final class WorkoutStore: ObservableObject {
         let liveDraftConsumptionURL = LiveWorkoutDraftConsumptionStore.storageURL(
             forWorkoutStorageURL: primaryURL
         )
+        let trainingProgramURL = TrainingProgramStore.storageURL(
+            forWorkoutStorageURL: primaryURL
+        )
         let liveWorkoutStem = liveWorkoutURL.deletingPathExtension().lastPathComponent
         let liveWorkoutRecoveryPrefix = "\(liveWorkoutStem).recovery-"
         var candidates = [
@@ -799,7 +802,8 @@ public final class WorkoutStore: ObservableObject {
             liveWorkoutURL,
             liveSlotReservationURL,
             liveDraftConsumptionURL,
-            workoutInviteJournalURL
+            workoutInviteJournalURL,
+            trainingProgramURL
         ]
         do {
             let children = try fileManager.contentsOfDirectory(

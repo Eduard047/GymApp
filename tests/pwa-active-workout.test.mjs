@@ -2402,3 +2402,79 @@ test("active parser rejects wrong owners, non-finite values, oversized rows, and
   assert.equal(vm.runInContext("activeWorkout", context), null);
   assert.equal(localStorage.getItem(`gym-pwa-account:${LOCAL_ACCOUNT.id}`), null);
 });
+
+test("four-week programs preserve owner boundaries, schedule and saved-workout links", () => {
+  const { context, localStorage } = loadContext();
+  assert.equal(vm.runInContext("createTrainingProgram()", context), true);
+  const key = vm.runInContext("trainingProgramDescriptor().storageKey", context);
+  const original = JSON.parse(localStorage.getItem(key));
+  assert.equal(original.slots.length, original.days * 4);
+  assert.ok(original.slots.at(-1).date > Date.now());
+  for (const mutate of [
+    p => { p.owner = "other-owner"; },
+    p => { p.slots[1].id = p.slots[0].id; },
+    p => { p.slots[0].date = Number.MAX_SAFE_INTEGER; },
+    p => { p.slots[0].sessionId = p.slots[1].sessionId = 7; },
+    p => { p.goal = "x".repeat(32769); }
+  ]) {
+    const invalid = structuredClone(original); mutate(invalid);
+    context.invalidProgram = JSON.stringify(invalid);
+    assert.equal(vm.runInContext("parseTrainingProgram(invalidProgram)", context), null);
+    assert.equal(localStorage.getItem(key), JSON.stringify(original));
+  }
+  vm.runInContext(`
+    state.sessions = [{id: 901, startedAt: Date.now(), exercises: []}];
+    updateTrainingProgramAction("training-program-link", {dataset:{session:"902"}});
+  `, context);
+  assert.equal(JSON.parse(localStorage.getItem(key)).slots[0].sessionId, null);
+  vm.runInContext('updateTrainingProgramAction("training-program-link", {dataset:{session:"901"}})', context);
+  assert.equal(JSON.parse(localStorage.getItem(key)).slots[0].sessionId, 901);
+  vm.runInContext('updateTrainingProgramAction("training-program-state", {dataset:{status:"paused"}})', context);
+  const paused = localStorage.getItem(key);
+  vm.runInContext('updateTrainingProgramAction("training-program-reschedule", {dataset:{}})', context);
+  assert.equal(localStorage.getItem(key), paused);
+  vm.runInContext('localStorage.removeItem(AUTH_KEY)', context);
+  assert.equal(vm.runInContext("createTrainingProgram()", context), false);
+  assert.equal(localStorage.getItem(key), paused);
+});
+
+test("adaptation preview preserves completed work and only apply commits pending targets", async () => {
+  const { context, runtimeNodes, localStorage } = loadContext();
+  await startTwoSetWorkout(context);
+  const [first, second] = JSON.parse(vm.runInContext("JSON.stringify(activeWorkout.blocks[0].sets.map(s=>s.id))", context));
+  runtimeNodes.set(`[data-active-set-id="${first}"][data-active-field="weight"]`, {value:"80"});
+  runtimeNodes.set(`[data-active-set-id="${first}"][data-active-field="reps"]`, {value:"8"});
+  assert.equal(await vm.runInContext(`recordActiveSet(${first})`, context), true);
+  runtimeNodes.set(`[data-active-set-id="${second}"][data-active-field="weight"]`, {value:"85"});
+  runtimeNodes.set(`[data-active-set-id="${second}"][data-active-field="reps"]`, {value:"6"});
+  const before = localStorage.getItem(activeStorageKey(context));
+  vm.runInContext('openTrainingAdaptation("tooHard")', context);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+  assert.equal(vm.runInContext("modal.candidate.blocks[0].sets[1].weight", context), 82.5);
+  assert.equal(await vm.runInContext("applyTrainingAdaptation()", context), true);
+  const after = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.deepEqual(after.blocks[0].sets[0], JSON.parse(before).blocks[0].sets[0]);
+  assert.equal(after.blocks[0].sets[1].weight, 82.5);
+  assert.equal(after.revision, JSON.parse(before).revision + 1);
+  assert.equal(await vm.runInContext("applyTrainingAdaptation()", context), false);
+});
+
+test("adaptation rejects stale history, live binding and account switching without writing", async () => {
+  for (const change of [
+    'state.profile.days = 6',
+    'liveWorkoutBinding = {localWorkoutId: activeWorkout.id}',
+    'localStorage.removeItem(AUTH_KEY)'
+  ]) {
+    const { context, runtimeNodes, localStorage } = loadContext();
+    await startTwoSetWorkout(context);
+    for (const set of JSON.parse(vm.runInContext("JSON.stringify(activeWorkout.blocks[0].sets)", context))) {
+      runtimeNodes.set(`[data-active-set-id="${set.id}"][data-active-field="weight"]`, {value:String(set.weight)});
+      runtimeNodes.set(`[data-active-set-id="${set.id}"][data-active-field="reps"]`, {value:String(set.reps)});
+    }
+    const key = activeStorageKey(context), before = localStorage.getItem(key);
+    vm.runInContext('openTrainingAdaptation("tooHard")', context);
+    vm.runInContext(change, context);
+    assert.equal(await vm.runInContext("applyTrainingAdaptation()", context), false);
+    assert.equal(localStorage.getItem(key), before);
+  }
+});
