@@ -957,7 +957,9 @@ private struct MainTabShell: View {
             scheduleAutomaticTutorial()
         }
         .onChange(of: showsAddWorkout) { isPresented in
-            if !isPresented {
+            if isPresented {
+                yieldTutorialToExternalNavigation()
+            } else {
                 sharedWorkoutDraftSeed = []
                 workoutLaunchSeed = nil
                 workoutLaunchConsumerID = nil
@@ -974,7 +976,9 @@ private struct MainTabShell: View {
             )
         }
         .onChange(of: showsActiveWorkout) { isPresented in
-            if !isPresented {
+            if isPresented {
+                yieldTutorialToExternalNavigation()
+            } else {
                 presentSharedWorkoutPreviewIfPossible()
                 scheduleAutomaticTutorial()
             }
@@ -1088,6 +1092,7 @@ private struct MainTabShell: View {
             try? await Task.sleep(for: .milliseconds(650))
             guard !Task.isCancelled,
                   tutorialStepIndex == nil,
+                  !tutorialAutomaticPresentationSuppressedForSession,
                   appState.activeAccountStorageKey == accountStorageKey,
                   !tutorialPresentationIsDeferred,
                   AppTutorialStore().needsAutomaticPresentation(

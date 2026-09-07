@@ -6,6 +6,11 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 
 Install the pinned build dependencies with `pnpm install --frozen-lockfile` before using either build helper. Both helpers use the same source preparation, native resource packing and PRG optimizer. The source pass disables type propagation and single-use copy propagation; the pinned patch preserves SDK array construction. The PRG pass retains argument-count checks and uses partial redundancy elimination without forbidden transformations. Native device limits remain enforced by the SDK. Release exports require the pinned Store signer and package readback before replacing an existing output.
 
+After device-specific source selection, oversized full profiles move stateless
+value checks into a separate module to satisfy the 254-static-member ceiling on
+older products. Compact profiles retain their existing class layout. Text
+extraction uses explicit substring bounds for older Connect IQ runtimes.
+
 ## Current controls
 
 - Main dashboard uses a watch-first workout hierarchy: current heart rate and zone, elapsed time, Gym kcal, current planned set, exercise, weight/reps, and the live effort/rest status. Garmin kcal remains available in the workout summary.
@@ -86,7 +91,7 @@ Development PRGs for Descent G1, Forerunner 55 / ForeAthlete 55, Instinct
 2/2S/2X, and Instinct Crossover use the stable compact hardware-key build and
 are compiled with debug metadata stripped. The shared `fr55` target uses this
 profile because the full 128 KiB build did not retain enough runtime headroom.
-The current journal build still exceeds the five 96 KiB product limits:
+The current journal build still exceeds the limits of the five 96 KiB products:
 compilation and Store export remain blocked for those products until the
 program fits their native ceiling. The manifest retains their compatibility
 entries; lowering the SDK limit checks is not a supported build path. The compact build preserves account/device

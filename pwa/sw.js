@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v152";
-// v152 improves program recovery, accessible navigation, and training contrast.
+const CACHE_VERSION = "v153";
+// v153 updates exercise counts and workout-frequency sorting.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -61,7 +61,7 @@ const SHELL_ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v87.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v109.js",
+  "./app.v110.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",

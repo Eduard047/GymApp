@@ -986,6 +986,17 @@ test("exercise library sorts by unique workout frequency in both directions", ()
 
   vm.runInContext('exerciseSortMode = "least"', context);
   assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [3, 2, 1]);
+
+  // A later render must observe edited history, even when catalog objects and
+  // the session array retain their identities.
+  vm.runInContext(`
+    state.sessions.splice(0, state.sessions.length, {
+      id: 30, startedAt: 30,
+      sets: [{ id: 31, exerciseName: "Plank", catalogKey: "plank", weight: 0, reps: 1 }]
+    });
+    exerciseSortMode = "most";
+  `, context);
+  assert.deepEqual(jsonFrom(context, "filteredLibraryExercises().map(exercise => exercise.id)"), [3, 1, 2]);
 });
 
 test("legacy session aliases preserve raw labels and derive the same stable identity", () => {

@@ -256,10 +256,10 @@ class GymText {
         if (id >= 2048) { return row; }
         var first = row.find("|");
         if (!GymStore.isUk() && !GymStore.isRu()) { return row.substring(0, first); }
-        var tail = row.substring(first + 1, null);
+        var tail = row.substring(first + 1, row.length());
         row = null;
         var second = tail.find("|");
-        return GymStore.isRu() ? tail.substring(second + 1, null) : tail.substring(0, second);
+        return GymStore.isRu() ? tail.substring(second + 1, tail.length()) : tail.substring(0, second);
     }
 }
 `);

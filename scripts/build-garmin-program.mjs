@@ -7,6 +7,7 @@ import { buildOptimizedProject, getConfig } from "@markw65/monkeyc-optimizer";
 import { optimizeProgram, readPrg, SectionKinds } from "@markw65/monkeyc-optimizer/sdk-util.js";
 import { prepareGarminSources } from "./lib/garmin-build-sources.mjs";
 import { pruneUnusedGarminDiagnostics } from "./lib/garmin-prune-diagnostics.mjs";
+import { splitGarminStoreStatics } from "./lib/garmin-store-statics.mjs";
 
 const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const garminRoot = path.join(projectRoot, "garmin");
@@ -173,6 +174,7 @@ async function main() {
       throw new Error("Garmin source analysis failed");
     }
     await pruneUnusedGarminDiagnostics(path.join(temporaryRoot, "sources"));
+    await splitGarminStoreStatics(path.join(temporaryRoot, "sources"));
     const rawRoot = path.join(temporaryRoot, "raw");
     const finalRoot = path.join(temporaryRoot, "final");
     await mkdir(rawRoot);

@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
@@ -1176,7 +1177,7 @@ private fun ExerciseDraftCard(
             .orEmpty()
             .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
     }
-    val setCountLabel = stringResource(R.string.exercise_set_count_compact, draft.sets.size)
+    val setCountLabel = pluralStringResource(R.plurals.saved_workout_set_count, draft.sets.size, draft.sets.size)
     val setDetails = mutableListOf<String>()
     for (set in draft.sets) {
         setDetails += stringResource(
