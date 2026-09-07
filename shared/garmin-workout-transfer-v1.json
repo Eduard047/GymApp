@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "frameType": "workout_part",
+  "ackType": "workout_part_ack",
+  "maximumSets": 60,
+  "maximumFrameBytes": 4096,
+  "maximumStagedBytes": 65536,
+  "maximumAgeSeconds": 86400,
+  "frameKeys": ["type", "transferVersion", "offset", "totalSets", "attemptId", "metadata", "set", "interval", "metrics"],
+  "metadataKeys": ["type", "bindingVersion", "workoutMode", "requestId", "accountBinding", "deviceBinding", "pairingGeneration", "startedAtSeconds", "durationSeconds", "gymCalories", "garminCalories", "avgHeartRate", "maxHeartRate", "lastHeartRate", "heartRateZone", "plannedSetCount", "plannedTargetSetCount", "completedPlannedSetCount"],
+  "rules": [
+    "Each frame carries one set, or no set for a free workout with totalSets and offset equal to zero.",
+    "Metadata is identical across frames and uses the existing create_workout scalar contract.",
+    "An optional interval or metrics field, when present in the first frame, must be present in every frame.",
+    "Only the exact next offset or an identical already persisted frame is accepted.",
+    "Every send uses a fresh attemptId; a partial acknowledgement echoes that exact attempt and cannot advance another attempt.",
+    "A partial acknowledgement reports the next offset only after durable account-bound staging.",
+    "The existing whole-workout acknowledgement is sent only after full validation and durable workout import.",
+    "A partial acknowledgement never removes the workout from the watch queue.",
+    "One incomplete transfer is retained per trusted device and active account; expired state may be replaced only from offset zero.",
+    "Receivers retain support for the released create_workout message. Older receivers ignore the new frame type, leaving the watch queue intact."
+  ]
+}

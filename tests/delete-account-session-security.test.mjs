@@ -9,6 +9,8 @@ const migrationPath =
   "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql";
 const hardeningMigrationPath =
   "supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql";
+const commitMigrationPath =
+  "supabase/migrations/20260902162432_linearize_account_deletion_commit.sql";
 const projectUrl = "https://project.example";
 const publishableKey = "sb_publishable_delete_account_test";
 const administrativeKey = "test-administrative-key";
@@ -16,6 +18,18 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const otherUserId = "00000000-0000-4000-8000-000000000002";
 const accessToken = "test-user-access-token";
 const deletionGrant = "10000000-0000-4000-8000-000000000001";
+const deletionOperationId = "20000000-0000-4000-8000-000000000001";
+const deletionCommittedAt = "2026-09-02T15:03:12.000Z";
+
+function committedDeletion(user = userId) {
+  return {
+    version: 2,
+    status: "committed",
+    userId: user,
+    operationId: deletionOperationId,
+    committedAt: deletionCommittedAt,
+  };
+}
 
 const originalDeno = globalThis.Deno;
 const hadDeno = Object.prototype.hasOwnProperty.call(globalThis, "Deno");
@@ -38,8 +52,14 @@ globalThis.Deno = {
   },
 };
 
-await import(`${pathToFileURL(resolve(edgePath)).href}?delete-account-session-test`);
-assert.equal(typeof edgeHandler, "function", "the real Edge handler must register with Deno.serve");
+await import(
+  `${pathToFileURL(resolve(edgePath)).href}?delete-account-session-test`
+);
+assert.equal(
+  typeof edgeHandler,
+  "function",
+  "the real Edge handler must register with Deno.serve",
+);
 
 after(() => {
   globalThis.fetch = originalFetch;
@@ -54,7 +74,11 @@ function deleteRequest() {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ action: "delete", confirmation: "DELETE", grant: deletionGrant }),
+    body: JSON.stringify({
+      action: "delete",
+      confirmation: "DELETE",
+      grant: deletionGrant,
+    }),
   });
 }
 
@@ -78,16 +102,17 @@ async function withFetchMock(mock, operation) {
   }
 }
 
-test("account deletion RPC derives and binds a current signed session with least privilege", async () => {
-  const [edge, sql, hardeningSql] = await Promise.all([
+test("account deletion RPC commits an exact-session operation with least privilege", async () => {
+  const [edge, sql, hardeningSql, commitSql] = await Promise.all([
     readFile(edgePath, "utf8"),
     readFile(migrationPath, "utf8"),
     readFile(hardeningMigrationPath, "utf8"),
+    readFile(commitMigrationPath, "utf8"),
   ]);
 
   const authUserCall = edge.indexOf("/auth/v1/user");
   const liveSessionCall = edge.indexOf(
-    "/rest/v1/rpc/consume_account_deletion_grant",
+    "/rest/v1/rpc/commit_account_deletion_operation",
   );
   const administrativeDelete = edge.indexOf("/auth/v1/admin/users/");
   assert.ok(
@@ -96,11 +121,16 @@ test("account deletion RPC derives and binds a current signed session with least
     "Auth-user and live-session decisions must precede administrative deletion",
   );
   assert.match(edge, /Authorization: authorization/);
-  assert.match(edge, /const liveSessionUserId = await liveSessionResponse\.json\(\) as unknown/);
-  assert.match(edge, /!isUuid\(liveSessionUserId\)/);
   assert.match(
     edge,
-    /liveSessionUserId\.toLowerCase\(\) !== authenticatedUser\.id\.toLowerCase\(\)/,
+    /const deletionCommit = await liveSessionResponse\.json\(\) as unknown/,
+  );
+  assert.match(edge, /deletionCommit\.version !== 2/);
+  assert.match(edge, /deletionCommit\.status !== "committed"/);
+  assert.match(edge, /!isUuid\(deletionCommit\.operationId\)/);
+  assert.match(
+    edge,
+    /deletionCommit\.userId\.toLowerCase\(\)[\s\S]*authenticatedUser\.id\.toLowerCase\(\)/,
   );
   assert.match(edge, /encodeURIComponent\(authenticatedUser\.id\)/);
 
@@ -109,7 +139,10 @@ test("account deletion RPC derives and binds a current signed session with least
     /create or replace function public\.prepare_account_deletion\(\)\s+returns jsonb/,
   );
   assert.match(hardeningSql, /account_deletion_grants_one_owner_purpose_idx/);
-  assert.match(hardeningSql, /delete from gymapp_private\.account_deletion_grants as deletion_grant[\s\S]*deletion_grant\.user_id = caller_user_id/);
+  assert.match(
+    hardeningSql,
+    /delete from gymapp_private\.account_deletion_grants as deletion_grant[\s\S]*deletion_grant\.user_id = caller_user_id/,
+  );
   assert.match(hardeningSql, /edge_preauth_debit\([\s\S]*'delete_account'/);
   assert.match(hardeningSql, /limit 64[\s\S]*for update skip locked/);
   assert.match(sql, /security definer\s+set search_path = ''/);
@@ -119,13 +152,70 @@ test("account deletion RPC derives and binds a current signed session with least
   assert.match(sql, /session\.user_id = caller_user_id/);
   assert.match(sql, /for key share/);
   assert.match(sql, /consumed_at is null/);
-  assert.match(sql, /return caller_user_id/);
   assert.match(
-    sql,
+    commitSql,
+    /create table gymapp_private\.account_deletion_operations/,
+  );
+  assert.match(
+    commitSql,
+    /user_id uuid not null unique references auth\.users\(id\) on delete cascade/,
+  );
+  assert.match(
+    commitSql,
+    /session_id uuid not null,/,
+  );
+  assert.doesNotMatch(
+    commitSql,
+    /session_id uuid not null references auth\.sessions/,
+  );
+  assert.match(commitSql, /from auth\.sessions as session[\s\S]*for share/);
+  assert.ok(
+    commitSql.indexOf("for share") <
+      commitSql.indexOf(
+        "insert into gymapp_private.account_deletion_operations",
+      ),
+    "session serialization must precede the irreversible operation commit",
+  );
+  assert.ok(
+    commitSql.indexOf(
+      "from gymapp_private.account_deletion_operations as operation",
+    ) < commitSql.indexOf("for share"),
+    "an exact committed operation must remain resumable after revocation",
+  );
+  assert.ok(
+    commitSql.indexOf("for share") <
+      commitSql.indexOf("pg_advisory_xact_lock"),
+    "new deletion commits must keep the shared session-then-owner lock order",
+  );
+  assert.match(commitSql, /'version', 2/);
+  assert.match(commitSql, /'status', 'committed'/);
+  assert.match(commitSql, /operation_already_committed/);
+  assert.match(
+    commitSql,
+    /set grant_hash = grant_row\.grant_hash,[\s\S]*session_id = caller_session_id/,
+  );
+  assert.match(
+    commitSql,
+    /create function public\.commit_account_deletion_operation\(p_grant text\)\s+returns jsonb/,
+  );
+  assert.match(
+    commitSql,
+    /create or replace function public\.consume_account_deletion_grant\(p_grant text\)\s+returns uuid[\s\S]*commit_account_deletion_operation/,
+  );
+  assert.match(
+    commitSql,
+    /revoke all on function public\.commit_account_deletion_operation\(text\)[\s\S]*from public, anon, authenticated, service_role/,
+  );
+  assert.match(
+    commitSql,
+    /grant execute on function public\.commit_account_deletion_operation\(text\)[\s\S]*to authenticated/,
+  );
+  assert.match(
+    commitSql,
     /revoke all on function public\.consume_account_deletion_grant\(text\)[\s\S]*from public, anon, authenticated, service_role/,
   );
   assert.match(
-    sql,
+    commitSql,
     /grant execute on function public\.consume_account_deletion_grant\(text\)[\s\S]*to authenticated/,
   );
 });
@@ -159,7 +249,11 @@ test("database-enforced preparation exhaustion is surfaced after Auth validation
     }
     if (url.endsWith("/rest/v1/rpc/prepare_account_deletion")) {
       preparationAttempted = true;
-      return Response.json({ version: 1, error: "rate_limited", retryAfter: 60 });
+      return Response.json({
+        version: 1,
+        error: "rate_limited",
+        retryAfter: 60,
+      });
     }
     throw new Error(`Unexpected request: ${url}`);
   }, () => edgeHandler(prepareRequest()));
@@ -206,9 +300,12 @@ test("a revoked session is rejected even when the old user endpoint would still 
     if (url.endsWith("/auth/v1/user")) {
       return Response.json({ id: userId });
     }
-    if (url.endsWith("/rest/v1/rpc/consume_account_deletion_grant")) {
+    if (url.endsWith("/rest/v1/rpc/commit_account_deletion_operation")) {
       return Response.json(
-        { code: "42501", message: "A current authenticated session is required" },
+        {
+          code: "42501",
+          message: "A current authenticated session is required",
+        },
         { status: 403 },
       );
     }
@@ -220,13 +317,19 @@ test("a revoked session is rejected even when the old user endpoint would still 
 
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: "invalid_deletion_grant" });
-  assert.equal(calls.filter(({ url }) => url.endsWith("/auth/v1/user")).length, 1);
-  assert.equal(calls.filter(({ url }) => url.includes("/auth/v1/admin/users/")).length, 0);
+  assert.equal(
+    calls.filter(({ url }) => url.endsWith("/auth/v1/user")).length,
+    1,
+  );
+  assert.equal(
+    calls.filter(({ url }) => url.includes("/auth/v1/admin/users/")).length,
+    0,
+  );
 
   const rpcCall = calls[2];
   assert.equal(
     rpcCall.url,
-    `${projectUrl}/rest/v1/rpc/consume_account_deletion_grant`,
+    `${projectUrl}/rest/v1/rpc/commit_account_deletion_operation`,
   );
   assert.equal(rpcCall.init.method, "POST");
   assert.equal(rpcCall.init.body, JSON.stringify({ p_grant: deletionGrant }));
@@ -249,8 +352,8 @@ test("a live session hard-deletes only the UUID returned by the bound RPC", asyn
     if (url.endsWith("/auth/v1/user")) {
       return Response.json({ id: userId });
     }
-    if (url.endsWith("/rest/v1/rpc/consume_account_deletion_grant")) {
-      return Response.json(userId);
+    if (url.endsWith("/rest/v1/rpc/commit_account_deletion_operation")) {
+      return Response.json(committedDeletion());
     }
     if (url === `${projectUrl}/auth/v1/admin/users/${userId}`) {
       return Response.json({});
@@ -265,10 +368,16 @@ test("a live session hard-deletes only the UUID returned by the bound RPC", asyn
   const deleteCall = calls[3];
   assert.equal(deleteCall.url, `${projectUrl}/auth/v1/admin/users/${userId}`);
   assert.equal(deleteCall.init.method, "DELETE");
-  assert.equal(deleteCall.init.body, JSON.stringify({ should_soft_delete: false }));
+  assert.equal(
+    deleteCall.init.body,
+    JSON.stringify({ should_soft_delete: false }),
+  );
   const adminHeaders = new Headers(deleteCall.init.headers);
   assert.equal(adminHeaders.get("apikey"), administrativeKey);
-  assert.equal(adminHeaders.get("authorization"), `Bearer ${administrativeKey}`);
+  assert.equal(
+    adminHeaders.get("authorization"),
+    `Bearer ${administrativeKey}`,
+  );
   assert.notEqual(adminHeaders.get("authorization"), `Bearer ${accessToken}`);
 });
 
@@ -282,7 +391,7 @@ test("a malformed live-session response cannot select an administrative deletion
     if (url.endsWith("/auth/v1/user")) {
       return Response.json({ id: userId });
     }
-    if (url.endsWith("/rest/v1/rpc/consume_account_deletion_grant")) {
+    if (url.endsWith("/rest/v1/rpc/commit_account_deletion_operation")) {
       return Response.json({ id: userId });
     }
     if (url.includes("/auth/v1/admin/users/")) {
@@ -292,8 +401,10 @@ test("a malformed live-session response cannot select an administrative deletion
     throw new Error(`Unexpected request: ${url}`);
   }, () => edgeHandler(deleteRequest()));
 
-  assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), { error: "invalid_or_expired_token" });
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error: "account_deletion_commit_failed",
+  });
   assert.equal(adminDeleteAttempted, false);
 });
 
@@ -307,8 +418,8 @@ test("a live-session UUID mismatch cannot redirect the administrative delete", a
     if (url.endsWith("/auth/v1/user")) {
       return Response.json({ id: userId });
     }
-    if (url.endsWith("/rest/v1/rpc/consume_account_deletion_grant")) {
-      return Response.json(otherUserId);
+    if (url.endsWith("/rest/v1/rpc/commit_account_deletion_operation")) {
+      return Response.json(committedDeletion(otherUserId));
     }
     if (url.includes("/auth/v1/admin/users/")) {
       adminDeleteAttempted = true;
@@ -318,6 +429,8 @@ test("a live-session UUID mismatch cannot redirect the administrative delete", a
   }, () => edgeHandler(deleteRequest()));
 
   assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), { error: "invalid_or_expired_token" });
+  assert.deepEqual(await response.json(), {
+    error: "invalid_or_expired_token",
+  });
   assert.equal(adminDeleteAttempted, false);
 });

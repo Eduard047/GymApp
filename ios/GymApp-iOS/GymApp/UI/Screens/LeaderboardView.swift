@@ -2270,12 +2270,7 @@ private struct FriendDetailView: View {
     }
 
     private func formatDay(_ raw: String) -> String {
-        let parser = DateFormatter()
-        parser.calendar = Calendar(identifier: .gregorian)
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: raw) else { return raw }
+        guard let date = SocialDayFormatting.parser.date(from: raw) else { return raw }
         var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
             .weekday(.abbreviated)
             .locale(AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
@@ -2416,12 +2411,7 @@ private struct FriendWorkoutReadOnlyDetailView: View {
     }
 
     private func formatDay(_ raw: String) -> String {
-        let parser = DateFormatter()
-        parser.calendar = Calendar(identifier: .gregorian)
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: raw) else { return raw }
+        guard let date = SocialDayFormatting.parser.date(from: raw) else { return raw }
         var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
             .weekday(.abbreviated)
             .locale(AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
@@ -2520,4 +2510,19 @@ private struct FriendWorkoutPickerSheet: View {
     private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
         gymText(english, ukrainian, russian, languageCode: gymCurrentLanguageCode())
     }
+}
+
+
+// Both callers are SwiftUI views. Keep the immutable parser on the main actor;
+// display locale remains part of each view's Date.FormatStyle.
+@MainActor
+private enum SocialDayFormatting {
+    static let parser: DateFormatter = {
+        let value = DateFormatter()
+        value.calendar = Calendar(identifier: .gregorian)
+        value.locale = Locale(identifier: "en_US_POSIX")
+        value.timeZone = TimeZone(secondsFromGMT: 0)
+        value.dateFormat = "yyyy-MM-dd"
+        return value
+    }()
 }

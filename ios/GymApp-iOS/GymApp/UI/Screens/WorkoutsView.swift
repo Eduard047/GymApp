@@ -477,12 +477,14 @@ public struct WorkoutsView: View {
                             gymText("History", "Історія", "История", languageCode: languageCode),
                             systemImage: "clock.arrow.circlepath"
                         )
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                 }
                 AppLanguageMenu()
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
 

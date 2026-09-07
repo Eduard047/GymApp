@@ -9,24 +9,90 @@ data class TrainingProgramSlot(val id: Long, val date: Long, val sessionId: Long
 data class TrainingProgram(val id: Long, val createdAt: Long, val days: Int, val goal: String,
                            val status: String, val slots: List<TrainingProgramSlot>)
 
-class TrainingProgramStore(context: Context, private val owner: String) {
-    private val preferences = context.getSharedPreferences("training-program-v1", Context.MODE_PRIVATE)
-    private val key = "program:$owner"
-    init { require(owner.length in 1..128 && owner.toByteArray().size <= 512) }
+internal interface TrainingProgramPersistence {
+    fun read(): String?
+    fun write(value: String?): Boolean
+}
 
-    fun load(): TrainingProgram? = preferences.getString(key, null)?.takeIf { it.toByteArray().size <= 32_768 }?.let { TrainingProgramCodec.decode(it, owner) }
-    fun clear(): Boolean = preferences.edit().remove(key).commit() && !preferences.contains(key)
-    fun save(program: TrainingProgram): Boolean {
-        val encoded = TrainingProgramCodec.encode(program, owner) ?: return false
-        return preferences.edit().putString(key, encoded).commit() && preferences.getString(key, null) == encoded
+class TrainingProgramStore internal constructor(
+    private val owner: String,
+    private val persistence: TrainingProgramPersistence
+) {
+    constructor(context: Context, owner: String) : this(owner, object : TrainingProgramPersistence {
+        private val preferences = context.getSharedPreferences("training-program-v1", Context.MODE_PRIVATE)
+        private val key = "program:$owner"
+        override fun read(): String? = preferences.getString(key, null)
+        override fun write(value: String?): Boolean = preferences.edit().putString(key, value).commit()
+    })
+
+    var hasError: Boolean = false
+        private set
+    private var committedRaw: String? = null
+    private var program: TrainingProgram? = null
+    init {
+        require(owner.length in 1..128 && owner.toByteArray().size <= 512)
+        reload()
     }
-    fun create(days: Int, goal: String, now: Long = System.currentTimeMillis()): Boolean {
-        require(days in 2..6 && goal.length <= 64)
-        val offsets = mapOf(2 to listOf(0,3),3 to listOf(0,2,4),4 to listOf(0,1,3,5),5 to listOf(0,1,2,3,4),6 to listOf(0,1,2,3,4,5)).getValue(days)
+
+    fun load(): TrainingProgram? = program
+
+    fun reload(): Boolean = runCatching {
+        val raw = persistence.read()
+        val value = raw?.let { requireNotNull(TrainingProgramCodec.decode(it, owner)) }
+        committedRaw = raw
+        program = value
+        hasError = false
+        true
+    }.getOrElse { hasError = true; false }
+
+    fun clear(): Boolean = runCatching {
+        val previous = persistence.read()
+        if (!persistence.write(null) || persistence.read() != null) {
+            persistence.write(previous)
+            hasError = true
+            false
+        } else {
+            committedRaw = null
+            program = null
+            hasError = false
+            true
+        }
+    }.getOrElse { hasError = true; false }
+
+    fun save(value: TrainingProgram): Boolean = runCatching {
+        check(!hasError && persistence.read() == committedRaw)
+        val encoded = requireNotNull(TrainingProgramCodec.encode(value, owner))
+        if (!persistence.write(encoded)) {
+            // A failed SharedPreferences commit may still update its in-memory map.
+            persistence.write(committedRaw)
+            error("Program write not confirmed")
+        }
+        check(persistence.read() == encoded)
+        committedRaw = encoded
+        program = value
+        true
+    }.getOrElse { hasError = true; false }
+
+    fun create(days: Int, goal: String, now: Long = System.currentTimeMillis(), replacingId: Long? = null): Boolean {
+        val current = load()
+        if (hasError || days !in 2..6 || goal.length > 64 ||
+            (if (current == null) replacingId != null else current.status != "completed" || current.id != replacingId)) return false
+        val offsets = mapOf(2 to listOf(0, 3), 3 to listOf(0, 2, 4), 4 to listOf(0, 1, 3, 5),
+            5 to listOf(0, 1, 2, 3, 4), 6 to listOf(0, 1, 2, 3, 4, 5)).getValue(days)
         val start = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
-        var nextId = now.coerceAtLeast(1); val slots = mutableListOf<TrainingProgramSlot>()
-        repeat(4) { week -> offsets.forEach { offset -> slots += TrainingProgramSlot(nextId++, start.plusDays((week*7+offset).toLong()).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()) } }
-        return save(TrainingProgram(now.coerceAtLeast(1), now, days, goal, "active", slots))
+        val id = maxOf(1, now, (current?.id ?: 0) + 1)
+        var nextId = id
+        val slots = mutableListOf<TrainingProgramSlot>()
+        repeat(4) { week -> offsets.forEach { offset ->
+            slots += TrainingProgramSlot(nextId++, start.plusDays((week * 7 + offset).toLong())
+                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())
+        } }
+        return save(TrainingProgram(id, now, days, goal, "active", slots))
+    }
+
+    fun reopen(): Boolean {
+        val current = load()?.takeIf { it.status == "completed" && it.slots.any { slot -> slot.sessionId == null } } ?: return false
+        return save(current.copy(status = "active"))
     }
     fun updateStatus(status: String): Boolean { val p=load()?:return false; if(p.status=="completed"||status !in setOf("active","paused","completed"))return false;return save(p.copy(status=status)) }
     fun next(program: TrainingProgram? = null): TrainingProgramSlot? { val resolved=program ?: load() ?: return null; return resolved.slots.firstOrNull{it.sessionId==null} }

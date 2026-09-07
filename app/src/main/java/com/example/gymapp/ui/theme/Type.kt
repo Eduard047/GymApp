@@ -7,9 +7,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val GymDataTypography = TextStyle(
-    fontFamily = FontFamily.Monospace,
+    fontFeatureSettings = "tnum",
+    fontFamily = FontFamily.SansSerif,
     fontWeight = FontWeight.SemiBold,
-    fontSize = 13.sp,
+    fontSize = 14.sp,
     lineHeight = 18.sp,
     letterSpacing = 0.sp
 )
@@ -70,15 +71,15 @@ val Typography = Typography(
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
-        fontSize = 13.sp,
+        fontSize = 14.sp,
         lineHeight = 18.sp,
         letterSpacing = 0.1.sp
     ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.45.sp
+        letterSpacing = 0.sp
     )
 )

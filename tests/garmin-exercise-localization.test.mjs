@@ -86,8 +86,8 @@ test("Garmin render localization never replaces synchronized exercise identity",
   const customName = "My custom carry";
   assert.equal(renderedExerciseName(customName, "uk"), customName);
   assert.equal(renderedExerciseName(customName, "ru"), customName);
-  assert.match(garminResourcesSource, /<jsonData id="ExerciseLabels" filename="exercise-labels\.json"\/>/);
-  assert.match(localizedFunction, /App\.loadResource\(Rez\.JsonData\.ExerciseLabels\)/);
+  assert.match(garminResourcesSource, /<string id="ExerciseLabels00">/);
+  assert.match(localizedFunction, /var shard = exerciseLabelShard\(name\)[\s\S]*App\.loadResource\(shards\[shard\]\)[\s\S]*shards = null/);
   assert.match(localizedFunction, /var label = name;/);
   assert.match(localizedFunction, /exerciseLabelCacheName = name;/);
   assert.match(localizedFunction, /exerciseLabelCacheLanguage = language;/);
@@ -100,7 +100,7 @@ test("Garmin render localization never replaces synchronized exercise identity",
   );
   assert.match(
     garminStoreSource,
-    /"exerciseName" => currentExercise\(\)/,
+    /recordedSet\(currentExercise\(\), weight, reps, statistics, restBefore, setInterval\)/,
     "completed workouts must keep the raw synchronized identity"
   );
   assert.match(
@@ -124,4 +124,30 @@ test("Garmin retains released aliases while unknown names pass through", () => {
     ru: "Сгибание рук"
   });
   assert.equal(renderedExerciseName("Imported custom exercise", "uk"), "Imported custom exercise");
+});
+
+
+test("Garmin native label shards preserve every translation without a JSON object graph", () => {
+  const merged = {};
+  assert.equal([...garminResourcesSource.matchAll(/<string id="ExerciseLabels[0-9]{2}">/g)].length, 16);
+  for (let index = 0; index < 16; index += 1) {
+    const suffix = index.toString().padStart(2, "0");
+    const match = garminResourcesSource.match(new RegExp(`<string id="ExerciseLabels${suffix}">([^<]*)</string>`));
+    assert.ok(match, "every native string shard is declared");
+    const packed = match[1].replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+    assert.ok(Buffer.byteLength(packed) <= 600, "a lookup must load a bounded string");
+    assert.equal(packed[0], "~");
+    for (const row of packed.slice(1).split("~")) {
+      const [name, uk, ru, ...extra] = row.split("|");
+      assert.equal(extra.length, 0);
+      assert.match(name, /^[\x20-\x7e]+$/);
+      assert.equal([...Buffer.from(name)].reduce((sum, byte) => sum + byte, 0) % 16, index, `wrong lookup shard for ${name}`);
+      assert.equal(merged[name], undefined, "each name has exactly one shard");
+      merged[name] = [uk, ru];
+    }
+  }
+  assert.deepEqual(merged, garminLabels);
+  assert.doesNotMatch(localizedFunction, /Lang\.Dictionary|Rez\.JsonData/);
+  assert.ok(localizedFunction.includes('name.find("|") == null && name.find("~") == null'),
+    "custom names containing separators remain literal text");
 });

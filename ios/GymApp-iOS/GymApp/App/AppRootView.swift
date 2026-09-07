@@ -836,43 +836,35 @@ private struct MainTabShell: View {
                 }
 
                 if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout {
-                    HStack(spacing: 10) {
-                        Image(systemName: "play.circle.fill")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(
-                                gymText(
-                                    "Workout in progress",
-                                    "Тренування триває",
-                                    "Тренировка идёт",
-                                    languageCode: languageCode
-                                )
-                            )
-                            .font(.subheadline.bold())
-                            Text("\(activeDraft.completedSetCount) / \(activeDraft.plannedSetCount)")
-                                .font(.caption.monospacedDigit())
-                        }
-                        Spacer(minLength: 8)
+                    HStack(alignment: .center, spacing: 12) {
                         Button {
                             showsAddWorkout = false
                             showsActiveWorkout = true
                         } label: {
-                            Text(
-                                gymText(
-                                    "Continue",
-                                    "Продовжити",
-                                    "Продолжить",
-                                    languageCode: languageCode
-                                )
-                            )
-                            .font(.subheadline.bold())
+                            HStack(spacing: 10) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.title2)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(gymText("Continue workout", "Продовжити тренування", "Продолжить тренировку", languageCode: languageCode))
+                                        .font(.subheadline.bold())
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text("\(activeDraft.completedSetCount) / \(activeDraft.plannedSetCount)")
+                                        .font(.subheadline.monospacedDigit())
+                                        .foregroundStyle(GymTheme.textSecondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(GymTheme.primary)
                         if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
                             Button(role: .destructive) {
                                 showingActiveDraftDiscardConfirmation = true
                             } label: {
                                 Image(systemName: "xmark")
-                                    .frame(width: 32, height: 32)
+                                    .frame(width: 44, height: 44)
                             }
                             .buttonStyle(.bordered)
                             .accessibilityLabel(
@@ -886,6 +878,7 @@ private struct MainTabShell: View {
                         }
                     }
                     .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, minHeight: 58)
                     .background(.regularMaterial)
                     .overlay(alignment: .bottom) { Divider() }

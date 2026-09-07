@@ -681,6 +681,14 @@ internal fun boundedGarminInboundEnvelopes(
                         GarminInboundCommandKind.SyncRequest
                     }
                 }
+                "workout_part" -> {
+                    val safe = GarminWorkoutTransfer.copyFrame(command) ?: continue
+                    val metadata = safe["metadata"] as? Map<*, *> ?: continue
+                    val requestId = metadata["requestId"] as? String ?: continue
+                    if (!isValidGarminMessageId(requestId, MAX_GARMIN_REQUEST_ID_LENGTH)) continue
+                    add(GarminInboundCommandEnvelope(GarminInboundCommandKind.Workout, safe))
+                    continue
+                }
                 "sync_ack" -> {
                     val syncId = command["syncId"] as? String ?: continue
                     val requestId = command["requestId"] as? String ?: continue

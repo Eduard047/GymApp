@@ -2,6 +2,10 @@
 
 Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearable devices listed in `manifest.xml`. Products whose installed device package cannot satisfy the app's Connect IQ 3.2 minimum are intentionally excluded. The UI is drawn from a 260x260 baseline and scales positions/sizes from the active `dc.getWidth()` / `dc.getHeight()` values, so higher-resolution round screens such as Venu 3 do not render the layout as a tiny fixed-size block.
 
+## Build pipeline
+
+Install the pinned build dependencies with `pnpm install --frozen-lockfile` before using either build helper. Both helpers use the same source preparation, native resource packing and PRG optimizer. The source pass disables type propagation and single-use copy propagation; the pinned patch preserves SDK array construction. The PRG pass retains argument-count checks and uses partial redundancy elimination without forbidden transformations. Native device limits remain enforced by the SDK. Release exports require the pinned Store signer and package readback before replacing an existing output.
+
 ## Current controls
 
 - Main dashboard uses a watch-first workout hierarchy: current heart rate and zone, elapsed time, Gym kcal, current planned set, exercise, weight/reps, and the live effort/rest status. Garmin kcal remains available in the workout summary.
@@ -22,7 +26,8 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 - Pause menu has `RESUME`, `SAVE`, and `DISCARD`.
 - `SAVE` opens a summary screen first; confirming there always saves the Garmin FIT activity, including workouts without manually logged sets or an Android phone connection. When the watch is securely paired with GymApp and sets were logged, the detailed GymApp summary is also queued for the phone.
 - `DISCARD` opens an explicit warning screen. `KEEP WORKOUT` is selected by default, `BACK` cancels, and only `YES, DISCARD` exits without saving the Garmin activity or sending the GymApp workout.
-- Finished workouts are queued locally until Garmin Connect can deliver them to the Android app.
+- Finished workouts remain queued locally until Garmin Connect can deliver them to a compatible phone client.
+- FIT finalization, queue append, queue recovery and final cleanup run in separate callbacks on Save. The saving screen consumes repeated input, and a failed stage returns to explicit retry. The durable owner/device/request marker remains authoritative across restarts.
 
 ## Workout data
 
@@ -30,12 +35,16 @@ Connect IQ watch app targeting the 108 API-compatible Garmin watches and wearabl
 - GymApp calculates its own strength-focused kcal estimate and also shows Garmin's reported kcal for comparison.
 - The phone app receives workout duration, Gym kcal, Garmin kcal, average/max HR, HR zones, and per-set duration, rest-before, start/peak/end HR, recovery drop, and detector confidence.
 - Exercise name, weight, and reps still require the selected values on the watch; heart rate cannot reliably infer exercise/kg/reps by itself.
+- On constrained-memory watches, per-set detector diagnostics are omitted from both the live set graph and outgoing payload, matching the compact restart checkpoint. Automatic set prompts, manual values, set intervals, workout heart-rate totals, and FIT recording remain available. The last set keeps its separate undo statistics only for the undo window.
 - Completed sets are committed once to the atomic active-workout snapshot. Low-memory profiles avoid periodic full-history serialization, so long mixed-order workouts do not repeatedly duplicate the complete set graph on the constrained Connect IQ heap.
-- Active snapshot v4 stores bounded exercise-catalog indices instead of repeating every exercise name. Legacy v2/v3 snapshots remain readable, while every catalog accepted by the phone's projected 60-set budget can no longer cross that budget around set 16.
+- FREE activities refresh a bounded checkpoint every 15 seconds and at lifecycle boundaries; bound compact workouts update only the empty-set header. Unpaired activities keep their separate watch-local journal. Resume restores elapsed time and metrics only after an explicit action. Pairing waits until that local activity is resolved; the journal never becomes a phone queue payload. A prepared/saved FIT phase prevents an uncertain save result from silently starting a duplicate activity after restart.
+- Compact active snapshot v6 commits a bounded header after immutable, epoch-bound set rows. Undo and replacement keep the previous committed prefix readable until the new header is durable. Legacy v2/v3/v4 snapshots remain readable, and numeric values retain their original precision.
+- Completed journal workouts pin their row bank. The queue writes bounded entries into an inactive slot before committing its small index; interrupted writes leave the previous index readable. Account/device/generation checks apply to the whole queue and every outgoing frame.
+- Large compact workouts use `workout_part` frames with one set each. Android and iOS persist the ordered transfer before partial acknowledgement and acknowledge the complete workout only after durable import. Update the phone client before distributing a watch build that uses these frames; older clients ignore them and the watch retains the queue.
 
 ## Auto set detection
 
-The watch estimates set/rest transitions from a bounded 10 Hz accelerometer movement score and heart-rate movement. The displayed HR remains Garmin's native current activity value (with direct sensor fallback); a three-sample median filter is used only for set/rest detection. Missing sensor data expires instead of leaving a stale number on screen, and a high but flat recovery heart rate cannot by itself start another set. Devices that cannot open the accelerometer stream automatically retain heart-rate-only detection.
+The watch estimates set/rest transitions from a bounded 25 Hz accelerometer movement score and heart-rate movement. The displayed HR remains Garmin's native current activity value (with direct sensor fallback); a three-sample median filter is used only for set/rest detection. Missing sensor data expires instead of leaving a stale number on screen, and a high but flat recovery heart rate cannot by itself start another set. Devices that cannot open the accelerometer stream automatically retain heart-rate-only detection.
 
 Detection is expressed as low, medium, or high confidence. High-confidence evidence can start a detected set, while medium confidence is shown as `SET?` instead of being treated as completed. Raw accelerometer samples are held only for the callback, are bounded before processing, and are never persisted or synchronized.
 
@@ -75,9 +84,12 @@ in automation.
 
 Development PRGs for Descent G1, Forerunner 55 / ForeAthlete 55, Instinct
 2/2S/2X, and Instinct Crossover use the stable compact hardware-key build and
-are compiled with debug metadata stripped. The five 96 KiB products require it;
-the shared `fr55` target uses it because the full 128 KiB build did not retain
-enough real loader/runtime headroom. The compact build preserves account/device
+are compiled with debug metadata stripped. The shared `fr55` target uses this
+profile because the full 128 KiB build did not retain enough runtime headroom.
+The current journal build still exceeds the five 96 KiB product limits:
+compilation and Store export remain blocked for those products until the
+program fits their native ceiling. The manifest retains their compatibility
+entries; lowering the SDK limit checks is not a supported build path. The compact build preserves account/device
 binding, completed sets, the FIT-before-queue commit, offline ordering, and the
 same tutorial. It checkpoints the live timeline in the atomic workout snapshot,
 but a process termination cannot reattach Garmin's native ActivityRecording
@@ -147,3 +159,7 @@ Store app.
 Android communication uses Garmin's official `ciq-companion-app-sdk` and requires Garmin Connect to be installed, running, and paired with the watch.
 
 The Garmin app id is `A72A5B9F4E3D4E5A8B72C1D9F6123E40`; it must remain identical in `manifest.xml` and the Android bridge.
+
+Compact watches read committed sets through bounded journal references and preserve exact numeric values when building phone frames. UTF-8 bounds use byte arrays to avoid allocating a numeric slot for every text byte; wire limits and account-binding validation remain unchanged.
+
+During recording, incoming phone messages remain enabled while periodic plan requests and automatic backlog uploads are deferred. The Ready screen retains manual plan synchronization, and queued workouts retry when recording is closed.

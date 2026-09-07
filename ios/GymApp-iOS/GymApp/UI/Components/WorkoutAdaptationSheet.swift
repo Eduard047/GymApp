@@ -44,20 +44,29 @@ struct WorkoutAdaptationSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let candidate {
-                        Text("\(request.source.plannedSetCount - request.source.completedSetCount) → \(candidate.plannedSetCount - candidate.completedSetCount) " + t("remaining sets", "підходів залишилось", "оставшихся подходов")).font(.headline)
+                        Text(t("Remaining sets", "Залишилось підходів", "Осталось подходов") + ": \(request.source.plannedSetCount - request.source.completedSetCount) → \(candidate.plannedSetCount - candidate.completedSetCount)")
+                            .font(.headline)
                         if request.reason == "timeCut" {
                             Text(t("Duration is an estimate, including rest between sets.", "Тривалість приблизна, з відпочинком між підходами.", "Длительность приблизительная, с отдыхом между подходами."))
+                                .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
                         }
-                        ForEach(candidate.exercises) { block in
-                            let pending = block.sets.filter { !$0.isCompleted }
-                            if !pending.isEmpty {
-                                let old = request.source.exercises.first { $0.sets.contains { $0.id == pending[0].id } }
-                                VStack(alignment: .leading, spacing: 8) {
-                                    if let old, old.exerciseID != block.exerciseID { Text(gymExerciseName(old.exerciseName ?? "") + " →").font(.subheadline) }
-                                    Text(gymExerciseName(block.exerciseName ?? "")).font(.headline)
-                                    ForEach(pending) { set in
-                                        let before = old?.sets.first { $0.id == set.id }
-                                        Text((before.map { "\($0.weight.formatted()) kg × \($0.reps) → " } ?? "") + "\(set.weight.formatted()) kg × \(set.reps)")
+                        ForEach(request.source.exercises) { old in
+                            let pending = old.sets.filter { !$0.isCompleted }
+                            let ids = Set(pending.map(\.id))
+                            let block = candidate.exercises.first { $0.sets.contains { ids.contains($0.id) && !$0.isCompleted } }
+                            let remaining = block?.sets.filter { ids.contains($0.id) && !$0.isCompleted } ?? []
+                            let replaced = block.map { $0.exerciseID != old.exerciseID } ?? false
+                            let changes = remaining.filter { set in replaced || pending.contains { $0.id == set.id && ($0.weight != set.weight || $0.reps != set.reps) } }
+                            if !pending.isEmpty && (pending.count != remaining.count || replaced || !changes.isEmpty) {
+                                GymPanel {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        if replaced { Text(gymExerciseName(old.exerciseName ?? "") + " →").font(.subheadline) }
+                                        Text(gymExerciseName(block?.exerciseName ?? old.exerciseName ?? "")).font(.headline)
+                                        Text(t("Remaining sets", "Залишилось підходів", "Осталось подходов") + ": \(pending.count) → \(remaining.count)")
+                                            .font(.subheadline)
+                                        ForEach(uniqueChanges(changes, before: pending, replaced: replaced), id: \.self) { value in
+                                            Text(value).font(.body.monospacedDigit())
+                                        }
                                     }
                                 }
                             }
@@ -86,6 +95,18 @@ struct WorkoutAdaptationSheet: View {
                 .onAppear { if request.reason == "tooHard" { candidate = WorkoutAdaptation.build(request.source, reason: request.reason, catalog: request.catalog) } }
         }
     }
+    private func uniqueChanges(_ sets: [ActiveWorkoutSet], before: [ActiveWorkoutSet], replaced: Bool) -> [String] {
+        let kg = t("kg", "кг", "кг")
+        var values: [String] = []
+        for set in sets {
+            let old = before.first { $0.id == set.id }
+            let prefix = !replaced ? old.map { "\($0.weight.formatted()) \(kg) × \($0.reps) → " } ?? "" : ""
+            let value = prefix + "\(set.weight.formatted()) \(kg) × \(set.reps)"
+            if !values.contains(value) { values.append(value) }
+        }
+        return values
+    }
+
     private func apply(_ candidate: ActiveWorkoutDraft) {
         do {
             guard request.catalog == workoutStore.exercises, request.history == workoutStore.allExerciseHistory(),

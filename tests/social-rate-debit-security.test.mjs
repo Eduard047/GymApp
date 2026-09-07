@@ -8,6 +8,8 @@ const durableDebitPath =
   "supabase/migrations/20260810003804_persist_social_rate_debits_on_domain_errors.sql";
 const deepHardeningPath =
   "supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql";
+const friendCodeBudgetPath =
+  "supabase/migrations/20260902162407_meter_friend_code_requests.sql";
 
 const sharedGatewayActions = [
   ["dashboard", "social_dashboard"],
@@ -69,7 +71,10 @@ function unwrapDurableDebitBody(body, action) {
   const debit =
     `  caller_user_id := gymapp_private.social_require_caller('${action}');`;
   const debitIndex = body.indexOf(debit);
-  assert.ok(debitIndex >= 0, `${action} must debit through social_require_caller`);
+  assert.ok(
+    debitIndex >= 0,
+    `${action} must debit through social_require_caller`,
+  );
 
   const nestedBegin = "\n\n  begin\n";
   const nestedBeginIndex = body.indexOf(
@@ -228,12 +233,18 @@ test("direct social RPCs and service-only live routes share the same aggregate a
     sharedDebit.indexOf("social_session_aggregate_debit(") >= 0 &&
       sharedDebit.indexOf("social_session_aggregate_debit(") < actionBucket,
   );
-  assert.match(aggregateDebit, /p_route not in \('social_live', 'social_gateway'\)/);
+  assert.match(
+    aggregateDebit,
+    /p_route not in \('social_live', 'social_gateway'\)/,
+  );
   assert.match(sharedDebit, /'social_live'/);
   assert.match(sessionHash, /'session:' \|\| p_session_id::text/);
   assert.match(serviceWrapper, /social_live_debit_budget\(/);
   assert.doesNotMatch(serviceWrapper, /social_live_gateway_debit_storage_v1\(/);
-  assert.match(perimeterWrapper, /social_session_aggregate_debit\(\s*'social_gateway'/);
+  assert.match(
+    perimeterWrapper,
+    /social_session_aggregate_debit\(\s*'social_gateway'/,
+  );
 
   for (const [domainAction, gatewayAction] of sharedGatewayActions) {
     assert.match(
@@ -242,7 +253,10 @@ test("direct social RPCs and service-only live routes share the same aggregate a
     );
   }
   assert.match(directBoundary, /social_live_debit_budget\(/);
-  assert.match(directBoundary, /consume_social_rate_limit\(caller_user_id, p_action\)/);
+  assert.match(
+    directBoundary,
+    /consume_social_rate_limit\(caller_user_id, p_action\)/,
+  );
   assert.match(directBoundary, /errcode = 'PT429'/);
   assert.match(
     directBoundary,
@@ -290,10 +304,15 @@ test("later direct social RPCs durably restore aggregate, mapped-action, and dom
     friendPageStorage,
     /gymapp_private\.social_friend_workout_page_base_storage_v1\(/,
   );
-  assert.doesNotMatch(friendPageStorage, /public\.social_friend_workout_page_base_v1/);
+  assert.doesNotMatch(
+    friendPageStorage,
+    /public\.social_friend_workout_page_base_v1/,
+  );
   assert.ok(
     commitRejection.indexOf("social_live_debit_budget(") <
-      commitRejection.indexOf("perform gymapp_private.consume_social_rate_limit("),
+      commitRejection.indexOf(
+        "perform gymapp_private.consume_social_rate_limit(",
+      ),
   );
   assert.match(
     commitRejection,
@@ -417,5 +436,52 @@ test("every remaining public social_require_caller route uses the durable direct
   assert.match(
     hardening,
     /revoke all on function gymapp_private\.social_execute_direct_worker\(text, jsonb\)\s+from public, anon, authenticated, service_role/,
+  );
+});
+
+test("friend-code lookup preserves v1 while sharing aggregate and bounded read-action debits", async () => {
+  const migration = await readFile(friendCodeBudgetPath, "utf8");
+  const worker = functionBody(
+    migration,
+    "gymapp_private.social_my_friend_code_direct_worker",
+  );
+  const wrapper = functionBody(migration, "public.social_my_friend_code");
+
+  assert.match(
+    migration,
+    /alter function public\.social_my_friend_code\(\)[\s\S]*set schema gymapp_private/,
+  );
+  assert.match(
+    migration,
+    /rename to social_my_friend_code_storage_v1/,
+  );
+  assert.ok(
+    worker.indexOf("social_begin_direct_request()") <
+      worker.indexOf("social_require_caller('friend_details')"),
+  );
+  assert.ok(
+    worker.indexOf("social_require_caller('friend_details')") <
+      worker.indexOf("social_my_friend_code_storage_v1()"),
+  );
+  assert.equal(
+    (worker.match(/social_commit_direct_rejection\(\s*'friend_details'/g) ?? [])
+      .length,
+    2,
+  );
+  assert.match(worker, /when sqlstate 'PT429' then/);
+  assert.match(
+    worker,
+    /when sqlstate '22023' or sqlstate 'P0001' or sqlstate 'P0002' then/,
+  );
+  assert.doesNotMatch(worker, /when\s+others/i);
+  assert.match(wrapper, /social_my_friend_code_direct_worker\(\)/);
+  assert.doesNotMatch(wrapper, /social_my_friend_code_storage_v1/);
+  assert.match(
+    migration,
+    /revoke all on function gymapp_private\.social_my_friend_code_storage_v1\(\)[\s\S]*from public, anon, authenticated, service_role/,
+  );
+  assert.match(
+    migration,
+    /grant execute on function public\.social_my_friend_code\(\)[\s\S]*to authenticated/,
   );
 });

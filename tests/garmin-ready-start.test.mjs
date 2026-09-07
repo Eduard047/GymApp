@@ -97,8 +97,8 @@ test("durable unfinished state is resumable while an empty snapshot remains a to
   assert.match(unfinished, /activeWorkoutSnapshotValid/);
   assert.match(unfinished, /timelineBase\[0\] > 0/);
   assert.doesNotMatch(unfinished, /return activeWorkoutSnapshotValid;/);
-  assert.match(view, /function readyPrimaryText\(\)[\s\S]*hasWorkoutToResume\(\)/);
-  assert.match(view, /"RESUME WORKOUT", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ"/);
+  assert.match(view, /function readyActionText\(index\)[\s\S]*hasWorkoutToResume\(\)/);
+  assert.match(view, /"RESUME", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ"/);
 });
 
 test("Ready exposes manual Sync while a bounded retry drains only durable pending work", async () => {
@@ -147,14 +147,18 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   const ready = section(view, "(:fullLegacyState)\n    function drawReady(dc, w, h)", "(:compactRichRecovery)\n    function drawReady(dc, w, h)");
   assert.match(ready, /readyActionCount\(\) == 4[\s\S]*i < 4[\s\S]*readyActionText\(i\)/);
   const compactReady = section(view, "(:compactRichRecovery)\n    function drawReady(dc, w, h)", "(:compactRecovery96)\n    function drawReady(dc, w, h)");
-  assert.match(compactReady, /readyActionText\(selected\)/);
-  assert.match(view, /"START WORKOUT", "ПОЧАТИ ТРЕН\.", "НАЧАТЬ ТРЕН\."/);
+  const compactMenu = section(view, "function drawCompactReady(dc, w, h)", "function startTutorial()");
+  assert.match(compactReady, /drawCompactReady\(dc, w, h\)/);
+  assert.match(compactMenu, /i < count[\s\S]*readyActionText\(i\)/);
+  assert.match(compactMenu, /fillRoundedRectangle/);
+  assert.match(compactMenu, /hasWorkoutToResume\(\)[\s\S]*GymSession\.elapsedText\(\)/);
+  assert.match(view, /"START PLAN", "ПОЧАТИ ПЛАН", "НАЧАТЬ ПЛАН"/);
   assert.match(view, /"FREE WORKOUT", "ВІЛЬНЕ ТРЕН\.", "СВОБ\. ТРЕН\."/);
   assert.match(view, /"FREE MODE", "ВІЛЬНИЙ РЕЖИМ", "СВОБ\. РЕЖИМ"/);
   assert.match(view, /"SYNC PLAN", "СИНХ\. ПЛАН", "СИНХ\. ПЛАН"/);
   assert.match(view, /"NOT PAIRED", "НЕ ПРИВ'ЯЗАНО", "НЕ СОПРЯЖЕНО"/);
-  assert.match(view, /"SYNC ", "СИНХ ", "СИНХ "/);
-  assert.match(view, /" WAITING · LAST ", " ЧЕКАЄ · ОСТ\. ", " ЖДУТ · ПОСЛ\. "/);
+  assert.match(view, /"READY", "ГОТОВО", "ГОТОВО"/);
+  assert.match(view, /"TO SYNC: ", "У ЧЕРЗІ: ", "В ОЧЕРЕДИ: "/);
   const binding = section(
     view,
     "function readyBindingText()",
@@ -162,8 +166,8 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   );
   assert.match(binding, /readyStatusText\(\)/);
   assert.doesNotMatch(binding, /accountBinding|deviceBinding|CloudDeviceToken/);
-  assert.match(compactReady, /"GYMAPP READY", "GYMAPP ГОТОВ", "GYMAPP ГОТОВО"/);
-  assert.match(compactReady, /w >= 200 \? Gfx\.FONT_SMALL : Gfx\.FONT_XTINY/);
+  assert.doesNotMatch(compactMenu, /selected \+ 1/);
+  assert.match(compactMenu, /fitTextWidth\(dc, readyActionText\(i\), font, width - 12\)/);
 });
 
 test("free workout mode is explicit, owner-bound, resume-safe, and omits plan progress", async () => {
@@ -179,6 +183,6 @@ test("free workout mode is explicit, owner-bound, resume-safe, and omits plan pr
   assert.match(mode, /GymStore\.pairingGeneration/);
   assert.match(mode, /GymStore\.hasUnfinishedWorkout\(\)/);
   assert.match(store, /if \(!GymWorkoutMode\.isPlanned\(\) \|\| plan\.size\(\) == 0\)/);
-  assert.match(store, /if \(!freeMode && plan\.size\(\) > 0\)/);
+  assert.match(store, /if \(!freeMode && context\[7\] > 0\)/);
   assert.match(store, /var wasPlannedSet = GymWorkoutMode\.isPlanned\(\) &&/);
 });

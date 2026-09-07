@@ -1,0 +1,14 @@
+diff --git a/build/chunk-YPHK67BN.cjs b/build/chunk-YPHK67BN.cjs
+index 163ec72ee3e0d81a5521c8b8cf01477d303dcbe7..9620990c45289c5b5008f862f51f4ce0ee90f93e 100644
+--- a/build/chunk-YPHK67BN.cjs
++++ b/build/chunk-YPHK67BN.cjs
+@@ -22864,7 +22864,8 @@ function optimizeFunc(func, context) {
+       changes: interpChanges
+     } = interpFunc(func, context);
+     changes = interpChanges || changes;
+-    changes = doArrayInits(func, liveInState, context) || changes;
++    // Preserve SDK array construction: rewriting nested constant arrays in
++    // 1.2.6 can emit a Number where the VM expects an Array or Object.
+     if (changes) continue;
+     changes = blockSharing(func, context) || changes;
+     if (changes) continue;

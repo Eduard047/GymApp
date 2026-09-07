@@ -218,34 +218,22 @@ if (-not $Release) {
         }
     }
 }
+$nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCommand) {
+    throw 'Node.js is required. Install dependencies with pnpm install --frozen-lockfile.'
+}
+$nodePath = $nodeCommand.Source
 $compilerArgs = @(
-    '-f', 'monkey.jungle',
-    '-y', $DeveloperKey,
-    '-o', $temporaryOutput,
-    '-w'
+    (Join-Path $PSScriptRoot 'build-garmin-program.mjs'),
+    '--sdk', $sdkPath,
+    '--developer-key', $DeveloperKey,
+    '--output', $temporaryOutput,
+    '--java-home', (Split-Path -Parent (Split-Path -Parent $javaPath))
 )
 if ($Release) {
-    $compilerArgs += @('-r', '-e')
+    $compilerArgs += '--export'
 } else {
-    $compilerArgs += @('-d', $Device)
-    # These constrained CIQ watch-app targets need debug metadata stripped to
-    # stay within their loader limit. Runtime workout/FIT/sync code is unchanged.
-    $constrainedDevices = @(
-        'descentg1',
-        'enduro',
-        'fenix6',
-        'fenix6s',
-        'fr245',
-        'fr55',
-        'instinct2',
-        'instinct2s',
-        'instinct2x',
-        'instinctcrossover',
-        'venusq'
-    )
-    if ($constrainedDevices -contains $Device) {
-        $compilerArgs += '-r'
-    }
+    $compilerArgs += @('--device', $Device)
 }
 
 $releaseGateFailure = $null
@@ -254,13 +242,13 @@ try {
     try {
         if ($Release) {
             $releaseGateFailure = 'Garmin release compilation failed.'
-            & $monkeycPath @compilerArgs *> $null
+            & $nodePath @compilerArgs *> $null
             if ($LASTEXITCODE -ne 0) {
                 throw [System.InvalidOperationException]::new('Release gate failed.')
             }
             $releaseGateFailure = $null
         } else {
-            & $monkeycPath @compilerArgs
+            & $nodePath @compilerArgs
             if ($LASTEXITCODE -ne 0) {
                 throw "Garmin build failed with exit code $LASTEXITCODE"
             }

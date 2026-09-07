@@ -1,56 +1,97 @@
 # `delete-account` Edge Function
 
-Authenticated, irreversible deletion of the caller's own Supabase Auth user. The function has no runtime package dependencies.
+Authenticated, irreversible deletion of the caller's own Supabase Auth user. The
+function has no runtime package dependencies.
 
 This repository-root directory is the canonical source of truth. Do not add a
 second function copy under a platform directory. The machine-readable
 [deployment contract](deployment-contract.json) pins the reviewed source hash,
 the last observed production version, and the release gate.
 
-Last observed production deployment: version 16 was `ACTIVE` with
-`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-08-28. Its deployed
-source byte-for-byte matched repository contract 5 with canonical SHA-256
-`a90be7db99f47a8a96a9bb0ba4b7c76a9a38b65db9ae3d6f825a2ec94952ccc4`;
-repository contract 6 and its database-enforced preparation budget are newer,
-so the deployment contract release gate is closed until an explicitly approved
-deployment and readback. The earlier one-time reauthentication grant, durable
-verified-identity budget, HMAC secret, and service-only wrapper were applied and
-read back before the observed function deployment.
+Last observed production deployment: version 19 was `ACTIVE` with
+`verify_jwt=true` in project `owrcbsrectdgaotndtxy` on 2026-09-02. Its deployed
+source and shared budget helper byte-for-byte matched repository contract 7 with
+canonical SHA-256 values
+`61b20eb4d80815f2474a82100fdfa1836e7f25989363809ffbe0dfb96fef1e2f` and
+`610b8b563da81cfe4932b7771fc76964f3d486ccff5281b90be8fbb80de73dba`;
+the preparation budget, verified-identity budget, and version-2 committed
+deletion-operation migrations were all read back from production. The
+deployment contract release gate is therefore open.
 
 Security properties:
 
 - accepts only `POST` with `Content-Type: application/json`;
-- accepts only the exact prepare body `{ "action": "prepare" }` or delete body `{ "action": "delete", "confirmation": "DELETE", "grant": "<uuid>" }`;
-- verifies the caller's bearer token and current Auth user with `GET /auth/v1/user` using a publishable/anon key;
-- after Auth validation, durably meters final deletion by an HMAC-pseudonymized account identity, so one account cannot consume another account's allowance;
-- preparation is independently rate-limited at the database boundary, requires a password-authenticated JWT no older than five minutes, and replaces the caller's sole five-minute capability bound to the exact user and Auth session;
-- deletion atomically consumes that one-time capability while locking and validating the same live Auth session;
-- requires the Auth user UUID and consumed-grant RPC UUID to match exactly before deletion;
-- hard-deletes that exact user through `DELETE /auth/v1/admin/users/{id}` with a new Supabase secret key or the legacy `SUPABASE_SERVICE_ROLE_KEY`;
-- never logs tokens, keys, request bodies, email addresses, or upstream error bodies;
+- accepts only the exact prepare body `{ "action": "prepare" }` or delete body
+  `{ "action": "delete", "confirmation": "DELETE", "grant": "<uuid>" }`;
+- verifies the caller's bearer token and current Auth user with
+  `GET /auth/v1/user` using a publishable/anon key;
+- after Auth validation, durably meters final deletion by an HMAC-pseudonymized
+  account identity, so one account cannot consume another account's allowance;
+- preparation is independently rate-limited at the database boundary, requires a
+  password-authenticated JWT no older than five minutes, and replaces the
+  caller's sole five-minute capability bound to the exact user and Auth session;
+- deletion atomically consumes that one-time capability through the versioned
+  `commit_account_deletion_operation` RPC and commits one private, idempotent
+  version-2 operation while holding a `SHARE` lock on the exact live Auth
+  session;
+- treats that database commit as the irreversible authorization point: a
+  revocation that commits first blocks deletion, while a later revocation does
+  not cancel the already-authorized administrative delete;
+- resumes the same operation after an administrative transport/storage failure
+  either with the exact current replay binding or with a newly prepared,
+  password-bound grant from another live session; recovery rotates one digest
+  instead of accumulating replay rows;
+- requires the Auth user UUID and committed-operation user UUID to match exactly
+  and validates the bounded operation UUID/timestamp before deletion;
+- hard-deletes that exact user through `DELETE /auth/v1/admin/users/{id}` with a
+  new Supabase secret key or the legacy `SUPABASE_SERVICE_ROLE_KEY`;
+- never logs tokens, keys, request bodies, email addresses, or upstream error
+  bodies;
 - returns bounded, generic errors with `Cache-Control: no-store`;
-- rejects browser-origin requests unless one exact origin is configured and matched; native iOS requests do not send a browser `Origin` header.
+- rejects browser-origin requests unless one exact origin is configured and
+  matched; native iOS requests do not send a browser `Origin` header.
 
-Official references: [Supabase Edge Function auth](https://supabase.com/docs/guides/functions/auth), [authorization headers](https://supabase.com/docs/guides/functions/auth-headers), [function secrets](https://supabase.com/docs/guides/functions/secrets), [admin deleteUser](https://supabase.com/docs/reference/javascript/auth-admin-deleteuser), and [user deletion caveats](https://supabase.com/docs/guides/auth/managing-user-data#deleting-users).
+Official references:
+[Supabase Edge Function auth](https://supabase.com/docs/guides/functions/auth),
+[authorization headers](https://supabase.com/docs/guides/functions/auth-headers),
+[function secrets](https://supabase.com/docs/guides/functions/secrets),
+[admin deleteUser](https://supabase.com/docs/reference/javascript/auth-admin-deleteuser),
+and
+[user deletion caveats](https://supabase.com/docs/guides/auth/managing-user-data#deleting-users).
 
 ## Environment
 
 Required:
 
 - `SUPABASE_URL`
-- one of `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_PUBLISHABLE_KEYS` (JSON containing a `default` or other named key), or legacy `SUPABASE_ANON_KEY`
-- one of `SUPABASE_SECRET_KEY`, `SUPABASE_SECRET_KEYS` (JSON containing a `default` or other named key), or legacy `SUPABASE_SERVICE_ROLE_KEY` — server-only; never put any of these values in the iOS app, source control, screenshots, Review Notes, or client logs
-- `GATEWAY_PREAUTH_HMAC_SECRET` — 32 random bytes encoded as 64 hexadecimal characters; server-only and used only to pseudonymize a verified account identity
+- one of `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_PUBLISHABLE_KEYS` (JSON
+  containing a `default` or other named key), or legacy `SUPABASE_ANON_KEY`
+- one of `SUPABASE_SECRET_KEY`, `SUPABASE_SECRET_KEYS` (JSON containing a
+  `default` or other named key), or legacy `SUPABASE_SERVICE_ROLE_KEY` —
+  server-only; never put any of these values in the iOS app, source control,
+  screenshots, Review Notes, or client logs
+- `GATEWAY_PREAUTH_HMAC_SECRET` — 32 random bytes encoded as 64 hexadecimal
+  characters; server-only and used only to pseudonymize a verified account
+  identity
 
 Optional:
 
-- `DELETE_ACCOUNT_ALLOWED_ORIGIN=https://your-web-app.example` enables browser preflight for exactly that origin. Native iOS requests don't require CORS. When unset, browser preflight is denied.
+- `DELETE_ACCOUNT_ALLOWED_ORIGIN=https://your-web-app.example` enables browser
+  preflight for exactly that origin. Native iOS requests don't require CORS.
+  When unset, browser preflight is denied.
 
 Keep the platform's per-function `verify_jwt` setting enabled (the default). The
-function retains its `/auth/v1/user` validation, then atomically consumes the
-one-time grant immediately before the admin call. Both grant RPCs are available
+function retains its `/auth/v1/user` validation, then atomically commits the
+one-time operation immediately before the admin call. Preparation, the versioned
+commit RPC, and the UUID-returning rolling-deploy compatibility RPC are available
 only to `authenticated`, use an empty search path, and derive the user/session
-identity exclusively from signed JWT claims.
+identity exclusively from signed JWT claims. Both commit RPCs enter the same
+private implementation, so an older Edge bundle remains safe while the migration
+and new bundle roll out. The private operation journal cascades with the Auth user
+and stores only UUIDs, one current replay grant digest, status, and commit time.
+It intentionally survives exact-session revocation so the same committed
+operation can resume, while a new live-session recovery still requires a fresh
+password-bound grant; it disappears with successful Auth user deletion.
 
 ## Request
 
@@ -66,26 +107,36 @@ After a successful fresh password sign-in, preparation returns a five-minute
 `grant`. Send it once with:
 
 ```json
-{"action":"delete","confirmation":"DELETE","grant":"<uuid>"}
+{ "action": "delete", "confirmation": "DELETE", "grant": "<uuid>" }
 ```
 
 Success:
 
 ```json
-{"deleted":true}
+{ "deleted": true }
 ```
 
-The client should then erase its local session and cached account data and return to the signed-out state. Supabase notes that deleting an Auth user does not automatically invalidate already-issued JWTs before they expire.
+The client should then erase its local session and cached account data and
+return to the signed-out state. Supabase notes that deleting an Auth user does
+not automatically invalidate already-issued JWTs before they expire.
 
 ## Mandatory data-deletion preflight
 
-This function deletes the Auth user. Before shipping the in-app deletion UI, verify all associated data is actually removed:
+This function deletes the Auth user. Before shipping the in-app deletion UI,
+verify all associated data is actually removed:
 
-1. Foreign keys from app-owned rows to `auth.users(id)` use the intended `ON DELETE CASCADE`, or the server deletes those rows before the Auth user.
-2. The user owns no Supabase Storage objects at deletion time. Supabase Auth refuses to delete a user who still owns Storage objects; add explicit cleanup if GymApp stores uploads.
-3. Data in private schemas, logs, backups, email systems, support tools, analytics, and other processors follows the retention disclosed in the privacy policy.
-4. A test account deletion removes Auth, profile, workout, progress, and storage records while preserving only data that law requires you to retain.
-5. The app clears its local Keychain/session and UserDefaults account data after a successful response.
+1. Foreign keys from app-owned rows to `auth.users(id)` use the intended
+   `ON DELETE CASCADE`, or the server deletes those rows before the Auth user.
+2. The user owns no Supabase Storage objects at deletion time. Supabase Auth
+   refuses to delete a user who still owns Storage objects; add explicit cleanup
+   if GymApp stores uploads.
+3. Data in private schemas, logs, backups, email systems, support tools,
+   analytics, and other processors follows the retention disclosed in the
+   privacy policy.
+4. A test account deletion removes Auth, profile, workout, progress, and storage
+   records while preserving only data that law requires you to retain.
+5. The app clears its local Keychain/session and UserDefaults account data after
+   a successful response.
 
 This production preflight passed again on 2026-07-22 with a disposable account
 that owned a profile, cloud state/projection, Garmin device, and two plans. The
@@ -136,8 +187,8 @@ curl -i \
   --data '{"action":"prepare"}'
 ```
 
-Also test missing/invalid bearer token, a globally signed-out or administratively
-revoked session whose JWT has not yet expired, wrong method, non-JSON media type,
-malformed JSON, wrong confirmation, extra fields, oversized body, grant RPC
-failure, Storage ownership failure, and repeat deletion. Never use a real customer
-account for these tests.
+Also test missing/invalid bearer token, a globally signed-out or
+administratively revoked session whose JWT has not yet expired, wrong method,
+non-JSON media type, malformed JSON, wrong confirmation, extra fields, oversized
+body, grant RPC failure, Storage ownership failure, and repeat deletion. Never
+use a real customer account for these tests.

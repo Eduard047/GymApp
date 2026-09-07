@@ -1545,7 +1545,8 @@ public final class WorkoutStore: ObservableObject {
                 throw WorkoutStoreError.workoutExerciseNotFound
             }
             state.workouts[workoutIndex].exercises.removeAll { $0.id == workoutExerciseID }
-            if state.workouts[workoutIndex].exercises.isEmpty {
+            if state.workouts[workoutIndex].exercises.isEmpty &&
+                !hasRecordedActivityMetrics(state.workouts[workoutIndex]) {
                 state.workouts.remove(at: workoutIndex)
             }
         }
@@ -1596,8 +1597,8 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
-    /// Mirrors Android cleanup: deleting the final set removes its exercise block;
-    /// deleting the final block removes the workout session.
+    /// Deleting the final set removes its exercise block. An enriched watch
+    /// activity returns to its metrics-only form when its last block is removed.
     public func deleteSet(
         workoutID: UUID,
         workoutExerciseID: UUID,
@@ -1619,7 +1620,8 @@ public final class WorkoutStore: ObservableObject {
             if state.workouts[location.workout].exercises[location.block].sets.isEmpty {
                 state.workouts[location.workout].exercises.remove(at: location.block)
             }
-            if state.workouts[location.workout].exercises.isEmpty {
+            if state.workouts[location.workout].exercises.isEmpty &&
+                !hasRecordedActivityMetrics(state.workouts[location.workout]) {
                 state.workouts.remove(at: location.workout)
             }
         }
@@ -4406,6 +4408,12 @@ public final class WorkoutStore: ObservableObject {
 
     private static func isActivityOnlyWorkout(_ workout: WorkoutSession) -> Bool {
         workout.exercises.isEmpty && workout.durationSeconds.map { $0 > 0 } == true
+    }
+
+    func hasRecordedActivityMetrics(_ workout: WorkoutSession) -> Bool {
+        workout.durationSeconds.map { $0 > 0 } == true && activityOnlyCloudItems.contains {
+            $0.workoutStartedAt == workout.date.gymEpochMilliseconds
+        }
     }
 
     private static func blockLocation(

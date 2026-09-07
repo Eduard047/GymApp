@@ -7,6 +7,18 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 object DateTimeUtils {
+    // DateTimeFormatter is immutable. Locale stays in the key; the current zone
+    // is still applied to each timestamp before formatting.
+    private val formatters = LinkedHashMap<Pair<String, Locale>, DateTimeFormatter>()
+
+    private fun formatter(pattern: String, locale: Locale): DateTimeFormatter = synchronized(formatters) {
+        val key = pattern to locale
+        formatters[key] ?: DateTimeFormatter.ofPattern(pattern, locale).also {
+            if (formatters.size >= 16) formatters.remove(formatters.keys.first())
+            formatters[key] = it
+        }
+    }
+
     private val ukrainianGenitiveMonths = listOf(
         "січня",
         "лютого",
@@ -42,7 +54,7 @@ object DateTimeUtils {
         locale: Locale = Locale.getDefault(),
         zoneId: ZoneId = ZoneId.systemDefault()
     ): String {
-        val formatter = DateTimeFormatter.ofPattern("LLLL yyyy", locale)
+        val formatter = formatter("LLLL yyyy", locale)
         return YearMonth.now(zoneId)
             .plusMonths(monthOffset.toLong())
             .atDay(1)
@@ -55,7 +67,7 @@ object DateTimeUtils {
         locale: Locale = Locale.getDefault(),
         zoneId: ZoneId = ZoneId.systemDefault()
     ): String {
-        val formatter = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", locale)
+        val formatter = formatter("EEE, d MMM yyyy", locale)
         return Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().format(formatter)
     }
 
@@ -66,10 +78,10 @@ object DateTimeUtils {
     ): String {
         val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
         if (locale.language.equals("uk", ignoreCase = true)) {
-            val weekday = date.format(DateTimeFormatter.ofPattern("EEEE", locale))
+            val weekday = date.format(formatter("EEEE", locale))
             return "$weekday, ${date.dayOfMonth} " +
                 "${ukrainianGenitiveMonths[date.monthValue - 1]} ${date.year}"
         }
-        return date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale))
+        return date.format(formatter("EEEE, d MMMM yyyy", locale))
     }
 }

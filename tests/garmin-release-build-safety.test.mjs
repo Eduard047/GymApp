@@ -103,7 +103,7 @@ test("Garmin release scripts pin RSA-4096 and preserve outputs until readback", 
   );
   assert.match(shell, /--sanitize-debug-paths[\s\S]*>\/dev\/null 2>&1/);
   assert.match(shell, /--sanitize-debug-paths[\s\S]*"\$project_root"/);
-  assert.match(shell, /"\$monkeyc" "\$\{compiler_args\[@\]\}" >\/dev\/null 2>&1/);
+  assert.match(shell, /"\$node_command" "\$\{compiler_args\[@\]\}" >\/dev\/null 2>&1/);
   assert.match(shell, /mv -f -- "\$sanitized_release_output" "\$output"/);
   assert.doesNotMatch(shell, /rm -f -- "\$output"/);
   assert.match(powershell, /--sanitize-debug-paths/);
@@ -114,7 +114,7 @@ test("Garmin release scripts pin RSA-4096 and preserve outputs until readback", 
   );
   assert.match(powershell, /--sanitize-debug-paths[^\n]*\*> \$null/);
   assert.match(powershell, /--sanitize-debug-paths[^\n]*\$projectRoot/);
-  assert.match(powershell, /& \$monkeycPath @compilerArgs \*> \$null/);
+  assert.match(powershell, /& \$nodePath @compilerArgs \*> \$null/);
   assert.match(
     powershell,
     /\[System\.IO\.File\]::Move\(\$sanitizedReleaseOutput, \$output, \$true\)/,
@@ -508,6 +508,17 @@ test(
         copyFile("scripts/build-garmin.sh", join(scripts, "build-garmin.sh")),
         copyFile("scripts/build-garmin.ps1", join(scripts, "build-garmin.ps1")),
         copyFile("scripts/VerifyGarminIq.java", join(scripts, "VerifyGarminIq.java")),
+        // Isolate the shell/PowerShell publication gates from source compilation.
+        // The real program builder's independent signer gate is exercised below.
+        writeFile(join(scripts, "build-garmin-program.mjs"), `
+          import { spawnSync } from "node:child_process";
+          import path from "node:path";
+          const args = process.argv.slice(2);
+          const sdk = args[args.indexOf("--sdk") + 1];
+          const output = args[args.indexOf("--output") + 1];
+          const result = spawnSync(path.join(sdk, "bin", "monkeyc"), ["-o", output], { stdio: "inherit" });
+          process.exit(result.status ?? 1);
+        `),
         writeFile(join(garmin, "monkey.jungle"), "# synthetic fixture\n"),
         writeFile(join(connectIq, "current-sdk.cfg"), `${sdk}\n`),
         writeFile(join(sdkBin, "monkeybrains.jar"), "synthetic fixture"),
@@ -617,6 +628,17 @@ test(
         assert.match(failure.stdout + failure.stderr, /pinned Store identity/);
         assert.equal(existsSync(marker), false, "fingerprint override bypassed the Store pin");
       }
+
+      await rm(marker, { force: true });
+      const builderFailure = run(process.execPath, [
+        "scripts/build-garmin-program.mjs", "--sdk", sdk,
+        "--developer-key", key4096Der, "--export",
+        "--output", join(outputRoot, "unapproved.iq"),
+      ], { env: environment });
+      assert.notEqual(builderFailure.status, 0);
+      assert.match(builderFailure.stdout + builderFailure.stderr, /pinned Store identity/);
+      assert.equal(existsSync(marker), false, "program builder compiled with an unapproved signer");
+      assert.equal(existsSync(join(outputRoot, "unapproved.iq")), false);
 
       const oldOutput = join(outputRoot, "gymapp-garmin-connect-iq.iq");
       await writeFile(oldOutput, "previous validated artifact");

@@ -1798,6 +1798,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             publishStatus("This Garmin device selection is no longer valid. Start it again in GymApp.", isError: true)
             return true
         }
+        if let activeStorageKey { workoutTransferStore.clear(account: activeStorageKey) }
         rawDevices = Dictionary(
             uniqueKeysWithValues: selected.map { ($0.uuid as UUID, $0) }
         )
@@ -1821,6 +1822,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     private func activate(_ session: AppAccountSession?) {
         if let previousStorageKey = activeStorageKey {
             clearPendingDeviceSelection(storageKey: previousStorageKey)
+            if previousStorageKey != session?.storageKey {
+                workoutTransferStore.clear(account: previousStorageKey)
+            }
         }
         pendingDeviceSelection = nil
         connectIQ.unregisterAllDeviceEvents(delegate: self)
@@ -2006,6 +2010,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                 receiveSyncAcknowledgement(message, from: app)
             case "create_workout":
                 receiveWorkout(message, from: app)
+            case "workout_part":
+                receiveWorkoutPart(message, from: app)
             default:
                 continue
             }
@@ -2273,7 +2279,29 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         syncInFlight.removeValue(forKey: deviceID)
     }
 
-    private func receiveWorkout(_ rawMessage: Any, from app: IQApp) {
+    private let workoutTransferStore = GarminPhoneWorkoutTransferStore()
+
+    private func receiveWorkoutPart(_ frame: Any, from app: IQApp) {
+        guard let binding = binding(for: app.device), isBindingConfirmed(binding),
+              let store = readyWorkoutStore(), let storageKey = activeStorageKey,
+              let step = workoutTransferStore.accept(account: storageKey, device: binding.device,
+                  frame: frame, binding: binding), readyWorkoutStore() === store else { return }
+        if let complete = step.completeMessage {
+            if receiveWorkout(complete, from: app) {
+                workoutTransferStore.clear(account: storageKey, device: binding.device)
+            }
+        } else if let frame = frame as? [String: Any],
+                  let metadata = frame["metadata"] as? [String: Any],
+                  let requestID = metadata["requestId"] as? String {
+            send(["type": "workout_part_ack", "transferVersion": 1, "requestId": requestID,
+                  "nextOffset": step.nextOffset, "attemptId": step.attemptID, "bindingVersion": 2,
+                  "accountBinding": binding.account, "deviceBinding": binding.device,
+                  "pairingGeneration": binding.pairingGeneration], to: app)
+        }
+    }
+
+    @discardableResult
+    private func receiveWorkout(_ rawMessage: Any, from app: IQApp) -> Bool {
         guard let binding = binding(for: app.device),
               let store = readyWorkoutStore(),
               let command = GarminPhoneWorkoutParser.parse(
@@ -2281,7 +2309,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                   expectedBinding: binding
               ) else {
             publishStatus("A malformed or unbound Garmin workout was rejected.", isError: true)
-            return
+            return false
         }
         let receiptKey = receiptLedgerKey(binding: binding)
         if let activeStorageKey {
@@ -2291,31 +2319,30 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         if let existing = ledger.records.first(where: { $0.requestID == command.requestID }) {
             guard existing.digest == command.digest else {
                 publishStatus("A conflicting Garmin workout replay was rejected.", isError: true)
-                return
+                return false
             }
             if existing.state == .pending {
                 guard matchingWorkout(command, in: store) else {
                     ledger.records.removeAll { $0.requestID == command.requestID }
-                    guard saveReceiptLedger(ledger, key: receiptKey) else { return }
-                    receiveWorkout(rawMessage, from: app)
-                    return
+                    guard saveReceiptLedger(ledger, key: receiptKey) else { return false }
+                    return receiveWorkout(rawMessage, from: app)
                 }
                 updateReceipt(
                     requestID: command.requestID,
                     state: .committed,
                     ledger: &ledger
                 )
-                guard saveReceiptLedger(ledger, key: receiptKey) else { return }
+                guard saveReceiptLedger(ledger, key: receiptKey) else { return false }
             }
             sendAcknowledgement(for: command.requestID, binding: binding, to: app)
-            return
+            return true
         }
 
         let oneHourAgo = Date().timeIntervalSince1970 - 3_600
         guard ledger.records.lazy.filter({ $0.createdAt >= oneHourAgo }).count <
                 Self.maximumReceiptsPerHour else {
             publishStatus("Garmin workout import is temporarily rate limited.", isError: true)
-            return
+            return false
         }
         ledger.records.append(
             .init(
@@ -2328,7 +2355,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         trimLedger(&ledger)
         guard saveReceiptLedger(ledger, key: receiptKey) else {
             publishStatus("The Garmin import receipt could not be stored.", isError: true)
-            return
+            return false
         }
 
         do {
@@ -2363,14 +2390,16 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     "The workout was saved, but Garmin acknowledgement is waiting for receipt recovery.",
                     isError: true
                 )
-                return
+                return false
             }
             sendAcknowledgement(for: command.requestID, binding: binding, to: app)
             publishStatus("Workout received from Garmin.", isError: false)
+            return true
         } catch {
             ledger.records.removeAll { $0.requestID == command.requestID }
             _ = saveReceiptLedger(ledger, key: receiptKey)
             publishStatus("The Garmin workout could not be saved.", isError: true)
+            return false
         }
     }
 
@@ -2756,6 +2785,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
     }
 
     static func clearStoredData(defaults: UserDefaults, storageKey: String) {
+        GarminPhoneWorkoutTransferStore().clear(account: storageKey)
         let indexKey = stateIndexKey(storageKey: storageKey)
         let indexedKeys = defaults.stringArray(forKey: indexKey) ?? []
         for key in indexedKeys.prefix(1_024) {

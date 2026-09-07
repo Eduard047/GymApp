@@ -184,38 +184,3 @@ internal fun ProgressHubScreen(
         }
     }
 }
-
-
-@Composable
-private fun TrainingProgramCard(owner: String, sessions: List<com.example.gymapp.data.entity.WorkoutSessionSummary>, profile: com.example.gymapp.util.TrainingProfile, onPrepare: () -> Unit) {
-    val context = LocalContext.current
-    val store = remember(owner, context) { com.example.gymapp.util.TrainingProgramStore(context, owner) }
-    var generation by rememberSaveable(owner) { mutableIntStateOf(0) }
-    val program = remember(owner, generation, sessions) { store.load() }
-    fun refresh(ok: Boolean) { if (ok) generation++ }
-    if (program == null) {
-        Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-            EmptyStatePanel(title = stringResource(R.string.training_four_week_program), supporting = stringResource(R.string.training_program_intro),
-                actionLabel = stringResource(R.string.training_program_create), onAction = { refresh(store.create(profile.workoutsPerWeek, profile.goal.name)) })
-        }
-        return
-    }
-    val next = store.next(program); val linked = program.slots.count { it.sessionId != null }; val match = next?.let { store.matchingSession(program, it, sessions) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { AppPanel(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.training_four_week_program), style = MaterialTheme.typography.titleLarge)
-            val goalLabel = when(program.goal) {
-                "AestheticFatLoss" -> R.string.training_goal_aesthetic_fat_loss
-                "MuscleGain" -> R.string.training_goal_muscle_gain
-                "Strength" -> R.string.training_goal_strength
-                else -> R.string.training_goal_balanced
-            }
-            Text("${stringResource(goalLabel)} · $linked/${program.slots.size}")
-            LinearProgressIndicator(progress = { linked.toFloat() / program.slots.size }, Modifier.fillMaxWidth())
-            Text(when(program.status){"paused"->stringResource(R.string.training_program_paused);"completed"->stringResource(R.string.training_program_finished);else->next?.let{stringResource(R.string.training_program_next,com.example.gymapp.util.DateTimeUtils.formatDate(it.date))}?:stringResource(R.string.training_program_all_linked)})
-            if(program.status=="active"&&next!=null){Button(onClick=onPrepare,Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(stringResource(R.string.training_program_prepare))};Text(stringResource(R.string.training_program_recalculate),style=MaterialTheme.typography.bodySmall);OutlinedButton(onClick={refresh(store.rescheduleNext())},Modifier.fillMaxWidth()){Text(stringResource(R.string.training_program_move))};match?.let{session->OutlinedButton(onClick={refresh(store.link(session.session.id,sessions))},Modifier.fillMaxWidth()){Text(stringResource(R.string.training_program_link))}}}
-            Row { when(program.status){"active"->TextButton(onClick={refresh(store.updateStatus("paused"))}){Text(stringResource(R.string.training_program_pause))};"paused"->TextButton(onClick={refresh(store.updateStatus("active"))}){Text(stringResource(R.string.training_program_resume))}};if(program.status!="completed")TextButton(onClick={refresh(store.updateStatus("completed"))}){Text(stringResource(R.string.training_program_finish))} }
-        } } }
-        items(program.slots.size) { i -> val slot=program.slots[i]; Text("${i+1}. ${com.example.gymapp.util.DateTimeUtils.formatDate(slot.date)} · ${if(slot.sessionId!=null)"✓" else "—"}",Modifier.padding(horizontal=16.dp,vertical=6.dp)) }
-    }
-}

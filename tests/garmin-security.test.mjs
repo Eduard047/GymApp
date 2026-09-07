@@ -30,7 +30,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(store, /maxPendingWorkouts = 8/);
   assert.match(store, /maxPendingNameBytes = 12000/);
   assert.match(store, /maxTotalNameBytes = 12000/);
-  assert.match(store, /toUtf8Array\(\)\.size\(\)/);
+  assert.match(store, /utf8Bytes\(value\.toString\(\)\)\.size\(\) <= maxExerciseNameBytes/);
   assert.match(store, /flatNames\.size\(\) != flatWeights\.size\(\)/);
   assert.match(store, /processedSyncIds/);
   assert.match(store, /stateOwnerBinding/);
@@ -132,8 +132,11 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.doesNotMatch(sessionReset, /start\(\)/);
   const sessionStart = session.match(/static function start\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(sessionStart, /startedAt = Time\.now\(\)\.value\(\)/);
-  assert.match(sessionStart, /hr = null/);
-  assert.match(sessionStart, /garminCalories = null/);
+  assert.match(sessionStart, /resetWorkoutMetrics\(\)/);
+  assert.match(sessionReset, /resetWorkoutMetrics\(\)/);
+  const metricReset = session.match(/static function resetWorkoutMetrics\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
+  assert.match(metricReset, /hr = null/);
+  assert.match(metricReset, /garminCalories = null/);
   const sessionTick = session.match(/static function tick\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(sessionTick, /var appliedActivityHeartRate = updateGarminActivityInfo\(\)/);
   assert.match(sessionTick, /var sampledSensorHeartRate = readHeartRateFromSensor\(\)/);
@@ -148,7 +151,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
     store,
     /var messageStartedAt = isValidWorkoutStartedAtSeconds\(activeWorkoutStartedAtSeconds\) \?[\s\S]*activeWorkoutStartedAtSeconds :[\s\S]*runtimeWorkoutStartedAtSeconds : GymSession\.startedAt/
   );
-  assert.match(store, /"startedAtSeconds" => messageStartedAt/);
+  assert.match(store, /"startedAtSeconds" => context\[4\]/);
   assert.doesNotMatch(store, /"startedAtSeconds" => Time\.now\(\)\.value\(\)/);
   assert.match(androidManager, /cacheAndPushPlan[\s\S]*garminPlanRequestFingerprint\([\s\S]*planSubmissionCoalescer\.submit/);
   assert.match(androidManager, /sendToConnectedDevicesLocked[\s\S]*GarminPlanSubmissionKey\([\s\S]*prepareExactPlanSubmission\(submissionKey\)[\s\S]*materializeGarminPlanSubmissionPayload/);
@@ -185,16 +188,18 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(store, /static function queueWorkout\(message\)[\s\S]*canQueueWorkout\(message\)/);
   assert.doesNotMatch(view, /GymStore\.canQueueWorkout\(message\)/,
     "the queue owner must recognize a durable same-id retry before applying capacity");
-  assert.match(view, /if \(!GymStore\.hasAccountBinding\(\) \|\| GymStore\.pending\.size\(\) == 0 \|\|[\s\S]*pendingSendInFlight\)/);
-  assert.match(view, /if \(!GymStore\.queueWorkout\(message\)\)/);
+  assert.match(view, /if \(!GymStore\.hasAccountBinding\(\) \|\| GymStore\.pendingCount\(\) == 0 \|\|[\s\S]*pendingSendInFlight\)/);
+  assert.match(view, /if \(!\(saveStage == 5 \? GymStore\.appendWorkout\(message\) : GymStore\.queueWorkout\(message\)\)\)/);
+  assert.match(store, /static function appendWorkout\(message\) \{\s*if \(!isValidWorkoutMessage\(message\) \|\| !bindingsMatch\(message\)\)/);
+  assert.match(view, /if \(saveStage != 5\) \{\s*var queued = GymStore\.pendingMessage\(\);[\s\S]*GymComm\.send/);
   assert.match(
     view,
-    /GymStore\.prepareWorkoutCommit\(\)[\s\S]*GymSession\.stopAndSave\(\)[\s\S]*GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*finishWorkout\(\)/
+    /GymStore\.prepareWorkoutCommit\(\)[\s\S]*GymSession\.stopAndSave\(\)[\s\S]*GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*finishWorkoutMessage\(saveMessage\)/
   );
   assert.doesNotMatch(view, /if \(!GymSession\.recording\) \{\s*GymStore\.clearActiveWorkout\(\)/);
   assert.match(app, /GymStore\.applyPhoneSync\(message\)/);
   assert.match(app, /"syncRevision" => syncRevision\.toLong\(\)/);
-  assert.match(app, /onSyncAckSent[\s\S]*sendNextPendingWorkout\(\)[\s\S]*GymStore\.pending\.size\(\) == 0[\s\S]*WAITING ACK/);
+  assert.match(app, /onSyncAckSent[\s\S]*sendNextPendingWorkout\(\)[\s\S]*GymStore\.pendingCount\(\) == 0[\s\S]*WAITING ACK/);
   assert.match(view, /GymStore\.applyCloudSync\(message\)/);
 });
 

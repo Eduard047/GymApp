@@ -20,13 +20,14 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   const finishWorkout = section(
     view,
     "function finishWorkoutMessage(message)",
-    "(:richRecovery)\n    function finishWorkout()"
+    "(:richRecovery)\n    function buildFinishWorkoutMessage()"
   );
   assert.match(
     finishWorkout,
-    /if \(!GymStore\.hasAccountBinding\(\)\)[\s\S]*return true;/
+    /if \(!GymStore\.hasAccountBinding\(\)\)[\s\S]*return saveStage != 5;/
   );
-  assert.match(view, /finishWorkoutMessage\(GymStore\.preparedWorkoutMessage\(\)\)/);
+  assert.match(view, /finishWorkoutMessage\(buildFinishWorkoutMessage\(\)\)/);
+  assert.match(view, /function buildFinishWorkoutMessage\(\) \{\s*return GymStore\.preparedWorkoutMessage\(\)/);
   assert.ok(
     finishWorkout.indexOf("!GymStore.hasAccountBinding()") <
       finishWorkout.indexOf("GymStore.queueWorkout(message)"),
@@ -37,7 +38,7 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   assert.match(finishWorkout, /GymStore\.queueWorkout\(message\)/);
   assert.match(
     finishWorkout,
-    /GymStore\.queueWorkout\(message\)[\s\S]*GymComm\.send\(GymStore\.pending\[0\], method\(:onWorkoutSent\)\)/
+    /GymStore\.queueWorkout\(message\)[\s\S]*GymStore\.pendingMessage\(\)[\s\S]*GymComm\.send\(queued, method\(:onWorkoutSent\)\)/
   );
   assert.doesNotMatch(finishWorkout, /GymComm\.send\(message,/);
 
@@ -49,8 +50,8 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
     "static function canQueueWorkout(message)",
     "static function isValidWorkoutMessage(message)"
   );
-  assert.match(canQueueWorkout, /pending\.size\(\) >= maxPendingWorkouts/);
-  assert.match(canQueueWorkout, /totalNameBytes > maxPendingNameBytes/);
+  assert.match(canQueueWorkout, /pendingCount\(\) >= maxPendingWorkouts/);
+  assert.match(canQueueWorkout, /totalNameBytes <= maxPendingNameBytes/);
 
   const queue = [];
   const canAppend = () => queue.length < 8;
@@ -68,22 +69,30 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
     saveAndExit,
     /if \(!fitAlreadySaved && !GymSession\.stopAndSave\(\)\)[\s\S]*GymStore\.status = "FIT FAIL";[\s\S]*return;/
   );
-  assert.match(saveAndExit, /GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*if \(!finishWorkout\(\)\)/);
-  assert.match(
-    saveAndExit,
-    /if \(!GymStore\.clearActiveWorkout\(\)\)[\s\S]*return;/
-  );
+  assert.match(saveAndExit, /GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*saveStage = needsPhoneSync \? 1 : 4/);
+  const completion = section(view, "function continueSaving()", "function onUpdate(");
+  assert.match(completion, /saveStage == 1[\s\S]*saveMessage = buildFinishWorkoutMessage\(\);[\s\S]*saveStage = saveMessage != null \? 5 : 0/);
+  assert.match(completion, /saveStage == 5[\s\S]*saveStage = finishWorkoutMessage\(saveMessage\) \? 2 : 0;\s*saveMessage = null/);
+  assert.match(completion, /else if \(saveStage == 3 \|\| saveStage == 4\)[\s\S]*if \(GymStore\.clearActiveWorkout\(\)\)[\s\S]*System\.exit\(\)/);
+  assert.match(completion, /saveStage == 2[\s\S]*GymStore\.recoverQueuedWorkout\(\) \? 3 : 0/);
+  assert.match(completion, /else \{\s*GymStore\.status = "SAVE FAIL"/);
+  assert.equal((view.match(/function tick\(\) \{\s*if \(saveStage > 0\) \{\s*continueSaving\(\);\s*return;/g) || []).length, 2,
+    "both runtime tiers yield between FIT, queue and cleanup before mailbox work");
+  assert.equal((saveAndExit.match(/function saveAndExit\(\) \{\s*if \(saveStage > 0\)/g) || []).length, 2,
+    "both tiers ignore repeated Save presses while completion is pending");
+  assert.match(view, /function onBack\(\) \{\s*if \(view\.saveStage > 0\) \{ return true; \}/);
   assert.doesNotMatch(
     saveAndExit,
     /GymStore\.sets\.size\(\) > 0 && !GymStore\.clearActiveWorkout\(\)/,
     "a zero-set FIT save must clear its runtime checkpoint too"
   );
+  assert.match(saveAndExit, /if \(GymLocalWorkout\.finish\(\)\) \{\s*System\.exit\(\)/);
   assert.ok(
-    saveAndExit.indexOf("GymSession.stopAndSave()") < saveAndExit.indexOf("System.exit()"),
+    saveAndExit.indexOf("GymSession.stopAndSave()") < saveAndExit.indexOf("System.exit()", saveAndExit.indexOf("var fitAlreadySaved")),
     "The app must not exit before Garmin confirms the FIT save"
   );
   assert.ok(
-    saveAndExit.indexOf("GymSession.stopAndSave()") < saveAndExit.indexOf("finishWorkout()"),
+    saveAndExit.indexOf("GymSession.stopAndSave()") < saveAndExit.indexOf("finishWorkoutMessage(saveMessage)"),
     "GymApp sync must not become sendable until Garmin confirms the FIT save"
   );
   assert.ok(
@@ -128,15 +137,15 @@ test("Garmin partial workouts declare plan progress and drain one queued workout
     "static function workoutMessage(requestId)",
     "static function applyPhoneSync("
   );
-  assert.match(workoutMessage, /if \(!freeMode && plan\.size\(\) > 0\)/);
-  assert.match(workoutMessage, /var plannedTargetSetCount = plan\.size\(\)/);
-  assert.match(workoutMessage, /var plannedSetCount = plannedTargetSetCount/);
-  assert.match(workoutMessage, /plannedSetCount < setCopies\.size\(\)[\s\S]*plannedSetCount = setCopies\.size\(\)/);
-  assert.match(workoutMessage, /message\.put\("plannedSetCount", plannedSetCount\)/);
-  assert.match(workoutMessage, /message\.put\("plannedTargetSetCount", plannedTargetSetCount\)/);
+  assert.match(workoutMessage, /if \(!freeMode && context\[7\] > 0\)/);
+  assert.match(workoutMessage, /var target = !freeMode \? plan\.size\(\) : 0/);
+  assert.match(workoutMessage, /context\[7\] < context\[9\] \? context\[9\] : context\[7\]/);
+  assert.match(workoutMessage, /target > 0 \? completedPlannedSetCount\(\) : 0, sets\.size\(\)/);
+  assert.match(workoutMessage, /message\["plannedSetCount"\] = context\[7\] < context\[9\] \? context\[9\] : context\[7\]/);
+  assert.match(workoutMessage, /message\["plannedTargetSetCount"\] = context\[7\]/);
   assert.match(
     workoutMessage,
-    /message\.put\("completedPlannedSetCount", completedPlannedSetCount\(\)\)/
+    /message\["completedPlannedSetCount"\] = context\[8\]/
   );
 
   const oldPhoneAccepts = ({ plannedSetCount, sets }) => plannedSetCount >= sets.length;
@@ -160,7 +169,7 @@ test("Garmin partial workouts declare plan progress and drain one queued workout
     "function sendNextPendingWorkout()",
     "function onPendingWorkoutSentAfterSync("
   );
-  assert.match(drain, /GymStore\.pending\.size\(\) == 0/);
-  assert.match(drain, /GymComm\.send\(GymStore\.pending\[0\]/);
+  assert.match(drain, /GymStore\.pendingCount\(\) == 0/);
+  assert.match(drain, /GymStore\.pendingMessage\(\)[\s\S]*GymComm\.send\(message/);
   assert.doesNotMatch(drain, /for \s*\(|while \s*\(/);
 });

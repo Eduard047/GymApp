@@ -981,7 +981,8 @@
     <string name="details_no_note">Без нотатки</string>
     <string name="garmin_workout_title">Силове тренування Garmin</string>
     <string name="garmin_free_workout_title">Вільне тренування Garmin</string>
-    <string name="garmin_free_workout_summary">Час, пульс і калорії — без вправ і підходів</string>
+    <string name="garmin_free_workout_summary">Показники годинника збережено. Додай виконані вправи та підходи.</string>
+    <string name="action_complete_free_workout">Додати вправи</string>
     <string name="garmin_workout_format_title">Силове тренування у форматі Garmin</string>
     <string name="garmin_workout_synced_from">%1$s · синхронізовано з Garmin</string>
     <string name="garmin_workout_note_derived_from">%1$s · показники прочитано зі збереженої нотатки</string>
@@ -1080,6 +1081,7 @@
     <string name="dialog_delete_set_impact_set_only">Буде видалено лише цей підхід.</string>
     <string name="dialog_delete_set_impact_exercise">Це останній підхід у цьому блоці вправи. Блок вправи також буде видалено з тренування.</string>
     <string name="dialog_delete_set_impact_workout">Це останній підхід у тренуванні. Усе тренування також буде видалено.</string>
+    <string name="dialog_delete_set_impact_watch_activity">Вправи буде видалено. Показники годинника й час тренування залишаться в історії.</string>
     <string name="post_workout_unavailable_title">Підсумок тренування недоступний</string>
     <string name="post_workout_unavailable_supporting">Не вдалося завантажити це тренування.</string>
     <string name="post_workout_rewards_eyebrow">Прогрес</string>
@@ -1293,7 +1295,7 @@
     <string name="push_live_room_closed_body">Відкрий GymApp, щоб переглянути стан.</string>
     <string name="activation_edit_plan">Переглянути вправи</string>
     <string name="activation_create_manually">Створити вручну</string>
-    <string name="today_plan_size">%1$d вправ · %2$d підходів</string>
+    <string name="today_plan_size">Вправ: %1$d · підходів: %2$d</string>
     <string name="today_plan_duration">Близько %1$d хв</string>
     <string name="progress_section_overview">Огляд</string>
     <string name="progress_section_exercises">Вправи</string>
@@ -1351,7 +1353,7 @@
     <string name="training_short_time">Мало часу</string>
     <string name="training_too_hard">Сьогодні надто важко</string>
     <string name="training_no_alternative">Схожої вправи немає.</string>
-    <string name="training_remaining_sets">%1$d → %2$d підходів залишилось</string>
+    <string name="training_remaining_sets">Залишилось підходів: %1$d → %2$d</string>
     <string name="training_time_estimate">Тривалість приблизна, з відпочинком між підходами.</string>
     <string name="training_apply_changes">Застосувати зміни</string>
     <string name="training_adaptation_live_blocked">Спільний план тренування не можна змінити.</string>
@@ -1362,12 +1364,27 @@
     <string name="training_program_paused">Призупинено</string>
     <string name="training_program_finished">Завершено</string>
     <string name="training_program_next">Наступне: %1$s</string>
-    <string name="training_program_all_linked">Усі тренування прив’язано</string>
-    <string name="training_program_prepare">Підготувати наступне тренування</string>
+    <string name="training_program_all_linked">Усі тренування виконано</string>
+    <string name="training_program_prepare">Підготувати тренування</string>
     <string name="training_program_recalculate">Розумний тренер перерахує цілі з поточної історії в редакторі.</string>
     <string name="training_program_move">Перенести на вільний день</string>
-    <string name="training_program_link">Прив’язати збережене тренування</string>
+    <string name="training_program_link">Зарахувати тренування</string>
     <string name="training_program_pause">Призупинити</string>
     <string name="training_program_resume">Продовжити</string>
     <string name="training_program_finish">Завершити</string>
+    <string name="training_program_count">Виконано тренувань: %1$d із %2$d</string>
+    <string name="training_program_save_error">Не вдалося підтвердити збереження програми. Завантаж її знову та повтори.</string>
+    <string name="training_program_reload">Завантажити програму знову</string>
+    <string name="training_program_new">Нова програма</string>
+    <string name="training_program_reopen">Відновити програму</string>
+    <string name="training_program_new_title">Почати нову програму?</string>
+    <string name="training_program_new_message">Це замінить попередній розклад. Збережені тренування залишаться в історії.</string>
+    <string name="training_program_finish_title">Завершити програму?</string>
+    <string name="training_program_finish_message">Збережені тренування залишаться в історії. Незавершений розклад можна буде відновити.</string>
+    <string name="training_program_options">Керування програмою</string>
+    <string name="training_program_options_hide">Приховати керування</string>
+    <string name="training_program_week">Тиждень %1$d · виконано %2$d із %3$d</string>
+    <string name="training_program_done">Виконано</string>
+    <string name="training_program_planned">Заплановано</string>
+    <string name="garmin_free_metrics_supporting">Час, пульс і калорії</string>
 </resources>

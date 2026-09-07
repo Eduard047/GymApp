@@ -1,11 +1,16 @@
 package com.example.gymapp.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.util.DateTimeUtils
@@ -23,11 +28,18 @@ fun WeeklyReviewCard(history: List<ExerciseHistoryEntry>, target: Int, onOpenWor
     AppPanel {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.training_weekly_review), style = MaterialTheme.typography.titleLarge)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { offset = (offset - 1).coerceAtLeast(-520) }) { Text(stringResource(R.string.training_previous_week)) }
-                TextButton(onClick = { offset = (offset + 1).coerceAtMost(0) }, enabled = offset < 0) { Text(stringResource(R.string.training_next_week)) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { offset = (offset - 1).coerceAtLeast(-520) }, enabled = offset > -520) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.training_previous_week))
+                }
+                Text(
+                    "${review.start.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM"))} – ${review.end.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM"))}",
+                    modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center
+                )
+                IconButton(onClick = { offset = (offset + 1).coerceAtMost(0) }, enabled = offset < 0) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.training_next_week))
+                }
             }
-            Text("${review.start.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM"))} – ${review.end.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM"))}", style = MaterialTheme.typography.bodySmall)
             if (review.partial) Text(stringResource(R.string.training_partial_week), style = MaterialTheme.typography.labelMedium)
             Text(stringResource(R.string.training_days_goal, review.trainingDays, target), style = MaterialTheme.typography.titleMedium)
             review.insights.forEach { insight ->

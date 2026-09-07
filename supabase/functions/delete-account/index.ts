@@ -116,6 +116,15 @@ function isUuid(value: unknown): value is string {
       .test(value);
 }
 
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isBoundedTimestamp(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 64 &&
+    Number.isFinite(Date.parse(value));
+}
+
 type DeletionRequest =
   | { action: "prepare" }
   | { action: "delete"; grant: string };
@@ -338,7 +347,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const liveSessionResponse = await fetch(
-      `${projectUrl}/rest/v1/rpc/consume_account_deletion_grant`,
+      `${projectUrl}/rest/v1/rpc/commit_account_deletion_operation`,
       {
         method: "POST",
         headers: {
@@ -355,14 +364,29 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return jsonResponse(req, 401, { error: "invalid_deletion_grant" });
     }
 
-    const liveSessionUserId = await liveSessionResponse.json() as unknown;
+    const deletionCommit = await liveSessionResponse.json() as unknown;
     if (
-      !isUuid(liveSessionUserId) ||
-      liveSessionUserId.toLowerCase() !== authenticatedUser.id.toLowerCase()
+      !isJsonRecord(deletionCommit) || deletionCommit.version !== 2 ||
+      deletionCommit.status !== "committed" ||
+      !isUuid(deletionCommit.userId) ||
+      !isUuid(deletionCommit.operationId) ||
+      !isBoundedTimestamp(deletionCommit.committedAt)
+    ) {
+      return jsonResponse(req, 502, {
+        error: "account_deletion_commit_failed",
+      });
+    }
+    if (
+      deletionCommit.userId.toLowerCase() !==
+        authenticatedUser.id.toLowerCase()
     ) {
       return jsonResponse(req, 401, { error: "invalid_or_expired_token" });
     }
 
+    // The RPC transaction above is the irreversible authorization point. It
+    // serialized with exact-session revocation and committed an idempotency
+    // operation; a revocation that lands after that commit must not cancel the
+    // already-authorized hard delete.
     const adminHeaders: Record<string, string> = {
       apikey: administrativeKey,
       "Content-Type": "application/json",

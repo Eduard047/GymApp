@@ -288,7 +288,8 @@ data class SetDeletionSnapshot(
     val removedWorkoutExercise: WorkoutExerciseEntity?,
     val removedWorkoutSession: WorkoutSessionEntity?,
     val removedGarminProvenance: GarminWorkoutProvenanceEntity?,
-    val deletionStoreToken: String
+    val deletionStoreToken: String,
+    val retainsRecordedActivity: Boolean = false
 )
 
 @ConsistentCopyVisibility
@@ -2848,7 +2849,9 @@ class GymRepository(
             removedWorkoutExercise = removedWorkoutExercise,
             removedWorkoutSession = removedWorkoutSession,
             removedGarminProvenance = removedGarminProvenance,
-            deletionStoreToken = deletionStoreToken
+            deletionStoreToken = deletionStoreToken,
+            retainsRecordedActivity = impact == SetDeletionImpact.WorkoutSession &&
+                activityOnlyWorkoutDao.getByStartedAt(details.session.date) != null
         )
     }
 

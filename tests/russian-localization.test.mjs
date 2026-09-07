@@ -250,10 +250,10 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
   assert.match(indexSource, /russian-text\.v87\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v108\.js/);
+  assert.match(indexSource, /app\.v109\.js/);
   assert.match(workerSource, /russian-text\.v87\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v108\.js/);
+  assert.match(workerSource, /app\.v109\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });
@@ -322,13 +322,13 @@ test("Garmin accepts Russian language sync and uses direct touch hit targets", a
   assert.match(store, /System\.LANGUAGE_UKR/);
   assert.match(store, /return "Exercise";/);
   assert.match(store, /static function currentExerciseLabel\(\)/);
-  assert.match(store, /App\.loadResource\(Rez\.JsonData\.ExerciseLabels\) as Lang\.Dictionary/);
+  assert.match(store, /App\.loadResource\(shards\[shard\]\) as Lang\.String/);
   assert.deepEqual(exerciseLabels["Bench Press"], ["Жим штанги лежачи", "Жим штанги лежа"]);
   assert.deepEqual(exerciseLabels.Squat, ["Присідання зі штангою", "Приседания со штангой"]);
   assert.deepEqual(exerciseLabels.Deadlift, ["Станова тяга", "Становая тяга"]);
   assert.deepEqual(exerciseLabels["Overhead Press"], ["Жим над головою", "Жим над головой"]);
   assert.deepEqual(exerciseLabels.Curl, ["Згинання рук", "Сгибание рук"]);
-  assert.match(store, /"exerciseName" => currentExercise\(\)/);
+  assert.match(store, /recordedSet\(currentExercise\(\), weight, reps, statistics, restBefore, setInterval\)/);
   assert.match(view, /evt\.getCoordinates\(\)/);
   assert.match(view, /function rowAt\(/);
   assert.match(view, /activate\(x < \(view\.screenWidth \/ 2\) \? -1 : 1\)/);
@@ -347,6 +347,6 @@ test("Garmin accepts Russian language sync and uses direct touch hit targets", a
   assert.match(view, /function statusLabel\(value\)/);
   assert.match(russianResources, /Облачный токен/);
   assert.match(ukrainianResources, /Хмарний токен/);
-  assert.match(buildScript, /-r -e/);
+  assert.match(buildScript, /--output "\$temporary_output" --export/);
   assert.equal([...manifest.matchAll(/<iq:product id=/g)].length, 108);
 });

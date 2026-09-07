@@ -70,6 +70,7 @@ struct ProgressHubView: View {
                     MissionsView(store: store, onOpenRanks: onOpenRanks, embedded: true)
                 case .program:
                     TrainingProgramView(workouts: store, onPrepare: onPrepareProgram)
+                        .id(store.accountStorageKey)
                 }
             }
         }
@@ -89,7 +90,7 @@ struct ProgressHubView: View {
             "Раздел прогресса",
             languageCode: languageCode
         )
-        if dynamicTypeSize.isAccessibilitySize {
+        if dynamicTypeSize >= .xxLarge {
             Menu {
                 ForEach(Section.allCases) { item in
                     Button {
@@ -139,6 +140,8 @@ struct ProgressHubView: View {
                     onNext: { monthOffset = min(0, monthOffset + 1) }
                 )
 
+                WeeklyReviewCard(store: store)
+
                 WorkoutProgressHero(
                     snapshot: gamification,
                     monthXP: monthXP,
@@ -146,8 +149,6 @@ struct ProgressHubView: View {
                     weeklyTarget: trainingProfile.workoutsPerWeek,
                     onOpenRanks: onOpenRanks
                 )
-
-                WeeklyReviewCard(store: store)
 
                 lifetimeMetricsCard
 

@@ -183,6 +183,46 @@ class ActivityOnlyWorkoutSidecarStoreTest {
         }
     }
 
+    @Test
+    fun freeWorkoutCanBeEnrichedWithoutLosingMetricsOnWatchReplay() = runBlocking {
+        withDatabase("activity-enrichment") { database, repository ->
+            val original = item(1_750_000_000_000L, 45.125).copy(
+                averageHeartRate = 120, maximumHeartRate = 155, garminCalories = 50
+            )
+            suspend fun receive() = repository.applyGarminCreateWorkout(
+                ownerBinding = "a".repeat(64), deviceBinding = "123456789",
+                pairingGeneration = "b".repeat(64), requestId = "free-enrichment-request",
+                payloadDigest = "c".repeat(64), date = original.workoutStartedAt,
+                note = original.note, sets = emptyList(), durationSeconds = original.durationSeconds,
+                isFreeWorkout = true, activityOnlyWorkout = original
+            )
+            receive()
+            val session = database.workoutDao().getSessions().first().single().session
+            val exercise = repository.addExercise("Bench Press")
+            val block = repository.addExerciseToSession(session.id, exercise, 55.0, 12)
+            repository.addSet(block, 60.0, 8)
+            receive()
+            repository.reconcileActivityOnlyWorkoutSidecar(listOf(original))
+            val visible = database.workoutDao().getSessions().first().single()
+            assertEquals(session, visible.session)
+            assertEquals(1, visible.exerciseCount)
+            assertEquals(2, visible.setCount)
+            assertEquals(listOf(original), repository.getActivityOnlyWorkoutSnapshot().items)
+            val details = database.workoutDao().getSessionDetailsSnapshot(session.id)!!
+            assertEquals(listOf(55.0, 60.0), details.workoutExercises.single().sets.map { it.weight })
+            repository.deleteSetById(details.workoutExercises.single().sets.first().id)
+            val lastSet = details.workoutExercises.single().sets.last()
+            val deletion = checkNotNull(repository.getSetDeletionSnapshot(lastSet.id))
+            assertTrue(deletion.retainsRecordedActivity)
+            assertTrue(repository.deleteSetIfUnchanged(deletion))
+            val restored = database.workoutDao().getSessions().first().single()
+            assertEquals(0, restored.setCount)
+            assertEquals(original.workoutStartedAt, restored.session.date)
+            assertEquals(original.durationSeconds, restored.session.durationSeconds)
+            assertEquals(listOf(original), repository.getActivityOnlyWorkoutSnapshot().items)
+        }
+    }
+
     private fun item(startedAt: Long, gymCalories: Double): ActivityOnlyWorkoutItem =
         ActivityOnlyWorkoutItem(
             workoutStartedAt = startedAt,

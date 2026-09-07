@@ -28,7 +28,7 @@ struct WeeklyReviewCard: View {
                     Button { evidence = insight } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(gymExerciseName(insight.current.exerciseName)).font(.headline)
-                            Text("\(insight.current.weight.formatted()) kg · \(insight.previous.reps) → \(insight.current.reps) " + t("reps", "повторів", "повторений"))
+                            Text("\(insight.current.weight.formatted()) \(t("kg", "кг", "кг")) · \(insight.previous.reps) → \(insight.current.reps) " + t("reps", "повторів", "повторений"))
                         }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     }.buttonStyle(GymSecondaryButtonStyle())
                 }
@@ -53,7 +53,7 @@ struct WeeklyReviewCard: View {
                     NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID) } label: {
                         VStack(alignment: .leading) {
                             Text(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted))
-                            Text("\(entry.weight.formatted()) kg × \(entry.reps)")
+                            Text("\(entry.weight.formatted()) \(t("kg", "кг", "кг")) × \(entry.reps)")
                         }
                     }
                 }.navigationTitle(t("Comparison", "Порівняння", "Сравнение"))

@@ -1,10 +1,20 @@
 <resources xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://developer.garmin.com/downloads/connect-iq/resources.xsd">
     <string id="AppName">GymApp</string>
     <string id="CloudDeviceTokenTitle">Cloud Token</string>
-    <string id="CompactDataKept">DATA KEPT</string>
-    <string id="CompactReopenApp">REOPEN APP</string>
-    <string id="CompactNotPaired">NOT PAIRED</string>
-    <string id="CompactWaiting">WAITING </string>
-    <string id="CompactSync">SYNC </string>
-    <jsonData id="ExerciseLabels" filename="exercise-labels.json"/>
+    <string id="ExerciseLabels00">~Dips|Віджимання на брусах|Отжимания на брусьях~Hammer Curl|Молоткові згинання рук|Молоточные сгибания рук~Preacher Curl|Згинання рук на лаві Скотта|Сгибание рук на скамье Скотта</string>
+    <string id="ExerciseLabels01">~Lying Leg Curl|Згинання ніг лежачи|Сгибание ног лежа~Plate Twist|Повороти корпусу з диском|Повороты корпуса с диском</string>
+    <string id="ExerciseLabels02">~Pull Up|Підтягування|Подтягивание~Assisted Pull Up|Підтягування у гравітроні|Подтягивание в гравитроне~Romanian Deadlift|Румунська тяга|Румынская тяга~Triceps Pushdown|Розгинання рук на блоці|Разгибание рук на блоке</string>
+    <string id="ExerciseLabels03">~Shoulder Press|Жим над головою|Жим над головой~Seated Dumbbell Curl|Згинання рук з гантелями сидячи|Сгибание рук с гантелями сидя~French Press|Французький жим|Французский жим</string>
+    <string id="ExerciseLabels04">~Dumbbell Bench Press|Жим гантелей лежачи|Жим гантелей лежа~Seated Leg Curl|Згинання ніг сидячи|Сгибание ног сидя~Weighted Crunch|Скручування з диском|Скручивание с диском</string>
+    <string id="ExerciseLabels05">~Push Up|Віджимання від підлоги|Отжимания от пола~Seated Cable Row|Горизонтальна тяга блока|Горизонтальная тяга блока~Leg Press|Жим ногами у тренажері|Жим ногами в тренажере~Leg Extension|Розгинання ніг у тренажері|Разгибание ног в тренажере~Hyperextension|Гіперекстензія|Гиперекстензия</string>
+    <string id="ExerciseLabels06">~Incline Dumbbell Press|Жим гантелей на похилій лаві|Жим гантелей на наклонной скамье~Lat Pulldown|Тяга верхнього блока|Тяга верхнего блока~Plank|Планка|Планка~Curl|Згинання рук|Сгибание рук</string>
+    <string id="ExerciseLabels07">~Machine Chest Fly|Зведення рук у тренажері|Сведение рук в тренажёре~Band Assisted Pull Up|Підтягування з еспандером|Подтягивание с эспандером~Plate Loaded Row|Горизонтальна тяга у важільному тренажері|Горизонтальная тяга в рычажном тренажере</string>
+    <string id="ExerciseLabels08">~Exercise|Вправа|Упражнение~Hanging Leg Raise|Підйом ніг у висі|Подъем ног в висе</string>
+    <string id="ExerciseLabels09">~Lateral Raise|Підйоми гантелей через сторони|Подъемы гантелей через стороны</string>
+    <string id="ExerciseLabels10">~Hip Abduction|Розведення ніг у тренажері|Разведение ног в тренажере~Calf Raise|Підйом на носки|Подъем на носки~Barbell Curl|Згинання рук зі штангою|Сгибание рук со штангой~V-Bar Triceps Pushdown|Розгинання рук на блоці з V-рукояттю|Разгибание рук на блоке с V-рукояткой~Side Hyperextension|Бокові нахили на гіперекстензії|Боковая гиперэкстензия</string>
+    <string id="ExerciseLabels11">~Straight Arm Pulldown|Журавель — тяга прямими руками|Журавель — тяга прямыми руками~Lunge|Випади|Выпады~Hip Thrust|Ягодичний міст зі штангою|Ягодичный мост со штангой~Upright Row|Тяга штанги до підборіддя|Тяга штанги к подбородку~Overhead Press|Жим над головою|Жим над головой</string>
+    <string id="ExerciseLabels12">~Barbell Row|Тяга штанги в нахилі|Тяга штанги в наклоне~Face Pull|Тяга каната до обличчя|Тяга каната к лицу~Hip Adduction|Зведення ніг у тренажері|Сведение ног в тренажере~Biceps Curl|Згинання рук на біцепс|Сгибание рук на бицепс~Overhead Dumbbell Triceps Extension|Розгинання гантелі над головою|Разгибание гантели над головой~Warm Up|Розминка|Разминка</string>
+    <string id="ExerciseLabels13">~Bench Press|Жим штанги лежачи|Жим штанги лежа~Assisted Dip|Віджимання на брусах у гравітроні|Отжимания на брусьях в гравитроне~Deadlift|Станова тяга|Становая тяга~Cable Curl|Згинання рук на нижньому блоці|Сгибание рук на нижнем блоке</string>
+    <string id="ExerciseLabels14">~Squat|Присідання зі штангою|Приседания со штангой~Machine Lateral Raise|Підйоми рук через сторони у тренажері|Подъемы рук через стороны в тренажере~Rear Delt Fly|Зворотні розведення у тренажері|Обратные разведения в тренажере</string>
+    <string id="ExerciseLabels15">~Incline Bench Press|Жим штанги на похилій лаві|Жим штанги на наклонной скамье~Bulgarian Split Squat|Болгарські випади|Болгарские выпады~Weighted Side Bend|Бокові нахили з обтяженням|Боковые наклоны с отягощением</string>
 </resources>

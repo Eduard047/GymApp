@@ -9,6 +9,7 @@ class GymApp extends App.AppBase {
     function initialize() {
         AppBase.initialize();
         GymStore.load();
+        GymLocalWorkout.restore();
         phoneMessageMethod = method(:onPhoneMessage);
         if (Comm has :registerForPhoneAppMessages) {
             Comm.registerForPhoneAppMessages(phoneMessageMethod);
@@ -24,10 +25,15 @@ class GymApp extends App.AppBase {
     }
 
     function onStop(state) {
+        if (!GymStore.keepsSetDiagnostics) { GymSession.stopSensors(); }
+        GymStore.checkpointLiveWorkout(true);
         GymStore.save();
     }
 
     function getInitialView() {
+        if (GymLocalWorkout.needsDecision()) {
+            return GymLocalWorkout.recoveryView();
+        }
         var view = new WorkoutView();
         return [view, new WorkoutDelegate(view)];
     }
@@ -61,7 +67,9 @@ class GymApp extends App.AppBase {
     }
 
     function pollMailbox() {
-        if (!(Comm has :getMailbox)) {
+        // The modern listener immediately delivers queued messages at registration.
+        // Polling the deprecated mailbox as well duplicates its native allocation.
+        if ((Comm has :registerForPhoneAppMessages) || !(Comm has :getMailbox)) {
             return;
         }
         try {
@@ -92,6 +100,8 @@ class GymApp extends App.AppBase {
                 GymStore.status = "SYNC FAIL";
             }
             sendSyncAck(message, applied);
+        } else if (typeText.equals("workout_part_ack")) {
+            if (GymPendingJournal.acknowledgePart(message)) { sendNextPendingWorkout(); }
         } else if (typeText != null && typeText.equals("ack")) {
             var ackRequestId = message.get("requestId");
             if (GymStore.bindingsMatch(message) && GymStore.removePendingByRequestId(ackRequestId)) {
@@ -152,7 +162,7 @@ class GymApp extends App.AppBase {
     }
 
     function sendNextPendingWorkout() {
-        if (!GymStore.hasAccountBinding() || GymStore.pending.size() == 0) {
+        if (!GymStore.hasAccountBinding() || GymStore.pendingCount() == 0) {
             return;
         }
         if (!GymStore.recoverQueuedWorkout()) {
@@ -162,7 +172,8 @@ class GymApp extends App.AppBase {
         // Drain exactly one oldest item per durable database acknowledgement. The
         // item remains queued until its own ack, so disconnects and retries are safe.
         GymStore.status = "SENDING NEXT";
-        GymComm.send(GymStore.pending[0], method(:onPendingWorkoutSentAfterSync));
+        var message = GymStore.pendingMessage();
+        if (message != null) { GymComm.send(message, method(:onPendingWorkoutSentAfterSync)); }
     }
 
     function onPendingWorkoutSentAfterSync(ok) {

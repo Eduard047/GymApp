@@ -35,7 +35,8 @@ test("Garmin short timers survive the signed System.getTimer rollover", async ()
   assert.match(timerHelper, /elapsed < 0l \? elapsed \+ 4294967296l : elapsed/);
   assert.match(session, /lastMotionTimerMs = null/);
   assert.match(session, /GymStore\.timerElapsedMs\(lastMotionTimerMs\)/);
-  assert.match(view, /GymStore\.timerElapsedMs\(lastSyncRequestAt\) > 20000l/);
+  assert.doesNotMatch(view, /GymStore\.timerElapsedMs\(lastSyncRequestAt\) > 20000l/);
+  assert.match(view, /function maybeRetryPending\(\) \{[\s\S]*if \(GymSession\.recording\) \{ return; \}/);
   assert.match(view, /GymStore\.timerElapsedMs\(savedSetFlashStartedAt\) <= GymStore\.undoWindowMs/);
   assert.match(store, /timerElapsedMs\(lastSetUndoStartedAt\) > undoWindowMs/);
 });
@@ -46,12 +47,12 @@ test("Garmin sync watchdog expires a missing Ready request before the idle retur
   const sent = section(view, "function onSyncSent(ok)", "(:fullLegacyState)\n    function requestCloudSyncNow()");
   const timeoutAt = tick.indexOf("if (syncRequestInFlight && lastSyncRequestAt != null");
   const idleReturnAt = tick.indexOf("if (page == 7 || !GymSession.recording)");
-  const periodicAt = tick.indexOf("if (!syncRequestInFlight && !syncRequestTimedOut");
+
 
   assert.ok(timeoutAt >= 0 && timeoutAt < idleReturnAt,
     "Ready and stopped-workout ticks must still expire a missing callback");
-  assert.ok(periodicAt > idleReturnAt,
-    "only an active recording may start periodic background sync");
+  assert.doesNotMatch(tick, /requestSyncNow\(\)/,
+    "recording ticks must not allocate a background transmit listener");
   assert.match(tick, /timerElapsedMs\(lastSyncRequestAt\) > 60000l[\s\S]*syncRequestTimedOut = true[\s\S]*status = "REOPEN"/);
   assert.match(sent, /if \(syncRequestTimedOut\) \{\s*return;\s*\}[\s\S]*syncRequestInFlight = false/);
   assert.doesNotMatch(sent, /syncRequestTimedOut = false/);
@@ -89,10 +90,6 @@ test("Garmin sync watchdog expires a missing Ready request before the idle retur
       state.status = "REOPEN";
     }
     if (ready || !recording) return;
-    if (!state.inFlight && !state.timedOut &&
-        (state.lastAt == null || now - state.lastAt > 20_000)) {
-      request(state, now);
-    }
   };
 
   const ready = freshState();
@@ -112,7 +109,7 @@ test("Garmin sync watchdog expires a missing Ready request before the idle retur
   assert.equal(reopened.maximumOutstanding, 1);
 });
 
-test("Garmin recording sync stays bounded for complete, error, missing, and late callbacks", () => {
+test("Garmin manual sync stays bounded without periodic recording retries", () => {
   const freshState = () => ({
     inFlight: false,
     timedOut: false,
@@ -142,25 +139,23 @@ test("Garmin recording sync stays bounded for complete, error, missing, and late
       state.timedOut = true;
       state.status = "REOPEN";
     }
-    if (!state.inFlight && !state.timedOut &&
-        (state.lastAt == null || now - state.lastAt > 20_000)) {
-      request(state, now);
-    }
   };
 
   for (const ok of [true, false]) {
     const completed = freshState();
-    recordingTick(completed, 0);
+    request(completed, 0);
     callback(completed, ok);
     recordingTick(completed, 20_000);
     assert.equal(completed.sends, 1, "complete/error callbacks do not cause an immediate retry");
     recordingTick(completed, 20_001);
-    assert.equal(completed.sends, 2, "complete/error callbacks permit one bounded periodic retry");
+    assert.equal(completed.sends, 1, "recording never creates a periodic retry");
+    request(completed, 20_002);
+    assert.equal(completed.sends, 2, "a new manual request may retry a completed operation");
     assert.equal(completed.maximumOutstanding, 1);
   }
 
   const missing = freshState();
-  recordingTick(missing, 0);
+  request(missing, 0);
   for (const now of [60_001, 80_002, 160_003]) recordingTick(missing, now);
   assert.deepEqual(
     { sends: missing.sends, timedOut: missing.timedOut, status: missing.status, maximumOutstanding: missing.maximumOutstanding },
@@ -216,10 +211,10 @@ test("Garmin restart restores the selected exercise only for the matching active
   assert.match(save, /Storage\.setValue\("currentEntryV1", \[[\s\S]*sets\.size\(\), currentExercise\(\), weight, reps/);
   assert.match(load, /restoreCurrentEntry\(savedCurrentEntry\)/);
   assert.match(load, /selectNextPlanSlotInGlobalOrder\(\)/);
-  assert.match(load, /sets\[sets\.size\(\) - 1\]\.get\("exerciseName"\)/);
+  assert.match(load, /setField\(GymSetAccess\.at\(sets, sets\.size\(\) - 1\), "exerciseName"\)/);
   assert.match(compactLoad, /Storage\.getValue\("currentEntryV1"\)/);
   assert.match(compactLoad, /restoreCurrentEntry\(savedCurrentEntry\)/);
-  assert.match(compactLoad, /sets\[sets\.size\(\) - 1\]\.get\("exerciseName"\)/);
+  assert.match(compactLoad, /setField\(GymSetAccess\.at\(sets, sets\.size\(\) - 1\), "exerciseName"\)/);
   assert.match(currentEntry, /value\.size\(\) != 2 && value\.size\(\) != 4/);
   assert.match(currentEntry, /value\[0\] != sets\.size\(\)/);
   assert.match(currentEntry, /isValidWeight\(value\[2\]\)/);

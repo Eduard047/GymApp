@@ -1,27 +1,29 @@
 {
   "schemaVersion": 1,
   "functionName": "delete-account",
-  "repositoryContractVersion": 6,
+  "repositoryContractVersion": 7,
   "repositorySource": "supabase/functions/delete-account/index.ts",
-  "repositorySourceSha256": "e6352f00f812f9d77387c193761de3c6aded58622c5b19dc86d29f443403a11f",
+  "repositorySourceSha256": "61b20eb4d80815f2474a82100fdfa1836e7f25989363809ffbe0dfb96fef1e2f",
   "repositorySharedSource": "supabase/functions/_shared/preauth-budget.ts",
-  "repositorySharedSourceSha256": "5add1a69abf91b4e7e7929c6298546f53c6e51b7b4069bc26557cd87f5e87ddc",
+  "repositorySharedSourceSha256": "610b8b563da81cfe4932b7771fc76964f3d486ccff5281b90be8fbb80de73dba",
   "requiredMigration": "supabase/migrations/20260823160705_require_one_time_account_deletion_grants.sql",
   "identityBudgetMigration": "supabase/migrations/20260902084252_harden_deep_scan_boundaries.sql",
+  "commitMigration": "supabase/migrations/20260902162432_linearize_account_deletion_commit.sql",
   "knownProduction": {
     "projectRef": "owrcbsrectdgaotndtxy",
-    "observedAt": "2026-08-28",
-    "functionVersion": 16,
-    "implementsRepositoryContractVersion": 5,
-    "sourceSha256": "a90be7db99f47a8a96a9bb0ba4b7c76a9a38b65db9ae3d6f825a2ec94952ccc4",
-    "sharedSourceSha256": "5add1a69abf91b4e7e7929c6298546f53c6e51b7b4069bc26557cd87f5e87ddc",
+    "observedAt": "2026-09-02",
+    "functionVersion": 19,
+    "implementsRepositoryContractVersion": 7,
+    "sourceSha256": "61b20eb4d80815f2474a82100fdfa1836e7f25989363809ffbe0dfb96fef1e2f",
+    "sharedSourceSha256": "610b8b563da81cfe4932b7771fc76964f3d486ccff5281b90be8fbb80de73dba",
     "verifyJwt": true,
     "requiredMigrationApplied": true,
-    "identityBudgetMigrationApplied": false
+    "identityBudgetMigrationApplied": true,
+    "commitMigrationApplied": true
   },
   "releaseGate": {
-    "deploymentRequired": true,
-    "minimumProductionFunctionVersion": 17,
-    "reason": "Apply the required migration and deploy the canonical repository source, then read back the production function and configuration before release."
+    "deploymentRequired": false,
+    "minimumProductionFunctionVersion": 19,
+    "reason": "Production function version 19, canonical source hashes, verify_jwt, and all required migrations were read back on 2026-09-02."
   }
 }

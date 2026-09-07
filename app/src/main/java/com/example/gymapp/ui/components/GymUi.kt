@@ -352,7 +352,9 @@ fun <T> GymSegmentedControl(
 ) {
     if (items.isEmpty()) return
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val stackVertically = maxWidth < 280.dp
+        val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+        val stackVertically = maxWidth < 280.dp || fontScale >= 1.8f
+        val useTwoColumns = items.size >= 4 && (maxWidth < 480.dp || fontScale > 1.15f)
         val content: @Composable (GymSegmentItem<T>, Modifier) -> Unit = { item, itemModifier ->
             val isSelected = item.value == selected
             Surface(
@@ -393,8 +395,7 @@ fun <T> GymSegmentedControl(
                         text = item.label,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
@@ -406,6 +407,15 @@ fun <T> GymSegmentedControl(
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
             ) {
                 items.forEach { item -> content(item, Modifier.fillMaxWidth()) }
+            }
+        } else if (useTwoColumns) {
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)) {
+                items.chunked(2).forEach { group ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)) {
+                        group.forEach { item -> content(item, Modifier.weight(1f)) }
+                        if (group.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    }
+                }
             }
         } else {
             Row(

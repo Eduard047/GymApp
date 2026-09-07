@@ -1776,16 +1776,12 @@ private fun FocusLensMetric(
             text = value,
             style = MaterialTheme.typography.titleLarge,
             color = Color.White,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            fontWeight = FontWeight.Bold
         )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.72f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            color = Color.White.copy(alpha = 0.72f)
         )
     }
 }

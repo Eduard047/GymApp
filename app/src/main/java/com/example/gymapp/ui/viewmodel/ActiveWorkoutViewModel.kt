@@ -71,7 +71,8 @@ data class ActiveWorkoutExerciseUiState(
     val sets: List<ActiveWorkoutSetUiState>
 )
 
-data class ActiveWorkoutAdaptationLine(val name: String, val previousName: String, val values: String)
+data class ActiveWorkoutAdaptationValue(val weight: Double, val reps: Int, val previousWeight: Double?, val previousReps: Int?)
+data class ActiveWorkoutAdaptationLine(val name: String, val previousName: String, val before: Int, val after: Int, val values: List<ActiveWorkoutAdaptationValue>)
 data class ActiveWorkoutAdaptationChoice(val exerciseId: Long, val name: String)
 data class ActiveWorkoutAdaptationUiState(
     val reason: String,
@@ -550,10 +551,24 @@ class ActiveWorkoutViewModel(
                 val after = request.candidate?.exercises?.sumOf { b -> b.sets.count { it.completedAt == null } } ?: 0
                 ActiveWorkoutAdaptationUiState(request.reason,
                     request.choices.map { ActiveWorkoutAdaptationChoice(it.exercise.id, it.exercise.name) }, request.candidate != null,
-                    before, after, request.candidate?.exercises?.flatMap { b -> b.sets.filter { it.completedAt == null }.map { set -> val oldBlock = request.previewSource.exercises.firstOrNull { block -> block.sets.any { it.id == set.id } }
-                        val old = oldBlock?.sets?.firstOrNull { it.id == set.id }
-                        ActiveWorkoutAdaptationLine(b.activeWorkoutExercise.exerciseName, oldBlock?.activeWorkoutExercise?.exerciseName.orEmpty(),
-                            (old?.let { "${formatActiveWeight(it.weight)} kg × ${it.reps} → " } ?: "") + "${formatActiveWeight(set.weight)} kg × ${set.reps}") } }.orEmpty(), request.isApplying)
+                    before, after, if (request.candidate == null) emptyList() else request.previewSource.exercises.mapNotNull { oldBlock ->
+                        val oldSets = oldBlock.sets.filter { it.completedAt == null }
+                        if (oldSets.isEmpty()) null else {
+                            val ids = oldSets.map { it.id }.toSet()
+                            val newBlock = request.candidate.exercises.firstOrNull { block -> block.sets.any { it.id in ids && it.completedAt == null } }
+                            val newSets = newBlock?.sets?.filter { it.id in ids && it.completedAt == null }.orEmpty()
+                            val replaced = newBlock != null && (newBlock.activeWorkoutExercise.catalogKey != oldBlock.activeWorkoutExercise.catalogKey || newBlock.activeWorkoutExercise.exerciseName != oldBlock.activeWorkoutExercise.exerciseName)
+                            val changes = newSets.mapNotNull { set ->
+                                val old = oldSets.first { it.id == set.id }
+                                if (!replaced && old.weight == set.weight && old.reps == set.reps) null
+                                else ActiveWorkoutAdaptationValue(set.weight, set.reps, if (replaced) null else old.weight, if (replaced) null else old.reps)
+                            }.distinct()
+                            if (oldSets.size == newSets.size && !replaced && changes.isEmpty()) null else
+                                ActiveWorkoutAdaptationLine(newBlock?.activeWorkoutExercise?.exerciseName ?: oldBlock.activeWorkoutExercise.exerciseName,
+                                    oldBlock.activeWorkoutExercise.exerciseName, oldSets.size, newSets.size, changes)
+                        }
+                    }, request.isApplying)
+
             }
         )
     }.flowOn(Dispatchers.Default)

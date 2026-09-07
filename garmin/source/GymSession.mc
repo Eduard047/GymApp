@@ -43,7 +43,6 @@ class GymSession {
     static var restingHr = 60;
     static var maxHrEstimate = 185;
     static var lastCalorieSeconds = 0;
-    static var lastMet = 0.0;
     static var lastKcalPerMinute = 0.0;
     static var setBoostCalories = 0.0;
     // FIT completion is separate from the app-level workout queue. Keep only the
@@ -61,12 +60,9 @@ class GymSession {
     static var lastHrChangeSeconds = 0;
     static var autoLogPrompt = false;
     static var activeSetSeen = false;
-    static var lastPromptSeconds = 0;
-    static var debugText = "";
     static var hrTrend = 0.0;
     static var activeStartSeconds = 0;
     static var lastSetEndSeconds = 0;
-    static var lastAutoReason = "init";
     static var minuteBucket = -1;
     static var minuteHrSum = 0;
     static var minuteHrSamples = 0;
@@ -99,7 +95,6 @@ class GymSession {
     static var currentSetEndHr = null;
     static var currentSetMaxConfidence = 0;
     static var currentSetZoneSeconds = null;
-    static var currentSetLastIntervalSeconds = 0;
     static var currentSetStartGymCalories = null;
     static var currentSetStartGarminCalories = null;
     static var currentSetEndGymCalories = null;
@@ -116,21 +111,12 @@ class GymSession {
     static var candidateStartGymCalories = null;
     static var candidateStartGarminCalories = null;
     static var candidateZoneSeconds = null;
-    static var candidateLastIntervalSeconds = 0;
     static var recoveryPeakHr = null;
     static var recoveryLowestHr = null;
 
-    static function start() {
-        if (!GymWorkoutMode.canResume()) {
-            GymStore.status = "MODE FAIL";
-            return false;
-        }
-        if (!retryAccountTransitionFitCleanup()) {
-            return false;
-        }
-        resetProfileDefaults();
-        loadProfile();
-        startedAt = Time.now().value();
+    // Start and owner transitions clear the same metric state. Keep one
+    // implementation so constrained VMs do not store both copies of the reset.
+    static function resetWorkoutMetrics() {
         pausedAt = 0;
         pausedAccumSeconds = 0;
         elapsedSeconds = 0;
@@ -142,32 +128,16 @@ class GymSession {
         previousFilterHr = null;
         olderFilterHr = null;
         lastValidHrSeconds = 0;
-        gymCalories = 0.0;
-        garminCalories = null;
-        lastCalorieSeconds = 0;
-        lastMet = 0.0;
-        lastKcalPerMinute = 0.0;
-        setBoostCalories = 0.0;
         avgHr = 0;
         maxHr = 0;
         hrSamples = 0;
+        gymCalories = 0.0;
+        garminCalories = null;
         zone = 0;
-        effortState = GymWorkoutMode.isFree() ? "FREE" : "WARMUP";
-        lastHr = null;
-        lastHrChangeSeconds = 0;
+        paused = false;
+        fitSaved = false;
         autoLogPrompt = false;
         activeSetSeen = false;
-        lastPromptSeconds = 0;
-        hrTrend = 0.0;
-        activeStartSeconds = 0;
-        lastSetEndSeconds = 0;
-        lastAutoReason = "init";
-        minuteBucket = -1;
-        minuteHrSum = 0;
-        minuteHrSamples = 0;
-        previousMinuteHr = null;
-        sessionBaselineHr = null;
-        activeSignalCount = 0;
         motionScore = 0.0;
         gyroAvailable = false;
         gyroScore = 0.0;
@@ -178,9 +148,6 @@ class GymSession {
         motionBurstSignals = 0;
         motionRhythmSignals = 0;
         motionBurstStartedSeconds = 0;
-        motionReversalCount = 0;
-        motionLastDirection = 0;
-        motionLastAxis = -1;
         currentSetMotionConfirmed = false;
         currentSetMotionOnly = false;
         lastLoggedSetSeconds = -10;
@@ -190,14 +157,49 @@ class GymSession {
         currentSetPeakHr = null;
         currentSetEndHr = null;
         currentSetMaxConfidence = 0;
-        resetCurrentSetInterval();
-        clearSetCandidate();
         recoveryPeakHr = null;
         recoveryLowestHr = null;
-        debugText = "init";
-        fitSaved = false;
-        paused = false;
+    }
 
+    static function start() {
+        if (!GymWorkoutMode.canResume()) {
+            GymStore.status = "MODE FAIL";
+            return false;
+        }
+        if (!retryAccountTransitionFitCleanup()) {
+            return false;
+        }
+        resetProfileDefaults();
+        loadProfile();
+        resetWorkoutMetrics();
+        startedAt = Time.now().value();
+        lastCalorieSeconds = 0;
+        lastKcalPerMinute = 0.0;
+        setBoostCalories = 0.0;
+        effortState = GymWorkoutMode.isFree() ? "FREE" : "WARMUP";
+        lastHr = null;
+        lastHrChangeSeconds = 0;
+        hrTrend = 0.0;
+        activeStartSeconds = 0;
+        lastSetEndSeconds = 0;
+        minuteBucket = -1;
+        minuteHrSum = 0;
+        minuteHrSamples = 0;
+        previousMinuteHr = null;
+        sessionBaselineHr = null;
+        activeSignalCount = 0;
+        motionReversalCount = 0;
+        motionLastDirection = 0;
+        motionLastAxis = -1;
+        resetCurrentSetInterval();
+        clearSetCandidate();
+        // Commit a new origin while FIT/sensor buffers are still unallocated.
+        // Resumed work already has a durable snapshot and keeps that exact origin.
+        if (!GymStore.hasUnfinishedWorkout() && !GymStore.checkpointLiveWorkout(true)) {
+            startedAt = 0;
+            if (!GymStore.status.equals("STORE FULL")) { GymStore.status = "RECOVERY FAIL"; }
+            return false;
+        }
         if (Toybox has :ActivityRecording) {
             try {
                 session = Recording.createSession({
@@ -379,52 +381,11 @@ class GymSession {
         // Session.stop()/discard() can fail transiently on real devices. Preserve the
         // handle and retry instead of overwriting a still-active native FIT session.
         fitCleanupPending = !fitDiscarded && session != null;
+        resetWorkoutMetrics();
         startedAt = 0;
-        pausedAt = 0;
-        pausedAccumSeconds = 0;
-        elapsedSeconds = 0;
-        hr = null;
-        activityHr = null;
-        sensorHr = null;
-        hrSource = "--";
-        filteredHr = null;
-        previousFilterHr = null;
-        olderFilterHr = null;
-        lastValidHrSeconds = 0;
-        avgHr = 0;
-        maxHr = 0;
-        hrSamples = 0;
-        gymCalories = 0.0;
-        garminCalories = null;
-        zone = 0;
         recording = false;
-        paused = false;
-        fitSaved = false;
-        autoLogPrompt = false;
-        activeSetSeen = false;
-        motionScore = 0.0;
-        gyroAvailable = false;
-        gyroScore = 0.0;
-        motionNoiseFloor = 0.0;
-        lastMotionTimerMs = null;
-        lastCredibleMotionSeconds = 0;
-        motionSignalCount = 0;
-        motionBurstSignals = 0;
-        motionRhythmSignals = 0;
-        motionBurstStartedSeconds = 0;
-        currentSetMotionConfirmed = false;
-        currentSetMotionOnly = false;
-        lastLoggedSetSeconds = -10;
-        setConfidence = 0;
-        confidenceLevel = "LOW";
-        currentSetStartHr = null;
-        currentSetPeakHr = null;
-        currentSetEndHr = null;
-        currentSetMaxConfidence = 0;
         resetCurrentSetInterval();
         clearSetCandidate();
-        recoveryPeakHr = null;
-        recoveryLowestHr = null;
         if (fitCleanupPending) {
             GymStore.status = "FIT RETRY";
         }
@@ -525,6 +486,9 @@ class GymSession {
     }
 
     static function startSensors() {
+        // Field reads share a row only within an action. The next sensor batch
+        // does not need that decoded row or its copied interval in memory.
+        GymActiveJournal.releaseReadCache();
         if (!GymWorkoutMode.canResume()) {
             stopSensors();
             return;
@@ -1251,15 +1215,12 @@ class GymSession {
         // state—never create a set, rest timer, prompt, or durable payload.
         clearAutoPrompt();
         GymStore.status = "MOTION SHORT";
-        lastAutoReason = "short motion ignored";
-        debugText = "short motion";
     }
 
     (:compactLegacyState)
     static function discardShortMotionInterval() {
         clearAutoPrompt();
         GymStore.status = "MOTION SHORT";
-        lastAutoReason = "short motion ignored";
     }
 
     (:fullLegacyState)
@@ -1279,8 +1240,6 @@ class GymSession {
         effortState = "REST";
         activeSignalCount = 0;
         autoLogPrompt = true;
-        lastPromptSeconds = elapsedSeconds;
-        lastAutoReason = "hr signal lost";
     }
 
     (:fullLegacyState)
@@ -1307,7 +1266,6 @@ class GymSession {
         beginSetInterval();
         initializeMotionSetSnapshot();
         lastHrChangeSeconds = elapsedSeconds;
-        lastAutoReason = gyroCorroborated ? "motion+gyro" : "motion rhythm";
     }
 
     (:compactLegacyState)
@@ -1333,7 +1291,6 @@ class GymSession {
         beginSetInterval();
         initializeMotionSetSnapshot();
         lastHrChangeSeconds = elapsedSeconds;
-        lastAutoReason = "motion rhythm";
     }
 
     (:fullLegacyState)
@@ -1364,8 +1321,6 @@ class GymSession {
         // pending confirmation. Suppressing it can merge the next superset into
         // this unsaved interval. The post-save deadband prevents duplicate prompts.
         autoLogPrompt = true;
-        lastPromptSeconds = elapsedSeconds;
-        lastAutoReason = "motion rest " + duration.toString() + "s";
     }
 
     (:compactLegacyState)
@@ -1390,8 +1345,6 @@ class GymSession {
         activeSignalCount = 0;
         effortState = "REST";
         autoLogPrompt = true;
-        lastPromptSeconds = elapsedSeconds;
-        lastAutoReason = "motion rest";
     }
 
     (:fullLegacyState)
@@ -1696,27 +1649,19 @@ class GymSession {
                     setConfidence = 70;
                 }
                 confidenceLevel = "HIGH";
-                lastAutoReason = "motion no hr";
-                debugText = "motion only";
             } else if (wasActiveSet && !GymStore.autoPromptEnabled) {
                 // Manual mode retains the bounded HR interval until SAVE.
                 effortState = "SET ACTIVE";
-                lastAutoReason = "manual no hr";
-                debugText = "no hr manual";
             } else if (wasActiveSet) {
                 var minimum = GymStore.sensitivityIndex == 0 ? 20 :
                     (GymStore.sensitivityIndex == 2 ? 12 : 15);
                 if (lastSetEndSeconds - activeStartSeconds >= minimum) {
                     effortState = "REST";
                     autoLogPrompt = true;
-                    lastPromptSeconds = elapsedSeconds;
-                    lastAutoReason = "hr signal lost";
-                    debugText = "save set";
+
                 } else {
                     clearAutoPrompt();
                     GymStore.status = "HR SHORT";
-                    lastAutoReason = "short hr ignored";
-                    debugText = "short hr";
                 }
             } else {
                 motionSignalCount = 0;
@@ -1726,8 +1671,6 @@ class GymSession {
                 if (!effortState.equals("PAUSED")) {
                     effortState = "READY";
                 }
-                lastAutoReason = "hr missing";
-                debugText = "no hr";
             }
         }
     }
@@ -1763,7 +1706,6 @@ class GymSession {
             if (lastSetEndSeconds - activeStartSeconds >= minimum) {
                 effortState = "REST";
                 autoLogPrompt = true;
-                lastPromptSeconds = elapsedSeconds;
             } else {
                 clearAutoPrompt();
                 GymStore.status = "HR SHORT";
@@ -1805,22 +1747,16 @@ class GymSession {
             sessionBaselineHr = value;
         }
         if (autoLogPrompt) {
-            lastAutoReason = "await confirm";
-            debugText = "save set";
             return;
         }
         if (previous == null) {
             if (!activeSetSeen && isMotionFresh() && motionScore >= motionThreshold()) {
                 beginSetCandidate(value);
             }
-            lastAutoReason = "first hr";
-            debugText = "hr " + value.toString() + " z" + zone.toString();
             return;
         }
-
         var delta = value - previous;
         hrTrend = ((hrTrend * 2.0) + delta.toFloat()) / 3.0;
-
         var riseThreshold = 5;
         var trendThreshold = 3.0;
         var minRiseFromBaseline = 10;
@@ -1828,7 +1764,6 @@ class GymSession {
         var activeZone = 3;
         var minActiveSeconds = 8;
         var restDetectSeconds = 35;
-
         if (GymStore.sensitivityIndex == 0) {
             riseThreshold = 7;
             trendThreshold = 4.0;
@@ -1846,7 +1781,6 @@ class GymSession {
             minActiveSeconds = 6;
             restDetectSeconds = 25;
         }
-
         var baselineDelta = value - sessionBaselineHr;
         var risingEnough = (delta >= riseThreshold || hrTrend >= trendThreshold) && baselineDelta >= minRiseFromBaseline;
         var zoneEnough = zone >= activeZone && baselineDelta >= (minRiseFromBaseline / 2);
@@ -1896,7 +1830,6 @@ class GymSession {
         } else {
             activeSignalCount = 0;
         }
-
         var requiredStartSignals = freshMotionEvidence ? 3 : 8;
         if (activeSignalCount >= requiredStartSignals) {
             if (!effortState.equals("SET ACTIVE")) {
@@ -1910,7 +1843,6 @@ class GymSession {
                     if (motionBurstSignals >= 2 && motionRhythmSignals >= 1) {
                         currentSetMotionConfirmed = true;
                     }
-                    lastAutoReason = "set resumed";
                 } else {
                     activeSetSeen = true;
                     var hasCandidate = candidateZoneSeconds instanceof Lang.Array &&
@@ -1929,7 +1861,6 @@ class GymSession {
                     currentSetMotionOnly = false;
                     beginSetInterval();
                     initializeMotionSetSnapshot();
-                    lastAutoReason = "rise +" + baselineDelta.toString();
                 }
             }
             effortState = "SET ACTIVE";
@@ -1945,7 +1876,6 @@ class GymSession {
                 // AUTO OFF is manual mode on every product: a transient HR fall
                 // must never erase or hide the interval before the athlete saves.
                 effortState = "SET ACTIVE";
-                lastAutoReason = "manual hold";
                 return;
             }
             if (wasSetActive && activeSetSeen && hasCompleteMotionInterval()) {
@@ -1953,8 +1883,6 @@ class GymSession {
                 // fall inside its quiet window must not preempt the motion/zone/
                 // calorie snapshots with a later recovery sample.
                 effortState = "SET ACTIVE";
-                lastAutoReason = "motion boundary";
-                debugText = "motion quiet";
                 return;
             }
             var activeDuration = elapsedSeconds - activeStartSeconds;
@@ -1965,8 +1893,6 @@ class GymSession {
                 // lets WorkoutView restore a rest countdown suspended for it.
                 clearAutoPrompt();
                 GymStore.status = "HR SHORT";
-                lastAutoReason = "short hr ignored";
-                debugText = "short hr";
                 return;
             }
             if (!wasSetActive) {
@@ -1987,10 +1913,7 @@ class GymSession {
                     (currentSetMotionConfirmed && !currentSetMotionOnly))
             ) {
                 autoLogPrompt = true;
-                lastPromptSeconds = elapsedSeconds;
-                lastAutoReason = "rest after " + activeDuration.toString() + "s";
             } else {
-                lastAutoReason = "rest no prompt";
             }
             effortState = "REST";
             if (value < sessionBaselineHr || (!activeSetSeen && baselineDelta < 4)) {
@@ -1998,21 +1921,17 @@ class GymSession {
             }
         } else if (setConfidence >= 40 && !activeSetSeen) {
             effortState = "SET MAYBE";
-            lastAutoReason = "uncertain";
         } else if (zone == 2) {
             effortState = "READY";
-            lastAutoReason = "zone ready";
             if (!activeSetSeen && baselineDelta < 4) {
                 sessionBaselineHr = ((sessionBaselineHr * 3) + value) / 4;
             }
         } else {
-            lastAutoReason = "hold";
             if (!activeSetSeen && baselineDelta < 4) {
                 sessionBaselineHr = ((sessionBaselineHr * 3) + value) / 4;
             }
         }
-        debugText = "d" + delta.toString() + " m" + motionScore.format("%.0f") +
-            " c" + setConfidence.toString() + " " + lastAutoReason;
+
     }
 
     // API 3.4 watches have a 96 KiB program ceiling. Keep the same bounded
@@ -2081,7 +2000,6 @@ class GymSession {
             if (elapsedSeconds - activeStartSeconds >= minimum) {
                 effortState = "REST";
                 autoLogPrompt = true;
-                lastPromptSeconds = elapsedSeconds;
             } else {
                 clearAutoPrompt();
                 GymStore.status = "HR SHORT";
@@ -2332,7 +2250,6 @@ class GymSession {
                 currentSetZoneSeconds[i] = candidateZoneSeconds[i];
             }
         }
-        currentSetLastIntervalSeconds = elapsedSeconds;
         currentSetStartGymCalories = useCandidate ? candidateStartGymCalories : gymCalories;
         currentSetStartGarminCalories = useCandidate ? candidateStartGarminCalories : garminCalories;
         currentSetEndGymCalories = null;
@@ -2347,7 +2264,6 @@ class GymSession {
 
     static function resetCurrentSetInterval() {
         currentSetZoneSeconds = null;
-        currentSetLastIntervalSeconds = 0;
         currentSetStartGymCalories = null;
         currentSetStartGarminCalories = null;
         currentSetEndGymCalories = null;
@@ -2374,7 +2290,6 @@ class GymSession {
         candidateStartGymCalories = gymCalories;
         candidateStartGarminCalories = garminCalories;
         candidateZoneSeconds = [0, 0, 0, 0, 0, 0];
-        candidateLastIntervalSeconds = elapsedSeconds;
     }
 
     static function clearSetCandidate() {
@@ -2384,7 +2299,6 @@ class GymSession {
         candidateStartGymCalories = null;
         candidateStartGarminCalories = null;
         candidateZoneSeconds = null;
-        candidateLastIntervalSeconds = 0;
     }
 
     static function expireSetCandidate() {
@@ -2414,7 +2328,6 @@ class GymSession {
         } else if (delta > 1) {
             delta = 1;
         }
-        candidateLastIntervalSeconds = sampleSeconds + delta;
         candidateZoneSeconds[sampleZone] += delta;
         if (candidateZoneSeconds[sampleZone] > 8) {
             candidateZoneSeconds[sampleZone] = 8;
@@ -2470,7 +2383,6 @@ class GymSession {
         if (delta > 1) {
             delta = 1;
         }
-        currentSetLastIntervalSeconds = sampleSeconds + delta;
         currentSetZoneSeconds[sampleZone] += delta;
         if (currentSetZoneSeconds[sampleZone] > 7200) {
             currentSetZoneSeconds[sampleZone] = 7200;
@@ -2580,14 +2492,10 @@ class GymSession {
     }
 
     static function copySetInterval(source) {
-        var copy = [];
         if (!(source instanceof Lang.Array) || source.size() != 10) {
             return [0, 0, 0.0, null, 0, 0, 0, 0, 0, 0];
         }
-        for (var i = 0; i < source.size(); i += 1) {
-            copy.add(source[i]);
-        }
-        return copy;
+        return source.slice(null, null);
     }
 
     static function beginRecoveryTracking(statistics) {
@@ -2644,7 +2552,6 @@ class GymSession {
         lastSetEndSeconds = 0;
         setConfidence = 0;
         confidenceLevel = "LOW";
-        lastAutoReason = "set logged";
     }
 
     static function rejectAutoPrompt() {
@@ -2653,8 +2560,6 @@ class GymSession {
         }
         clearAutoPrompt();
         GymStore.status = "SET SKIPPED";
-        lastAutoReason = "set rejected";
-        debugText = "set rejected";
         return true;
     }
 
@@ -2677,7 +2582,6 @@ class GymSession {
         currentSetMotionOnly = false;
         restoredSetInterval = copySetInterval(statistics.get("setInterval"));
         currentSetZoneSeconds = null;
-        currentSetLastIntervalSeconds = 0;
         currentSetStartGymCalories = null;
         currentSetStartGarminCalories = null;
         currentSetEndGymCalories = null;
@@ -2692,7 +2596,6 @@ class GymSession {
         confidenceLevel = setConfidence >= 70 ? "HIGH" : (setConfidence >= 40 ? "MED" : "LOW");
         recoveryPeakHr = null;
         recoveryLowestHr = null;
-        lastAutoReason = autoLogPrompt ? "auto set undo" : "manual set undo";
     }
 
     static function resetProfileDefaults() {
@@ -2736,7 +2639,6 @@ class GymSession {
             }
         } catch (ex) {
         }
-
         try {
             if (UserProfile has :getHeartRateZones2) {
                 zones = UserProfile.getHeartRateZones2(Activity.SPORT_TRAINING);
@@ -2789,7 +2691,6 @@ class GymSession {
             }
             return 5;
         }
-
         if (value < zones[0]) {
             return 0;
         } else if (value <= zones[1]) {
@@ -2830,7 +2731,6 @@ class GymSession {
             deltaSeconds = 30;
         }
         var met = metForHeartRate();
-        lastMet = met;
         lastKcalPerMinute = met * 3.5 * profileWeightKg / 200.0;
         // Standard MET estimate: kcal/min = MET * 3.5 * kg / 200.
         // For strength work this is an estimate; Garmin's proprietary calorie
@@ -2905,7 +2805,6 @@ class GymSession {
         } else if (hrr > 1.0) {
             hrr = 1.0;
         }
-
         var lowHr = (hr <= restingHr + 25 || hrr <= 0.30) && zone <= 1;
         if (lowHr && (!activeSetSeen || effortState.equals("READY") || effortState.equals("WARMUP") || effortState.equals("REST"))) {
             if (!activeSetSeen) {
@@ -2913,7 +2812,6 @@ class GymSession {
             }
             return clampMet(1.15 + (hrr * 1.2), 1.15, 1.8);
         }
-
         if (effortState.equals("SET ACTIVE") || zone >= 3 || hrr >= 0.45) {
             var hrrMet = hrrBasedActiveMet(hrr);
             var modelMet = researchExerciseMet();
@@ -2925,7 +2823,6 @@ class GymSession {
             }
             return clampMet(activeMet, 3.8, 12.0);
         }
-
         if (effortState.equals("REST") || activeSetSeen) {
             var recoveryMet = 0.75 + (hrr * 2.2);
             if (previousMinuteHr != null && previousMinuteHr > hr + 10) {
@@ -2935,7 +2832,6 @@ class GymSession {
             }
             return clampMet(recoveryMet, 1.15, 2.6);
         }
-
         return clampMet(1.0 + (hrr * 1.2), 1.0, 1.8);
     }
 

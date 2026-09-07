@@ -71,6 +71,54 @@ final class TrainingToolsTests: XCTestCase {
         XCTAssertEqual(TrainingProgramStore(owner: "second", workoutStorageURL: secondURL).program, second.program)
     }
 
+    @MainActor func testProgramWriteFailureKeepsCommittedStateAndCanRetry() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("workouts.json")
+        var reject = false
+        let store = TrainingProgramStore(owner: "first", workoutStorageURL: url) { data, target in
+            if reject { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: target, options: .atomic)
+        }
+        XCTAssertTrue(store.create(profile: TrainingProfile(workoutsPerWeek: 3)))
+        let committed = store.program
+        reject = true
+        store.status("completed")
+        XCTAssertTrue(store.hasError)
+        XCTAssertEqual(committed, store.program)
+        XCTAssertEqual(committed, TrainingProgramStore(owner: "first", workoutStorageURL: url).program)
+        reject = false
+        store.reload()
+        store.status("completed")
+        XCTAssertEqual(store.program?.status, "completed")
+    }
+
+    @MainActor func testStaleProgramWriteAndNewCycleIdentity() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("workouts.json")
+        let first = TrainingProgramStore(owner: "first", workoutStorageURL: url)
+        XCTAssertTrue(first.create(profile: TrainingProfile(workoutsPerWeek: 3)))
+        let stale = TrainingProgramStore(owner: "first", workoutStorageURL: url)
+        first.status("paused")
+        stale.status("completed")
+        XCTAssertTrue(stale.hasError)
+        XCTAssertEqual(TrainingProgramStore(owner: "first", workoutStorageURL: url).program?.status, "paused")
+        first.status("completed")
+        let id = first.program!.id
+        first.reopen()
+        XCTAssertEqual(first.program?.status, "active")
+        XCTAssertEqual(first.program?.id, id)
+        first.status("completed")
+        XCTAssertFalse(first.create(profile: TrainingProfile(workoutsPerWeek: 4), replacing: UUID()))
+        first.reload()
+        XCTAssertTrue(first.create(profile: TrainingProfile(workoutsPerWeek: 4), replacing: id))
+        XCTAssertNotEqual(first.program?.id, id)
+        XCTAssertEqual(first.program?.slots.count, 16)
+    }
+
     private func entry(_ exercise: UUID, date: Date, weight: Double, reps: Int) -> ExerciseHistoryEntry {
         ExerciseHistoryEntry(setID: UUID(), workoutID: UUID(), sessionDate: date, exerciseID: exercise,
             exerciseName: "Exercise", weight: weight, reps: reps, setOrderIndex: 0)

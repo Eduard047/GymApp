@@ -66,10 +66,10 @@ test("delete-account has one canonical Edge source with a pinned contract hash",
   );
 });
 
-test("one-time deletion grant remains between user verification and administrative deletion", () => {
+test("committed deletion operation remains between user verification and administrative deletion", () => {
   const authUserCall = source.indexOf("/auth/v1/user");
   const liveSessionCall = source.indexOf(
-    "/rest/v1/rpc/consume_account_deletion_grant",
+    "/rest/v1/rpc/commit_account_deletion_operation",
   );
   const administrativeDelete = source.indexOf("/auth/v1/admin/users/");
 
@@ -85,8 +85,11 @@ test("one-time deletion grant remains between user verification and administrati
   assert.match(source, /Authorization: authorization/);
   assert.match(
     source,
-    /liveSessionUserId\.toLowerCase\(\) !== authenticatedUser\.id\.toLowerCase\(\)/,
+    /deletionCommit\.userId\.toLowerCase\(\)[\s\S]*authenticatedUser\.id\.toLowerCase\(\)/,
   );
+  assert.match(source, /deletionCommit\.version !== 2/);
+  assert.match(source, /deletionCommit\.status !== "committed"/);
+  assert.match(source, /!isUuid\(deletionCommit\.operationId\)/);
   assert.match(source, /encodeURIComponent\(authenticatedUser\.id\)/);
 
   const functionSection = /\[functions\.delete-account\]([\s\S]*?)(?=\n\[|$)/
@@ -107,11 +110,18 @@ test("known production state is represented by an enforceable release gate", asy
     deploymentContract.identityBudgetMigration,
     "utf8",
   );
+  const commitMigration = await readFile(
+    deploymentContract.commitMigration,
+    "utf8",
+  );
   assert.match(
     requiredMigration,
     /consume_account_deletion_grant/,
   );
   assert.match(identityBudgetMigration, /Invalid verified identity/);
+  assert.match(commitMigration, /account_deletion_operations/);
+  assert.match(commitMigration, /for share/);
+  assert.match(commitMigration, /'version', 2/);
   const isolatedLimiterBody = identityBudgetMigration.match(
     /as \$function\$\s*([\s\S]*?)\$function\$;/,
   )?.[1];
@@ -122,6 +132,7 @@ test("known production state is represented by an enforceable release gate", asy
   const gate = deploymentContract.releaseGate;
   const productionIsCurrent = production.requiredMigrationApplied === true &&
     production.identityBudgetMigrationApplied === true &&
+    production.commitMigrationApplied === true &&
     production.functionVersion >= gate.minimumProductionFunctionVersion &&
     production.implementsRepositoryContractVersion ===
       deploymentContract.repositoryContractVersion &&

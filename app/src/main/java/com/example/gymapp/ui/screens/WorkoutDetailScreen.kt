@@ -267,8 +267,7 @@ internal fun WorkoutDetailScreen(
         } else {
             val isActivityOnly = details.workoutExercises.isEmpty() &&
                 details.session.durationSeconds?.let { it > 0L } == true
-            val isEditingWorkout = !isActivityOnly &&
-                editingWorkoutSessionId == details.session.id
+            val isEditingWorkout = editingWorkoutSessionId == details.session.id
             val controls = workoutDetailControlVisibility(isEditingWorkout)
             val listState = rememberLazyListState()
             val toggleEditMode = {
@@ -360,6 +359,7 @@ internal fun WorkoutDetailScreen(
                 if (garminMetrics != null) {
                     item {
                         WatchMetricsDisclosureCard(
+                            isActivityOnly = isActivityOnly,
                             expanded = areWatchMetricsExpanded,
                             onToggle = { areWatchMetricsExpanded = !areWatchMetricsExpanded }
                         )
@@ -879,12 +879,11 @@ private fun WorkoutHeaderCard(
                 },
                 onHero = true
             )
-            if (!isActivityOnly) {
-                WorkoutEditModeButton(
-                    isEditing = isEditing,
-                    onToggleEdit = onToggleEdit
-                )
-            }
+            WorkoutEditModeButton(
+                isEditing = isEditing,
+                isActivityOnly = isActivityOnly,
+                onToggleEdit = onToggleEdit
+            )
         }
     }
 }
@@ -1041,11 +1040,12 @@ private fun GarminWorkoutHeaderCard(
                             )
                         }
                 }
-                WorkoutEditModeButton(
-                    isEditing = isEditing,
-                    onToggleEdit = onToggleEdit
-                )
             }
+            WorkoutEditModeButton(
+                isEditing = isEditing,
+                isActivityOnly = isActivityOnly,
+                onToggleEdit = onToggleEdit
+            )
         }
     }
 }
@@ -1053,6 +1053,7 @@ private fun GarminWorkoutHeaderCard(
 @Composable
 private fun WorkoutEditModeButton(
     isEditing: Boolean,
+    isActivityOnly: Boolean,
     onToggleEdit: () -> Unit
 ) {
     FilledTonalButton(
@@ -1071,6 +1072,8 @@ private fun WorkoutEditModeButton(
             text = stringResource(
                 if (isEditing) {
                     R.string.action_finish_editing_workout
+                } else if (isActivityOnly) {
+                    R.string.action_complete_free_workout
                 } else {
                     R.string.action_edit_workout
                 }
@@ -1082,6 +1085,7 @@ private fun WorkoutEditModeButton(
 
 @Composable
 private fun WatchMetricsDisclosureCard(
+    isActivityOnly: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit
 ) {
@@ -1106,7 +1110,10 @@ private fun WatchMetricsDisclosureCard(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = stringResource(R.string.garmin_watch_metrics_section_supporting),
+                    text = stringResource(
+                        if (isActivityOnly) R.string.garmin_free_metrics_supporting
+                        else R.string.garmin_watch_metrics_section_supporting
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

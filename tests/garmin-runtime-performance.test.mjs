@@ -118,3 +118,16 @@ test("Garmin full-profile text fitting preserves the longest prefix logarithmica
     }
   }
 });
+
+
+test("Garmin recording polls incoming messages without allocating periodic outbound requests", async () => {
+  const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
+  for (const tick of view.matchAll(/function tick\(\) \{[\s\S]*?(?=\n    (?:\(:|function ))/g)) {
+    assert.match(tick[0], /getApp\(\)\.pollMailbox\(\)/);
+    assert.match(tick[0], /GymSession\.tick\(\)/);
+    assert.doesNotMatch(tick[0], /requestSyncNow\(\)/);
+  }
+  const retry = section(view, "function maybeRetryPending()", "function hasWorkoutToResume()");
+  assert.ok(retry.indexOf("if (GymSession.recording)") < retry.indexOf("flushPending()"));
+  assert.match(view, /function syncFromReady\(\)[\s\S]*requestSyncNow\(\)/);
+});

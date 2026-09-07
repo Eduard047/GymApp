@@ -992,6 +992,7 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
         let accountStorageKey: String
         let storeIdentifier: ObjectIdentifier
         let workoutSnapshot: WorkoutSession
+        let retainsRecordedActivity: Bool
 
         var workoutID: UUID { workoutSnapshot.id }
         var workoutExerciseIDs: [UUID] { workoutSnapshot.exercises.map(\.id) }
@@ -1095,6 +1096,7 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
               context.workoutID == expectedWorkoutID,
               let workout = store.workout(id: context.workoutID),
               workout == context.workoutSnapshot,
+              store.hasRecordedActivityMetrics(workout) == context.retainsRecordedActivity,
               let currentBlock = workout.exercises.first(where: { $0.id == expectedBlock.id }),
               currentBlock == expectedBlock else {
             return false
@@ -1126,6 +1128,15 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
     }
 
     func confirmationMessage(languageCode: String) -> String {
+        if context.retainsRecordedActivity &&
+            (impact == .setExerciseAndWorkout || impact == .exerciseAndWorkout) {
+            return gymText(
+                "The exercises will be removed. Your watch metrics and workout time will stay in history. You can undo briefly on this screen.",
+                "Вправи буде видалено. Показники годинника й час тренування залишаться в історії. На цьому екрані ще можна буде скасувати видалення.",
+                "Упражнения будут удалены. Показатели часов и время тренировки останутся в истории. На этом экране ещё можно будет отменить удаление.",
+                languageCode: languageCode
+            )
+        }
         let key: String
         switch impact {
         case .setOnly:
@@ -1159,7 +1170,8 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
         Context(
             accountStorageKey: store.accountStorageKey,
             storeIdentifier: ObjectIdentifier(store),
-            workoutSnapshot: workout
+            workoutSnapshot: workout,
+            retainsRecordedActivity: store.hasRecordedActivityMetrics(workout)
         )
     }
 
@@ -1360,13 +1372,15 @@ struct WorkoutDetailView: View {
                     LazyVStack(spacing: 14) {
                         hero(workout, garminSummary: garminSummary)
 
-                        if !isEditing && !activityOnly {
-                            Button(action: beginEditing) {
+                        if !isEditing {
+                            Button {
+                                beginEditing()
+                            } label: {
                                 Label(
                                     gymText(
-                                        "Edit workout",
-                                        "Редагувати тренування",
-                                        "Редактировать тренировку",
+                                        activityOnly ? "Add exercises" : "Edit workout",
+                                        activityOnly ? "Додати вправи" : "Редагувати тренування",
+                                        activityOnly ? "Добавить упражнения" : "Редактировать тренировку",
                                         languageCode: gymCurrentLanguageCode()
                                     ),
                                     systemImage: "pencil"
@@ -1384,10 +1398,10 @@ struct WorkoutDetailView: View {
                             GymStatusBanner(message: statusMessage, isError: true)
                         }
 
-                        if isEditing && !activityOnly {
+                        if isEditing && !activityOnly && garminSummary == nil {
                             metadataPanel(isGarminWorkout: garminSummary != nil)
                         }
-                        if activityOnly {
+                        if activityOnly && !isEditing {
                             Button(role: .destructive) {
                                 presentWorkoutDeletionConfirmation()
                             } label: {
@@ -1404,7 +1418,8 @@ struct WorkoutDetailView: View {
                             }
                             .buttonStyle(GymSecondaryButtonStyle())
                             .disabled(pendingDeletion != nil)
-                        } else {
+                        }
+                        if !activityOnly || isEditing {
                             exerciseSection(workout)
                         }
                     }
@@ -1448,7 +1463,7 @@ struct WorkoutDetailView: View {
                 onSelect: addExercise,
                 onCreate: createExerciseForEditing
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
         }
         .sheet(isPresented: $showingShareChooser) {
             if let sharingPlan {
@@ -1548,9 +1563,9 @@ struct WorkoutDetailView: View {
 
                 if activityOnly {
                     Text(gymText(
-                        "Time, heart rate, and calories only. No exercises or sets were created.",
-                        "Лише час, пульс і калорії. Вправи та підходи не створювалися.",
-                        "Только время, пульс и калории. Упражнения и подходы не создавались.",
+                        "Watch metrics are saved. Add the exercises and sets you completed.",
+                        "Показники годинника збережено. Додай виконані вправи та підходи.",
+                        "Показатели часов сохранены. Добавь выполненные упражнения и подходы.",
                         languageCode: languageCode
                     ))
                     .font(.caption)
@@ -2754,9 +2769,6 @@ private struct StoredWorkoutSetEditorRow: View {
                     )
                 )
                     .font(.subheadline.weight(.bold))
-                ForEach(prLabels, id: \.self) { label in
-                    GymInfoPill(label, systemImage: "trophy.fill", accent: GymTheme.tertiary)
-                }
                 Spacer(minLength: 4)
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "trash")
@@ -2772,10 +2784,11 @@ private struct StoredWorkoutSetEditorRow: View {
                 )
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { editors }
-                VStack(spacing: 10) { editors }
+            ForEach(prLabels, id: \.self) { label in
+                GymInfoPill(label, systemImage: "trophy.fill", accent: GymTheme.tertiary)
             }
+
+            VStack(spacing: 10) { editors }
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) { actions }

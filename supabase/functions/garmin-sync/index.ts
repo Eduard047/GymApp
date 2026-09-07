@@ -6,6 +6,10 @@ import {
 } from "../_shared/garmin-capability.ts";
 import { validateGarminPlan } from "../_shared/garmin-plan-contract.ts";
 import { scheduleBestEffortGarminTelemetry } from "../_shared/garmin-telemetry.ts";
+import {
+  debitGarminGatewayBudget,
+  type GarminGatewayBudgetLane,
+} from "../_shared/preauth-budget.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -59,6 +63,15 @@ type GarminCapabilityContext = {
   deviceId?: string;
 };
 
+type MeteredGarminAction =
+  | "createDeviceIdempotent"
+  | "createDevice"
+  | "listDevices"
+  | "rotateDeviceToken"
+  | "revokeDevice"
+  | "fetchPlan"
+  | "ackPlan";
+
 function json(
   body: unknown,
   status = 200,
@@ -92,6 +105,31 @@ function rateLimitedResponse(
     429,
     { "Retry-After": String(retryAfter), ...extraHeaders },
   );
+}
+
+async function requireGarminGatewayBudget(
+  action: MeteredGarminAction,
+  lane: GarminGatewayBudgetLane,
+  sourceHint: string,
+  supabaseUrl: string,
+  databaseSecretKey: string,
+): Promise<Response | null> {
+  const budget = await debitGarminGatewayBudget(
+    lane,
+    action,
+    sourceHint.slice(0, 4_096) || "missing",
+    supabaseUrl,
+    databaseSecretKey,
+  );
+  if (budget.status === "allowed") return null;
+  if (budget.status === "rate_limited") {
+    return json(
+      { error: "Rate limit exceeded", retryAfter: budget.retryAfter },
+      429,
+      { "Retry-After": String(budget.retryAfter) },
+    );
+  }
+  return json({ error: "Gateway budget unavailable" }, 503);
 }
 
 function requiredEnv(name: string) {
@@ -352,6 +390,14 @@ Deno.serve(async (request) => {
     if (capabilityVersion === 2) {
       return json({ error: "Garmin client upgrade required" }, 426);
     }
+    const gatewayBudget = await requireGarminGatewayBudget(
+      "createDeviceIdempotent",
+      "jwt",
+      request.headers.get("Authorization") ?? "missing",
+      supabaseUrl,
+      databaseSecretKey,
+    );
+    if (gatewayBudget) return gatewayBudget;
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
     if (!userClient) return json({ error: "Unauthorized" }, 401);
     const { data: userData, error: userError } = await userClient.auth
@@ -457,6 +503,14 @@ Deno.serve(async (request) => {
     if (capabilityVersion === 2) {
       return json({ error: "Garmin client upgrade required" }, 426);
     }
+    const gatewayBudget = await requireGarminGatewayBudget(
+      "createDevice",
+      "jwt",
+      request.headers.get("Authorization") ?? "missing",
+      supabaseUrl,
+      databaseSecretKey,
+    );
+    if (gatewayBudget) return gatewayBudget;
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
     if (!userClient) return json({ error: "Unauthorized" }, 401);
     const { data: userData, error: userError } = await userClient.auth
@@ -512,6 +566,14 @@ Deno.serve(async (request) => {
   }
 
   if (body.action === "listDevices") {
+    const gatewayBudget = await requireGarminGatewayBudget(
+      "listDevices",
+      "jwt",
+      request.headers.get("Authorization") ?? "missing",
+      supabaseUrl,
+      databaseSecretKey,
+    );
+    if (gatewayBudget) return gatewayBudget;
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
     if (!userClient) return json({ error: "Unauthorized" }, 401);
     const { data: userData, error: userError } = await userClient.auth
@@ -549,6 +611,14 @@ Deno.serve(async (request) => {
     if (capabilityVersion === 2) {
       return json({ error: "Garmin client upgrade required" }, 426);
     }
+    const gatewayBudget = await requireGarminGatewayBudget(
+      "rotateDeviceToken",
+      "jwt",
+      request.headers.get("Authorization") ?? "missing",
+      supabaseUrl,
+      databaseSecretKey,
+    );
+    if (gatewayBudget) return gatewayBudget;
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
     if (!userClient) return json({ error: "Unauthorized" }, 401);
     const { data: userData, error: userError } = await userClient.auth
@@ -644,6 +714,14 @@ Deno.serve(async (request) => {
   }
 
   if (body.action === "revokeDevice") {
+    const gatewayBudget = await requireGarminGatewayBudget(
+      "revokeDevice",
+      "jwt",
+      request.headers.get("Authorization") ?? "missing",
+      supabaseUrl,
+      databaseSecretKey,
+    );
+    if (gatewayBudget) return gatewayBudget;
     const userClient = authenticatedClient(request, supabaseUrl, anonKey);
     if (!userClient) return json({ error: "Unauthorized" }, 401);
     const { data: userData, error: userError } = await userClient.auth
@@ -679,6 +757,14 @@ Deno.serve(async (request) => {
         capabilityVersionHeaders(2),
       );
     }
+    const gatewayBudget = await requireGarminGatewayBudget(
+      "fetchPlan",
+      "capability",
+      deviceToken || "missing",
+      supabaseUrl,
+      databaseSecretKey,
+    );
+    if (gatewayBudget) return gatewayBudget;
     const capability = await resolveGarminCapability(
       deviceToken,
       capabilityHmacSecret,
@@ -829,6 +915,14 @@ Deno.serve(async (request) => {
         capabilityVersionHeaders(2),
       );
     }
+    const gatewayBudget = await requireGarminGatewayBudget(
+      "ackPlan",
+      "capability",
+      deviceToken || "missing",
+      supabaseUrl,
+      databaseSecretKey,
+    );
+    if (gatewayBudget) return gatewayBudget;
     const capability = await resolveGarminCapability(
       deviceToken,
       capabilityHmacSecret,

@@ -6,7 +6,14 @@ const migrationPath = new URL(
   "../supabase/migrations/20260810091350_bind_push_installations_to_auth_sessions.sql",
   import.meta.url,
 );
-const sql = await readFile(migrationPath, "utf8");
+const authorizationMigrationPath = new URL(
+  "../supabase/migrations/20260902162456_authorize_push_delivery_send.sql",
+  import.meta.url,
+);
+const [sql, authorizationSql] = await Promise.all([
+  readFile(migrationPath, "utf8"),
+  readFile(authorizationMigrationPath, "utf8"),
+]);
 
 function sqlFunction(source, qualifiedName) {
   const start = source.indexOf(`create function ${qualifiedName}(`) >= 0
@@ -24,7 +31,10 @@ test("notification addresses carry an indexed exact Auth-session reference", () 
     sql,
     /foreign key \(auth_session_id\)[\s\S]*references auth\.sessions\(id\)[\s\S]*on delete set null[\s\S]*not valid;/,
   );
-  assert.match(sql, /validate constraint notification_installations_auth_session_fkey/);
+  assert.match(
+    sql,
+    /validate constraint notification_installations_auth_session_fkey/,
+  );
   assert.match(
     sql,
     /notification_installations_auth_session_idx[\s\S]*\(auth_session_id, id\)[\s\S]*where auth_session_id is not null/,
@@ -44,15 +54,24 @@ test("registration derives the session only from the signed JWT and rotates on r
     sql,
     "gymapp_private.notification_installation_session_guard",
   );
-  const register = sqlFunction(sql, "public.notification_register_installation");
+  const register = sqlFunction(
+    sql,
+    "public.notification_register_installation",
+  );
 
   assert.match(requireSession, /auth\.jwt\(\) ->> 'session_id'/);
   assert.match(requireSession, /session\.id = session_id_text::uuid/);
   assert.match(requireSession, /session\.user_id = p_user_id/);
-  assert.match(requireSession, /session\.not_after is null[\s\S]*session\.not_after > pg_catalog\.clock_timestamp\(\)/);
+  assert.match(
+    requireSession,
+    /session\.not_after is null[\s\S]*session\.not_after > pg_catalog\.clock_timestamp\(\)/,
+  );
   assert.match(requireSession, /for key share/);
 
-  assert.match(register, /caller_session_id := gymapp_private\.notification_require_current_auth_session_id/);
+  assert.match(
+    register,
+    /caller_session_id := gymapp_private\.notification_require_current_auth_session_id/,
+  );
   assert.match(register, /gymapp\.notification_registration_session_id/);
   assert.match(register, /notification_register_installation_storage_v1/);
   assert.doesNotMatch(
@@ -61,7 +80,10 @@ test("registration derives the session only from the signed JWT and rotates on r
     "the public RPC must not accept a caller-selected session id",
   );
 
-  assert.match(guard, /old\.auth_session_id is distinct from current_session_id/);
+  assert.match(
+    guard,
+    /old\.auth_session_id is distinct from current_session_id/,
+  );
   assert.match(guard, /new\.binding_id := pg_catalog\.gen_random_uuid\(\)/);
   assert.match(guard, /new\.revision := old\.revision \+ 1/);
   assert.match(guard, /new\.auth_session_id := current_session_id/);
@@ -69,7 +91,10 @@ test("registration derives the session only from the signed JWT and rotates on r
     guard,
     /old\.auth_session_id is not null[\s\S]*new\.auth_session_id is null[\s\S]*new\.provider_token := null[\s\S]*new\.revoked_at := request_time/,
   );
-  assert.match(sql, /legacy_unbound[\s\S]*for update skip locked[\s\S]*limit 500/);
+  assert.match(
+    sql,
+    /legacy_unbound[\s\S]*for update skip locked[\s\S]*limit 500/,
+  );
 });
 
 test("claim and final pre-send check both fail closed on the exact session", () => {
@@ -83,19 +108,87 @@ test("claim and final pre-send check both fail closed on the exact session", () 
   assert.match(current, /join auth\.sessions as session/);
   assert.match(current, /session\.id = installation\.auth_session_id/);
   assert.match(current, /session\.user_id = installation\.user_id/);
-  assert.match(current, /installation\.revision = delivery\.installation_revision/);
-  assert.match(current, /session\.not_after is null[\s\S]*session\.not_after > pg_catalog\.clock_timestamp\(\)/);
+  assert.match(
+    current,
+    /installation\.revision = delivery\.installation_revision/,
+  );
+  assert.match(
+    current,
+    /session\.not_after is null[\s\S]*session\.not_after > pg_catalog\.clock_timestamp\(\)/,
+  );
   assert.match(current, /for key share of session/);
 
   const storageCall = claim.indexOf("push_claim_deliveries_storage_v1");
-  const currentCheck = claim.indexOf("push_delivery_session_is_current", storageCall);
-  const providerReturn = claim.indexOf("claimed_row.provider_token::text", currentCheck);
-  assert.ok(storageCall >= 0 && currentCheck > storageCall && providerReturn > currentCheck);
+  const currentCheck = claim.indexOf(
+    "push_delivery_session_is_current",
+    storageCall,
+  );
+  const providerReturn = claim.indexOf(
+    "claimed_row.provider_token::text",
+    currentCheck,
+  );
+  assert.ok(
+    storageCall >= 0 && currentCheck > storageCall &&
+      providerReturn > currentCheck,
+  );
   assert.match(claim, /registration_session_revoked/);
-  assert.match(claim, /invalid_session_installations[\s\S]*for update of installation skip locked[\s\S]*limit 500/);
-  assert.match(claim, /set provider_token = null,[\s\S]*binding_id = pg_catalog\.gen_random_uuid\(\)[\s\S]*revoked_at = request_time/);
+  assert.match(
+    claim,
+    /invalid_session_installations[\s\S]*for update of installation skip locked[\s\S]*limit 500/,
+  );
+  assert.match(
+    claim,
+    /set provider_token = null,[\s\S]*binding_id = pg_catalog\.gen_random_uuid\(\)[\s\S]*revoked_at = request_time/,
+  );
   assert.match(claim, /set status = 'invalid',[\s\S]*lease_token = null/);
   assert.match(preSend, /gymapp_private\.push_delivery_session_is_current/);
+});
+
+test("provider send authorization serializes revocation at an explicit commit point", () => {
+  const authorize = sqlFunction(
+    authorizationSql,
+    "gymapp_private.authorize_push_delivery_send",
+  );
+  const publicAuthorize = sqlFunction(
+    authorizationSql,
+    "public.push_authorize_delivery_send",
+  );
+  const compatibility = sqlFunction(
+    authorizationSql,
+    "public.push_delivery_is_current",
+  );
+  const sessionLock = authorize.indexOf("for share");
+  const deliveryLock = authorize.indexOf(
+    "for update of delivery, outbox, installation",
+  );
+  const commitWrite = authorize.indexOf("send_authorized_at");
+
+  assert.match(authorizationSql, /add column send_authorized_at timestamptz/);
+  assert.match(authorizationSql, /add column send_authorized_lease_token uuid/);
+  assert.ok(
+    sessionLock > 0 && deliveryLock > sessionLock && commitWrite > deliveryLock,
+  );
+  assert.match(authorize, /session\.id = installation_session_id/);
+  assert.match(authorize, /session\.user_id = installation_user_id/);
+  assert.match(
+    authorize,
+    /installation\.revision = delivery\.installation_revision/,
+  );
+  assert.match(authorize, /send_authorized_lease_token = p_lease_token/);
+  assert.match(
+    authorizationSql,
+    /push_outbox_deliveries_send_authorization_guard[\s\S]*before update/,
+  );
+  assert.match(
+    publicAuthorize,
+    /auth\.role\(\) is distinct from 'service_role'/,
+  );
+  assert.match(publicAuthorize, /authorize_push_delivery_send/);
+  assert.match(compatibility, /authorize_push_delivery_send/);
+  assert.match(
+    authorizationSql,
+    /grant execute on function public\.push_authorize_delivery_send\(uuid, uuid\)[\s\S]*to service_role/,
+  );
 });
 
 test("public signatures and least-privilege grants remain compatible", () => {

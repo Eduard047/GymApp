@@ -496,6 +496,67 @@ final class ActivityOnlyWorkoutCloudSidecarTests: XCTestCase {
         XCTAssertEqual(try reopened.activityOnlyCloudSnapshotItems(), [edited])
     }
 
+    func testFreeWorkoutEnrichmentPreservesMetricsAcrossReopenAndSyncReplay() throws {
+        let directory = try temporaryDirectory(named: "free-enrichment")
+        let storageKey = "free-enrichment-owner"
+        let original = try item(timestamp: 1_750_000_000_000, duration: 754,
+                                gymCalories: 45.125, garminCalories: 50,
+                                averageHeartRate: 120, maximumHeartRate: 155,
+                                endingHeartRateZone: 3, note: "Garmin · Duration 12:34 · Avg HR 120")
+        let store = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        _ = try store.applyActivityOnlyCloudItems([original], expectedLocalItems: [])
+        let workout = try XCTUnwrap(store.workouts.first)
+        let exercise = try store.addExercise(name: "Bench Press")
+        let block = try store.addExercise(toWorkout: workout.id, exerciseID: exercise.id,
+                                         initialSet: WorkoutSetDraft(weight: 55, reps: 12))
+        _ = try store.addSet(workoutID: workout.id, workoutExerciseID: block.id, weight: 60, reps: 8)
+        let reopened = try WorkoutStore(accountStorageKey: storageKey, directoryURL: directory)
+        _ = try reopened.applyActivityOnlyCloudItems([original], expectedLocalItems: [original])
+        let visible = try XCTUnwrap(reopened.workout(id: workout.id))
+        XCTAssertEqual(reopened.workouts.count, 1)
+        XCTAssertEqual(visible.date, workout.date)
+        XCTAssertEqual(visible.durationSeconds, workout.durationSeconds)
+        XCTAssertEqual(visible.note, workout.note)
+        XCTAssertEqual(visible.exercises.first?.sets.map(\.weight), [55, 60])
+        XCTAssertEqual(visible.exercises.first?.sets.map(\.reps), [12, 8])
+        XCTAssertEqual(try reopened.activityOnlyCloudSnapshotItems(), [original])
+    }
+
+    func testRemovingLastManualEntryRestoresFreeWorkoutWithoutDeletingMetrics() throws {
+        for removeWholeExercise in [false, true] {
+            let directory = try temporaryDirectory(named: "free-remove-\(removeWholeExercise)")
+            let original = try item(timestamp: 1_750_000_000_000, duration: 754,
+                                    gymCalories: 45.125, garminCalories: 50,
+                                    averageHeartRate: 120, maximumHeartRate: 155,
+                                    endingHeartRateZone: 3, note: "Watch activity")
+            let store = try WorkoutStore(accountStorageKey: "free-owner", directoryURL: directory)
+            _ = try store.applyActivityOnlyCloudItems([original], expectedLocalItems: [])
+            let workout = try XCTUnwrap(store.workouts.first)
+            let exercise = try store.addExercise(name: "Bench Press")
+            let block = try store.addExercise(toWorkout: workout.id, exerciseID: exercise.id,
+                                             initialSet: WorkoutSetDraft(weight: 55, reps: 12))
+            if removeWholeExercise {
+                try store.removeExercise(fromWorkout: workout.id, workoutExerciseID: block.id)
+            } else {
+                try store.deleteSet(workoutID: workout.id, workoutExerciseID: block.id,
+                                    setID: XCTUnwrap(block.sets.first).id)
+            }
+            let restored = try XCTUnwrap(store.workout(id: workout.id))
+            XCTAssertTrue(restored.exercises.isEmpty)
+            XCTAssertEqual(restored.date, workout.date)
+            XCTAssertEqual(restored.durationSeconds, 754)
+            XCTAssertEqual(try store.activityOnlyCloudSnapshotItems(), [original])
+            let reopened = try WorkoutStore(accountStorageKey: "free-owner", directoryURL: directory)
+            XCTAssertEqual(reopened.workouts.count, 1)
+            XCTAssertEqual(reopened.workouts.first?.id, workout.id)
+            XCTAssertEqual(try reopened.activityOnlyCloudSnapshotItems(), [original])
+            // Explicit workout deletion must still remove the complete activity.
+            try reopened.deleteWorkout(id: workout.id)
+            XCTAssertTrue(reopened.workouts.isEmpty)
+            XCTAssertEqual(try reopened.activityOnlyCloudSnapshotItems(), [])
+        }
+    }
+
     func testPendingTupleIsOwnerBoundAndExactTransientReplayUsesSameBody() async throws {
         let directory = try temporaryDirectory(named: "exact-replay")
         let storageKey = "cloud-activity-owner"

@@ -62,7 +62,10 @@ internal fun SetDeleteConfirmationDialog(
 ) {
     val exerciseName = localizedExerciseName(snapshot.exerciseName)
     val weight = String.format(Locale.getDefault(), "%.1f", snapshot.weight)
-    val impact = stringResource(setDeleteImpactTextResource(snapshot.impact))
+    val impact = stringResource(
+        if (snapshot.retainsRecordedActivity) R.string.dialog_delete_set_impact_watch_activity
+        else setDeleteImpactTextResource(snapshot.impact)
+    )
     PersistedDeleteConfirmationDialog(
         title = stringResource(R.string.dialog_delete_set_title),
         message = stringResource(

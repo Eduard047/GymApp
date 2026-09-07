@@ -5,12 +5,15 @@ using Toybox.System as System;
 using Toybox.Time as Time;
 
 class GymStore {
-    static var bindingVersion = 2;
+    static const bindingVersion = 2;
     private static const storageSchemaVersion = 6;
     static var exercises = ["Bench Press", "Squat", "Deadlift", "Pull Up", "Overhead Press"];
     static var sets = [];
     static var plan = [];
     static var pending = [];
+    private static var parkedPending = null;
+    private static var pendingEstimateSource = null;
+    private static var pendingEstimateBytes = 0;
     static var exerciseIndex = 0;
     static var weight = 50.0;
     static var reps = 10;
@@ -45,13 +48,12 @@ class GymStore {
     static var runtimeWorkoutStartedAtSeconds = null;
     (:fullLegacyState)
     static var runtimePausePending = false;
-    (:fullLegacyState)
     static var lastRuntimeCheckpointTimerMs = null;
     // A validated activeWorkoutV1 checkpoint lets a restarted session shift new
     // intervals onto the durable timeline. Legacy sets without that checkpoint
     // stay fail-closed and omit optional interval diagnostics.
     static var resumedWorkoutIntervalsInvalid = false;
-    static var undoWindowMs = 5000;
+    static const undoWindowMs = 5000;
     static var status = "READY";
     static var weightStep = 2.5;
     static var restSecondsDefault = 90;
@@ -65,6 +67,11 @@ class GymStore {
     static var stateOwnerBinding = null;
     static var deviceBinding = null;
     static var pairingGeneration = null;
+    // Strings are immutable. Reuse syntax validation for the last two exact
+    // values; ownership is still checked separately against the current state.
+    // This bounds retention and avoids repeated 64-byte walks in one callback.
+    private static var validatedBindingA = null;
+    private static var validatedBindingB = null;
     // Startup recovery temporarily makes the generation write the commit point.
     // Ordinary account transitions keep the owner marker as their commit point.
     static var pairingRecoveryCommitLast = false;
@@ -107,8 +114,12 @@ class GymStore {
     static var legacyCompactCount = -1;
     static var requestCounter = 0;
 
-    static var maxPlanSets = 60;
-    static var maxWorkoutSets = 60;
+    (:fullLegacyState)
+    static const keepsSetDiagnostics = true;
+    (:compactLegacyState)
+    static const keepsSetDiagnostics = false;
+    static const maxPlanSets = 60;
+    static const maxWorkoutSets = 60;
     // Keep a bounded offline backlog, but do not block an ordinary third workout
     // merely because the phone has not acknowledged the first two yet. The byte
     // budgets below remain authoritative, so no item is evicted or silently
@@ -118,16 +129,15 @@ class GymStore {
     private static const maxExerciseNameLength = 160;
     private static const maxExerciseNameBytes = 640;
     private static const maxTotalNameBytes = 12000;
-    static var maxBindingLength = 128;
-    static var maxWeight = 1000000.0;
-    static var maxReps = 10000;
-    static var maxPhoneSyncRevision = 9007199254740991l;
-    static var maxCloudPlanRevision = 2147483647;
+    static const maxBindingLength = 128;
+    static const maxWeight = 1000000.0;
+    static const maxReps = 10000;
+    static const maxPhoneSyncRevision = 9007199254740991l;
+    static const maxCloudPlanRevision = 2147483647;
     private static const maxEstimatedStoreBytes = 24000;
     private static const maxLegacyStoredValueBytes = 32768;
     (:fullLegacyState)
     private static const maxRuntimeCheckpointBytes = 2048;
-    (:fullLegacyState)
     private static const runtimeCheckpointIntervalMs = 15000;
     (:fullLegacyState)
     private static const maxRuntimeClockRecoverySeconds = 30;
@@ -135,6 +145,7 @@ class GymStore {
 
     (:fullLegacyState)
     static function load() {
+        parkedPending = null;
         pairingRecoveryCommitLast = false;
         clearTransientSetActions();
         lastLoggedSetEndSeconds = 0;
@@ -200,10 +211,13 @@ class GymStore {
         legacyRawPending = legacyUnboundState ? savedPending : null;
         if (isValidPendingList(savedPending)) {
             pending = savedPending;
+            pendingEstimateSource = null;
         } else if (legacyUnboundState && isValidLegacyPendingList(savedPending)) {
             pending = normalizedLegacyPendingList(savedPending);
+            pendingEstimateSource = null;
         } else {
             pending = [];
+            pendingEstimateSource = null;
         }
         var savedWeight = Storage.getValue("weight");
         if (isValidWeight(savedWeight)) {
@@ -268,7 +282,7 @@ class GymStore {
         processedSyncIds = isValidProcessedSyncIds(savedProcessedSyncIds) ? savedProcessedSyncIds : [];
         var savedActiveWorkout = Storage.getValue("activeWorkoutV1");
         if (!savedExerciseCatalogValid && savedActiveWorkout instanceof Lang.Array &&
-            savedActiveWorkout.size() > 0 && savedActiveWorkout[0] == 4) {
+            savedActiveWorkout.size() > 0 && (savedActiveWorkout[0] == 4 || savedActiveWorkout[0] == 6)) {
             try {
                 Storage.deleteValue("activeWorkoutV1");
                 savedActiveWorkout = null;
@@ -308,6 +322,7 @@ class GymStore {
         if (legacyUpgrade && !adoptLegacyStateOwner()) {
             scopedStateValid = false;
         }
+        GymPendingJournal.load();
         var previousPairingGeneration = pairingGeneration;
         var pairingRecoveryTarget = scopedStateValid ? stagedPairingRecoveryTarget() : null;
         var activeAlreadyTargetsRecovery = false;
@@ -318,7 +333,7 @@ class GymStore {
             pairingGeneration = pairingRecoveryTarget;
             if (savedActiveWorkout != null &&
                 isValidActiveWorkoutSnapshot(savedActiveWorkout)) {
-                if (savedActiveWorkout[0] != 4 || savedExerciseCatalogValid) {
+                if ((savedActiveWorkout[0] != 4 && savedActiveWorkout[0] != 6) || savedExerciseCatalogValid) {
                     activeAlreadyTargetsRecovery =
                         activeWorkoutSnapshotMatchesBindings(savedActiveWorkout);
                 }
@@ -377,10 +392,11 @@ class GymStore {
         } else {
             restorePreparedWorkout(savedPreparedWorkout);
         }
+        parkPendingForSnapshot(savedActiveWorkout);
         if (savedActiveWorkout != null) {
             var validActiveSnapshot = scopedStateValid &&
                 isValidActiveWorkoutSnapshot(savedActiveWorkout) &&
-                (savedActiveWorkout[0] != 4 || savedExerciseCatalogValid);
+                ((savedActiveWorkout[0] != 4 && savedActiveWorkout[0] != 6) || savedExerciseCatalogValid);
             var snapshotMatches = validActiveSnapshot &&
                 activeWorkoutSnapshotMatchesBindings(savedActiveWorkout);
             if (!snapshotMatches && recoveredPairing && validActiveSnapshot) {
@@ -405,7 +421,7 @@ class GymStore {
         var currentEntryRestored = restoreCurrentEntry(savedCurrentEntry);
         if (!currentEntryRestored && sets.size() > 0) {
             selectExerciseByName(
-                sets[sets.size() - 1].get("exerciseName").toString());
+                setField(GymSetAccess.at(sets, sets.size() - 1), "exerciseName").toString());
         }
         if (legacyUnboundState) {
             // HEAD releases had no account owner marker. Preserve their validated local
@@ -428,6 +444,7 @@ class GymStore {
         } else {
             pruneAccountScopedState();
             recoverQueuedWorkout();
+            parkPendingDuringLongWorkout(sets.size());
             if (hasPreparedWorkout()) {
                 status = preparedWorkoutFitSaved() ? "FIT SAVED" : "FIT CHECK";
             }
@@ -441,6 +458,7 @@ class GymStore {
                     // durable authority and the exact stage remains retryable.
                     pairingGeneration = previousPairingGeneration;
                     for (var i = 0; i < pending.size(); i += 1) {
+                        pendingEstimateSource = null;
                         pending[i].put("pairingGeneration", previousPairingGeneration);
                     }
                     if (preparedWorkout != null) {
@@ -453,7 +471,7 @@ class GymStore {
         GymWorkoutMode.restore();
         if (GymWorkoutMode.isPlanned() && !currentEntryRestored) {
             if (sets.size() > 0 && selectExerciseByName(
-                    sets[sets.size() - 1].get("exerciseName").toString())) {
+                    setField(GymSetAccess.at(sets, sets.size() - 1), "exerciseName").toString())) {
                 applyCurrentPlanSet();
             } else {
                 selectNextPlanSlotInGlobalOrder();
@@ -520,7 +538,8 @@ class GymStore {
                 Storage.setValue("activeWorkoutStartedAtSeconds", activeWorkoutStartedAtSeconds);
             }
             Storage.setValue("plan", storedPlanValue);
-            Storage.setValue("pending", pending);
+            if (parkedPending == null) { Storage.setValue("pending", pending); }
+            if (!GymPendingJournal.save()) { status = "SAVE FAIL"; return false; }
             Storage.setValue("weight", weight);
             Storage.setValue("reps", reps);
             Storage.setValue("weightStep", weightStep);
@@ -598,6 +617,7 @@ class GymStore {
     // the entire historical migration graph into the process.
     (:compactLegacyState)
     static function load() {
+        parkedPending = null;
         pairingRecoveryCommitLast = false;
         clearTransientSetActions();
         resetActiveWorkoutSnapshotState();
@@ -607,19 +627,32 @@ class GymStore {
         lastWorkoutSyncAtSeconds = null;
         exerciseCatalogRepairRequired = false;
 
+        // Release constructor/previous-load graphs before decoding the legacy
+        // queue. Its atomic value can need more transient space than live rows.
+        exercises = []; sets = []; plan = []; pending = [];
+        pendingEstimateSource = null;
+        GymPendingJournal.reset();
+        var value = Storage.getValue("pending");
+        pending = isValidPendingList(value) ? value : [];
+        value = null;
+
         var savedAccount = Storage.getValue("accountBinding");
         var savedOwner = Storage.getValue("stateOwnerBinding");
         accountBinding = isValidAccountBinding(savedAccount) ? savedAccount.toString() : null;
         stateOwnerBinding = isValidAccountBinding(savedOwner) ? savedOwner.toString() : null;
         var ownerMatches = accountBinding != null && stateOwnerBinding != null &&
             accountBinding.toString().equals(stateOwnerBinding.toString());
+        if (ownerMatches) {
+            stateOwnerBinding = accountBinding;
+            validatedBindingA = accountBinding;
+        }
         var schema = Storage.getValue("storageSchemaVersion");
         var legacyUpgrade = schema == null && accountBinding != null && stateOwnerBinding == null;
         var legacyMarker = Storage.getValue("legacyUnboundState");
         legacyUnboundState = accountBinding == null &&
             ((legacyMarker instanceof Lang.Boolean && legacyMarker) || schema == null);
 
-        var value = Storage.getValue("exercises");
+        value = Storage.getValue("exercises");
         var savedExerciseCatalogValid =
             isValidExerciseList(value, maxPlanSets) && value.size() > 0;
         exerciseCatalogNeedsWrite = !savedExerciseCatalogValid;
@@ -629,8 +662,6 @@ class GymStore {
         sets = isValidSetList(value, maxWorkoutSets, true) ? value : [];
         value = Storage.getValue("plan");
         plan = restoredPlan(value);
-        value = Storage.getValue("pending");
-        pending = isValidPendingList(value) ? value : [];
         resumedWorkoutIntervalsInvalid = sets.size() > 0;
         value = Storage.getValue("activeWorkoutStartedAtSeconds");
         activeWorkoutStartedAtSeconds = sets.size() > 0 &&
@@ -649,7 +680,13 @@ class GymStore {
         value = Storage.getValue("sensitivityIndex");
         sensitivityIndex = value instanceof Lang.Number && value >= 0 && value <= 2 ? value : 1;
         value = Storage.getValue("language");
-        language = value == null ? "en" : normalizedLanguage(value.toString());
+        if (value != null) {
+            language = normalizedLanguage(value.toString());
+        } else {
+            var systemLanguage = System.getDeviceSettings().systemLanguage;
+            language = systemLanguage == System.LANGUAGE_UKR ? "uk" :
+                (systemLanguage == System.LANGUAGE_RUS ? "ru" : "en");
+        }
 
         value = Storage.getValue("deviceBinding");
         deviceBinding = isBoundedText(value, maxBindingLength) ? value.toString() : null;
@@ -706,7 +743,7 @@ class GymStore {
         }
         var savedActive = Storage.getValue("activeWorkoutV1");
         if (!savedExerciseCatalogValid && savedActive instanceof Lang.Array &&
-            savedActive.size() > 0 && savedActive[0] == 4) {
+            savedActive.size() > 0 && (savedActive[0] == 4 || savedActive[0] == 6)) {
             try {
                 Storage.deleteValue("activeWorkoutV1");
                 savedActive = null;
@@ -714,6 +751,12 @@ class GymStore {
                 exerciseCatalogRepairRequired = true;
             }
         }
+        // Fully bound legacy messages can stay on disk while the indexed queue
+        // is decoded. Pairing recovery retains its complete mutation graph.
+        if (ownerMatches && stagedPairingRecoveryTarget() == null) {
+            parkPendingDuringLongWorkout(maxWorkoutSets);
+        }
+        GymPendingJournal.load();
         var previousPairingGeneration = pairingGeneration;
         var pairingRecoveryTarget = ownerMatches ? stagedPairingRecoveryTarget() : null;
         var activeAlreadyTargetsRecovery = false;
@@ -723,7 +766,7 @@ class GymStore {
         if (pairingRecoveryTarget != null) {
             pairingGeneration = pairingRecoveryTarget;
             if (savedActive != null && isValidActiveWorkoutSnapshot(savedActive)) {
-                if (savedActive[0] != 4 || savedExerciseCatalogValid) {
+                if ((savedActive[0] != 4 && savedActive[0] != 6) || savedExerciseCatalogValid) {
                     activeAlreadyTargetsRecovery =
                         activeWorkoutSnapshotMatchesBindings(savedActive);
                 }
@@ -783,9 +826,10 @@ class GymStore {
         } else {
             restorePreparedWorkout(savedPreparedWorkout);
         }
+        parkPendingForSnapshot(savedActive);
         var restoredActive = false;
         if (ownerMatches && isValidActiveWorkoutSnapshot(savedActive) &&
-            (savedActive[0] != 4 || savedExerciseCatalogValid) &&
+            ((savedActive[0] != 4 && savedActive[0] != 6) || savedExerciseCatalogValid) &&
             activeWorkoutSnapshotMatchesBindings(savedActive)) {
             restoreActiveWorkoutSnapshot(savedActive);
             restoredActive = true;
@@ -799,7 +843,7 @@ class GymStore {
             }
         } else if (recoveredPairing && ownerMatches &&
             isValidActiveWorkoutSnapshot(savedActive) &&
-            (savedActive[0] != 4 || savedExerciseCatalogValid)) {
+            ((savedActive[0] != 4 && savedActive[0] != 6) || savedExerciseCatalogValid)) {
             pairingGeneration = previousPairingGeneration;
             var activeMatchesPrevious =
                 activeWorkoutSnapshotMatchesBindings(savedActive);
@@ -824,7 +868,7 @@ class GymStore {
             restoreCurrentEntry(savedCurrentEntry);
         if (!currentEntryRestored && sets.size() > 0) {
             selectExerciseByName(
-                sets[sets.size() - 1].get("exerciseName").toString());
+                setField(GymSetAccess.at(sets, sets.size() - 1), "exerciseName").toString());
         }
         if (legacyUnboundState) {
             if (!fullLegacyMigrated) {
@@ -836,6 +880,7 @@ class GymStore {
         } else {
             pruneAccountScopedState();
             recoverQueuedWorkout();
+            parkPendingDuringLongWorkout(sets.size());
             if (hasPreparedWorkout()) {
                 status = preparedWorkoutFitSaved() ? "FIT SAVED" : "FIT CHECK";
             }
@@ -846,6 +891,7 @@ class GymStore {
                 if (!recoverySaved) {
                     pairingGeneration = previousPairingGeneration;
                     for (var i = 0; i < pending.size(); i += 1) {
+                        pendingEstimateSource = null;
                         pending[i].put("pairingGeneration", previousPairingGeneration);
                     }
                     if (preparedWorkout != null) {
@@ -858,7 +904,7 @@ class GymStore {
         GymWorkoutMode.restore();
         if (GymWorkoutMode.isPlanned() && !currentEntryRestored) {
             if (sets.size() > 0 && selectExerciseByName(
-                    sets[sets.size() - 1].get("exerciseName").toString())) {
+                    setField(GymSetAccess.at(sets, sets.size() - 1), "exerciseName").toString())) {
                 applyCurrentPlanSet();
             } else {
                 selectNextPlanSlotInGlobalOrder();
@@ -901,16 +947,15 @@ class GymStore {
             Storage.setValue("currentEntryV1", [
                 sets.size(), currentExercise(), weight, reps
             ]);
-            var storedSets = sets;
-            if (activeWorkoutSnapshotValid && hasAccountBinding()) {
-                storedSets = [];
-            }
+            var storedSets = activeWorkoutSnapshotValid && hasAccountBinding() ?
+                [] : normalizedSetList(sets);
             Storage.setValue("sets", storedSets);
             Storage.setValue("activeWorkoutStartedAtSeconds",
                 activeWorkoutSnapshotValid && hasAccountBinding() ?
                     null : activeWorkoutStartedAtSeconds);
             Storage.setValue("plan", storedPlanValue);
-            Storage.setValue("pending", pending);
+            if (parkedPending == null) { Storage.setValue("pending", pending); }
+            if (!GymPendingJournal.save()) { status = "SAVE FAIL"; return false; }
             Storage.setValue("weight", weight);
             Storage.setValue("reps", reps);
             Storage.setValue("weightStep", weightStep);
@@ -1022,6 +1067,7 @@ class GymStore {
     }
 
     static function resetActiveWorkoutSnapshotState() {
+        GymActiveJournal.reset();
         activeWorkoutSnapshotValid = false;
         activeWorkoutTimelineValid = false;
         timelineBase = null;
@@ -1037,11 +1083,13 @@ class GymStore {
     (:enhancedCompactCheckpoint)
     static function resetRuntimeCheckpointState() {
         runtimeWorkoutStartedAtSeconds = null;
+        lastRuntimeCheckpointTimerMs = null;
     }
 
     (:compactCheckpoint96)
     static function resetRuntimeCheckpointState() {
         runtimeWorkoutStartedAtSeconds = null;
+        lastRuntimeCheckpointTimerMs = null;
     }
 
     (:fullLegacyState)
@@ -1132,7 +1180,9 @@ class GymStore {
     }
 
     static function activeWorkoutSnapshotMatchesBindings(snapshot) {
-        if (!(snapshot instanceof Lang.Array) || !hasAccountBinding() ||
+        if (!(snapshot instanceof Lang.Array) || snapshot.size() < 4 ||
+            !isValidAccountBinding(snapshot[1]) ||
+            !isBoundedText(snapshot[2], maxBindingLength) || !hasAccountBinding() ||
             !accountBinding.toString().equals(snapshot[1].toString()) ||
             !deviceBinding.toString().equals(snapshot[2].toString())) {
             return false;
@@ -1147,8 +1197,11 @@ class GymStore {
 
     (:fullLegacyState)
     static function isValidActiveWorkoutSnapshot(snapshot) {
+        if (snapshot instanceof Lang.Array && snapshot.size() == 10 && snapshot[0] == 6) {
+            return GymActiveJournal.validate(snapshot);
+        }
         if (snapshot instanceof Lang.Array && snapshot.size() > 0 &&
-            snapshot[0] instanceof Lang.Number && snapshot[0] == 4 &&
+            snapshot[0] instanceof Lang.Number && (snapshot[0] == 4 || snapshot[0] == 6) &&
             snapshot.size() == 10) {
             return isValidCompactV4ActiveWorkoutSnapshot(snapshot);
         }
@@ -1202,7 +1255,7 @@ class GymStore {
 
     static function isValidCompactV4ActiveWorkoutSnapshot(snapshot) {
         if (!(snapshot instanceof Lang.Array) || snapshot.size() != 10 ||
-            !(snapshot[0] instanceof Lang.Number) || snapshot[0] != 4 ||
+            !(snapshot[0] instanceof Lang.Number) || (snapshot[0] != 4 && snapshot[0] != 6) ||
             !isValidAccountBinding(snapshot[1]) ||
             !isBoundedText(snapshot[2], maxBindingLength) ||
             !isValidOptionalAccountBinding(snapshot[3]) ||
@@ -1248,8 +1301,11 @@ class GymStore {
     // the unambiguous durable tombstone.
     (:enhancedCompactCheckpoint)
     static function isValidActiveWorkoutSnapshot(snapshot) {
+        if (snapshot instanceof Lang.Array && snapshot.size() == 10 && snapshot[0] == 6) {
+            return GymActiveJournal.validate(snapshot);
+        }
         if (snapshot instanceof Lang.Array && snapshot.size() > 0 &&
-            snapshot[0] instanceof Lang.Number && snapshot[0] == 4) {
+            snapshot[0] instanceof Lang.Number && (snapshot[0] == 4 || snapshot[0] == 6)) {
             return isValidCompactV4ActiveWorkoutSnapshot(snapshot);
         }
         if (!(snapshot instanceof Lang.Array) || snapshot.size() != 7 ||
@@ -1284,8 +1340,11 @@ class GymStore {
     // A v3 origin/checkpoint may represent a started workout before its first set.
     (:compactCheckpoint96)
     static function isValidActiveWorkoutSnapshot(snapshot) {
+        if (snapshot instanceof Lang.Array && snapshot.size() == 10 && snapshot[0] == 6) {
+            return GymActiveJournal.validate(snapshot);
+        }
         if (snapshot instanceof Lang.Array && snapshot.size() > 0 &&
-            snapshot[0] instanceof Lang.Number && snapshot[0] == 4) {
+            snapshot[0] instanceof Lang.Number && (snapshot[0] == 4 || snapshot[0] == 6)) {
             return isValidCompactV4ActiveWorkoutSnapshot(snapshot);
         }
         if (!(snapshot instanceof Lang.Array) || snapshot.size() != 7 ||
@@ -1607,7 +1666,7 @@ class GymStore {
     static function areSnapshotIntervalsConsistent(snapshotSets, checkpoint) {
         var intervals = [];
         for (var i = 0; i < snapshotSets.size(); i += 1) {
-            var interval = snapshotSets[i].get("setInterval");
+            var interval = setField(GymSetAccess.at(snapshotSets, i), "setInterval");
             if (!(interval instanceof Lang.Array)) {
                 return false;
             }
@@ -1623,7 +1682,8 @@ class GymStore {
 
     (:fullLegacyState)
     static function restoreActiveWorkoutSnapshot(snapshot) {
-        if (snapshot[0] == 4 && snapshot.size() == 10) {
+        GymActiveJournal.rememberLegacy(snapshot);
+        if ((snapshot[0] == 4 || snapshot[0] == 6) && snapshot.size() == 10) {
             sets = restoredCompactV4Sets(snapshot);
         } else if (snapshot[0] >= 3) {
             var restored = [];
@@ -1656,7 +1716,7 @@ class GymStore {
         }
         activeWorkoutStartedAtSeconds = snapshot[4];
         activeWorkoutSnapshotValid = true;
-        var checkpoint = snapshot[0] == 4 && snapshot.size() == 10 ?
+        var checkpoint = (snapshot[0] == 4 || snapshot[0] == 6) && snapshot.size() == 10 ?
             snapshot[9] : (snapshot[0] >= 3 ? snapshot[10] : snapshot[6]);
         // load() invokes this only after the untrusted snapshot, checkpoint, and
         // every persisted interval have passed the complete validator above.
@@ -1676,31 +1736,41 @@ class GymStore {
         }
     }
 
+    (:fullLegacyState)
+    static function restoredSet(name, setWeight, setReps, interval) {
+        return {"exerciseName" => name, "weight" => setWeight, "reps" => setReps,
+            "setInterval" => interval};
+    }
+
+    (:compactLegacyState)
+    static function restoredSet(name, setWeight, setReps, interval) {
+        return GymRecordedSet.create(name, setWeight, setReps, interval);
+    }
+
     static function restoredCompactV4Sets(snapshot) {
+        if (snapshot[0] == 6) { return GymActiveJournal.restored(snapshot); }
         var restored = [];
         for (var i = 0; i < snapshot[5].size(); i += 1) {
-            var item = {
-                "exerciseName" => exercises[snapshot[5][i]].toString(),
-                "weight" => snapshot[6][i],
-                "reps" => snapshot[7][i]
-            };
-            if (snapshot[8] != null) {
-                item.put("setInterval", copySetInterval(snapshot[8][i]));
-            }
-            restored.add(item);
+            // The validated Object Store value is process-local. Completed
+            // intervals remain immutable; edits take a copy at the session boundary.
+            var interval = snapshot[8] == null ? null :
+                snapshot[8][i];
+            restored.add(restoredSet(exercises[snapshot[5][i]].toString(),
+                snapshot[6][i], snapshot[7][i], interval));
         }
         return restored;
     }
 
     (:enhancedCompactCheckpoint)
     static function restoreActiveWorkoutSnapshot(snapshot) {
-        sets = snapshot[0] == 4 ?
+        GymActiveJournal.rememberLegacy(snapshot);
+        sets = (snapshot[0] == 4 || snapshot[0] == 6) ?
             restoredCompactV4Sets(snapshot) : normalizedSetList(snapshot[5]);
         activeWorkoutStartedAtSeconds = snapshot[4];
         activeWorkoutSnapshotValid = true;
         restDurationMs = 0;
         restStartedAt = null;
-        var checkpoint = snapshot[0] == 4 ? snapshot[9] : snapshot[6];
+        var checkpoint = (snapshot[0] == 4 || snapshot[0] == 6) ? snapshot[9] : snapshot[6];
         if (checkpoint != null) {
             activeWorkoutTimelineValid = true;
             resumedWorkoutIntervalsInvalid = false;
@@ -1710,7 +1780,7 @@ class GymStore {
             // journal. Relaunch may replay at most one checkpoint window, but it
             // never loses the completed set or rest entirely.
             if (sets.size() > 0) {
-                var lastInterval = sets[sets.size() - 1].get("setInterval");
+                var lastInterval = setField(GymSetAccess.at(sets, sets.size() - 1), "setInterval");
                 if (isValidSetInterval(lastInterval) &&
                     checkpoint[0] >= lastInterval[1]) {
                     var elapsedSinceSet = checkpoint[0] - lastInterval[1];
@@ -1730,11 +1800,12 @@ class GymStore {
 
     (:compactCheckpoint96)
     static function restoreActiveWorkoutSnapshot(snapshot) {
-        sets = snapshot[0] == 4 ?
+        GymActiveJournal.rememberLegacy(snapshot);
+        sets = (snapshot[0] == 4 || snapshot[0] == 6) ?
             restoredCompactV4Sets(snapshot) : normalizedSetList(snapshot[5]);
         activeWorkoutStartedAtSeconds = snapshot[4];
         activeWorkoutSnapshotValid = true;
-        var checkpoint = snapshot[0] == 4 ? snapshot[9] : snapshot[6];
+        var checkpoint = (snapshot[0] == 4 || snapshot[0] == 6) ? snapshot[9] : snapshot[6];
         if (checkpoint != null) {
             activeWorkoutTimelineValid = true;
             resumedWorkoutIntervalsInvalid = false;
@@ -1787,6 +1858,9 @@ class GymStore {
 
     (:fullLegacyState)
     static function checkpointLiveWorkout(force) {
+        if (!hasAccountBinding()) {
+            return GymLocalWorkout.checkpoint(force);
+        }
         if (runtimePausePending) {
             if (!GymSession.pause()) {
                 status = "PAUSE FAIL";
@@ -1878,15 +1952,18 @@ class GymStore {
 
     (:enhancedCompactCheckpoint)
     static function checkpointLiveWorkout(force) {
+        if (!hasAccountBinding()) {
+            return GymLocalWorkout.checkpoint(force);
+        }
         if (!hasAccountBinding() || GymSession.startedAt <= 0 ||
             GymSession.fitSaved) {
             return true;
         }
-        // Each completed set is already committed atomically. Rebuilding and
-        // serializing the complete set history every 15 seconds creates a large
-        // transient heap spike on 96/128 KiB products. Keep full-history
-        // checkpoints for explicit lifecycle boundaries only.
-        if (!force) {
+        // Completed sets are durable already. A free workout has no rows, so
+        // its bounded header can also checkpoint metrics every 15 seconds.
+        if (!force && (!GymWorkoutMode.isFree() || GymSession.paused ||
+            (lastRuntimeCheckpointTimerMs != null &&
+                timerElapsedMs(lastRuntimeCheckpointTimerMs) < runtimeCheckpointIntervalMs.toLong()))) {
             return true;
         }
         var checkpoint = currentTimelineCheckpoint(0.0);
@@ -1906,18 +1983,23 @@ class GymStore {
         }
         activeWorkoutStartedAtSeconds = origin;
         runtimeWorkoutStartedAtSeconds = origin;
+        lastRuntimeCheckpointTimerMs = System.getTimer();
         return true;
     }
 
     (:compactCheckpoint96)
     static function checkpointLiveWorkout(force) {
+        if (!hasAccountBinding()) {
+            return GymLocalWorkout.checkpoint(force);
+        }
         if (!hasAccountBinding() || GymSession.startedAt <= 0 ||
             GymSession.fitSaved || (!force && GymSession.paused)) {
             return true;
         }
-        // Completed sets are durable already; avoid periodically materializing
-        // the entire history on the smallest process heap.
-        if (!force) {
+        // Free workouts only replace the bounded checkpoint header.
+        if (!force && (!GymWorkoutMode.isFree() ||
+            (lastRuntimeCheckpointTimerMs != null &&
+                timerElapsedMs(lastRuntimeCheckpointTimerMs) < runtimeCheckpointIntervalMs.toLong()))) {
             return true;
         }
         var checkpoint = currentTimelineCheckpoint(0.0);
@@ -1935,6 +2017,7 @@ class GymStore {
         if (runtimeWorkoutStartedAtSeconds == null) {
             runtimeWorkoutStartedAtSeconds = GymSession.startedAt;
         }
+        lastRuntimeCheckpointTimerMs = System.getTimer();
         return true;
     }
 
@@ -1982,7 +2065,7 @@ class GymStore {
             return false;
         }
         try {
-            if (!isValidSetList(nextSets, maxWorkoutSets, true)) {
+            if (!isValidLiveSetList(nextSets, maxWorkoutSets, true)) {
                 status = "SAVE FAIL";
                 return false;
             }
@@ -1992,20 +2075,20 @@ class GymStore {
             var metrics = [];
             var intervals = checkpoint == null ? null : [];
             for (var i = 0; i < nextSets.size(); i += 1) {
-                var item = nextSets[i];
+                var item = GymSetAccess.at(nextSets, i);
                 var exerciseCatalogIndex = exerciseIndexForName(
-                    item.get("exerciseName")
+                    setField(item, "exerciseName")
                 );
                 if (exerciseCatalogIndex < 0) {
                     status = "SAVE FAIL";
                     return false;
                 }
                 indices.add(exerciseCatalogIndex);
-                weights.add(item.get("weight"));
-                setReps.add(item.get("reps"));
+                weights.add(setField(item, "weight"));
+                setReps.add(setField(item, "reps"));
                 metrics.add(compactSetMetrics(item));
                 if (intervals != null) {
-                    intervals.add(item.get("setInterval"));
+                    intervals.add(setField(item, "setInterval"));
                 }
             }
             var snapshot = [
@@ -2074,74 +2157,35 @@ class GymStore {
         }
     }
 
+    (:fullLegacyState)
+    static function isImmutableLiveRecord(value) { return false; }
+
+    (:compactLegacyState)
+    static function isImmutableLiveRecord(value) {
+        return GymRecordedSet.isRecord(value) || GymActiveJournal.isRecord(value);
+    }
+
     (:compactLegacyState)
     static function persistActiveWorkoutSnapshot(nextSets, startedAtSeconds, checkpoint) {
-        if (!hasAccountBinding() || !ensureDurableExerciseCatalog()) {
-            return false;
-        }
-        if (!isValidSetList(nextSets, maxWorkoutSets, true)) {
+        if (!hasAccountBinding() || !ensureDurableExerciseCatalog() ||
+            !isValidLiveSetList(nextSets, maxWorkoutSets, true) ||
+            (checkpoint != null && !isValidTimelineCheckpoint(checkpoint))) {
             status = "SAVE FAIL";
             return false;
         }
-        var indices = [];
-        var weights = [];
-        var setReps = [];
-        var intervals = checkpoint == null ? null : [];
-        for (var i = 0; i < nextSets.size(); i += 1) {
-            var item = nextSets[i];
-            var exerciseCatalogIndex = exerciseIndexForName(
-                item.get("exerciseName")
-            );
-            if (exerciseCatalogIndex < 0) {
-                status = "SAVE FAIL";
-                return false;
-            }
-            indices.add(exerciseCatalogIndex);
-            weights.add(item.get("weight"));
-            setReps.add(item.get("reps"));
-            if (intervals != null) {
-                intervals.add(item.get("setInterval"));
-            }
-        }
-        var snapshot = [
-            4,
-            accountBinding.toString(),
-            deviceBinding.toString(),
-            isValidAccountBinding(pairingGeneration) ? pairingGeneration.toString() : null,
-            startedAtSeconds,
-            indices,
-            weights,
-            setReps,
-            intervals,
-            checkpoint
-        ];
-        if (!isValidActiveWorkoutSnapshot(snapshot) ||
-            !isWithinStorageBudgetForActiveSnapshot(snapshot)) {
-            status = "STORE FULL";
+        if (!GymActiveJournal.commit(nextSets, startedAtSeconds, checkpoint)) {
+            if (!status.equals("STORE FULL")) { status = "SAVE FAIL"; }
             return false;
         }
+        activeWorkoutSnapshotValid = true;
+        activeWorkoutTimelineValid = checkpoint != null;
         try {
-            var canReleaseMirrorBeforeCommit = activeWorkoutSnapshotValid;
-            if (canReleaseMirrorBeforeCommit) {
-                Storage.setValue("sets", []);
-                Storage.setValue("activeWorkoutStartedAtSeconds", null);
-            }
-            Storage.setValue("activeWorkoutV1", snapshot);
-            activeWorkoutSnapshotValid = true;
-            activeWorkoutTimelineValid = checkpoint != null;
-            if (!canReleaseMirrorBeforeCommit) {
-                try {
-                    Storage.setValue("sets", []);
-                    Storage.setValue("activeWorkoutStartedAtSeconds", null);
-                } catch (e) {
-                    // The new snapshot wins on load and cleanup can retry later.
-                }
-            }
-            return true;
+            Storage.setValue("sets", []);
+            Storage.setValue("activeWorkoutStartedAtSeconds", null);
         } catch (e) {
-            status = "SAVE FAIL";
-            return false;
+            // The committed header is authoritative; the old mirror cannot win.
         }
+        return true;
     }
 
     (:fullLegacyState)
@@ -2229,17 +2273,55 @@ class GymStore {
         }
 
         var label = name;
-        if (isUk() || isRu()) {
-            var table = App.loadResource(Rez.JsonData.ExerciseLabels) as Lang.Dictionary;
-            var labels = table.get(name);
-            if (labels instanceof Lang.Array && labels.size() == 2) {
-                label = labels[isUk() ? 0 : 1].toString();
+        if ((isUk() || isRu()) && name.find("|") == null && name.find("~") == null) {
+            // Native string resources avoid allocating a decoded dictionary and
+            // every neighbouring label. Only the selected row survives in RAM.
+            var shard = exerciseLabelShard(name);
+            var shards = [
+                Rez.Strings.ExerciseLabels00, Rez.Strings.ExerciseLabels01,
+                Rez.Strings.ExerciseLabels02, Rez.Strings.ExerciseLabels03,
+                Rez.Strings.ExerciseLabels04, Rez.Strings.ExerciseLabels05,
+                Rez.Strings.ExerciseLabels06, Rez.Strings.ExerciseLabels07,
+                Rez.Strings.ExerciseLabels08, Rez.Strings.ExerciseLabels09,
+                Rez.Strings.ExerciseLabels10, Rez.Strings.ExerciseLabels11,
+                Rez.Strings.ExerciseLabels12, Rez.Strings.ExerciseLabels13,
+                Rez.Strings.ExerciseLabels14, Rez.Strings.ExerciseLabels15
+            ];
+            var packed = App.loadResource(shards[shard]) as Lang.String;
+            shards = null;
+            var marker = "~" + name + "|";
+            var start = packed.find(marker);
+            if (start != null) {
+                start += marker.length();
+                // The build verifies every translated row fits in this window.
+                // Avoid copying the rest of the resource beside the full shard.
+                var rowEnd = start + 192;
+                if (rowEnd > packed.length()) { rowEnd = packed.length(); }
+                var row = packed.substring(start, rowEnd);
+                packed = null;
+                if (row == null) { return name; }
+                var end = row.find("~");
+                if (end != null) { row = row.substring(0, end); }
+                var divider = row.find("|");
+                if (divider != null) {
+                    label = isUk() ? row.substring(0, divider) :
+                        row.substring(divider + 1, row.length());
+                }
             }
         }
         exerciseLabelCacheName = name;
         exerciseLabelCacheLanguage = language;
         exerciseLabelCacheValue = label;
         return label;
+    }
+
+    static function exerciseLabelShard(name) {
+        var bytes = utf8Bytes(name);
+        var bucket = 0;
+        for (var i = 0; i < bytes.size(); i += 1) {
+            bucket = (bucket + bytes[i]) % 16;
+        }
+        return bucket;
     }
 
     static function applyCurrentPlanSet() {
@@ -2257,7 +2339,7 @@ class GymStore {
         for (var i = 0; i < plan.size(); i += 1) {
             var candidate = plan[i];
             if (candidate instanceof Lang.Dictionary &&
-                candidate.get("exerciseName").toString().equals(exerciseName)) {
+                setField(candidate, "exerciseName").toString().equals(exerciseName)) {
                 if (matchingIndex == completed) {
                     item = candidate;
                     break;
@@ -2272,8 +2354,8 @@ class GymStore {
         if (!(item instanceof Lang.Dictionary)) {
             return false;
         }
-        var plannedWeight = item.get("weight");
-        var plannedReps = item.get("reps");
+        var plannedWeight = setField(item, "weight");
+        var plannedReps = setField(item, "reps");
         // The phone serializes Kotlin Double values. Validation accepts every
         // Connect IQ numeric representation, so application must use the same
         // contract or a valid plan can be ACKed while retaining stale kg.
@@ -2288,9 +2370,9 @@ class GymStore {
     static function completedSetsForExercise(exerciseName) {
         var completed = 0;
         for (var i = 0; i < sets.size(); i += 1) {
-            var item = sets[i];
-            if (item instanceof Lang.Dictionary &&
-                item.get("exerciseName").toString().equals(exerciseName)) {
+            var item = GymSetAccess.at(sets, i);
+            if (isSetRecord(item) &&
+                setField(item, "exerciseName").toString().equals(exerciseName)) {
                 completed += 1;
             }
         }
@@ -2302,7 +2384,7 @@ class GymStore {
         for (var i = 0; i < plan.size(); i += 1) {
             var item = plan[i];
             if (item instanceof Lang.Dictionary &&
-                item.get("exerciseName").toString().equals(exerciseName)) {
+                setField(item, "exerciseName").toString().equals(exerciseName)) {
                 planned += 1;
             }
         }
@@ -2315,7 +2397,7 @@ class GymStore {
         for (var i = 0; i < plan.size(); i += 1) {
             var item = plan[i];
             if (item instanceof Lang.Dictionary &&
-                item.get("exerciseName").toString().equals(exerciseName)) {
+                setField(item, "exerciseName").toString().equals(exerciseName)) {
                 planned += 1;
             }
         }
@@ -2323,27 +2405,21 @@ class GymStore {
     }
 
     static function completedPlannedSetCount() {
+        if (plan.size() == 0 || sets.size() == 0) { return 0; }
+        // Match each actual set to one unconsumed target. A byte per target
+        // avoids repeatedly rescanning all earlier actual sets and names.
+        var consumed = new [plan.size()]b;
         var completed = 0;
         for (var i = 0; i < sets.size(); i += 1) {
-            var setItem = sets[i];
-            if (!(setItem instanceof Lang.Dictionary)) {
-                continue;
-            }
-            var exerciseName = setItem.get("exerciseName").toString();
-            var earlierActual = 0;
-            for (var j = 0; j < i; j += 1) {
-                var earlierSet = sets[j];
-                if (earlierSet instanceof Lang.Dictionary &&
-                    earlierSet.get("exerciseName").toString().equals(exerciseName)) {
-                    earlierActual += 1;
+            var item = GymSetAccess.at(sets, i);
+            if (!isSetRecord(item)) { continue; }
+            var name = setField(item, "exerciseName");
+            for (var p = 0; p < plan.size(); p += 1) {
+                if (consumed[p] == 0 && plan[p] instanceof Lang.Dictionary &&
+                    setField(plan[p], "exerciseName").toString().equals(name.toString())) {
+                    consumed[p] = 1; completed += 1; break;
                 }
             }
-            if (earlierActual < plannedSetsForExercise(exerciseName)) {
-                completed += 1;
-            }
-        }
-        if (completed > plan.size()) {
-            completed = plan.size();
         }
         return completed;
     }
@@ -2377,7 +2453,7 @@ class GymStore {
             return false;
         }
         var item = plan[0];
-        if (!selectExerciseByName(item.get("exerciseName").toString())) {
+        if (!selectExerciseByName(setField(item, "exerciseName").toString())) {
             return false;
         }
         return applyPlanItem(item);
@@ -2415,7 +2491,7 @@ class GymStore {
             return false;
         }
         var statistics = GymSession.captureSetStatistics();
-        var setInterval = setIntervalForCurrentTimeline(statistics.get("setInterval"));
+        var setInterval = setIntervalForCurrentTimeline(setField(statistics, "setInterval"));
         var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds;
         var nextWorkoutStartedAt = activeWorkoutStartedAtSeconds;
         if (nextWorkoutStartedAt == null &&
@@ -2432,10 +2508,7 @@ class GymStore {
         // Previous set dictionaries are immutable after publication. Copy only
         // the array spine here; cloning every dictionary and interval produces a
         // transient O(n) heap spike on every new set.
-        var nextSets = [];
-        for (var copyIndex = 0; copyIndex < sets.size(); copyIndex += 1) {
-            nextSets.add(sets[copyIndex]);
-        }
+        var nextSets = sets.slice(null, null);
         var previousWeight = weight;
         var previousReps = reps;
         var previousExerciseIndex = exerciseIndex;
@@ -2449,17 +2522,17 @@ class GymStore {
                 currentExercise(), completedAfterCommit
             );
             if (postCommitPlanItem instanceof Lang.Dictionary &&
-                isValidWeight(postCommitPlanItem.get("weight")) &&
-                isValidReps(postCommitPlanItem.get("reps"))) {
-                postCommitWeight = postCommitPlanItem.get("weight");
-                postCommitReps = postCommitPlanItem.get("reps");
+                isValidWeight(setField(postCommitPlanItem, "weight")) &&
+                isValidReps(setField(postCommitPlanItem, "reps"))) {
+                postCommitWeight = setField(postCommitPlanItem, "weight");
+                postCommitReps = setField(postCommitPlanItem, "reps");
             }
         }
         // The first set has no preceding rest. After a process restart the prior
         // set end is also unknown, so do not manufacture a zero-second recovery.
         var restBefore = null;
-        if (nextSets.size() > 0) {
-            var previousSet = nextSets[nextSets.size() - 1];
+        if (keepsSetDiagnostics && nextSets.size() > 0) {
+            var previousSet = GymSetAccess.at(nextSets, nextSets.size() - 1);
             var currentStart = statistics.get("setStartedSeconds");
             if (lastLoggedSetEndSeconds > 0 && currentStart instanceof Lang.Number &&
                 currentStart >= lastLoggedSetEndSeconds) {
@@ -2469,36 +2542,25 @@ class GymStore {
                 }
             }
             var recoveryDrop = GymSession.recoveryHeartRateDrop();
-            if (recoveryDrop != null) {
+            if (keepsSetDiagnostics && recoveryDrop != null) {
                 var previousSetSource = previousSet;
                 previousSet = {
-                    "exerciseName" => previousSetSource.get("exerciseName").toString(),
-                    "weight" => previousSetSource.get("weight"),
-                    "reps" => previousSetSource.get("reps")
+                    "exerciseName" => setField(previousSetSource, "exerciseName").toString(),
+                    "weight" => setField(previousSetSource, "weight"),
+                    "reps" => setField(previousSetSource, "reps")
                 };
                 copyOptionalSetMetrics(previousSet, previousSetSource);
                 previousSet.put("recoveryHeartRateDrop", recoveryDrop);
                 nextSets[nextSets.size() - 1] = previousSet;
             }
         }
-        var setItem = {
-            "exerciseName" => currentExercise(),
-            "weight" => weight,
-            "reps" => reps,
-            "activeSeconds" => statistics.get("activeSeconds"),
-            "restBeforeSeconds" => restBefore,
-            "startHeartRate" => statistics.get("startHeartRate"),
-            "peakHeartRate" => statistics.get("peakHeartRate"),
-            "endHeartRate" => statistics.get("endHeartRate"),
-            "detectionConfidence" => statistics.get("detectionConfidence"),
-            "setInterval" => setInterval
-        };
         var wasAutoPrompt = GymSession.autoLogPrompt;
         var boost = GymSession.setBoostFor(weight, reps);
         setInterval[2] += boost;
         if (setInterval[2] > 100000.0) {
             setInterval[2] = 100000.0;
         }
+        var setItem = recordedSet(currentExercise(), weight, reps, statistics, restBefore, setInterval);
         nextSets.add(setItem);
 
         var legacyOriginUnavailable = previousSets.size() > 0 &&
@@ -2535,7 +2597,7 @@ class GymStore {
         // Only publish globals and calorie corrections after the single-value
         // snapshot commit succeeds. A thrown Object Store write leaves the old set
         // list and detector totals untouched.
-        sets = nextSets;
+        sets = usedAtomicSnapshot ? GymSetAccess.committed(nextSets) : nextSets;
         activeWorkoutStartedAtSeconds = nextWorkoutStartedAt;
         GymSession.restoreSetBoost(boost);
         if (wasPlannedSet) {
@@ -2576,6 +2638,33 @@ class GymStore {
         return true;
     }
 
+    (:fullLegacyState)
+    static function recordedSet(name, setWeight, setReps, statistics, restBefore, setInterval) {
+        return {
+            "exerciseName" => name,
+            "weight" => setWeight,
+            "reps" => setReps,
+            "activeSeconds" => setField(statistics, "activeSeconds"),
+            "restBeforeSeconds" => restBefore,
+            "startHeartRate" => setField(statistics, "startHeartRate"),
+            "peakHeartRate" => setField(statistics, "peakHeartRate"),
+            "endHeartRate" => setField(statistics, "endHeartRate"),
+            "detectionConfidence" => setField(statistics, "detectionConfidence"),
+            "setInterval" => setInterval
+        };
+    }
+
+    (:compactLegacyState)
+    static function recordedSet(name, setWeight, setReps, statistics, restBefore, setInterval) {
+        // The durable compact checkpoint already omits optional detector fields.
+        // Keep the live graph equally small; undo uses lastSetStatistics separately.
+        if (!hasAccountBinding()) {
+            return {"exerciseName" => name, "weight" => setWeight, "reps" => setReps,
+                "setInterval" => setInterval};
+        }
+        return restoredSet(name, setWeight, setReps, setInterval);
+    }
+
     static function canUndoLastSet() {
         if (!GymWorkoutMode.allowsDetailedTracking() || sets.size() == 0 ||
             lastSetUndoStartedAt == null) {
@@ -2603,11 +2692,11 @@ class GymStore {
         }
         var previousSets = sets;
         var lastIndex = previousSets.size() - 1;
-        var lastSet = previousSets[lastIndex];
-        var nextSets = [];
-        for (var copyIndex = 0; copyIndex < lastIndex; copyIndex += 1) {
-            nextSets.add(previousSets[copyIndex]);
-        }
+        var lastSet = GymSetAccess.at(previousSets, lastIndex);
+        var undoneName = setField(lastSet, "exerciseName");
+        var undoneWeight = setField(lastSet, "weight");
+        var undoneReps = setField(lastSet, "reps");
+        var nextSets = previousSets.slice(0, lastIndex);
         var boost = lastSetBoost;
         var restorePrompt = lastSetWasAutoPrompt;
         var restoreStatistics = lastSetStatistics;
@@ -2643,9 +2732,9 @@ class GymStore {
             try {
                 Storage.setValue("currentEntryV1", [
                     nextSets.size(),
-                    lastSet.get("exerciseName").toString(),
-                    lastSet.get("weight"),
-                    lastSet.get("reps")
+                    undoneName.toString(),
+                    undoneWeight,
+                    undoneReps
                 ]);
             } catch (e) {
                 status = "SAVE FAIL";
@@ -2657,13 +2746,13 @@ class GymStore {
             previousSets = null;
         }
 
-        sets = nextSets;
+        sets = usedAtomicSnapshot ? GymSetAccess.committed(nextSets) : nextSets;
         activeWorkoutStartedAtSeconds = nextWorkoutStartedAt;
         GymSession.removeSetBoost(boost);
-        weight = lastSet.get("weight");
-        reps = lastSet.get("reps");
+        weight = undoneWeight;
+        reps = undoneReps;
         for (var e = 0; e < exercises.size(); e += 1) {
-            if (exercises[e].toString().equals(lastSet.get("exerciseName").toString())) {
+            if (exercises[e].toString().equals(undoneName.toString())) {
                 exerciseIndex = e;
                 break;
             }
@@ -2770,6 +2859,10 @@ class GymStore {
     }
 
     static function clearWorkout() {
+        if (!GymLocalWorkout.clear()) {
+            status = "RECOVERY FAIL";
+            return false;
+        }
         if (hasAccountBinding() && !persistEmptyActiveWorkoutSnapshot()) {
             status = "SAVE FAIL";
             return false;
@@ -2797,6 +2890,9 @@ class GymStore {
     }
 
     static function hasUnfinishedWorkout() {
+        if (GymLocalWorkout.snapshot != null) {
+            return true;
+        }
         if (sets.size() > 0 || activeWorkoutStartedAtSeconds != null ||
             runtimeWorkoutStartedAtSeconds != null) {
             return true;
@@ -2815,6 +2911,10 @@ class GymStore {
     }
 
     static function clearActiveWorkout() {
+        if (!GymLocalWorkout.clear()) {
+            status = "RECOVERY FAIL";
+            return false;
+        }
         var atomicallyCleared = false;
         if (hasAccountBinding()) {
             if (!persistEmptyActiveWorkoutSnapshot()) {
@@ -2913,7 +3013,7 @@ class GymStore {
         }
         var freeMode = preparedWorkout.size() == 7 && preparedWorkout[6];
         if (!freeMode) {
-            return isValidSetList(sets, maxWorkoutSets, false);
+            return isValidLiveSetList(sets, maxWorkoutSets, false);
         }
         // A FREE phase marker is useful only beside a real, owner-bound
         // metrics checkpoint. The empty tombstone and a forged zero-duration
@@ -2957,7 +3057,7 @@ class GymStore {
                 return false;
             }
         } else if (!GymWorkoutMode.isPlanned() ||
-            !isValidSetList(sets, maxWorkoutSets, false)) {
+            !isValidLiveSetList(sets, maxWorkoutSets, false)) {
             return false;
         }
         var marker = [
@@ -3014,6 +3114,21 @@ class GymStore {
             // A stale marker is harmless once the matching pending request is
             // durable; recoverQueuedWorkout clears it idempotently on next load.
         }
+    }
+
+    static function preparedWorkoutJournalMetadata(allowSetsOnly) {
+        if (!hasPreparedWorkout() ||
+            (!preparedWorkoutFitSaved() &&
+                (!allowSetsOnly || !GymSession.fitOutcomeUnknownAfterRestart()))) { return null; }
+        return workoutMessageForSave(preparedWorkout[4].toString(), true);
+    }
+
+    static function pendingMessage() {
+        // Loading a parked legacy queue allocates complete messages. Delay that
+        // work until the phone link can actually send them; keep disk state intact.
+        if (GymSession.recording || !GymComm.isPhoneConnected() ||
+            !restorePendingForMutation()) { return null; }
+        return pending.size() > 0 ? pending[0] : GymPendingJournal.nextMessage();
     }
 
     static function preparedWorkoutMessage() {
@@ -3084,17 +3199,6 @@ class GymStore {
         return days.toString() + tr("d", "д", "д");
     }
 
-    (:compactLegacyState)
-    static function lastWorkoutSyncText() {
-        if (lastWorkoutSyncAtSeconds == null) {
-            return tr("NEVER", "НІК", "НИК");
-        }
-        var age = Time.now().value() - lastWorkoutSyncAtSeconds;
-        return age >= 0 && age < 3600 ?
-            tr("RECENT", "НЕДАВНО", "НЕДАВНО") :
-            tr("EARLIER", "РАНІШЕ", "РАНЬШЕ");
-    }
-
     static function restoreTutorialHistory(value) {
         tutorialHistory = [];
         if (!(value instanceof Lang.Array) || value.size() > maxTutorialAccounts) {
@@ -3153,19 +3257,22 @@ class GymStore {
     }
 
     static function workoutMessage(requestId) {
+        return workoutMessageForSave(requestId, false);
+    }
+
+    static function workoutMessageForSave(requestId, metadataOnly) {
         if (!hasAccountBinding() || !hasPreparedWorkout() ||
             !isBoundedText(requestId, maxBindingLength) ||
             !preparedWorkout[4].toString().equals(requestId.toString())) {
             return null;
         }
         var freeMode = preparedWorkout.size() == 7 && preparedWorkout[6];
-        var workoutMode = freeMode ? "free" : "planned";
         if ((freeMode && sets.size() != 0) ||
-            (!freeMode && !isValidSetList(sets, maxWorkoutSets, false))) {
+            (!freeMode && !isValidLiveSetList(sets, maxWorkoutSets, false))) {
             return null;
         }
         var setCopies = [];
-        var setMetrics = [];
+        var setMetrics = keepsSetDiagnostics ? [] : null;
         var setIntervals = [];
         var messageCheckpoint = activeWorkoutTimelineValid &&
             !resumedWorkoutIntervalsInvalid ? currentTimelineCheckpoint(0.0) : null;
@@ -3174,14 +3281,14 @@ class GymStore {
             return null;
         }
         var allIntervalsAvailable = messageCheckpoint != null;
-        for (var i = 0; !freeMode && i < sets.size(); i += 1) {
-            var setItem = sets[i];
-            if (!(setItem instanceof Lang.Dictionary)) {
+        for (var i = 0; !metadataOnly && !freeMode && i < sets.size(); i += 1) {
+            var setItem = GymSetAccess.at(sets, i);
+            if (!(isSetRecord(setItem))) {
                 return null;
             }
-            var exerciseName = setItem.get("exerciseName");
-            var setWeight = setItem.get("weight");
-            var setReps = setItem.get("reps");
+            var exerciseName = setField(setItem, "exerciseName");
+            var setWeight = setField(setItem, "weight");
+            var setReps = setField(setItem, "reps");
             if (!isValidExerciseName(exerciseName) || !isValidWeight(setWeight) || !isValidReps(setReps)) {
                 return null;
             }
@@ -3191,15 +3298,17 @@ class GymStore {
                 "reps" => setReps
             };
             setCopies.add(setCopy);
-            setMetrics.add(compactSetMetrics(setItem));
-            var setInterval = setItem.get("setInterval");
+            if (keepsSetDiagnostics && setMetrics != null) { setMetrics.add(compactSetMetrics(setItem)); }
+            var setInterval = setField(setItem, "setInterval");
             if (isValidSetInterval(setInterval)) {
-                setIntervals.add(copySetInterval(setInterval));
+                // Keep one immutable interval per completed set while the live
+                // workout and its outgoing message coexist during durable save.
+                setIntervals.add(setInterval);
             } else {
                 allIntervalsAvailable = false;
             }
         }
-        if (!freeMode && setMetrics.size() > 0) {
+        if (keepsSetDiagnostics && !freeMode && setMetrics != null && setMetrics.size() > 0) {
             var latestRecovery = GymSession.recoveryHeartRateDrop();
             if (latestRecovery != null) {
                 setMetrics[setMetrics.size() - 1][5] = latestRecovery;
@@ -3212,72 +3321,72 @@ class GymStore {
         if (!isValidWorkoutStartedAtSeconds(messageStartedAt)) {
             return null;
         }
-        var message = {
-            "type" => "create_workout",
-            "bindingVersion" => bindingVersion,
-            "workoutMode" => workoutMode,
-            "requestId" => requestId,
-            "accountBinding" => accountBinding,
-            "deviceBinding" => deviceBinding,
-            // New workouts persist their logical origin with the first set. Only
-            // legacy in-progress workouts without that key fall back to the honest
-            // beginning of the current resumed recording segment.
-            "startedAtSeconds" => messageStartedAt,
-            "sets" => setCopies
-        };
-        if (!freeMode) {
-            message.put("setMetrics", setMetrics);
+        var target = !freeMode ? plan.size() : 0;
+        var context = [requestId, accountBinding, deviceBinding, pairingGeneration,
+            messageStartedAt, freeMode, messageCheckpoint, target,
+            target > 0 ? completedPlannedSetCount() : 0, sets.size()];
+        if (metadataOnly) { return context; }
+        var message = expandWorkoutMetadata(context);
+        if (message == null) { return null; }
+        message["sets"] = setCopies;
+        if (keepsSetDiagnostics && !freeMode && setMetrics != null) {
+            message["setMetrics"] = setMetrics;
         }
-        if (messageCheckpoint != null) {
-            var duration = messageCheckpoint[0];
-            var gymTotal = messageCheckpoint[1];
-            var garminTotal = messageCheckpoint[2];
-            message.put("durationSeconds", duration);
-            message.put("gymCalories", gymTotal);
-            var combinedSamples = messageCheckpoint[4];
-            var combinedAverage = combinedSamples > 0 ?
-                (messageCheckpoint[3] / combinedSamples).toNumber() : 0;
-            if (!freeMode || combinedSamples > 0) {
-                message.put("avgHeartRate", combinedAverage);
-                message.put("maxHeartRate", messageCheckpoint[5]);
-                message.put("heartRateZone", messageCheckpoint[7]);
-            }
-            // Optional scalar diagnostics must be absent, rather than explicit
-            // null, so released phone parsers can accept a workout when the
-            // Garmin system calorie or heart-rate source is unavailable.
-            if (garminTotal != null) {
-                message.put("garminCalories", garminTotal);
-            }
-            if (messageCheckpoint[6] != null) {
-                message.put("lastHeartRate", messageCheckpoint[6]);
-            }
-            if (allIntervalsAvailable && !freeMode &&
-                setIntervals.size() == setCopies.size() &&
-                areSetIntervalsConsistent(
-                    setIntervals,
-                    duration,
-                    gymTotal,
-                    garminTotal
-                )) {
-                message.put("setIntervals", setIntervals);
-            }
+        if (messageCheckpoint != null && allIntervalsAvailable && !freeMode &&
+            setIntervals.size() == setCopies.size() &&
+            areSetIntervalsConsistent(setIntervals, messageCheckpoint[0],
+                messageCheckpoint[1], messageCheckpoint[2])) {
+            message["setIntervals"] = setIntervals;
         }
-        if (!freeMode && plan.size() > 0) {
-            var plannedTargetSetCount = plan.size();
-            // Released phone parsers require the legacy field to be at least the
-            // number of actual sets. Keep that compatibility envelope while the
-            // exact target/progress pair carries honest plan completion for new clients.
-            var plannedSetCount = plannedTargetSetCount;
-            if (plannedSetCount < setCopies.size()) {
-                plannedSetCount = setCopies.size();
+        return message;
+    }
+
+    // Preserve exact numeric values and optional-field absence while expanding
+    // the bounded disk context into the existing phone contract. Callers still
+    // validate ownership and request identity before accepting or sending it.
+    static function isValidWorkoutContext(context) {
+        if (!(context instanceof Lang.Array) || context.size() != 10 ||
+            !(context[5] instanceof Lang.Boolean) ||
+            !isBoundedText(context[0], maxBindingLength) ||
+            !isValidAccountBinding(context[1]) ||
+            !isBoundedText(context[2], maxBindingLength) ||
+            !isValidWorkoutStartedAtSeconds(context[4]) ||
+            !isValidOptionalAccountBinding(context[3]) ||
+            (context[6] != null && !isValidTimelineCheckpoint(context[6])) ||
+            !isBoundedInteger(context[7], 0, maxPlanSets) ||
+            !isBoundedInteger(context[8], 0, context[7]) ||
+            !isBoundedInteger(context[9], 0, maxWorkoutSets) ||
+            context[8] > context[9] ||
+            (context[5] && (context[7] != 0 || context[9] != 0))) { return false; }
+        return true;
+    }
+
+    static function expandWorkoutMetadata(context) {
+        if (!isValidWorkoutContext(context)) { return null; }
+        var freeMode = context[5];
+        var checkpoint = context[6];
+        var message = {"type" => "create_workout", "bindingVersion" => bindingVersion,
+            "workoutMode" => freeMode ? "free" : "planned", "requestId" => context[0],
+            "accountBinding" => context[1], "deviceBinding" => context[2],
+            "startedAtSeconds" => context[4]};
+        if (checkpoint != null) {
+            message["durationSeconds"] = checkpoint[0];
+            message["gymCalories"] = checkpoint[1];
+            var samples = checkpoint[4];
+            if (!freeMode || samples > 0) {
+                message["avgHeartRate"] = samples > 0 ? (checkpoint[3] / samples).toNumber() : 0;
+                message["maxHeartRate"] = checkpoint[5];
+                message["heartRateZone"] = checkpoint[7];
             }
-            message.put("plannedSetCount", plannedSetCount);
-            message.put("plannedTargetSetCount", plannedTargetSetCount);
-            message.put("completedPlannedSetCount", completedPlannedSetCount());
+            if (checkpoint[2] != null) { message["garminCalories"] = checkpoint[2]; }
+            if (checkpoint[6] != null) { message["lastHeartRate"] = checkpoint[6]; }
         }
-        if (isValidAccountBinding(pairingGeneration)) {
-            message.put("pairingGeneration", pairingGeneration.toString());
+        if (!freeMode && context[7] > 0) {
+            message["plannedSetCount"] = context[7] < context[9] ? context[9] : context[7];
+            message["plannedTargetSetCount"] = context[7];
+            message["completedPlannedSetCount"] = context[8];
         }
+        if (context[3] != null) { message["pairingGeneration"] = context[3].toString(); }
         return message;
     }
 
@@ -3292,6 +3401,10 @@ class GymStore {
 
     (:fullLegacyState)
     static function applySyncFromSource(message, bindingSource) {
+        if (GymLocalWorkout.blocksPairing()) {
+            status = "DATA KEPT";
+            return false;
+        }
         if (!isValidSyncMessage(message, bindingSource)) {
             status = "BAD SYNC";
             return false;
@@ -3400,6 +3513,9 @@ class GymStore {
             // the phone will retry the same revision after the workout is queued.
             status = "PAIR WAIT";
             return false;
+        }
+        if (pairingGenerationChanges && !accountChanged && !resetWorkout && !restorePendingForMutation()) {
+            status = "DATA KEPT"; return false;
         }
         // Persist the global replay barrier before destructive account-transition writes.
         if (!stageSync(safeMessage, bindingSource)) {
@@ -3518,6 +3634,10 @@ class GymStore {
 
     (:compactLegacyState)
     static function applySyncFromSource(message, bindingSource) {
+        if (GymLocalWorkout.blocksPairing()) {
+            status = "DATA KEPT";
+            return false;
+        }
         if (!bindingSource.equals("phone") ||
             !isValidSyncMessage(message, bindingSource)) {
             status = "BAD SYNC";
@@ -3572,6 +3692,9 @@ class GymStore {
                 preparedWorkout != null)) {
             status = "PAIR WAIT";
             return false;
+        }
+        if (pairingGenerationChanges && !accountChanged && !resetWorkout && !restorePendingForMutation()) {
+            status = "DATA KEPT"; return false;
         }
         if (!stageSync(safeMessage, bindingSource)) {
             status = "SAVE FAIL";
@@ -3713,10 +3836,10 @@ class GymStore {
         for (var i = 0; i < plan.size(); i += 1) {
             var item = plan[i];
             if (!(item instanceof Lang.Dictionary) ||
-                !item.get("exerciseName").toString().equals(names[i].toString()) ||
-                (item.get("weight") as Lang.Numeric).toDouble() !=
+                !setField(item, "exerciseName").toString().equals(names[i].toString()) ||
+                (setField(item, "weight") as Lang.Numeric).toDouble() !=
                     (weights[i] as Lang.Numeric).toDouble() ||
-                (item.get("reps") as Lang.Numeric).toLong() !=
+                (setField(item, "reps") as Lang.Numeric).toLong() !=
                     (setReps[i] as Lang.Numeric).toLong()) {
                 return false;
             }
@@ -4034,11 +4157,7 @@ class GymStore {
     }
 
     static function copySyncArray(source) {
-        var copy = [];
-        for (var i = 0; i < source.size(); i += 1) {
-            copy.add(source[i]);
-        }
-        return copy;
+        return source.slice(null, null);
     }
 
     static function hasAccountBinding() {
@@ -4101,12 +4220,74 @@ class GymStore {
         return messageGeneration == null;
     }
 
+    static function pendingCount() {
+        return (parkedPending == null ? pending.size() : parkedPending[0].size()) + GymPendingJournal.entries.size();
+    }
+
+    // A legacy queue is already durable and immutable during a live workout.
+    // Retain only its bounded identity and budget until it is actually needed.
+    private static function parkPendingForSnapshot(value) {
+        if (!(value instanceof Lang.Array) || value.size() < 6) { return; }
+        parkPendingDuringLongWorkout(value[5] instanceof Lang.Array ? value[5].size() : value[5]);
+    }
+
+    static function parkPendingDuringLongWorkout(count) {
+        if (!isBoundedInteger(count, 0, maxWorkoutSets) ||
+            (count < 15 && GymPendingJournal.entries.size() == 0) ||
+            pending.size() == 0 || parkedPending != null) { return; }
+        var ids = []; var origins = []; var names = 0;
+        for (var i = 0; i < pending.size(); i += 1) {
+            if (!bindingsMatch(pending[i])) { return; }
+            ids.add(pending[i]["requestId"]); origins.add(pending[i]["startedAtSeconds"]);
+            names += setListNameBytes(pending[i]["sets"]);
+        }
+        parkedPending = [ids, estimatedPendingBytes(), names, origins];
+        pending = []; pendingEstimateSource = null;
+    }
+
+    static function restorePendingForMutation() {
+        if (parkedPending == null) { return true; }
+        if (sets.size() > 14) { return false; }
+        try {
+            var saved = Storage.getValue("pending");
+            if (!isValidPendingList(saved) || saved.size() != parkedPending[0].size()) { return false; }
+            for (var i = 0; i < saved.size(); i += 1) {
+                if (!bindingsMatch(saved[i]) ||
+                    !(saved[i] as Lang.Dictionary)["requestId"].equals(parkedPending[0][i])) { return false; }
+            }
+            pending = saved; parkedPending = null; pendingEstimateSource = null;
+            return true;
+        } catch (e) { return false; }
+    }
+
+    static function legacyPendingNameBytes() {
+        if (parkedPending != null) { return parkedPending[2]; }
+        var bytes = 0;
+        for (var i = 0; i < pending.size(); i += 1) { bytes += setListNameBytes(pending[i]["sets"]); }
+        return bytes;
+    }
+
+    private static function parkedPendingOrigin(requestId) {
+        if (parkedPending == null) { return null; }
+        for (var i = 0; i < parkedPending[0].size(); i += 1) {
+            if (parkedPending[0][i].equals(requestId)) { return parkedPending[3][i]; }
+        }
+        return null;
+    }
+
     static function removePendingByRequestId(requestId) {
         // An ACK must never win the marker -> pending -> active tombstone
         // transaction. If finalization still fails, retain the queue head.
         if (!recoverQueuedWorkout() ||
-            !isBoundedText(requestId, maxBindingLength) || pending.size() == 0) {
+            !isBoundedText(requestId, maxBindingLength) || pendingCount() == 0) {
             return false;
+        }
+        if (!restorePendingForMutation()) { return false; }
+        if (pending.size() == 0) {
+            if (!GymPendingJournal.remove(requestId)) { return false; }
+            lastWorkoutSyncAtSeconds = Time.now().value();
+            save();
+            return true;
         }
         var requestText = requestId.toString();
         var item = pending[0];
@@ -4118,6 +4299,7 @@ class GymStore {
             !itemRequestId.toString().equals(requestText)) {
             return false;
         }
+        pendingEstimateSource = null;
         pending.remove(item);
         lastWorkoutSyncAtSeconds = Time.now().value();
         if (save()) {
@@ -4148,15 +4330,31 @@ class GymStore {
             }
         }
         for (var j = 0; j < pending.size(); j += 1) {
+            pendingEstimateSource = null;
             pending[j].put("pairingGeneration", nextGeneration.toString());
         }
-        return isValidPendingList(pending);
+        return isValidPendingList(pending) && GymPendingJournal.rotate(previousGeneration, nextGeneration);
     }
 
     static function queueWorkout(message) {
+        if (!appendWorkout(message)) {
+            return false;
+        }
+        if (!recoverQueuedWorkout()) {
+            status = "QUEUED SAFE";
+            return false;
+        }
+        status = "QUEUED";
+        return true;
+    }
+
+    // Save callbacks can yield after the durable append. The prepared marker
+    // keeps this item unsendable until recoverQueuedWorkout commits cleanup.
+    static function appendWorkout(message) {
         if (!isValidWorkoutMessage(message) || !bindingsMatch(message)) {
             return false;
         }
+        if (!restorePendingForMutation()) { return false; }
         var requestId = message.get("requestId").toString();
         var alreadyQueued = false;
         for (var i = 0; i < pending.size(); i += 1) {
@@ -4178,21 +4376,20 @@ class GymStore {
                 status = "SYNC FULL";
                 return false;
             }
-            var nextPending = [];
-            for (var j = 0; j < pending.size(); j += 1) {
-                nextPending.add(pending[j]);
-            }
+            var nextPending = pending.slice(null, null);
             nextPending.add(message);
 
             var previousPending = pending;
             var withinBudget = false;
             try {
                 pending = nextPending;
+                pendingEstimateSource = null;
                 withinBudget = isWithinStorageBudget();
             } catch (e) {
                 withinBudget = false;
             }
             pending = previousPending;
+            pendingEstimateSource = null;
             if (!withinBudget) {
                 status = "QUEUE FULL";
                 return false;
@@ -4209,13 +4406,10 @@ class GymStore {
                 return false;
             }
             pending = nextPending;
+            pendingEstimateSource = null;
         }
 
-        if (!recoverQueuedWorkout()) {
-            status = "QUEUED SAFE";
-            return false;
-        }
-        status = "QUEUED";
+        status = "QUEUED SAFE";
         return true;
     }
 
@@ -4232,6 +4426,7 @@ class GymStore {
         // an early ACK from resurrecting the workout.
         if (!isBoundedText(marker, maxBindingLength) && hasPreparedWorkout()) {
             var preparedId = preparedWorkout[4].toString();
+            if (GymPendingJournal.contains(preparedId) || (parkedPendingOrigin(preparedId) != null)) { marker = preparedId; }
             for (var p = 0; p < pending.size(); p += 1) {
                 var preparedItem = pending[p];
                 if (preparedItem instanceof Lang.Dictionary &&
@@ -4246,17 +4441,24 @@ class GymStore {
         if (!isBoundedText(marker, maxBindingLength)) {
             return true;
         }
-        var queued = false;
+        var queuedOrigin = GymPendingJournal.origin(marker);
+        if (queuedOrigin == null) { queuedOrigin = parkedPendingOrigin(marker); }
+        var queued = queuedOrigin != null;
         for (var i = 0; i < pending.size(); i += 1) {
             var item = pending[i];
             if (item instanceof Lang.Dictionary &&
                 isBoundedText(item.get("requestId"), maxBindingLength) &&
                 item.get("requestId").toString().equals(marker.toString())) {
-                queued = true;
+                queued = true; queuedOrigin = item.get("startedAtSeconds");
                 break;
             }
         }
-        if (queued) {
+        var activeBelongsToMarker = preparedWorkout != null &&
+            isValidPreparedWorkout(preparedWorkout) && activeWorkoutSnapshotMatchesBindings(preparedWorkout) &&
+            preparedWorkout[4].equals(marker) && activeWorkoutStartedAtSeconds == queuedOrigin;
+        // A failed marker deletion must never erase a newer active workout on
+        // the next launch. Only the matching prepared transaction owns cleanup.
+        if (queued && (!hasUnfinishedWorkout() || activeBelongsToMarker)) {
             if (hasAccountBinding() && !persistEmptyActiveWorkoutSnapshot()) {
                 return false;
             }
@@ -4273,15 +4475,19 @@ class GymStore {
             }
             clearPreparedWorkout(marker);
         }
+        if (queued && !activeBelongsToMarker) { clearPreparedWorkout(marker); }
         try {
             Storage.deleteValue("queuedActiveRequestId");
         } catch (e) {
-            // Retrying recovery is safe.
+            // A later retry still compares the marker with the active transaction.
         }
         return true;
     }
 
     static function beginAccountTransition() {
+        validatedBindingA = null;
+        validatedBindingB = null;
+        pendingEstimateSource = null;
         try {
             Storage.deleteValue("stateOwnerBinding");
             stateOwnerBinding = null;
@@ -4338,6 +4544,11 @@ class GymStore {
     }
 
     static function clearAccountScopedState() {
+        parkedPending = null;
+        GymPendingJournal.clear();
+        GymActiveJournal.clear();
+        validatedBindingA = null;
+        validatedBindingB = null;
         try {
             // Invalid/missing ownership never restores this value, but remove the
             // account-bound wearable cache as well so a later lifecycle cannot revive
@@ -4359,6 +4570,7 @@ class GymStore {
         plan = [];
         GymWorkoutMode.clear();
         pending = [];
+        pendingEstimateSource = null;
         preparedWorkout = null;
         lastWorkoutSyncAtSeconds = null;
         activeWorkoutStartedAtSeconds = null;
@@ -4512,7 +4724,7 @@ class GymStore {
     static function refreshLegacyCurrentQuarantine() {
         if (!legacyUnboundState ||
             !isValidExerciseList(exercises, maxPlanSets) ||
-            !isValidSetList(sets, maxWorkoutSets, true) ||
+            !isValidLiveSetList(sets, maxWorkoutSets, true) ||
             !isValidSetList(plan, maxPlanSets, true) ||
             !isValidLegacyPendingList(pending) ||
             !isValidWeight(weight) || !isValidReps(reps) ||
@@ -4567,8 +4779,9 @@ class GymStore {
         clearTransientSetActions();
         plan = normalizedSetList(snapshot.get("plan"));
         pending = normalizedLegacyPendingList(snapshot.get("pending"));
-        weight = snapshot.get("weight");
-        reps = snapshot.get("reps");
+        pendingEstimateSource = null;
+        weight = setField(snapshot, "weight");
+        reps = setField(snapshot, "reps");
         weightStep = snapshot.get("weightStep");
         restSecondsDefault = snapshot.get("restSecondsDefault");
         autoPromptEnabled = snapshot.get("autoPromptEnabled");
@@ -4605,7 +4818,7 @@ class GymStore {
             !isValidSetList(value.get("sets"), maxWorkoutSets, true) ||
             !isValidSetList(value.get("plan"), maxPlanSets, true) ||
             !isValidLegacyPendingList(value.get("pending")) ||
-            !isValidWeight(value.get("weight")) || !isValidReps(value.get("reps")) ||
+            !isValidWeight(setField(value, "weight")) || !isValidReps(setField(value, "reps")) ||
             !isValidLegacyQuarantineSettings(value) ||
             !(value.get("autoPromptEnabled") instanceof Lang.Boolean) ||
             !isBoundedText(value.get("language"), 2) ||
@@ -4636,11 +4849,11 @@ class GymStore {
     static function normalizedSetList(source) {
         var copy = [];
         for (var i = 0; i < source.size(); i += 1) {
-            var item = source[i];
+            var item = GymSetAccess.at(source, i);
             var normalized = {
-                "exerciseName" => item.get("exerciseName").toString(),
-                "weight" => item.get("weight"),
-                "reps" => item.get("reps")
+                "exerciseName" => setField(item, "exerciseName").toString(),
+                "weight" => setField(item, "weight"),
+                "reps" => setField(item, "reps")
             };
             copyOptionalSetMetrics(normalized, item);
             copy.add(normalized);
@@ -4649,9 +4862,9 @@ class GymStore {
     }
 
     static function compactSetMetrics(source) {
-        var startHeartRate = source.get("startHeartRate");
-        var peakHeartRate = source.get("peakHeartRate");
-        var endHeartRate = source.get("endHeartRate");
+        var startHeartRate = setField(source, "startHeartRate");
+        var peakHeartRate = setField(source, "peakHeartRate");
+        var endHeartRate = setField(source, "endHeartRate");
         if (startHeartRate != null &&
             (peakHeartRate == null || startHeartRate > peakHeartRate)) {
             peakHeartRate = startHeartRate;
@@ -4661,22 +4874,18 @@ class GymStore {
             peakHeartRate = endHeartRate;
         }
         return [
-            source.get("activeSeconds"),
-            source.get("restBeforeSeconds"),
+            setField(source, "activeSeconds"),
+            setField(source, "restBeforeSeconds"),
             startHeartRate,
             peakHeartRate,
             endHeartRate,
-            source.get("recoveryHeartRateDrop"),
-            source.get("detectionConfidence")
+            setField(source, "recoveryHeartRateDrop"),
+            setField(source, "detectionConfidence")
         ];
     }
 
     static function copySetInterval(source) {
-        var copy = [];
-        for (var i = 0; i < source.size(); i += 1) {
-            copy.add(source[i]);
-        }
-        return copy;
+        return source.slice(null, null);
     }
 
     static function copyOptionalSetMetrics(target, source) {
@@ -4685,12 +4894,12 @@ class GymStore {
             "endHeartRate", "recoveryHeartRateDrop", "detectionConfidence"
         ];
         for (var i = 0; i < keys.size(); i += 1) {
-            var value = source.get(keys[i]);
+            var value = setField(source, keys[i]);
             if (value != null) {
                 target.put(keys[i], value);
             }
         }
-        var setInterval = source.get("setInterval");
+        var setInterval = setField(source, "setInterval");
         if (isValidSetInterval(setInterval)) {
             target.put("setInterval", copySetInterval(setInterval));
         }
@@ -4728,12 +4937,13 @@ class GymStore {
     }
 
     static function loadSyncStage(source) {
-        var key = source.equals("cloud") ? "cloudSyncStage" : "phoneSyncStage";
-        var maximum = source.equals("cloud") ? maxCloudPlanRevision : maxPhoneSyncRevision;
+        if (!keepsSetDiagnostics && !source.equals("phone")) { return; }
+        var key = (keepsSetDiagnostics && source.equals("cloud")) ? "cloudSyncStage" : "phoneSyncStage";
+        var maximum = (keepsSetDiagnostics && source.equals("cloud")) ? maxCloudPlanRevision : maxPhoneSyncRevision;
         var stage = Storage.getValue(key);
         if (stage instanceof Lang.Dictionary && isValidSyncStage(stage, maximum, source)) {
             var stagedMessage = normalizedSyncMessage(stage.get("message"), source);
-            if (source.equals("cloud")) {
+            if ((keepsSetDiagnostics && source.equals("cloud"))) {
                 stagedCloudPlanRevision = stage.get("revision").toNumber();
                 stagedCloudPlanId = stage.get("id").toString();
                 stagedCloudAccountBinding = stage.get("accountBinding").toString();
@@ -4746,7 +4956,7 @@ class GymStore {
             }
             return;
         }
-        if (source.equals("cloud")) {
+        if ((keepsSetDiagnostics && source.equals("cloud"))) {
             stagedCloudPlanRevision = 0;
             stagedCloudPlanId = null;
             stagedCloudAccountBinding = null;
@@ -4760,9 +4970,10 @@ class GymStore {
     }
 
     static function stageSync(message, source) {
+        if (!keepsSetDiagnostics && !source.equals("phone")) { return false; }
         // Both call sites pass a freshly normalized, fully validated dictionary;
         // rebuilding it here used to duplicate every plan/catalog array.
-        var revision = source.equals("cloud") ?
+        var revision = (keepsSetDiagnostics && source.equals("cloud")) ?
             message.get("planRevision") : message.get("syncRevision");
         var stage = {
             "revision" => revision,
@@ -4774,8 +4985,8 @@ class GymStore {
             return false;
         }
         try {
-            Storage.setValue(source.equals("cloud") ? "cloudSyncStage" : "phoneSyncStage", stage);
-            if (source.equals("cloud")) {
+            Storage.setValue((keepsSetDiagnostics && source.equals("cloud")) ? "cloudSyncStage" : "phoneSyncStage", stage);
+            if ((keepsSetDiagnostics && source.equals("cloud"))) {
                 stagedCloudPlanRevision = revision.toNumber();
                 stagedCloudPlanId = message.get("requestId").toString();
                 stagedCloudAccountBinding = message.get("accountBinding").toString();
@@ -4793,9 +5004,10 @@ class GymStore {
     }
 
     static function clearSyncStage(source) {
+        if (!keepsSetDiagnostics && !source.equals("phone")) { return; }
         try {
-            Storage.deleteValue(source.equals("cloud") ? "cloudSyncStage" : "phoneSyncStage");
-            if (source.equals("cloud")) {
+            Storage.deleteValue((keepsSetDiagnostics && source.equals("cloud")) ? "cloudSyncStage" : "phoneSyncStage");
+            if ((keepsSetDiagnostics && source.equals("cloud"))) {
                 stagedCloudPlanRevision = 0;
                 stagedCloudPlanId = null;
                 stagedCloudAccountBinding = null;
@@ -4819,11 +5031,12 @@ class GymStore {
     }
 
     static function isExactStagedSync(message, source) {
-        var revision = source.equals("cloud") ?
+        if (!keepsSetDiagnostics && !source.equals("phone")) { return false; }
+        var revision = (keepsSetDiagnostics && source.equals("cloud")) ?
             message.get("planRevision").toNumber() : message.get("syncRevision").toLong();
         var requestId = message.get("requestId").toString();
         var messageAccount = message.get("accountBinding").toString();
-        if (source.equals("cloud")) {
+        if ((keepsSetDiagnostics && source.equals("cloud"))) {
             if (stagedCloudPlanRevision != revision || stagedCloudPlanId == null ||
                 stagedCloudAccountBinding == null ||
                 !stagedCloudPlanId.toString().equals(requestId) ||
@@ -4841,6 +5054,7 @@ class GymStore {
     }
 
     static function syncMessagesEqual(left, right, source) {
+        if (!keepsSetDiagnostics && !source.equals("phone")) { return false; }
         if (!isValidSyncMessage(left, source) || !isValidSyncMessage(right, source)) {
             return false;
         }
@@ -4857,7 +5071,7 @@ class GymStore {
             !sameNumericArray(left.get("planReps"), right.get("planReps"), false)) {
             return false;
         }
-        if (source.equals("cloud")) {
+        if ((keepsSetDiagnostics && source.equals("cloud"))) {
             return sameOptionalText(left.get("planId"), right.get("planId")) &&
                 left.get("planRevision").toLong() == right.get("planRevision").toLong();
         }
@@ -4930,9 +5144,10 @@ class GymStore {
     }
 
     static function syncRevisionStatus(message, source) {
+        if (!keepsSetDiagnostics && !source.equals("phone")) { return -1; }
         var requestId = message.get("requestId").toString();
         var messageAccount = message.get("accountBinding").toString();
-        if (source.equals("cloud")) {
+        if ((keepsSetDiagnostics && source.equals("cloud"))) {
             var cloudRevision = message.get("planRevision").toNumber();
             if (cloudRevision < lastCloudPlanRevision) {
                 return -1;
@@ -4978,7 +5193,8 @@ class GymStore {
     }
 
     static function rememberSyncRevision(message, source) {
-        if (source.equals("cloud")) {
+        if (!keepsSetDiagnostics && !source.equals("phone")) { return; }
+        if ((keepsSetDiagnostics && source.equals("cloud"))) {
             lastCloudPlanRevision = message.get("planRevision").toNumber();
             lastCloudPlanId = message.get("planId").toString();
         } else {
@@ -4989,44 +5205,29 @@ class GymStore {
     }
 
     static function isWithinStorageBudget() {
-        var estimate = 4096 + 2048;
-        estimate += estimatedValueBytes(exercises);
-        // The rich active dictionaries live only in memory. Current releases
-        // budget the compact atomic snapshot separately and do not retain a
-        // second completed-set graph in the per-key store.
-        if (!activeWorkoutSnapshotValid || !hasAccountBinding()) {
-            estimate += estimatedValueBytes(sets);
-        }
-        var planValue = storedPlan();
-        if (planValue == null) {
-            return false;
-        }
-        estimate += estimatedValueBytes(planValue);
-        estimate += estimatedValueBytes(pending);
-        estimate += estimatedValueBytes(deferredSync);
-        estimate += estimatedValueBytes(processedSyncIds);
-        estimate += estimatedValueBytes(accountBinding);
-        estimate += estimatedValueBytes(deviceBinding);
-        estimate += estimatedValueBytes(pairingGeneration);
-        estimate += estimatedValueBytes(cloudDeviceBinding);
-        estimate += estimatedValueBytes(activeWorkoutStartedAtSeconds);
-        estimate += estimatedValueBytes(preparedWorkout);
-        estimate += estimatedValueBytes(lastWorkoutSyncAtSeconds);
-        estimate += estimatedValueBytes(tutorialHistory);
-        return estimate <= maxEstimatedStoreBytes;
+        return isWithinStorageBudgetForActiveSnapshot(null);
     }
 
     static function isWithinStorageBudgetForActiveSnapshot(snapshot) {
         var estimate = 4096 + 2048;
         estimate += estimatedValueBytes(exercises);
-        estimate += estimatedValueBytes(snapshot);
-        // Full-v3 snapshot[5] contains only names, so add the calibrated
-        // downgrade-mirror cost. Compact-v3 snapshot[5] already is that mirror;
-        // adding another 112 bytes per set would reject valid long workouts.
-        if (snapshot[0] != 4) {
-            estimate += 16 + estimatedValueBytes(snapshot[5]);
-            if (snapshot.size() == 11) {
-                estimate += snapshot[5].size() * 112;
+        if (snapshot == null) {
+            // A committed atomic snapshot already accounts for the active sets.
+            // Legacy/ownerless state still budgets its separate set collection.
+            if (!activeWorkoutSnapshotValid || !hasAccountBinding()) {
+                estimate += estimatedValueBytes(sets);
+            }
+            estimate += estimatedValueBytes(activeWorkoutStartedAtSeconds);
+        } else {
+            estimate += estimatedActiveSnapshotBytes(snapshot);
+            // Full-v3 snapshot[5] contains only names, so add the calibrated
+            // downgrade-mirror cost. Compact-v3 snapshot[5] already is that mirror;
+            // adding another 112 bytes per set would reject valid long workouts.
+            if (snapshot[0] != 4 && snapshot[0] != 6) {
+                estimate += 16 + estimatedValueBytes(snapshot[5]);
+                if (snapshot.size() == 11) {
+                    estimate += snapshot[5].size() * 112;
+                }
             }
         }
         var planValue = storedPlan();
@@ -5034,7 +5235,8 @@ class GymStore {
             return false;
         }
         estimate += estimatedValueBytes(planValue);
-        estimate += estimatedValueBytes(pending);
+        estimate += estimatedPendingBytes();
+        estimate += GymPendingJournal.estimatedBytes();
         estimate += estimatedValueBytes(deferredSync);
         estimate += estimatedValueBytes(processedSyncIds);
         estimate += estimatedValueBytes(accountBinding);
@@ -5051,6 +5253,37 @@ class GymStore {
         return isBoundedInteger(value, 946684800, 2147483647);
     }
 
+    static function estimatedActiveSnapshotBytes(snapshot) {
+        if (snapshot[0] == 6) {
+            // The journal header is bounded independently of its rows. Budget
+            // its exact bindings/checkpoint plus object-store framing, including
+            // the empty commit which releases a completed workout.
+            return 256 + estimatedValueBytes(snapshot) +
+                (GymPendingJournal.pins(snapshot[6]) ? 0 : snapshot[5] * 160 + GymActiveJournal.stagingBytes);
+        }
+        if (!keepsSetDiagnostics && snapshot[0] == 4 && snapshot.size() == 10) {
+            // Called after the complete v4 validator. Indexed names and bounded
+            // numeric columns need at most 160 bytes per set, including its
+            // ten-field interval. Reserve another KiB for bindings/checkpoint.
+            // Avoid recursively serializing every old interval just to estimate
+            // the next write; it can exhaust a compact watch's callback budget.
+            return 1024 + snapshot[5].size() * 160;
+        }
+        return estimatedValueBytes(snapshot);
+    }
+
+    static function estimatedPendingBytes() {
+        if (parkedPending != null) { return parkedPending[1]; }
+        // Queue entries are immutable between their explicit append, ACK, and
+        // pairing transitions. Those mutations invalidate this exact-list cache.
+        // Rewalking every offline workout on each live set can trip the watchdog.
+        if (pendingEstimateSource != pending) {
+            pendingEstimateBytes = estimatedValueBytes(pending);
+            pendingEstimateSource = pending;
+        }
+        return pendingEstimateBytes;
+    }
+
     static function estimatedValueBytes(value) {
         return estimatedValueBytesAtDepth(value, 0);
     }
@@ -5063,7 +5296,7 @@ class GymStore {
             return 4;
         }
         if (value instanceof Lang.String) {
-            return 2 + value.toString().toUtf8Array().size();
+            return 2 + utf8Bytes(value.toString()).size();
         }
         if (value instanceof Lang.Boolean) {
             return value ? 4 : 5;
@@ -5093,7 +5326,7 @@ class GymStore {
                 if (!(key instanceof Lang.String) || key.toString().length() > 64) {
                     return maxLegacyStoredValueBytes + 1;
                 }
-                bytes += 3 + key.toString().toUtf8Array().size();
+                bytes += 3 + utf8Bytes(key.toString()).size();
             }
             bytes += estimatedValueBytesAtDepth(
                 dictionary ? value.get(items[i]) : items[i],
@@ -5155,6 +5388,7 @@ class GymStore {
             isBoundedText(cloudDeviceBinding, maxBindingLength);
         if (!hasAccountBinding()) {
             pending = [];
+            pendingEstimateSource = null;
         } else {
             var stagedGeneration = stagedPairingRecoveryTarget();
             var safePending = [];
@@ -5168,6 +5402,7 @@ class GymStore {
                 }
             }
             pending = safePending;
+            pendingEstimateSource = null;
         }
         if (!hasAccountBinding() && !hasCloudBinding) {
             clearAccountScopedState();
@@ -5204,6 +5439,17 @@ class GymStore {
         }
     }
 
+    // ByteArray uses one byte per UTF-8 byte. A Lang.Array stores a boxed
+    // Number slot for each byte and can exhaust the small watch heap while
+    // validating an otherwise valid multilingual exercise name.
+    static function utf8Bytes(value as Lang.String) as Lang.ByteArray {
+        return Toybox.StringUtil.convertEncodedString(value, {
+            :fromRepresentation => Toybox.StringUtil.REPRESENTATION_STRING_PLAIN_TEXT,
+            :toRepresentation => Toybox.StringUtil.REPRESENTATION_BYTE_ARRAY,
+            :encoding => Toybox.StringUtil.CHAR_ENCODING_UTF8
+        }) as Lang.ByteArray;
+    }
+
     static function isBoundedText(value, maxLength) {
         if (!(value instanceof Lang.String)) {
             return false;
@@ -5214,20 +5460,25 @@ class GymStore {
 
     static function isValidExerciseName(value) {
         return isBoundedText(value, maxExerciseNameLength) &&
-            value.toString().toUtf8Array().size() <= maxExerciseNameBytes;
+            utf8Bytes(value.toString()).size() <= maxExerciseNameBytes;
     }
 
     static function isValidAccountBinding(value) {
         if (!isBoundedText(value, 64) || value.toString().length() != 64) {
             return false;
         }
-        var bytes = value.toString().toUtf8Array();
+        if (value.equals(validatedBindingA) || value.equals(validatedBindingB)) {
+            return true;
+        }
+        var bytes = utf8Bytes(value.toString());
         for (var i = 0; i < bytes.size(); i += 1) {
             var code = bytes[i];
             if (!((code >= 48 && code <= 57) || (code >= 97 && code <= 102))) {
                 return false;
             }
         }
+        validatedBindingB = validatedBindingA;
+        validatedBindingA = value;
         return true;
     }
 
@@ -5277,7 +5528,7 @@ class GymStore {
             if (!isValidExerciseName(value[i])) {
                 return false;
             }
-            totalNameBytes += value[i].toString().toUtf8Array().size();
+            totalNameBytes += utf8Bytes(value[i].toString()).size();
             if (totalNameBytes > maxTotalNameBytes) {
                 return false;
             }
@@ -5285,29 +5536,88 @@ class GymStore {
         return true;
     }
 
+    (:fullLegacyState)
+    static function isSetRecord(value) {
+        return value instanceof Lang.Dictionary;
+    }
+
+    (:compactLegacyState)
+    static function isSetRecord(value) {
+        return value instanceof Lang.Dictionary || GymRecordedSet.isRecord(value) ||
+            GymActiveJournal.isRecord(value);
+    }
+
+    (:fullLegacyState)
+    static function setField(value, key) { return value.get(key); }
+
+    (:compactLegacyState)
+    static function setField(value, key) {
+        return value instanceof Lang.Dictionary ? value.get(key) :
+            (GymActiveJournal.isRecord(value) ? GymActiveJournal.get(value, key) : GymRecordedSet.get(value, key));
+    }
+
+    (:fullLegacyState)
+    static function validatedLiveNameBytes(value) { return null; }
+
+    (:compactLegacyState)
+    static function validatedLiveNameBytes(value) {
+        return GymActiveJournal.isRecord(value) ?
+            (GymActiveJournal.get(value, "exerciseName") == null ? null : utf8Bytes(value[0]).size()) :
+            (isImmutableLiveRecord(value) ? value[5] : null);
+    }
+
+    static function isValidLiveSetList(value, maximum, allowEmpty) {
+        return validateSetList(value, maximum, allowEmpty, true);
+    }
+
     static function isValidSetList(value, maximum, allowEmpty) {
+        return validateSetList(value, maximum, allowEmpty, false);
+    }
+
+    // Only internal completed-set callers opt into the fixed-field live type.
+    // Storage, imported plans, and phone messages still require dictionaries.
+    static function validateSetList(value, maximum, allowEmpty, allowLiveRecord) {
+        if (GymSetAccess.isJournal(value)) {
+            return allowLiveRecord && value.valid(maximum, allowEmpty);
+        }
         if (!(value instanceof Lang.Array) || value.size() > maximum || (!allowEmpty && value.size() == 0)) {
             return false;
         }
         var totalNameBytes = 0;
         for (var i = 0; i < value.size(); i += 1) {
-            var item = value[i];
-            if (!(item instanceof Lang.Dictionary) || item.size() > 11 ||
-                !isValidExerciseName(item.get("exerciseName")) ||
-                !isValidWeight(item.get("weight")) ||
-                !isValidReps(item.get("reps")) ||
-                !isOptionalBoundedNumber(item.get("activeSeconds"), 0.0, 7200.0) ||
-                !isOptionalBoundedNumber(item.get("restBeforeSeconds"), 0.0, 86400.0) ||
-                !isOptionalBoundedNumber(item.get("startHeartRate"), 0.0, 240.0) ||
-                !isOptionalBoundedNumber(item.get("peakHeartRate"), 0.0, 240.0) ||
-                !isOptionalBoundedNumber(item.get("endHeartRate"), 0.0, 240.0) ||
-                !isOptionalBoundedNumber(item.get("recoveryHeartRateDrop"), 0.0, 240.0) ||
-                !isOptionalBoundedNumber(item.get("detectionConfidence"), 0.0, 100.0) ||
-                (item.get("setInterval") != null &&
-                    !isValidSetInterval(item.get("setInterval")))) {
+            var item = GymSetAccess.at(value, i);
+            var validatedBytes = allowLiveRecord ? validatedLiveNameBytes(item) : null;
+            if (!keepsSetDiagnostics && validatedBytes != null) {
+                // Only the internal factory emits this nonserializable tag,
+                // after validating every field and copying the interval bytes.
+                // Stored/imported/wire lists never take this trusted-live path.
+                totalNameBytes += validatedBytes;
+                if (totalNameBytes > maxTotalNameBytes) { return false; }
+                continue;
+            }
+            if ((!(item instanceof Lang.Dictionary) &&
+                    (!allowLiveRecord || !isSetRecord(item))) || item.size() > 11 ||
+                !isValidExerciseName(setField(item, "exerciseName")) ||
+                !isValidWeight(setField(item, "weight")) ||
+                !isValidReps(setField(item, "reps"))) {
                 return false;
             }
-            totalNameBytes += item.get("exerciseName").toString().toUtf8Array().size();
+            // Internal fixed-field records cannot contain optional dictionary
+            // diagnostics. Untrusted stored/wire dictionaries still validate all
+            // fields; opting into the live type never widens the wire contract.
+            if (item instanceof Lang.Dictionary &&
+                (!isOptionalBoundedNumber(setField(item, "activeSeconds"), 0.0, 7200.0) ||
+                !isOptionalBoundedNumber(setField(item, "restBeforeSeconds"), 0.0, 86400.0) ||
+                !isOptionalBoundedNumber(setField(item, "startHeartRate"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(setField(item, "peakHeartRate"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(setField(item, "endHeartRate"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(setField(item, "recoveryHeartRateDrop"), 0.0, 240.0) ||
+                !isOptionalBoundedNumber(setField(item, "detectionConfidence"), 0.0, 100.0))) {
+                return false;
+            }
+            var interval = setField(item, "setInterval");
+            if (interval != null && !isValidSetInterval(interval)) { return false; }
+            totalNameBytes += utf8Bytes(setField(item, "exerciseName").toString()).size();
             if (totalNameBytes > maxTotalNameBytes) {
                 return false;
             }
@@ -5536,33 +5846,27 @@ class GymStore {
         }
     }
 
-    static function canQueueWorkout(message) {
-        if (pending.size() >= maxPendingWorkouts || !isValidWorkoutMessage(message)) {
+    // Only appendWorkout calls this, after validating the exact message and
+    // owner/device binding in the same callback. Revalidating every interval
+    // here can exhaust a small watch's callback budget on a recovered workout.
+    private static function canQueueWorkout(message) {
+        if (pendingCount() >= maxPendingWorkouts || !GymPendingJournal.readable) {
             return false;
         }
-        var totalNameBytes = setListNameBytes(message.get("sets"));
-        for (var i = 0; i < pending.size(); i += 1) {
-            totalNameBytes += setListNameBytes(pending[i].get("sets"));
-            if (totalNameBytes > maxPendingNameBytes) {
-                return false;
-            }
-        }
-        return true;
+        var totalNameBytes = setListNameBytes(message.get("sets")) + GymPendingJournal.totalNameBytes();
+        return totalNameBytes <= maxPendingNameBytes;
     }
 
-    static function isValidWorkoutMessage(message) {
+    static function isValidWorkoutMetadata(message, actualSetCount) {
         if (!(message instanceof Lang.Dictionary) || message.size() > 21) {
             return false;
         }
         var version = message.get("bindingVersion");
         var type = message.get("type");
         var modeValue = message.get("workoutMode");
-        var setsValue = message.get("sets");
         var durationValue = message.get("durationSeconds");
         var gymCaloriesValue = message.get("gymCalories");
         var garminCaloriesValue = message.get("garminCalories");
-        var setMetricsValue = message.get("setMetrics");
-        var setIntervalsValue = message.get("setIntervals");
         var plannedCountValue = message.get("plannedSetCount");
         if (modeValue != null &&
             (!isBoundedText(modeValue, 7) ||
@@ -5588,45 +5892,33 @@ class GymStore {
         if (!commonValid) {
             return false;
         }
+        if (!isBoundedInteger(actualSetCount, 0, maxWorkoutSets)) { return false; }
         if (modeValue != null && modeValue.toString().equals("free")) {
-            if (!(setsValue instanceof Lang.Array) || setsValue.size() != 0) {
-                return false;
-            }
-            return isValidSetList(setsValue, maxWorkoutSets, true) &&
+            return actualSetCount == 0 &&
                 isBoundedNumber(durationValue, 1.0, 604800.0) &&
                 isBoundedNumber(gymCaloriesValue, 0.0, 10000000.0) &&
-                setMetricsValue == null &&
-                setIntervalsValue == null &&
-                plannedCountValue == null &&
-                message.get("plannedTargetSetCount") == null &&
+                message.get("setMetrics") == null && message.get("setIntervals") == null &&
+                plannedCountValue == null && message.get("plannedTargetSetCount") == null &&
                 message.get("completedPlannedSetCount") == null;
         }
-        // Missing workoutMode is the released detailed payload. Treat it as
-        // planned so an already queued workout keeps its exact validation and
-        // request identity after upgrading the watch app.
-        var actualSetCount = setListCount(setsValue);
-        return isValidSetList(setsValue, maxWorkoutSets, false) &&
-            (setMetricsValue == null ||
-                isValidSetMetricsList(setMetricsValue, setsValue)) &&
-            (setIntervalsValue == null ||
-                (isValidSetIntervalsList(setIntervalsValue, setsValue) &&
-                    areSetIntervalsConsistent(
-                        setIntervalsValue,
-                        durationValue,
-                        gymCaloriesValue,
-                        garminCaloriesValue
-                    ))) &&
-            (plannedCountValue == null ||
-                isValidPlannedSetCount(
-                    plannedCountValue,
-                    actualSetCount
-                )) &&
-            isValidExactPlannedProgress(
-                plannedCountValue,
-                message.get("plannedTargetSetCount"),
-                message.get("completedPlannedSetCount"),
-                actualSetCount
-            );
+        return actualSetCount > 0 &&
+            (plannedCountValue == null || isValidPlannedSetCount(plannedCountValue, actualSetCount)) &&
+            isValidExactPlannedProgress(plannedCountValue, message.get("plannedTargetSetCount"),
+                message.get("completedPlannedSetCount"), actualSetCount);
+    }
+
+    static function isValidWorkoutMessage(message) {
+        if (!(message instanceof Lang.Dictionary)) { return false; }
+        var setsValue = message.get("sets");
+        if (!isValidWorkoutMetadata(message, setListCount(setsValue))) { return false; }
+        var freeMode = message.get("workoutMode") != null && message.get("workoutMode").equals("free");
+        var metrics = message.get("setMetrics");
+        var intervals = message.get("setIntervals");
+        return isValidSetList(setsValue, maxWorkoutSets, freeMode) &&
+            (metrics == null || isValidSetMetricsList(metrics, setsValue)) &&
+            (intervals == null || (isValidSetIntervalsList(intervals, setsValue) &&
+                areSetIntervalsConsistent(intervals, message.get("durationSeconds"),
+                    message.get("gymCalories"), message.get("garminCalories"))));
     }
 
     static function isValidOptionalAccountBinding(value) {
@@ -5662,7 +5954,7 @@ class GymStore {
     static function setListNameBytes(setList) {
         var total = 0;
         for (var i = 0; i < setList.size(); i += 1) {
-            total += setList[i].get("exerciseName").toString().toUtf8Array().size();
+            total += utf8Bytes(setField(GymSetAccess.at(setList, i), "exerciseName").toString()).size();
         }
         return total;
     }
@@ -5676,6 +5968,7 @@ class GymStore {
             return false;
         }
         var savedSets = value[5];
+        if (value[0] == 6) { return isBoundedInteger(savedSets, 1, maxWorkoutSets); }
         return savedSets instanceof Lang.Array && savedSets.size() > 0;
     }
 
@@ -5713,8 +6006,8 @@ class GymStore {
             !isValidSetList(value.get("plan"), maxPlanSets, true) ||
             !(value.get("pending") instanceof Lang.Array) ||
             value.get("pending").size() > maxPendingWorkouts ||
-            !isValidWeight(value.get("weight")) ||
-            !isValidReps(value.get("reps")) ||
+            !isValidWeight(setField(value, "weight")) ||
+            !isValidReps(setField(value, "reps")) ||
             !isValidWeight(value.get("weightStep")) ||
             value.get("weightStep") <= 0.0 || value.get("weightStep") > 100.0 ||
             !(value.get("restSecondsDefault") instanceof Lang.Number) ||
@@ -5759,8 +6052,9 @@ class GymStore {
         clearTransientSetActions();
         plan = value.get("plan");
         pending = [];
-        weight = value.get("weight");
-        reps = value.get("reps");
+        pendingEstimateSource = null;
+        weight = setField(value, "weight");
+        reps = setField(value, "reps");
         weightStep = value.get("weightStep");
         restSecondsDefault = value.get("restSecondsDefault");
         autoPromptEnabled = value.get("autoPromptEnabled");
@@ -5770,7 +6064,7 @@ class GymStore {
         resumedWorkoutIntervalsInvalid = migratedSets.size() > 0;
         exerciseIndex = 0;
         if (sets.size() > 0) {
-            selectExerciseByName(sets[sets.size() - 1].get("exerciseName").toString());
+            selectExerciseByName(setField(GymSetAccess.at(sets, sets.size() - 1), "exerciseName").toString());
         } else {
             selectNextPlanSlotInGlobalOrder();
         }
@@ -5839,7 +6133,7 @@ class GymStore {
     (:compactLegacyState)
     static function refreshLegacyCurrentQuarantine() {
         if (legacyCompactCount == -2 ||
-            !isValidSetList(sets, maxWorkoutSets, true) ||
+            !isValidLiveSetList(sets, maxWorkoutSets, true) ||
             (activeWorkoutStartedAtSeconds != null &&
                 (sets.size() == 0 ||
                     !isValidWorkoutStartedAtSeconds(activeWorkoutStartedAtSeconds)))) {
@@ -5881,16 +6175,6 @@ class GymStore {
     (:compactLegacyState)
     static function legacyCurrentSetCount() {
         return legacyCompactCount;
-    }
-
-    (:compactLegacyState)
-    static function isValidLegacyPendingList(value) {
-        return false;
-    }
-
-    (:compactLegacyState)
-    static function normalizedLegacyPendingList(source) {
-        return [];
     }
 
     static function builtInExercises() {

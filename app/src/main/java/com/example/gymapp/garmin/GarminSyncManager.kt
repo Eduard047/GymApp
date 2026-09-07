@@ -35,6 +35,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.UUID
@@ -378,7 +379,11 @@ class GarminSyncManager(
         scope.launch {
             for (queued in inboundWorkoutCommands) {
                 try {
-                    createWorkout(queued.device, queued.command)
+                    if (queued.command["type"] == "workout_part") {
+                        receiveWorkoutPart(queued.device, queued.command)
+                    } else {
+                        createWorkout(queued.device, queued.command)
+                    }
                 } catch (error: Exception) {
                     Log.i(TAG, "Rejected Garmin workout after processing failure", error)
                 }
@@ -478,6 +483,7 @@ class GarminSyncManager(
             application.cloudAuthManager.authState.collect { state ->
                 val target = authTransitionTargetFor(state.session)
                 if (target == null) {
+                    synchronized(accountBindingLock) { workoutTransferStore.clear() }
                     readyAuthTransitionKey = null
                     lastPlanSyncStatus = "Garmin account transition is invalid"
                     cancelStalePendingAcks()
@@ -513,6 +519,7 @@ class GarminSyncManager(
             )
 
             if (trusted.state == GarminTrustedDeviceState.Unpaired) {
+                workoutTransferStore.clear()
                 val editor = preferences.edit()
                     .putString(LAST_READY_AUTH_TRANSITION_KEY, target.key)
                     .remove(PENDING_AUTH_TRANSITION_KEY)
@@ -547,6 +554,7 @@ class GarminSyncManager(
             }
 
             readyAuthTransitionKey = null
+            workoutTransferStore.clear()
             val committed = preferences.edit()
                 .putString(PENDING_AUTH_TRANSITION_KEY, target.key)
                 .putString(PENDING_AUTH_ACCOUNT_BINDING_KEY, target.accountBinding)
@@ -771,6 +779,7 @@ class GarminSyncManager(
                 userId = userId,
                 sessionGeneration = sessionGeneration
             ) ?: return@synchronized null
+            if (!workoutTransferStore.clearAccount(resolved.accountBinding)) return@synchronized null
             val editor = preferences.edit()
             resolved.preferenceKeys.forEach(editor::remove)
             if (!editor.commit()) return@synchronized null
@@ -1006,7 +1015,43 @@ class GarminSyncManager(
         )
     }
 
-    private suspend fun createWorkout(device: IQDevice, command: Map<Any?, Any?>) {
+    private val workoutTransferStore by lazy {
+        GarminWorkoutTransferStore(File(application.noBackupFilesDir, "garmin-workout-transfer.v1.json"))
+    }
+
+    private suspend fun receiveWorkoutPart(device: IQDevice, frame: Map<Any?, Any?>) {
+        val staged = pairingStateMutex.withLock {
+            val account = activeAccountContext() ?: return@withLock null
+            val source = deviceBinding(device)
+            if (trustedDeviceBinding(account) != source) return@withLock null
+            val metadata = frame["metadata"] as? Map<*, *> ?: return@withLock null
+            val generation = metadata["pairingGeneration"] as? String ?: return@withLock null
+            val inbound = inboundPairingGeneration(account, source, generation) ?: return@withLock null
+            if (inbound.completesPendingReset) return@withLock null
+            val binding = GarminBinding(account.binding, source, inbound.value)
+            val step = synchronized(accountBindingLock) {
+                if (!isStillActive(account)) return@synchronized null
+                workoutTransferStore.accept(frame, binding, System.currentTimeMillis())
+            } ?: return@withLock null
+            Triple(account, binding, step)
+        } ?: return
+        if (!isStillActive(staged.first)) return
+        val step = staged.third
+        if (step.completeMessage != null) {
+            // The existing import/receipt path alone may issue the whole-workout ACK.
+            if (createWorkout(device, step.completeMessage)) workoutTransferStore.clear()
+        } else {
+            val metadata = frame["metadata"] as Map<*, *>
+            sendAndWait(device, boundGarminPayload(
+                payload = mapOf("type" to "workout_part_ack", "transferVersion" to 1,
+                    "requestId" to checkNotNull(metadata["requestId"]), "nextOffset" to step.nextOffset,
+                    "attemptId" to step.attemptId),
+                binding = staged.second, includePairingGeneration = true
+            ))
+        }
+    }
+
+    private suspend fun createWorkout(device: IQDevice, command: Map<Any?, Any?>): Boolean {
         val accepted = pairingStateMutex.withLock {
             val account = activeAccountContext() ?: return@withLock null
             val sourceDeviceBinding = deviceBinding(device)
@@ -1094,7 +1139,7 @@ class GarminSyncManager(
                 WorkoutPersistenceResult.AlreadyProcessed ->
                     AcceptedGarminWorkout(account, binding, workout)
             }
-        } ?: return
+        } ?: return false
 
         sendAndWait(
             device,
@@ -1111,6 +1156,7 @@ class GarminSyncManager(
         if (isStillActive(accepted.account)) {
             pushSyncForContext(device, accepted.account)
         }
+        return true
     }
 
     /**

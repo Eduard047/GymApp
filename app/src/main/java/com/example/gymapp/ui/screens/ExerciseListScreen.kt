@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -1121,6 +1122,28 @@ fun ExerciseListScreen(
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
                 val displayExerciseName = localizedExerciseName(exercise.name)
                 val searchMatchReason = exerciseSearchMatch(exercise.name, searchQuery)?.reason
+                val fullWidthTitle = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.4f
+                val titleContent: @Composable (Modifier) -> Unit = { titleModifier ->
+                    Column(
+                        modifier = titleModifier,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = displayExerciseName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (searchMatchReason != null) {
+                            Text(
+                                text = localizedExerciseSearchMatchReason(searchMatchReason),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
                 AppPanel(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1130,6 +1153,9 @@ fun ExerciseListScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(13.dp)
                     ) {
+                        if (fullWidthTitle) {
+                            titleContent(Modifier.fillMaxWidth())
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1139,29 +1165,13 @@ fun ExerciseListScreen(
                                 exerciseId = exercise.id,
                                 exerciseName = exercise.name,
                                 ownerKey = exerciseMediaOwnerKey,
-                            width = 76.dp,
-                            height = 64.dp
+                                width = 76.dp,
+                                height = 64.dp
                             )
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Text(
-                                    text = displayExerciseName,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (searchMatchReason != null) {
-                                    Text(
-                                        text = localizedExerciseSearchMatchReason(searchMatchReason),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                            if (fullWidthTitle) {
+                                Spacer(Modifier.weight(1f))
+                            } else {
+                                titleContent(Modifier.weight(1f))
                             }
                             IconButton(onClick = { onToggleFavorite(exercise) }) {
                                 Icon(

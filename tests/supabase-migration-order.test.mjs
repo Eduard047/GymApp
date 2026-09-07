@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationsDirectory = "supabase/migrations";
@@ -10,11 +10,18 @@ const productionLastRecordedVersion = "20260831093331";
 const productionMigrationCount = 61;
 const reviewedForwardMigrations = [
   "20260902084252_harden_deep_scan_boundaries.sql",
+  "20260902162345_harden_garmin_public_gateway_budgets.sql",
+  "20260902162407_meter_friend_code_requests.sql",
+  "20260902162432_linearize_account_deletion_commit.sql",
+  "20260902162456_authorize_push_delivery_send.sql",
 ];
 
 function migrationVersion(fileName) {
   const match = migrationNamePattern.exec(fileName);
-  assert.ok(match, `${fileName} must match <14-digit UTC timestamp>_<name>.sql`);
+  assert.ok(
+    match,
+    `${fileName} must match <14-digit UTC timestamp>_<name>.sql`,
+  );
   return match[1];
 }
 
@@ -31,7 +38,7 @@ function assertValidUtcTimestamp(version, fileName) {
   assert.equal(
     roundTripped,
     version,
-    `${fileName} must contain a real UTC calendar timestamp`
+    `${fileName} must contain a real UTC calendar timestamp`,
   );
 }
 
@@ -48,22 +55,30 @@ test("Supabase migration versions are valid, unique, and strictly ordered", asyn
     return version;
   });
 
-  assert.equal(new Set(versions).size, versions.length, "migration versions must be unique");
+  assert.equal(
+    new Set(versions).size,
+    versions.length,
+    "migration versions must be unique",
+  );
   for (let index = 1; index < versions.length; index += 1) {
     assert.ok(
       versions[index - 1] < versions[index],
-      `${files[index - 1]} must sort before ${files[index]}`
+      `${files[index - 1]} must sort before ${files[index]}`,
     );
   }
 
   const guardIndex = files.indexOf(
-    "20260722005900_fail_closed_public_rls_guard.sql"
+    "20260722005900_fail_closed_public_rls_guard.sql",
   );
   assert.ok(
-    guardIndex > files.indexOf("20260721201016_add_hip_abduction_to_exercise_catalog.sql")
+    guardIndex >
+      files.indexOf("20260721201016_add_hip_abduction_to_exercise_catalog.sql"),
   );
   assert.ok(
-    guardIndex < files.indexOf("20260722010000_require_live_session_for_account_deletion.sql")
+    guardIndex <
+      files.indexOf(
+        "20260722010000_require_live_session_for_account_deletion.sql",
+      ),
   );
 });
 
@@ -72,16 +87,19 @@ test("local Supabase uses the PostgreSQL major required by the migration chain",
     readFile("supabase/config.toml", "utf8"),
     readFile(
       "supabase/migrations/20260722013000_prepare_bounded_user_state_projection.sql",
-      "utf8"
+      "utf8",
     ),
   ]);
   const databaseSection = /\[db\]([\s\S]*?)(?=\n\[|$)/.exec(config)?.[1];
 
-  assert.ok(databaseSection, "Supabase config must pin the local database major");
+  assert.ok(
+    databaseSection,
+    "Supabase config must pin the local database major",
+  );
   assert.match(databaseSection, /major_version\s*=\s*17/);
   assert.match(
     projectionMigration,
-    /current_setting\('server_version_num'\)::integer < 170000/
+    /current_setting\('server_version_num'\)::integer < 170000/,
   );
 });
 
@@ -89,15 +107,21 @@ test("verified production history is followed only by reviewed forward migration
   const files = await orderedMigrationFiles();
   const versions = files.map(migrationVersion);
   const preHistory = files.filter(
-    (fileName) => migrationVersion(fileName) < productionFirstRecordedVersion
+    (fileName) => migrationVersion(fileName) < productionFirstRecordedVersion,
   );
   const forwardDrift = files.filter(
-    (fileName) => migrationVersion(fileName) > productionLastRecordedVersion
+    (fileName) => migrationVersion(fileName) > productionLastRecordedVersion,
   );
 
-  assert.equal(files.length, productionMigrationCount + reviewedForwardMigrations.length);
+  assert.equal(
+    files.length,
+    productionMigrationCount + reviewedForwardMigrations.length,
+  );
   assert.equal(versions[0], productionFirstRecordedVersion);
-  assert.equal(versions[productionMigrationCount - 1], productionLastRecordedVersion);
+  assert.equal(
+    versions[productionMigrationCount - 1],
+    productionLastRecordedVersion,
+  );
   assert.deepEqual(preHistory, []);
   assert.deepEqual(forwardDrift, reviewedForwardMigrations);
 });

@@ -162,10 +162,13 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   }
 
   const freeDashboard = section(view, "function drawFreeDashboard(dc, w, h)", "(:fullLegacyState)\n    function isCompactDashboard");
-  assert.match(freeDashboard, /GymSession\.elapsedText\(\)/);
-  assert.match(freeDashboard, /GymSession\.zone/);
-  assert.match(freeDashboard, /GymStore\.totalGymCalories\(\)/);
-  assert.doesNotMatch(freeDashboard, /currentExercise|weight|reps|sets|rest|autoLog|motion/i);
+  const overview = section(view, "function drawDashboardOverview(dc, w, h, hrText)",
+    "(:fullLegacyState)\n    function drawFreeDashboard(dc, w, h)");
+  assert.match(freeDashboard, /drawDashboardOverview\(dc, w, h/);
+  assert.match(overview, /GymSession\.elapsedText\(\)/);
+  assert.match(overview, /drawHeartRateZones\(dc, w, h/);
+  assert.match(overview, /GymStore\.totalGymCalories\(\)/);
+  assert.doesNotMatch(freeDashboard + overview, /currentExercise|weight|reps|sets|rest|autoLog|motion/i);
   const compactDashboard = section(view,
     "(:compactLegacyState)\n    function drawTinyDashboard",
     "(:fullLegacyState)\n    function drawCompactHeartIcon");
@@ -174,7 +177,7 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
     "96 KiB FREE must branch away from exercise and set rows");
   const compactReadyStatus = section(view,
     "(:compactLegacyState)\n    function readyStatusText()",
-    "function readyPrimaryText()");
+    "function readyActionCount()");
   assert.match(compactReadyStatus,
     /\|FIT FAIL\|FIT CHECK\|SAVE FAIL\|START FAIL\|REC FAIL\|FIT RETRY\|/,
     "compact recovery must localize exactly the released data-retention statuses");
@@ -194,7 +197,7 @@ test("prepared FREE commit and queue are mode-bound, positive-duration, and plan
   const message = section(store,
     "static function workoutMessage(requestId)", "static function applyPhoneSync(");
   const validator = section(store,
-    "static function isValidWorkoutMessage(message)", "static function isValidOptionalAccountBinding(value)");
+    "static function isValidWorkoutMetadata(message, actualSetCount)", "static function isValidOptionalAccountBinding(value)");
   const recover = section(store,
     "static function recoverQueuedWorkout()", "static function beginAccountTransition()");
 
@@ -208,17 +211,17 @@ test("prepared FREE commit and queue are mode-bound, positive-duration, and plan
   assert.match(prepare, /freeCheckpoint\[0\] <= 0/);
   assert.match(prepare, /var marker = \[\s*2,[\s\S]*freeMode\s*\]/);
 
-  assert.match(message, /"workoutMode" => workoutMode/);
-  assert.match(message, /"sets" => setCopies/);
-  assert.match(message, /if \(!freeMode\) \{\s*message\.put\("setMetrics", setMetrics\)/);
-  assert.match(message, /if \(!freeMode \|\| combinedSamples > 0\)/);
+  assert.match(message, /"workoutMode" => freeMode \? "free" : "planned"/);
+  assert.match(message, /message\["sets"\] = setCopies/);
+  assert.match(message, /if \(keepsSetDiagnostics && !freeMode && setMetrics != null\) \{\s*message\["setMetrics"\] = setMetrics/);
+  assert.match(message, /if \(!freeMode \|\| samples > 0\)/);
   assert.match(message, /runtimeWorkoutStartedAtSeconds/);
   assert.match(validator, /message\.size\(\) > 21/);
   assert.match(validator, /modeValue\.toString\(\)\.equals\("free"\)/);
-  assert.match(validator, /setsValue\.size\(\) != 0/);
+  assert.match(validator, /actualSetCount == 0[\s\S]*isValidSetList\(setsValue, maxWorkoutSets, freeMode\)/);
   assert.match(validator, /isBoundedNumber\(durationValue, 1\.0, 604800\.0\)/);
-  assert.match(validator, /setMetricsValue == null/);
-  assert.match(validator, /Missing workoutMode is the released detailed payload/);
+  assert.match(validator, /message\.get\("setMetrics"\) == null/);
+  assert.match(validator, /if \(modeValue != null && modeValue\.toString\(\)\.equals\("free"\)\)[\s\S]*return actualSetCount > 0/);
   assert.doesNotMatch(recover, /plan = \[\]/,
     "finishing one activity must not erase the downloaded plan");
 });

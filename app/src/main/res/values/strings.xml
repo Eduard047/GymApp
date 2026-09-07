@@ -973,7 +973,8 @@
     <string name="details_no_note">No note</string>
     <string name="garmin_workout_title">Garmin strength workout</string>
     <string name="garmin_free_workout_title">Garmin free workout</string>
-    <string name="garmin_free_workout_summary">Time, heart rate, and calories — no exercises or sets</string>
+    <string name="garmin_free_workout_summary">Watch metrics are saved. Add the exercises and sets you completed.</string>
+    <string name="action_complete_free_workout">Add exercises</string>
     <string name="garmin_workout_format_title">Garmin-format strength workout</string>
     <string name="garmin_workout_synced_from">%1$s · synced from Garmin</string>
     <string name="garmin_workout_note_derived_from">%1$s · metrics read from the saved note</string>
@@ -1072,6 +1073,7 @@
     <string name="dialog_delete_set_impact_set_only">Only this set will be deleted.</string>
     <string name="dialog_delete_set_impact_exercise">This is the last set in this exercise block. The exercise block will also be removed from the workout.</string>
     <string name="dialog_delete_set_impact_workout">This is the last set in the workout. The entire workout will also be deleted.</string>
+    <string name="dialog_delete_set_impact_watch_activity">The exercises will be removed. Your watch metrics and workout time will stay in history.</string>
     <string name="post_workout_unavailable_title">Workout summary unavailable</string>
     <string name="post_workout_unavailable_supporting">This workout could not be loaded.</string>
     <string name="post_workout_rewards_eyebrow">Progress</string>
@@ -1285,7 +1287,7 @@
     <string name="push_live_room_closed_body">Open GymApp to view the latest state.</string>
     <string name="activation_edit_plan">Review exercises</string>
     <string name="activation_create_manually">Create manually</string>
-    <string name="today_plan_size">%1$d exercises · %2$d sets</string>
+    <string name="today_plan_size">Exercises: %1$d · sets: %2$d</string>
     <string name="today_plan_duration">About %1$d min</string>
     <string name="progress_section_overview">Overview</string>
     <string name="progress_section_exercises">Exercises</string>
@@ -1343,7 +1345,7 @@
     <string name="training_short_time">Short on time</string>
     <string name="training_too_hard">Too hard today</string>
     <string name="training_no_alternative">No similar exercise available.</string>
-    <string name="training_remaining_sets">%1$d → %2$d remaining sets</string>
+    <string name="training_remaining_sets">Remaining sets: %1$d → %2$d</string>
     <string name="training_time_estimate">Duration is an estimate, including rest between sets.</string>
     <string name="training_apply_changes">Apply changes</string>
     <string name="training_adaptation_live_blocked">A shared workout plan cannot be changed.</string>
@@ -1354,12 +1356,27 @@
     <string name="training_program_paused">Paused</string>
     <string name="training_program_finished">Finished</string>
     <string name="training_program_next">Next: %1$s</string>
-    <string name="training_program_all_linked">All sessions linked</string>
-    <string name="training_program_prepare">Prepare next workout</string>
+    <string name="training_program_all_linked">All workouts completed</string>
+    <string name="training_program_prepare">Prepare workout</string>
     <string name="training_program_recalculate">Smart Coach recalculates targets from current history in the editor.</string>
     <string name="training_program_move">Move to next free day</string>
-    <string name="training_program_link">Link saved workout</string>
+    <string name="training_program_link">Count saved workout</string>
     <string name="training_program_pause">Pause</string>
     <string name="training_program_resume">Resume</string>
     <string name="training_program_finish">Finish</string>
+    <string name="training_program_count">Workouts completed: %1$d of %2$d</string>
+    <string name="training_program_save_error">Could not confirm the saved program. Reload and try again.</string>
+    <string name="training_program_reload">Reload program</string>
+    <string name="training_program_new">New program</string>
+    <string name="training_program_reopen">Reopen program</string>
+    <string name="training_program_new_title">Start a new program?</string>
+    <string name="training_program_new_message">This replaces the previous schedule. Saved workouts remain in your history.</string>
+    <string name="training_program_finish_title">Finish this program?</string>
+    <string name="training_program_finish_message">Saved workouts remain in your history. You can reopen any unfinished schedule later.</string>
+    <string name="training_program_options">Program options</string>
+    <string name="training_program_options_hide">Hide program options</string>
+    <string name="training_program_week">Week %1$d · %2$d of %3$d completed</string>
+    <string name="training_program_done">Completed</string>
+    <string name="training_program_planned">Planned</string>
+    <string name="garmin_free_metrics_supporting">Time, heart rate, and calories</string>
 </resources>

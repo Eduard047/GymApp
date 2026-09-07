@@ -17592,7 +17592,7 @@ final class CoreParityTests: XCTestCase {
         let activeWorkout = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
         let exercises = try iosSource("GymApp/UI/Screens/ExercisesView.swift")
 
-        XCTAssertTrue(progress.contains("if dynamicTypeSize.isAccessibilitySize"))
+        XCTAssertTrue(progress.contains("if dynamicTypeSize >= .xxLarge"))
         XCTAssertTrue(progress.contains("private var progressSectionControl"))
         XCTAssertTrue(missions.contains("if dynamicTypeSize.isAccessibilitySize"))
         XCTAssertTrue(missions.contains("private var missionPeriodControl"))

@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -2101,111 +2102,116 @@ internal fun GymAppRoot(
                                     )
                                 )
                             ) {
-                                NavigationBar(
-                                    modifier = Modifier
-                                        .heightIn(min = 76.dp)
-                                        .padding(horizontal = 8.dp),
-                                    containerColor = Color.Transparent,
-                                    tonalElevation = 0.dp
-                                ) {
-                                    AppDestination.bottomTabs.forEach { tab ->
-                                        val tabWorkoutInviteCount = if (
-                                            tab == AppDestination.Profile
+                                val tabsPerRow = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.4f) 2 else 4
+                                Column {
+                                    AppDestination.bottomTabs.chunked(tabsPerRow).forEach { tabs ->
+                                        NavigationBar(
+                                            modifier = Modifier
+                                                .heightIn(min = 76.dp)
+                                                .padding(horizontal = 8.dp),
+                                            containerColor = Color.Transparent,
+                                            tonalElevation = 0.dp
                                         ) {
-                                            workoutInviteBadgeCount
-                                        } else {
-                                            0
-                                        }
-                                        val tutorialTarget = when (tab) {
-                                            AppDestination.Exercises ->
-                                                TutorialTarget.NavigationExercises
-                                            AppDestination.Progress ->
-                                                TutorialTarget.NavigationProgress
-                                            AppDestination.Profile ->
-                                                TutorialTarget.NavigationProfile
-                                            else -> null
-                                        }
-                                        NavigationBarItem(
-                                            modifier = if (
-                                                tutorialTarget != null &&
-                                                activeTutorialAnchors != null
-                                            ) {
-                                                Modifier.tutorialAnchor(
-                                                    activeTutorialAnchors,
-                                                    tutorialTarget
-                                                )
-                                            } else {
-                                                Modifier
-                                            },
-                                            selected = currentRoute == tab.route,
-                                            onClick = {
-                                                // Workouts is the retained start destination. Saving
-                                                // Profile while popping to it maps that saved entry to
-                                                // Workouts; restoring in the same navigate call then puts
-                                                // Profile straight back on top and makes Home look inert.
-                                                val preserveState = shouldPreserveBottomTabState(tab)
-                                                navController.navigate(tab.route) {
-                                                    popUpTo(navController.graph.startDestinationId) {
-                                                        saveState = preserveState
-                                                    }
-                                                    launchSingleTop = true
-                                                    restoreState = preserveState
+                                            tabs.forEach { tab ->
+                                                val tabWorkoutInviteCount = if (
+                                                    tab == AppDestination.Profile
+                                                ) {
+                                                    workoutInviteBadgeCount
+                                                } else {
+                                                    0
                                                 }
-                                            },
-                                            colors = NavigationBarItemDefaults.colors(
-                                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                            ),
-                                            icon = {
-                                                BadgedBox(
-                                                    badge = {
-                                                        if (tabWorkoutInviteCount > 0) {
-                                                            Badge {
-                                                                Text(tabWorkoutInviteCount.toString())
+                                                val tutorialTarget = when (tab) {
+                                                    AppDestination.Exercises ->
+                                                        TutorialTarget.NavigationExercises
+                                                    AppDestination.Progress ->
+                                                        TutorialTarget.NavigationProgress
+                                                    AppDestination.Profile ->
+                                                        TutorialTarget.NavigationProfile
+                                                    else -> null
+                                                }
+                                                NavigationBarItem(
+                                                    modifier = if (
+                                                        tutorialTarget != null &&
+                                                        activeTutorialAnchors != null
+                                                    ) {
+                                                        Modifier.tutorialAnchor(
+                                                            activeTutorialAnchors,
+                                                            tutorialTarget
+                                                        )
+                                                    } else {
+                                                        Modifier
+                                                    },
+                                                    selected = currentRoute == tab.route,
+                                                    onClick = {
+                                                        // Workouts is the retained start destination. Saving
+                                                        // Profile while popping to it maps that saved entry to
+                                                        // Workouts; restoring in the same navigate call then puts
+                                                        // Profile straight back on top and makes Home look inert.
+                                                        val preserveState = shouldPreserveBottomTabState(tab)
+                                                        navController.navigate(tab.route) {
+                                                            popUpTo(navController.graph.startDestinationId) {
+                                                                saveState = preserveState
+                                                            }
+                                                            launchSingleTop = true
+                                                            restoreState = preserveState
+                                                        }
+                                                    },
+                                                    colors = NavigationBarItemDefaults.colors(
+                                                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    ),
+                                                    icon = {
+                                                        BadgedBox(
+                                                            badge = {
+                                                                if (tabWorkoutInviteCount > 0) {
+                                                                    Badge {
+                                                                        Text(tabWorkoutInviteCount.toString())
+                                                                    }
+                                                                }
+                                                            }
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier.size(24.dp),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = tab.icon,
+                                                                    contentDescription = if (
+                                                                        tabWorkoutInviteCount > 0
+                                                                    ) {
+                                                                        stringResource(
+                                                                            R.string.workout_invites_pending_count,
+                                                                            tabWorkoutInviteCount
+                                                                        )
+                                                                    } else {
+                                                                        stringResource(tab.labelRes)
+                                                                    },
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
                                                             }
                                                         }
-                                                    }
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier.size(24.dp),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = tab.icon,
-                                                            contentDescription = if (
-                                                                tabWorkoutInviteCount > 0
-                                                            ) {
-                                                                stringResource(
-                                                                    R.string.workout_invites_pending_count,
-                                                                    tabWorkoutInviteCount
-                                                                )
-                                                            } else {
-                                                                stringResource(tab.labelRes)
-                                                            },
-                                                            modifier = Modifier.size(20.dp)
+                                                    },
+                                                    label = {
+                                                        Text(
+                                                            text = stringResource(tab.labelRes),
+                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                fontSize = 12.sp,
+                                                                lineHeight = 14.sp,
+                                                                letterSpacing = 0.sp
+                                                            ),
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            textAlign = TextAlign.Center,
+                                                            maxLines = 2,
+                                                            softWrap = true,
+                                                            overflow = TextOverflow.Ellipsis
                                                         )
                                                     }
-                                                }
-                                            },
-                                            label = {
-                                                Text(
-                                                    text = stringResource(tab.labelRes),
-                                                    style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontSize = 12.sp,
-                                                        lineHeight = 14.sp,
-                                                        letterSpacing = 0.sp
-                                                    ),
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    textAlign = TextAlign.Center,
-                                                    maxLines = 2,
-                                                    softWrap = true,
-                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             }
-                                        )
+                                        }
                                     }
                                 }
                             }
@@ -2227,11 +2233,11 @@ internal fun GymAppRoot(
                                     containerColor = MaterialTheme.colorScheme.tertiary,
                                     contentColor = MaterialTheme.colorScheme.onTertiary,
                                     expanded = true,
-                                    text = { Text(text = stringResource(R.string.action_finish_workout)) },
+                                    text = { Text(text = stringResource(R.string.title_post_workout_summary)) },
                                     icon = {
                                         Icon(
                                             imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = stringResource(R.string.action_finish_workout)
+                                            contentDescription = stringResource(R.string.title_post_workout_summary)
                                         )
                                     }
                                 )

@@ -294,7 +294,7 @@ struct ProfileView: View {
                         languageCode: languageCode
                     ))
                         .font(GymTheme.TypeScale.heroTitle)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(
                         isCloudAccount
                             ? gymText(
@@ -312,7 +312,7 @@ struct ProfileView: View {
                     )
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 6)
@@ -503,13 +503,20 @@ struct ProfileView: View {
                 if garminPhoneSync.devices.isEmpty && selectedCloudDevice == nil {
                     GymInlineState(
                         gymText(
-                            "No Garmin watch connected yet. Connect one from Account & devices.",
-                            "Годинник Garmin ще не підключено. Підключи його в розділі «Акаунт і пристрої».",
-                            "Часы Garmin ещё не подключены. Подключи их в разделе «Аккаунт и устройства».",
+                            "Connect your Garmin watch to send workouts and keep your results together.",
+                            "Підключи годинник Garmin, щоб надсилати тренування та зберігати результати разом.",
+                            "Подключите часы Garmin, чтобы отправлять тренировки и хранить результаты вместе.",
                             languageCode: languageCode
                         ),
                         systemImage: "applewatch"
                     )
+                    Button(gymText("Connect Garmin", "Підключити Garmin", "Подключить Garmin", languageCode: languageCode)) {
+                        garminPhoneSync.selectDevices()
+                    }
+                    .buttonStyle(GymPrimaryButtonStyle())
+                    if let message = garminPhoneSync.statusMessage {
+                        GymStatusBanner(message: message, isError: garminPhoneSync.statusIsError)
+                    }
                 } else {
                     ForEach(garminPhoneSync.devices) { device in
                         garminDeviceRow(

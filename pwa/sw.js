@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v151";
-// v151 adds account-owned training programs and active workout tools.
+const CACHE_VERSION = "v152";
+// v152 improves program recovery, accessible navigation, and training contrast.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,7 +48,7 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v84.css",
+  "./styles.v85.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v72.js",
@@ -61,7 +61,7 @@ const SHELL_ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v87.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v108.js",
+  "./app.v109.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",

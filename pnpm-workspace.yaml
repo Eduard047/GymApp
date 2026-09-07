@@ -2,3 +2,5 @@ allowBuilds:
   # Reviewed, pinned build-only binary used to vendor the official Supabase
   # Realtime browser client. No other dependency lifecycle scripts are allowed.
   esbuild: true
+patchedDependencies:
+  '@markw65/monkeyc-optimizer@1.2.6': patches/@markw65__monkeyc-optimizer@1.2.6.patch

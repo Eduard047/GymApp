@@ -14,18 +14,22 @@ class GymWorkoutMode {
     static const MODE_PLANNED = 2;
     static var state = MODE_IDLE;
 
+    (:richWorkoutMode, :inline)
     static function isIdle() {
         return state == MODE_IDLE;
     }
 
+    (:inline)
     static function isFree() {
         return state == MODE_FREE;
     }
 
+    (:inline)
     static function isPlanned() {
         return state == MODE_PLANNED;
     }
 
+    (:inline)
     static function allowsDetailedTracking() {
         return state == MODE_PLANNED;
     }
@@ -53,6 +57,10 @@ class GymWorkoutMode {
 
     (:richWorkoutMode)
     static function begin(usePlan) {
+        if (GymLocalWorkout.readFailed) {
+            GymStore.status = "RECOVERY FAIL";
+            return false;
+        }
         if (!(usePlan instanceof Lang.Boolean) || !isIdle() ||
             GymStore.hasUnfinishedWorkout()) {
             GymStore.status = "MODE FAIL";
@@ -74,6 +82,11 @@ class GymWorkoutMode {
             // untouched so recovery and a later explicit Start Plan remain safe.
             GymStore.restDurationMs = 0;
             GymStore.restStartedAt = null;
+        }
+        // Persist the first target before a zero-set activity can be resumed.
+        if (usePlan && !GymStore.saveCurrentEntry()) {
+            state = MODE_IDLE;
+            return false;
         }
         if (!GymStore.hasAccountBinding()) {
             return true;
@@ -102,6 +115,10 @@ class GymWorkoutMode {
     // compatibility path and gives the constrained products loader headroom.
     (:compactWorkoutMode96)
     static function begin(usePlan) {
+        if (GymLocalWorkout.readFailed) {
+            GymStore.status = "RECOVERY FAIL";
+            return false;
+        }
         if (!(usePlan instanceof Lang.Boolean) || state != MODE_IDLE ||
             GymStore.hasUnfinishedWorkout()) {
             GymStore.status = "MODE FAIL";
@@ -121,6 +138,11 @@ class GymWorkoutMode {
         } else {
             GymStore.restDurationMs = 0;
             GymStore.restStartedAt = null;
+        }
+        // Persist the first target before a zero-set activity can be resumed.
+        if (usePlan && !GymStore.saveCurrentEntry()) {
+            state = MODE_IDLE;
+            return false;
         }
         if (!GymStore.hasAccountBinding()) {
             return true;

@@ -197,7 +197,15 @@ if [[ "$mode" == "release" ]]; then
 fi
 
 mkdir -p "$output_root"
-compiler_args=(-f monkey.jungle -y "$developer_key" -w)
+node_command="$(command -v node || true)"
+if [[ -z "$node_command" ]]; then
+    echo "Node.js is required. Install dependencies with pnpm install --frozen-lockfile." >&2
+    exit 1
+fi
+compiler_args=("$script_root/build-garmin-program.mjs" --sdk "$sdk_root" --developer-key "$developer_key")
+if [[ -n "${JAVA_HOME:-}" ]]; then
+    compiler_args+=(--java-home "$JAVA_HOME")
+fi
 if [[ "$mode" == "release" ]]; then
     output="$output_root/gymapp-garmin-connect-iq.iq"
     if ! release_staging_root="$(
@@ -216,7 +224,7 @@ if [[ "$mode" == "release" ]]; then
     # that leaf canonical while isolating raw and sanitized packages by folder.
     temporary_output="$raw_release_root/gymapp-garmin-connect-iq.iq"
     sanitized_release_output="$sanitized_release_root/gymapp-garmin-connect-iq.iq"
-    compiler_args+=(-o "$temporary_output" -r -e)
+    compiler_args+=(--output "$temporary_output" --export)
 else
     if [[ ! -d "$connect_iq_root/Devices/$device" ]]; then
         echo "Connect IQ device '$device' is not installed." >&2
@@ -227,20 +235,13 @@ else
     temporary_settings="${temporary_output%.prg}-settings.json"
     temporary_debug="$temporary_output.debug.xml"
     rm -f -- "$temporary_output" "$temporary_settings" "$temporary_debug"
-    compiler_args+=(-o "$temporary_output" -d "$device")
-    # These constrained CIQ watch-app targets need debug metadata stripped to
-    # stay within their loader limit. Runtime workout/FIT/sync code is unchanged.
-    case "$device" in
-        descentg1|enduro|fenix6|fenix6s|fr245|fr55|instinct2|instinct2s|instinct2x|instinctcrossover|venusq)
-            compiler_args+=(-r)
-            ;;
-    esac
+    compiler_args+=(--output "$temporary_output" --device "$device")
 fi
 
 if [[ "$mode" == "release" ]]; then
     if ! (
         cd "$garmin_root"
-        "$monkeyc" "${compiler_args[@]}" >/dev/null 2>&1
+        "$node_command" "${compiler_args[@]}" >/dev/null 2>&1
     ); then
         echo "Garmin release compilation failed." >&2
         exit 1
@@ -248,7 +249,7 @@ if [[ "$mode" == "release" ]]; then
 else
     (
         cd "$garmin_root"
-        "$monkeyc" "${compiler_args[@]}"
+        "$node_command" "${compiler_args[@]}"
     )
 fi
 if [[ ! -s "$temporary_output" ]]; then

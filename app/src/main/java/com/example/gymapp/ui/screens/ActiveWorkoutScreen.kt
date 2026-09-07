@@ -251,8 +251,12 @@ fun ActiveWorkoutScreen(
             item {
                 AppPanel(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(R.string.training_adapt_workout), style = MaterialTheme.typography.titleMedium)
-                        listOf("equipmentUnavailable" to R.string.training_equipment_busy,
+                        var showAdaptationOptions by rememberSaveable { mutableStateOf(false) }
+                        TextButton(onClick = { showAdaptationOptions = !showAdaptationOptions }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.training_adapt_workout))
+                            Icon(if (showAdaptationOptions) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                        }
+                        if (showAdaptationOptions) listOf("equipmentUnavailable" to R.string.training_equipment_busy,
                             "timeCut" to R.string.training_short_time, "tooHard" to R.string.training_too_hard).forEach { (reason, label) ->
                             OutlinedButton(onClick = { onPreviewAdaptation(reason, if (reason == "timeCut") 0 else 20, null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(label)) }
                         }
@@ -432,7 +436,17 @@ fun ActiveWorkoutScreen(
                     adaptation.previewLines.forEach { line ->
                         val name = localizedExerciseName(line.name)
                         val before = if (line.previousName.isNotEmpty() && line.previousName != line.name) localizedExerciseName(line.previousName) + " → " else ""
-                        Text("$before$name: ${line.values}", style = MaterialTheme.typography.bodySmall)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("$before$name", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.training_remaining_sets, line.before, line.after))
+                            val number = java.text.NumberFormat.getNumberInstance()
+                            line.values.forEach { value ->
+                                val old = if (value.previousWeight != null) stringResource(R.string.set_weight_reps_value,
+                                    number.format(value.previousWeight), value.previousReps.toString()) + " → " else ""
+                                Text(old + stringResource(R.string.set_weight_reps_value, number.format(value.weight), value.reps.toString()),
+                                    style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
                     }
                 }
             } },

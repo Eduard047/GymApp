@@ -212,7 +212,9 @@ test("Garmin free activity stays metrics-only in history and detail", () => {
   assert.match(detail, /40 kcal/);
   assert.match(detail, /130 bpm/);
   assert.match(detail, /data-action="delete-session"/);
-  assert.doesNotMatch(detail, /data-action="(?:edit-workout|share-session|add-saved-workout-set|edit-set|delete-set)"/);
+  assert.match(detail, /data-action="edit-workout"/);
+  assert.match(detail, /Add exercises/);
+  assert.doesNotMatch(detail, /data-action="(?:share-session|add-saved-workout-set|edit-set|delete-set)"/);
   assert.doesNotMatch(detail, /Exercises|Sets|Reps|Volume|Garmin · Duration/);
 });
 
@@ -308,4 +310,50 @@ test("saved-workout details bind exclusive expansion and synchronize aria-expand
   assert.match(appSource, /details\[data-saved-workout-exercise\]/);
   assert.match(appSource, /if \(other !== details && other\.open\) other\.open = false/);
   assert.match(appSource, /setAttribute\("aria-expanded", String\(item\.open\)\)/);
+});
+
+
+test("free workout enrichment preserves watch metrics through save and sync replay", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    activeAccount = { id: "free-workout-owner", name: "Local", remote: false };
+    state.sessions[0].sets = [];
+    state.sessions[0].durationSeconds = 754;
+    state.sessions[0].note = "Garmin · Duration 12:34 · Gym kcal 40 · Garmin kcal 38 · Avg HR 130 · Max HR 165 · HR zone Z3";
+    globalThis.original = { ...state.sessions[0] };
+    globalThis.exactItems = activityOnlySyncItems(state);
+    render = () => {};
+    queueRemoteSave = () => {};
+    showToast = message => { globalThis.lastToast = message; };
+  `, context);
+  assert.equal(vm.runInContext("quickAddExercise(101, 201)", context), false);
+  assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 0);
+  vm.runInContext("workoutDetailEditSessionId = 201", context);
+  assert.match(vm.runInContext("detailScreen(201)", context), /data-action="open-workout-exercise-picker"/);
+  assert.equal(vm.runInContext("quickAddExercise(101, 201)", context), true);
+  vm.runInContext(`
+    state.sessions[0].sets[0].weight = 55;
+    state.sessions[0].sets[0].reps = 12;
+    saveState();
+    globalThis.saved = JSON.parse(localStorage.getItem(activeStorageKey()));
+    globalThis.replayed = installActivityOnlyItems(state, exactItems);
+  `, context);
+  assert.equal(vm.runInContext("saved.sessions[0].sets[0].weight", context), 55);
+  assert.equal(vm.runInContext("replayed.sessions.length", context), 1);
+  assert.equal(vm.runInContext("replayed.sessions[0].sets[0].reps", context), 12);
+  for (const key of ["id", "startedAt", "durationSeconds", "note"]) {
+    assert.equal(vm.runInContext(`replayed.sessions[0].${key} === original.${key}`, context), true);
+  }
+  assert.equal(vm.runInContext("JSON.stringify(activityOnlySyncItems(state, exactItems)) === JSON.stringify(exactItems)", context), true);
+  assert.equal(vm.runInContext("loadWorkoutDurationLedger(activeAccount).ledger.items[0].durationSeconds", context), 754);
+  vm.runInContext(`
+    state.sessions = [{ ...original, sets: [] }];
+    localStorage.setItem = () => { throw new Error("quota"); };
+  `, context);
+  vm.runInContext("quickAddExercise(102, 201)", context);
+  assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 0);
+  assert.equal(vm.runInContext("state.sessions[0].note === original.note", context), true);
+  vm.runInContext("workoutDetailEditSessionId = null", context);
+  assert.equal(vm.runInContext("quickAddExercise(101, 201)", context), false);
 });

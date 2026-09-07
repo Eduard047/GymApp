@@ -52,13 +52,13 @@ test("Garmin workout discard requires an explicit safe-default confirmation", as
   const tapHandler = section(view, "function onTap(evt)", "function rowAt(");
   assert.match(tapHandler, /view\.page == 6[\s\S]*rowAt\(y, 144, 48, 2\)[\s\S]*handleDiscardConfirmation\(\)/);
 
-  for (const handler of ["onNextPage()", "onPreviousPage()", "onNextMode()", "onPreviousMode()"]) {
+  for (const handler of ["movePage(delta)", "onNextMode()", "onPreviousMode()"]) {
     const handlerSection = section(view, `function ${handler}`, "function ");
     assert.match(handlerSection, /view\.page == 6[\s\S]*moveDiscardSelection\(/, handler);
   }
   const keyHandler = section(view, "function onKey(evt)", "function handleSelect()");
-  assert.match(keyHandler, /view\.page == 6[\s\S]*moveDiscardSelection\(-1\)/);
-  assert.match(keyHandler, /view\.page == 6[\s\S]*moveDiscardSelection\(1\)/);
+  assert.match(keyHandler, /handleHorizontalKey\(key == Ui\.KEY_LEFT \? -1 : 1\)/);
+  assert.match(keyHandler, /view\.page == 6[\s\S]*moveDiscardSelection\(delta\)/);
 
   // Account transitions remain an automatic privacy boundary and never wait on UI state.
   const syncApply = section(store, "static function applySyncFromSource", "static function isValidSyncMessage");

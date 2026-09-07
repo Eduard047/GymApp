@@ -27,7 +27,7 @@ test("Garmin finish is a prepared to FIT-saved to queued transaction", async () 
   const prepareAt = saveAndExit.indexOf("GymStore.prepareWorkoutCommit()");
   const fitAt = saveAndExit.indexOf("GymSession.stopAndSave()");
   const markAt = saveAndExit.indexOf("GymStore.markPreparedWorkoutFitSaved()");
-  const queueAt = saveAndExit.indexOf("finishWorkout()");
+  const queueAt = saveAndExit.indexOf("finishWorkoutMessage(saveMessage)");
   assert.ok(prepareAt >= 0 && prepareAt < fitAt && fitAt < markAt && markAt < queueAt);
   assert.match(prepared, /Storage\.setValue\("preparedWorkoutV1", marker\)/);
   assert.match(prepared, /activeWorkoutSnapshotMatchesBindings\(value\)/);
@@ -37,7 +37,7 @@ test("Garmin finish is a prepared to FIT-saved to queued transaction", async () 
   assert.match(prepared, /return workoutMessage\(preparedWorkout\[4\]\.toString\(\)\)/);
   assert.match(store, /status = "SYNC FULL"/);
   assert.ok(
-    saveAndExit.indexOf("finishWorkout()") < saveAndExit.indexOf("GymStore.clearActiveWorkout()"),
+    saveAndExit.indexOf("finishWorkoutMessage(saveMessage)") < saveAndExit.indexOf("GymStore.clearActiveWorkout()"),
     "active sets may clear only after the durable queue accepts the FIT-saved request"
   );
 });
@@ -49,12 +49,12 @@ test("Garmin exposes recovery, queue count, last sync, and bounded oldest-first 
     read("garmin/source/GymApp.mc")
   ]);
   const retry = section(view, "function maybeRetryPending()", "function hasWorkoutToResume()");
-  assert.match(view, /GymStore\.pending\.size\(\)/);
+  assert.match(view, /GymStore\.pendingCount\(\)/);
   assert.match(view, /GymStore\.lastWorkoutSyncText\(\)/);
   assert.match(view, /"DATA KEPT · RETRY"/);
   assert.match(retry, /pendingRetryDelayMs\.toLong\(\)/);
   assert.match(view, /if \(next > 300000\)[\s\S]*next = 300000/);
-  assert.match(view, /GymComm\.send\(GymStore\.pending\[0\], method\(:onPendingSent\)\)/);
+  assert.match(view, /var message = GymStore\.pendingMessage\(\)[\s\S]*GymComm\.send\(message, method\(:onPendingSent\)\)/);
   assert.match(store, /lastWorkoutSyncAtSeconds = Time\.now\(\)\.value\(\)[\s\S]*if \(save\(\)\)/);
   assert.match(app, /removePendingByRequestId\(ackRequestId\)[\s\S]*sendNextPendingWorkout\(\)/);
 });
@@ -362,16 +362,19 @@ test("Forerunner 55 checkpoints explicit lifecycle boundaries without periodic h
 
   assert.match(compactValidation, /snapshotSets\.size\(\) == 0 && startedAtSeconds != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
   assert.match(compact96Validation, /snapshotSets\.size\(\) == 0 && startedAtSeconds != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
-  assert.match(compactCheckpoint, /if \(!force\) \{\s*return true;/);
+  assert.match(compactCheckpoint, /!force && \(!GymWorkoutMode\.isFree\(\) \|\| GymSession\.paused/);
+  assert.match(compactCheckpoint, /timerElapsedMs\(lastRuntimeCheckpointTimerMs\) < runtimeCheckpointIntervalMs\.toLong\(\)/);
   assert.doesNotMatch(compactCheckpoint, /elapsedSeconds - lastCompactCheckpointElapsed < 15/);
   assert.match(compactCheckpoint, /origin = GymSession\.startedAt/);
   assert.match(compactCheckpoint, /persistActiveWorkoutSnapshot\(sets, origin, checkpoint\)[\s\S]*activeWorkoutStartedAtSeconds = origin[\s\S]*runtimeWorkoutStartedAtSeconds = origin/);
   assert.doesNotMatch(compactSave, /persistActiveWorkoutSnapshot\(/);
-  assert.match(compactRestore, /lastInterval = sets\[sets\.size\(\) - 1\]\.get\("setInterval"\)/);
+  assert.match(compactRestore, /lastInterval = setField\(GymSetAccess\.at\(sets, sets\.size\(\) - 1\), "setInterval"\)/);
   assert.match(compactRestore, /elapsedSinceSet = checkpoint\[0\] - lastInterval\[1\]/);
   assert.match(compactRestore, /remainingRest = restSecondsDefault - elapsedSinceSet/);
   assert.match(view, /startOrResumeWorkout\(usePlan\)[\s\S]*checkpointLiveWorkout\(true\)/);
-  assert.match(view, /A restored workout is already durable[\s\S]*!resuming && !GymStore\.checkpointLiveWorkout\(true\)/);
+  const session = await read("garmin/source/GymSession.mc");
+  assert.match(session, /!GymStore\.hasUnfinishedWorkout\(\) && !GymStore\.checkpointLiveWorkout\(true\)[\s\S]*Recording\.createSession/);
+  assert.match(view, /if \(resuming && GymStore\.keepsSetDiagnostics &&/);
   assert.match(view, /openPauseMenu\(\)[\s\S]*checkpointLiveWorkout\(true\)/);
   assert.match(view, /function onHide\(\)[\s\S]*checkpointLiveWorkout\(true\)[\s\S]*stopSensors\(\)/);
 
@@ -416,7 +419,7 @@ test("96 KiB phase-zero retry is sets-only, idempotent, and cannot race an ACK",
   );
   const compactFinish = section(
     view,
-    "(:compactRecovery96)\n    function finishWorkout()",
+    "(:compactRecovery96)\n    function buildFinishWorkoutMessage()",
     "(:richRecovery)\n    function finishFitRecovery(activityFound)"
   );
   const compactSave = section(
@@ -440,9 +443,11 @@ test("96 KiB phase-zero retry is sets-only, idempotent, and cannot race an ACK",
 
   const duplicateAt = queue.indexOf("alreadyQueued = true");
   const capacityAt = queue.indexOf("canQueueWorkout(message)");
-  const recoverAt = queue.indexOf("recoverQueuedWorkout()");
-  assert.ok(duplicateAt >= 0 && duplicateAt < capacityAt && capacityAt < recoverAt,
+  assert.ok(duplicateAt >= 0 && duplicateAt < capacityAt,
     "same-id recovery must bypass a full queue before finalizing the transaction");
+  const wrapper = queue.slice(0, queue.indexOf("static function appendWorkout(message)"));
+  assert.match(wrapper, /if \(!appendWorkout\(message\)\)[\s\S]*return false;[\s\S]*if \(!recoverQueuedWorkout\(\)\)/,
+    "recovery runs only after the append succeeds, including a validated replay");
   assert.match(queue, /Storage\.setValue\("queuedActiveRequestId", requestId\)[\s\S]*Storage\.setValue\("pending", nextPending\)/);
   assert.match(queue, /persistEmptyActiveWorkoutSnapshot\(\)[\s\S]*sets = \[\][\s\S]*if \(!save\(\)\)[\s\S]*clearPreparedWorkout\(marker\)/);
   assert.match(store, /removePendingByRequestId\(requestId\)[\s\S]*!recoverQueuedWorkout\(\)/);

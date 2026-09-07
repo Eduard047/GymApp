@@ -121,12 +121,25 @@ class GymCommListener extends Comm.ConnectionListener {
 
 class GymComm {
     static var watchVersion = "2026.08.20.1521";
+    (:fullLegacyState)
     static var cloudSyncUrl = "https://owrcbsrectdgaotndtxy.supabase.co/functions/v1/garmin-sync";
+    (:fullLegacyState)
     static var legacyCapabilityLength = 64;
+    (:fullLegacyState)
     static var cloudCapabilityLength = 234;
+    (:fullLegacyState)
     static var signedOutAccountBinding = "ce5a39150e5fd2bd1a1adeb786fb05b39ee4e0395443a87ed7e2309796124d29";
 
+    static function isPhoneConnected() {
+        try { return Toybox.System.getDeviceSettings().phoneConnected; }
+        catch (e) { return false; }
+    }
+
     static function send(message, callback) {
+        if (!isPhoneConnected()) {
+            if (callback != null) { callback.invoke(false); }
+            return;
+        }
         try {
             Comm.transmit(message, null, new GymCommListener(callback));
         } catch (e) {
