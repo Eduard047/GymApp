@@ -58,7 +58,7 @@ function malformedCheckpointMetadataCannotExpand(logger as Test.Logger) as Lang.
 (:test, :compactLegacyState)
 function queuedCheckpointMetadataSurvivesRestartAndRejectsAnotherHeader(logger as Test.Logger) as Lang.Boolean {
     if (!PendingJournalFixture.prepare()) { return false; }
-    var entry = GymPendingJournal.entries[0];
+    var entry = PendingJournalFixture.entry();
     var header = entry[1];
     entry[0] = ["pending-journal-request-001", header[1], header[2], header[3], header[4], false, header[9], 0, 0, header[5]];
     if (!GymPendingJournal.validEntry(entry)) { return false; }
@@ -68,7 +68,7 @@ function queuedCheckpointMetadataSurvivesRestartAndRejectsAnotherHeader(logger a
     var frame = GymPendingJournal.frame(0, "checkpoint-attempt");
     if (frame == null || frame["metadata"]["durationSeconds"] != 60 ||
         frame["set"]["weight"] != 52.123456789d) { return false; }
-    entry = GymPendingJournal.entries[0];
+    entry = PendingJournalFixture.entry();
     entry[0][9] = 1;
     if (GymPendingJournal.validEntry(entry)) { return false; }
     entry[0][9] = 2;

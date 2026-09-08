@@ -33,9 +33,9 @@ test("Garmin finish is a prepared to FIT-saved to queued transaction", async () 
   assert.match(prepared, /activeWorkoutSnapshotMatchesBindings\(value\)/);
   assert.match(prepared, /nextRequestId\("workout"\)/);
   assert.match(prepared, /preparedWorkout\[5\] = 1[\s\S]*Storage\.setValue\("preparedWorkoutV1", preparedWorkout\)/);
-  assert.match(prepared, /preparedWorkout\[5\] = 0[\s\S]*status = "FIT CHECK"/);
+  assert.match(prepared, /preparedWorkout\[5\] = 0[\s\S]*status = GymStatus\.FIT_CHECK/);
   assert.match(prepared, /return workoutMessage\(preparedWorkout\[4\]\.toString\(\)\)/);
-  assert.match(store, /status = "SYNC FULL"/);
+  assert.match(store, /status = GymStatus\.SYNC_FULL/);
   assert.ok(
     saveAndExit.indexOf("finishWorkoutMessage(saveMessage)") < saveAndExit.indexOf("GymStore.clearActiveWorkout()"),
     "active sets may clear only after the durable queue accepts the FIT-saved request"
@@ -98,7 +98,7 @@ test("Forerunner 55 compact summary keeps the action below workout metrics", asy
   assert.notEqual(compactEnd, -1);
   const compactSummary = view.slice(compactStart, compactEnd);
 
-  assert.match(compactSummary, /sy\(h, 62\)[\s\S]*sy\(h, 112\)[\s\S]*sy\(h, 146\)[\s\S]*sy\(h, 190\)/);
+  assert.match(compactSummary, /drawCentered\(dc, 62,[\s\S]*drawCentered\(dc, 112,[\s\S]*drawCentered\(dc, 146,[\s\S]*drawCentered\(dc, 190,/);
   assert.doesNotMatch(compactSummary, /drawMenuRow\(/);
 });
 
@@ -121,7 +121,7 @@ test("Forerunner 55 upgrade bridges full-v3 into indexed v4 and merges its runti
   );
   const migration = section(
     store,
-    "(:fr55UpgradeBridge)\n    static function restoreMigratedActiveWorkout(savedActive)",
+    "(:fr55UpgradeBridge, :inline)\n    static function restoreMigratedActiveWorkout(savedActive)",
     "(:noFr55UpgradeBridge)\n    static function compactActiveSnapshotFromFullV3(value)"
   );
 
@@ -165,7 +165,7 @@ test("Forerunner 55 upgrade bridges full-v3 into indexed v4 and merges its runti
   const rewriteAt = migration.indexOf('Storage.setValue("activeWorkoutV1", migratedActive)');
   const cleanupAt = migration.indexOf('Storage.deleteValue("activeRuntimeV1")');
   assert.ok(restoreAt >= 0 && restoreAt < rewriteAt && rewriteAt < cleanupAt);
-  assert.match(migration, /catch \(e\) \{[\s\S]*status = "SAVE FAIL"/);
+  assert.match(migration, /catch \(e\) \{[\s\S]*status = GymStatus\.SAVE_FAIL/);
   assert.match(compactLoad, /ownerMatches && restoreMigratedActiveWorkout\(savedActive\)/);
 
   const OWNER = "a".repeat(64);
@@ -360,8 +360,11 @@ test("Forerunner 55 checkpoints explicit lifecycle boundaries without periodic h
     "(:fullLegacyState)\n    static function resetRuntimeCheckpointState()"
   );
 
-  assert.match(compactValidation, /snapshotSets\.size\(\) == 0 && startedAtSeconds != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
-  assert.match(compact96Validation, /snapshotSets\.size\(\) == 0 && startedAtSeconds != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
+  assert.match(compactValidation, /return isValidCompactV4ActiveWorkoutSnapshot\(snapshot\)/);
+  assert.match(compact96Validation, /return isValidCompactV4ActiveWorkoutSnapshot\(snapshot\)/);
+  const sharedValidation = section(store, "static function isValidCompactV4ActiveWorkoutSnapshot(snapshot)", "// The compact hardware tier accepts legacy");
+  assert.match(sharedValidation, /items\.size\(\) == 0 && origin != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
+  assert.match(sharedValidation, /GymActiveJournal\.validBindings\(snapshot\)/);
   assert.match(compactCheckpoint, /!force && \(!GymWorkoutMode\.isFree\(\) \|\| GymSession\.paused/);
   assert.match(compactCheckpoint, /timerElapsedMs\(lastRuntimeCheckpointTimerMs\) < runtimeCheckpointIntervalMs\.toLong\(\)/);
   assert.doesNotMatch(compactCheckpoint, /elapsedSeconds - lastCompactCheckpointElapsed < 15/);
@@ -414,7 +417,7 @@ test("96 KiB phase-zero retry is sets-only, idempotent, and cannot race an ACK",
   );
   const compactMessage = section(
     store,
-    "(:compactRecovery96)\n    static function preparedWorkoutSetsOnlyMessage()",
+    "(:compactRecovery96, :inline)\n    static function preparedWorkoutSetsOnlyMessage()",
     "static function restoreLastWorkoutSync(value)"
   );
   const compactFinish = section(

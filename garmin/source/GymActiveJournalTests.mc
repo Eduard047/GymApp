@@ -145,6 +145,8 @@ function journalUndoRestoresRemovedExerciseAndExactPickerAcrossReload(logger as 
         !GymStore.currentExercise().equals("Squat") ||
         GymStore.weight != 82.123456789d || GymStore.reps != 9) { return false; }
     header = Storage.getValue("activeWorkoutV1");
+    if (Storage.getValue(GymActiveJournal.key(header[6], 1)) != null ||
+        Storage.getValue(GymActiveJournal.key(header[6], 0)) == null) { return false; }
     var entry = Storage.getValue("currentEntryV1");
     GymStore.resetActiveWorkoutSnapshotState();
     if (!GymStore.isValidActiveWorkoutSnapshot(header)) { return false; }
@@ -170,7 +172,7 @@ function journalHandlesRequireExactHeaderAndRejectUncommittedRowRevision(logger 
     if (!GymStore.persistActiveWorkoutSnapshot([item], 1700000000, checkpoint)) { return false; }
     GymStore.restoreActiveWorkoutSnapshot(Storage.getValue("activeWorkoutV1"));
     var handle = GymSetAccess.at(GymStore.sets, 0);
-    if (GymStore.setField(handle, "weight") != 50.0 || GymStore.sets.data.size() != GymStore.maxWorkoutSets) { return false; }
+    if (GymStore.setField(handle, "weight") != 50.0 || GymStore.sets.data.size() != GymWorkoutMode.recordingSetLimit) { return false; }
     // An ordinary checkpoint changes the published header without rewriting
     // the immutable row. Newly issued handles still read the older valid row.
     if (!GymStore.persistActiveWorkoutSnapshot(GymStore.sets.slice(null, null),
@@ -221,4 +223,44 @@ function journalDirectorySharesOnlyItsImmutablePrefix(logger as Test.Logger) as 
         replacement.data == original || GymActiveJournal.snapshot()[6] == bank) { return false; }
     return GymStore.setField(GymSetAccess.at(replacement, 0), "weight") == 50.0 &&
         GymStore.setField(GymSetAccess.at(replacement, 1), "weight") == 75.0;
+}
+
+(:test, :compactLegacyState)
+function recordingCapacityCommitsThirtyAndRejectsOverflow(logger as Test.Logger) as Lang.Boolean {
+    GymStore.clearAccountScopedState();
+    GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    GymStore.stateOwnerBinding = GymStore.accountBinding;
+    GymStore.deviceBinding = "capacity-test"; GymStore.pairingGeneration = null;
+    GymStore.exercises = ["Bench Press"]; GymStore.exerciseCatalogNeedsWrite = true;
+    GymStore.plan = [{"exerciseName" => "Bench Press", "weight" => 50.0, "reps" => 8}];
+    GymWorkoutMode.state = GymWorkoutMode.MODE_PLANNED;
+    var capacity = GymWorkoutMode.recordingSetLimit;
+    if (GymActiveJournal.allocateRows(1).size() != capacity ||
+        GymActiveJournal.allocateRows(0).size() != 0 ||
+        GymActiveJournal.allocateRows(60).size() != 60) { return false; }
+    var items = [];
+    for (var i = 0; i < capacity; i += 1) {
+        items.add(GymStore.restoredSet("Bench Press", 50.0 + i, 8, null));
+    }
+    // The final permitted set must commit before the next one is refused.
+    if (!GymStore.persistActiveWorkoutSnapshot(items.slice(0, capacity - 1), null, null)) { return false; }
+    var header = Storage.getValue("activeWorkoutV1");
+    if (!GymStore.isValidActiveWorkoutSnapshot(header)) { return false; }
+    GymStore.restoreActiveWorkoutSnapshot(header);
+    GymStore.exerciseIndex = 0; GymStore.weight = 82.5; GymStore.reps = 9;
+    GymSession.recording = false; GymSession.startedAt = 0;
+    GymSession.elapsedSeconds = 0; GymSession.gymCalories = 0.0;
+    GymSession.setBoostCalories = 0.0; GymSession.garminCalories = null;
+    if (!GymStore.addSet() || GymStore.sets.size() != capacity ||
+        GymStore.setField(GymSetAccess.at(GymStore.sets, capacity - 1), "weight") != 82.5) {
+        logger.debug("Final permitted set failed: " + GymStatus.text(GymStore.status));
+        return false;
+    }
+    // At the new limit, rejection must happen before any journal write.
+    header = Storage.getValue("activeWorkoutV1");
+    if (!GymStore.isValidActiveWorkoutSnapshot(header)) { return false; }
+    GymStore.restoreActiveWorkoutSnapshot(header);
+    var before = GymStore.sets;
+    return !GymStore.addSet() && (GymStore.status == GymStatus.SET_LIMIT) &&
+        GymStore.sets == before && Storage.getValue("activeWorkoutV1")[5] == capacity;
 }

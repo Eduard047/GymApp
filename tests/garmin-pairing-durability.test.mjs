@@ -179,7 +179,7 @@ test("Garmin load defers old-bound pairing stages and completes target-bound par
   assert.match(load, /validActiveSnapshot[\s\S]*!snapshotMatches && recoveredPairing[\s\S]*pairingGeneration = previousPairingGeneration[\s\S]*activeWorkoutSnapshotMatchesBindings\(savedActiveWorkout\)[\s\S]*pairingGeneration = pairingRecoveryTarget/);
   assert.match(load, /recoveredPairing && savedPreparedWorkout != null[\s\S]*preparedMatchesPrevious[\s\S]*savedPreparedWorkout\[3\] = pairingRecoveryTarget/);
   assert.match(load, /pairingRecoveryDeferred && preparedAlreadyTargetsRecovery[\s\S]*preparedWorkout = savedPreparedWorkout/);
-  assert.match(load, /pruneAccountScopedState\(\);[\s\S]*recoverQueuedWorkout\(\);[\s\S]*if \(recoveredPairing\)[\s\S]*pairingRecoveryCommitLast = true[\s\S]*recoverySaved = save\(\)[\s\S]*pairingRecoveryCommitLast = false[\s\S]*if \(!recoverySaved\)[\s\S]*pairingGeneration = previousPairingGeneration[\s\S]*pending\[i\]\.put\("pairingGeneration", previousPairingGeneration\)[\s\S]*status = "SAVE FAIL"/);
+  assert.match(load, /pruneAccountScopedState\(\);[\s\S]*recoverQueuedWorkout\(\);[\s\S]*if \(recoveredPairing\)[\s\S]*pairingRecoveryCommitLast = true[\s\S]*recoverySaved = save\(\)[\s\S]*pairingRecoveryCommitLast = false[\s\S]*if \(!recoverySaved\)[\s\S]*pairingGeneration = previousPairingGeneration[\s\S]*pending\[i\]\.put\("pairingGeneration", previousPairingGeneration\)[\s\S]*status = GymStatus\.SAVE_FAIL/);
   assert.doesNotMatch(load, /clearSyncStage/);
 
   assert.match(recovery, /hasAccountBinding\(\)/);
@@ -205,7 +205,7 @@ test("Garmin load defers old-bound pairing stages and completes target-bound par
     "a live old-bound workout must reject the new generation before journaling it"
   );
   assert.doesNotMatch(storeSource, /adoptPairingGenerationForPending/);
-  assert.match(compactApplySync, /revisionStatus == 0[\s\S]*isExactStagedSync\(safeMessage, bindingSource\)[\s\S]*!syncBindingsMatch\(safeMessage\)[\s\S]*revisionStatus = 1[\s\S]*status = "SYNC DUP"[\s\S]*clearSyncStageIfMatches\(safeMessage, bindingSource\)[\s\S]*return true/);
+  assert.match(compactApplySync, /revisionStatus == 0[\s\S]*isExactStagedSync\(safeMessage, bindingSource\)[\s\S]*!syncBindingsMatch\(safeMessage\)[\s\S]*revisionStatus = 1[\s\S]*status = GymStatus\.SYNC_DUP[\s\S]*clearSyncStageIfMatches\(safeMessage, bindingSource\)[\s\S]*return true/);
 
   const fullSaveStart = storeSource.indexOf("(:fullLegacyState)\n    static function save()");
   const fullSaveEnd = storeSource.indexOf("(:compactLegacyState)\n    static function load()", fullSaveStart);

@@ -25,7 +25,7 @@ function failedFitPauseCannotPrepareOrCompleteSave(logger as Test.Logger) as Lan
     var view = new WorkoutView();
     view.saveAndExit();
     var valid = session.stopCalls == 1 && session.saveCalls == 0 &&
-        view.saveStage == 0 && GymStore.status.equals("PAUSE FAIL") &&
+        view.saveStage == 0 && (GymStore.status == GymStatus.PAUSE_FAIL) &&
         GymStore.preparedWorkout == previousPrepared && GymStore.sets == previousSets;
     GymSession.session = previousSession;
     LocalWorkoutFixture.reset();
@@ -108,7 +108,7 @@ function failedFirstCheckpointCannotStartFitRecording(logger as Test.Logger) as 
     GymPendingJournal.readable = false;
     var started = GymSession.start();
     var ok = !started && !GymSession.recording && GymSession.session == null &&
-        GymSession.startedAt == 0 && GymStore.status.equals("RECOVERY FAIL");
+        GymSession.startedAt == 0 && (GymStore.status == GymStatus.RECOVERY_FAIL);
     GymStore.clearAccountScopedState();
     LocalWorkoutFixture.reset();
     return ok;

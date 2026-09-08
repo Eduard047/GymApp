@@ -58,7 +58,7 @@ test("Start and Resume are explicit, single-shot, and fail closed", async () => 
   assert.match(start, /if \(!started\)[\s\S]*GymWorkoutMode\.clear\(\)/);
   assert.match(compactStart, /GymStore\.hasPreparedWorkout\(\)/);
   assert.ok(start.indexOf("if (!started)") < start.indexOf("page = 0"));
-  assert.match(fitStart, /if \(recording\) \{\s*startSensors\(\);\s*\} else \{\s*stopSensors\(\);/);
+  assert.match(fitStart, /if \(recording\) \{[\s\S]*recordingSetLimit == 30[\s\S]*sensorsPending = true[\s\S]*else \{ startSensors\(\); \}[\s\S]*\} else \{\s*stopSensors\(\);/);
   assert.ok(
     fitStart.indexOf("if (recording)") > fitStart.indexOf("session.start()"),
     "sensor listeners must be gated by the authoritative FIT start result"
@@ -66,7 +66,7 @@ test("Start and Resume are explicit, single-shot, and fail closed", async () => 
   assert.equal((fitStart.match(/failStartAndCleanup\(\)/g) || []).length, 3);
   assert.match(failedFitStart, /fitCleanupPending = session != null && !discard\(\)/);
   assert.match(failedFitStart, /recording = false[\s\S]*startedAt = 0/);
-  assert.match(failedFitStart, /fitCleanupPending \? "FIT RETRY" : "REC FAIL"/);
+  assert.match(failedFitStart, /fitCleanupPending \? GymStatus\.FIT_RETRY : GymStatus\.REC_FAIL/);
 
   const transition = (state, fitStartResult) => {
     if (state.active || state.fitSaved) return { ...state, starts: 0 };
@@ -97,7 +97,7 @@ test("durable unfinished state is resumable while an empty snapshot remains a to
   assert.match(unfinished, /activeWorkoutSnapshotValid/);
   assert.match(unfinished, /timelineBase\[0\] > 0/);
   assert.doesNotMatch(unfinished, /return activeWorkoutSnapshotValid;/);
-  assert.match(view, /function readyActionText\(index\)[\s\S]*hasWorkoutToResume\(\)/);
+  assert.match(view, /function readyActionText\(index, count\)[\s\S]*hasWorkoutToResume\(\)/);
   assert.match(view, /"RESUME", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ"/);
 });
 
@@ -140,16 +140,16 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   const version = manifest.match(/version="(\d+\.\d+\.\d+)"/)?.[1];
   assert.ok(version);
 
-  const actions = section(view, "function readyActionText(index)", "(:fullLegacyState)\n    function drawReady(dc, w, h)");
+  const actions = section(view, "function readyActionText(index, count)", "(:fullLegacyState)\n    function drawReady(dc, w, h)");
   assert.ok(actions.indexOf('"START PLAN"') < actions.indexOf('"FREE WORKOUT"'));
   assert.ok(actions.indexOf('"FREE WORKOUT"') < actions.indexOf('"SYNC PLAN"'));
   assert.ok(actions.indexOf('"SYNC PLAN"') < actions.indexOf('"SETTINGS"'));
   const ready = section(view, "(:fullLegacyState)\n    function drawReady(dc, w, h)", "(:compactRichRecovery)\n    function drawReady(dc, w, h)");
-  assert.match(ready, /readyActionCount\(\) == 4[\s\S]*i < 4[\s\S]*readyActionText\(i\)/);
+  assert.match(ready, /count = readyActionCount\(\)[\s\S]*count == 4[\s\S]*i < 4[\s\S]*readyActionText\(i, count\)/);
   const compactReady = section(view, "(:compactRichRecovery)\n    function drawReady(dc, w, h)", "(:compactRecovery96)\n    function drawReady(dc, w, h)");
   const compactMenu = section(view, "function drawCompactReady(dc, w, h)", "function startTutorial()");
   assert.match(compactReady, /drawCompactReady\(dc, w, h\)/);
-  assert.match(compactMenu, /i < count[\s\S]*readyActionText\(i\)/);
+  assert.match(compactMenu, /i < count[\s\S]*readyActionText\(i, count\)/);
   assert.match(compactMenu, /fillRoundedRectangle/);
   assert.match(compactMenu, /hasWorkoutToResume\(\)[\s\S]*GymSession\.elapsedText\(\)/);
   assert.match(view, /"START PLAN", "ПОЧАТИ ПЛАН", "НАЧАТЬ ПЛАН"/);
@@ -158,7 +158,7 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   assert.match(view, /"SYNC PLAN", "СИНХ\. ПЛАН", "СИНХ\. ПЛАН"/);
   assert.match(view, /"NOT PAIRED", "НЕ ПРИВ'ЯЗАНО", "НЕ СОПРЯЖЕНО"/);
   assert.match(view, /"READY", "ГОТОВО", "ГОТОВО"/);
-  assert.match(view, /"TO SYNC: ", "У ЧЕРЗІ: ", "В ОЧЕРЕДИ: "/);
+  assert.match(view, /"В ОЧЕРЕДИ: "[\s\S]*"У ЧЕРЗІ: "[\s\S]*"TO SYNC: "/);
   const binding = section(
     view,
     "function readyBindingText()",
@@ -167,7 +167,7 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   assert.match(binding, /readyStatusText\(\)/);
   assert.doesNotMatch(binding, /accountBinding|deviceBinding|CloudDeviceToken/);
   assert.doesNotMatch(compactMenu, /selected \+ 1/);
-  assert.match(compactMenu, /fitTextWidth\(dc, readyActionText\(i\), font, width - 12\)/);
+  assert.match(compactMenu, /fitTextWidth\(dc, readyActionText\(i, count\), font, width - 12\)/);
 });
 
 test("free workout mode is explicit, owner-bound, resume-safe, and omits plan progress", async () => {

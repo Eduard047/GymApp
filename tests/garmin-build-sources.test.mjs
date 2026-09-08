@@ -52,7 +52,9 @@ test("Garmin diagnostic pruning preserves reads, reflection, evaluation and devi
       ["full", "class View { function render() { return GymSession.gyroScore; } }"],
       ["reflect", 'class View { function inspect() { return "gyroScore"; } }'],
       ["symbol", 'class View { function inspect() { return :gyroScore; } }'],
-      ["shadow", "class View { function input(GymSession) { GymSession.gyroScore = 5; } }"]
+      ["shadow", "class View { function input(GymSession) { GymSession.gyroScore = 5; } }"],
+      ["alias", "class View { function input() { var target = GymSession; return target; } }"],
+      ["dynamic", "class View { function input(key) { return GymSession[key]; } }"]
     ]) {
       await mkdir(path.join(root, name));
       await writeFile(path.join(root, name, "sample.mc"), sample + extra);
@@ -60,10 +62,10 @@ test("Garmin diagnostic pruning preserves reads, reflection, evaluation and devi
     await pruneUnusedGarminDiagnostics(root);
     const compact = await readFile(path.join(root, "compact/sample.mc"), "utf8");
     assert.doesNotMatch(compact, /gyroScore/);
-    assert.match(compact, /motionNoiseFloor = sample\(\);/);
+    assert.doesNotMatch(compact, /static var motionNoiseFloor/);
     assert.match(compact, /sample\(\);/);
     assert.match(compact, /static var recording = false/);
-    for (const name of ["full", "reflect", "symbol", "shadow"]) {
+    for (const name of ["full", "reflect", "symbol", "shadow", "alias", "dynamic"]) {
       assert.match(await readFile(path.join(root, name, "sample.mc"), "utf8"), /static var gyroScore/);
     }
   });
@@ -219,5 +221,43 @@ test("Garmin live-screen text uses bounded locale resources with exact original 
       }
     }
     assert.ok(hot.some(phrase => phrase.id >= 2304), "interactive screens span bounded shards");
+  });
+});
+
+test("unused Garmin fields preserve stored reads, side effects and transitive evaluation", async () => {
+  await fixture(async root => {
+    const sample = `class GymStore {
+      static var lastCloudPlanId = null;
+      static var stagedCloudPlanId = null;
+      static function load() {
+        lastCloudPlanId = Storage.getValue("lastCloudPlanId");
+        stagedCloudPlanId = lastCloudPlanId == null ? null : lastCloudPlanId;
+      }
+    }`;
+    for (const [name, source] of [
+      ["normal", sample],
+      ["shadowed", sample.replace("load()", "load(Storage)")],
+      ["classStorage", sample + " class Storage {}"],
+      ["moduleStorage", sample + " module Storage {}"],
+      ["aliasStorage", "using Other as Storage; " + sample],
+      ["read", sample + 'class View { function read() { return GymStore.stagedCloudPlanId; } }']
+    ]) {
+      await mkdir(path.join(root, name));
+      await writeFile(path.join(root, name, "sample.mc"), source);
+    }
+    await pruneUnusedGarminDiagnostics(root);
+    const normal = await readFile(path.join(root, "normal/sample.mc"), "utf8");
+    assert.doesNotMatch(normal, /static var (lastCloudPlanId|stagedCloudPlanId)/);
+    assert.equal((normal.match(/Storage.getValue\("lastCloudPlanId"\)/g) || []).length, 1);
+    assert.match(normal, /var discardedField_\w+ = Storage.getValue/);
+    const shadowed = await readFile(path.join(root, "shadowed/sample.mc"), "utf8");
+    assert.match(shadowed, /static var lastCloudPlanId/);
+    for (const name of ["classStorage", "moduleStorage", "aliasStorage"]) {
+      assert.match(await readFile(path.join(root, name, "sample.mc"), "utf8"), /static var lastCloudPlanId/);
+    }
+    const read = await readFile(path.join(root, "read/sample.mc"), "utf8");
+    assert.match(read, /static var lastCloudPlanId/);
+    assert.match(read, /static var stagedCloudPlanId/);
+    assert.equal(await pruneUnusedGarminDiagnostics(root), 0);
   });
 });

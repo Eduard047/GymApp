@@ -13,6 +13,11 @@ class GymWorkoutMode {
     static const MODE_FREE = 1;
     static const MODE_PLANNED = 2;
     static var state = MODE_IDLE;
+    // Recording capacity is separate from the legacy storage/wire read limit.
+    (:fr55Memory)
+    static const recordingSetLimit = 30;
+    (:notFr55Memory)
+    static const recordingSetLimit = 60;
 
     (:richWorkoutMode, :inline)
     static function isIdle() {
@@ -36,14 +41,14 @@ class GymWorkoutMode {
 
     static function hasValidPlan() {
         var currentPlan = GymStore.plan;
-        if (!GymStore.isValidSetList(currentPlan, GymStore.maxPlanSets, true) ||
+        if (!GymStore.isValidLiveSetList(currentPlan, GymStore.maxPlanSets, true) ||
             currentPlan.size() == 0) {
             return false;
         }
         for (var i = 0; i < currentPlan.size(); i += 1) {
-            var item = currentPlan[i];
-            if (!(item instanceof Lang.Dictionary) ||
-                GymStore.exerciseIndexForName(item.get("exerciseName")) < 0) {
+            var item = GymSetAccess.at(currentPlan, i);
+            if (!GymStore.isSetRecord(item) ||
+                GymStore.exerciseIndexForName(GymStore.setField(item, "exerciseName")) < 0) {
                 return false;
             }
         }
@@ -58,22 +63,28 @@ class GymWorkoutMode {
     (:richWorkoutMode)
     static function begin(usePlan) {
         if (GymLocalWorkout.readFailed) {
-            GymStore.status = "RECOVERY FAIL";
+            GymStore.status = GymStatus.RECOVERY_FAIL;
             return false;
         }
         if (!(usePlan instanceof Lang.Boolean) || !isIdle() ||
             GymStore.hasUnfinishedWorkout()) {
-            GymStore.status = "MODE FAIL";
+            GymStore.status = GymStatus.MODE_FAIL;
+            return false;
+        }
+        // Reserve a queue slot before any new workout or picker state is written.
+        // Resume bypasses begin(), so an existing recording remains recoverable.
+        if (GymStore.pendingCount() >= 8) {
+            GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }
         if (usePlan && !hasValidPlan()) {
-            GymStore.status = "NO PLAN";
+            GymStore.status = GymStatus.NO_PLAN;
             return false;
         }
         state = usePlan ? MODE_PLANNED : MODE_FREE;
         if (isPlanned() && !GymStore.selectNextPlanSlotInGlobalOrder()) {
             state = MODE_IDLE;
-            GymStore.status = "NO PLAN";
+            GymStore.status = GymStatus.NO_PLAN;
             return false;
         }
         if (isFree()) {
@@ -104,7 +115,7 @@ class GymWorkoutMode {
             return true;
         } catch (e) {
             state = MODE_IDLE;
-            GymStore.status = "SAVE FAIL";
+            GymStore.status = GymStatus.SAVE_FAIL;
             return false;
         }
     }
@@ -116,23 +127,29 @@ class GymWorkoutMode {
     (:compactWorkoutMode96)
     static function begin(usePlan) {
         if (GymLocalWorkout.readFailed) {
-            GymStore.status = "RECOVERY FAIL";
+            GymStore.status = GymStatus.RECOVERY_FAIL;
             return false;
         }
         if (!(usePlan instanceof Lang.Boolean) || state != MODE_IDLE ||
             GymStore.hasUnfinishedWorkout()) {
-            GymStore.status = "MODE FAIL";
+            GymStore.status = GymStatus.MODE_FAIL;
+            return false;
+        }
+        // Reserve a queue slot before any new workout or picker state is written.
+        // Resume bypasses begin(), so an existing recording remains recoverable.
+        if (GymStore.pendingCount() >= 8) {
+            GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }
         if (usePlan && !hasValidPlan()) {
-            GymStore.status = "NO PLAN";
+            GymStore.status = GymStatus.NO_PLAN;
             return false;
         }
         state = usePlan ? MODE_PLANNED : MODE_FREE;
         if (usePlan) {
             if (!GymStore.selectNextPlanSlotInGlobalOrder()) {
                 state = MODE_IDLE;
-                GymStore.status = "NO PLAN";
+                GymStore.status = GymStatus.NO_PLAN;
                 return false;
             }
         } else {
@@ -156,7 +173,7 @@ class GymWorkoutMode {
             return true;
         } catch (e) {
             state = MODE_IDLE;
-            GymStore.status = "SAVE FAIL";
+            GymStore.status = GymStatus.SAVE_FAIL;
             return false;
         }
     }

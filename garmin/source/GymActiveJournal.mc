@@ -30,11 +30,16 @@ class GymActiveJournal {
         return "activeRow" + bank.toString() + "-" + index.toString();
     }
 
+    // Callers establish the enclosing array shape before reading its binding tuple.
+    static function validBindings(value) {
+        return GymStore.isValidAccountBinding(value[1]) &&
+            GymStore.isBoundedText(value[2], GymStore.maxBindingLength) &&
+            GymStore.isValidOptionalAccountBinding(value[3]);
+    }
+
     static function validHeader(value) {
         if (!(value instanceof Lang.Array) || value.size() != 10 || !(value[0] instanceof Lang.Number) || value[0] != 6 ||
-            !GymStore.isValidAccountBinding(value[1]) ||
-            !GymStore.isBoundedText(value[2], GymStore.maxBindingLength) ||
-            !GymStore.isValidOptionalAccountBinding(value[3]) ||
+            !validBindings(value) ||
             !GymStore.isBoundedInteger(value[5], 0, GymStore.maxWorkoutSets) ||
             !GymStore.isBoundedInteger(value[6], 0, 9) ||
             !GymStore.isBoundedInteger(value[7], 1, 2147483647) ||
@@ -105,7 +110,8 @@ class GymActiveJournal {
     (:fullLegacyState)
     static function allocateRows(count) { return []; }
     (:compactLegacyState)
-    static function allocateRows(count) { return new [count == 0 ? 0 : GymStore.maxWorkoutSets]b; }
+    static function allocateRows(count) { return new [count == 0 ? 0 :
+        (count > GymWorkoutMode.recordingSetLimit ? count : GymWorkoutMode.recordingSetLimit)]b; }
     (:fullLegacyState)
     static function rememberRow(rows, name, row, index) {
         rows.add(GymStore.restoredSet(name, row[2], row[3], row[4]));
@@ -171,6 +177,15 @@ class GymActiveJournal {
             }
         }
         return true;
+    }
+
+    // Reclaim only beyond a committed prefix or within a proven unreferenced bank.
+    // A failed cleanup leaves harmless unreferenced rows for a later retry.
+    static function pruneTail(bank, count) {
+        for (var r = count; r < GymStore.maxWorkoutSets; r += 1) {
+            try { Storage.deleteValue(key(bank, r)); }
+            catch (e) { break; }
+        }
     }
 
     (:compactLegacyState)
@@ -264,9 +279,10 @@ class GymActiveJournal {
         var withinBudget = validHeader(value) && GymStore.isWithinStorageBudgetForActiveSnapshot(value);
         stagingBytes = 0;
         if (!withinBudget) {
-            GymStore.status = "STORE FULL";
+            GymStore.status = GymStatus.STORE_FULL;
             return false;
         }
+        if (!reusable) { pruneTail(bank, 0); }
         try {
             for (var r = start; r < next.size(); r += 1) {
                 var record = GymSetAccess.at(next, r);
@@ -278,6 +294,7 @@ class GymActiveJournal {
             Storage.setValue("activeWorkoutV1", value);
         } catch (e) { return false; }
         header = value;
+        if (reusable && value[5] < previous[5]) { pruneTail(bank, value[5]); }
         legacyCount = -1;
         intervalTotals = [previousEnd, gymSum, garminSum, hasGarmin];
         rowCacheRef = null; rowCache = null;
@@ -288,10 +305,7 @@ class GymActiveJournal {
         // Reclaim only an old bank which has no queue readers. A completed workout
         // continues to reference its exact rows after the active pointer moves.
         if (!reusable && validHeader(previous) && !GymPendingJournal.pins(previous[6])) {
-            for (var old = 0; old < GymStore.maxWorkoutSets; old += 1) {
-                try { Storage.deleteValue(key(previous[6], old)); }
-                catch (e) { break; }
-            }
+            pruneTail(previous[6], 0);
         }
         return true;
     }

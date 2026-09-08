@@ -136,7 +136,19 @@ async function main() {
         await cp(path.join(garminRoot, name), path.join(sourceRoot, name), { recursive: true });
       }
     }
-    const phrases = await prepareGarminSources(sourceRoot);
+    // Keep single-device text pools aligned with the exact annotation profile.
+    // Exports share resources across devices and retain the complete pool.
+    const excludedAnnotations = new Set();
+    if (!exportBuild) {
+      const jungle = await readFile(path.join(sourceRoot, "monkey.jungle"), "utf8");
+      const definitions = new Map([...jungle.matchAll(/^([a-z0-9]+)\.excludeAnnotations\s*=\s*([^\r\n]*)$/gm)]
+        .map(match => [match[1], match[2].trim()]));
+      const profile = definitions.get(args["--device"]) ?? definitions.get("base");
+      if (profile != null && /^[a-zA-Z0-9_;]+$/.test(profile)) {
+        for (const annotation of profile.split(";")) excludedAnnotations.add(annotation);
+      }
+    }
+    const phrases = await prepareGarminSources(sourceRoot, excludedAnnotations);
     if (testBuild) await addTextTest(path.join(sourceRoot, "source"), phrases);
     const config = await getConfig({
       ignore_settings_files: true,

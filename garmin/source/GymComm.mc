@@ -163,7 +163,7 @@ class GymComm {
             "deviceBinding" => GymStore.deviceBinding,
             "pairingGenerationSupported" => true,
             "watchVersion" => watchVersion,
-            "status" => GymStore.status
+            "status" => GymStatus.text(GymStore.status)
         };
         if (GymStore.isValidAccountBinding(GymStore.pairingGeneration)) {
             request.put("pairingGeneration", GymStore.pairingGeneration.toString());

@@ -47,7 +47,7 @@ class GymLocalWorkout {
                 // Keep an unreadable journal intact; never overwrite it with a
                 // new workout or silently assign it to a newly paired account.
                 readFailed = true;
-                GymStore.status = "RECOVERY FAIL";
+                GymStore.status = GymStatus.RECOVERY_FAIL;
                 return;
             }
             snapshot = saved;
@@ -55,7 +55,7 @@ class GymLocalWorkout {
             GymWorkoutMode.state = GymWorkoutMode.MODE_FREE;
         } catch (e) {
             readFailed = true;
-            GymStore.status = "RECOVERY FAIL";
+            GymStore.status = GymStatus.RECOVERY_FAIL;
         }
     }
 
@@ -74,7 +74,7 @@ class GymLocalWorkout {
             lastCheckpoint = System.getTimer();
             return true;
         } catch (e) {
-            GymStore.status = "RECOVERY FAIL";
+            GymStore.status = GymStatus.RECOVERY_FAIL;
             return false;
         }
     }
@@ -122,7 +122,7 @@ class GymLocalWorkout {
                 return false;
             }
             if (!GymSession.fitSaved && !GymSession.stopAndSave()) {
-                GymStore.status = "FIT FAIL";
+                GymStore.status = GymStatus.FIT_FAIL;
                 return false;
             }
             if (!setPhase(2)) {

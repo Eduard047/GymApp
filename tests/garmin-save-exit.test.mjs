@@ -67,7 +67,7 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   assert.match(saveAndExit, /GymStore\.prepareWorkoutCommit\(\)/);
   assert.match(
     saveAndExit,
-    /if \(!fitAlreadySaved && !GymSession\.stopAndSave\(\)\)[\s\S]*GymStore\.status = "FIT FAIL";[\s\S]*return;/
+    /if \(!fitAlreadySaved && !GymSession\.stopAndSave\(\)\)[\s\S]*GymStore\.status = GymStatus\.FIT_FAIL;[\s\S]*return;/
   );
   assert.match(saveAndExit, /GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*saveStage = needsPhoneSync \? 1 : 4/);
   const completion = section(view, "function continueSaving()", "function onUpdate(");
@@ -75,7 +75,7 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   assert.match(completion, /saveStage == 5[\s\S]*saveStage = finishWorkoutMessage\(saveMessage\) \? 2 : 0;\s*saveMessage = null/);
   assert.match(completion, /else if \(saveStage == 3 \|\| saveStage == 4\)[\s\S]*if \(GymStore\.clearActiveWorkout\(\)\)[\s\S]*System\.exit\(\)/);
   assert.match(completion, /saveStage == 2[\s\S]*GymStore\.recoverQueuedWorkout\(\) \? 3 : 0/);
-  assert.match(completion, /else \{\s*GymStore\.status = "SAVE FAIL"/);
+  assert.match(completion, /else \{\s*GymStore\.status = GymStatus\.SAVE_FAIL/);
   assert.equal((view.match(/function tick\(\) \{\s*if \(saveStage > 0\) \{\s*continueSaving\(\);\s*return;/g) || []).length, 2,
     "both runtime tiers yield between FIT, queue and cleanup before mailbox work");
   assert.equal((saveAndExit.match(/function saveAndExit\(\) \{\s*if \(saveStage > 0\)/g) || []).length, 2,

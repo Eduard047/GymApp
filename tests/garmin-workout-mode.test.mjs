@@ -179,7 +179,7 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
     "(:compactLegacyState)\n    function readyStatusText()",
     "function readyActionCount()");
   assert.match(compactReadyStatus,
-    /\|FIT FAIL\|FIT CHECK\|SAVE FAIL\|START FAIL\|REC FAIL\|FIT RETRY\|/,
+    /current == GymStatus\.FIT_FAIL \|\| current == GymStatus\.FIT_CHECK \|\| current == GymStatus\.SAVE_FAIL \|\| current == GymStatus\.START_FAIL \|\| current == GymStatus\.REC_FAIL \|\| current == GymStatus\.FIT_RETRY/,
     "compact recovery must localize exactly the released data-retention statuses");
   assert.doesNotMatch(compactReadyStatus, /current\.find\("FAIL"\)/,
     "unrelated internal failures must not be mislabeled as retained workout data");

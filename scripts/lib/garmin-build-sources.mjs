@@ -42,7 +42,7 @@ function replaceRanges(source, edits) {
 const escapeXml = value => value.replaceAll("&", "&amp;")
   .replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-export async function prepareGarminSources(root) {
+export async function prepareGarminSources(root, excludedAnnotations = new Set()) {
   const sourceRoot = path.join(root, "source");
   const stringsPath = path.join(root, "resources", "strings.xml");
   let originalStrings = null;
@@ -86,10 +86,18 @@ export async function prepareGarminSources(root) {
   const phrases = new Map();
   // The recording render path loads only one locale, keeping its transient
   // text allocation below the merged catalog/translation shards.
-  const hotFunctions = new Set(["onUpdate", "drawTinyDashboard", "dashboardStatusText", "confidenceLabel", "workoutErrorText", "effortLabel", "setSummaryText", "drawEntry", "drawSettings", "drawDebug", "drawSetSavedOverlay", "statusLabel"]);
+  const hotFunctions = new Set(["onUpdate", "readyStatusText", "readyActionText", "drawTinyDashboard", "dashboardStatusText", "confidenceLabel", "workoutErrorText", "effortLabel", "setSummaryText", "drawEntry", "drawSettings", "drawDebug", "drawSetSavedOverlay", "statusLabel"]);
   for (const file of files) {
     const source = await readFile(path.join(sourceRoot, file), "utf8");
     const ast = plugin.parsers.monkeyc.parse(source);
+    const excludedRanges = [];
+    walk(ast, node => {
+      const attributes = node.attrs?.attributes?.elements ?? [];
+      if (attributes.some(attribute => attribute.operator === ":" &&
+          excludedAnnotations.has(attribute.argument?.name))) {
+        excludedRanges.push([node.start, node.end]);
+      }
+    });
     const calls = [];
     const edits = [];
     const localNames = new Map();
@@ -142,6 +150,7 @@ export async function prepareGarminSources(root) {
         edits.push([receiver.end, node.end, ""]);
       } else if (name === "tr" && node.arguments.length === 3 &&
           node.arguments.every(arg => arg.type === "Literal" && typeof arg.value === "string")) {
+        if (excludedRanges.some(([start, end]) => node.start >= start && node.end <= end)) return;
         const values = node.arguments.map(arg => arg.value);
         // Delimiters are never interpreted when the original UI copy contains them.
         if (values.some(value => /[~|]/.test(value))) return;
@@ -186,7 +195,7 @@ export async function prepareGarminSources(root) {
     let group = hotGroups.at(-1);
     const costs = phrase.values.map(value => 8 + Buffer.byteLength(value));
     if (costs.some(cost => cost >= 96)) throw new Error("Garmin live label exceeds 96 bytes");
-    if (costs.some((cost, language) => group.bytes[language] + cost > 600)) {
+    if (costs.some((cost, language) => group.bytes[language] + cost > 300)) {
       group = { phrases: [], bytes: [2, 2, 2] };
       hotGroups.push(group);
     }
@@ -222,7 +231,7 @@ export async function prepareGarminSources(root) {
     for (let language = 0; language < 3; language += 1) {
       const index = groupIndex * 3 + language;
       const packed = `~${group.phrases.map(phrase => `u${phrase.id}|${phrase.values[language]}`).join("~")}~`;
-      if (Buffer.byteLength(packed) > 600) throw new Error("Garmin live resource exceeds 600 bytes");
+      if (Buffer.byteLength(packed) > 300) throw new Error("Garmin live resource exceeds 300 bytes");
       hotRefs.push(`Rez.Strings.UiHot${index}`);
       resources.push(`    <string id="UiHot${index}">${escapeXml(packed)}</string>`);
     }
@@ -234,25 +243,32 @@ class GymText {
     static function resource(bucket) {
         if (bucket >= ${bucketCount}) {
             var hotRefs = [${hotRefs.join(", ")}];
-            return Application.loadResource(hotRefs[bucket - ${bucketCount}]);
+            var hotRef = hotRefs[bucket - ${bucketCount}];
+            hotRefs = null;
+            return Application.loadResource(hotRef);
         }
         var refs = [${buckets.map((_, index) => `Rez.Strings.UiText${index}`).join(", ")}];
-        var packed = Application.loadResource(refs[bucket]);
+        var ref = refs[bucket];
         refs = null;
-        return packed;
+        return Application.loadResource(ref);
     }
     static function get(id) {
         var marker = "~u" + id.toString() + "|";
+        var nextMarker = "~u" + (id + (id >= 2048 ? 1 : ${bucketCount})).toString() + "|";
         var packed = resource(id >= 2048 ? ${bucketCount} + ((id - 2048) / 256).toNumber() * 3 + (GymStore.isUk() ? 1 : (GymStore.isRu() ? 2 : 0)) : id % ${bucketCount});
         var start = packed.find(marker);
         if (start == null) { return ""; }
         start += marker.length();
-        var end = start + (id >= 2048 ? 96 : 192);
-        if (end > packed.length()) { end = packed.length(); }
+        marker = null;
+        // UI rows are ordered by consecutive IDs within each resource bucket.
+        // Find the next row before copying so only this label is allocated.
+        // The final row ends immediately before the resource's trailing marker.
+        var end = packed.find(nextMarker);
+        nextMarker = null;
+        if (end == null) { end = packed.length() - 1; }
         var row = packed.substring(start, end);
         packed = null;
         if (row == null) { return ""; }
-        row = row.substring(0, row.find("~"));
         if (id >= 2048) { return row; }
         var first = row.find("|");
         if (!GymStore.isUk() && !GymStore.isRu()) { return row.substring(0, first); }

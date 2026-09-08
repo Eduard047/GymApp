@@ -131,7 +131,7 @@ function sixtySetCheckpointRestoresAndRejectsOverflow(logger as Test.Logger) as 
     var checkpoint = [1800, 240.0, null, 0, 0, 0, null, 0];
     var origin = Toybox.Time.now().value() - 1800;
     if (!GymStore.persistActiveWorkoutSnapshot(records, origin, checkpoint)) {
-        logger.debug("Checkpoint denied: " + GymStore.status);
+        logger.debug("Checkpoint denied: " + GymStatus.text(GymStore.status));
         return false;
     }
     records = null;
@@ -343,4 +343,60 @@ function plannedProgressCountsEachTargetAtMostOnce(logger as Test.Logger) as Lan
     valid = valid && GymStore.completedPlannedSetCount() == 0;
     GymStore.plan = previousPlan; GymStore.sets = previousSets;
     return valid;
+}
+
+(:test, :compactLegacyState)
+function compactPlanPreservesStorageFieldsAndExactBudget(logger as Test.Logger) as Lang.Boolean {
+    var beforePlan = GymStore.plan;
+    var beforeSource = GymStore.persistedPlanSource;
+    var beforeBytes = GymStore.persistedPlanBytes;
+    var input = [
+        {"exerciseName" => "Жим штанги", "weight" => 52.5, "reps" => 8},
+        {"exerciseName" => "Custom", "weight" => 0, "reps" => 12,
+            "activeSeconds" => 20.0, "setInterval" => [0, 20, 1.0, null, 0, 0, 0, 0, 0, 0]}
+    ];
+    var bytes = GymStore.estimatedValueBytes(input);
+    var optional = input[1];
+    var restored = GymStore.restoredPlan(input);
+    GymStore.plan = restored;
+    var stored = GymStore.storedPlan();
+    var ok = GymStore.isValidLiveSetList(restored, 60, false) &&
+        !GymStore.isValidSetList(restored, 60, false) &&
+        stored != null && GymStore.isValidSetList(stored, 60, false) &&
+        stored[0]["exerciseName"].equals("Жим штанги") &&
+        stored[0]["weight"] == 52.5 && stored[0]["reps"] == 8 &&
+        stored[1] == optional && GymStore.persistedPlanBytes == bytes &&
+        GymStore.estimatedValueBytes(stored) == bytes &&
+        GymStore.restoredPlan([{ "exerciseName" => "X", "weight" => -1, "reps" => 8 }]).size() == 0 &&
+        GymStore.restoredPlan([GymRecordedSet.create("X", 1, 1, null)]).size() == 0;
+    GymStore.plan = beforePlan; GymStore.persistedPlanSource = beforeSource;
+    GymStore.persistedPlanBytes = beforeBytes;
+    return ok;
+}
+
+(:test)
+function optionalSetMetricBoundsRemainExact(logger as Test.Logger) as Lang.Boolean {
+    var names = ["activeSeconds", "restBeforeSeconds", "startHeartRate", "peakHeartRate",
+        "endHeartRate", "recoveryHeartRateDrop", "detectionConfidence"];
+    var bounds = [7200.0, 86400.0, 240.0, 240.0, 240.0, 240.0, 100.0];
+    var record = {"exerciseName" => "Bench Press", "weight" => 50.0, "reps" => 8};
+    var metrics = [null, null, null, null, null, null, null];
+    for (var m = 0; m < names.size(); m += 1) {
+        var allowed = [null, 0, bounds[m]];
+        for (var a = 0; a < allowed.size(); a += 1) {
+            record[names[m]] = allowed[a]; metrics[m] = allowed[a];
+            if (!GymStore.isValidSetList([record], 60, false) ||
+                !GymStore.isValidSetMetricsList([metrics], [record])) { return false; }
+        }
+        var denied = [-0.01, bounds[m] + 0.01, "1", true, [], {}];
+        for (var d = 0; d < denied.size(); d += 1) {
+            record[names[m]] = denied[d]; metrics[m] = denied[d];
+            if (GymStore.isValidSetList([record], 60, false) ||
+                GymStore.isValidSetMetricsList([metrics], [record])) { return false; }
+        }
+        record.remove(names[m]); metrics[m] = null;
+    }
+    return !GymStore.isValidSetMetricsList([[null]], [record]) &&
+        !GymStore.isValidSetMetricsList([{}], [record]) &&
+        !GymStore.isValidSetMetricsList([], [record]);
 }

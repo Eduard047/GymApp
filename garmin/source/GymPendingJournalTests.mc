@@ -4,6 +4,11 @@ using Toybox.Test as Test;
 
 (:test, :compactLegacyState)
 class PendingJournalFixture {
+static function entry() {
+    var index = Storage.getValue("pendingJournalV1");
+    return index[0] == 3 ? Storage.getValue("queueEntry" + index[1] + "-" + index[2][0]) : index[1][0];
+}
+
 static function prepare() { return prepareCount(2); }
 
 static function prepareCount(count) { return prepareWithLegacy(count, 0); }
@@ -60,7 +65,7 @@ static function prepareWithLegacy(count, legacyCount) {
 (:test, :compactLegacyState)
 function pendingJournalPinsOriginalRowsAndNamesAcrossNewWorkout(logger as Test.Logger) as Lang.Boolean {
     if (!PendingJournalFixture.prepare()) { return false; }
-    var bank = GymPendingJournal.entries[0][1][6];
+    var bank = PendingJournalFixture.entry()[1][6];
     if (!GymStore.persistEmptyActiveWorkoutSnapshot() || Storage.getValue("activeWorkoutV1")[6] == bank) { return false; }
     GymStore.exercises = ["Squat"];
     GymStore.exerciseCatalogNeedsWrite = true;
@@ -85,7 +90,7 @@ function pendingJournalRejectsInterruptedMissingRowsAndStalePreparation(logger a
     if (GymPendingJournal.availableBank(-1) != -1) { return false; }
     GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     if (!GymPendingJournal.load()) { return false; }
-    var bank = GymPendingJournal.entries[0][1][6];
+    var bank = PendingJournalFixture.entry()[1][6];
     Storage.deleteValue(GymActiveJournal.key(bank, 1));
     if (GymPendingJournal.load() || GymPendingJournal.entries.size() != 0) { return false; }
     GymStore.clearAccountScopedState();
@@ -96,7 +101,7 @@ function pendingJournalRejectsInterruptedMissingRowsAndStalePreparation(logger a
 function pendingJournalRecoversCommittedQueueBeforeWholeWorkoutAck(logger as Test.Logger) as Lang.Boolean {
     if (!PendingJournalFixture.prepare() || !GymStore.save()) { return false; }
     var request = "pending-journal-request-001";
-    var bank = GymPendingJournal.entries[0][1][6];
+    var bank = PendingJournalFixture.entry()[1][6];
     // Simulate a process restart after index commit but before active cleanup.
     GymStore.load();
     if (GymStore.sets.size() != 0 || GymStore.hasPreparedWorkout() ||
@@ -192,11 +197,11 @@ function legacyPendingParkingPreservesDiskAndOrderingAcrossRestart(logger as Tes
     if (!GymStore.restorePendingForMutation() ||
         !(GymStore.pending[0] as Lang.Dictionary)["requestId"].equals(legacyId) ||
         ((GymStore.pending[0] as Lang.Dictionary)["sets"][0] as Lang.Dictionary)["weight"] != 73.123456789d) { return false; }
-    // Idle restarts must also leave complete legacy messages parked beside a journal.
+    // Idle restarts retain the decoded legacy message to avoid a second peak allocation.
     GymStore.parkPendingDuringLongWorkout(0);
-    if (GymStore.pending.size() != 0 || !GymStore.save()) { return false; }
+    if (GymStore.pending.size() != 1 || !GymStore.save()) { return false; }
     GymStore.load();
-    if (GymStore.sets.size() != 0 || GymStore.pending.size() != 0 ||
+    if (GymStore.sets.size() != 0 || GymStore.pending.size() != 1 ||
         GymStore.pendingCount() != 2 || !GymStore.restorePendingForMutation()) { return false; }
     if (!GymStore.removePendingByRequestId(legacyId) || GymStore.pendingCount() != 1 ||
         !GymPendingJournal.contains("pending-journal-request-001")) { return false; }
@@ -206,8 +211,8 @@ function legacyPendingParkingPreservesDiskAndOrderingAcrossRestart(logger as Tes
 
 (:test, :compactLegacyState)
 function longQueuedBankIsNotChargedTwiceWhenClearingActiveWorkout(logger as Test.Logger) as Lang.Boolean {
-    if (!PendingJournalFixture.prepareCount(60)) { return false; }
-    var queuedBank = GymPendingJournal.entries[0][1][6];
+    if (!PendingJournalFixture.prepareCount(30)) { return false; }
+    var queuedBank = PendingJournalFixture.entry()[1][6];
     if (!GymStore.persistEmptyActiveWorkoutSnapshot() ||
         Storage.getValue("activeWorkoutV1")[5] != 0 ||
         Storage.getValue("activeWorkoutV1")[6] == queuedBank ||
@@ -217,9 +222,9 @@ function longQueuedBankIsNotChargedTwiceWhenClearingActiveWorkout(logger as Test
     GymStore.preparedWorkout = null;
     GymPendingJournal.reset();
     return GymPendingJournal.load() && GymPendingJournal.entries.size() == 1 &&
-        GymPendingJournal.entries[0][1][5] == 60 &&
-        GymPendingJournal.row(GymPendingJournal.entries[0], 0)[1] == 52.123456789d &&
-        GymPendingJournal.row(GymPendingJournal.entries[0], 59)[2] == 9;
+        PendingJournalFixture.entry()[1][5] == 30 &&
+        GymPendingJournal.row(PendingJournalFixture.entry(), 0)[1] == 52.123456789d &&
+        GymPendingJournal.row(PendingJournalFixture.entry(), 29)[2] == 9;
 }
 
 (:test, :compactLegacyState)
@@ -277,7 +282,7 @@ function parkedLegacyQueueStillCountsTowardEightWorkoutLimit(logger as Test.Logg
             "accountBinding" => GymStore.accountBinding, "deviceBinding" => GymStore.deviceBinding,
             "sets" => [{"exerciseName" => "Bench Press", "weight" => 50.0, "reps" => 8}]});
     }
-    GymStore.parkPendingDuringLongWorkout(60);
+    GymStore.parkPendingDuringLongWorkout(30);
     if (GymStore.pending.size() != 0 || GymStore.pendingCount() != 9) { return false; }
     GymPendingJournal.reset();
     var ok = !GymPendingJournal.load() && !GymPendingJournal.readable &&
@@ -309,7 +314,7 @@ function admittedWorkoutKeepsRoomForItsQueueAndEmptyCommit(logger as Test.Logger
     var accepted = GymStore.persistActiveWorkoutSnapshot([], 1700003000, checkpoint);
     if (!accepted) {
         var prior = Storage.getValue("activeWorkoutV1");
-        var kept = GymStore.status.equals("STORE FULL") && prior[4] == null &&
+        var kept = (GymStore.status == GymStatus.STORE_FULL) && prior[4] == null &&
             prior[5] == 0 && GymStore.pendingCount() == 3;
         GymStore.clearAccountScopedState();
         return kept;
@@ -326,4 +331,76 @@ function admittedWorkoutKeepsRoomForItsQueueAndEmptyCommit(logger as Test.Logger
         Storage.getValue("activeWorkoutV1")[4] == null && !GymStore.hasPreparedWorkout();
     GymStore.clearAccountScopedState();
     return ok;
+}
+
+(:test, :compactLegacyState)
+function pendingMetadataTotalsRejectConflictsInBothFormats(logger as Test.Logger) as Lang.Boolean {
+    for (var format = 0; format < 2; format += 1) {
+        for (var field = 0; field < 2; field += 1) {
+            if (!PendingJournalFixture.prepareWithLegacy(2, format)) { return false; }
+            GymPendingJournal.reset();
+            if (!GymPendingJournal.load() || GymPendingJournal.entries.size() != 1) { return false; }
+            var index = Storage.getValue("pendingJournalV1");
+            var key = "queueEntry" + index[1].toString() + "-" + index[2][0].toString();
+            var entry = Storage.getValue(key);
+            var metadata = entry[0];
+            if (metadata instanceof Lang.Dictionary) {
+                metadata[field == 0 ? "durationSeconds" : "gymCalories"] = 1;
+            } else if (metadata instanceof Lang.Array) { metadata[6][field] = 1; }
+            else { return false; }
+            Storage.setValue(key, entry);
+            GymPendingJournal.reset();
+            if (GymPendingJournal.load() || GymPendingJournal.readable ||
+                GymPendingJournal.entries.size() != 0) { return false; }
+            // Reject the inconsistent payload without deleting the durable index.
+            if (Storage.getValue("pendingJournalV1")[1] != index[1]) { return false; }
+        }
+    }
+    GymStore.clearAccountScopedState();
+    return true;
+}
+
+(:test, :compactLegacyState)
+function queueReferencesRejectReplacedRecordsAndUnreadableSave(logger as Test.Logger) as Lang.Boolean {
+    if (!PendingJournalFixture.prepare() || !GymStore.recoverQueuedWorkout()) { return false; }
+    var index = Storage.getValue("pendingJournalV1");
+    var key = "queueEntry" + index[1] + "-" + index[2][0];
+    var original = Storage.getValue(key);
+    var entry = Storage.getValue(key);
+    var header = entry[1] as Lang.Array;
+    header[7] += 1;
+    Storage.setValue(key, entry);
+    if (GymPendingJournal.frame(0, "replaced-record") != null ||
+        GymStore.removePendingByRequestId("pending-journal-request-001") ||
+        Storage.getValue("pendingJournalV1")[2].size() != 1) { return false; }
+    Storage.setValue(key, original);
+    if (GymPendingJournal.frame(0, "original-record") == null) { return false; }
+    GymPendingJournal.readable = false;
+    GymStore.pending = [{"mustNotPersist" => true}];
+    var before = Storage.getValue("pending");
+    if (GymStore.save() || Storage.getValue("pending").size() != before.size()) { return false; }
+    GymStore.pending = []; GymPendingJournal.readable = true;
+    GymStore.clearAccountScopedState();
+    return true;
+}
+
+(:test, :compactLegacyState)
+function fullQueueRefusesNewModesWithoutWritingWorkoutState(logger as Test.Logger) as Lang.Boolean {
+    if (!PendingJournalFixture.prepareWithLegacy(1, 7) ||
+        !GymStore.recoverQueuedWorkout() || GymStore.pendingCount() != 8) { return false; }
+    GymWorkoutMode.clear();
+    var before = Storage.getValue("activeWorkoutV1");
+    var exercise = GymStore.exerciseIndex;
+    var weight = GymStore.weight;
+    var reps = GymStore.reps;
+    var plan = GymStore.plan;
+    if (GymWorkoutMode.begin(true) || GymWorkoutMode.begin(false) ||
+        GymStore.status != GymStatus.QUEUE_FULL || !GymWorkoutMode.isIdle() ||
+        GymStore.pendingCount() != 8 || GymStore.plan != plan ||
+        GymStore.exerciseIndex != exercise || GymStore.weight != weight || GymStore.reps != reps ||
+        Storage.getValue("activeWorkoutModeV1") != null) { return false; }
+    var after = Storage.getValue("activeWorkoutV1");
+    for (var i = 4; i < 9; i += 1) { if (before[i] != after[i]) { return false; } }
+    GymStore.clearAccountScopedState();
+    return true;
 }

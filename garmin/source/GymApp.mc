@@ -5,6 +5,7 @@ using Toybox.WatchUi as Ui;
 
 class GymApp extends App.AppBase {
     hidden var phoneMessageMethod;
+    var finishedDurably = false;
 
     function initialize() {
         AppBase.initialize();
@@ -25,6 +26,9 @@ class GymApp extends App.AppBase {
     }
 
     function onStop(state) {
+        // Finishing already committed the queue and cleared the active snapshot.
+        // Its exit-only cache release must never be written back as an empty plan.
+        if (finishedDurably) { return; }
         if (!GymStore.keepsSetDiagnostics) { GymSession.stopSensors(); }
         GymStore.checkpointLiveWorkout(true);
         GymStore.save();
@@ -62,7 +66,7 @@ class GymApp extends App.AppBase {
     }
 
     function onPhoneMessageError(error as Comm.PhoneAppMessageError) as Void {
-        GymStore.status = "MSG ERR";
+        GymStore.status = GymStatus.MSG_ERR;
         Ui.requestUpdate();
     }
 
@@ -75,29 +79,30 @@ class GymApp extends App.AppBase {
         try {
             onMail(Comm.getMailbox());
         } catch (e) {
-            GymStore.status = "MAIL ERR";
+            GymStore.status = GymStatus.MAIL_ERR;
         }
     }
 
     function handlePhonePayload(message) {
+        if (finishedDurably) { return; }
         if (!(message instanceof Lang.Dictionary)) {
-            GymStore.status = "BAD MSG";
+            GymStore.status = GymStatus.BAD_MSG;
             return;
         }
         var type = message.get("type");
         if (!(type instanceof Lang.String) || type.toString().length() > 32) {
-            GymStore.status = "BAD MSG";
+            GymStore.status = GymStatus.BAD_MSG;
             return;
         }
         var typeText = type.toString();
         if (typeText != null && typeText.equals("sync")) {
-            GymStore.status = "SYNC RX";
+            GymStore.status = GymStatus.SYNC_RX;
             var applied = false;
             try {
                 applied = GymStore.applyPhoneSync(message);
             } catch (e) {
                 applied = false;
-                GymStore.status = "SYNC FAIL";
+                GymStore.status = GymStatus.SYNC_FAIL;
             }
             sendSyncAck(message, applied);
         } else if (typeText.equals("workout_part_ack")) {
@@ -105,10 +110,10 @@ class GymApp extends App.AppBase {
         } else if (typeText != null && typeText.equals("ack")) {
             var ackRequestId = message.get("requestId");
             if (GymStore.bindingsMatch(message) && GymStore.removePendingByRequestId(ackRequestId)) {
-                GymStore.status = "SAVED";
+                GymStore.status = GymStatus.SAVED;
                 sendNextPendingWorkout();
             } else {
-                GymStore.status = "BAD ACK";
+                GymStore.status = GymStatus.BAD_ACK;
             }
         } else {
             GymStore.status = "MSG " + typeText;
@@ -126,7 +131,7 @@ class GymApp extends App.AppBase {
             !GymStore.bindingsMatch(message)) {
             return;
         }
-        GymStore.status = "ACKING";
+        GymStore.status = GymStatus.ACKING;
         try {
             var ack = {
                 "type" => "sync_ack",
@@ -146,12 +151,12 @@ class GymApp extends App.AppBase {
             }
             GymComm.send(ack, method(:onSyncAckSent));
         } catch (e) {
-            GymStore.status = "ACK FAIL";
+            GymStore.status = GymStatus.ACK_FAIL;
         }
     }
 
     function onSyncAckSent(ok) {
-        GymStore.status = ok ? "ACK OK" : "ACK ERR";
+        GymStore.status = ok ? GymStatus.ACK_OK : GymStatus.ACK_ERR;
         if (ok) {
             // A queued workout may have been waiting while the phone repaired the
             // secure pairing. Retry only the oldest item and keep it until the
@@ -166,18 +171,18 @@ class GymApp extends App.AppBase {
             return;
         }
         if (!GymStore.recoverQueuedWorkout()) {
-            GymStore.status = "DATA KEPT";
+            GymStore.status = GymStatus.DATA_KEPT;
             return;
         }
         // Drain exactly one oldest item per durable database acknowledgement. The
         // item remains queued until its own ack, so disconnects and retries are safe.
-        GymStore.status = "SENDING NEXT";
+        GymStore.status = GymStatus.SENDING_NEXT;
         var message = GymStore.pendingMessage();
         if (message != null) { GymComm.send(message, method(:onPendingWorkoutSentAfterSync)); }
     }
 
     function onPendingWorkoutSentAfterSync(ok) {
-        GymStore.status = ok ? "WAITING ACK" : "QUEUED";
+        GymStore.status = ok ? GymStatus.WAITING_ACK : GymStatus.QUEUED;
         Ui.requestUpdate();
     }
 }

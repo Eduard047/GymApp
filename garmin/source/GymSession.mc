@@ -161,9 +161,12 @@ class GymSession {
         recoveryLowestHr = null;
     }
 
+    (:fr55Memory)
+    static var sensorsPending = false;
+
     static function start() {
         if (!GymWorkoutMode.canResume()) {
-            GymStore.status = "MODE FAIL";
+            GymStore.status = GymStatus.MODE_FAIL;
             return false;
         }
         if (!retryAccountTransitionFitCleanup()) {
@@ -197,7 +200,7 @@ class GymSession {
         // Resumed work already has a durable snapshot and keeps that exact origin.
         if (!GymStore.hasUnfinishedWorkout() && !GymStore.checkpointLiveWorkout(true)) {
             startedAt = 0;
-            if (!GymStore.status.equals("STORE FULL")) { GymStore.status = "RECOVERY FAIL"; }
+            if (!(GymStore.status == GymStatus.STORE_FULL)) { GymStore.status = GymStatus.RECOVERY_FAIL; }
             return false;
         }
         if (Toybox has :ActivityRecording) {
@@ -223,7 +226,8 @@ class GymSession {
         // leave motion or heart-rate listeners running when no authoritative
         // activity recording exists.
         if (recording) {
-            startSensors();
+            if (GymWorkoutMode.recordingSetLimit == 30) { sensorsPending = true; }
+            else { startSensors(); }
         } else {
             stopSensors();
         }
@@ -237,7 +241,7 @@ class GymSession {
         startedAt = 0;
         pausedAt = 0;
         elapsedSeconds = 0;
-        GymStore.status = fitCleanupPending ? "FIT RETRY" : "REC FAIL";
+        GymStore.status = fitCleanupPending ? GymStatus.FIT_RETRY : GymStatus.REC_FAIL;
     }
 
     static function pause() {
@@ -247,11 +251,11 @@ class GymSession {
         if (session != null) {
             try {
                 if (session.isRecording() && !session.stop()) {
-                    GymStore.status = "PAUSE FAIL";
+                    GymStore.status = GymStatus.PAUSE_FAIL;
                     return false;
                 }
             } catch (ex) {
-                GymStore.status = "PAUSE FAIL";
+                GymStore.status = GymStatus.PAUSE_FAIL;
                 return false;
             }
         }
@@ -264,7 +268,7 @@ class GymSession {
 
     static function resume() {
         if (!GymWorkoutMode.canResume()) {
-            GymStore.status = "MODE FAIL";
+            GymStore.status = GymStatus.MODE_FAIL;
             return false;
         }
         if (!paused) {
@@ -276,11 +280,11 @@ class GymSession {
         if (session != null) {
             try {
                 if (!session.isRecording() && !session.start()) {
-                    GymStore.status = "RESUME FAIL";
+                    GymStore.status = GymStatus.RESUME_FAIL;
                     return false;
                 }
             } catch (ex) {
-                GymStore.status = "RESUME FAIL";
+                GymStore.status = GymStatus.RESUME_FAIL;
                 return false;
             }
         }
@@ -290,7 +294,8 @@ class GymSession {
         }
         pausedAt = 0;
         paused = false;
-        startSensors();
+        if (GymWorkoutMode.recordingSetLimit == 30) { sensorsPending = true; }
+        else { startSensors(); }
         // Paused time is already removed from elapsedSeconds. It is not a set
         // boundary, so keep every active motion/HR snapshot intact across resume.
         if (GymWorkoutMode.isFree()) {
@@ -361,7 +366,7 @@ class GymSession {
             discarded = false;
         }
         if (!discarded) {
-            GymStore.status = "FIT FAIL";
+            GymStore.status = GymStatus.FIT_FAIL;
             return false;
         }
         session = null;
@@ -387,7 +392,7 @@ class GymSession {
         resetCurrentSetInterval();
         clearSetCandidate();
         if (fitCleanupPending) {
-            GymStore.status = "FIT RETRY";
+            GymStore.status = GymStatus.FIT_RETRY;
         }
     }
 
@@ -396,13 +401,14 @@ class GymSession {
             return true;
         }
         if (!discard()) {
-            GymStore.status = "FIT RETRY";
+            GymStore.status = GymStatus.FIT_RETRY;
             return false;
         }
         fitCleanupPending = false;
         return true;
     }
 
+    (:inline)
     static function createFitFields() {
         gymKcalField = null;
         gymZoneField = null;
@@ -486,6 +492,7 @@ class GymSession {
     }
 
     static function startSensors() {
+        if (GymWorkoutMode.recordingSetLimit == 30) { sensorsPending = false; }
         // Field reads share a row only within an action. The next sensor batch
         // does not need that decoded row or its copied interval in memory.
         GymActiveJournal.releaseReadCache();
@@ -510,6 +517,7 @@ class GymSession {
     }
 
     static function stopSensors() {
+        if (GymWorkoutMode.recordingSetLimit == 30) { sensorsPending = false; }
         if (Toybox has :Sensor) {
             stopMotionListener();
             try {
@@ -519,7 +527,7 @@ class GymSession {
         }
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function startMotionListener() {
         if (motionListenerRegistered || !(Sensor has :registerSensorDataListener)) {
             return;
@@ -591,7 +599,7 @@ class GymSession {
     // The compact hardware tier uses the proven accelerometer + HR path. The
     // synchronized gyro implementation above is excluded only to preserve its
     // loader reserve; failure still falls back to HR-only detection.
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function startMotionListener() {
         if (motionListenerRegistered || !(Sensor has :registerSensorDataListener)) {
             return;
@@ -605,11 +613,7 @@ class GymSession {
                 :period => 1,
                 :accelerometer => {
                     :enabled => true,
-                    :sampleRate => sampleRate,
-                    :includePower => false,
-                    :includePitch => false,
-                    :includeRoll => false,
-                    :includeTimestamps => false
+                    :sampleRate => sampleRate
                 }
             });
             motionListenerRegistered = true;
@@ -648,6 +652,7 @@ class GymSession {
         }
     }
 
+    (:inline)
     static function motionSampleRate() {
         var sampleRate = 25;
         if (Sensor has :getMaxSampleRate) {
@@ -1122,7 +1127,7 @@ class GymSession {
         }
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function canArmMotionCandidate() {
         return !paused && !autoLogPrompt &&
             (GymStore.sets.size() == 0 ||
@@ -1130,14 +1135,14 @@ class GymSession {
                     8);
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function canArmMotionCandidate() {
         return !paused && !autoLogPrompt &&
             (GymStore.sets.size() == 0 ||
                 elapsedSeconds - lastLoggedSetSeconds >= 8);
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function hasCredibleRestRestartEvidence(risingEnough) {
         if (GymStore.restDurationMs <= 0) {
             return true;
@@ -1155,7 +1160,7 @@ class GymSession {
             motionSignalCount >= 3 && motionScore >= motionThreshold();
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function hasCredibleRestRestartEvidence(risingEnough) {
         if (GymStore.restDurationMs <= 0) {
             return true;
@@ -1208,19 +1213,19 @@ class GymSession {
         }
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function discardShortMotionInterval() {
         // A few strong movements can be loading plates or walking. If they stop
         // before the minimum bounded set duration, clear only transient detector
         // state—never create a set, rest timer, prompt, or durable payload.
         clearAutoPrompt();
-        GymStore.status = "MOTION SHORT";
+        GymStore.status = GymStatus.MOTION_SHORT;
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function discardShortMotionInterval() {
         clearAutoPrompt();
-        GymStore.status = "MOTION SHORT";
+        GymStore.status = GymStatus.MOTION_SHORT;
     }
 
     (:fullLegacyState)
@@ -1293,7 +1298,7 @@ class GymSession {
         lastHrChangeSeconds = elapsedSeconds;
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function endSetFromMotion() {
         if (!GymStore.autoPromptEnabled) {
             return;
@@ -1323,7 +1328,7 @@ class GymSession {
         autoLogPrompt = true;
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function endSetFromMotion() {
         if (!GymStore.autoPromptEnabled) {
             return;
@@ -1398,7 +1403,7 @@ class GymSession {
         currentSetEndGarminCalories = garminCalories;
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function hasCompleteMotionInterval() {
         if (!currentSetMotionConfirmed) {
             return false;
@@ -1412,7 +1417,7 @@ class GymSession {
         return ended - activeStartSeconds >= motionMinimumSetSeconds();
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function hasCompleteMotionInterval() {
         return currentSetMotionConfirmed &&
             lastCredibleMotionSeconds >= activeStartSeconds &&
@@ -1436,7 +1441,7 @@ class GymSession {
             (GymStore.sensitivityIndex == 2 ? 4 : 5);
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function motionQuietWindowSeconds() {
         if (GymStore.sensitivityIndex == 0) {
             return 5;
@@ -1446,7 +1451,7 @@ class GymSession {
         return 4;
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function motionQuietWindowSeconds() {
         return GymStore.sensitivityIndex == 0 ? 5 :
             (GymStore.sensitivityIndex == 2 ? 3 : 4);
@@ -1507,6 +1512,7 @@ class GymSession {
             (remainder < 10 ? "0" : "") + remainder.toString();
     }
 
+    (:inline)
     static function readHeartRateFromSensor() {
         sensorHr = null;
         if (Toybox has :Sensor) {
@@ -1521,6 +1527,7 @@ class GymSession {
         return sensorHr;
     }
 
+    (:inline)
     static function updateGarminActivityInfo() {
         var appliedHeartRate = false;
         activityHr = null;
@@ -1583,6 +1590,7 @@ class GymSession {
         return true;
     }
 
+    (:inline)
     static function trackRecoveryHeartRate(value) {
         if (recoveryPeakHr == null || !effortState.equals("REST")) {
             return;
@@ -1661,7 +1669,7 @@ class GymSession {
 
                 } else {
                     clearAutoPrompt();
-                    GymStore.status = "HR SHORT";
+                    GymStore.status = GymStatus.HR_SHORT;
                 }
             } else {
                 motionSignalCount = 0;
@@ -1708,7 +1716,7 @@ class GymSession {
                 autoLogPrompt = true;
             } else {
                 clearAutoPrompt();
-                GymStore.status = "HR SHORT";
+                GymStore.status = GymStatus.HR_SHORT;
             }
             return;
         }
@@ -1721,6 +1729,7 @@ class GymSession {
         }
     }
 
+    (:inline)
     static function trackMinuteHeartRate(value) {
         var bucket = (elapsedSeconds / 60).toNumber();
         if (minuteBucket < 0) {
@@ -1892,7 +1901,7 @@ class GymSession {
                 // false start, not an indefinitely pending set. Clearing it also
                 // lets WorkoutView restore a rest countdown suspended for it.
                 clearAutoPrompt();
-                GymStore.status = "HR SHORT";
+                GymStore.status = GymStatus.HR_SHORT;
                 return;
             }
             if (!wasSetActive) {
@@ -2002,7 +2011,7 @@ class GymSession {
                 autoLogPrompt = true;
             } else {
                 clearAutoPrompt();
-                GymStore.status = "HR SHORT";
+                GymStore.status = GymStatus.HR_SHORT;
             }
             return;
         }
@@ -2276,6 +2285,7 @@ class GymSession {
         restoredSetInterval = null;
     }
 
+    (:inline)
     static function beginSetCandidate(startHrValue) {
         if (activeSetSeen || paused) {
             return;
@@ -2301,6 +2311,7 @@ class GymSession {
         candidateZoneSeconds = null;
     }
 
+    (:inline)
     static function expireSetCandidate() {
         if (candidateZoneSeconds instanceof Lang.Array &&
             (elapsedSeconds - candidateStartSeconds > 8 ||
@@ -2347,6 +2358,7 @@ class GymSession {
         return evidenceEnd;
     }
 
+    (:inline)
     static function captureActiveEvidenceTotals() {
         if (!effortState.equals("SET ACTIVE") || !activeSetSeen) {
             return;
@@ -2358,6 +2370,7 @@ class GymSession {
         }
     }
 
+    (:inline)
     static function captureEndedSetTotals() {
         if (!activeSetSeen || lastSetEndSeconds <= 0 ||
             currentSetEndGymCalories != null) {
@@ -2367,6 +2380,7 @@ class GymSession {
         currentSetEndGarminCalories = garminCalories;
     }
 
+    (:inline)
     static function trackActiveSetInterval(sampleSeconds, sampleZone) {
         if (!effortState.equals("SET ACTIVE") ||
             !(currentSetZoneSeconds instanceof Lang.Array) ||
@@ -2498,6 +2512,7 @@ class GymSession {
         return source.slice(null, null);
     }
 
+    (:inline)
     static function beginRecoveryTracking(statistics) {
         recoveryPeakHr = statistics == null ? null : statistics.get("peakHeartRate");
         recoveryLowestHr = statistics == null ? null : statistics.get("endHeartRate");
@@ -2554,12 +2569,13 @@ class GymSession {
         confidenceLevel = "LOW";
     }
 
+    (:inline)
     static function rejectAutoPrompt() {
         if (!autoLogPrompt) {
             return false;
         }
         clearAutoPrompt();
-        GymStore.status = "SET SKIPPED";
+        GymStore.status = GymStatus.SET_SKIPPED;
         return true;
     }
 
@@ -2598,6 +2614,7 @@ class GymSession {
         recoveryLowestHr = null;
     }
 
+    (:inline)
     static function resetProfileDefaults() {
         profileWeightKg = 80.0;
         profileAge = 30;
@@ -2608,7 +2625,7 @@ class GymSession {
         zones = null;
     }
 
-    (:fullLegacyState)
+    (:fullLegacyState, :inline)
     static function loadProfile() {
         try {
             var profile = UserProfile.getProfile();
@@ -2650,7 +2667,7 @@ class GymSession {
         }
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :inline)
     static function loadProfile() {
         try {
             var profile = UserProfile.getProfile();
@@ -2705,6 +2722,7 @@ class GymSession {
         return 5;
     }
 
+    (:inline)
     static function hasValidHeartRateZones() {
         if (!(zones instanceof Lang.Array) || zones.size() < 6) {
             return false;
@@ -2751,6 +2769,7 @@ class GymSession {
         }
     }
 
+    (:inline)
     static function setBoostFor(weightKg, reps) {
         if (weightKg == null || reps == null || weightKg <= 0 || reps <= 0) {
             return 0.0;
@@ -2835,6 +2854,7 @@ class GymSession {
         return clampMet(1.0 + (hrr * 1.2), 1.0, 1.8);
     }
 
+    (:inline)
     static function hrrBasedActiveMet(hrr) {
         var vo2Scale = 1.0;
         if (profileVo2Max != null && profileVo2Max > 20) {
@@ -2848,6 +2868,7 @@ class GymSession {
         return 3.4 + (hrr * 7.8 * vo2Scale);
     }
 
+    (:inline)
     static function researchExerciseMet() {
         if (profileWeightKg <= 0 || hr == null) {
             return null;
@@ -2888,6 +2909,7 @@ class GymSession {
         return null;
     }
 
+    (:inline)
     static function keytelKjPerMinute() {
         if (profileGender == UserProfile.GENDER_MALE) {
             return -55.0969

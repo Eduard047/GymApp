@@ -26,7 +26,28 @@ class GymPendingJournal {
     }
 
     private static function requestIdOf(entry) {
-        return entry[0] instanceof Lang.Array ? entry[0][0] : entry[0]["requestId"];
+        return entry.size() == 4 ? entry[0] :
+            (entry[0] instanceof Lang.Array ? entry[0][0] : entry[0]["requestId"]);
+    }
+
+    // Runtime references keep immutable queue records on disk. They are never
+    // a stored/wire format; old versions 1/2 remain full entries until committed.
+    private static function reference(entry) {
+        return [requestIdOf(entry), entry[1], entry[2], GymStore.estimatedValueBytes(entry)];
+    }
+    private static function resolve(entry) as Lang.Array or Null {
+        if (entry.size() != 4) { return entry; }
+        try {
+            var stored = Storage.getValue(entryKey(indexSlot, entry[1][6]));
+            if (!matchesGeneration(stored, entry[1][3]) ||
+                !requestIdOf(stored).equals(entry[0])) { return null; }
+            var h = stored[1];
+            for (var i = 4; i <= 8; i += 1) {
+                if (h[i] != entry[1][i]) { return null; }
+            }
+            if (stored[2] != entry[2]) { return null; }
+            return stored;
+        } catch (e) { return null; }
     }
 
     private static function entryKey(slot, bank) {
@@ -40,12 +61,18 @@ class GymPendingJournal {
         var banks = [];
         try {
             for (var i = 0; i < next.size(); i += 1) {
-                var bank = next[i][1][6];
-                Storage.setValue(entryKey(slot, bank), next[i]);
+                var entry = resolve(next[i]);
+                if (entry == null) { return false; }
+                var bank = entry[1][6];
+                Storage.setValue(entryKey(slot, bank), entry);
                 banks.add(bank);
             }
             Storage.setValue("pendingJournalV1", [3, slot, banks]);
         } catch (e) { return false; }
+        // Resolve against the old slot before switching runtime references.
+        for (var j = 0; j < next.size(); j += 1) {
+            if (next[j].size() != 4) { next[j] = reference(next[j]); }
+        }
         indexSlot = slot;
         return true;
     }
@@ -124,42 +151,32 @@ class GymPendingJournal {
         if (value == null) { return true; }
         if (!(value instanceof Lang.Array) || value.size() < 2 ||
             !(value[0] instanceof Lang.Number)) { readable = false; return false; }
-        var next = null;
+        var source = null;
         if (value[0] == 3) {
             if (value.size() != 3 || !(value[1] instanceof Lang.Number) ||
-                (value[1] != 0 && value[1] != 1) ||
-                !(value[2] instanceof Lang.Array) || value[2].size() > 8) {
-                readable = false; return false;
-            }
-            next = [];
-            try {
-                for (var b = 0; b < value[2].size(); b += 1) {
-                    var bank = value[2][b];
-                    if (!(bank instanceof Lang.Number) || bank < 0 || bank > 9) {
-                        readable = false; return false;
-                    }
-                    var entry = Storage.getValue(entryKey(value[1], bank));
-                    if (!(entry instanceof Lang.Array) || entry.size() != 3 ||
-                        !GymActiveJournal.validHeader(entry[1]) || entry[1][6] != bank) {
-                        readable = false; return false;
-                    }
-                    next.add(entry);
-                }
-            } catch (e) { readable = false; return false; }
-            indexSlot = value[1];
+                (value[1] != 0 && value[1] != 1)) { readable = false; return false; }
+            indexSlot = value[1]; source = value[2];
         } else {
-            if (value.size() != 2 || (value[0] != 1 && value[0] != 2) ||
-                !(value[1] instanceof Lang.Array) || value[1].size() > 8) {
+            if (value.size() != 2 || (value[0] != 1 && value[0] != 2)) {
                 readable = false; return false;
             }
-            next = value[1];
+            source = value[1];
         }
+        if (!(source instanceof Lang.Array) || source.size() > 8) { readable = false; return false; }
+        var next = [];
         // Never publish only a valid prefix of an unreadable queue.
         var bytes = 0;
         var recovery = GymStore.stagedPairingRecoveryTarget();
-        if (next.size() + GymStore.pendingCount() > 8) { readable = false; return false; }
-        for (var i = 0; i < next.size(); i += 1) {
-            var entry = next[i];
+        if (source.size() + GymStore.pendingCount() > 8) { readable = false; return false; }
+        for (var i = 0; i < source.size(); i += 1) {
+            var entry = source[i];
+            if (value[0] == 3) {
+                if (!(entry instanceof Lang.Number) || entry < 0 || entry > 9) { readable = false; return false; }
+                try { entry = Storage.getValue(entryKey(indexSlot, entry)); }
+                catch (e) { readable = false; return false; }
+                if (!(entry instanceof Lang.Array) || entry.size() != 3 ||
+                    !GymActiveJournal.validHeader(entry[1]) || entry[1][6] != source[i]) { readable = false; return false; }
+            }
             if (!(entry instanceof Lang.Array) || entry.size() != 3 ||
                 (value[0] == 1 && !(entry[0] instanceof Lang.Dictionary))) {
                 readable = false; return false;
@@ -173,30 +190,31 @@ class GymPendingJournal {
                     readable = false; return false;
                 }
             }
-            // One validated immutable metadata value serves the entire bank.
-            // Re-expanding it for every row can exhaust the startup watchdog.
-            var metadata = metadataOf(entry);
             var nameBytes = 0;
             var totals = [0, 0.0, 0.0];
             for (var r = 0; r < entry[1][5]; r += 1) {
                 var item = row(entry, r);
-                if (item == null || !addInterval(entry, metadata, totals, item[3])) {
+                if (item == null || !addInterval(entry, totals, item[3])) {
                     readable = false; return false;
                 }
                 nameBytes += GymStore.utf8Bytes(item[0]).size();
             }
             if (nameBytes != entry[2]) { readable = false; return false; }
-            entry[1][1] = GymStore.accountBinding;
-            entry[1][2] = GymStore.deviceBinding;
+            var loadedHeader = entry[1] as Lang.Array;
+            loadedHeader[1] = GymStore.accountBinding;
+            loadedHeader[2] = GymStore.deviceBinding;
             if (entry[0] instanceof Lang.Array) {
-                entry[0][1] = GymStore.accountBinding;
-                entry[0][2] = GymStore.deviceBinding;
-                entry[0][3] = entry[1][3];
+                var context = entry[0] as Lang.Array;
+                context[1] = GymStore.accountBinding;
+                context[2] = GymStore.deviceBinding;
+                context[3] = loadedHeader[3];
             } else {
-                entry[0]["accountBinding"] = GymStore.accountBinding;
-                entry[0]["deviceBinding"] = GymStore.deviceBinding;
+                var metadata = entry[0] as Lang.Dictionary;
+                metadata["accountBinding"] = GymStore.accountBinding;
+                metadata["deviceBinding"] = GymStore.deviceBinding;
             }
             bytes += nameBytes;
+            next.add(value[0] == 3 ? reference(entry) : entry);
         }
         if (bytes > 12000) { readable = false; return false; }
         entries = next;
@@ -240,7 +258,7 @@ class GymPendingJournal {
                     staged = null; return -1;
                 }
                 if ((staged[1][9] != null && !GymStore.isValidSetInterval(value[4])) ||
-                    !addInterval(staged, metadataOf(staged), stagedTotals, value[4])) { staged = null; return -1; }
+                    !addInterval(staged, stagedTotals, value[4])) { staged = null; return -1; }
                 var name = GymStore.exercises[value[1]];
                 var bytes = GymStore.utf8Bytes(name).size();
                 if (staged[2] + bytes + totalNameBytes() > 12000) { staged = null; return -1; }
@@ -268,23 +286,33 @@ class GymPendingJournal {
 
     // Validate chronological slices against both the committed checkpoint and
     // outgoing totals. This same check applies during append and after restart.
-    private static function addInterval(entry, metadata, totals, interval) {
+    private static function addInterval(entry, totals, interval) {
         var checkpoint = entry[1][9];
         if (checkpoint == null) { return interval == null; }
+        // Entry validation already checked both legacy dictionaries and compact
+        // contexts. Read only the three totals needed here; expanding the wire
+        // dictionary for each row consumes the headroom needed to save on FR55.
+        var metadata = entry[0];
+        var context = metadata instanceof Lang.Array;
+        var summary = context ? metadata[6] : metadata;
+        if (summary == null) { return false; }
+        var duration = context ? summary[0] : summary["durationSeconds"];
+        var gymCalories = context ? summary[1] : summary["gymCalories"];
+        var garminCalories = context ? summary[2] : summary["garminCalories"];
         // row() and advance() validate each interval once before this aggregate check.
         if (interval[0] < totals[0] ||
-            metadata["durationSeconds"] == null || interval[1] > checkpoint[0] ||
-            interval[1] > metadata["durationSeconds"]) { return false; }
+            duration == null || interval[1] > checkpoint[0] ||
+            interval[1] > duration) { return false; }
         totals[0] = interval[1]; totals[1] += interval[2].toFloat();
         if (interval[3] != null) {
-            if (checkpoint[2] == null || metadata["garminCalories"] == null) { return false; }
+            if (checkpoint[2] == null || garminCalories == null) { return false; }
             totals[2] += interval[3].toFloat();
         }
-        return metadata["gymCalories"] != null &&
+        return gymCalories != null &&
             totals[1] <= checkpoint[1].toFloat() + 0.1 &&
-            totals[1] <= metadata["gymCalories"].toFloat() + 0.1 &&
+            totals[1] <= gymCalories.toFloat() + 0.1 &&
             (checkpoint[2] == null || totals[2] <= checkpoint[2].toFloat() + 0.1) &&
-            (metadata["garminCalories"] == null || totals[2] <= metadata["garminCalories"].toFloat() + 0.1);
+            (garminCalories == null || totals[2] <= garminCalories.toFloat() + 0.1);
     }
 
     static function estimatedBytes() {
@@ -292,7 +320,7 @@ class GymPendingJournal {
         for (var i = 0; i < entries.size(); i += 1) {
             // Both index slots hold the same bounded entry. Use its actual
             // encoded-value estimate plus per-entry framing reserve.
-            bytes += 256 + 2 * GymStore.estimatedValueBytes(entries[i]) +
+            bytes += 256 + 2 * (entries[i].size() == 4 ? entries[i][3] : GymStore.estimatedValueBytes(entries[i])) +
                 entries[i][1][5] * 224 + entries[i][2];
         }
         return bytes;
@@ -324,7 +352,7 @@ class GymPendingJournal {
         if (!readable) { return null; }
         for (var i = 0; i < entries.size(); i += 1) {
             if (requestIdOf(entries[i]).equals(requestId) &&
-                validEntry(entries[i])) { return entries[i][1][4]; }
+                validEntry(resolve(entries[i]))) { return entries[i][1][4]; }
         }
         return null;
     }
@@ -333,7 +361,7 @@ class GymPendingJournal {
         if (!readable || !GymStore.isBoundedText(requestId, GymStore.maxBindingLength)) { return false; }
         for (var i = 0; i < entries.size(); i += 1) {
             if (requestIdOf(entries[i]).equals(requestId) &&
-                validEntry(entries[i])) { return true; }
+                validEntry(resolve(entries[i]))) { return true; }
         }
         return false;
     }
@@ -343,14 +371,14 @@ class GymPendingJournal {
             !GymStore.isValidAccountBinding(next)) { return false; }
         var rotated = [];
         for (var i = 0; i < entries.size(); i += 1) {
-            var entry = entries[i];
+            var entry = resolve(entries[i]);
             if (!matchesGeneration(entry, previous) && !matchesGeneration(entry, next)) { return false; }
             var metadata = {};
             var source = metadataOf(entry);
             var keys = source.keys();
             for (var k = 0; k < keys.size(); k += 1) { metadata.put(keys[k], source[keys[k]]); }
             metadata.put("pairingGeneration", next);
-            var header = entry[1].slice(null, null); header[3] = next;
+            var header = (entry[1] as Lang.Array).slice(null, null); header[3] = next;
             rotated.add([metadata, header, entry[2]]);
         }
         entries = rotated; dirty = entries.size() > 0;
@@ -363,7 +391,7 @@ class GymPendingJournal {
         if (!readable) { return false; }
         if (!dirty) { return true; }
         for (var i = 0; i < entries.size(); i += 1) {
-            if (!validEntry(entries[i])) { return false; }
+            if (!validEntry(resolve(entries[i]))) { return false; }
         }
         if (!storeIndex(entries)) { return false; }
         dirty = false;
@@ -402,7 +430,7 @@ class GymPendingJournal {
     }
 
     static function nextMessage() {
-        if (!readable || entries.size() == 0 || !validEntry(entries[0])) { return null; }
+        if (!readable || entries.size() == 0) { return null; }
         var id = requestIdOf(entries[0]);
         if (transferId == null || !transferId.equals(id) ||
             (sentAt != null && GymStore.timerElapsedMs(sentAt) >= 20000l)) { offset = 0; }
@@ -413,15 +441,16 @@ class GymPendingJournal {
     }
 
     static function acknowledgePart(message) {
+        var entry = entries.size() == 0 ? null : resolve(entries[0]);
         if (!(message instanceof Lang.Dictionary) || message.size() != 9 ||
             !GymStore.bindingsMatch(message) || !readable || entries.size() == 0 ||
-            !validEntry(entries[0]) || transferId == null || attempt == null ||
+            !validEntry(entry) || transferId == null || attempt == null ||
             !GymStore.sameOptionalText(message["type"], "workout_part_ack") ||
             !(message["transferVersion"] instanceof Lang.Number) || message["transferVersion"] != 1 ||
             !GymStore.sameOptionalText(message["requestId"], transferId) ||
             !GymStore.sameOptionalText(message["attemptId"], attempt) ||
             !requestIdOf(entries[0]).equals(transferId) ||
-            !GymStore.isBoundedInteger(message["nextOffset"], offset + 1, entries[0][1][5] - 1)) { return false; }
+            !GymStore.isBoundedInteger(message["nextOffset"], offset + 1, entry[1][5] - 1)) { return false; }
         // Only a fresh, exact phone response advances this in-memory cursor.
         // No partial response removes any persistent workout data.
         offset = message["nextOffset"]; attempt = null; sentAt = null;
@@ -430,8 +459,9 @@ class GymPendingJournal {
 
     static function frame(offset, attemptId) {
         if (!GymStore.isBoundedText(attemptId, GymStore.maxBindingLength)) { return null; }
-        if (!readable || entries.size() == 0 || !validEntry(entries[0])) { return null; }
-        var entry = entries[0];
+        if (!readable || entries.size() == 0) { return null; }
+        var entry = resolve(entries[0]);
+        if (!validEntry(entry)) { return null; }
         var count = entry[1][5];
         if (!GymStore.isBoundedInteger(offset, 0, count == 0 ? 0 : count - 1)) { return null; }
         var message = {"type" => "workout_part", "transferVersion" => 1,

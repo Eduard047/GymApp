@@ -102,7 +102,7 @@ test("Garmin rest countdown never blocks or hides a detected next set", async ()
     /GymStore\.restStartedAt != null[\s\S]*GymSession\.effortState\.equals\("SET ACTIVE"\)[\s\S]*GymStore\.timerElapsedMs\(GymStore\.restStartedAt\)[\s\S]*GymStore\.restStartedAt = null/
   );
   assert.ok(
-    tick.indexOf("restWasActive = false") < tick.indexOf('GymStore.status = "REST DONE"'),
+    tick.indexOf("restWasActive = false") < tick.indexOf('GymStore.status = GymStatus\.REST_DONE'),
     "suspending rest for a possible set must not vibrate as if the timer completed"
   );
   const dashboard = section(view, "function drawDashboard(", "function showSetSavedFlash(");
@@ -117,7 +117,7 @@ test("Garmin rest countdown never blocks or hides a detected next set", async ()
   const restore = section(view, "function restoreSuspendedRest()", "function onSyncSent(");
   assert.match(restore, /GymStore\.restStartedAt = System\.getTimer\(\)/);
   assert.match(restore, /restWasActive = true/);
-  assert.match(restore, /REST RESUMED/);
+  assert.match(restore, /GymStatus\.REST_RESUMED/);
   const undoDelegate = section(view, "function undoLastSet()", "function handleSettings(");
   assert.match(undoDelegate, /GymStore\.restDurationMs > 0 && GymStore\.restStartedAt == null[\s\S]*GymSession\.activeSetSeen/);
   assert.ok(
@@ -285,7 +285,7 @@ test("Garmin can undo only the most recent set inside a bounded window", async (
   assert.match(undo, /var previousWorkoutStartedAt = activeWorkoutStartedAtSeconds/);
   assert.match(undo, /if \(nextSets\.size\(\) == 0\)[\s\S]*nextWorkoutStartedAt = null/);
   assert.match(undo, /if \(!compatibilitySaved && !usedAtomicSnapshot && !legacySnapshotCommitted\)[\s\S]*sets = previousSets[\s\S]*GymSession\.restoreSetBoost\(boost\)/);
-  assert.match(undo, /if \(!save\(\)\)[\s\S]*status = "RECOVERY FAIL"/);
+  assert.match(undo, /if \(!save\(\)\)[\s\S]*status = GymStatus\.RECOVERY_FAIL/);
   assert.match(undo, /restDurationMs = 0[\s\S]*restStartedAt = null/);
   assert.match(session, /static function restoreSetAfterUndo\(statistics, restorePrompt\)/);
   assert.match(undo, /GymSession\.restoreSetAfterUndo\(restoreStatistics, restorePrompt\)/);
@@ -390,7 +390,7 @@ test("Garmin set save and undo keep calorie corrections consistent on failure", 
     "the durable snapshot must commit before the calorie correction becomes visible"
   );
   assert.match(addSet, /if \(!compatibilitySaved && !usedAtomicSnapshot && !legacySnapshotCommitted\)/);
-  assert.match(addSet, /if \(!save\(\)\)[\s\S]*status = "RECOVERY FAIL"/);
+  assert.match(addSet, /if \(!save\(\)\)[\s\S]*status = GymStatus\.RECOVERY_FAIL/);
   const undo = section(store, "static function undoLastSet()", "static function clearTransientSetActions()");
   assert.ok(
     undo.indexOf("persistActiveWorkoutSnapshot(nextSets") <
@@ -483,7 +483,7 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   assert.match(lifecycle, /motionDuration >= motionMinimumSetSeconds\(\)[\s\S]*endSetFromMotion\(\)[\s\S]*else if \(currentSetMotionOnly\)[\s\S]*discardShortMotionInterval\(\)/);
   assert.match(lifecycle, /if \(!GymStore\.autoPromptEnabled\) \{\s*return;/);
   assert.match(lifecycle, /static function endSetFromMotion\(\)/);
-  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState)\n    static function endSetFromMotion()");
+  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState, :inline)\n    static function endSetFromMotion()");
   assert.match(motionEnd, /var ended = lastCredibleMotionSeconds/);
   assert.match(motionEnd, /ended < activeStartSeconds[\s\S]*ended > elapsedSeconds/);
   assert.doesNotMatch(motionEnd, /activeEvidenceEndSeconds\(\)/);
@@ -495,7 +495,7 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   assert.doesNotMatch(lifecycle, /GymStore\.addSet|Storage|GymComm/);
   const shortMotion = section(session, "static function discardShortMotionInterval()", "static function endHrCorroboratedSetAfterSignalLoss()");
   assert.match(shortMotion, /clearAutoPrompt\(\)/);
-  assert.match(shortMotion, /status = "MOTION SHORT"/);
+  assert.match(shortMotion, /status = GymStatus\.MOTION_SHORT/);
   assert.doesNotMatch(shortMotion, /GymStore\.addSet|startRest|Storage|GymComm|autoLogPrompt = true/);
   const signalLossEnd = section(session, "static function endHrCorroboratedSetAfterSignalLoss()", "static function promoteMotionCandidate()");
   assert.match(signalLossEnd, /autoLogPrompt = true/);
@@ -546,7 +546,7 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   assert.doesNotMatch(keepMotionBlock, /currentSetEndGymCalories|currentSetEndGarminCalories/);
   assert.match(keepMotionBlock, /setConfidence = 70[\s\S]*confidenceLevel = "HIGH"/);
   assert.match(staleHr, /lastSetEndSeconds - activeStartSeconds >= minimum[\s\S]*autoLogPrompt = true/);
-  assert.match(staleHr, /else \{\s*clearAutoPrompt\(\);[\s\S]*status = "HR SHORT"/);
+  assert.match(staleHr, /else \{\s*clearAutoPrompt\(\);[\s\S]*status = GymStatus\.HR_SHORT/);
 
   const clear = section(session, "static function clearAutoPrompt()", "static function restoreSetAfterUndo(");
   assert.match(clear, /motionBurstSignals = 0/);
@@ -555,13 +555,13 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   const reject = section(session, "static function rejectAutoPrompt()", "static function restoreSetAfterUndo(");
   assert.match(reject, /if \(!autoLogPrompt\)[\s\S]*return false/);
   assert.match(reject, /clearAutoPrompt\(\)/);
-  assert.match(reject, /status = "SET SKIPPED"/);
-  assert.match(reject, /GymStore\.status = "SET SKIPPED"/);
+  assert.match(reject, /status = GymStatus\.SET_SKIPPED/);
+  assert.match(reject, /GymStore\.status = GymStatus\.SET_SKIPPED/);
   assert.doesNotMatch(reject, /GymStore\.addSet|startRest|Storage|GymComm/);
 
   const viewTick = section(view, "function tick()", "function requestSyncNow()");
   assert.match(viewTick, /!autoPromptWasActive && GymSession\.autoLogPrompt/);
-  assert.match(viewTick, /Attention\.vibrate\(\[[\s\S]*CONFIRM SET/);
+  assert.match(viewTick, /Attention\.vibrate\(\[[\s\S]*GymStatus\.CONFIRM_SET/);
   assert.match(viewTick, /autoPromptWasActive = GymSession\.autoLogPrompt/);
   assert.match(viewTick, /GymStore\.timerElapsedMs\(GymStore\.restStartedAt\)[\s\S]*GymStore\.restStartedAt = null/);
   assert.match(viewTick, /!GymSession\.activeSetSeen[\s\S]*restoreSuspendedRest\(\)/);
@@ -745,7 +745,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   );
   const evidenceTotals = section(session, "static function captureActiveEvidenceTotals()", "static function captureEndedSetTotals()");
   assert.doesNotMatch(evidenceTotals, /currentSetEndGymCalories|currentSetEndGarminCalories/);
-  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState)\n    static function endSetFromMotion()");
+  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState, :inline)\n    static function endSetFromMotion()");
   assert.doesNotMatch(motionEnd, /currentSetLastEvidenceGymCalories|currentSetLastEvidenceGarminCalories/);
   const initialMotionSnapshot = section(session, "static function initializeMotionSetSnapshot()", "static function motionMinimumSetSeconds()");
   assert.match(initialMotionSnapshot, /currentSetEndGymCalories = gymCalories/);
@@ -754,7 +754,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   const effort = section(session, "static function updateEffortState(value)", "static function updateSetConfidence");
   assert.match(
     effort,
-    /activeDuration < minActiveSeconds[\s\S]*!currentSetMotionConfirmed \|\| currentSetMotionOnly[\s\S]*clearAutoPrompt\(\)[\s\S]*status = "HR SHORT"/
+    /activeDuration < minActiveSeconds[\s\S]*!currentSetMotionConfirmed \|\| currentSetMotionOnly[\s\S]*clearAutoPrompt\(\)[\s\S]*status = GymStatus\.HR_SHORT/
   );
   assert.match(
     effort,
@@ -763,7 +763,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   assert.match(effort, /currentSetEndGymCalories = null[\s\S]*currentSetEndGarminCalories = null/);
   assert.match(effort, /effortState\.equals\("SET ACTIVE"\)[\s\S]*currentSetEndHr = value/);
   assert.ok(
-    effort.indexOf("!GymStore.autoPromptEnabled") < effort.indexOf('status = "HR SHORT"'),
+    effort.indexOf("!GymStore.autoPromptEnabled") < effort.indexOf('status = GymStatus\.HR_SHORT'),
     "AUTO OFF must hold any detected interval before automatic short-start cleanup"
   );
   const capture = section(session, "static function captureSetStatistics()", "static function promoteSetCandidateForCapture()");
@@ -1164,7 +1164,7 @@ test("Garmin keeps the selected exercise and completes plan targets in free orde
   const overlay = section(view, "function drawSetSavedOverlay(", "function drawPausedOverlay(");
   assert.match(overlay, /GymStore\.tr\("NEXT: "/);
   assert.match(overlay, /fitTextWidth\(dc, setSummaryText\(\)/);
-  assert.match(overlay, /GymStore\.tr\("REST "/);
+  assert.match(overlay, /GymStore\.isRu\(\)[\s\S]*"ОТДЫХ "[\s\S]*GymStore\.isUk\(\)[\s\S]*"ВІДП "[\s\S]*"REST "/);
   assert.match(overlay, /countdownText\(rest\)/);
 });
 
@@ -1473,7 +1473,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
 
   assert.match(
     jungle,
-    /^base\.excludeAnnotations = .*compactLegacyState.*compactRecovery96.*compactCheckpoint96.*enhancedCompactCheckpoint.*noPageDots.*tightFullDebugState;compactWorkoutMode96$/m
+    /^base\.excludeAnnotations = .*compactLegacyState.*compactRecovery96.*compactCheckpoint96.*enhancedCompactCheckpoint.*noPageDots.*tightFullDebugState;compactWorkoutMode96;fr55Memory$/m
   );
   const compactProducts = [
     "descentg1",
@@ -1485,14 +1485,14 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   ];
   assert.match(
     jungle,
-    /^fr55\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96$/m
+    /^fr55\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory$/m
   );
   for (const product of compactProducts.filter((product) => product !== "fr55")) {
     assert.match(jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode$`, "m"));
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory$`, "m"));
   }
-  assert.equal((jungle.match(/;richWorkoutMode$/gm) || []).length, 5);
-  assert.equal((jungle.match(/;compactWorkoutMode96$/gm) || []).length, 7);
+  assert.equal((jungle.match(/;richWorkoutMode;fr55Memory$/gm) || []).length, 5);
+  assert.equal((jungle.match(/;compactWorkoutMode96;(?:notFr55Memory|fr55Memory)$/gm) || []).length, 7);
   assert.equal(
     (jungle.match(/\.excludeAnnotations = fullLegacyState/g) || []).length,
     compactProducts.length + 5
@@ -1513,7 +1513,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   for (const product of constrained128Products) {
     assert.match(
       jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96$`, "m")
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory$`, "m")
     );
   }
   assert.match(readme, /Enduro, Fenix 6, Fenix 6S, Forerunner 245, and Venu Sq/);
@@ -1854,7 +1854,7 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   assert.doesNotMatch(onShow, /GymSession\.(?:start|resume)\(/);
   assert.match(explicitStart, /hasWorkoutToResume\(\)/);
   assert.match(explicitStart, /started = GymSession\.start\(\)/);
-  assert.match(explicitStart, /if \(resuming\)[\s\S]*GymStore\.markWorkoutResumed\(\)[\s\S]*"RESUMED"/);
+  assert.match(explicitStart, /if \(resuming\)[\s\S]*GymStore\.markWorkoutResumed\(\)[\s\S]*GymStatus\.RESUMED/);
   const markResumed = section(store, "static function markWorkoutResumed()", "static function clearActiveWorkout()");
   assert.match(markResumed, /sets\.size\(\) > 0 && !activeWorkoutTimelineValid/);
 
@@ -1865,9 +1865,9 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   );
   assert.match(snapshotValidation, /snapshot\.size\(\) != 7/);
   assert.match(snapshotValidation, /snapshot\[0\] != 2 && snapshot\[0\] != 3 && snapshot\[0\] != 4/);
-  assert.match(snapshotValidation, /isValidAccountBinding\(snapshot\[1\]\)/);
-  assert.match(snapshotValidation, /isBoundedText\(snapshot\[2\], maxBindingLength\)/);
-  assert.match(snapshotValidation, /isValidOptionalAccountBinding\(snapshot\[3\]\)/);
+  assert.match(snapshotValidation, /GymActiveJournal\.validBindings\(snapshot\)/);
+  const activeBindings = await readFile("garmin/source/GymActiveJournal.mc", "utf8");
+  assert.match(activeBindings, /isValidAccountBinding\(value\[1\]\)[\s\S]*isBoundedText\(value\[2\], GymStore\.maxBindingLength\)[\s\S]*isValidOptionalAccountBinding\(value\[3\]\)/);
   assert.match(snapshotValidation, /snapshotVersion == 2[\s\S]*isValidSetList\(snapshotSets, maxWorkoutSets, true\)/);
   assert.match(snapshotValidation, /snapshotVersion == 3 \|\| snapshotVersion == 4[\s\S]*isValidCompactActiveSetArrays\(snapshot\)/);
   assert.match(snapshotValidation, /startedAtSeconds == null && checkpoint != null/);
@@ -2097,9 +2097,10 @@ test("Garmin active runtime checkpoint is bounded, owner-scoped, and restart-saf
   );
   assert.match(validation, /snapshot\.size\(\) != 11/);
   assert.match(validation, /snapshot\[0\] != 1/);
-  assert.match(validation, /isValidAccountBinding\(snapshot\[1\]\)/);
-  assert.match(validation, /isBoundedText\(snapshot\[2\], maxBindingLength\)/);
-  assert.match(validation, /isValidOptionalAccountBinding\(snapshot\[3\]\)/);
+  assert.match(validation, /GymActiveJournal\.validBindings\(snapshot\)/);
+  const bindings = await readFile("garmin/source/GymActiveJournal.mc", "utf8");
+  assert.match(bindings, /isValidAccountBinding\(value\[1\]\)[\s\S]*isBoundedText\(value\[2\], GymStore\.maxBindingLength\)[\s\S]*isValidOptionalAccountBinding\(value\[3\]\)/);
+
   assert.match(validation, /isBoundedInteger\(snapshot\[4\], 0, maxWorkoutSets\)/);
   assert.match(validation, /isValidWorkoutStartedAtSeconds\(snapshot\[5\]\)/);
   assert.match(validation, /isValidWorkoutStartedAtSeconds\(snapshot\[6\]\)/);
@@ -2532,7 +2533,7 @@ test("Garmin compact snapshots preserve many completed sets across restart with 
     /metrics = null;[\s\S]*snapshot = \[[\s\S]*setReps,[\s\S]*intervals,[\s\S]*checkpoint[\s\S]*\];[\s\S]*isWithinStorageBudgetForActiveSnapshot\(snapshot\)/
   );
   assert.match(persist, /\(:compactLegacyState\)[\s\S]*GymActiveJournal\.commit\(nextSets, startedAtSeconds, checkpoint\)/);
-  assert.match(persist, /catch \(e\) \{[\s\S]*status = "SAVE FAIL";[\s\S]*return false/);
+  assert.match(persist, /catch \(e\) \{[\s\S]*status = GymStatus\.SAVE_FAIL;[\s\S]*return false/);
   assert.doesNotMatch(persist, /normalizedSetList\(nextSets\)/);
   assert.match(budget, /if \(!activeWorkoutSnapshotValid \|\| !hasAccountBinding\(\)\)[\s\S]*estimatedValueBytes\(sets\)/);
   assert.match(

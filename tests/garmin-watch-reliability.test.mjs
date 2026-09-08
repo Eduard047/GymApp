@@ -53,10 +53,10 @@ test("Garmin sync watchdog expires a missing Ready request before the idle retur
     "Ready and stopped-workout ticks must still expire a missing callback");
   assert.doesNotMatch(tick, /requestSyncNow\(\)/,
     "recording ticks must not allocate a background transmit listener");
-  assert.match(tick, /timerElapsedMs\(lastSyncRequestAt\) > 60000l[\s\S]*syncRequestTimedOut = true[\s\S]*status = "REOPEN"/);
+  assert.match(tick, /timerElapsedMs\(lastSyncRequestAt\) > 60000l[\s\S]*syncRequestTimedOut = true[\s\S]*status = GymStatus\.REOPEN/);
   assert.match(sent, /if \(syncRequestTimedOut\) \{\s*return;\s*\}[\s\S]*syncRequestInFlight = false/);
   assert.doesNotMatch(sent, /syncRequestTimedOut = false/);
-  assert.equal((view.match(/current\.equals\("REOPEN"\)/g) || []).length, 2,
+  assert.equal((view.match(/current == GymStatus\.REOPEN/g) || []).length, 2,
     "both full and compact Ready views must explain the reopen recovery");
 
   const freshState = () => ({
@@ -297,7 +297,7 @@ test("Garmin account transition retains and retries a FIT session that could not
   assert.match(reset, /var fitDiscarded = discard\(\)/);
   assert.match(reset, /fitCleanupPending = !fitDiscarded && session != null/);
   assert.doesNotMatch(reset, /session = null/);
-  assert.match(retry, /if \(!discard\(\)\)[\s\S]*"FIT RETRY"[\s\S]*return false/);
+  assert.match(retry, /if \(!discard\(\)\)[\s\S]*GymStatus\.FIT_RETRY[\s\S]*return false/);
   assert.match(retry, /fitCleanupPending = false;[\s\S]*return true/);
   assert.match(
     tick,
