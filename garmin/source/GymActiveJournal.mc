@@ -131,6 +131,18 @@ class GymActiveJournal {
     }
 
     (:compactLegacyState)
+    static function countExercise(name) {
+        if (records == null || GymStore.sets != records ||
+            !GymStore.activeWorkoutSnapshotMatchesBindings(header)) { return 0; }
+        var index = GymStore.exerciseIndexForName(name);
+        var count = 0;
+        for (var i = 0; i < records.count; i += 1) {
+            if (records.data[i] == index) { count += 1; }
+        }
+        return count;
+    }
+
+    (:compactLegacyState)
     static function get(value, field) {
         var record = value;
         if (!field.equals("exerciseName") && !field.equals("weight") && !field.equals("reps") && !field.equals("setInterval")) {
@@ -141,9 +153,14 @@ class GymActiveJournal {
         // overwrite its referenced prefix; replacement/undo commits invalidate
         // old handles before an index can be reused. Rows still require the
         // committed epoch and a revision no newer than that header.
+        // validate/commit already checked this immutable header's shape and binding
+        // syntax. Reads still compare the exact live owner/device/generation,
+        // without rescanning both 64-character hashes for every field.
         if (header == null || records == null || index >= records.size() ||
             index < 0 || index >= header[5] || record[3] != header ||
-            !GymStore.activeWorkoutSnapshotMatchesBindings(header)) { return null; }
+            !header[1].equals(GymStore.accountBinding) ||
+            !header[2].equals(GymStore.deviceBinding) ||
+            !GymStore.sameOptionalText(header[3], GymStore.pairingGeneration)) { return null; }
         if (field.equals("exerciseName")) { return record[0]; }
         if (rowCacheRef != record) {
             rowCacheRef = null; rowCache = null;
@@ -188,6 +205,29 @@ class GymActiveJournal {
         }
     }
 
+    (:fullLegacyState)
+    static function queueNameStorageBytes() { return null; }
+
+    (:compactLegacyState)
+    static function queueNameStorageBytes() {
+        return uniqueNameStorageBytes(records.data, records.count);
+    }
+
+    (:compactLegacyState)
+    private static function uniqueNameStorageBytes(directory, count) {
+        var seen = 0l;
+        var bytes = 0;
+        for (var i = 0; i < count; i += 1) {
+            var index = directory[i];
+            var bit = 1l << index;
+            if ((seen & bit) == 0) {
+                seen |= bit;
+                bytes += 64 + GymStore.utf8Bytes(GymStore.exercises[index]).size();
+            }
+        }
+        return bytes;
+    }
+
     (:compactLegacyState)
     static function commit(next, origin, checkpoint) {
         if (checkpoint != null && !GymStore.isValidTimelineCheckpoint(checkpoint)) { return false; }
@@ -226,6 +266,9 @@ class GymActiveJournal {
                 previousEnd = interval[1];
                 gymSum += interval[2].toFloat();
                 if (interval[3] != null) { hasGarmin = true; garminSum += interval[3].toFloat(); }
+                // The validator reads a private copy from setField. Do not keep
+                // the final copy alive beside the storage serialization buffer.
+                interval = null;
             }
         }
         if (checkpoint != null && (previousEnd > checkpoint[0] ||
@@ -269,12 +312,20 @@ class GymActiveJournal {
         }
         // Reserve the eventual queue representation before accepting more work.
         // Each row is shared; only name framing and two metadata slots are extra.
-        // A queue context is at most one header plus 100 bytes (generated request
-        // ID, mode and three bounded counts). Reserve the new empty header too,
-        // so committing the queue cannot strand final cleanup outside the budget.
+        // Each context shares the header's owner, origin, count and checkpoint.
+        // Its generated workout ID is at most 36 characters; mode and plan
+        // counts add at most 48 encoded bytes over the replaced numeric fields.
+        // Reserve two entry slots (4 headers + 2 * 48), plus 192 framing bytes.
+        // The existing active-header reservation covers its smaller tombstone.
         if (origin != null && !GymPendingJournal.pins(bank)) {
-            stagingBytes += 512 + 4 * GymStore.estimatedValueBytes(value) +
-                next.size() * 64 + nameBytes;
+            stagingBytes += 288 + 4 * GymStore.estimatedValueBytes(value) +
+                uniqueNameStorageBytes(directory, next.size());
+            if (GymStore.preparedWorkout == null) {
+                // The later FIT transaction adds its owner-bound prepared
+                // record and request marker. Keep room before accepting a set.
+                stagingBytes += 128 + GymStore.estimatedValueBytes(value[1]) +
+                    GymStore.estimatedValueBytes(value[2]) + GymStore.estimatedValueBytes(value[3]);
+            }
         }
         var withinBudget = validHeader(value) && GymStore.isWithinStorageBudgetForActiveSnapshot(value);
         stagingBytes = 0;
@@ -282,14 +333,20 @@ class GymActiveJournal {
             GymStore.status = GymStatus.STORE_FULL;
             return false;
         }
+        // Timeline preparation can refill the last-row read cache after the
+        // sensor pause. It is disposable; storage writes need that headroom.
+        releaseReadCache();
         if (!reusable) { pruneTail(bank, 0); }
         try {
             for (var r = start; r < next.size(); r += 1) {
                 var record = GymSetAccess.at(next, r);
                 Storage.setValue(key(bank, r), [epoch,
-                    GymStore.exerciseIndexForName(GymStore.setField(record, "exerciseName")),
+                    directory[r],
                     GymStore.setField(record, "weight"), GymStore.setField(record, "reps"),
-                    checkpoint == null ? null : GymStore.setField(record, "setInterval"), revision]);
+                    // Serialization borrows the validated immutable interval;
+                    // UI callers still receive copies through setField().
+                    checkpoint == null ? null : (GymRecordedSet.isRecord(record) ?
+                        record[3] : GymStore.setField(record, "setInterval")), revision]);
             }
             Storage.setValue("activeWorkoutV1", value);
         } catch (e) { return false; }

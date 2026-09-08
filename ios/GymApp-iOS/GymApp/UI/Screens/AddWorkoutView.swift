@@ -149,6 +149,7 @@ struct AddWorkoutView: View {
     @ObservedObject private var store: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var garminCloud: GarminCloudService
+    private let garminPhone: GarminPhoneSyncService?
 
     @State private var date = Date()
     @State private var note = ""
@@ -215,6 +216,7 @@ struct AddWorkoutView: View {
             store: appState.workoutStore,
             activeWorkoutStore: activeWorkoutStore,
             garminCloud: appState.garminCloud,
+            garminPhone: appState.garminPhoneSync,
             isCloudAccount: appState.auth.session?.cloud != nil,
             initialDrafts: initialDrafts,
             launchSeed: launchSeed,
@@ -254,6 +256,7 @@ struct AddWorkoutView: View {
         store: WorkoutStore,
         activeWorkoutStore: ActiveWorkoutStore,
         garminCloud: GarminCloudService,
+        garminPhone: GarminPhoneSyncService? = nil,
         isCloudAccount: Bool,
         initialDrafts: [WorkoutExerciseDraft] = [],
         launchSeed: WorkoutLaunchSeed? = nil,
@@ -277,6 +280,7 @@ struct AddWorkoutView: View {
         _store = ObservedObject(wrappedValue: store)
         _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
         _garminCloud = ObservedObject(wrappedValue: garminCloud)
+        self.garminPhone = garminPhone
         let storedProfile = TrainingProfileStore().load(
             accountStorageKey: store.accountStorageKey
         )
@@ -980,6 +984,18 @@ struct AddWorkoutView: View {
     }
 
     private var garminPanel: some View {
+        Group {
+            if let garminPhone {
+                GarminPlanDeliveryPanel(phone: garminPhone, cloud: garminCloud,
+                    isCloudAccount: isCloudAccount, isEmpty: drafts.isEmpty,
+                    sendPhone: syncPlanToPhoneWatch, sendCloud: syncPlanToGarmin)
+            } else {
+                garminCloudPanel
+            }
+        }
+    }
+
+    private var garminCloudPanel: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 10) {
                 Button(action: syncPlanToGarmin) {
@@ -1093,7 +1109,7 @@ struct AddWorkoutView: View {
                     sessionDetails
                     templatePanel
 
-                    if isCloudAccount, liveInviteRecipient == nil {
+                    if isCloudAccount || garminPhone != nil, liveInviteRecipient == nil {
                         garminPanel
                     }
 
@@ -2065,10 +2081,10 @@ struct AddWorkoutView: View {
         Dictionary(uniqueKeysWithValues: store.exercises.map { ($0.id, $0) })
     }
 
-    private func currentGarminSyncKey(binding: GarminDeviceBinding) throws -> GarminDraftSyncKey {
+    private func currentGarminSyncKey(deviceID: String) throws -> GarminDraftSyncKey {
         try makeGarminDraftSyncKey(
             accountStorageKey: store.accountStorageKey,
-            deviceID: binding.deviceID,
+            deviceID: deviceID,
             title: gymText(
                 "Workout plan",
                 "План тренування",
@@ -2092,7 +2108,7 @@ struct AddWorkoutView: View {
             return
         }
         do {
-            let key = try currentGarminSyncKey(binding: binding)
+            let key = try currentGarminSyncKey(deviceID: binding.deviceID)
             let submission = try prepareGarminDraftSubmission(
                 existing: garminDraftSubmission,
                 key: key
@@ -2107,7 +2123,7 @@ struct AddWorkoutView: View {
                     guard garminDraftSubmission == submission,
                           store.accountStorageKey == submission.key.accountStorageKey,
                           garminCloud.selectedDevice?.deviceID == submission.key.deviceID,
-                          try currentGarminSyncKey(binding: binding) == submission.key else {
+                          try currentGarminSyncKey(deviceID: binding.deviceID) == submission.key else {
                         throw AuthServiceError.sessionChanged
                     }
                     show(
@@ -2125,6 +2141,18 @@ struct AddWorkoutView: View {
         } catch {
             show(gymErrorMessage(error), error: true)
         }
+    }
+
+    private func syncPlanToPhoneWatch(_ deviceID: String) {
+        if let message = validationMessage() { show(message, error: true); return }
+        guard let garminPhone else { return }
+        do {
+            let key = try currentGarminSyncKey(deviceID: deviceID)
+            let submission = try prepareGarminDraftSubmission(existing: garminDraftSubmission, key: key)
+            garminDraftSubmission = submission
+            try garminPhone.queuePlan(submission.plan, deviceID: deviceID)
+            statusMessage = nil
+        } catch { show(gymErrorMessage(error), error: true) }
     }
 
     private func show(_ message: String, error: Bool) {

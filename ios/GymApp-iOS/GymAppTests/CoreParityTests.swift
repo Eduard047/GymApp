@@ -17043,6 +17043,79 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    func testGarminPhonePlanSurvivesOfflineHandshakeRetryAndAcknowledgement() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-plan")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000211", displayName: "Plan test")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "phone-plan-workouts"))
+        _ = try store.addExercise(name: "Catalog exercise")
+        let directory = try temporaryDirectory(named: "phone-plan-deliveries")
+        let planStore = GarminPhonePlanStore(root: directory)
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Forerunner 55", friendlyName: "Plan watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .notConnected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport, planStore: planStore)
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Plan test",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Жим штанги", sets: [.init(weight: 52.5, reps: 9, orderIndex: 0),
+                .init(weight: 55, reps: 8, orderIndex: 1)]),
+                .init(name: "Тяга блока", sets: [.init(weight: 40, reps: 12, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        XCTAssertTrue(transport.sent.isEmpty)
+        transport.statuses[id] = .connected
+        service.deviceStatusChanged(device, status: .connected)
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        let handshake = try XCTUnwrap(transport.sent.first)
+        XCTAssertEqual(handshake.message["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(handshake.message["planNames"] as? [String], [])
+        service.receivedMessage(syncAcknowledgement(for: handshake.message), from: handshake.app)
+        let planSent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(planSent)
+        let delivery = try XCTUnwrap(transport.sent.last)
+        XCTAssertEqual(delivery.message["planNames"] as? [String], ["Жим штанги", "Жим штанги", "Тяга блока"])
+        XCTAssertEqual(delivery.message["planWeights"] as? [Double], [52.5, 55, 40])
+        XCTAssertEqual(delivery.message["planReps"] as? [Int], [9, 8, 12])
+        XCTAssertGreaterThan(try XCTUnwrap(delivery.message["syncRevision"] as? Int64),
+            try XCTUnwrap(handshake.message["syncRevision"] as? Int64))
+        let binding = GarminPhoneBinding(account: try XCTUnwrap(delivery.message["accountBinding"] as? String),
+            device: try XCTUnwrap(delivery.message["deviceBinding"] as? String),
+            pairingGeneration: try XCTUnwrap(delivery.message["pairingGeneration"] as? String))
+        let freshStore = GarminPhonePlanStore(root: directory)
+        XCTAssertEqual(try freshStore.load(account: account.storageKey, binding: binding)?.acknowledged, false)
+        // SDK delivery alone is not a watch acknowledgement; an unrelated ACK is ignored.
+        var wrongAck = syncAcknowledgement(for: delivery.message)
+        wrongAck["syncId"] = "wrong-plan"
+        service.receivedMessage(wrongAck, from: delivery.app)
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(try freshStore.load(account: account.storageKey, binding: binding)?.acknowledged, false)
+        service.deviceStatusChanged(device, status: .connected)
+        let retrySent = await waitUntil { transport.sent.count == 3 }
+        XCTAssertTrue(retrySent)
+        XCTAssertEqual(transport.sent.last?.message["syncId"] as? String, delivery.message["syncId"] as? String)
+        XCTAssertEqual(transport.sent.last?.message["syncRevision"] as? Int64, delivery.message["syncRevision"] as? Int64)
+        service.receivedMessage(syncAcknowledgement(for: delivery.message), from: delivery.app)
+        let acknowledged = await waitUntil { (try? freshStore.load(account: account.storageKey, binding: binding)?.acknowledged) == true }
+        XCTAssertTrue(acknowledged)
+        service.deviceStatusChanged(device, status: .connected)
+        let reconnectSent = await waitUntil { transport.sent.count == 4 }
+        XCTAssertTrue(reconnectSent)
+        XCTAssertEqual(transport.sent.last?.message["planNames"] as? [String], ["Жим штанги", "Жим штанги", "Тяга блока"])
+        let anotherGeneration = GarminPhoneBinding(account: binding.account, device: binding.device,
+            pairingGeneration: String(repeating: "c", count: 64))
+        XCTAssertNil(try freshStore.load(account: account.storageKey, binding: anotherGeneration))
+        XCTAssertNil(try freshStore.load(account: "another-account", binding: binding))
+        service.clearLocalData(storageKey: account.storageKey)
+        XCTAssertNil(try freshStore.load(account: account.storageKey, binding: binding))
+    }
+
     private func syncAcknowledgement(for message: [String: Any]) -> [String: Any] {
         [
             "type": "sync_ack",

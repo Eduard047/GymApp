@@ -182,30 +182,17 @@ class GymWorkoutMode {
     static function restore() {
         state = MODE_IDLE;
         var marker = Storage.getValue("activeWorkoutModeV1");
-        var preparedMode = null;
-        if (GymStore.hasPreparedWorkout()) {
-            preparedMode = GymStore.preparedWorkout.size() == 7 ?
-                (GymStore.preparedWorkout[6] ? "free" : "planned") :
-                "planned";
-        }
+        var prepared = GymStore.hasPreparedWorkout();
+        var preparedFree = prepared && GymStore.preparedWorkout.size() == 7 &&
+            GymStore.preparedWorkout[6];
         var valid = marker instanceof Lang.Array && marker.size() == 5 &&
             marker[0] instanceof Lang.Number && marker[0] == 1 &&
-            marker[4] instanceof Lang.Boolean && GymStore.hasAccountBinding() &&
-            GymStore.isValidAccountBinding(marker[1]) &&
-            GymStore.isBoundedText(marker[2], GymStore.maxBindingLength) &&
-            GymStore.isValidOptionalAccountBinding(marker[3]) &&
-            GymStore.accountBinding.toString().equals(marker[1].toString()) &&
-            GymStore.deviceBinding.toString().equals(marker[2].toString()) &&
-            ((GymStore.pairingGeneration == null && marker[3] == null) ||
-                (GymStore.isValidAccountBinding(GymStore.pairingGeneration) &&
-                    GymStore.isValidAccountBinding(marker[3]) &&
-                    GymStore.pairingGeneration.toString().equals(
-                        marker[3].toString()))) &&
+            marker[4] instanceof Lang.Boolean &&
+            GymStore.isValidOptionalAccountBinding(GymStore.pairingGeneration) &&
+            GymStore.activeWorkoutSnapshotMatchesBindings(marker) &&
             GymStore.hasUnfinishedWorkout() &&
             (!marker[4] || hasValidPlan()) &&
-            (preparedMode == null ||
-                (marker[4] && preparedMode.equals("planned")) ||
-                (!marker[4] && preparedMode.equals("free")));
+            (!prepared || marker[4] != preparedFree);
         if (valid) {
             state = marker[4] ? MODE_PLANNED : MODE_FREE;
             return;
@@ -213,9 +200,8 @@ class GymWorkoutMode {
         // Phase 0/1 is a second owner-bound mode journal. If the smaller active
         // marker was lost after preparation, recover the exact transaction mode
         // instead of exposing detailed controls for an empty FREE payload.
-        if (preparedMode != null &&
-            (preparedMode.equals("free") || hasValidPlan())) {
-            state = preparedMode.equals("free") ? MODE_FREE : MODE_PLANNED;
+        if (prepared && (preparedFree || hasValidPlan())) {
+            state = preparedFree ? MODE_FREE : MODE_PLANNED;
         }
         try {
             Storage.deleteValue("activeWorkoutModeV1");

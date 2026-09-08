@@ -15,6 +15,7 @@ class GymPendingJournal {
     private static var offset = 0;
     private static var sentAt = null;
     private static var indexSlot = 0;
+    private static var stagedNameBytes = null;
 
     // Version 2 stores an exact checkpoint context instead of repeating every
     // wire key. Version 1 dictionaries remain readable until acknowledged.
@@ -26,29 +27,36 @@ class GymPendingJournal {
     }
 
     private static function requestIdOf(entry) {
-        return entry.size() == 4 ? entry[0] :
+        return entry.size() == 9 ? entry[0] :
             (entry[0] instanceof Lang.Array ? entry[0][0] : entry[0]["requestId"]);
     }
 
-    // Runtime references keep immutable queue records on disk. They are never
+    // Flat runtime references retain only the exact immutable identity/version
+    // tuple; the owner tuple and checkpoint remain on disk. These are never
     // a stored/wire format; old versions 1/2 remain full entries until committed.
-    private static function reference(entry) {
-        return [requestIdOf(entry), entry[1], entry[2], GymStore.estimatedValueBytes(entry)];
+    private static function reference(entry, names) {
+        var h = entry[1];
+        return [requestIdOf(entry), h[3], h[4], h[5], h[6], h[7], h[8], entry[2],
+            entryStorageBytes(entry, names)];
     }
     private static function resolve(entry) as Lang.Array or Null {
-        if (entry.size() != 4) { return entry; }
+        if (entry.size() != 9) { return entry; }
         try {
-            var stored = Storage.getValue(entryKey(indexSlot, entry[1][6]));
-            if (!matchesGeneration(stored, entry[1][3]) ||
+            var stored = Storage.getValue(entryKey(indexSlot, entry[4]));
+            if (!matchesGeneration(stored, entry[1]) ||
                 !requestIdOf(stored).equals(entry[0])) { return null; }
             var h = stored[1];
             for (var i = 4; i <= 8; i += 1) {
-                if (h[i] != entry[1][i]) { return null; }
+                if (h[i] != entry[i - 2]) { return null; }
             }
-            if (stored[2] != entry[2]) { return null; }
+            if (stored[2] != entry[7]) { return null; }
+            shareBindings(stored, entry[1]);
             return stored;
         } catch (e) { return null; }
     }
+
+    private static function bankOf(entry) { return entry.size() == 9 ? entry[4] : entry[1][6]; }
+    private static function nameBytesOf(entry) { return entry.size() == 9 ? entry[7] : entry[2]; }
 
     private static function entryKey(slot, bank) {
         return "queueEntry" + slot.toString() + "-" + bank.toString();
@@ -66,18 +74,19 @@ class GymPendingJournal {
                 var bank = entry[1][6];
                 Storage.setValue(entryKey(slot, bank), entry);
                 banks.add(bank);
+                entry = null;
             }
             Storage.setValue("pendingJournalV1", [3, slot, banks]);
         } catch (e) { return false; }
         // Resolve against the old slot before switching runtime references.
         for (var j = 0; j < next.size(); j += 1) {
-            if (next[j].size() != 4) { next[j] = reference(next[j]); }
+            if (next[j].size() != 9) { next[j] = reference(next[j], next[j] == staged ? stagedNameBytes : null); }
         }
         indexSlot = slot;
         return true;
     }
 
-    static function reset() { indexSlot = 0; entries = []; readable = true; dirty = false; transferId = null; attempt = null; offset = 0; sentAt = null; staged = null; nextName = 0; stagedTotals = null; }
+    static function reset() { stagedNameBytes = null; indexSlot = 0; entries = []; readable = true; dirty = false; transferId = null; attempt = null; offset = 0; sentAt = null; staged = null; nextName = 0; stagedTotals = null; }
 
     static function nameKey(bank, index) {
         return "queueName" + bank.toString() + "-" + index.toString();
@@ -85,7 +94,7 @@ class GymPendingJournal {
 
     static function pins(bank) {
         for (var i = 0; i < entries.size(); i += 1) {
-            if (entries[i][1][6] == bank) { return true; }
+            if (bankOf(entries[i]) == bank) { return true; }
         }
         return false;
     }
@@ -139,8 +148,26 @@ class GymPendingJournal {
                 (header[9] == null ? value[4] != null : !GymStore.isValidSetInterval(value[4]))) {
                 return null;
             }
-            return [name[2], value[2], value[3], value[4]];
+            return [name[2], value[2], value[3], value[4], value[1]];
         } catch (e) { return null; }
+    }
+
+    // Called only after the complete owner/device/generation validation. Stored
+    // metadata repeats the same immutable strings; reuse their exact live values
+    // before the serializer allocates its own output buffer.
+    private static function shareBindings(entry, generation) {
+        var header = entry[1];
+        header[1] = GymStore.accountBinding;
+        header[2] = GymStore.deviceBinding;
+        header[3] = generation;
+        var metadata = entry[0];
+        if (metadata instanceof Lang.Array) {
+            metadata[1] = header[1]; metadata[2] = header[2]; metadata[3] = generation;
+        } else {
+            metadata["accountBinding"] = header[1];
+            metadata["deviceBinding"] = header[2];
+            if (metadata["pairingGeneration"] != null) { metadata["pairingGeneration"] = generation; }
+        }
     }
 
     static function load() {
@@ -185,36 +212,31 @@ class GymPendingJournal {
                 readable = false; return false;
             }
             for (var p = 0; p < i; p += 1) {
-                if (next[p][1][6] == entry[1][6] ||
+                if (bankOf(next[p]) == entry[1][6] ||
                     requestIdOf(next[p]).equals(requestIdOf(entry))) {
                     readable = false; return false;
                 }
             }
             var nameBytes = 0;
+            var uniqueNameBytes = 0; var seenNames = 0l;
             var totals = [0, 0.0, 0.0];
             for (var r = 0; r < entry[1][5]; r += 1) {
                 var item = row(entry, r);
                 if (item == null || !addInterval(entry, totals, item[3])) {
                     readable = false; return false;
                 }
-                nameBytes += GymStore.utf8Bytes(item[0]).size();
+                var size = GymStore.utf8Bytes(item[0]).size();
+                nameBytes += size;
+                var bit = 1l << item[4];
+                if ((seenNames & bit) == 0) {
+                    seenNames |= bit; uniqueNameBytes += 64 + size;
+                }
             }
             if (nameBytes != entry[2]) { readable = false; return false; }
-            var loadedHeader = entry[1] as Lang.Array;
-            loadedHeader[1] = GymStore.accountBinding;
-            loadedHeader[2] = GymStore.deviceBinding;
-            if (entry[0] instanceof Lang.Array) {
-                var context = entry[0] as Lang.Array;
-                context[1] = GymStore.accountBinding;
-                context[2] = GymStore.deviceBinding;
-                context[3] = loadedHeader[3];
-            } else {
-                var metadata = entry[0] as Lang.Dictionary;
-                metadata["accountBinding"] = GymStore.accountBinding;
-                metadata["deviceBinding"] = GymStore.deviceBinding;
-            }
+            shareBindings(entry, GymStore.sameOptionalText(entry[1][3], GymStore.pairingGeneration) ?
+                GymStore.pairingGeneration : recovery);
             bytes += nameBytes;
-            next.add(value[0] == 3 ? reference(entry) : entry);
+            next.add(value[0] == 3 ? reference(entry, uniqueNameBytes) : entry);
         }
         if (bytes > 12000) { readable = false; return false; }
         entries = next;
@@ -238,6 +260,7 @@ class GymPendingJournal {
         if (!validEntry(value) ||
             !GymStore.preparedWorkout[4].equals(requestIdOf(value))) { return -1; }
         if (!clearBankNames(header[6])) { return -1; }
+        stagedNameBytes = GymActiveJournal.queueNameStorageBytes();
         staged = value; stagedTotals = [0, 0.0, 0.0];
         return 0;
     }
@@ -315,13 +338,24 @@ class GymPendingJournal {
             (garminCalories == null || totals[2] <= garminCalories.toFloat() + 0.1);
     }
 
+    private static function entryStorageBytes(entry, names) {
+        var header = entry[1];
+        // Immutable rows share one stored name per catalog index. The separate
+        // 12 KiB wire limit still counts every repeated name, as before.
+        // Two serialized entry slots require 136 bytes of measured framing;
+        // retain 192 for their framing and share of the small index.
+        return 192 + 2 * GymStore.estimatedValueBytes(entry) + header[5] * 160 +
+            (names == null ? header[5] * 64 + entry[2] : names);
+    }
+
     static function estimatedBytes() {
         var bytes = 0;
         for (var i = 0; i < entries.size(); i += 1) {
             // Both index slots hold the same bounded entry. Use its actual
             // encoded-value estimate plus per-entry framing reserve.
-            bytes += 256 + 2 * (entries[i].size() == 4 ? entries[i][3] : GymStore.estimatedValueBytes(entries[i])) +
-                entries[i][1][5] * 224 + entries[i][2];
+            var entry = entries[i];
+            bytes += entry.size() == 9 ? entry[8] :
+                entryStorageBytes(entry, entry == staged ? stagedNameBytes : null);
         }
         return bytes;
     }
@@ -351,20 +385,15 @@ class GymPendingJournal {
     static function origin(requestId) {
         if (!readable) { return null; }
         for (var i = 0; i < entries.size(); i += 1) {
-            if (requestIdOf(entries[i]).equals(requestId) &&
-                validEntry(resolve(entries[i]))) { return entries[i][1][4]; }
+            if (requestIdOf(entries[i]).equals(requestId)) {
+                var entry = resolve(entries[i]);
+                if (validEntry(entry)) { return entry[1][4]; }
+            }
         }
         return null;
     }
 
-    static function contains(requestId) {
-        if (!readable || !GymStore.isBoundedText(requestId, GymStore.maxBindingLength)) { return false; }
-        for (var i = 0; i < entries.size(); i += 1) {
-            if (requestIdOf(entries[i]).equals(requestId) &&
-                validEntry(resolve(entries[i]))) { return true; }
-        }
-        return false;
-    }
+    static function contains(requestId) { return origin(requestId) != null; }
 
     static function rotate(previous, next) {
         if (!readable || !GymStore.isValidOptionalAccountBinding(previous) ||
@@ -403,7 +432,7 @@ class GymPendingJournal {
             !requestIdOf(entries[0]).equals(requestId) ||
             (GymStore.hasPreparedWorkout() &&
                 GymStore.preparedWorkout[4].equals(requestId))) { return false; }
-        var bank = entries[0][1][6];
+        var bank = bankOf(entries[0]);
         var next = entries.slice(1, null);
         if (!storeIndex(next)) { return false; }
         entries = next; dirty = false;
@@ -424,7 +453,7 @@ class GymPendingJournal {
 
     static function totalNameBytes() {
         var bytes = 0;
-        for (var i = 0; i < entries.size(); i += 1) { bytes += entries[i][2]; }
+        for (var i = 0; i < entries.size(); i += 1) { bytes += nameBytesOf(entries[i]); }
         bytes += GymStore.legacyPendingNameBytes();
         return bytes;
     }

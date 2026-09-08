@@ -6,10 +6,22 @@ using Toybox.WatchUi as Ui;
 class GymApp extends App.AppBase {
     hidden var phoneMessageMethod;
     var finishedDurably = false;
+    (:fr55Memory) var startupState = null;
 
     function initialize() {
         AppBase.initialize();
-        GymStore.load();
+        if (GymWorkoutMode.recordingSetLimit == 30) {
+            // Separate native lifecycle callbacks bound startup CPU work: basic
+            // state, the immutable queue, then active recovery. Every validator
+            // still runs before a workout view or phone listener is installed.
+            startupState = GymStore.beginLoad();
+        } else {
+            GymStore.load();
+            finishInitialization();
+        }
+    }
+
+    function finishInitialization() {
         GymLocalWorkout.restore();
         phoneMessageMethod = method(:onPhoneMessage);
         if (Comm has :registerForPhoneAppMessages) {
@@ -23,6 +35,7 @@ class GymApp extends App.AppBase {
     }
 
     function onStart(state) {
+        if (GymWorkoutMode.recordingSetLimit == 30) { GymPendingJournal.load(); }
     }
 
     function onStop(state) {
@@ -35,6 +48,11 @@ class GymApp extends App.AppBase {
     }
 
     function getInitialView() {
+        if (GymWorkoutMode.recordingSetLimit == 30 && startupState != null) {
+            GymStore.completeLoad(startupState);
+            startupState = null;
+            finishInitialization();
+        }
         if (GymLocalWorkout.needsDecision()) {
             return GymLocalWorkout.recoveryView();
         }

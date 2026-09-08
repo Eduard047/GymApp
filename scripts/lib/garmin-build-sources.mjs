@@ -241,13 +241,14 @@ export async function prepareGarminSources(root, excludedAnnotations = new Set()
   await writeFile(path.join(sourceRoot, "GymText.mc"), `using Toybox.Application;
 class GymText {
     static function resource(bucket) {
+        var strings = Rez.Strings;
         if (bucket >= ${bucketCount}) {
-            var hotRefs = [${hotRefs.join(", ")}];
+            var hotRefs = [${hotRefs.map(ref => ref.replace("Rez.Strings.", "strings.")).join(", ")}];
             var hotRef = hotRefs[bucket - ${bucketCount}];
             hotRefs = null;
             return Application.loadResource(hotRef);
         }
-        var refs = [${buckets.map((_, index) => `Rez.Strings.UiText${index}`).join(", ")}];
+        var refs = [${buckets.map((_, index) => `strings.UiText${index}`).join(", ")}];
         var ref = refs[bucket];
         refs = null;
         return Application.loadResource(ref);

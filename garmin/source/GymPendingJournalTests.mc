@@ -197,11 +197,12 @@ function legacyPendingParkingPreservesDiskAndOrderingAcrossRestart(logger as Tes
     if (!GymStore.restorePendingForMutation() ||
         !(GymStore.pending[0] as Lang.Dictionary)["requestId"].equals(legacyId) ||
         ((GymStore.pending[0] as Lang.Dictionary)["sets"][0] as Lang.Dictionary)["weight"] != 73.123456789d) { return false; }
-    // Idle restarts retain the decoded legacy message to avoid a second peak allocation.
+    // FR55 parks the legacy queue at idle too; larger profiles retain it.
     GymStore.parkPendingDuringLongWorkout(0);
-    if (GymStore.pending.size() != 1 || !GymStore.save()) { return false; }
+    var idleSize = GymWorkoutMode.recordingSetLimit == 30 ? 0 : 1;
+    if (GymStore.pending.size() != idleSize || !GymStore.save()) { return false; }
     GymStore.load();
-    if (GymStore.sets.size() != 0 || GymStore.pending.size() != 1 ||
+    if (GymStore.sets.size() != 0 || GymStore.pending.size() != idleSize ||
         GymStore.pendingCount() != 2 || !GymStore.restorePendingForMutation()) { return false; }
     if (!GymStore.removePendingByRequestId(legacyId) || GymStore.pendingCount() != 1 ||
         !GymPendingJournal.contains("pending-journal-request-001")) { return false; }

@@ -7,7 +7,7 @@ function handlingMotionDoesNotPromote(logger as Test.Logger) as Lang.Boolean {
     GymSession.paused = false;
     GymSession.autoLogPrompt = false;
     GymSession.activeSetSeen = false;
-    GymSession.effortState = "REST";
+    GymSession.effortState = GymSession.EFFORT_REST;
     GymSession.elapsedSeconds = 0;
     GymSession.lastLoggedSetSeconds = -10;
     GymSession.motionBurstSignals = 0;
@@ -33,7 +33,7 @@ function rhythmicMotionPromptsAfterQuietWindow(logger as Test.Logger) as Lang.Bo
     GymSession.paused = false;
     GymSession.autoLogPrompt = false;
     GymSession.activeSetSeen = false;
-    GymSession.effortState = "REST";
+    GymSession.effortState = GymSession.EFFORT_REST;
     GymSession.elapsedSeconds = 0;
     GymSession.lastLoggedSetSeconds = -10;
     GymSession.motionBurstSignals = 0;
@@ -49,11 +49,11 @@ function rhythmicMotionPromptsAfterQuietWindow(logger as Test.Logger) as Lang.Bo
         GymSession.updateMotionLifecycle();
     }
     var promoted = GymSession.activeSetSeen &&
-        GymSession.effortState.equals("SET ACTIVE");
+        GymSession.effortState == GymSession.EFFORT_ACTIVE;
     GymSession.elapsedSeconds = 10;
     GymSession.updateMotionLifecycle();
     logger.debug("promoted=" + promoted.toString() +
         " prompt=" + GymSession.autoLogPrompt.toString());
     return promoted && GymSession.autoLogPrompt &&
-        GymSession.effortState.equals("REST");
+        GymSession.effortState == GymSession.EFFORT_REST;
 }
