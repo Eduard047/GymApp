@@ -21,6 +21,7 @@ final class CloudSyncDiagnosticsTests: XCTestCase {
         XCTAssertEqual(event.operation, .workoutStateRead)
         XCTAssertEqual(event.statusCode, 503)
         XCTAssertNil(event.postgRESTCode)
+        XCTAssertEqual(event.postgRESTCodeReason, .unrecognizedCode)
         XCTAssertEqual(event.transport, .unknown)
         let rendered = String(describing: event)
         XCTAssertFalse(rendered.contains("unknown-code"))
@@ -40,8 +41,22 @@ final class CloudSyncDiagnosticsTests: XCTestCase {
             transportClass: .http
         )
         XCTAssertEqual(event.postgRESTCode, "42501")
+        XCTAssertEqual(event.postgRESTCodeReason, .allowlistedCode)
         XCTAssertEqual(event.statusCode, 403)
         XCTAssertEqual(event.transport, .http)
+
+        for code in ["PGRST100", "PGRST102", "PGRST106", "42702", "22P02"] {
+            let reviewed = CloudSyncDiagnostics.makeEvent(
+                operation: .friendDashboard,
+                phase: .response,
+                outcome: .failure,
+                statusCode: 400,
+                postgRESTCode: code,
+                transportClass: .http
+            )
+            XCTAssertEqual(reviewed.postgRESTCode, code)
+            XCTAssertEqual(reviewed.postgRESTCodeReason, .allowlistedCode)
+        }
 
         let invalidStatus = CloudSyncDiagnostics.makeEvent(
             operation: .friendDashboard,
@@ -53,6 +68,49 @@ final class CloudSyncDiagnosticsTests: XCTestCase {
         )
         XCTAssertNil(invalidStatus.statusCode)
         XCTAssertNil(invalidStatus.postgRESTCode)
+        XCTAssertEqual(invalidStatus.postgRESTCodeReason, .unrecognizedCode)
+    }
+
+    func testDiagnosticsDistinguishMissingAndUnrecognizedCodes() {
+        let missing = CloudSyncDiagnostics.makeEvent(
+            operation: .friendDashboard,
+            phase: .response,
+            outcome: .failure,
+            statusCode: 400,
+            transportClass: .http
+        )
+        XCTAssertEqual(missing.postgRESTCodeReason, .missingCode)
+
+        let malformed = CloudSyncDiagnostics.makeEvent(
+            operation: .friendDashboard,
+            phase: .response,
+            outcome: .failure,
+            statusCode: 400,
+            postgRESTCodePresent: true,
+            transportClass: .http
+        )
+        XCTAssertNil(malformed.postgRESTCode)
+        XCTAssertEqual(malformed.postgRESTCodeReason, .unrecognizedCode)
+
+        let unknown = CloudSyncDiagnostics.makeEvent(
+            operation: .friendDashboard,
+            phase: .response,
+            outcome: .failure,
+            statusCode: 400,
+            postgRESTCode: "PGRST999",
+            transportClass: .http
+        )
+        XCTAssertNil(unknown.postgRESTCode)
+        XCTAssertEqual(unknown.postgRESTCodeReason, .unrecognizedCode)
+
+        let nonHTTP = CloudSyncDiagnostics.makeEvent(
+            operation: .friendDashboard,
+            phase: .decode,
+            outcome: .failure,
+            statusCode: 200,
+            transportClass: .decode
+        )
+        XCTAssertEqual(nonHTTP.postgRESTCodeReason, .none)
     }
 
     func testPausedWriteGateRetainsOnlyBooleanState() {
@@ -137,6 +195,7 @@ final class CloudSyncDiagnosticsTests: XCTestCase {
             )
             XCTAssertEqual(responseEvent.statusCode, 503)
             XCTAssertNil(responseEvent.postgRESTCode)
+            XCTAssertEqual(responseEvent.postgRESTCodeReason, .missingCode)
             XCTAssertEqual(responseEvent.transport, .http)
             XCTAssertFalse(String(describing: events.snapshot()).contains(marker))
         }

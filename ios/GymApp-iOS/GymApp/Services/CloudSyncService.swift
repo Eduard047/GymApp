@@ -130,6 +130,13 @@ enum CloudSyncDiagnosticTransport: String, Sendable {
     case none
 }
 
+enum CloudSyncDiagnosticCodeReason: String, Sendable {
+    case none
+    case missingCode = "missing_code"
+    case unrecognizedCode = "unrecognized_code"
+    case allowlistedCode = "allowlisted_code"
+}
+
 struct CloudSyncDiagnosticGate: Equatable, Sendable {
     let accountReady: Bool
     let signingOut: Bool
@@ -144,6 +151,7 @@ struct CloudSyncDiagnosticEvent: Equatable, Sendable {
     let outcome: CloudSyncDiagnosticOutcome
     let statusCode: Int?
     let postgRESTCode: String?
+    let postgRESTCodeReason: CloudSyncDiagnosticCodeReason
     let transport: CloudSyncDiagnosticTransport
     let gate: CloudSyncDiagnosticGate?
 }
@@ -157,8 +165,10 @@ enum CloudSyncDiagnostics {
     // Keep this list deliberately small. Status remains useful when a structured
     // server code is unknown, while only stable, reviewed codes are emitted.
     static let allowedPostgRESTCodes: Set<String> = [
+        "PGRST100", "PGRST102", "PGRST106",
         "PGRST202", "PGRST204", "PGRST301", "PGRST302", "PGRST303",
-        "42883", "42501", "P0001", "P0002", "22023", "42P01", "42703", "23505"
+        "42883", "42501", "42702", "22P02", "P0001", "P0002", "22023",
+        "42P01", "42703", "23505"
     ]
 
 #if DEBUG
@@ -176,17 +186,24 @@ enum CloudSyncDiagnostics {
         outcome: CloudSyncDiagnosticOutcome,
         statusCode: Int? = nil,
         postgRESTCode: String? = nil,
+        postgRESTCodePresent: Bool? = nil,
         transportClass: CloudSyncDiagnosticTransport? = nil,
         error: Error? = nil,
         gate: CloudSyncDiagnosticGate? = nil
     ) -> CloudSyncDiagnosticEvent {
         let safeStatus = statusCode.flatMap { (100 ... 599).contains($0) ? $0 : nil }
+        let codeReason = Self.codeReason(
+            statusCode: safeStatus,
+            postgRESTCode: postgRESTCode,
+            postgRESTCodePresent: postgRESTCodePresent ?? (postgRESTCode != nil)
+        )
         return CloudSyncDiagnosticEvent(
             operation: operation,
             phase: phase,
             outcome: outcome,
             statusCode: safeStatus,
             postgRESTCode: sanitizedPostgRESTCode(postgRESTCode),
+            postgRESTCodeReason: codeReason,
             transport: transportClass ?? Self.transport(for: error),
             gate: gate
         )
@@ -199,6 +216,7 @@ enum CloudSyncDiagnostics {
         outcome: CloudSyncDiagnosticOutcome,
         statusCode: Int? = nil,
         postgRESTCode: String? = nil,
+        postgRESTCodePresent: Bool? = nil,
         transportClass: CloudSyncDiagnosticTransport? = nil,
         error: Error? = nil,
         gate: CloudSyncDiagnosticGate? = nil
@@ -209,6 +227,7 @@ enum CloudSyncDiagnostics {
             outcome: outcome,
             statusCode: statusCode,
             postgRESTCode: postgRESTCode,
+            postgRESTCodePresent: postgRESTCodePresent,
             transportClass: transportClass,
             error: error,
             gate: gate
@@ -218,13 +237,31 @@ enum CloudSyncDiagnostics {
 #endif
         let status = event.statusCode.map(String.init) ?? "none"
         let code = event.postgRESTCode ?? "none"
+        let codeReason = event.postgRESTCodeReason.rawValue
         let gateDescription = event.gate.map {
             "ready=\($0.accountReady),signing_out=\($0.signingOut),store=\($0.storeMatches),session=\($0.cloudSessionMatches),writes=\($0.writesAllowed)"
         } ?? "none"
         logger.notice(
-            "cloud_sync op=\(event.operation.rawValue, privacy: .public) phase=\(event.phase.rawValue, privacy: .public) outcome=\(event.outcome.rawValue, privacy: .public) status=\(status, privacy: .public) code=\(code, privacy: .public) transport=\(event.transport.rawValue, privacy: .public) gate=\(gateDescription, privacy: .public)"
+            "cloud_sync op=\(event.operation.rawValue, privacy: .public) phase=\(event.phase.rawValue, privacy: .public) outcome=\(event.outcome.rawValue, privacy: .public) status=\(status, privacy: .public) code=\(code, privacy: .public) code_reason=\(codeReason, privacy: .public) transport=\(event.transport.rawValue, privacy: .public) gate=\(gateDescription, privacy: .public)"
         )
         return event
+    }
+
+    private static func codeReason(
+        statusCode: Int?,
+        postgRESTCode: String?,
+        postgRESTCodePresent: Bool
+    ) -> CloudSyncDiagnosticCodeReason {
+        if let postgRESTCode {
+            return allowedPostgRESTCodes.contains(postgRESTCode)
+                ? .allowlistedCode
+                : .unrecognizedCode
+        }
+        guard postgRESTCodePresent else {
+            guard let statusCode, (400 ... 599).contains(statusCode) else { return .none }
+            return .missingCode
+        }
+        return .unrecognizedCode
     }
 
     static func transport(for error: Error?) -> CloudSyncDiagnosticTransport {
@@ -1611,6 +1648,7 @@ final class CloudSyncService: ObservableObject {
         guard (200..<300).contains(http.statusCode) else {
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             let code = Self.postgRESTErrorCode(object?["code"])
+            let codePresent = object?["code"] != nil
             if conflictMeansStaleState && http.statusCode == 409 {
                 CloudSyncDiagnostics.record(
                     operation: operation,
@@ -1618,6 +1656,7 @@ final class CloudSyncService: ObservableObject {
                     outcome: .failure,
                     statusCode: http.statusCode,
                     postgRESTCode: code,
+                    postgRESTCodePresent: codePresent,
                     transportClass: .http
                 )
                 throw CloudSyncError.staleRemoteState
@@ -1631,6 +1670,7 @@ final class CloudSyncService: ObservableObject {
                 outcome: .failure,
                 statusCode: http.statusCode,
                 postgRESTCode: code,
+                postgRESTCodePresent: codePresent,
                 transportClass: .http
             )
             throw RequestFailure.http(
