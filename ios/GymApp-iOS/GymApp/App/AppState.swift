@@ -1160,7 +1160,14 @@ final class AppState: ObservableObject {
         // activation. Let that request establish (or reject) its CAS revision before a
         // user-requested sync begins. Store mutations that arrive while either request is
         // awaiting the network are queued and serialized behind the manual reconciliation.
-        guard manualCloudSyncLease == nil else { return }
+        guard manualCloudSyncLease == nil else {
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateWrite,
+                phase: .gate,
+                outcome: .skipped
+            )
+            return
+        }
         let manualLease = ManualCloudSyncLease(
             accountGeneration: accountActivationGeneration,
             storageKey: session.storageKey,
@@ -1184,9 +1191,33 @@ final class AppState: ObservableObject {
               workoutStore.accountStorageKey == session.storageKey,
               auth.session?.storageKey == session.storageKey,
               auth.session?.cloud?.userID == cloud.userID else {
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateWrite,
+                phase: .gate,
+                outcome: .skipped,
+                gate: CloudSyncDiagnosticGate(
+                    accountReady: isAccountReady,
+                    signingOut: isSigningOut,
+                    storeMatches: workoutStore.accountStorageKey == session.storageKey,
+                    cloudSessionMatches: auth.session?.cloud?.userID == cloud.userID,
+                    writesAllowed: cloudWritableAccountStorageKey == session.storageKey
+                )
+            )
             return
         }
         guard cloudWritableAccountStorageKey == session.storageKey else {
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateWrite,
+                phase: .gate,
+                outcome: .paused,
+                gate: CloudSyncDiagnosticGate(
+                    accountReady: isAccountReady,
+                    signingOut: isSigningOut,
+                    storeMatches: workoutStore.accountStorageKey == session.storageKey,
+                    cloudSessionMatches: auth.session?.cloud?.userID == cloud.userID,
+                    writesAllowed: false
+                )
+            )
             if cloudReconciliationRequiredStorageKey == session.storageKey {
                 await reconcileStaleManualSync(
                     store: workoutStore,
@@ -2494,9 +2525,28 @@ final class AppState: ObservableObject {
               let cloud = session.cloud else { return }
         if manualCloudSyncLease != nil {
             cloudSaveQueued = true
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateWrite,
+                phase: .gate,
+                outcome: .queued
+            )
             return
         }
-        guard cloudWritableAccountStorageKey == session.storageKey else { return }
+        guard cloudWritableAccountStorageKey == session.storageKey else {
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateWrite,
+                phase: .gate,
+                outcome: .paused,
+                gate: CloudSyncDiagnosticGate(
+                    accountReady: isAccountReady,
+                    signingOut: isSigningOut,
+                    storeMatches: workoutStore.accountStorageKey == session.storageKey,
+                    cloudSessionMatches: auth.session?.cloud?.userID == cloud.userID,
+                    writesAllowed: false
+                )
+            )
+            return
+        }
         if cloudSavePhase == .uploading {
             // Let the in-flight request establish its returned CAS revision, then
             // serialize the newer snapshot behind it.
@@ -2517,10 +2567,25 @@ final class AppState: ObservableObject {
             do {
                 try await Task.sleep(for: delay)
                 guard !Task.isCancelled else { return }
-                guard self.isAccountReady,
-                      self.workoutStore === store,
-                      self.auth.session?.cloud?.userID == cloud.userID,
-                      self.cloudWritableAccountStorageKey == session.storageKey else { return }
+                let gate = CloudSyncDiagnosticGate(
+                    accountReady: self.isAccountReady,
+                    signingOut: self.isSigningOut,
+                    storeMatches: self.workoutStore === store,
+                    cloudSessionMatches: self.auth.session?.cloud?.userID == cloud.userID,
+                    writesAllowed: self.cloudWritableAccountStorageKey == session.storageKey
+                )
+                guard gate.accountReady,
+                      gate.storeMatches,
+                      gate.cloudSessionMatches,
+                      gate.writesAllowed else {
+                    CloudSyncDiagnostics.record(
+                        operation: .workoutStateWrite,
+                        phase: .gate,
+                        outcome: .skipped,
+                        gate: gate
+                    )
+                    return
+                }
                 self.cloudSavePhase = .uploading
                 self.cloudSyncStatus = .syncing
                 try await self.uploadCurrentState(
@@ -2532,6 +2597,12 @@ final class AppState: ObservableObject {
             } catch is CancellationError {
                 // Cancelling is allowed only during the debounce phase.
             } catch {
+                CloudSyncDiagnostics.record(
+                    operation: .workoutStateWrite,
+                    phase: .reconciliation,
+                    outcome: .failure,
+                    error: error
+                )
                 self.cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
                 self.show(error: error)
             }

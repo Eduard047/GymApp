@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 enum CloudSyncError: LocalizedError {
     case invalidPayload
@@ -23,6 +24,238 @@ enum CloudSyncError: LocalizedError {
         case .requestFailed(let message): return message
         }
     }
+}
+
+enum CloudSyncOperation: String, CaseIterable, Sendable {
+    case workoutStateRead = "workout_state_read"
+    case workoutStateWrite = "workout_state_write"
+    case workoutProfileWrite = "workout_profile_write"
+    case workoutDurationWrite = "workout_duration_write"
+    case activityOnlyRead = "activity_only_read"
+    case activityOnlyWrite = "activity_only_write"
+    case friendDashboard = "friend_dashboard"
+    case friendCode = "friend_code"
+    case friendDetails = "friend_details"
+    case friendWorkoutPage = "friend_workout_page"
+    case friendWorkoutDetailCapability = "friend_workout_detail_capability"
+    case friendPrivacyRead = "friend_privacy_read"
+    case friendPrivacyWrite = "friend_privacy_write"
+    case friendRelationshipWrite = "friend_relationship_write"
+    case friendInboxPage = "friend_inbox_page"
+    case friendInboxLegacy = "friend_inbox_legacy"
+    case friendInvitePlan = "friend_invite_plan"
+    case friendInviteWrite = "friend_invite_write"
+    case unknown = "unknown"
+
+    static func resolve(path: String, method: String) -> Self {
+        if path.hasPrefix("/rest/v1/user_states") {
+            return method == "GET" ? .workoutStateRead : .workoutStateWrite
+        }
+        if path.hasPrefix("/rest/v1/profiles") {
+            return .workoutProfileWrite
+        }
+        switch path {
+        case "/rest/v1/rpc/social_sync_workout_durations":
+            return .workoutDurationWrite
+        case "/rest/v1/rpc/garmin_read_activity_only_workouts":
+            return .activityOnlyRead
+        case "/rest/v1/rpc/garmin_sync_activity_only_workouts":
+            return .activityOnlyWrite
+        case "/rest/v1/rpc/social_dashboard":
+            return .friendDashboard
+        case "/rest/v1/rpc/social_my_friend_code":
+            return .friendCode
+        case "/rest/v1/rpc/social_friend_details":
+            return .friendDetails
+        case "/rest/v1/rpc/social_friend_workout_page":
+            return .friendWorkoutPage
+        case "/rest/v1/rpc/social_friend_workout_detail_capability":
+            return .friendWorkoutDetailCapability
+        case "/rest/v1/rpc/social_workout_detail_privacy":
+            return .friendPrivacyRead
+        case "/rest/v1/rpc/social_update_workout_detail_privacy",
+             "/rest/v1/rpc/social_update_privacy":
+            return .friendPrivacyWrite
+        case "/rest/v1/rpc/social_send_friend_request",
+             "/rest/v1/rpc/social_respond_friend_request",
+             "/rest/v1/rpc/social_cancel_friend_request",
+             "/rest/v1/rpc/social_remove_friend",
+             "/rest/v1/rpc/social_block_profile",
+             "/rest/v1/rpc/social_unblock_profile":
+            return .friendRelationshipWrite
+        case "/rest/v1/rpc/social_workout_inbox_page":
+            return .friendInboxPage
+        case "/rest/v1/rpc/social_workout_inbox":
+            return .friendInboxLegacy
+        case "/rest/v1/rpc/social_workout_invite_plan":
+            return .friendInvitePlan
+        case "/rest/v1/rpc/social_send_workout_invite",
+             "/rest/v1/rpc/social_respond_workout_invite",
+             "/rest/v1/rpc/social_cancel_workout_invite":
+            return .friendInviteWrite
+        default:
+            return .unknown
+        }
+    }
+}
+
+enum CloudSyncDiagnosticPhase: String, Sendable {
+    case request
+    case response
+    case decode
+    case cas
+    case commit
+    case gate
+    case reconciliation
+}
+
+enum CloudSyncDiagnosticOutcome: String, Sendable {
+    case success
+    case failure
+    case retry
+    case queued
+    case skipped
+    case paused
+}
+
+enum CloudSyncDiagnosticTransport: String, Sendable {
+    case http
+    case network
+    case responseLimit = "response_limit"
+    case decode
+    case validation
+    case authentication
+    case cancellation
+    case unknown
+    case none
+}
+
+struct CloudSyncDiagnosticGate: Equatable, Sendable {
+    let accountReady: Bool
+    let signingOut: Bool
+    let storeMatches: Bool
+    let cloudSessionMatches: Bool
+    let writesAllowed: Bool
+}
+
+struct CloudSyncDiagnosticEvent: Equatable, Sendable {
+    let operation: CloudSyncOperation
+    let phase: CloudSyncDiagnosticPhase
+    let outcome: CloudSyncDiagnosticOutcome
+    let statusCode: Int?
+    let postgRESTCode: String?
+    let transport: CloudSyncDiagnosticTransport
+    let gate: CloudSyncDiagnosticGate?
+}
+
+enum CloudSyncDiagnostics {
+    private static let logger = Logger(
+        subsystem: "com.setforge.gymapp.ios",
+        category: "cloud-sync"
+    )
+
+    // Keep this list deliberately small. Status remains useful when a structured
+    // server code is unknown, while only stable, reviewed codes are emitted.
+    static let allowedPostgRESTCodes: Set<String> = [
+        "PGRST202", "PGRST204", "PGRST301", "PGRST302", "PGRST303",
+        "42883", "42501", "P0001", "P0002", "22023", "42P01", "42703", "23505"
+    ]
+
+#if DEBUG
+    nonisolated(unsafe) static var testObserver: ((CloudSyncDiagnosticEvent) -> Void)?
+#endif
+
+    static func sanitizedPostgRESTCode(_ code: String?) -> String? {
+        guard let code, allowedPostgRESTCodes.contains(code) else { return nil }
+        return code
+    }
+
+    static func makeEvent(
+        operation: CloudSyncOperation,
+        phase: CloudSyncDiagnosticPhase,
+        outcome: CloudSyncDiagnosticOutcome,
+        statusCode: Int? = nil,
+        postgRESTCode: String? = nil,
+        transportClass: CloudSyncDiagnosticTransport? = nil,
+        error: Error? = nil,
+        gate: CloudSyncDiagnosticGate? = nil
+    ) -> CloudSyncDiagnosticEvent {
+        let safeStatus = statusCode.flatMap { (100 ... 599).contains($0) ? $0 : nil }
+        return CloudSyncDiagnosticEvent(
+            operation: operation,
+            phase: phase,
+            outcome: outcome,
+            statusCode: safeStatus,
+            postgRESTCode: sanitizedPostgRESTCode(postgRESTCode),
+            transport: transportClass ?? Self.transport(for: error),
+            gate: gate
+        )
+    }
+
+    @discardableResult
+    static func record(
+        operation: CloudSyncOperation,
+        phase: CloudSyncDiagnosticPhase,
+        outcome: CloudSyncDiagnosticOutcome,
+        statusCode: Int? = nil,
+        postgRESTCode: String? = nil,
+        transportClass: CloudSyncDiagnosticTransport? = nil,
+        error: Error? = nil,
+        gate: CloudSyncDiagnosticGate? = nil
+    ) -> CloudSyncDiagnosticEvent {
+        let event = makeEvent(
+            operation: operation,
+            phase: phase,
+            outcome: outcome,
+            statusCode: statusCode,
+            postgRESTCode: postgRESTCode,
+            transportClass: transportClass,
+            error: error,
+            gate: gate
+        )
+#if DEBUG
+        testObserver?(event)
+#endif
+        let status = event.statusCode.map(String.init) ?? "none"
+        let code = event.postgRESTCode ?? "none"
+        let gateDescription = event.gate.map {
+            "ready=\($0.accountReady),signing_out=\($0.signingOut),store=\($0.storeMatches),session=\($0.cloudSessionMatches),writes=\($0.writesAllowed)"
+        } ?? "none"
+        logger.notice(
+            "cloud_sync op=\(event.operation.rawValue, privacy: .public) phase=\(event.phase.rawValue, privacy: .public) outcome=\(event.outcome.rawValue, privacy: .public) status=\(status, privacy: .public) code=\(code, privacy: .public) transport=\(event.transport.rawValue, privacy: .public) gate=\(gateDescription, privacy: .public)"
+        )
+        return event
+    }
+
+    static func transport(for error: Error?) -> CloudSyncDiagnosticTransport {
+        guard let error else { return .none }
+        if error is CancellationError { return .cancellation }
+        if error is URLError { return .network }
+        if error is BoundedURLSessionError { return .responseLimit }
+        if error is AuthServiceError { return .authentication }
+        if error is DecodingError { return .decode }
+        if let cloudError = error as? CloudSyncError {
+            switch cloudError {
+            case .invalidPayload, .invalidSocialProfile, .invalidFriendship,
+                 .invalidWorkoutInvite:
+                return .validation
+            case .invalidResponse:
+                return .decode
+            case .staleRemoteState:
+                return .validation
+            case .postgRESTFailure:
+                return .http
+            case .requestFailed:
+                return .unknown
+            }
+        }
+        return .unknown
+    }
+}
+
+private struct CloudSyncResponse: Sendable {
+    let data: Data
+    let statusCode: Int
 }
 
 @MainActor
@@ -68,23 +301,41 @@ final class CloudSyncService: ObservableObject {
     func loadRemoteState(expectedUserID: String? = nil) async throws -> Data? {
         operationRevision &+= 1
         let expectedOperation = operationRevision
-        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
+        let session = try await validCloudSession(
+            expectedUserID: expectedUserID,
+            operation: .workoutStateRead
+        )
         let userID = expectedUserID ?? session.userID
         guard session.userID == userID else { throw AuthServiceError.sessionChanged }
         stateRevision = .unknown
         let path = "/rest/v1/user_states?select=state,updated_at&user_id=eq.\(Self.queryValue(userID))&limit=1"
-        let data = try await request(
+        let response = try await request(
             path: path,
             method: "GET",
             expectedUserID: userID,
             maximumResponseBytes: Self.maximumCloudStateResponseBytes
         )
+        let data = response.data
         guard operationRevision == expectedOperation,
               auth.session?.cloud?.userID == userID else {
             throw AuthServiceError.sessionChanged
         }
-        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw CloudSyncError.invalidResponse
+        let rows: [[String: Any]]
+        do {
+            guard let decodedRows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                throw CloudSyncError.invalidResponse
+            }
+            rows = decodedRows
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateRead,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode,
+                error: error
+            )
+            throw error
         }
         guard let row = rows.first else {
             stateRevision = .missing(userID: userID)
@@ -92,6 +343,13 @@ final class CloudSyncService: ObservableObject {
         }
         guard let state = row["state"],
               let updatedAt = (row["updated_at"] as? String)?.nonEmpty else {
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateRead,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode
+            )
             throw CloudSyncError.invalidResponse
         }
         stateRevision = .loaded(userID: userID, updatedAt: updatedAt)
@@ -102,13 +360,25 @@ final class CloudSyncService: ObservableObject {
         expectedUserID: String? = nil
     ) async throws -> ActivityOnlyWorkoutCloudReadResult {
         do {
-            let (data, _) = try await socialRequest(
+            let (response, _) = try await socialRequestWithResponse(
                 path: "/rest/v1/rpc/garmin_read_activity_only_workouts",
                 expectedUserID: expectedUserID,
                 body: [:],
                 maximumResponseBytes: ActivityOnlyWorkoutCloudCodec.maximumResponseBytes
             )
-            return .snapshot(try ActivityOnlyWorkoutCloudCodec.parseReadResponse(data))
+            do {
+                return .snapshot(try ActivityOnlyWorkoutCloudCodec.parseReadResponse(response.data))
+            } catch {
+                CloudSyncDiagnostics.record(
+                    operation: .activityOnlyRead,
+                    phase: .decode,
+                    outcome: .failure,
+                    statusCode: response.statusCode,
+                    transportClass: .decode,
+                    error: error
+                )
+                throw error
+            }
         } catch let error where Self.isMissingActivityOnlyRPC(error) {
             // Mixed-version deployments must keep the local owner-private activity instead
             // of falling back to schema-v2 or the public workout-duration sidecar.
@@ -132,16 +402,45 @@ final class CloudSyncService: ObservableObject {
             throw CloudSyncError.invalidPayload
         }
         do {
-            let (data, _) = try await socialRequest(
+            let (response, _) = try await socialRequestWithResponse(
                 path: "/rest/v1/rpc/garmin_sync_activity_only_workouts",
                 expectedUserID: expectedUserID,
                 encodedBody: exactRequestBody ?? canonicalRequestBody,
                 maximumResponseBytes: ActivityOnlyWorkoutCloudCodec.maximumResponseBytes
             )
-            let result = try ActivityOnlyWorkoutCloudCodec.parseSyncResponse(data)
+            let result: ActivityOnlyWorkoutCloudSyncResult
+            do {
+                result = try ActivityOnlyWorkoutCloudCodec.parseSyncResponse(response.data)
+            } catch {
+                CloudSyncDiagnostics.record(
+                    operation: .activityOnlyWrite,
+                    phase: .decode,
+                    outcome: .failure,
+                    statusCode: response.statusCode,
+                    transportClass: .decode,
+                    error: error
+                )
+                throw error
+            }
             if case .synced(_, let syncedCount, _, _) = result,
                syncedCount != items.count {
+                CloudSyncDiagnostics.record(
+                    operation: .activityOnlyWrite,
+                    phase: .commit,
+                    outcome: .failure,
+                    statusCode: response.statusCode,
+                    transportClass: .validation
+                )
                 throw CloudSyncError.invalidResponse
+            }
+            if case .synced = result {
+                CloudSyncDiagnostics.record(
+                    operation: .activityOnlyWrite,
+                    phase: .commit,
+                    outcome: .success,
+                    statusCode: response.statusCode,
+                    transportClass: .http
+                )
             }
             return result
         } catch let error where Self.isMissingActivityOnlyRPC(error) {
@@ -164,7 +463,10 @@ final class CloudSyncService: ObservableObject {
             throw CloudSyncError.invalidPayload
         }
         let expectedOperation = operationRevision
-        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
+        let session = try await validCloudSession(
+            expectedUserID: expectedUserID,
+            operation: .workoutStateWrite
+        )
         let userID = expectedUserID ?? session.userID
         guard session.userID == userID,
               auth.session?.cloud?.userID == userID else {
@@ -181,9 +483,9 @@ final class CloudSyncService: ObservableObject {
         }
         let timestamp = Self.nextRevisionTimestamp(after: priorRevision)
 
-        let revisionData: Data
+        let revisionResponse: CloudSyncResponse
         if let priorRevision {
-            revisionData = try await request(
+            revisionResponse = try await request(
                 path: "/rest/v1/user_states?user_id=eq.\(Self.queryValue(userID))&updated_at=eq.\(Self.queryValue(priorRevision))&select=updated_at",
                 method: "PATCH",
                 expectedUserID: userID,
@@ -191,7 +493,7 @@ final class CloudSyncService: ObservableObject {
                 body: ["state": state, "updated_at": timestamp]
             )
         } else {
-            revisionData = try await request(
+            revisionResponse = try await request(
                 path: "/rest/v1/user_states?select=updated_at",
                 method: "POST",
                 expectedUserID: userID,
@@ -205,7 +507,14 @@ final class CloudSyncService: ObservableObject {
             )
         }
 
-        guard let storedRevision = Self.singleUpdatedAt(in: revisionData) else {
+        guard let storedRevision = Self.singleUpdatedAt(in: revisionResponse.data) else {
+            CloudSyncDiagnostics.record(
+                operation: .workoutStateWrite,
+                phase: .cas,
+                outcome: .failure,
+                statusCode: revisionResponse.statusCode,
+                transportClass: .decode
+            )
             throw CloudSyncError.staleRemoteState
         }
         guard operationRevision == expectedOperation,
@@ -235,12 +544,13 @@ final class CloudSyncService: ObservableObject {
         }
 
         do {
-            let durationData = try await request(
+            let durationResponse = try await request(
                 path: "/rest/v1/rpc/social_sync_workout_durations",
                 method: "POST",
                 expectedUserID: userID,
                 body: ["p_items": workoutDurations]
             )
+            let durationData = durationResponse.data
             guard let result = try JSONSerialization.jsonObject(with: durationData) as? [String: Any],
                   let version = ActivityOnlyWorkoutCloudCodec.exactInteger(
                     result["version"], range: 1 ... 2
@@ -283,6 +593,12 @@ final class CloudSyncService: ObservableObject {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            CloudSyncDiagnostics.record(
+                operation: .workoutDurationWrite,
+                phase: .commit,
+                outcome: .failure,
+                error: error
+            )
             // The core row and public profile are already committed. Duration is an
             // optional forward-compatible sidecar, so a transient RPC failure must not
             // turn that successful write into a stale-revision retry loop.
@@ -293,32 +609,52 @@ final class CloudSyncService: ObservableObject {
         }
         lastSyncedAt = Date()
         lastError = nil
+        CloudSyncDiagnostics.record(
+            operation: .workoutStateWrite,
+            phase: .commit,
+            outcome: .success,
+            transportClass: CloudSyncDiagnosticTransport.none
+        )
     }
 
     func socialDashboard(expectedUserID: String? = nil) async throws -> SocialDashboard {
-        let (data, _) = try await socialRequest(
+        let (response, _) = try await socialRequestWithResponse(
             path: "/rest/v1/rpc/social_dashboard",
             expectedUserID: expectedUserID,
             body: [:],
             maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
         )
         do {
-            return try SocialPayloadParser.dashboard(from: data)
+            return try SocialPayloadParser.dashboard(from: response.data)
         } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendDashboard,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode
+            )
             throw CloudSyncError.invalidResponse
         }
     }
 
     func socialMyFriendCode(expectedUserID: String? = nil) async throws -> String {
-        let (data, _) = try await socialRequest(
+        let (response, _) = try await socialRequestWithResponse(
             path: "/rest/v1/rpc/social_my_friend_code",
             expectedUserID: expectedUserID,
             body: [:],
             maximumResponseBytes: SocialPayloadParser.maximumFriendCodeResponseBytes
         )
         do {
-            return try SocialPayloadParser.friendCode(from: data)
+            return try SocialPayloadParser.friendCode(from: response.data)
         } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendCode,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode
+            )
             throw CloudSyncError.invalidResponse
         }
     }
@@ -330,19 +666,26 @@ final class CloudSyncService: ObservableObject {
         guard SocialPayloadParser.isValidProfileID(profileID) else {
             throw CloudSyncError.invalidSocialProfile
         }
-        let (data, _) = try await socialRequest(
+        let (response, _) = try await socialRequestWithResponse(
             path: "/rest/v1/rpc/social_friend_details",
             expectedUserID: expectedUserID,
             body: ["p_profile_id": profileID],
             maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
         )
         do {
-            let details = try SocialPayloadParser.friendDetails(from: data)
+            let details = try SocialPayloadParser.friendDetails(from: response.data)
             guard details.friend.profileID == profileID else {
                 throw SocialPayloadError.invalidResponse
             }
             return details
         } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendDetails,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode
+            )
             throw CloudSyncError.invalidResponse
         }
     }
@@ -365,24 +708,44 @@ final class CloudSyncService: ObservableObject {
         if let expectedActivityRevision {
             body["p_expected_activity_revision"] = expectedActivityRevision
         }
+        let response: CloudSyncResponse
         do {
-            let (data, _) = try await socialRequest(
+            (response, _) = try await socialRequestWithResponse(
                 path: "/rest/v1/rpc/social_friend_workout_page",
                 expectedUserID: expectedUserID,
                 body: body,
                 maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
             )
-            let page = try SocialPayloadParser.friendWorkoutPage(from: data)
+        } catch CloudSyncError.postgRESTFailure(_, let code, _)
+                    where ["P0002", "PGRST202", "42883"].contains(code) {
+            return nil
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendWorkoutPage,
+                phase: .request,
+                outcome: .failure,
+                transportClass: CloudSyncDiagnostics.transport(for: error),
+                error: error
+            )
+            throw CloudSyncError.invalidResponse
+        }
+        do {
+            let page = try SocialPayloadParser.friendWorkoutPage(from: response.data)
             guard page.profileID == profileID,
                   expectedActivityRevision == nil ||
                     page.activityRevision == expectedActivityRevision else {
                 throw SocialPayloadError.invalidResponse
             }
             return page
-        } catch CloudSyncError.postgRESTFailure(_, let code, _)
-                    where ["P0002", "PGRST202", "42883"].contains(code) {
-            return nil
         } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendWorkoutPage,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode,
+                error: error
+            )
             throw CloudSyncError.invalidResponse
         }
     }
@@ -394,30 +757,64 @@ final class CloudSyncService: ObservableObject {
         guard SocialPayloadParser.isValidProfileID(profileID) else {
             throw CloudSyncError.invalidSocialProfile
         }
+        let response: CloudSyncResponse
         do {
-            let (data, _) = try await socialRequest(
+            (response, _) = try await socialRequestWithResponse(
                 path: "/rest/v1/rpc/social_friend_workout_detail_capability",
                 expectedUserID: expectedUserID,
                 body: ["p_profile_id": profileID],
                 maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
             )
-            return try SocialPayloadParser.friendWorkoutDetailCapability(from: data)
         } catch CloudSyncError.postgRESTFailure(let status, let code, _)
                     where status == 404 && ["PGRST202", "42883"].contains(code) {
             return SocialFriendWorkoutDetailCapability(available: false)
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendWorkoutDetailCapability,
+                phase: .request,
+                outcome: .failure,
+                transportClass: CloudSyncDiagnostics.transport(for: error),
+                error: error
+            )
+            throw error
+        }
+        do {
+            return try SocialPayloadParser.friendWorkoutDetailCapability(from: response.data)
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendWorkoutDetailCapability,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode,
+                error: error
+            )
+            throw error
         }
     }
 
     func socialWorkoutDetailPrivacy(
         expectedUserID: String? = nil
     ) async throws -> SocialWorkoutDetailPrivacy {
-        let (data, _) = try await socialRequest(
+        let (response, _) = try await socialRequestWithResponse(
             path: "/rest/v1/rpc/social_workout_detail_privacy",
             expectedUserID: expectedUserID,
             body: [:],
             maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
         )
-        return try SocialPayloadParser.workoutDetailPrivacy(from: data)
+        do {
+            return try SocialPayloadParser.workoutDetailPrivacy(from: response.data)
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendPrivacyRead,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode,
+                error: error
+            )
+            throw error
+        }
     }
 
     func socialUpdateWorkoutDetailPrivacy(
@@ -428,7 +825,7 @@ final class CloudSyncService: ObservableObject {
         guard (1 ... 2_147_483_647).contains(expectedRevision) else {
             throw CloudSyncError.invalidResponse
         }
-        let (data, _) = try await socialRequest(
+        let (response, _) = try await socialRequestWithResponse(
             path: "/rest/v1/rpc/social_update_workout_detail_privacy",
             expectedUserID: expectedUserID,
             body: [
@@ -437,8 +834,28 @@ final class CloudSyncService: ObservableObject {
             ],
             maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
         )
-        let result = try SocialPayloadParser.workoutDetailPrivacy(from: data)
+        let result: SocialWorkoutDetailPrivacy
+        do {
+            result = try SocialPayloadParser.workoutDetailPrivacy(from: response.data)
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendPrivacyWrite,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode,
+                error: error
+            )
+            throw error
+        }
         guard result.shareWorkoutDetails == enabled else {
+            CloudSyncDiagnostics.record(
+                operation: .friendPrivacyWrite,
+                phase: .commit,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .validation
+            )
             throw CloudSyncError.invalidResponse
         }
         return result
@@ -555,7 +972,7 @@ final class CloudSyncService: ObservableObject {
         guard (1 ... 2_147_483_647).contains(expectedRevision) else {
             throw CloudSyncError.invalidResponse
         }
-        let (data, _) = try await socialRequest(
+        let (response, _) = try await socialRequestWithResponse(
             path: "/rest/v1/rpc/social_update_privacy",
             expectedUserID: expectedUserID,
             body: [
@@ -568,8 +985,15 @@ final class CloudSyncService: ObservableObject {
             maximumResponseBytes: SocialPayloadParser.maximumMutationResponseBytes
         )
         do {
-            return try SocialPayloadParser.privacyMutation(from: data)
+            return try SocialPayloadParser.privacyMutation(from: response.data)
         } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendPrivacyWrite,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode
+            )
             throw CloudSyncError.invalidResponse
         }
     }
@@ -609,7 +1033,7 @@ final class CloudSyncService: ObservableObject {
         guard (1 ... SocialPayloadParser.workoutInboxPageLimit).contains(limit) else {
             throw CloudSyncError.invalidResponse
         }
-        let data: Data
+        let response: CloudSyncResponse
         do {
             var body: [String: Any] = [
                 "p_cursor_created_at": NSNull(),
@@ -622,7 +1046,7 @@ final class CloudSyncService: ObservableObject {
                 body["p_cursor_invite_id"] = cursor.inviteID
                 body["p_cursor_pending"] = cursor.pending
             }
-            (data, _) = try await socialRequest(
+            (response, _) = try await socialRequestWithResponse(
                 path: "/rest/v1/rpc/social_workout_inbox_page",
                 expectedUserID: expectedUserID,
                 body: body,
@@ -636,24 +1060,38 @@ final class CloudSyncService: ObservableObject {
             guard permitsLegacyFallback, cursor == nil else {
                 throw CloudSyncError.invalidResponse
             }
-            let (data, _) = try await socialRequest(
+            let (legacyResponse, _) = try await socialRequestWithResponse(
                 path: "/rest/v1/rpc/social_workout_inbox",
                 expectedUserID: expectedUserID,
                 body: [:],
                 maximumResponseBytes: SocialPayloadParser.maximumResponseBytes
             )
             do {
-                return try SocialPayloadParser.workoutInbox(from: data)
+                return try SocialPayloadParser.workoutInbox(from: legacyResponse.data)
             } catch {
+                CloudSyncDiagnostics.record(
+                    operation: .friendInboxLegacy,
+                    phase: .decode,
+                    outcome: .failure,
+                    statusCode: legacyResponse.statusCode,
+                    transportClass: .decode
+                )
                 throw CloudSyncError.invalidResponse
             }
         }
         do {
             return try SocialPayloadParser.workoutInboxPage(
-                from: data,
+                from: response.data,
                 expectedLimit: limit
             )
         } catch {
+            CloudSyncDiagnostics.record(
+                operation: .friendInboxPage,
+                phase: .decode,
+                outcome: .failure,
+                statusCode: response.statusCode,
+                transportClass: .decode
+            )
             throw CloudSyncError.invalidResponse
         }
     }
@@ -875,11 +1313,32 @@ final class CloudSyncService: ObservableObject {
         encodedBody: Data? = nil,
         maximumResponseBytes: Int
     ) async throws -> (Data, String) {
+        let (response, userID) = try await socialRequestWithResponse(
+            path: path,
+            expectedUserID: expectedUserID,
+            body: body,
+            encodedBody: encodedBody,
+            maximumResponseBytes: maximumResponseBytes
+        )
+        return (response.data, userID)
+    }
+
+    private func socialRequestWithResponse(
+        path: String,
+        expectedUserID: String?,
+        body: Any? = nil,
+        encodedBody: Data? = nil,
+        maximumResponseBytes: Int
+    ) async throws -> (CloudSyncResponse, String) {
         let expectedOperation = operationRevision
-        let session = try await auth.validCloudSession(expectedUserID: expectedUserID)
+        let operation = CloudSyncOperation.resolve(path: path, method: "POST")
+        let session = try await validCloudSession(
+            expectedUserID: expectedUserID,
+            operation: operation
+        )
         let userID = expectedUserID ?? session.userID
         guard session.userID == userID else { throw AuthServiceError.sessionChanged }
-        let data = try await request(
+        let response = try await request(
             path: path,
             method: "POST",
             expectedUserID: userID,
@@ -891,7 +1350,25 @@ final class CloudSyncService: ObservableObject {
               auth.session?.cloud?.userID == userID else {
             throw AuthServiceError.sessionChanged
         }
-        return (data, userID)
+        return (response, userID)
+    }
+
+    private func validCloudSession(
+        expectedUserID: String?,
+        operation: CloudSyncOperation
+    ) async throws -> CloudAccountSession {
+        do {
+            return try await auth.validCloudSession(expectedUserID: expectedUserID)
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .failure,
+                transportClass: CloudSyncDiagnostics.transport(for: error),
+                error: error
+            )
+            throw error
+        }
     }
 
     private func request(
@@ -903,9 +1380,18 @@ final class CloudSyncService: ObservableObject {
         maximumResponseBytes: Int? = nil,
         body: Any? = nil,
         encodedBody: Data? = nil
-    ) async throws -> Data {
+    ) async throws -> CloudSyncResponse {
+        let operation = CloudSyncOperation.resolve(path: path, method: method)
         guard body == nil || encodedBody == nil else {
-            throw CloudSyncError.invalidPayload
+            let error = CloudSyncError.invalidPayload
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .failure,
+                transportClass: .validation,
+                error: error
+            )
+            throw error
         }
         let requestBody: Data?
         if let encodedBody {
@@ -920,11 +1406,27 @@ final class CloudSyncService: ObservableObject {
         }
         if let requestBody,
            requestBody.count > Self.maximumCloudRequestBytes {
-            throw CloudSyncError.invalidPayload
+            let error = CloudSyncError.invalidPayload
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .failure,
+                transportClass: .validation,
+                error: error
+            )
+            throw error
         }
         guard let initialSession = auth.session?.cloud,
               initialSession.userID == expectedUserID else {
-            throw AuthServiceError.sessionChanged
+            let error = AuthServiceError.sessionChanged
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .failure,
+                transportClass: .authentication,
+                error: error
+            )
+            throw error
         }
         do {
             return try await requestOnce(
@@ -939,12 +1441,41 @@ final class CloudSyncService: ObservableObject {
         } catch RequestFailure.http(let statusCode, _, _)
                     where statusCode == 401 || statusCode == 403 {
             guard auth.session?.cloud == initialSession else {
-                throw AuthServiceError.sessionChanged
+                let error = AuthServiceError.sessionChanged
+                CloudSyncDiagnostics.record(
+                    operation: operation,
+                    phase: .request,
+                    outcome: .failure,
+                    statusCode: statusCode,
+                    transportClass: .authentication,
+                    error: error
+                )
+                throw error
             }
-            let refreshed = try await auth.validCloudSession(
-                expectedUserID: expectedUserID,
-                forceRefresh: true
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .retry,
+                statusCode: statusCode,
+                transportClass: .http
             )
+            let refreshed: CloudAccountSession
+            do {
+                refreshed = try await auth.validCloudSession(
+                    expectedUserID: expectedUserID,
+                    forceRefresh: true
+                )
+            } catch {
+                CloudSyncDiagnostics.record(
+                    operation: operation,
+                    phase: .request,
+                    outcome: .failure,
+                    statusCode: statusCode,
+                    transportClass: .authentication,
+                    error: error
+                )
+                throw error
+            }
             do {
                 return try await requestOnce(
                     path: path,
@@ -968,6 +1499,14 @@ final class CloudSyncService: ObservableObject {
                 code: code,
                 message: message
             )
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .failure,
+                error: error
+            )
+            throw error
         }
     }
 
@@ -979,16 +1518,33 @@ final class CloudSyncService: ObservableObject {
         conflictMeansStaleState: Bool = false,
         maximumResponseBytes: Int? = nil,
         body: Data? = nil
-    ) async throws -> Data {
+    ) async throws -> CloudSyncResponse {
+        let operation = CloudSyncOperation.resolve(path: path, method: method)
         guard let url = URL(string: path, relativeTo: GymAppConfiguration.supabaseURL) else {
-            throw CloudSyncError.invalidResponse
+            let error = CloudSyncError.invalidResponse
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .failure,
+                transportClass: .validation,
+                error: error
+            )
+            throw error
         }
         let responseLimit = maximumResponseBytes ?? Self.maximumCloudResponseBytes
         guard !token.isEmpty,
               token.utf8.prefix(Self.maximumTokenBytes + 1).count <= Self.maximumTokenBytes,
               token.unicodeScalars.allSatisfy({ (0x21...0x7e).contains($0.value) }),
               (1...Self.maximumCloudStateResponseBytes).contains(responseLimit) else {
-            throw CloudSyncError.invalidResponse
+            let error = CloudSyncError.invalidResponse
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .request,
+                outcome: .failure,
+                transportClass: .validation,
+                error: error
+            )
+            throw error
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -1012,30 +1568,85 @@ final class CloudSyncService: ObservableObject {
             )
         } catch BoundedURLSessionError.responseTooLarge(let statusCode?)
                     where statusCode == 401 || statusCode == 403 {
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .response,
+                outcome: .failure,
+                statusCode: statusCode,
+                transportClass: .responseLimit
+            )
             throw RequestFailure.http(
                 statusCode: statusCode,
                 code: nil,
                 message: "Cloud sync failed (HTTP \(statusCode))."
             )
-        } catch is BoundedURLSessionError {
+        } catch BoundedURLSessionError.responseTooLarge(let statusCode) {
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .response,
+                outcome: .failure,
+                statusCode: statusCode,
+                transportClass: .responseLimit
+            )
             throw CloudSyncError.invalidResponse
+        } catch is BoundedURLSessionError {
+            let error = CloudSyncError.invalidResponse
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .response,
+                outcome: .failure,
+                transportClass: .responseLimit,
+                error: error
+            )
+            throw error
+        } catch {
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .response,
+                outcome: .failure,
+                error: error
+            )
+            throw error
         }
         guard (200..<300).contains(http.statusCode) else {
-            if conflictMeansStaleState && http.statusCode == 409 {
-                throw CloudSyncError.staleRemoteState
-            }
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             let code = Self.postgRESTErrorCode(object?["code"])
+            if conflictMeansStaleState && http.statusCode == 409 {
+                CloudSyncDiagnostics.record(
+                    operation: operation,
+                    phase: .cas,
+                    outcome: .failure,
+                    statusCode: http.statusCode,
+                    postgRESTCode: code,
+                    transportClass: .http
+                )
+                throw CloudSyncError.staleRemoteState
+            }
             let message = object?["message"] as? String
                 ?? object?["error"] as? String
                 ?? "Cloud sync failed (HTTP \(http.statusCode))."
+            CloudSyncDiagnostics.record(
+                operation: operation,
+                phase: .response,
+                outcome: .failure,
+                statusCode: http.statusCode,
+                postgRESTCode: code,
+                transportClass: .http
+            )
             throw RequestFailure.http(
                 statusCode: http.statusCode,
                 code: code,
                 message: message
             )
         }
-        return data
+        CloudSyncDiagnostics.record(
+            operation: operation,
+            phase: .response,
+            outcome: .success,
+            statusCode: http.statusCode,
+            transportClass: .http
+        )
+        return CloudSyncResponse(data: data, statusCode: http.statusCode)
     }
 
     private static func cloudError(
