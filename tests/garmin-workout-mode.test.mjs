@@ -17,9 +17,12 @@ const validPlan = (plan, catalog) =>
   plan.every((item) => item && typeof item.exerciseName === "string" &&
     catalog.includes(item.exerciseName));
 
-const beginMode = ({ state, unfinished, plan, catalog }, usePlan) => {
+const startablePlan = (plan, catalog) => validPlan(plan, catalog) && plan.length <= 30;
+
+const beginMode = ({ state, unfinished, plan, catalog, pendingCount = 0, queueReadable = true }, usePlan) => {
   if (typeof usePlan !== "boolean" || state !== Mode.IDLE || unfinished) return state;
-  if (usePlan && !validPlan(plan, catalog)) return state;
+  if (!queueReadable || pendingCount > 0) return state;
+  if (usePlan && !startablePlan(plan, catalog)) return state;
   return usePlan ? Mode.PLANNED : Mode.FREE;
 };
 
@@ -66,6 +69,22 @@ test("Garmin workout modes follow a one-way IDLE to FREE or PLANNED state machin
   assert.equal(beginMode({ state: Mode.IDLE, unfinished: false, plan: [], catalog }, true), Mode.IDLE);
   assert.equal(beginMode({ state: Mode.IDLE, unfinished: false,
     plan: [{ exerciseName: "Unknown" }], catalog }, true), Mode.IDLE);
+  const thirtySetPlan = Array.from({ length: 30 }, () => ({ exerciseName: "Squat" }));
+  const thirtyOneSetPlan = Array.from({ length: 31 }, () => ({ exerciseName: "Squat" }));
+  assert.equal(startablePlan(thirtySetPlan, catalog), true);
+  assert.equal(beginMode({ state: Mode.IDLE, unfinished: false,
+    plan: thirtySetPlan, catalog }, true), Mode.PLANNED);
+  assert.equal(validPlan(thirtyOneSetPlan, catalog), true,
+    "the historical storage/resume validator still accepts up to 60 targets");
+  assert.equal(beginMode({ state: Mode.IDLE, unfinished: false,
+    plan: thirtyOneSetPlan, catalog }, true), Mode.IDLE,
+  "a new planned workout stops at today's 30-target cap");
+  assert.equal(beginMode({ state: Mode.IDLE, unfinished: false, pendingCount: 1,
+    plan: thirtySetPlan, catalog }, true), Mode.IDLE,
+  "a durable pending workout reserves the queue slot until it drains");
+  assert.equal(beginMode({ state: Mode.IDLE, unfinished: false, queueReadable: false,
+    plan, catalog }, false), Mode.IDLE,
+  "an unreadable pending journal fails closed for new workouts");
   assert.equal(beginMode({ state: Mode.FREE, unfinished: false, plan, catalog }, true), Mode.FREE,
     "an activity cannot switch from FREE to PLANNED");
   assert.equal(beginMode({ state: Mode.PLANNED, unfinished: false, plan, catalog }, false), Mode.PLANNED,
@@ -84,6 +103,10 @@ test("mode recovery requires exact ownership and preserves the prepared mode", (
   const freePrepared = [2, "acct", "watch", "g1", "req", 0, true];
   assert.equal(restoreMode({ ...base, marker: freeMarker, prepared: freePrepared }), Mode.FREE);
   assert.equal(restoreMode({ ...base, marker: plannedMarker, prepared: null }), Mode.PLANNED);
+  const legacySixtyPlan = Array.from({ length: 60 }, () => ({ exerciseName: "Squat" }));
+  assert.equal(restoreMode({ ...base, marker: plannedMarker, prepared: null,
+    plan: legacySixtyPlan }), Mode.PLANNED,
+  "an existing owner-bound plan remains resumable at the legacy storage cap");
   assert.equal(restoreMode({ ...base, marker: null, prepared: freePrepared }), Mode.FREE,
     "phase recovery is an independent mode journal");
   assert.equal(restoreMode({ ...base, marker: plannedMarker, prepared: freePrepared }), Mode.FREE,
@@ -132,7 +155,29 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   ]);
   assert.match(mode, /MODE_IDLE = 0[\s\S]*MODE_FREE = 1[\s\S]*MODE_PLANNED = 2/);
   assert.match(mode, /!isIdle\(\) \|\|\s*GymStore\.hasUnfinishedWorkout\(\)/);
-  assert.match(mode, /usePlan && !hasValidPlan\(\)/);
+  const validPlan = section(mode, "static function hasValidPlan()", "static function hasStartablePlan()");
+  const startablePlan = section(mode, "static function hasStartablePlan()", "static function canResume()");
+  const resumePlan = section(mode, "static function canResume()", "(:richWorkoutMode)\n    static function begin(usePlan)");
+  const richSetGate = section(mode,
+    "(:richWorkoutMode, :inline)\n    static function allowsDetailedTracking()",
+    "(:compactWorkoutMode96, :inline)\n    static function allowsDetailedTracking()");
+  const manualSetGate = section(mode,
+    "(:compactWorkoutMode96, :inline)\n    static function allowsDetailedTracking()",
+    "static function hasValidPlan()");
+  assert.match(validPlan, /GymStore\.isValidLiveSetList\(currentPlan, GymStore\.maxPlanSets, true\)/);
+  assert.match(startablePlan, /GymStore\.plan\.size\(\) <= GymStore\.maxNewWorkoutSets && hasValidPlan\(\)/);
+  assert.match(resumePlan, /state == MODE_PLANNED && hasValidPlan\(\)/);
+  assert.match(richSetGate, /return state == MODE_PLANNED;/,
+    "128 KiB rich profiles retain the detector-backed set gate");
+  assert.match(manualSetGate, /return state == MODE_PLANNED;/,
+    "96 KiB profiles allow athlete-entered sets in planned mode while FREE stays duration-only");
+  const begin = section(mode, "(:richWorkoutMode)\n    static function begin(usePlan)", "(:compactWorkoutMode96)\n    static function begin(usePlan)");
+  const compactBegin = section(mode, "(:compactWorkoutMode96)\n    static function begin(usePlan)", "(:richWorkoutMode)\n    static function restore()");
+  for (const implementation of [begin, compactBegin]) {
+    assert.match(implementation, /!GymPendingJournal\.readable \|\| GymStore\.pendingCount\(\) > 0/,
+      "new workouts must reserve a durable pending queue slot");
+    assert.match(implementation, /usePlan && !hasStartablePlan\(\)/);
+  }
   assert.match(mode, /state = usePlan \? MODE_PLANNED : MODE_FREE/);
   assert.match(mode, /activeWorkoutModeV1/);
   assert.match(mode, /markerSize == 2 \|\| markerSize == 5/,
@@ -140,25 +185,39 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   assert.match(mode, /GymStore\.hasUnfinishedWorkout\(\)/,
     "the compact marker is usable only beside an accepted owner-bound workout");
 
-  const startSensors = section(session, "static function startSensors()", "static function stopSensors()");
-  assert.match(startSensors, /if \(!GymWorkoutMode\.canResume\(\)\)/);
-  assert.match(startSensors, /GymWorkoutMode\.allowsDetailedTracking\(\)[\s\S]*startMotionListener\(\)/);
-  assert.match(startSensors, /else \{[\s\S]*stopMotionListener\(\)[\s\S]*motionAvailable = false/);
+  const richStartSensors = section(session,
+    "(:richWorkoutMode)\n    static function startSensors()",
+    "(:compactWorkoutMode96)\n    static function startSensors()");
+  const manualStartSensors = section(session,
+    "(:compactWorkoutMode96)\n    static function startSensors()",
+    "static function stopSensors()");
+  assert.match(richStartSensors, /if \(!GymWorkoutMode\.canResume\(\)\)/);
+  assert.match(richStartSensors, /GymWorkoutMode\.allowsDetailedTracking\(\)[\s\S]*startMotionListener\(\)/);
+  assert.match(richStartSensors, /else \{[\s\S]*stopMotionListener\(\)[\s\S]*motionAvailable = false/);
+  assert.match(manualStartSensors, /Sensor\.setEnabledSensors\(\[Sensor\.SENSOR_HEARTRATE\]\)/);
+  assert.doesNotMatch(manualStartSensors,
+    /autoPromptEnabled|startMotionListener|\bregisterSensorDataListener|SENSOR_ACCEL|SENSOR_GYRO|accelerometer|gyroscope/i,
+    "96 KiB startup remains HR-only even when the legacy setting is enabled");
   assert.equal((session.match(/function onSensorData\(data\) \{\s*if \(!GymWorkoutMode\.allowsDetailedTracking\(\)\)/g) || []).length, 2);
   const heartRate = section(session, "static function applyHeartRate(value)", "static function filteredHeartRate(value)");
+  assert.match(session, /static const EFFORT_FREE = 6;/);
   assert.match(heartRate, /if \(detailedTracking\)[\s\S]*trackRecoveryHeartRate\(value\)[\s\S]*updateEffortState/);
-  assert.match(heartRate, /else \{[\s\S]*autoLogPrompt = false[\s\S]*activeSetSeen = false[\s\S]*effortState = "FREE"/);
-  const tick = section(session, "static function tick()", "static function startSensors()");
+  assert.match(heartRate, /else \{[\s\S]*autoLogPrompt = false[\s\S]*activeSetSeen = false[\s\S]*effortState = EFFORT_FREE/);
+  const tick = section(session, "static function tick(", "static function startSensors()");
   assert.match(tick,
-    /expireStaleHeartRate\(\)[\s\S]*if \(!detailedTracking\)[\s\S]*if \(!paused\)[\s\S]*effortState = "FREE"/,
+    /expireStaleHeartRate\(\)[\s\S]*if \(!detailedTracking\)[\s\S]*if \(!paused\)[\s\S]*effortState = EFFORT_FREE/,
     "FREE stale-HR expiry must preserve the paused lifecycle without arming detailed tracking");
+  const effortLabel = section(view, "function effortLabel(state)", "function confidenceLabel()");
+  assert.match(effortLabel, /return "FREE";/,
+    "the internal EFFORT_FREE state still renders with the FREE label");
 
   for (const guardedMutation of ["nextExercise", "addSet", "canUndoLastSet", "undoLastSet", "restSeconds"]) {
     const start = `static function ${guardedMutation}(`;
     const bodyStart = store.indexOf(start);
     assert.notEqual(bodyStart, -1, `missing ${guardedMutation}`);
     const body = store.slice(bodyStart, bodyStart + 420);
-    assert.match(body, /GymWorkoutMode\.allowsDetailedTracking\(\)/, `${guardedMutation} must reject FREE`);
+    assert.match(body, /GymWorkoutMode\.allowsDetailedTracking\(\)/,
+      `${guardedMutation} must use the profile-specific mode gate`);
   }
 
   const freeDashboard = section(view, "function drawFreeDashboard(dc, w, h)", "(:fullLegacyState)\n    function isCompactDashboard");
@@ -169,12 +228,31 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   assert.match(overview, /drawHeartRateZones\(dc, w, h/);
   assert.match(overview, /GymStore\.totalGymCalories\(\)/);
   assert.doesNotMatch(freeDashboard + overview, /currentExercise|weight|reps|sets|rest|autoLog|motion/i);
-  const compactDashboard = section(view,
-    "(:compactLegacyState)\n    function drawTinyDashboard",
+  const manualDashboard = section(view,
+    "(:compactWorkoutMode96)\n    function drawManualDashboard",
     "(:fullLegacyState)\n    function drawCompactHeartIcon");
-  assert.match(compactDashboard,
-    /if \(GymWorkoutMode\.isFree\(\)\)[\s\S]*totalGymCalories\(\)[\s\S]*\} else \{[\s\S]*currentExerciseLabel\(\)/,
-    "96 KiB FREE must branch away from exercise and set rows");
+  assert.match(manualDashboard, /GymStore\.currentExerciseLabel\(\)/,
+    "96 KiB planned workouts show the selected exercise name");
+  assert.match(manualDashboard, /GymStore\.sets\.size\(\) \+ 1/,
+    "96 KiB planned workouts show the next manual set number");
+  assert.match(manualDashboard, /setSummaryText\(\)/,
+    "96 KiB planned workouts show the current set summary");
+  assert.doesNotMatch(manualDashboard, /autoLogPrompt|startMotionListener|motion|EFFORT_(ACTIVE|CANDIDATE)/i,
+    "96 KiB manual UI omits detector state and labels");
+  const freeSession = section(view,
+    "(:compactWorkoutMode96)\n    function drawFreeSessionDashboard",
+    "(:fullLegacyState)\n    function drawCompactHeartIcon");
+  assert.match(view,
+    /if \(GymWorkoutMode\.isFree\(\)\) \{\s*drawFreeSessionDashboard\(dc, w, h, false\);\s*\} else \{\s*drawManualDashboard\(dc, w, h, false\);/,
+    "FREE and planned manual workouts use separate 96 KiB dashboards");
+  assert.match(freeSession,
+    /"HR " \+ heart[\s\S]*GymSession\.elapsedText\(\)[\s\S]*"KCAL " \+ GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/,
+    "FREE displays aggregate heart rate, elapsed time, and calories");
+  assert.match(freeSession,
+    /if \(!saveAction\) \{\s*drawMinimalLine\(dc, w, h \* 0\.84,[\s\S]*"SELECT: PAUSE"/,
+    "FREE offers pause from its workout dashboard");
+  assert.doesNotMatch(freeSession, /GymStore\.sets|currentExercise|weight|reps|SET ENTRY/i,
+    "FREE does not display manual set controls or details");
   const compactReadyStatus = section(view,
     "(:compactLegacyState)\n    function readyStatusText()",
     "function readyActionCount()");
@@ -184,6 +262,8 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   assert.doesNotMatch(compactReadyStatus, /current\.find\("FAIL"\)/,
     "unrelated internal failures must not be mislabeled as retained workout data");
   assert.match(view, /GymWorkoutMode\.isFree\(\)[\s\S]*openPauseMenu\(\)/);
+  assert.match(view, /if \(GymWorkoutMode\.isFree\(\)\) \{\s*openPauseMenu\(\);\s*\}/,
+    "SELECT on duration-only FREE opens the pause menu");
   assert.match(view, /function navigateContent\(delta\) \{\s*if \(GymWorkoutMode\.isFree\(\)/);
   assert.match(view, /function hasPendingSetPrompt\(\) \{\s*if \(!GymWorkoutMode\.allowsDetailedTracking\(\)\)/);
 });

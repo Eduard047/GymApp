@@ -201,6 +201,11 @@ test("Garmin restart restores the selected exercise only for the matching active
     "(:compactLegacyState)\n    static function load()",
     "(:compactLegacyState)\n    static function save()"
   );
+  const compactBeginLoad = section(
+    store,
+    "(:compactLegacyState)\n    static function beginLoad()",
+    "(:compactLegacyState)\n    static function load()"
+  );
   const save = section(store, "static function save()", "static function resetActiveWorkoutSnapshotState()");
   const currentEntry = section(
     store,
@@ -212,7 +217,8 @@ test("Garmin restart restores the selected exercise only for the matching active
   assert.match(load, /restoreCurrentEntry\(savedCurrentEntry\)/);
   assert.match(load, /selectNextPlanSlotInGlobalOrder\(\)/);
   assert.match(load, /setField\(GymSetAccess\.at\(sets, sets\.size\(\) - 1\), "exerciseName"\)/);
-  assert.match(compactLoad, /Storage\.getValue\("currentEntryV1"\)/);
+  assert.match(compactBeginLoad, /var savedCurrentEntry = Storage\.getValue\("currentEntryV1"\)/);
+  assert.match(compactBeginLoad, /return \[schema, ownerMatches, savedExerciseCatalogValid, savedCurrentEntry,[\s\S]*savedActive/);
   assert.match(compactLoad, /restoreCurrentEntry\(savedCurrentEntry\)/);
   assert.match(compactLoad, /setField\(GymSetAccess\.at\(sets, sets\.size\(\) - 1\), "exerciseName"\)/);
   assert.match(currentEntry, /value\.size\(\) != 2 && value\.size\(\) != 4/);
@@ -290,7 +296,7 @@ test("Garmin account transition retains and retries a FIT session that could not
     "static function retryAccountTransitionFitCleanup()",
     "static function createFitFields()"
   );
-  const tick = section(session, "static function tick()", "static function startSensors()");
+  const tick = section(session, "static function tick(", "static function startSensors()");
 
   assert.match(session, /static var fitCleanupPending = false/);
   assert.match(start, /if \(!retryAccountTransitionFitCleanup\(\)\)[\s\S]*return false/);

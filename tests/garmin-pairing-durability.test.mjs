@@ -198,7 +198,8 @@ test("Garmin load defers old-bound pairing stages and completes target-bound par
 
   assert.match(applySync, /var revisionStatus = syncRevisionStatus\(safeMessage, bindingSource\)[\s\S]*var repairReplay = repairPairing/);
   assert.match(applySync, /revisionStatus == 0 \|\| isExactStagedSync\(safeMessage, bindingSource\)/);
-  assert.match(applySync, /pairingGeneration\.toString\(\)\.equals\(nextPairingGeneration\.toString\(\)\)[\s\S]*!repairReplay/);
+  assert.match(applySync, /var repairReplay = repairPairing[\s\S]*isValidAccountBinding\(pairingGeneration\)[\s\S]*isValidAccountBinding\(nextPairingGeneration\)[\s\S]*pairingGeneration\.equals\(nextPairingGeneration\.toString\(\)\)[\s\S]*revisionStatus == 0 \|\| isExactStagedSync\(safeMessage, bindingSource\)/);
+  assert.match(applySync, /if \(repairPairing &&[\s\S]*pairingGeneration\.equals\(nextPairingGeneration\.toString\(\)\)[\s\S]*!repairReplay/);
   assert.match(applySync, /\(shouldUpgradePending \|\| repairPairing\)[\s\S]*rotatePairingGenerationForPending/);
   assert.ok(
     applySync.indexOf("pairingGenerationChanges") < applySync.indexOf("stageSync(safeMessage"),
@@ -208,7 +209,7 @@ test("Garmin load defers old-bound pairing stages and completes target-bound par
   assert.match(compactApplySync, /revisionStatus == 0[\s\S]*isExactStagedSync\(safeMessage, bindingSource\)[\s\S]*!syncBindingsMatch\(safeMessage\)[\s\S]*revisionStatus = 1[\s\S]*status = GymStatus\.SYNC_DUP[\s\S]*clearSyncStageIfMatches\(safeMessage, bindingSource\)[\s\S]*return true/);
 
   const fullSaveStart = storeSource.indexOf("(:fullLegacyState)\n    static function save()");
-  const fullSaveEnd = storeSource.indexOf("(:compactLegacyState)\n    static function load()", fullSaveStart);
+  const fullSaveEnd = storeSource.indexOf("(:compactLegacyState)\n    static function beginLoad()", fullSaveStart);
   const compactSaveStart = storeSource.indexOf("(:compactLegacyState)\n    static function save()");
   const compactSaveEnd = storeSource.indexOf("static function ensureDurableExerciseCatalog()", compactSaveStart);
   for (const save of [

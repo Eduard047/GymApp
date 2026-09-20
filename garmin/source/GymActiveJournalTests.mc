@@ -116,7 +116,7 @@ function activeJournalReplacementCannotOverwritePreviousBankBeforeCommit(logger 
     return GymStore.setField(GymSetAccess.at(GymStore.sets, 0), "weight") == 90.0;
 }
 
-(:test, :compactLegacyState)
+(:test, :compactLegacyState, :richWorkoutMode)
 function journalUndoRestoresRemovedExerciseAndExactPickerAcrossReload(logger as Test.Logger) as Lang.Boolean {
     GymStore.clearAccountScopedState();
     GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -234,7 +234,7 @@ function recordingCapacityCommitsThirtyAndRejectsOverflow(logger as Test.Logger)
     GymStore.exercises = ["Bench Press"]; GymStore.exerciseCatalogNeedsWrite = true;
     GymStore.plan = [{"exerciseName" => "Bench Press", "weight" => 50.0, "reps" => 8}];
     GymWorkoutMode.state = GymWorkoutMode.MODE_PLANNED;
-    var capacity = GymWorkoutMode.recordingSetLimit;
+    var capacity = GymStore.maxNewWorkoutSets;
     if (GymActiveJournal.allocateRows(1).size() != capacity ||
         GymActiveJournal.allocateRows(0).size() != 0 ||
         GymActiveJournal.allocateRows(60).size() != 60) { return false; }

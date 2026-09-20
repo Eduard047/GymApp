@@ -52,6 +52,7 @@ class GymActiveJournal {
                 (value[5] > 0 || value[9] != null));
     }
 
+    (:richWorkoutMode)
     static function validate(value) {
         reset();
         if (!validHeader(value)) { return false; }
@@ -104,6 +105,69 @@ class GymActiveJournal {
         header = value;
         records = finishRows(value, restored, nameBytes);
         intervalTotals = [previousEnd, gymSum, garminSum, hasGarmin];
+        return true;
+    }
+
+    (:compactWorkoutMode96)
+    static function validate(value) {
+        reset();
+        if (!validHeader(value)) { return false; }
+        var restored = allocateRows(value[5]);
+        var checkpoint = value[9];
+        var previousEnd = 0;
+        var gymSum = 0.0;
+        var garminSum = 0.0;
+        var hasGarmin = false;
+        var intervalMode = 0;
+        var nameBytes = 0;
+        try {
+            for (var i = 0; i < value[5]; i += 1) {
+                var row = Storage.getValue(key(value[6], i));
+                if (!(row instanceof Lang.Array) || row.size() != 6 ||
+                    row[0] != value[7] ||
+                    !GymStore.isBoundedInteger(row[1], 0, GymStore.exercises.size() - 1) ||
+                    !GymStore.isValidWeight(row[2]) || !GymStore.isValidReps(row[3]) ||
+                    !GymStore.isBoundedInteger(row[5], 1, value[8])) { return false; }
+                var interval = row[4];
+                if (interval == null) {
+                    // A compact manual workout omits every per-set interval.
+                    // Reject mixed banks so a torn rewrite cannot be mistaken
+                    // for either the old complete or new omitted representation.
+                    if (intervalMode == 1) { return false; }
+                    intervalMode = 2;
+                } else {
+                    if (checkpoint == null || intervalMode == 2 ||
+                        !GymStore.isValidSetInterval(interval) ||
+                        interval[0] < previousEnd || interval[1] > checkpoint[0]) {
+                        return false;
+                    }
+                    intervalMode = 1;
+                    previousEnd = interval[1];
+                    gymSum += interval[2].toFloat();
+                    if (interval[3] != null) {
+                        hasGarmin = true;
+                        garminSum += interval[3].toFloat();
+                    }
+                }
+                var name = GymStore.exercises[row[1]];
+                nameBytes += GymStore.utf8Bytes(name).size();
+                if (nameBytes > 12000) { return false; }
+                rememberRow(restored, name, row, i);
+            }
+        } catch (e) { return false; }
+        if (checkpoint != null && (gymSum > checkpoint[1].toFloat() + 0.1 ||
+            (hasGarmin && (checkpoint[2] == null ||
+                garminSum > checkpoint[2].toFloat() + 0.1)))) { return false; }
+        // Publish only after every stored row has passed validation. Keeping this
+        // exact result avoids a second full storage read in the same callback.
+        if (GymStore.activeWorkoutSnapshotMatchesBindings(value)) {
+            value[1] = GymStore.accountBinding;
+            value[2] = GymStore.deviceBinding;
+            value[3] = GymStore.pairingGeneration;
+        }
+        header = value;
+        records = finishRows(value, restored, nameBytes);
+        intervalTotals = [previousEnd, gymSum, garminSum, hasGarmin, intervalMode];
         return true;
     }
 
@@ -228,7 +292,7 @@ class GymActiveJournal {
         return bytes;
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     static function commit(next, origin, checkpoint) {
         if (checkpoint != null && !GymStore.isValidTimelineCheckpoint(checkpoint)) { return false; }
         var previousEnd = 0;
@@ -354,6 +418,153 @@ class GymActiveJournal {
         if (reusable && value[5] < previous[5]) { pruneTail(bank, value[5]); }
         legacyCount = -1;
         intervalTotals = [previousEnd, gymSum, garminSum, hasGarmin];
+        rowCacheRef = null; rowCache = null;
+        if (GymSetAccess.isJournal(next)) {
+            next.source = value; next.data = directory; next.count = value[5];
+            next.nameBytes = nameBytes; next.tail = []; records = next;
+        } else { records = finishRows(value, directory, nameBytes); }
+        // Reclaim only an old bank which has no queue readers. A completed workout
+        // continues to reference its exact rows after the active pointer moves.
+        if (!reusable && validHeader(previous) && !GymPendingJournal.pins(previous[6])) {
+            pruneTail(previous[6], 0);
+        }
+        return true;
+    }
+
+    (:compactWorkoutMode96)
+    static function commit(next, origin, checkpoint) {
+        if (checkpoint != null && !GymStore.isValidTimelineCheckpoint(checkpoint)) { return false; }
+        var previousEnd = 0;
+        var gymSum = 0.0;
+        var garminSum = 0.0;
+        var hasGarmin = false;
+        var intervalMode = checkpoint == null && next.size() > 0 ? 2 : 0;
+        var reusable = header != null && !GymPendingJournal.pins(header[6]) &&
+            GymStore.activeWorkoutSnapshotMatchesBindings(header) &&
+            header[8] < 2147483647 && header[4] == origin &&
+            (header[9] == null) == (checkpoint == null);
+        if (GymSetAccess.isJournal(next) &&
+            (next.source != header || (next.count < header[5] && next.tail.size() > 0))) {
+            reusable = false;
+        }
+        var checkedFrom = GymSetAccess.isJournal(next) && next.source == header ? next.count : 0;
+        for (var i = checkedFrom; i < next.size(); i += 1) {
+            var item = GymSetAccess.at(next, i);
+            var index = GymStore.exerciseIndexForName(GymStore.setField(item, "exerciseName"));
+            if (index < 0) { return false; }
+            if (reusable && i < records.size() &&
+                (!isRecord(item) || item[3] != header || item[1] != i)) {
+                reusable = false;
+            }
+        }
+        var intervalStart = reusable && next.size() >= records.size() ? records.size() : 0;
+        if (intervalStart > 0 && intervalTotals != null) {
+            previousEnd = intervalTotals[0]; gymSum = intervalTotals[1];
+            garminSum = intervalTotals[2]; hasGarmin = intervalTotals[3];
+            intervalMode = intervalTotals[4];
+        }
+        if (checkpoint != null) {
+            for (var t = intervalStart; t < next.size(); t += 1) {
+                var interval = GymStore.setField(GymSetAccess.at(next, t), "setInterval");
+                if (interval == null) {
+                    if (intervalMode == 1) { return false; }
+                    intervalMode = 2;
+                    continue;
+                }
+                if (intervalMode == 2 || !GymStore.isValidSetInterval(interval) ||
+                    interval[0] < previousEnd || interval[1] > checkpoint[0]) { return false; }
+                intervalMode = 1;
+                previousEnd = interval[1];
+                gymSum += interval[2].toFloat();
+                if (interval[3] != null) { hasGarmin = true; garminSum += interval[3].toFloat(); }
+                // The validator reads a private copy from setField. Do not keep
+                // the final copy alive beside the storage serialization buffer.
+                interval = null;
+            }
+        }
+        if (checkpoint != null && (previousEnd > checkpoint[0] ||
+            gymSum > checkpoint[1].toFloat() + 0.1 || (hasGarmin &&
+                (checkpoint[2] == null || garminSum > checkpoint[2].toFloat() + 0.1)))) {
+            return false;
+        }
+        var previous = header;
+        if (previous == null && legacyCount < 0) {
+            try { previous = Storage.getValue("activeWorkoutV1"); }
+            catch (e) { return false; }
+        }
+        var bank = reusable ? header[6] :
+            GymPendingJournal.availableBank(validHeader(previous) ? previous[6] : -1);
+        if (bank < 0) { return false; }
+        var epoch = reusable ? header[7] :
+            (validHeader(previous) ? previous[7] % 2147483647 + 1 : 1);
+        var revision = reusable ? header[8] + 1 : 1;
+        var value = [6, GymStore.accountBinding, GymStore.deviceBinding,
+            GymStore.pairingGeneration, origin, next.size(), bank, epoch, revision, checkpoint];
+        // A pinned previous bank is already included in the durable queue
+        // estimate. Moving the active pointer must not charge its rows twice.
+        stagingBytes = reusable ? 0 : (legacyCount >= 0 ? legacyCount * 160 :
+            (validHeader(previous) && !GymPendingJournal.pins(previous[6]) ?
+                previous[5] * 160 : 0));
+        var start = reusable ? records.size() : 0;
+        // The directory is immutable inside the published prefix. Appending
+        // may fill its unused capacity; undo only shortens the visible prefix.
+        // A replacement which changes a referenced index takes a separate copy.
+        var sharedDirectory = GymSetAccess.isJournal(next) && next.source == header &&
+            next.data.size() >= next.size() &&
+            (next.tail.size() == 0 || next.count == header[5]);
+        var directory = sharedDirectory ? next.data : allocateRows(next.size());
+        var nameBytes = sharedDirectory ? next.nameBytes : 0;
+        var directoryStart = sharedDirectory ? next.count : 0;
+        for (var d = directoryStart; d < next.size(); d += 1) {
+            var entry = GymSetAccess.at(next, d);
+            var entryName = GymStore.setField(entry, "exerciseName");
+            directory[d] = GymStore.exerciseIndexForName(entryName);
+            nameBytes += GymStore.utf8Bytes(entryName).size();
+        }
+        // Reserve the eventual queue representation before accepting more work.
+        // Each row is shared; only name framing and two metadata slots are extra.
+        // Each context shares the header's owner, origin, count and checkpoint.
+        // Its generated workout ID is at most 36 characters; mode and plan
+        // counts add at most 48 encoded bytes over the replaced numeric fields.
+        // Reserve two entry slots (4 headers + 2 * 48), plus 192 framing bytes.
+        // The existing active-header reservation covers its smaller tombstone.
+        if (origin != null && !GymPendingJournal.pins(bank)) {
+            stagingBytes += 288 + 4 * GymStore.estimatedValueBytes(value) +
+                uniqueNameStorageBytes(directory, next.size());
+            if (GymStore.preparedWorkout == null) {
+                // The later FIT transaction adds its owner-bound prepared
+                // record and request marker. Keep room before accepting a set.
+                stagingBytes += 128 + GymStore.estimatedValueBytes(value[1]) +
+                    GymStore.estimatedValueBytes(value[2]) + GymStore.estimatedValueBytes(value[3]);
+            }
+        }
+        var withinBudget = validHeader(value) && GymStore.isWithinStorageBudgetForActiveSnapshot(value);
+        stagingBytes = 0;
+        if (!withinBudget) {
+            GymStore.status = GymStatus.STORE_FULL;
+            return false;
+        }
+        // Timeline preparation can refill the last-row read cache after the
+        // sensor pause. It is disposable; storage writes need that headroom.
+        releaseReadCache();
+        if (!reusable) { pruneTail(bank, 0); }
+        try {
+            for (var r = start; r < next.size(); r += 1) {
+                var record = GymSetAccess.at(next, r);
+                Storage.setValue(key(bank, r), [epoch,
+                    directory[r],
+                    GymStore.setField(record, "weight"), GymStore.setField(record, "reps"),
+                    // Serialization borrows the validated immutable interval;
+                    // UI callers still receive copies through setField().
+                    checkpoint == null ? null : (GymRecordedSet.isRecord(record) ?
+                        record[3] : GymStore.setField(record, "setInterval")), revision]);
+            }
+            Storage.setValue("activeWorkoutV1", value);
+        } catch (e) { return false; }
+        header = value;
+        if (reusable && value[5] < previous[5]) { pruneTail(bank, value[5]); }
+        legacyCount = -1;
+        intervalTotals = [previousEnd, gymSum, garminSum, hasGarmin, intervalMode];
         rowCacheRef = null; rowCache = null;
         if (GymSetAccess.isJournal(next)) {
             next.source = value; next.data = directory; next.count = value[5];

@@ -13,7 +13,8 @@ class GymWorkoutMode {
     static const MODE_FREE = 1;
     static const MODE_PLANNED = 2;
     static var state = MODE_IDLE;
-    // Recording capacity is separate from the legacy storage/wire read limit.
+    // Profile sentinel selects memory-specialized code paths; product limits
+    // for new workouts are shared and live in GymStore.maxNewWorkoutSets.
     (:fr55Memory)
     static const recordingSetLimit = 30;
     (:notFr55Memory)
@@ -34,10 +35,25 @@ class GymWorkoutMode {
         return state == MODE_PLANNED;
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function allowsDetailedTracking() {
         return state == MODE_PLANNED;
     }
+
+    // The 96 KiB profile keeps manual set entry in Plan mode while Free remains
+    // duration-only, matching the existing save wire contract.
+    (:compactWorkoutMode96, :inline)
+    static function allowsDetailedTracking() {
+        return state == MODE_PLANNED;
+    }
+
+    // Keep optional per-set interval rows on richer profiles; the 96 KiB
+    // products can omit the slices while retaining aggregate timeline metrics.
+    (:richWorkoutMode, :inline)
+    static function permitsOmittedSetIntervals() { return false; }
+
+    (:compactWorkoutMode96, :inline)
+    static function permitsOmittedSetIntervals() { return true; }
 
     static function hasValidPlan() {
         var currentPlan = GymStore.plan;
@@ -46,13 +62,17 @@ class GymWorkoutMode {
             return false;
         }
         for (var i = 0; i < currentPlan.size(); i += 1) {
-            var item = GymSetAccess.at(currentPlan, i);
-            if (!GymStore.isSetRecord(item) ||
-                GymStore.exerciseIndexForName(GymStore.setField(item, "exerciseName")) < 0) {
+            var exerciseName = GymPlanAccess.nameAt(currentPlan, i);
+            if (exerciseName == null ||
+                GymStore.exerciseIndexForName(exerciseName) < 0) {
                 return false;
             }
         }
         return true;
+    }
+
+    static function hasStartablePlan() {
+        return GymStore.plan.size() <= GymStore.maxNewWorkoutSets && hasValidPlan();
     }
 
     static function canResume() {
@@ -73,11 +93,11 @@ class GymWorkoutMode {
         }
         // Reserve a queue slot before any new workout or picker state is written.
         // Resume bypasses begin(), so an existing recording remains recoverable.
-        if (GymStore.pendingCount() >= 8) {
+        if (!GymPendingJournal.readable || GymStore.pendingCount() > 0) {
             GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }
-        if (usePlan && !hasValidPlan()) {
+        if (usePlan && !hasStartablePlan()) {
             GymStore.status = GymStatus.NO_PLAN;
             return false;
         }
@@ -137,11 +157,11 @@ class GymWorkoutMode {
         }
         // Reserve a queue slot before any new workout or picker state is written.
         // Resume bypasses begin(), so an existing recording remains recoverable.
-        if (GymStore.pendingCount() >= 8) {
+        if (!GymPendingJournal.readable || GymStore.pendingCount() > 0) {
             GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }
-        if (usePlan && !hasValidPlan()) {
+        if (usePlan && !hasStartablePlan()) {
             GymStore.status = GymStatus.NO_PLAN;
             return false;
         }

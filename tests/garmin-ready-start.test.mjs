@@ -23,11 +23,11 @@ test("fresh Garmin launch is Ready or a prepared recovery and never starts a wor
   assert.doesNotMatch(onShow, /GymSession\.(?:start|resume)\(/);
   assert.match(onShow, /if \(!GymSession\.paused\) \{\s*GymSession\.startSensors\(\)/);
   assert.doesNotMatch(onShow, /requestSyncNow\(|flushPending\(|requestCloudSyncNow\(|GymComm\.(?:requestSync|requestCloudPlan|send)\(/);
-  assert.ok(
-    tick.indexOf("if (page == 7 || !GymSession.recording)") < tick.indexOf("GymSession.tick()"),
-    "the idle tick must return before recording logic"
-  );
-  assert.match(tick, /maybeRetryPending\(\)[\s\S]*if \(page == 7 \|\| !GymSession\.recording\)/);
+  const idleGuard = tick.indexOf("if (page == 7 || !GymSession.recording)");
+  const workoutTick = tick.indexOf("GymSession.tick();");
+  assert.ok(idleGuard >= 0 && workoutTick > idleGuard,
+    "the idle tick must return before recording logic");
+  assert.match(tick, /maybeRetryPending\(\)[\s\S]*if \(page == 7 \|\| !GymSession\.recording\) \{[\s\S]*?return;\s*\}[\s\S]*GymSession\.tick\(\);/);
   assert.doesNotMatch(view, /scheduleCloudSyncOnOpen|requestCloudSyncOnOpen|cloudAuto/);
 });
 
@@ -141,9 +141,14 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   assert.ok(version);
 
   const actions = section(view, "function readyActionText(index, count)", "(:fullLegacyState)\n    function drawReady(dc, w, h)");
-  assert.ok(actions.indexOf('"START PLAN"') < actions.indexOf('"FREE WORKOUT"'));
-  assert.ok(actions.indexOf('"FREE WORKOUT"') < actions.indexOf('"SYNC PLAN"'));
-  assert.ok(actions.indexOf('"SYNC PLAN"') < actions.indexOf('"SETTINGS"'));
+  const plannedChoices = section(actions, "else if (count == 4) {", "return index == 1 ?");
+  assert.match(plannedChoices, /if \(index == 0\) \{\s*return GymStore\.tr\("START PLAN"/);
+  assert.match(plannedChoices, /else if \(index == 1\) \{\s*return GymStore\.tr\("FREE WORKOUT"/);
+  assert.match(plannedChoices, /index -= 1;/);
+  const remainingChoices = actions.slice(actions.indexOf("return index == 1 ?"));
+  assert.match(remainingChoices, /return index == 1 \?\s*GymStore\.tr\("SYNC PLAN"[\s\S]*?:\s*GymStore\.tr\("SETTINGS"/);
+  assert.match(actions, /else if \(index == 0\) \{\s*return GymStore\.tr\("FREE WORKOUT"/,
+    "without a startable plan, Free Workout remains the first Ready action");
   const ready = section(view, "(:fullLegacyState)\n    function drawReady(dc, w, h)", "(:compactRichRecovery)\n    function drawReady(dc, w, h)");
   assert.match(ready, /count = readyActionCount\(\)[\s\S]*count == 4[\s\S]*i < 4[\s\S]*readyActionText\(i, count\)/);
   const compactReady = section(view, "(:compactRichRecovery)\n    function drawReady(dc, w, h)", "(:compactRecovery96)\n    function drawReady(dc, w, h)");

@@ -16,6 +16,8 @@ class GymPendingJournal {
     private static var sentAt = null;
     private static var indexSlot = 0;
     private static var stagedNameBytes = null;
+    (:compactWorkoutMode96)
+    private static var stagedIntervalMode = 0;
 
     // Version 2 stores an exact checkpoint context instead of repeating every
     // wire key. Version 1 dictionaries remain readable until acknowledged.
@@ -86,7 +88,11 @@ class GymPendingJournal {
         return true;
     }
 
+    (:richWorkoutMode)
     static function reset() { stagedNameBytes = null; indexSlot = 0; entries = []; readable = true; dirty = false; transferId = null; attempt = null; offset = 0; sentAt = null; staged = null; nextName = 0; stagedTotals = null; }
+
+    (:compactWorkoutMode96)
+    static function reset() { stagedNameBytes = null; indexSlot = 0; entries = []; readable = true; dirty = false; transferId = null; attempt = null; offset = 0; sentAt = null; staged = null; nextName = 0; stagedTotals = null; stagedIntervalMode = 0; }
 
     static function nameKey(bank, index) {
         return "queueName" + bank.toString() + "-" + index.toString();
@@ -132,6 +138,7 @@ class GymPendingJournal {
             GymStore.sameOptionalText(context ? metadata[3] : metadata["pairingGeneration"], generation);
     }
 
+    (:richWorkoutMode)
     static function row(entry, index) {
         var header = entry[1];
         if (!GymStore.isBoundedInteger(index, 0, header[5] - 1)) { return null; }
@@ -146,6 +153,28 @@ class GymPendingJournal {
                 !(name instanceof Lang.Array) || name.size() != 3 || name[0] != header[7] ||
                 name[1] != value[1] || !GymStore.isValidExerciseName(name[2]) ||
                 (header[9] == null ? value[4] != null : !GymStore.isValidSetInterval(value[4]))) {
+                return null;
+            }
+            return [name[2], value[2], value[3], value[4], value[1]];
+        } catch (e) { return null; }
+    }
+
+    (:compactWorkoutMode96)
+    static function row(entry, index) {
+        var header = entry[1];
+        if (!GymStore.isBoundedInteger(index, 0, header[5] - 1)) { return null; }
+        try {
+            var value = Storage.getValue(GymActiveJournal.key(header[6], index));
+            if (!(value instanceof Lang.Array) || value.size() != 6 ||
+                !GymStore.isBoundedInteger(value[1], 0, 59)) { return null; }
+            var name = Storage.getValue(nameKey(header[6], value[1]));
+            if (!(value instanceof Lang.Array) || value.size() != 6 ||
+                value[0] != header[7] || !GymStore.isBoundedInteger(value[5], 1, header[8]) ||
+                !GymStore.isValidWeight(value[2]) || !GymStore.isValidReps(value[3]) ||
+                !(name instanceof Lang.Array) || name.size() != 3 || name[0] != header[7] ||
+                name[1] != value[1] || !GymStore.isValidExerciseName(name[2]) ||
+                (value[4] != null && (header[9] == null ||
+                    !GymStore.isValidSetInterval(value[4])))) {
                 return null;
             }
             return [name[2], value[2], value[3], value[4], value[1]];
@@ -170,6 +199,7 @@ class GymPendingJournal {
         }
     }
 
+    (:richWorkoutMode)
     static function load() {
         reset();
         var value = null;
@@ -243,8 +273,92 @@ class GymPendingJournal {
         return true;
     }
 
+    (:compactWorkoutMode96)
+    static function load() {
+        reset();
+        var value = null;
+        try { value = Storage.getValue("pendingJournalV1"); }
+        catch (e) { readable = false; return false; }
+        if (value == null) { return true; }
+        if (!(value instanceof Lang.Array) || value.size() < 2 ||
+            !(value[0] instanceof Lang.Number)) { readable = false; return false; }
+        var source = null;
+        if (value[0] == 3) {
+            if (value.size() != 3 || !(value[1] instanceof Lang.Number) ||
+                (value[1] != 0 && value[1] != 1)) { readable = false; return false; }
+            indexSlot = value[1]; source = value[2];
+        } else {
+            if (value.size() != 2 || (value[0] != 1 && value[0] != 2)) {
+                readable = false; return false;
+            }
+            source = value[1];
+        }
+        if (!(source instanceof Lang.Array) || source.size() > 8) { readable = false; return false; }
+        var next = [];
+        // Never publish only a valid prefix of an unreadable queue.
+        var bytes = 0;
+        var recovery = GymStore.stagedPairingRecoveryTarget();
+        if (source.size() + GymStore.pendingCount() > 8) { readable = false; return false; }
+        for (var i = 0; i < source.size(); i += 1) {
+            var entry = source[i];
+            if (value[0] == 3) {
+                if (!(entry instanceof Lang.Number) || entry < 0 || entry > 9) { readable = false; return false; }
+                try { entry = Storage.getValue(entryKey(indexSlot, entry)); }
+                catch (e) { readable = false; return false; }
+                if (!(entry instanceof Lang.Array) || entry.size() != 3 ||
+                    !GymActiveJournal.validHeader(entry[1]) || entry[1][6] != source[i]) { readable = false; return false; }
+            }
+            if (!(entry instanceof Lang.Array) || entry.size() != 3 ||
+                (value[0] == 1 && !(entry[0] instanceof Lang.Dictionary))) {
+                readable = false; return false;
+            }
+            if (!validEntry(entry) && (recovery == null || !matchesGeneration(entry, recovery))) {
+                readable = false; return false;
+            }
+            for (var p = 0; p < i; p += 1) {
+                if (bankOf(next[p]) == entry[1][6] ||
+                    requestIdOf(next[p]).equals(requestIdOf(entry))) {
+                    readable = false; return false;
+                }
+            }
+            var nameBytes = 0;
+            var uniqueNameBytes = 0; var seenNames = 0l;
+            var totals = [0, 0.0, 0.0];
+            var intervalMode = 0;
+            for (var r = 0; r < entry[1][5]; r += 1) {
+                var item = row(entry, r);
+                if (item == null) {
+                    readable = false; return false;
+                }
+                if (item[3] == null) {
+                    if (intervalMode == 1) { readable = false; return false; }
+                    intervalMode = 2;
+                } else {
+                    if (intervalMode == 2) { readable = false; return false; }
+                    intervalMode = 1;
+                }
+                if (!addInterval(entry, totals, item[3])) { readable = false; return false; }
+                var size = GymStore.utf8Bytes(item[0]).size();
+                nameBytes += size;
+                var bit = 1l << item[4];
+                if ((seenNames & bit) == 0) {
+                    seenNames |= bit; uniqueNameBytes += 64 + size;
+                }
+            }
+            if (nameBytes != entry[2]) { readable = false; return false; }
+            shareBindings(entry, GymStore.sameOptionalText(entry[1][3], GymStore.pairingGeneration) ?
+                GymStore.pairingGeneration : recovery);
+            bytes += nameBytes;
+            next.add(value[0] == 3 ? reference(entry, uniqueNameBytes) : entry);
+        }
+        if (bytes > 12000) { readable = false; return false; }
+        entries = next;
+        return true;
+    }
+
     // Returns 0 while names are being pinned, 1 after the durable queue commit,
     // or -1 on failure. The active snapshot/marker remain intact on every failure.
+    (:richWorkoutMode)
     static function begin(metadata) {
         staged = null; nextName = 0; stagedTotals = null;
         if (!(metadata instanceof Lang.Dictionary) && !(metadata instanceof Lang.Array)) { return -1; }
@@ -265,6 +379,28 @@ class GymPendingJournal {
         return 0;
     }
 
+    (:compactWorkoutMode96)
+    static function begin(metadata) {
+        staged = null; nextName = 0; stagedTotals = null; stagedIntervalMode = 0;
+        if (!(metadata instanceof Lang.Dictionary) && !(metadata instanceof Lang.Array)) { return -1; }
+        if (!readable || GymStore.pendingCount() >= 8 ||
+            !GymStore.hasPreparedWorkout() || (!GymStore.preparedWorkoutFitSaved() &&
+                !GymSession.fitOutcomeUnknownAfterRestart())) { return -1; }
+        var header = GymActiveJournal.snapshot();
+        if (header == null || pins(header[6]) || header[5] != GymStore.sets.size()) { return -1; }
+        if (metadata instanceof Lang.Dictionary) {
+            metadata.remove("sets"); metadata.remove("setMetrics"); metadata.remove("setIntervals");
+        }
+        var value = [metadata, header, 0];
+        if (!validEntry(value) ||
+            !GymStore.preparedWorkout[4].equals(requestIdOf(value))) { return -1; }
+        if (!clearBankNames(header[6])) { return -1; }
+        stagedNameBytes = GymActiveJournal.queueNameStorageBytes();
+        staged = value; stagedTotals = [0, 0.0, 0.0];
+        return 0;
+    }
+
+    (:richWorkoutMode)
     static function advance() {
         if (staged == null || !validEntry(staged) || !GymStore.hasPreparedWorkout() ||
             (!GymStore.preparedWorkoutFitSaved() && !GymSession.fitOutcomeUnknownAfterRestart()) ||
@@ -307,8 +443,59 @@ class GymPendingJournal {
         } catch (e) { staged = null; return -1; }
     }
 
+    (:compactWorkoutMode96)
+    static function advance() {
+        if (staged == null || !validEntry(staged) || !GymStore.hasPreparedWorkout() ||
+            (!GymStore.preparedWorkoutFitSaved() && !GymSession.fitOutcomeUnknownAfterRestart()) ||
+            !GymStore.preparedWorkout[4].equals(requestIdOf(staged)) ||
+            GymActiveJournal.snapshot() != staged[1]) { staged = null; return -1; }
+        try {
+            if (nextName < staged[1][5]) {
+                var value = Storage.getValue(GymActiveJournal.key(staged[1][6], nextName));
+                if (!(value instanceof Lang.Array) || value.size() != 6 ||
+                    value[0] != staged[1][7] ||
+                    !GymStore.isBoundedInteger(value[5], 1, staged[1][8]) ||
+                    !GymStore.isValidWeight(value[2]) || !GymStore.isValidReps(value[3]) ||
+                    !GymStore.isBoundedInteger(value[1], 0, GymStore.exercises.size() - 1)) {
+                    staged = null; return -1;
+                }
+                if (value[4] == null) {
+                    if (stagedIntervalMode == 1) { staged = null; return -1; }
+                    stagedIntervalMode = 2;
+                } else {
+                    if (stagedIntervalMode == 2 || staged[1][9] == null ||
+                        !GymStore.isValidSetInterval(value[4])) { staged = null; return -1; }
+                    stagedIntervalMode = 1;
+                }
+                if (!addInterval(staged, stagedTotals, value[4])) { staged = null; return -1; }
+                var name = GymStore.exercises[value[1]];
+                var bytes = GymStore.utf8Bytes(name).size();
+                if (staged[2] + bytes + totalNameBytes() > 12000) { staged = null; return -1; }
+                Storage.setValue(nameKey(staged[1][6], value[1]), [value[0], value[1], name]);
+                staged[2] += bytes; nextName += 1;
+                return 0;
+            }
+            var next = entries.slice(null, null);
+            next.add(staged);
+            // The existing prepared ID is also the recovery marker when an index
+            // commit wins but its later active tombstone does not.
+            var previousEntries = entries;
+            entries = next;
+            var withinBudget = false;
+            try { withinBudget = GymStore.isWithinStorageBudget(); }
+            catch (budgetError) { withinBudget = false; }
+            entries = previousEntries;
+            if (!withinBudget) { staged = null; return -1; }
+            Storage.setValue("queuedActiveRequestId", GymStore.preparedWorkout[4]);
+            if (!storeIndex(next)) { staged = null; return -1; }
+            entries = next; staged = null; nextName = 0;
+            return 1;
+        } catch (e) { staged = null; return -1; }
+    }
+
     // Validate chronological slices against both the committed checkpoint and
     // outgoing totals. This same check applies during append and after restart.
+    (:richWorkoutMode)
     private static function addInterval(entry, totals, interval) {
         var checkpoint = entry[1][9];
         if (checkpoint == null) { return interval == null; }
@@ -325,6 +512,40 @@ class GymPendingJournal {
         // row() and advance() validate each interval once before this aggregate check.
         if (interval[0] < totals[0] ||
             duration == null || interval[1] > checkpoint[0] ||
+            interval[1] > duration) { return false; }
+        totals[0] = interval[1]; totals[1] += interval[2].toFloat();
+        if (interval[3] != null) {
+            if (checkpoint[2] == null || garminCalories == null) { return false; }
+            totals[2] += interval[3].toFloat();
+        }
+        return gymCalories != null &&
+            totals[1] <= checkpoint[1].toFloat() + 0.1 &&
+            totals[1] <= gymCalories.toFloat() + 0.1 &&
+            (checkpoint[2] == null || totals[2] <= checkpoint[2].toFloat() + 0.1) &&
+            (garminCalories == null || totals[2] <= garminCalories.toFloat() + 0.1);
+    }
+
+    (:compactWorkoutMode96)
+    private static function addInterval(entry, totals, interval) {
+        var checkpoint = entry[1][9];
+        if (checkpoint == null) { return interval == null; }
+        // Entry validation already checked both legacy dictionaries and compact
+        // contexts. Read only the three totals needed here; expanding the wire
+        // dictionary for each row consumes the headroom needed to save on FR55.
+        var metadata = entry[0];
+        var context = metadata instanceof Lang.Array;
+        var summary = context ? metadata[6] : metadata;
+        if (summary == null) { return false; }
+        var duration = context ? summary[0] : summary["durationSeconds"];
+        var gymCalories = context ? summary[1] : summary["gymCalories"];
+        var garminCalories = context ? summary[2] : summary["garminCalories"];
+        if (duration == null || gymCalories == null) { return false; }
+        // Aggregate metrics remain mandatory; only the optional per-set slice
+        // is absent from new compact manual workouts.
+        if (interval == null) { return true; }
+        // row() and advance() validate each interval once before this aggregate check.
+        if (interval[0] < totals[0] ||
+            interval[1] > checkpoint[0] ||
             interval[1] > duration) { return false; }
         totals[0] = interval[1]; totals[1] += interval[2].toFloat();
         if (interval[3] != null) {

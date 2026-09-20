@@ -55,17 +55,22 @@ const intervalsAreConsistent = (intervals, durationSeconds, gymTotal, garminTota
   );
 };
 
-test("Garmin tracking prefers activity HR, diagnoses both sources, and expires stale readings", async () => {
+test("Garmin tracking prefers activity HR, samples sensor HR only for fallback or diagnostics, and expires stale readings", async () => {
   const [session, view, store] = await Promise.all([
     readFile("garmin/source/GymSession.mc", "utf8"),
     readFile("garmin/source/WorkoutView.mc", "utf8"),
     readFile("garmin/source/GymStore.mc", "utf8")
   ]);
 
-  const tick = section(session, "static function tick()", "static function startSensors()");
+  const tick = section(session, "static function tick(", "static function startSensors()");
   assert.ok(
     tick.indexOf("updateGarminActivityInfo()") < tick.indexOf("readHeartRateFromSensor()"),
     "the native activity sample remains authoritative"
+  );
+  assert.match(tick, /var sampledSensorHeartRate = null/);
+  assert.match(
+    tick,
+    /if \(!appliedActivityHeartRate \|\| showSensorDiagnostics\) \{\s*sampledSensorHeartRate = readHeartRateFromSensor\(\);/
   );
   assert.match(tick, /if \(!appliedActivityHeartRate\)[\s\S]*applyHeartRate\(sampledSensorHeartRate\)/);
   assert.match(tick, /expireStaleHeartRate\(\)/);
@@ -81,6 +86,7 @@ test("Garmin tracking prefers activity HR, diagnoses both sources, and expires s
   assert.match(session, /static function hasValidHeartRateZones\(\)/);
   assert.match(view, /"ACT", GymSession\.activityHr/);
   assert.match(view, /"SNS", GymSession\.sensorHr/);
+  assert.equal((view.match(/GymSession\.tick\(page == 4\);/g) || []).length, 2);
   assert.match(view, /"MOV", motionDebugText\(\)/);
   assert.match(view, /function motionDebugText\(\)[\s\S]*GymSession\.motionAvailable/);
   assert.match(view, /"CONF", GymSession\.setConfidence/);
@@ -209,13 +215,13 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
 
   const onShow = section(view, "function onShow()", "function onHide()");
   const viewTick = section(view, "function tick()", "function requestSyncNow()");
-  const sessionTick = section(session, "static function tick()", "static function startSensors()");
+  const sessionTick = section(session, "static function tick(", "static function startSensors()");
   const pause = section(session, "static function pause()", "static function resume()");
   const resume = section(session, "static function resume()", "static function stopAndSave()");
   const calories = section(session, "static function updateCalories()", "static function setBoostFor(");
 
   assert.match(onShow, /ticker\.start\(method\(:tick\), 1000, true\)/);
-  assert.match(viewTick, /GymSession\.tick\(\)/);
+  assert.match(viewTick, /GymSession\.tick\(page == 4\)/);
   assert.match(viewTick, /Ui\.requestUpdate\(\)/);
   assert.match(sessionTick, /elapsedSeconds = now - startedAt - pausedAccumSeconds - currentPaused/);
   assert.ok(
@@ -1487,7 +1493,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   ];
   assert.match(
     jungle,
-    /^fr55\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory$/m
+    /^fr55\.excludeAnnotations = fullLegacyState;fr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory$/m
   );
   for (const product of compactProducts.filter((product) => product !== "fr55")) {
     assert.match(jungle,
@@ -1727,7 +1733,7 @@ test("Garmin full-to-compact ownerless quarantine retries the full snapshot befo
   const migration = section(
     store,
     "static function migrateFullLegacyQuarantineToCompact()",
-    "(:noFr55UpgradeBridge)\n    static function migrateFullLegacyQuarantineToCompact()"
+    "(:compactRecovery96)\n    static function migrateFullLegacyQuarantineToCompact()"
   );
 
   assert.ok(
@@ -2115,7 +2121,7 @@ test("Garmin active runtime checkpoint is bounded, owner-scoped, and restart-saf
   assert.match(validation, /isBoundedInteger\(restValue, 1, 3600\)/);
   assert.match(
     writer,
-    /var snapshot = \[\s*1,\s*accountBinding\.toString\(\),\s*deviceBinding\.toString\(\),[\s\S]*sets\.size\(\),\s*savedAt,\s*origin,\s*checkpoint,\s*GymSession\.paused,\s*restMode,\s*restValue\s*\]/
+    /var snapshot = \[\s*1,\s*accountBinding,\s*deviceBinding,\s*isValidAccountBinding\(pairingGeneration\) \?\s*pairingGeneration : null,\s*sets\.size\(\),\s*savedAt,\s*origin,\s*checkpoint,\s*GymSession\.paused,\s*restMode,\s*restValue\s*\]/
   );
   assert.match(writer, /Storage\.setValue\("activeRuntimeV1", snapshot\)/);
 

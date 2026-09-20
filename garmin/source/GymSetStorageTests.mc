@@ -109,6 +109,412 @@ function recordedIntervalsPreserveExactNumbersAndRejectMalformedCheckpoints(logg
     return !GymStore.isValidActiveWorkoutSnapshot(snapshot);
 }
 
+(:test, :notFr55Memory, :richWorkoutMode)
+function boundLoadDefersLegacyMirrorUntilSnapshotDecision(logger as Test.Logger) as Lang.Boolean {
+    var previousStoredSets = Toybox.Application.Storage.getValue("sets");
+    var previousStoredStartedAt = Toybox.Application.Storage.getValue("activeWorkoutStartedAtSeconds");
+    var previousSets = GymStore.sets;
+    var previousStartedAt = GymStore.activeWorkoutStartedAtSeconds;
+    var previousIntervalsInvalid = GymStore.resumedWorkoutIntervalsInvalid;
+    var previousOwner = GymStore.accountBinding;
+    var previousStateOwner = GymStore.stateOwnerBinding;
+    var previousDevice = GymStore.deviceBinding;
+    var previousGeneration = GymStore.pairingGeneration;
+
+    var owner = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    var otherOwner = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    var device = "deferred-mirror-test";
+    var startedAt = 1700000000;
+    var mirror = [
+        {"exerciseName" => "Bench Press", "weight" => 52.5, "reps" => 8,
+            "setInterval" => [0, 30, 4.0, null, 0, 0, 0, 0, 0, 0]},
+        {"exerciseName" => "Squat", "weight" => 75.0, "reps" => 10,
+            "setInterval" => [30, 60, 3.0, null, 0, 0, 0, 0, 0, 0]}
+    ];
+    var validActive = [2, owner, device, null, startedAt, mirror, null];
+    var wrongOwnerActive = [2, otherOwner, device, null, startedAt, mirror, null];
+    var corruptActive = ["corrupt active snapshot"];
+    var retainedCatalogSnapshot = [4, owner, device, null, startedAt, [], [], []];
+    var passed = false;
+
+    try {
+        Toybox.Application.Storage.setValue("sets", mirror);
+        Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", startedAt);
+        GymStore.accountBinding = owner;
+        GymStore.stateOwnerBinding = owner;
+        GymStore.deviceBinding = device;
+        GymStore.pairingGeneration = null;
+
+        GymStore.sets = [];
+        GymStore.activeWorkoutStartedAtSeconds = null;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+        var coldFallback = GymStore.restoreLegacySetMirrorIfSnapshotAbsent(null) &&
+            GymStore.sets.size() == 2 &&
+            GymStore.setField(GymSetAccess.at(GymStore.sets, 0), "weight") == 52.5 &&
+            GymStore.setField(GymSetAccess.at(GymStore.sets, 1), "reps") == 10 &&
+            GymStore.setField(GymSetAccess.at(GymStore.sets, 0), "setInterval")[2] == 4.0 &&
+            GymStore.activeWorkoutStartedAtSeconds == startedAt &&
+            GymStore.resumedWorkoutIntervalsInvalid;
+
+        GymStore.sets = [];
+        GymStore.activeWorkoutStartedAtSeconds = null;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+        var validSnapshotSuppressesMirror =
+            GymStore.isValidActiveWorkoutSnapshot(validActive) &&
+            GymStore.activeWorkoutSnapshotMatchesBindings(validActive) &&
+            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(validActive) &&
+            GymStore.sets.size() == 0 &&
+            GymStore.activeWorkoutStartedAtSeconds == null &&
+            !GymStore.resumedWorkoutIntervalsInvalid;
+
+        GymStore.sets = [];
+        GymStore.activeWorkoutStartedAtSeconds = null;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+        var corruptSnapshotSuppressesMirror =
+            !GymStore.isValidActiveWorkoutSnapshot(corruptActive) &&
+            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(corruptActive) &&
+            GymStore.sets.size() == 0;
+
+        GymStore.sets = [];
+        GymStore.activeWorkoutStartedAtSeconds = null;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+        var wrongOwnerSuppressesMirror =
+            GymStore.isValidActiveWorkoutSnapshot(wrongOwnerActive) &&
+            !GymStore.activeWorkoutSnapshotMatchesBindings(wrongOwnerActive) &&
+            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(wrongOwnerActive) &&
+            GymStore.sets.size() == 0;
+
+        // A null saved value is the state after catalog repair successfully deletes
+        // the unsupported snapshot. A retained v4 value models deletion failure.
+        GymStore.sets = [];
+        GymStore.activeWorkoutStartedAtSeconds = null;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+        var catalogDeleteSuccessRestoresMirror =
+            GymStore.restoreLegacySetMirrorIfSnapshotAbsent(null) &&
+            GymStore.sets.size() == 2 &&
+            GymStore.activeWorkoutStartedAtSeconds == startedAt;
+
+        GymStore.sets = [];
+        GymStore.activeWorkoutStartedAtSeconds = null;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+        var catalogDeleteFailureKeepsMirrorSuppressed =
+            retainedCatalogSnapshot[0] == 4 &&
+            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(retainedCatalogSnapshot) &&
+            GymStore.sets.size() == 0 &&
+            GymStore.activeWorkoutStartedAtSeconds == null;
+
+        passed = coldFallback && validSnapshotSuppressesMirror &&
+            corruptSnapshotSuppressesMirror && wrongOwnerSuppressesMirror &&
+            catalogDeleteSuccessRestoresMirror && catalogDeleteFailureKeepsMirrorSuppressed;
+    } catch (e) {
+        logger.debug("Deferred mirror fixture failed: " + e.toString());
+    }
+
+    try {
+        if (previousStoredSets == null) { Toybox.Application.Storage.deleteValue("sets"); }
+        else { Toybox.Application.Storage.setValue("sets", previousStoredSets); }
+        if (previousStoredStartedAt == null) { Toybox.Application.Storage.deleteValue("activeWorkoutStartedAtSeconds"); }
+        else { Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", previousStoredStartedAt); }
+    } catch (e) {
+        passed = false;
+    }
+    GymStore.sets = previousSets;
+    GymStore.activeWorkoutStartedAtSeconds = previousStartedAt;
+    GymStore.resumedWorkoutIntervalsInvalid = previousIntervalsInvalid;
+    GymStore.accountBinding = previousOwner;
+    GymStore.stateOwnerBinding = previousStateOwner;
+    GymStore.deviceBinding = previousDevice;
+    GymStore.pairingGeneration = previousGeneration;
+    return passed;
+}
+
+(:test, :fr55Memory)
+function fr55IgnoresLegacySetMirrorWithoutClearingCurrentState(logger as Test.Logger) as Lang.Boolean {
+    var previousStoredSets = Toybox.Application.Storage.getValue("sets");
+    var previousStoredStartedAt = Toybox.Application.Storage.getValue("activeWorkoutStartedAtSeconds");
+    var previousSets = GymStore.sets;
+    var previousPlan = GymStore.plan;
+    var previousPending = GymStore.pending;
+    var previousStartedAt = GymStore.activeWorkoutStartedAtSeconds;
+    var previousRuntimeStartedAt = GymStore.runtimeWorkoutStartedAtSeconds;
+    var previousTimeline = GymStore.timelineBase;
+    var previousSnapshotValid = GymStore.activeWorkoutSnapshotValid;
+    var previousTimelineValid = GymStore.activeWorkoutTimelineValid;
+    var previousIntervalsInvalid = GymStore.resumedWorkoutIntervalsInvalid;
+    var previousStatus = GymStore.status;
+    var passed = false;
+
+    var legacySets = [
+        {"exerciseName" => "Bench Press", "weight" => 50.0, "reps" => 8}
+    ];
+    var legacyStartedAt = 1699999900;
+    var currentSets = [GymStore.recordedSet("Squat", 80.0, 6, {}, null,
+        [0, 30, 4.0, null, 0, 0, 0, 0, 0, 0])];
+    var currentPlan = [{"exerciseName" => "Bench Press", "weight" => 60.0, "reps" => 8}];
+    var currentPending = [{"requestId" => "fr55-recovery-test"}];
+    var currentTimeline = [30, 4.0, null, 0, 0, 0, null, 0];
+    var currentStartedAt = 1700000000;
+
+    try {
+        Toybox.Application.Storage.setValue("sets", legacySets);
+        Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", legacyStartedAt);
+        GymStore.sets = currentSets;
+        GymStore.plan = currentPlan;
+        GymStore.pending = currentPending;
+        GymStore.activeWorkoutStartedAtSeconds = currentStartedAt;
+        GymStore.runtimeWorkoutStartedAtSeconds = currentStartedAt;
+        GymStore.timelineBase = currentTimeline;
+        GymStore.activeWorkoutSnapshotValid = true;
+        GymStore.activeWorkoutTimelineValid = true;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+
+        var ignoredNullMirror = !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(null) &&
+            GymStore.sets == currentSets &&
+            GymStore.activeWorkoutStartedAtSeconds == currentStartedAt &&
+            GymStore.runtimeWorkoutStartedAtSeconds == currentStartedAt &&
+            GymStore.timelineBase == currentTimeline &&
+            GymStore.activeWorkoutSnapshotValid && GymStore.activeWorkoutTimelineValid &&
+            !GymStore.resumedWorkoutIntervalsInvalid &&
+            GymStore.plan == currentPlan && GymStore.pending == currentPending;
+        var ignoredInvalidMirror = !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(["invalid"]) &&
+            GymStore.sets == currentSets &&
+            GymStore.activeWorkoutStartedAtSeconds == currentStartedAt &&
+            GymStore.runtimeWorkoutStartedAtSeconds == currentStartedAt &&
+            GymStore.timelineBase == currentTimeline &&
+            GymStore.activeWorkoutSnapshotValid && GymStore.activeWorkoutTimelineValid &&
+            !GymStore.resumedWorkoutIntervalsInvalid &&
+            GymStore.plan == currentPlan && GymStore.pending == currentPending;
+        var mirrorRemainsStored =
+            Toybox.Application.Storage.getValue("activeWorkoutStartedAtSeconds") == legacyStartedAt;
+        var storedMirror = Toybox.Application.Storage.getValue("sets");
+        mirrorRemainsStored = mirrorRemainsStored && storedMirror instanceof Lang.Array &&
+            storedMirror.size() == 1 &&
+            GymStore.setField(GymSetAccess.at(storedMirror, 0), "weight") == 50.0;
+        passed = ignoredNullMirror && ignoredInvalidMirror && mirrorRemainsStored;
+    } catch (e) {
+        logger.debug("FR55 legacy mirror fixture failed: " + e.toString());
+    }
+
+    try {
+        if (previousStoredSets == null) { Toybox.Application.Storage.deleteValue("sets"); }
+        else { Toybox.Application.Storage.setValue("sets", previousStoredSets); }
+        if (previousStoredStartedAt == null) {
+            Toybox.Application.Storage.deleteValue("activeWorkoutStartedAtSeconds");
+        } else {
+            Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", previousStoredStartedAt);
+        }
+    } catch (e) {
+        passed = false;
+    }
+    GymStore.sets = previousSets;
+    GymStore.plan = previousPlan;
+    GymStore.pending = previousPending;
+    GymStore.activeWorkoutStartedAtSeconds = previousStartedAt;
+    GymStore.runtimeWorkoutStartedAtSeconds = previousRuntimeStartedAt;
+    GymStore.timelineBase = previousTimeline;
+    GymStore.activeWorkoutSnapshotValid = previousSnapshotValid;
+    GymStore.activeWorkoutTimelineValid = previousTimelineValid;
+    GymStore.resumedWorkoutIntervalsInvalid = previousIntervalsInvalid;
+    GymStore.status = previousStatus;
+    return passed;
+}
+
+(:test, :fr55Memory)
+function fr55DropsOwnerlessActiveStateAndKeepsPlanAndPending(logger as Test.Logger) as Lang.Boolean {
+    var previousSets = GymStore.sets;
+    var previousPlan = GymStore.plan;
+    var previousPending = GymStore.pending;
+    var previousStartedAt = GymStore.activeWorkoutStartedAtSeconds;
+    var previousRuntimeStartedAt = GymStore.runtimeWorkoutStartedAtSeconds;
+    var previousRuntimeCheckpoint = GymStore.lastRuntimeCheckpointTimerMs;
+    var previousTimeline = GymStore.timelineBase;
+    var previousSnapshotValid = GymStore.activeWorkoutSnapshotValid;
+    var previousTimelineValid = GymStore.activeWorkoutTimelineValid;
+    var previousIntervalsInvalid = GymStore.resumedWorkoutIntervalsInvalid;
+    var previousLegacyCount = GymStore.legacyCompactCount;
+    var previousJournalSnapshot = GymActiveJournal.snapshot();
+    var previousJournalStagingBytes = GymActiveJournal.stagingBytes;
+
+    var staleSets = [GymStore.recordedSet("Bench Press", 50.0, 8, {}, null, null)];
+    var keptPlan = [{"exerciseName" => "Squat", "weight" => 80.0, "reps" => 5}];
+    var keptPending = [{"requestId" => "fr55-quarantine-test"}];
+    var keptStartedAt = 1700000000;
+    var keptRuntimeStartedAt = 1699999900;
+    var keptTimeline = [30, 4.0, null, 0, 0, 0, null, 0];
+
+    GymStore.sets = staleSets;
+    GymStore.plan = keptPlan;
+    GymStore.pending = keptPending;
+    GymStore.activeWorkoutStartedAtSeconds = keptStartedAt;
+    GymStore.runtimeWorkoutStartedAtSeconds = keptRuntimeStartedAt;
+    GymStore.lastRuntimeCheckpointTimerMs = 12000;
+    GymStore.timelineBase = keptTimeline;
+    GymStore.activeWorkoutSnapshotValid = true;
+    GymStore.activeWorkoutTimelineValid = true;
+    GymStore.resumedWorkoutIntervalsInvalid = true;
+    GymStore.legacyCompactCount = 1;
+
+    GymStore.discardLegacyUnboundActiveWorkout();
+    var clearedActive = GymStore.sets.size() == 0 &&
+        GymStore.activeWorkoutStartedAtSeconds == null &&
+        GymStore.runtimeWorkoutStartedAtSeconds == null &&
+        GymStore.lastRuntimeCheckpointTimerMs == null &&
+        GymStore.timelineBase == null &&
+        !GymStore.activeWorkoutSnapshotValid &&
+        !GymStore.activeWorkoutTimelineValid &&
+        !GymStore.resumedWorkoutIntervalsInvalid &&
+        GymStore.legacyCompactCount == 0 &&
+        GymActiveJournal.snapshot() == null;
+    var preservedRecovery = GymStore.plan == keptPlan && GymStore.pending == keptPending;
+
+    GymStore.sets = staleSets;
+    GymStore.activeWorkoutStartedAtSeconds = keptStartedAt;
+    GymStore.runtimeWorkoutStartedAtSeconds = keptRuntimeStartedAt;
+    GymStore.lastRuntimeCheckpointTimerMs = 12000;
+    GymStore.timelineBase = keptTimeline;
+    GymStore.activeWorkoutSnapshotValid = true;
+    GymStore.activeWorkoutTimelineValid = true;
+    GymStore.resumedWorkoutIntervalsInvalid = true;
+    GymStore.legacyCompactCount = -2;
+    GymStore.discardLegacyUnboundActiveWorkout();
+    var malformedQuarantineRemainsFailClosed =
+        GymStore.sets.size() == 0 &&
+        GymStore.activeWorkoutStartedAtSeconds == null &&
+        GymStore.runtimeWorkoutStartedAtSeconds == null &&
+        GymStore.lastRuntimeCheckpointTimerMs == null &&
+        GymStore.timelineBase == null &&
+        !GymStore.activeWorkoutSnapshotValid &&
+        !GymStore.activeWorkoutTimelineValid &&
+        !GymStore.resumedWorkoutIntervalsInvalid &&
+        GymStore.legacyCompactCount == -2 &&
+        GymStore.plan == keptPlan && GymStore.pending == keptPending;
+
+    GymStore.sets = previousSets;
+    GymStore.plan = previousPlan;
+    GymStore.pending = previousPending;
+    GymStore.activeWorkoutStartedAtSeconds = previousStartedAt;
+    GymStore.runtimeWorkoutStartedAtSeconds = previousRuntimeStartedAt;
+    GymStore.lastRuntimeCheckpointTimerMs = previousRuntimeCheckpoint;
+    GymStore.timelineBase = previousTimeline;
+    GymStore.activeWorkoutSnapshotValid = previousSnapshotValid;
+    GymStore.activeWorkoutTimelineValid = previousTimelineValid;
+    GymStore.resumedWorkoutIntervalsInvalid = previousIntervalsInvalid;
+    GymStore.legacyCompactCount = previousLegacyCount;
+    var restoredJournal = previousJournalSnapshot == null ? true :
+        GymActiveJournal.validate(previousJournalSnapshot);
+    GymActiveJournal.stagingBytes = previousJournalStagingBytes;
+    return clearedActive && preservedRecovery && malformedQuarantineRemainsFailClosed &&
+        restoredJournal;
+}
+
+(:test, :compactWorkoutMode96)
+function compact96SkipsLegacyMirrorAndPreservesQuarantine(logger as Test.Logger) as Lang.Boolean {
+    var previousStoredSets = Toybox.Application.Storage.getValue("sets");
+    var previousStoredStartedAt = Toybox.Application.Storage.getValue("activeWorkoutStartedAtSeconds");
+    var previousSets = GymStore.sets;
+    var previousPlan = GymStore.plan;
+    var previousPending = GymStore.pending;
+    var previousStartedAt = GymStore.activeWorkoutStartedAtSeconds;
+    var previousRuntimeStartedAt = GymStore.runtimeWorkoutStartedAtSeconds;
+    var previousRuntimeCheckpoint = GymStore.lastRuntimeCheckpointTimerMs;
+    var previousTimeline = GymStore.timelineBase;
+    var previousSnapshotValid = GymStore.activeWorkoutSnapshotValid;
+    var previousTimelineValid = GymStore.activeWorkoutTimelineValid;
+    var previousIntervalsInvalid = GymStore.resumedWorkoutIntervalsInvalid;
+    var previousLegacyCount = GymStore.legacyCompactCount;
+    var previousJournalSnapshot = GymActiveJournal.snapshot();
+    var previousJournalStagingBytes = GymActiveJournal.stagingBytes;
+    var legacySets = [{"exerciseName" => "Bench Press", "weight" => 50.0, "reps" => 8}];
+    var legacyStartedAt = 1699999900;
+    var currentSets = [GymStore.recordedSet("Squat", 80.0, 6, {}, null, null)];
+    var currentPlan = [{"exerciseName" => "Bench Press", "weight" => 60.0, "reps" => 8}];
+    var currentPending = [{"requestId" => "compact96-recovery-test"}];
+    var currentStartedAt = 1700000000;
+    var passed = false;
+
+    try {
+        Toybox.Application.Storage.setValue("sets", legacySets);
+        Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", legacyStartedAt);
+        GymStore.sets = [];
+        GymStore.plan = currentPlan;
+        GymStore.pending = currentPending;
+        GymStore.activeWorkoutStartedAtSeconds = null;
+        GymStore.resumedWorkoutIntervalsInvalid = false;
+        var coldMirrorSuppressed =
+            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(null) &&
+            GymStore.sets.size() == 0 && GymStore.activeWorkoutStartedAtSeconds == null;
+
+        GymStore.sets = currentSets;
+        GymStore.activeWorkoutStartedAtSeconds = currentStartedAt;
+        GymStore.runtimeWorkoutStartedAtSeconds = currentStartedAt;
+        GymStore.timelineBase = [30, 4.0, null, 0, 0, 0, null, 0];
+        GymStore.activeWorkoutSnapshotValid = true;
+        GymStore.activeWorkoutTimelineValid = true;
+        var invalidMirrorLeavesCurrentState =
+            !GymStore.restoreLegacySetMirrorIfSnapshotAbsent(["invalid"]) &&
+            GymStore.sets == currentSets &&
+            GymStore.activeWorkoutStartedAtSeconds == currentStartedAt &&
+            GymStore.runtimeWorkoutStartedAtSeconds == currentStartedAt &&
+            GymStore.activeWorkoutSnapshotValid && GymStore.activeWorkoutTimelineValid &&
+            GymStore.plan == currentPlan && GymStore.pending == currentPending;
+        var storedMirror = Toybox.Application.Storage.getValue("sets");
+        var mirrorStillStored =
+            Toybox.Application.Storage.getValue("activeWorkoutStartedAtSeconds") == legacyStartedAt &&
+            storedMirror instanceof Lang.Array && storedMirror.size() == 1 &&
+            GymStore.setField(GymSetAccess.at(storedMirror, 0), "weight") == 50.0;
+
+        GymStore.sets = currentSets;
+        GymStore.activeWorkoutStartedAtSeconds = currentStartedAt;
+        GymStore.runtimeWorkoutStartedAtSeconds = currentStartedAt;
+        GymStore.lastRuntimeCheckpointTimerMs = 12000;
+        GymStore.timelineBase = [30, 4.0, null, 0, 0, 0, null, 0];
+        GymStore.activeWorkoutSnapshotValid = true;
+        GymStore.activeWorkoutTimelineValid = true;
+        GymStore.resumedWorkoutIntervalsInvalid = true;
+        GymStore.legacyCompactCount = -2;
+        GymStore.discardLegacyUnboundActiveWorkout();
+        var badQuarantineStillFailsClosed = GymStore.sets.size() == 0 &&
+            GymStore.activeWorkoutStartedAtSeconds == null &&
+            GymStore.runtimeWorkoutStartedAtSeconds == null &&
+            GymStore.lastRuntimeCheckpointTimerMs == null && GymStore.timelineBase == null &&
+            !GymStore.activeWorkoutSnapshotValid && !GymStore.activeWorkoutTimelineValid &&
+            !GymStore.resumedWorkoutIntervalsInvalid && GymStore.legacyCompactCount == -2 &&
+            GymActiveJournal.snapshot() == null &&
+            GymStore.plan == currentPlan && GymStore.pending == currentPending;
+        passed = coldMirrorSuppressed && invalidMirrorLeavesCurrentState &&
+            mirrorStillStored && badQuarantineStillFailsClosed;
+    } catch (e) {
+        logger.debug("Compact 96 recovery fixture failed: " + e.toString());
+    }
+
+    try {
+        if (previousStoredSets == null) { Toybox.Application.Storage.deleteValue("sets"); }
+        else { Toybox.Application.Storage.setValue("sets", previousStoredSets); }
+        if (previousStoredStartedAt == null) {
+            Toybox.Application.Storage.deleteValue("activeWorkoutStartedAtSeconds");
+        } else {
+            Toybox.Application.Storage.setValue("activeWorkoutStartedAtSeconds", previousStoredStartedAt);
+        }
+    } catch (e) {
+        passed = false;
+    }
+    GymStore.sets = previousSets;
+    GymStore.plan = previousPlan;
+    GymStore.pending = previousPending;
+    GymStore.activeWorkoutStartedAtSeconds = previousStartedAt;
+    GymStore.runtimeWorkoutStartedAtSeconds = previousRuntimeStartedAt;
+    GymStore.lastRuntimeCheckpointTimerMs = previousRuntimeCheckpoint;
+    GymStore.timelineBase = previousTimeline;
+    GymStore.activeWorkoutSnapshotValid = previousSnapshotValid;
+    GymStore.activeWorkoutTimelineValid = previousTimelineValid;
+    GymStore.resumedWorkoutIntervalsInvalid = previousIntervalsInvalid;
+    GymStore.legacyCompactCount = previousLegacyCount;
+    var restoredJournal = previousJournalSnapshot == null ? true :
+        GymActiveJournal.validate(previousJournalSnapshot);
+    GymActiveJournal.stagingBytes = previousJournalStagingBytes;
+    return passed && restoredJournal;
+}
+
 (:test)
 function sixtySetCheckpointRestoresAndRejectsOverflow(logger as Test.Logger) as Lang.Boolean {
     GymStore.accountBinding = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -346,32 +752,98 @@ function plannedProgressCountsEachTargetAtMostOnce(logger as Test.Logger) as Lan
 }
 
 (:test, :compactLegacyState)
-function compactPlanPreservesStorageFieldsAndExactBudget(logger as Test.Logger) as Lang.Boolean {
+function compactLegacyPlanMigratesSimpleRowsAndPreservesOptionalFields(logger as Test.Logger) as Lang.Boolean {
     var beforePlan = GymStore.plan;
     var beforeSource = GymStore.persistedPlanSource;
     var beforeBytes = GymStore.persistedPlanBytes;
-    var input = [
+    var beforeNeedsWrite = GymStore.persistedPlanNeedsV5Write;
+    var beforeExercises = GymStore.exercises;
+    var beforeCatalogNeedsWrite = GymStore.exerciseCatalogNeedsWrite;
+
+    var simpleRows = [
         {"exerciseName" => "Жим штанги", "weight" => 52.5, "reps" => 8},
-        {"exerciseName" => "Custom", "weight" => 0, "reps" => 12,
-            "activeSeconds" => 20.0, "setInterval" => [0, 20, 1.0, null, 0, 0, 0, 0, 0, 0]}
+        {"exerciseName" => "Присед", "weight" => 80.0, "reps" => 5}
     ];
-    var bytes = GymStore.estimatedValueBytes(input);
-    var optional = input[1];
-    var restored = GymStore.restoredPlan(input);
-    GymStore.plan = restored;
+    var legacyBytes = GymStore.estimatedValueBytes(simpleRows);
+    var migrated = GymStore.restoredPlan(simpleRows);
+    GymStore.plan = migrated;
     var stored = GymStore.storedPlan();
-    var ok = GymStore.isValidLiveSetList(restored, 60, false) &&
-        !GymStore.isValidSetList(restored, 60, false) &&
-        stored != null && GymStore.isValidSetList(stored, 60, false) &&
-        stored[0]["exerciseName"].equals("Жим штанги") &&
-        stored[0]["weight"] == 52.5 && stored[0]["reps"] == 8 &&
-        stored[1] == optional && GymStore.persistedPlanBytes == bytes &&
-        GymStore.estimatedValueBytes(stored) == bytes &&
-        GymStore.restoredPlan([{ "exerciseName" => "X", "weight" => -1, "reps" => 8 }]).size() == 0 &&
-        GymStore.restoredPlan([GymRecordedSet.create("X", 1, 1, null)]).size() == 0;
+    var simpleOk = migrated instanceof GymPlanList &&
+        GymPlanAccess.valid(migrated, GymStore.maxPlanSets, false) &&
+        GymStore.persistedPlanNeedsV5Write && stored instanceof Lang.Array &&
+        stored.size() == 4 && stored[0] == 5 && stored[1][0].equals("Жим штанги") &&
+        stored[1][1].equals("Присед") && stored[2][0] == 52.5 && stored[3][1] == 5 &&
+        GymStore.persistedPlanBytes == legacyBytes;
+
+    var optionalRows = [{"exerciseName" => "Custom", "weight" => 0, "reps" => 12,
+        "activeSeconds" => 20.0,
+        "setInterval" => [0, 20, 1.0, null, 0, 0, 0, 0, 0, 0]}];
+    var optionalBytes = GymStore.estimatedValueBytes(optionalRows);
+    var fallback = GymStore.restoredPlan(optionalRows);
+    GymStore.plan = fallback;
+    var preserved = GymStore.storedPlan();
+    var optionalOk = fallback == optionalRows && preserved == optionalRows &&
+        !GymStore.persistedPlanNeedsV5Write &&
+        GymStore.setField(preserved[0], "activeSeconds") == 20.0 &&
+        GymStore.setField(preserved[0], "setInterval")[1] == 20 &&
+        GymStore.persistedPlanBytes == optionalBytes &&
+        GymStore.estimatedValueBytes(preserved) == optionalBytes;
+
     GymStore.plan = beforePlan; GymStore.persistedPlanSource = beforeSource;
     GymStore.persistedPlanBytes = beforeBytes;
-    return ok;
+    GymStore.persistedPlanNeedsV5Write = beforeNeedsWrite;
+    GymStore.exercises = beforeExercises;
+    GymStore.exerciseCatalogNeedsWrite = beforeCatalogNeedsWrite;
+    return simpleOk && optionalOk;
+}
+
+(:test, :compactLegacyState)
+function compactV5PlanRejectsMalformedColumnsAndOversizedNameBudget(logger as Test.Logger) as Lang.Boolean {
+    var beforePlanSource = GymStore.persistedPlanSource;
+    var beforePlanBytes = GymStore.persistedPlanBytes;
+    var beforeNeedsWrite = GymStore.persistedPlanNeedsV5Write;
+
+    var names60 = [];
+    var weights60 = [];
+    var reps60 = [];
+    for (var i = 0; i < GymStore.maxPlanSets; i += 1) {
+        names60.add("Bench Press");
+        weights60.add(50.0);
+        reps60.add(8);
+    }
+    var legacySizedPlan = new GymPlanList([5, names60, weights60, reps60]);
+    var countOk = legacySizedPlan.valid(GymStore.maxPlanSets, false) &&
+        !legacySizedPlan.valid(GymStore.maxNewWorkoutSets, false);
+
+    var malformed = new GymPlanList([5, ["Bench Press", "Squat"], [50.0], [8]]);
+    var malformedRejected = !malformed.valid(GymStore.maxPlanSets, false);
+    var longName = "";
+    for (var c = 0; c < 101; c += 1) { longName += "Ж"; }
+    var overBudgetNames = [];
+    var overBudgetWeights = [];
+    var overBudgetReps = [];
+    for (var n = 0; n < GymStore.maxPlanSets; n += 1) {
+        overBudgetNames.add(longName);
+        overBudgetWeights.add(50.0);
+        overBudgetReps.add(8);
+    }
+    var overBudget = new GymPlanList([5, overBudgetNames,
+        overBudgetWeights, overBudgetReps]);
+    var budgetRejected = !GymStore.isValidExerciseList(overBudgetNames,
+        GymStore.maxPlanSets) && !overBudget.valid(GymStore.maxPlanSets, false);
+    var restoredOverBudget = GymStore.restoredPlan([5, overBudgetNames,
+        overBudgetWeights, overBudgetReps]);
+    budgetRejected = budgetRejected && restoredOverBudget == null &&
+        !GymStore.persistedPlanNeedsV5Write;
+    var restoredMalformed = GymStore.restoredPlan([5, ["Bench Press", "Squat"],
+        [50.0], [8]]);
+    var malformedStateSafe = restoredMalformed == null &&
+        !GymStore.persistedPlanNeedsV5Write;
+
+    GymStore.persistedPlanSource = beforePlanSource;
+    GymStore.persistedPlanBytes = beforePlanBytes;
+    GymStore.persistedPlanNeedsV5Write = beforeNeedsWrite;
+    return countOk && malformedRejected && budgetRejected && malformedStateSafe;
 }
 
 (:test)

@@ -20,7 +20,7 @@ descentg1.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBr
 # Forerunner 55 and its Japanese ForeAthlete 55 variant share the `fr55`
 # binary. The full legacy/cloud renderer exceeds the real 128 KiB loader
 # reserve on this target, so use the proven hardware-key compact build.
-fr55.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory
+fr55.excludeAnnotations = fullLegacyState;fr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory
 instinct2.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory
 instinct2s.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory
 instinct2x.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory

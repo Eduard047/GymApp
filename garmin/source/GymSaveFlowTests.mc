@@ -8,6 +8,15 @@ class RefusingPauseSession {
     function isRecording() { return true; }
     function stop() { stopCalls += 1; return false; }
     function save() { saveCalls += 1; return true; }
+
+    (:richWorkoutMode)
+    function clearDetectorState() {
+        GymSession.autoLogPrompt = false;
+        GymSession.activeSetSeen = false;
+    }
+
+    (:compactWorkoutMode96)
+    function clearDetectorState() { }
 }
 
 (:test)
@@ -20,8 +29,7 @@ function failedFitPauseCannotPrepareOrCompleteSave(logger as Test.Logger) as Lan
     GymSession.session = session;
     GymSession.recording = true;
     GymSession.paused = false;
-    GymSession.autoLogPrompt = false;
-    GymSession.activeSetSeen = false;
+    session.clearDetectorState();
     var view = new WorkoutView();
     view.saveAndExit();
     var valid = session.stopCalls == 1 && session.saveCalls == 0 &&

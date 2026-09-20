@@ -10,6 +10,15 @@ const section = (source, start, end) => {
   return source.slice(startIndex, endIndex);
 };
 
+const annotatedFunction = (source, marker, name) => {
+  const method = new RegExp(`\\(:[^)]*\\b${marker}\\b[^)]*\\)\\s+function ${name}\\([^)]*\\)\\s*\\{`);
+  const match = method.exec(source);
+  assert.ok(match, `Missing ${marker} function ${name} variant`);
+  const endIndex = source.indexOf("\n    function ", match.index + match[0].length);
+  assert.notEqual(endIndex, -1, `Missing end boundary for ${marker} function ${name}`);
+  return source.slice(match.index, endIndex);
+};
+
 test("Garmin saves FIT before making account-bound sets sendable while unbound FIT stays independent", async () => {
   const [view, session, store] = await Promise.all([
     readFile("garmin/source/WorkoutView.mc", "utf8"),
@@ -20,7 +29,7 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   const finishWorkout = section(
     view,
     "function finishWorkoutMessage(message)",
-    "(:richRecovery)\n    function buildFinishWorkoutMessage()"
+    "function buildFinishWorkoutMessage()"
   );
   assert.match(
     finishWorkout,
@@ -64,23 +73,78 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   assert.equal(canAppend(), false, "the bounded ninth workout must apply backpressure without eviction");
 
   const saveAndExit = section(view, "function saveAndExit()", "function onUpdate(");
+  const richSaveAndExit = annotatedFunction(view, "richRecovery", "saveAndExit");
+  const fr55SaveAndExit = annotatedFunction(view, "fr55Memory", "saveAndExit");
+  const fr55BuildMessage = annotatedFunction(view, "fr55Memory", "buildFinishWorkoutMessage");
+  const compactUnboundFreeFinish = annotatedFunction(
+    view, "compactWorkoutMode96", "canFinishUnboundFreeWithoutStoreClear");
+  const richUnboundFreeFinish = annotatedFunction(
+    view, "richWorkoutMode", "canFinishUnboundFreeWithoutStoreClear");
   assert.match(saveAndExit, /GymStore\.prepareWorkoutCommit\(\)/);
   assert.match(
     saveAndExit,
     /if \(!fitAlreadySaved && !GymSession\.stopAndSave\(\)\)[\s\S]*GymStore\.status = GymStatus\.FIT_FAIL;[\s\S]*return;/
   );
+  assert.match(
+    richSaveAndExit,
+    /if \(needsPhoneSync && GymStore\.preparedWorkoutNeedsFitDecision\(\) &&\s*GymSession\.fitOutcomeUnknownAfterRestart\(\)\) \{\s*handleFitRecoveryAction\(\);\s*return;/
+  );
+  assert.match(
+    fr55SaveAndExit,
+    /var fitUnknown = needsPhoneSync &&\s*!GymStore\.preparedWorkoutFitSaved\(\) &&\s*GymSession\.fitOutcomeUnknownAfterRestart\(\);/
+  );
+  assert.match(
+    fr55SaveAndExit,
+    /if \(!fitUnknown && !fitAlreadySaved && !GymSession\.stopAndSave\(\)\)/,
+    "unknown FIT state must not trigger another stop/save attempt"
+  );
+  assert.match(
+    fr55SaveAndExit,
+    /if \(needsPhoneSync && !fitUnknown &&[\s\S]*?GymStore\.markPreparedWorkoutFitSaved\(\)/,
+    "FR55 must never mark an unknown FIT outcome as saved"
+  );
+  assert.match(fr55SaveAndExit, /saveSetsOnly = fitUnknown;\s*saveStage = needsPhoneSync \? 1 : 4/);
+  assert.match(
+    fr55BuildMessage,
+    /return GymStore\.preparedWorkoutFitSaved\(\) \?\s*GymStore\.preparedWorkoutMessage\(\) :\s*GymStore\.preparedWorkoutSetsOnlyMessage\(\);/
+  );
   assert.match(saveAndExit, /GymStore\.markPreparedWorkoutFitSaved\(\)[\s\S]*saveStage = needsPhoneSync \? 1 : 4/);
   const completion = section(view, "function continueSaving()", "function onUpdate(");
   assert.match(completion, /saveStage == 1[\s\S]*saveMessage = buildFinishWorkoutMessage\(\);[\s\S]*saveStage = saveMessage != null \? 5 : 0/);
   assert.match(completion, /saveStage == 5[\s\S]*saveStage = finishWorkoutMessage\(saveMessage\) \? 2 : 0;\s*saveMessage = null/);
-  assert.match(completion, /else if \(saveStage == 3 \|\| saveStage == 4\)[\s\S]*if \(GymStore\.clearActiveWorkout\(\)\)[\s\S]*System\.exit\(\)/);
+  assert.match(compactUnboundFreeFinish,
+    /return GymWorkoutMode\.isFree\(\) && !GymStore\.hasAccountBinding\(\);/,
+    "only a 96 KiB unbound FREE session may finish without owned-store cleanup");
+  assert.match(richUnboundFreeFinish, /return false;/,
+    "the rich path always requires the normal active-workout clear");
+  assert.match(completion,
+    /else if \(saveStage == 3 \|\| saveStage == 4\)[\s\S]*if \(canFinishUnboundFreeWithoutStoreClear\(\) \|\|\s*GymStore\.clearActiveWorkout\(\)\) \{[\s\S]*?System\.exit\(\);\s*\} else \{\s*GymStore\.status = GymStatus\.SAVE_FAIL;/,
+    "bound workouts exit only after active-state cleanup succeeds; safe unbound FREE may skip that owned-key clear");
   assert.match(completion, /saveStage == 2[\s\S]*GymStore\.recoverQueuedWorkout\(\) \? 3 : 0/);
   assert.match(completion, /else \{\s*GymStore\.status = GymStatus\.SAVE_FAIL/);
-  assert.equal((view.match(/function tick\(\) \{\s*if \(saveStage > 0\) \{\s*continueSaving\(\);\s*return;/g) || []).length, 2,
-    "both runtime tiers yield between FIT, queue and cleanup before mailbox work");
-  assert.equal((saveAndExit.match(/function saveAndExit\(\) \{\s*if \(saveStage > 0\)/g) || []).length, 2,
-    "both tiers ignore repeated Save presses while completion is pending");
-  assert.match(view, /function onBack\(\) \{\s*if \(view\.saveStage > 0\) \{ return true; \}/);
+  const saveTicks = [...view.matchAll(/\(:([^)]*)\)\s+function tick\(\) \{/g)];
+  const tickProfiles = new Set(saveTicks.flatMap((match) =>
+    match[1].split(",").map((profile) => profile.trim().replace(/^:/, ""))));
+  for (const profile of ["fullLegacyState", "compactLegacyState", "richWorkoutMode", "compactWorkoutMode96"]) {
+    assert.ok(tickProfiles.has(profile), `${profile} keeps its own tick path`);
+  }
+  assert.equal(saveTicks.length, 3,
+    "full, compact/rich, and 96 KiB profiles keep separate tick paths");
+  for (const tickStart of saveTicks) {
+    const nextMethod = view.indexOf("\n    function ", tickStart.index + tickStart[0].length);
+    assert.notEqual(nextMethod, -1, "each tick path has a bounded method body");
+    const tick = view.slice(tickStart.index, nextMethod);
+    assert.match(tick, /if \(saveStage > 0\) \{\s*continueSaving\(\);\s*return;/,
+      "each profile yields before mailbox work while FIT, queue or cleanup is pending");
+  }
+  assert.equal((saveAndExit.match(/function saveAndExit\(\) \{\s*if \(saveStage > 0\)/g) || []).length, 3,
+    "rich, compact and FR55 save paths ignore repeated Save presses while completion is pending");
+  assert.match(view, /function inputBlocked\(\) \{[\s\S]*?return view\.saveStage != 0;\s*\}/);
+  assert.equal(
+    (view.match(/function onBack\(\) \{\s*if \(inputBlocked\(\)\) \{ return true; \}/g) || []).length,
+    3,
+    "rich, compact and FR55 navigation block Back while any serialized action or save phase is pending"
+  );
   assert.doesNotMatch(
     saveAndExit,
     /GymStore\.sets\.size\(\) > 0 && !GymStore\.clearActiveWorkout\(\)/,

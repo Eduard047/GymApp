@@ -30,7 +30,10 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(store, /maxPendingWorkouts = 8/);
   assert.match(store, /maxPendingNameBytes = 12000/);
   assert.match(store, /maxTotalNameBytes = 12000/);
-  assert.match(store, /utf8Bytes\(value\.toString\(\)\)\.size\(\) <= maxExerciseNameBytes/);
+  assert.match(store,
+    /isBoundedText\(value, maxExerciseNameLength\) &&\s*utf8Bytes\(value\)\.size\(\) <= maxExerciseNameBytes/,
+    "exercise names retain both character-count and UTF-8 byte limits"
+  );
   assert.match(store, /flatNames\.size\(\) != flatWeights\.size\(\)/);
   assert.match(store, /processedSyncIds/);
   assert.match(store, /stateOwnerBinding/);
@@ -137,15 +140,26 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   const metricReset = session.match(/static function resetWorkoutMetrics\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(metricReset, /hr = null/);
   assert.match(metricReset, /garminCalories = null/);
-  const sessionTick = session.match(/static function tick\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
+  const sessionTick = session.match(/static function tick\([^)]*\) \{[\s\S]*?\n    \}/)?.[0] || "";
   assert.match(sessionTick, /var appliedActivityHeartRate = updateGarminActivityInfo\(\)/);
-  assert.match(sessionTick, /var sampledSensorHeartRate = readHeartRateFromSensor\(\)/);
+  assert.match(sessionTick, /var sampledSensorHeartRate = null/);
+  assert.match(
+    sessionTick,
+    /if \(!appliedActivityHeartRate \|\| showSensorDiagnostics\) \{\s*sampledSensorHeartRate = readHeartRateFromSensor\(\);/
+  );
   assert.match(
     sessionTick,
     /if \(!appliedActivityHeartRate\)[\s\S]*applyHeartRate\(sampledSensorHeartRate\)[\s\S]*expireStaleHeartRate\(\)/
   );
   const activityInfo = session.match(/static function updateGarminActivityInfo\(\) \{[\s\S]*?\n    \}/)?.[0] || "";
-  assert.match(activityInfo, /appliedHeartRate = applyHeartRate\(info\.currentHeartRate\)/);
+  assert.match(activityInfo,
+    /if \(isValidHeartRate\(info\.currentHeartRate\)\) \{\s*activityHr = info\.currentHeartRate;/,
+    "only a validated activity heart rate is retained"
+  );
+  assert.match(activityInfo,
+    /info = null;[\s\S]*if \(activityHr != null\) \{[\s\S]*appliedHeartRate = applyHeartRate\(activityHr\)/,
+    "release the large activity object before applying its cached reading"
+  );
   assert.match(activityInfo, /return appliedHeartRate/);
   assert.match(
     store,

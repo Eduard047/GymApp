@@ -4,6 +4,19 @@ using Toybox.Application.Storage;
 
 (:test)
 class LocalWorkoutFixture {
+    (:notFr55Memory, :richWorkoutMode)
+    static function resetLocalWorkoutCheckpoint() as Void {
+        GymLocalWorkout.lastCheckpoint = null;
+    }
+
+    (:fr55Memory)
+    static function resetLocalWorkoutCheckpoint() as Void {
+    }
+
+    (:compactWorkoutMode96)
+    static function resetLocalWorkoutCheckpoint() as Void {
+    }
+
     static function reset() {
     GymStore.accountBinding = null;
     GymStore.deviceBinding = null;
@@ -15,7 +28,7 @@ class LocalWorkoutFixture {
     GymStore.timelineBase = null;
     GymLocalWorkout.snapshot = null;
     GymLocalWorkout.readFailed = false;
-    GymLocalWorkout.lastCheckpoint = null;
+    LocalWorkoutFixture.resetLocalWorkoutCheckpoint();
     GymSession.startedAt = 0;
     GymSession.fitSaved = false;
     GymSession.recording = false;
@@ -24,7 +37,7 @@ class LocalWorkoutFixture {
     }
 }
 
-(:test)
+(:test, :notFr55Memory, :richWorkoutMode)
 function localWorkoutRestoresMetricsWithoutRecording(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     var saved = [1, 0, 1700000000, [300, 24.5, 20, 1200, 10, 140, 125, 2]];
@@ -38,7 +51,7 @@ function localWorkoutRestoresMetricsWithoutRecording(logger as Test.Logger) as L
     return valid;
 }
 
-(:test)
+(:test, :notFr55Memory, :richWorkoutMode)
 function localWorkoutRejectsInvalidReplacementAndOwner(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     var saved = [1, 0, 1700000000, [300, 24.5, null, 0, 0, 0, null, 0]];
@@ -54,7 +67,7 @@ function localWorkoutRejectsInvalidReplacementAndOwner(logger as Test.Logger) as
     return valid;
 }
 
-(:test)
+(:test, :notFr55Memory, :richWorkoutMode)
 function localWorkoutUnknownFitCannotSaveAgain(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     GymSession.session = null;
@@ -68,7 +81,7 @@ function localWorkoutUnknownFitCannotSaveAgain(logger as Test.Logger) as Lang.Bo
     return valid;
 }
 
-(:test)
+(:test, :notFr55Memory, :richWorkoutMode)
 function localWorkoutCorruptionPreservesJournal(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     Storage.setValue("localFreeWorkoutV1", [9, 0]);
@@ -80,7 +93,7 @@ function localWorkoutCorruptionPreservesJournal(logger as Test.Logger) as Lang.B
     return valid;
 }
 
-(:test)
+(:test, :notFr55Memory, :richWorkoutMode)
 function localWorkoutPhaseAndTombstoneRoundTrip(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     if (!GymLocalWorkout.write([1, 0, 1700000000,
@@ -97,7 +110,7 @@ function localWorkoutPhaseAndTombstoneRoundTrip(logger as Test.Logger) as Lang.B
     return valid;
 }
 
-(:test)
+(:test, :notFr55Memory, :richWorkoutMode)
 function localWorkoutPairingCannotReplaceRecovery(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     var saved = [1, 0, 1700000000, [300, 24.5, null, 0, 0, 0, null, 0]];
@@ -118,7 +131,7 @@ function localWorkoutPairingCannotReplaceRecovery(logger as Test.Logger) as Lang
 
 // Constrained watches expose the real 128 KiB object-store quota even when the
 // unit-test runner raises the process heap. Fill only synthetic test keys.
-(:test, :compactLegacyState)
+(:test, :notFr55Memory, :compactLegacyState, :richWorkoutMode)
 function localWorkoutFullStorageRetainsDurableCheckpoint(logger as Test.Logger) as Lang.Boolean {
     LocalWorkoutFixture.reset();
     var saved = [1, 0, 1700000000, [0, 0.0, null, 0, 0, 0, null, 0]];
@@ -162,5 +175,133 @@ function localWorkoutFullStorageRetainsDurableCheckpoint(logger as Test.Logger) 
         [300, 24.5, 20, 1200, 10, 140, 125, 2]]);
     logger.debug("Storage full preserved checkpoint and retry=" + valid.toString());
     LocalWorkoutFixture.reset();
+    return valid;
+}
+
+(:test, :compactWorkoutMode96)
+function compact96IgnoresLocalFreeRecoveryWithoutDeletingIt(logger as Test.Logger) as Lang.Boolean {
+    var previousMarker = Storage.getValue("localFreeWorkoutV1");
+    var previousSnapshot = GymLocalWorkout.snapshot;
+    var previousReadFailed = GymLocalWorkout.readFailed;
+    var previousTimeline = GymStore.timelineBase;
+    var previousMode = GymWorkoutMode.state;
+    var previousPlan = GymStore.plan;
+    var previousPending = GymStore.pending;
+    var previousFitSaved = GymSession.fitSaved;
+    var marker = [1, 0, 1700000000, [300, 24.5, 20, 1200, 10, 140, 125, 2]];
+    var testPlan = [["compact96-plan-sentinel"]];
+    var testPending = [{"id" => "compact96-pending-sentinel"}];
+
+    Storage.setValue("localFreeWorkoutV1", marker);
+    GymLocalWorkout.snapshot = null;
+    GymLocalWorkout.readFailed = false;
+    GymStore.timelineBase = null;
+    GymWorkoutMode.state = GymWorkoutMode.MODE_IDLE;
+    GymStore.plan = testPlan;
+    GymStore.pending = testPending;
+    GymSession.fitSaved = false;
+    GymLocalWorkout.restore();
+
+    var checkpointed = GymLocalWorkout.checkpoint(true);
+    var cleared = GymLocalWorkout.clear();
+    var stored = Storage.getValue("localFreeWorkoutV1");
+    var markerRetained = stored instanceof Lang.Array && stored.size() == 4 &&
+        stored[3] instanceof Lang.Array && stored[3][0] == 300;
+    var valid = GymLocalWorkout.snapshot == null && !GymLocalWorkout.readFailed &&
+        !GymLocalWorkout.needsDecision() && !GymLocalWorkout.blocksPairing() &&
+        !GymLocalWorkout.finish() && GymStore.timelineBase == null &&
+        GymWorkoutMode.state == GymWorkoutMode.MODE_IDLE && checkpointed && cleared &&
+        GymStore.plan == testPlan && GymStore.pending == testPending &&
+        !GymSession.fitSaved && markerRetained;
+
+    if (previousMarker == null) {
+        Storage.deleteValue("localFreeWorkoutV1");
+    } else {
+        Storage.setValue("localFreeWorkoutV1", previousMarker);
+    }
+    GymLocalWorkout.snapshot = previousSnapshot;
+    GymLocalWorkout.readFailed = previousReadFailed;
+    GymStore.timelineBase = previousTimeline;
+    GymWorkoutMode.state = previousMode;
+    GymStore.plan = previousPlan;
+    GymStore.pending = previousPending;
+    GymSession.fitSaved = previousFitSaved;
+    return valid;
+}
+
+(:test, :fr55Memory)
+function fr55IgnoresObsoleteLocalWorkoutMarker(logger as Test.Logger) as Lang.Boolean {
+    var previousMarker = Storage.getValue("localFreeWorkoutV1");
+    var previousSnapshot = GymLocalWorkout.snapshot;
+    var previousReadFailed = GymLocalWorkout.readFailed;
+    var previousTimeline = GymStore.timelineBase;
+    var previousMode = GymWorkoutMode.state;
+
+    Storage.setValue("localFreeWorkoutV1",
+        [1, 0, 1700000000, [300, 24.5, 20, 1200, 10, 140, 125, 2]]);
+    GymLocalWorkout.snapshot = null;
+    GymLocalWorkout.readFailed = false;
+    GymStore.timelineBase = null;
+    GymWorkoutMode.state = GymWorkoutMode.MODE_IDLE;
+    GymLocalWorkout.restore();
+
+    var stored = Storage.getValue("localFreeWorkoutV1");
+    var markerRetained = stored instanceof Lang.Array && stored.size() == 4 &&
+        stored[3] instanceof Lang.Array && stored[3][0] == 300;
+    var valid = GymLocalWorkout.snapshot == null && !GymLocalWorkout.readFailed &&
+        !GymLocalWorkout.needsDecision() && !GymLocalWorkout.blocksPairing() &&
+        !GymLocalWorkout.finish() && GymStore.timelineBase == null &&
+        GymWorkoutMode.state == GymWorkoutMode.MODE_IDLE && markerRetained;
+
+    if (previousMarker == null) {
+        Storage.deleteValue("localFreeWorkoutV1");
+    } else {
+        Storage.setValue("localFreeWorkoutV1", previousMarker);
+    }
+    GymLocalWorkout.snapshot = previousSnapshot;
+    GymLocalWorkout.readFailed = previousReadFailed;
+    GymStore.timelineBase = previousTimeline;
+    GymWorkoutMode.state = previousMode;
+    return valid;
+}
+
+(:test, :fr55Memory)
+function fr55RecoveryStubsPreserveFitAndQueues(logger as Test.Logger) as Lang.Boolean {
+    var previousMarker = Storage.getValue("localFreeWorkoutV1");
+    var previousSnapshot = GymLocalWorkout.snapshot;
+    var previousReadFailed = GymLocalWorkout.readFailed;
+    var previousPlan = GymStore.plan;
+    var previousPending = GymStore.pending;
+    var previousFitSaved = GymSession.fitSaved;
+    var marker = [1, 0, 1700000000, [300, 24.5, 20, 1200, 10, 140, 125, 2]];
+    var testPlan = [["fr55-plan-sentinel"]];
+    var testPending = [{"id" => "fr55-pending-sentinel"}];
+
+    Storage.setValue("localFreeWorkoutV1", marker);
+    GymLocalWorkout.snapshot = null;
+    GymLocalWorkout.readFailed = false;
+    GymStore.plan = testPlan;
+    GymStore.pending = testPending;
+    GymSession.fitSaved = false;
+
+    var checkpointed = GymLocalWorkout.checkpoint(true);
+    var cleared = GymLocalWorkout.clear();
+    var stored = Storage.getValue("localFreeWorkoutV1");
+    var markerRetained = stored instanceof Lang.Array && stored.size() == 4 &&
+        stored[3] instanceof Lang.Array && stored[3][0] == 300;
+    var valid = checkpointed && cleared && GymLocalWorkout.snapshot == null &&
+        !GymLocalWorkout.readFailed && !GymSession.fitSaved &&
+        GymStore.plan == testPlan && GymStore.pending == testPending && markerRetained;
+
+    if (previousMarker == null) {
+        Storage.deleteValue("localFreeWorkoutV1");
+    } else {
+        Storage.setValue("localFreeWorkoutV1", previousMarker);
+    }
+    GymLocalWorkout.snapshot = previousSnapshot;
+    GymLocalWorkout.readFailed = previousReadFailed;
+    GymStore.plan = previousPlan;
+    GymStore.pending = previousPending;
+    GymSession.fitSaved = previousFitSaved;
     return valid;
 }

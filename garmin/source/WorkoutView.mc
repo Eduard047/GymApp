@@ -20,14 +20,20 @@ class WorkoutView extends Ui.View {
     var pauseSelected = 0;
     var discardSelected = 0;
     var settingsSelected = 0;
+    (:notFr55Memory, :richWorkoutMode)
     var settingsCount = 7;
+    (:fr55Memory)
+    var settingsCount = 3;
     var ticker;
     var restWasActive = false;
+    (:richWorkoutMode)
     var autoPromptWasActive = false;
     var savedSetFlashStartedAt = null;
     var savedSetNumber = 0;
     var lastSyncRequestAt = null;
     (:fr55Memory)
+    var savePlanReleased = false;
+    (:compactWorkoutMode96)
     var savePlanReleased = false;
     var syncRequestInFlight = false;
     var syncRequestTimedOut = false;
@@ -35,6 +41,7 @@ class WorkoutView extends Ui.View {
     var pendingRetryDelayMs = 5000;
     var pendingSendInFlight = false;
     var tutorialActive = false;
+    (:notFr55Memory, :richWorkoutMode)
     var tutorialStep = 0;
     var screenWidth = 260;
     var screenHeight = 260;
@@ -46,6 +53,27 @@ class WorkoutView extends Ui.View {
     var dashboardProgressPlanCount = -1;
     (:fullLegacyState)
     var dashboardProgressText = null;
+
+    // The constrained profiles can discard the durable plan cache after the
+    // journal owns the workout. Keep the rich profile's FR55 predicate exact.
+    (:richWorkoutMode, :inline)
+    function shouldReleasePlanMemoryAfterSave() {
+        return GymWorkoutMode.recordingSetLimit == 30;
+    }
+
+    (:compactWorkoutMode96, :inline)
+    function shouldReleasePlanMemoryAfterSave() { return true; }
+
+    // Unpaired FREE sessions have no owned active-workout key to clear. Let
+    // the 96 KiB profile finish from its durable FIT result without rewriting
+    // storage that belongs to an older account.
+    (:richWorkoutMode, :inline)
+    function canFinishUnboundFreeWithoutStoreClear() { return false; }
+
+    (:compactWorkoutMode96, :inline)
+    function canFinishUnboundFreeWithoutStoreClear() {
+        return GymWorkoutMode.isFree() && !GymStore.hasAccountBinding();
+    }
 
     // Negative phases serialize set actions after native sensor buffers leave
     // the input callback; positive phases keep the existing workout save flow.
@@ -61,6 +89,7 @@ class WorkoutView extends Ui.View {
         continueSetAction();
     }
 
+    (:richWorkoutMode)
     function continueSetAction() {
         var action = saveStage;
         saveStage = 0;
@@ -92,12 +121,28 @@ class WorkoutView extends Ui.View {
         }
     }
 
+    // 96 KiB devices expose explicit set entry only; undo is omitted to keep
+    // the constrained profile's durable commit path small.
+    (:compactWorkoutMode96)
+    function continueSetAction() {
+        var action = saveStage;
+        saveStage = 0;
+        if (!GymWorkoutMode.allowsDetailedTracking()) { return; }
+        if (action == -1) {
+            if (GymStore.addSet()) {
+                GymStore.clearTransientSetActions();
+                Attention.vibrate([new Attention.VibeProfile(60, 150)]);
+            }
+        }
+        Ui.requestUpdate();
+    }
+
     function initialize() {
         View.initialize();
         ticker = new Timer.Timer();
     }
 
-    (:enhancedRecoveryCheckpoint)
+    (:enhancedRecoveryCheckpoint, :notFr55Memory)
     function onShow() {
         if (saveStage < 0) {
             ticker.start(method(:continueSetAction), 50, false);
@@ -127,7 +172,34 @@ class WorkoutView extends Ui.View {
         }
     }
 
-    (:compactRecovery96)
+    (:fr55Memory)
+    function onShow() {
+        if (saveStage < 0) {
+            ticker.start(method(:continueSetAction), 50, false);
+            return;
+        }
+        ticker.start(method(:tick), 1000, true);
+        if (GymStore.hasPreparedWorkout()) {
+            page = 3;
+        } else if (GymSession.recording) {
+            page = GymSession.paused ? 2 : 0;
+            if (!GymSession.paused) {
+                GymSession.startSensors();
+            }
+        } else {
+            page = 7;
+        }
+        selected = 0;
+        pauseSelected = 0;
+        discardSelected = 0;
+        // Mailbox polling is intentionally retained while idle so a bound phone
+        // can deliver a plan. The launch path itself sends nothing and starts no
+        // recording or sensor; a durable pending workout retries only after the
+        // bounded timer in tick().
+        getApp().pollMailbox();
+    }
+
+    (:compactWorkoutMode96)
     function onShow() {
         if (saveStage < 0) {
             ticker.start(method(:continueSetAction), 50, false);
@@ -146,9 +218,6 @@ class WorkoutView extends Ui.View {
         }
         selected = 0;
         getApp().pollMailbox();
-        if (page == 7 && GymStore.shouldStartTutorial()) {
-            startTutorial();
-        }
     }
 
     function onHide() {
@@ -260,7 +329,7 @@ class WorkoutView extends Ui.View {
         GymStore.status = GymStatus.CONFIRM_SET;
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function notifyAutoPrompt() {
         Attention.vibrate([new Attention.VibeProfile(45, 120)]);
         GymStore.status = GymStatus.CONFIRM_SET;
@@ -275,7 +344,7 @@ class WorkoutView extends Ui.View {
         GymComm.requestSync(method(:onSyncSent));
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function tick() {
         if (saveStage < 0) {
             continueSetAction();
@@ -345,6 +414,41 @@ class WorkoutView extends Ui.View {
             restWasActive = false;
             autoPromptWasActive = false;
         }
+        GymStore.checkpointLiveWorkout(false);
+        Ui.requestUpdate();
+    }
+
+    (:compactWorkoutMode96)
+    function tick() {
+        if (saveStage < 0) {
+            continueSetAction();
+            return;
+        }
+        if (saveStage > 0) {
+            continueSaving();
+            return;
+        }
+        getApp().pollMailbox();
+        maybeRetryPending();
+        if (syncRequestInFlight && lastSyncRequestAt != null &&
+            GymStore.timerElapsedMs(lastSyncRequestAt) > 60000l) {
+            syncRequestInFlight = false;
+            syncRequestTimedOut = true;
+            GymStore.status = GymStatus.REOPEN;
+        }
+        if (page == 7 || !GymSession.recording) {
+            Ui.requestUpdate();
+            return;
+        }
+        if (GymSession.paused) { return; }
+        GymSession.tick();
+        var rest = GymStore.restSeconds();
+        var activeRest = rest > 0;
+        if (restWasActive && !activeRest) {
+            Attention.vibrate([new Attention.VibeProfile(100, 500), new Attention.VibeProfile(100, 500)]);
+            GymStore.status = GymStatus.REST_DONE;
+        }
+        restWasActive = activeRest;
         GymStore.checkpointLiveWorkout(false);
         Ui.requestUpdate();
     }
@@ -557,7 +661,7 @@ class WorkoutView extends Ui.View {
         return true;
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
     function startOrResumeWorkout(usePlan) {
         if (page != 7 || GymSession.fitSaved || GymStore.hasPreparedWorkout()) {
             GymStore.status = GymStatus.START_FAIL;
@@ -605,7 +709,6 @@ class WorkoutView extends Ui.View {
         }
         // New origins were committed before FIT allocation in start().
         page = 0;
-        autoPromptWasActive = GymSession.autoLogPrompt;
         Ui.requestUpdate();
         return true;
     }
@@ -649,12 +752,19 @@ class WorkoutView extends Ui.View {
         return true;
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function buildFinishWorkoutMessage() {
         return GymStore.preparedWorkoutMessage();
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
+    function buildFinishWorkoutMessage() {
+        return GymStore.preparedWorkoutFitSaved() ?
+            GymStore.preparedWorkoutMessage() :
+            GymStore.preparedWorkoutSetsOnlyMessage();
+    }
+
+    (:fr55Memory)
     function buildFinishWorkoutMessage() {
         return GymStore.preparedWorkoutFitSaved() ?
             GymStore.preparedWorkoutMessage() :
@@ -665,7 +775,7 @@ class WorkoutView extends Ui.View {
         return finishWorkoutMessage(buildFinishWorkoutMessage());
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function finishFitRecovery(activityFound) {
         if (GymActiveJournal.snapshot() != null &&
             (GymStore.sets.size() > 14 || GymStore.pendingCount() > 0)) {
@@ -697,13 +807,13 @@ class WorkoutView extends Ui.View {
         System.exit();
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function fitRecoveryPending() {
         return GymStore.preparedWorkoutNeedsFitDecision() &&
             GymSession.fitOutcomeUnknownAfterRestart();
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function handleFitRecoveryAction() {
         if (!fitRecoveryPending()) {
             return false;
@@ -723,7 +833,7 @@ class WorkoutView extends Ui.View {
         return finishFitRecovery(pauseSelected == 1);
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function saveAndExit() {
         if (saveStage > 0) {
             return;
@@ -781,7 +891,49 @@ class WorkoutView extends Ui.View {
     // The 96 KiB tier keeps the proven phase-0 behavior and omits the richer
     // post-crash FIT decision UI. This preserves loader headroom on products
     // whose process ceiling is lower than their nominal PRG limit.
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
+    function saveAndExit() {
+        if (saveStage > 0) {
+            return;
+        }
+        // Freeze FIT and release sensor buffers before allocating the durable
+        // commit marker. The pause-menu path is already paused; direct summary
+        // completion must have the same memory and timing boundary.
+        if (GymSession.recording && !GymSession.pause()) {
+            Ui.requestUpdate();
+            return;
+        }
+        var needsPhoneSync = (GymStore.sets.size() > 0 ||
+            GymWorkoutMode.isFree()) &&
+            GymStore.hasAccountBinding();
+        if (needsPhoneSync && !GymStore.prepareWorkoutCommit()) {
+            GymStore.status = GymStatus.SAVE_FAIL;
+            Ui.requestUpdate();
+            return;
+        }
+        var fitUnknown = needsPhoneSync &&
+            !GymStore.preparedWorkoutFitSaved() &&
+            GymSession.fitOutcomeUnknownAfterRestart();
+        var fitAlreadySaved = GymSession.fitSaved ||
+            GymStore.preparedWorkoutFitSaved();
+        if (!fitUnknown && !fitAlreadySaved && !GymSession.stopAndSave()) {
+            GymStore.status = GymStatus.FIT_FAIL;
+            Ui.requestUpdate();
+            return;
+        }
+        if (needsPhoneSync && !fitUnknown &&
+            !GymStore.preparedWorkoutFitSaved() &&
+            !GymStore.markPreparedWorkoutFitSaved()) {
+            GymStore.status = GymStatus.SAVE_FAIL;
+            Ui.requestUpdate();
+            return;
+        }
+        saveSetsOnly = fitUnknown;
+        saveStage = needsPhoneSync ? 1 : 4;
+        Ui.requestUpdate();
+    }
+
+    (:fr55Memory)
     function saveAndExit() {
         if (saveStage > 0) {
             return;
@@ -799,9 +951,6 @@ class WorkoutView extends Ui.View {
             Ui.requestUpdate();
             return;
         }
-        // Freeze FIT and release sensor buffers before allocating the durable
-        // commit marker. The pause-menu path is already paused; direct summary
-        // completion must have the same memory and timing boundary.
         if (GymSession.recording && !GymSession.pause()) {
             Ui.requestUpdate();
             return;
@@ -843,13 +992,14 @@ class WorkoutView extends Ui.View {
                 var metadata = GymStore.preparedWorkoutJournalMetadata(saveSetsOnly);
                 saveStage = GymPendingJournal.begin(metadata) == 0 ? 6 : 0;
                 if (saveStage == 6) {
-                    if (GymWorkoutMode.recordingSetLimit == 30 &&
+                    if (shouldReleasePlanMemoryAfterSave() &&
                         GymStore.plan == GymStore.persistedPlanSource) {
                         // FIT, active rows and this plan are already durable.
                         // The queue context above captured exact plan progress;
                         // no editing or recording can follow this terminal phase.
                         GymStore.plan = [];
                         GymStore.persistedPlanSource = GymStore.plan;
+                        GymStore.persistedPlanNeedsV5Write = false;
                         GymStore.clearTransientSetActions();
                         savePlanReleased = true;
                     }
@@ -876,12 +1026,14 @@ class WorkoutView extends Ui.View {
         } else if (saveStage == 3 || saveStage == 4) {
             var sendQueued = saveStage == 3;
             saveStage = 0;
-            if (GymStore.clearActiveWorkout()) {
-                if (GymWorkoutMode.recordingSetLimit == 30) {
+            if (canFinishUnboundFreeWithoutStoreClear() ||
+                GymStore.clearActiveWorkout()) {
+                if (shouldReleasePlanMemoryAfterSave()) {
                     getApp().finishedDurably = true;
                     // No screens or new workout can follow this successful exit.
                     // Free these caches before decoding a parked legacy queue.
-                    GymStore.plan = []; GymStore.persistedPlanSource = null;
+                    GymStore.plan = []; GymStore.persistedPlanSource = GymStore.plan;
+                    GymStore.persistedPlanNeedsV5Write = false;
                     GymStore.exercises = [];
                 }
                 if (sendQueued) {
@@ -905,7 +1057,7 @@ class WorkoutView extends Ui.View {
         screenHeight = h;
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
-        if (GymWorkoutMode.recordingSetLimit == 30 && savePlanReleased && saveStage == 0) {
+        if (shouldReleasePlanMemoryAfterSave() && savePlanReleased && saveStage == 0) {
             drawCentered(dc, h / 2, Gfx.FONT_XTINY, GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК"));
             return;
         }
@@ -960,7 +1112,7 @@ class WorkoutView extends Ui.View {
         screenHeight = h;
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
-        if (GymWorkoutMode.recordingSetLimit == 30 && savePlanReleased && saveStage == 0) {
+        if (shouldReleasePlanMemoryAfterSave() && savePlanReleased && saveStage == 0) {
             drawCentered(dc, h / 2, Gfx.FONT_XTINY, GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК"));
             return;
         }
@@ -1005,16 +1157,16 @@ class WorkoutView extends Ui.View {
         }
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
     function onUpdate(dc) {
         var w = dc.getWidth();
         var h = dc.getHeight();
-        screenWidth = w;
-        screenHeight = h;
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
-        if (GymWorkoutMode.recordingSetLimit == 30 && savePlanReleased && saveStage == 0) {
-            drawCentered(dc, h / 2, Gfx.FONT_XTINY, GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК"));
+        if (shouldReleasePlanMemoryAfterSave() && savePlanReleased && saveStage == 0) {
+            dc.drawText(w / 2, h / 2 - dc.getFontHeight(Gfx.FONT_XTINY) / 2,
+                Gfx.FONT_XTINY, GymStore.tr("REOPEN APP", "ПЕРЕЗАПУСК", "ПЕРЕЗАПУСК"),
+                Gfx.TEXT_JUSTIFY_CENTER);
             return;
         }
         if (saveStage > 0) {
@@ -1023,36 +1175,22 @@ class WorkoutView extends Ui.View {
                 Gfx.TEXT_JUSTIFY_CENTER);
             return;
         }
-        if (GymWorkoutMode.isFree() &&
-            (page == 1 || page == 4 || page == 5)) {
-            page = 0;
-        }
         if (page == 7) {
             drawReady(dc, w, h);
         } else if (page == 0) {
-            var rest = GymStore.restSeconds();
-            var active = GymSession.effortState == GymSession.EFFORT_ACTIVE;
-            var maybe = GymSession.effortState == GymSession.EFFORT_CANDIDATE;
-            drawTinyDashboard(dc, w, h,
-                GymSession.hr == null ? "--" : GymSession.hr.toString(),
-                rest, active, maybe, dashboardStatusText(rest, active, maybe));
+            if (GymWorkoutMode.isFree()) {
+                drawFreeSessionDashboard(dc, w, h, false);
+            } else {
+                drawManualDashboard(dc, w, h, false);
+            }
         } else if (page == 1) {
             drawEntry(dc, w, h);
         } else if (page == 2) {
             drawPauseMenu(dc, w, h);
         } else if (page == 3) {
             drawSummary(dc, w, h);
-        } else if (page == 5) {
-            drawSettings(dc, w, h);
         } else if (page == 6) {
             drawDiscardConfirmation(dc, w, h);
-        }
-        drawPageDots(dc, w, h);
-        if (isUndoOverlayActive()) {
-            drawSetSavedOverlay(dc, w, h);
-        }
-        if (tutorialActive && page == 7) {
-            drawTutorialOverlay(dc, w, h);
         }
     }
 
@@ -1146,14 +1284,29 @@ class WorkoutView extends Ui.View {
         return GymStore.tr("READY", "ГОТОВО", "ГОТОВО");
     }
 
+    (:richWorkoutMode)
     function readyActionCount() {
         if (GymLocalWorkout.snapshot != null) { return 2; }
-        return !hasWorkoutToResume() && GymWorkoutMode.hasValidPlan() ? 4 : 3;
+        if (!hasWorkoutToResume() && GymStore.pendingCount() > 0) { return 2; }
+        return !hasWorkoutToResume() && GymWorkoutMode.hasStartablePlan() ? 4 : 3;
     }
 
+    (:compactWorkoutMode96)
+    function readyActionCount() {
+        if (GymLocalWorkout.snapshot != null || hasWorkoutToResume() ||
+            GymStore.pendingCount() > 0) { return 2; }
+        return GymWorkoutMode.hasStartablePlan() ? 3 : 2;
+    }
+
+    (:richWorkoutMode)
     function readyActionText(index, count) {
         if (GymLocalWorkout.snapshot != null && index == 1) {
             return GymStore.tr("LATER", "ПІЗНІШЕ", "ПОЗЖЕ");
+        }
+        if (!hasWorkoutToResume() && GymStore.pendingCount() > 0) {
+            return index == 0 ?
+                GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.") :
+                GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
         }
         if (hasWorkoutToResume()) {
             if (index == 0) {
@@ -1172,6 +1325,34 @@ class WorkoutView extends Ui.View {
         return index == 1 ?
             GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН") :
             GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
+    }
+
+    (:compactWorkoutMode96)
+    function readyActionText(index, count) {
+        if (GymLocalWorkout.snapshot != null && index == 1) {
+            return GymStore.tr("LATER", "ПІЗНІШЕ", "ПОЗЖЕ");
+        }
+        if (!hasWorkoutToResume() && GymStore.pendingCount() > 0) {
+            return index == 0 ?
+                GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.") :
+                GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
+        }
+        if (hasWorkoutToResume()) {
+            return index == 0 ?
+                GymStore.tr("RESUME", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ") :
+                GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН");
+        }
+        if (GymWorkoutMode.hasStartablePlan()) {
+            if (index == 0) {
+                return GymStore.tr("START PLAN", "ПОЧАТИ ПЛАН", "НАЧАТЬ ПЛАН");
+            }
+            if (index == 1) {
+                return GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
+            }
+        } else if (index == 0) {
+            return GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
+        }
+        return GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН");
     }
 
     (:fullLegacyState)
@@ -1200,12 +1381,21 @@ class WorkoutView extends Ui.View {
         drawCompactReady(dc, w, h);
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
     function drawReady(dc, w, h) {
-        drawCompactReady(dc, w, h);
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.18, Gfx.FONT_XTINY,
+            fitText(readyStatusText(), 20), Gfx.TEXT_JUSTIFY_CENTER);
+        var count = readyActionCount();
+        var top = h * (count == 4 ? 0.34 : 0.40);
+        var step = h * (count == 4 ? 0.13 : 0.16);
+        for (var i = 0; i < count; i += 1) {
+            drawMinimalLine(dc, w, top + i * step,
+                readyActionText(i, count), i == selected);
+        }
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawCompactReady(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
@@ -1245,6 +1435,7 @@ class WorkoutView extends Ui.View {
         }
     }
 
+    (:notFr55Memory, :richWorkoutMode)
     function startTutorial() {
         if (page != 7 || GymStore.hasUnfinishedWorkout() ||
             GymStore.hasPreparedWorkout()) {
@@ -1257,6 +1448,7 @@ class WorkoutView extends Ui.View {
         return true;
     }
 
+    (:notFr55Memory, :richWorkoutMode)
     function tutorialNext() {
         if (!tutorialActive) {
             return;
@@ -1276,6 +1468,7 @@ class WorkoutView extends Ui.View {
         }
     }
 
+    (:notFr55Memory, :richWorkoutMode)
     function tutorialBackOrSkip() {
         if (!tutorialActive) {
             return;
@@ -1294,7 +1487,13 @@ class WorkoutView extends Ui.View {
         }
     }
 
-    (:fullLegacyState)
+    (:fr55Memory)
+    function tutorialNext() {}
+
+    (:fr55Memory)
+    function tutorialBackOrSkip() {}
+
+    (:fullLegacyState, :notFr55Memory)
     function drawTutorialOverlay(dc, w, h) {
         var targetY = readyActionCount() == 4 ?
             (tutorialStep == 0 ? 91 : (tutorialStep == 1 ? 167 : 205)) :
@@ -1322,7 +1521,7 @@ class WorkoutView extends Ui.View {
         drawCentered(dc, 70, Gfx.FONT_XTINY, fitTextWidth(dc, detail, Gfx.FONT_XTINY, sr(w, h, 174)));
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :notFr55Memory, :richWorkoutMode)
     function drawTutorialOverlay(dc, w, h) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 2, Gfx.FONT_XTINY,
@@ -1330,6 +1529,9 @@ class WorkoutView extends Ui.View {
                 readyActionText(selected, readyActionCount()),
             Gfx.TEXT_JUSTIFY_CENTER);
     }
+
+    (:fr55Memory)
+    function drawTutorialOverlay(dc, w, h) {}
 
     (:fullLegacyState)
     function drawReadyRow(dc, w, h, index, baseY, label) {
@@ -1512,7 +1714,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(centerX, 137, Gfx.FONT_SYSTEM_XTINY, fitted, Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawTinyDashboard(dc, w, h, hrText, rest, setActive, setMaybe, status) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 16, Gfx.FONT_XTINY,
@@ -1541,6 +1743,53 @@ class WorkoutView extends Ui.View {
         if (GymSession.paused) {
             dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
             dc.drawCircle(w / 2, h / 2, (w / 2) - 5);
+        }
+    }
+
+    (:compactWorkoutMode96)
+    function drawManualDashboard(dc, w, h, saveAction) {
+        var center = w / 2;
+        var heart = GymSession.hr == null ? "--" : GymSession.hr.toString();
+        var elapsed = GymSession.elapsedText();
+        var rest = GymStore.restSeconds();
+        var restText = rest > 0 ? countdownText(rest) : "--";
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(center, h * 0.20, Gfx.FONT_XTINY,
+            fitText(GymStore.currentExerciseLabel(), 20),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(center, h * 0.34, Gfx.FONT_TINY,
+            GymStore.tr("SET ", "ПІДХІД ", "ПОДХОД ") +
+                (GymStore.sets.size() + 1).toString(),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(center, h * 0.47, Gfx.FONT_XTINY, setSummaryText(),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        drawMinimalLine(dc, w, h * 0.61,
+            GymStore.tr("HR ", "ПУЛЬС ", "ПУЛЬС ") + heart + " " + elapsed, false);
+        drawMinimalLine(dc, w, h * 0.73,
+            GymStore.tr("KCAL ", "ККАЛ ", "ККАЛ ") +
+                GymStore.totalGymCalories().format("%.0f") + " " +
+                GymStore.tr("REST ", "ВІДП ", "ОТД. ") + restText, false);
+        drawMinimalLine(dc, w, h * 0.86,
+            GymStore.tr("SELECT: SET ENTRY", "ВИБІР: ПІДХІД", "ВЫБОР: ПОДХОД"), false);
+    }
+
+    (:compactWorkoutMode96)
+    function drawFreeSessionDashboard(dc, w, h, saveAction) {
+        var center = w / 2;
+        var heart = GymSession.hr == null ? "--" : GymSession.hr.toString();
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(center, h * 0.25, Gfx.FONT_TINY,
+            "HR " + heart,
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(center, h * 0.45, Gfx.FONT_TINY,
+            GymSession.elapsedText(), Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(center, h * 0.63, Gfx.FONT_TINY,
+            "KCAL " + GymStore.totalGymCalories().format("%.1f"),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        if (!saveAction) {
+            drawMinimalLine(dc, w, h * 0.84,
+                GymStore.tr("SELECT: PAUSE", "ВИБІР: ПАУЗА", "ВЫБОР: ПАУЗА"), false);
         }
     }
 
@@ -1695,17 +1944,23 @@ class WorkoutView extends Ui.View {
         drawCentered(dc, 210, Gfx.FONT_SYSTEM_XTINY, fitted);
     }
 
+    (:richWorkoutMode)
     function showSetSavedFlash(number) {
         savedSetNumber = number;
         savedSetFlashStartedAt = System.getTimer();
     }
 
+    (:richWorkoutMode)
     function isUndoOverlayActive() {
         return page != 7 && savedSetFlashStartedAt != null &&
             GymStore.timerElapsedMs(savedSetFlashStartedAt) <= GymStore.undoWindowMs &&
             GymStore.canUndoLastSet();
     }
 
+    (:compactWorkoutMode96)
+    function isUndoOverlayActive() { return false; }
+
+    (:richWorkoutMode)
     function dismissSetSavedFlash() {
         savedSetFlashStartedAt = null;
     }
@@ -1730,7 +1985,7 @@ class WorkoutView extends Ui.View {
         drawCentered(dc, 216, Gfx.FONT_XTINY, GymStore.tr("TAP / BACK: UNDO", "ТАП / НАЗАД: СКАС", "ТАП / НАЗАД: ОТМЕНА"));
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawSetSavedOverlay(dc, w, h) {
         dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_BLACK);
         dc.clear();
@@ -1803,6 +2058,7 @@ class WorkoutView extends Ui.View {
         return Gfx.COLOR_LT_GRAY;
     }
 
+    (:richWorkoutMode)
     function effortLabel(state) {
         if (state == GymSession.EFFORT_ACTIVE) {
             return GymStore.tr("SET ACTIVE", "ПІДХІД", "ПОДХОД");
@@ -1820,6 +2076,7 @@ class WorkoutView extends Ui.View {
         return "FREE";
     }
 
+    (:richWorkoutMode)
     function confidenceLabel() {
         if (GymSession.setConfidence >= 70) {
             return GymStore.tr("HIGH", "ВИС", "ВЫС");
@@ -1857,7 +2114,7 @@ class WorkoutView extends Ui.View {
         return effortLabel(GymSession.effortState);
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function dashboardStatusText(rest, setActive, setMaybe) {
         var fault = workoutErrorText();
         if (fault != null) {
@@ -1927,7 +2184,7 @@ class WorkoutView extends Ui.View {
         }
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawEntry(dc, w, h) {
         var fault = workoutErrorText();
         drawHeader(dc, w, h, fault == null ? GymStore.tr("SET ENTRY", "ПІДХІД", "ПОДХОД") : fault);
@@ -1953,6 +2210,38 @@ class WorkoutView extends Ui.View {
         drawCentered(dc, 192, Gfx.FONT_XTINY, setSummaryText());
     }
 
+    (:compactWorkoutMode96)
+    function drawEntry(dc, w, h) {
+        var font = Gfx.FONT_XTINY;
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.12, font,
+            GymStore.tr("ADD SET", "ДОДАТИ ПІДХІД", "ДОБАВИТЬ ПОДХОД"),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        for (var index = 0; index < 4; index += 1) {
+            var label;
+            var value;
+            if (index == 0) {
+                label = GymStore.tr("EXERCISE", "ВПРАВА", "УПРАЖН");
+                value = GymStore.currentExerciseLabel();
+            } else if (index == 1) {
+                label = "KG";
+                value = localizedDecimal(GymStore.weight);
+            } else if (index == 2) {
+                label = GymStore.tr("REPS", "ПОВТ", "ПОВТ");
+                value = GymStore.reps.toString();
+            } else {
+                label = GymStore.tr("SAVE SET", "ЗБЕРЕГТИ", "СОХРАНИТЬ");
+                value = GymStore.sets.size().toString();
+            }
+            drawMinimalLine(dc, w, h * (0.30 + index * 0.14),
+                label + "  " + value, index == selected);
+        }
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.88, font, fitText(setSummaryText(), 20),
+            Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    (:richWorkoutMode)
     function drawPauseMenu(dc, w, h) {
         dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
         drawHeader(dc, w, h, GymStore.tr("PAUSED", "ПАУЗА", "ПАУЗА"));
@@ -1963,6 +2252,19 @@ class WorkoutView extends Ui.View {
         drawMenuRow(dc, w, h, 0, 82, GymStore.tr("RESUME", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ"));
         drawMenuRow(dc, w, h, 1, 126, GymStore.tr("SAVE", "ЗБЕРЕГТИ", "СОХРАНИТЬ"));
         drawMenuRow(dc, w, h, 2, 170, GymStore.tr("DISCARD", "СКАСУВ", "СБРОСИТЬ"));
+    }
+
+    (:compactWorkoutMode96)
+    function drawPauseMenu(dc, w, h) {
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.20, Gfx.FONT_XTINY,
+            GymStore.tr("PAUSED", "ПАУЗА", "ПАУЗА"), Gfx.TEXT_JUSTIFY_CENTER);
+        drawMinimalLine(dc, w, h * 0.40,
+            GymStore.tr("RESUME", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ"), pauseSelected == 0);
+        drawMinimalLine(dc, w, h * 0.54,
+            GymStore.tr("FINISH", "ЗАВЕРШИТИ", "ЗАВЕРШИТЬ"), pauseSelected == 1);
+        drawMinimalLine(dc, w, h * 0.68,
+            GymStore.tr("DISCARD", "СКАСУВАТИ", "СБРОСИТЬ"), pauseSelected == 2);
     }
 
     (:fullLegacyState)
@@ -1981,11 +2283,27 @@ class WorkoutView extends Ui.View {
         drawDiscardRow(dc, w, h, 1, 192, GymStore.tr("YES, DISCARD", "ТАК, СКАСУВАТИ", "ДА, СБРОСИТЬ"), true);
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawDiscardConfirmation(dc, w, h) {
         drawHeader(dc, w, h, GymStore.tr("DISCARD?", "СКАСУВАТИ?", "СБРОСИТЬ?"));
         drawDiscardRow(dc, w, h, 0, 112, GymStore.tr("KEEP", "ЗАЛИШИТИ", "ОСТАВИТЬ"), false);
         drawDiscardRow(dc, w, h, 1, 166, GymStore.tr("DISCARD", "СКАСУВАТИ", "СБРОСИТЬ"), true);
+    }
+
+    (:compactWorkoutMode96)
+    function drawDiscardConfirmation(dc, w, h) {
+        dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.22, Gfx.FONT_XTINY,
+            GymStore.tr("DISCARD WORKOUT?", "СКАСУВАТИ?", "СБРОСИТЬ?"),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.36, Gfx.FONT_XTINY,
+            GymStore.tr("CANNOT BE UNDONE", "НЕ МОЖНА СКАСУВАТИ", "НЕЛЬЗЯ ОТМЕНИТЬ"),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        drawMinimalLine(dc, w, h * 0.54,
+            GymStore.tr("KEEP WORKOUT", "ЗАЛИШИТИ", "ОСТАВИТЬ"), discardSelected == 0);
+        drawMinimalLine(dc, w, h * 0.68,
+            GymStore.tr("YES, DISCARD", "ТАК, СКАСУВАТИ", "ДА, СБРОСИТЬ"), discardSelected == 1);
     }
 
     (:fullLegacyState)
@@ -2015,7 +2333,7 @@ class WorkoutView extends Ui.View {
         drawMenuRow(dc, w, h, 0, 210, GymStore.tr("SAVE & EXIT", "ЗБЕРЕГТИ", "СОХРАНИТЬ"));
     }
 
-    (:compactRichRecovery)
+    (:compactRichRecovery, :notFr55Memory)
     function drawSummary(dc, w, h) {
         if (fitRecoveryPending()) {
             drawFitRecoverySummary(dc, w, h);
@@ -2038,11 +2356,24 @@ class WorkoutView extends Ui.View {
         drawCentered(dc, 190, Gfx.FONT_XTINY, "> " + fitText(GymStore.tr("SAVE & EXIT", "ЗБЕРЕГТИ", "СОХРАНИТЬ"), 13));
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
     function drawSummary(dc, w, h) {
-        // The compact dashboard already renders the complete allowed surface:
-        // FREE stops after duration/HR/calories, while PLANNED continues with
-        // exercise/set state. Reusing it keeps the summary semantically exact.
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.30, Gfx.FONT_XTINY,
+            GymStore.tr("FINISH WORKOUT?", "ЗАВЕРШИТИ?", "ЗАВЕРШИТЬ?"),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        drawMinimalLine(dc, w, h * 0.50,
+            GymStore.tr("SELECT: SAVE", "ВИБІР: ЗБЕРЕГТИ", "ВЫБОР: СОХРАНИТЬ"), true);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.66, Gfx.FONT_XTINY,
+            GymStore.tr("BACK: PAUSE MENU", "НАЗАД: ПАУЗА", "НАЗАД: ПАУЗА"),
+            Gfx.TEXT_JUSTIFY_CENTER);
+    }
+
+    (:fr55Memory)
+    function drawSummary(dc, w, h) {
+        // Keep HR/timer, free-workout calories, and planned set details on FR55
+        // while omitting the FIT-recovery decision used by richer profiles.
         drawTinyDashboard(dc, w, h,
             GymSession.hr == null ? "--" : GymSession.hr.toString(),
             0, false, false, readyStatusText());
@@ -2073,7 +2404,7 @@ class WorkoutView extends Ui.View {
                 GymStore.tr("SAVE & EXIT", "ЗБЕРЕГТИ", "СОХРАНИТЬ"), 13));
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function fitRecoveryActionText() {
         if (discardSelected == 1) {
             return GymStore.tr("ENTER TO CONFIRM", "ENTER: ПІДТВЕРДИТИ", "ENTER: ПОДТВЕРДИТЬ");
@@ -2089,7 +2420,7 @@ class WorkoutView extends Ui.View {
             GymStore.tr("SETS ONLY", "ЛИШЕ ПІДХОДИ", "ТОЛЬКО ПОДХОДЫ");
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function drawFitRecoverySummary(dc, w, h) {
         drawHeader(dc, w, h, GymStore.tr("FIT CHECK", "ПЕРЕВІРКА FIT", "ПРОВЕРКА FIT"));
         var font = w >= 200 ? Gfx.FONT_SMALL : Gfx.FONT_XTINY;
@@ -2179,7 +2510,7 @@ class WorkoutView extends Ui.View {
         drawSettingsRow(dc, w, h, 6, 211, GymStore.tr("TUTORIAL", "НАВЧАННЯ", "ОБУЧЕНИЕ"), GymStore.tr("OPEN", "ВІДКР", "ОТКР"));
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :notFr55Memory, :richWorkoutMode)
     function drawSettings(dc, w, h) {
         drawHeader(dc, w, h, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"));
         var label;
@@ -2205,6 +2536,24 @@ class WorkoutView extends Ui.View {
         } else {
             label = GymStore.tr("TUTORIAL", "НАВЧАННЯ", "ОБУЧЕНИЕ");
             value = GymStore.tr("OPEN", "ВІДКР", "ОТКР");
+        }
+        drawSettingsRow(dc, w, h, settingsSelected, 116, label, value);
+    }
+
+    (:fr55Memory)
+    function drawSettings(dc, w, h) {
+        drawHeader(dc, w, h, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"));
+        var label;
+        var value;
+        if (settingsSelected == 0) {
+            label = "AUTO";
+            value = GymStore.onOff(GymStore.autoPromptEnabled);
+        } else if (settingsSelected == 1) {
+            label = GymStore.tr("DETECT", "ЧУТЛ", "ЧУВСТ");
+            value = GymStore.sensitivityLabel();
+        } else {
+            label = GymStore.tr("REST", "ВІДП", "ОТДЫХ");
+            value = GymStore.restSecondsDefault.toString();
         }
         drawSettingsRow(dc, w, h, settingsSelected, 116, label, value);
     }
@@ -2280,7 +2629,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(sx(w, 212), sy(h, baseY + 7), Gfx.FONT_XTINY, fitTextWidth(dc, value, Gfx.FONT_XTINY, sr(w, h, 78)), Gfx.TEXT_JUSTIFY_RIGHT);
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawSettingsRow(dc, w, h, index, baseY, label, value) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, (h / 2) - 16, Gfx.FONT_XTINY,
@@ -2302,7 +2651,7 @@ class WorkoutView extends Ui.View {
         drawCentered(dc, baseY + 9, Gfx.FONT_XTINY, fitTextWidth(dc, label, Gfx.FONT_XTINY, sr(w, h, 132)));
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawMenuRow(dc, w, h, index, baseY, label) {
         dc.setColor(index == pauseSelected ? Gfx.COLOR_GREEN : Gfx.COLOR_WHITE,
             Gfx.COLOR_TRANSPARENT);
@@ -2326,7 +2675,7 @@ class WorkoutView extends Ui.View {
         drawCentered(dc, baseY + 9, Gfx.FONT_XTINY, fitTextWidth(dc, label, Gfx.FONT_XTINY, sr(w, h, 152)));
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawDiscardRow(dc, w, h, index, baseY, label, destructive) {
         dc.setColor(index == discardSelected ?
             (destructive ? Gfx.COLOR_RED : Gfx.COLOR_GREEN) : Gfx.COLOR_WHITE,
@@ -2367,7 +2716,7 @@ class WorkoutView extends Ui.View {
         dc.drawText(sx(w, 202), sy(h, baseY + 9), Gfx.FONT_XTINY, "+", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function drawAdjustRow(dc, w, h, index, baseY, label, value) {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, (h / 2) - 14, Gfx.FONT_XTINY,
@@ -2379,6 +2728,14 @@ class WorkoutView extends Ui.View {
     function drawHeader(dc, w, h, label) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawCentered(dc, 34, Gfx.FONT_XTINY, label);
+    }
+
+    (:compactWorkoutMode96)
+    function drawMinimalLine(dc, w, y, text, highlighted) {
+        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, y, Gfx.FONT_XTINY,
+            (highlighted ? "> " : "  ") + fitText(text, 22),
+            Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     (:pageDots)
@@ -2485,7 +2842,7 @@ class WorkoutView extends Ui.View {
         return fitted == null ? "..." : fitted;
     }
 
-    (:compactLegacyState)
+    (:compactLegacyState, :richWorkoutMode)
     function fitTextWidth(dc, text, font, maxWidth) {
         if (text == null) {
             return "";
@@ -2516,7 +2873,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     var view;
 
     function inputBlocked() {
-        if (GymWorkoutMode.recordingSetLimit == 30 && view.savePlanReleased && view.saveStage == 0) {
+        if (view.shouldReleasePlanMemoryAfterSave() && view.savePlanReleased && view.saveStage == 0) {
             System.exit();
             return true;
         }
@@ -2528,6 +2885,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         view = workoutView;
     }
 
+    (:richWorkoutMode)
     function hasPendingSetPrompt() {
         if (!GymWorkoutMode.allowsDetailedTracking()) {
             return false;
@@ -2535,10 +2893,14 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return view.page != 7 && GymSession.autoLogPrompt;
     }
 
+    (:compactWorkoutMode96)
+    function hasPendingSetPrompt() { return false; }
+
     function exitReady() {
         System.exit();
     }
 
+    (:richWorkoutMode)
     function onSelect() {
         if (inputBlocked()) { return true; }
         if (view.tutorialActive) {
@@ -2572,6 +2934,30 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
+    (:compactWorkoutMode96)
+    function onSelect() {
+        if (inputBlocked()) { return true; }
+        if (view.page == 7) {
+            handleReadySelection();
+        } else if (view.page == 3) {
+            view.saveAndExit();
+        } else if (view.page == 2) {
+            handlePauseMenu();
+        } else if (view.page == 6) {
+            handleDiscardConfirmation();
+        } else if (view.page == 0) {
+            if (GymWorkoutMode.isFree()) {
+                openPauseMenu();
+            } else {
+                view.page = 1;
+            }
+        } else if (view.page == 1) {
+            handleSelect();
+        }
+        Ui.requestUpdate();
+        return true;
+    }
+
     function onNextPage() {
         return movePage(1);
     }
@@ -2582,6 +2968,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     // Both hardware directions share the same modal guards and cyclic menus.
     // Keep the FIT-recovery variant separate on the smallest watch profile.
+    (:richWorkoutMode)
     function movePage(delta) {
         if (inputBlocked()) { return true; }
         if (view.tutorialActive) {
@@ -2612,7 +2999,26 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
-    (:richRecoveryNavigation)
+    (:compactWorkoutMode96)
+    function movePage(delta) {
+        if (inputBlocked()) { return true; }
+        if (view.page == 7) {
+            var count = view.readyActionCount();
+            view.selected = (view.selected + count + delta) % count;
+        } else if (view.page == 2) {
+            view.pauseSelected = (view.pauseSelected + 3 + delta) % 3;
+        } else if (view.page == 6) {
+            moveDiscardSelection(delta);
+        } else if (view.page == 1) {
+            view.selected = (view.selected + 4 + delta) % 4;
+        } else if (view.page == 0 && !GymWorkoutMode.isFree()) {
+            view.page = 1;
+        }
+        Ui.requestUpdate();
+        return true;
+    }
+
+    (:richRecoveryNavigation, :notFr55Memory)
     function moveSummaryPage(delta) {
         if (view.fitRecoveryPending()) {
             moveFitRecovery(delta);
@@ -2621,7 +3027,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
-    (:compactRecovery96)
+    (:fr55Memory)
     function moveSummaryPage(delta) {
         moveSavedSummary(delta);
     }
@@ -2684,7 +3090,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
-    (:richRecoveryNavigation)
+    (:richRecoveryNavigation, :notFr55Memory)
     function onMenu() {
         if (inputBlocked()) { return true; }
         if (view.tutorialActive) {
@@ -2706,7 +3112,21 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
+    function onMenu() {
+        if (inputBlocked()) { return true; }
+        if (view.page == 7) {
+            view.syncFromReady();
+        } else if (view.page == 6) {
+            cancelDiscardConfirmation();
+        } else {
+            openPauseMenu();
+        }
+        Ui.requestUpdate();
+        return true;
+    }
+
+    (:fr55Memory)
     function onMenu() {
         if (inputBlocked()) { return true; }
         if (view.tutorialActive) {
@@ -2724,7 +3144,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
-    (:richRecoveryNavigation)
+    (:richRecoveryNavigation, :notFr55Memory)
     function onBack() {
         if (inputBlocked()) { return true; }
         if (view.tutorialActive) {
@@ -2761,7 +3181,34 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
+    function onBack() {
+        if (inputBlocked()) { return true; }
+        if (view.page == 7) {
+            exitReady();
+            return true;
+        } else if (view.page == 6) {
+            cancelDiscardConfirmation();
+        } else if (view.page == 3) {
+            if (GymStore.preparedWorkoutFitSaved()) {
+                GymStore.status = GymStatus.FIT_SAVED;
+            } else {
+                view.page = 2;
+                view.pauseSelected = 1;
+            }
+        } else if (view.page == 2) {
+            view.page = 0;
+            view.pauseSelected = 0;
+        } else if (view.page == 1) {
+            view.page = 0;
+        } else {
+            openPauseMenu();
+        }
+        Ui.requestUpdate();
+        return true;
+    }
+
+    (:fr55Memory)
     function onBack() {
         if (inputBlocked()) { return true; }
         if (view.tutorialActive) {
@@ -2949,7 +3396,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
-    (:richRecoveryNavigation)
+    (:richRecoveryNavigation, :notFr55Memory)
     function handleHorizontalKey(delta) {
         if (view.page == 3 && view.fitRecoveryPending()) {
             moveFitRecovery(delta);
@@ -2958,11 +3405,17 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
     function handleHorizontalKey(delta) {
         adjustContent(delta);
     }
 
+    (:fr55Memory)
+    function handleHorizontalKey(delta) {
+        adjustContent(delta);
+    }
+
+    (:richWorkoutMode)
     function adjustContent(delta) {
         if (view.page == 1) {
             activate(delta);
@@ -2975,12 +3428,23 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
+    (:compactWorkoutMode96)
+    function adjustContent(delta) {
+        if (view.page == 1) {
+            activate(delta);
+        } else if (view.page == 6) {
+            moveDiscardSelection(delta);
+        } else {
+            navigateContent(delta);
+        }
+    }
+
     function handleSelect() {
         // onSelect has already handled every non-entry page and modal state.
         activate(1);
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function moveFitRecovery(delta) {
         if (view.discardSelected == 0) {
             view.pauseSelected = (view.pauseSelected + delta) % 3;
@@ -2990,7 +3454,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
-    (:richRecovery)
+    (:richRecovery, :notFr55Memory)
     function deferOrCancelFitRecovery() {
         if (view.discardSelected == 1) {
             view.discardSelected = 0;
@@ -3002,13 +3466,22 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         System.exit();
     }
 
+    (:richWorkoutMode)
     function handleReadySelection() {
         if (GymLocalWorkout.snapshot != null && view.selected == 1) {
             exitReady();
             return;
         }
         var resuming = view.hasWorkoutToResume();
-        var hasPlanChoice = !resuming && GymWorkoutMode.hasValidPlan();
+        if (!resuming && GymStore.pendingCount() > 0) {
+            if (view.selected == 0) {
+                view.syncFromReady();
+            } else {
+                openReadySettings();
+            }
+            return;
+        }
+        var hasPlanChoice = !resuming && GymWorkoutMode.hasStartablePlan();
         if (view.selected == 0) {
             view.startOrResumeWorkout(hasPlanChoice);
         } else if (hasPlanChoice && view.selected == 1) {
@@ -3020,6 +3493,34 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
+    (:compactWorkoutMode96)
+    function handleReadySelection() {
+        if (GymLocalWorkout.snapshot != null && view.selected == 1) {
+            exitReady();
+            return;
+        }
+        var resuming = view.hasWorkoutToResume();
+        if (!resuming && GymStore.pendingCount() > 0) {
+            if (view.selected == 0) { view.syncFromReady(); }
+            else { view.startOrResumeWorkout(false); }
+            return;
+        }
+        var hasPlan = !resuming && GymWorkoutMode.hasStartablePlan();
+        if (resuming) {
+            if (view.selected == 0) { view.startOrResumeWorkout(false); }
+            else { view.syncFromReady(); }
+        } else if (hasPlan && view.selected == 0) {
+            view.startOrResumeWorkout(true);
+        } else if (hasPlan && view.selected == 1) {
+            view.startOrResumeWorkout(false);
+        } else if (view.selected == (hasPlan ? 2 : 1)) {
+            view.syncFromReady();
+        } else {
+            view.startOrResumeWorkout(false);
+        }
+    }
+
+    (:richWorkoutMode)
     function openReadySettings() {
         view.settingsSelected = 0;
         view.page = 5;
@@ -3038,7 +3539,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         view.page = 2;
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
     function openPauseMenu() {
         if (!GymSession.paused && !GymSession.pause()) {
             Ui.requestUpdate();
@@ -3078,27 +3579,13 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
-    (:compactRecovery96)
+    (:compactWorkoutMode96)
     function navigateContent(delta) {
         if (GymWorkoutMode.isFree() || view.page == 2 ||
             view.page == 3 || view.page == 6) {
             return;
         }
-        if (delta > 0) {
-            if (view.page == 0) {
-                view.page = 1;
-            } else if (view.page == 1) {
-                view.page = 5;
-            } else {
-                view.page = 0;
-            }
-        } else if (view.page == 0) {
-            view.page = 5;
-        } else if (view.page == 5) {
-            view.page = 1;
-        } else {
-            view.page = 0;
-        }
+        view.page = view.page == 0 ? 1 : 0;
     }
 
     function handlePauseMenu() {
@@ -3140,6 +3627,11 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             Ui.requestUpdate();
             return;
         }
+        if (view.canFinishUnboundFreeWithoutStoreClear()) {
+            getApp().finishedDurably = true;
+            System.exit();
+            return;
+        }
         if (!GymStore.clearWorkout()) {
             GymStore.status = GymStatus.SAVE_FAIL;
             Ui.requestUpdate();
@@ -3148,6 +3640,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         System.exit();
     }
 
+    (:richWorkoutMode)
     function activate(delta) {
         if (!GymWorkoutMode.allowsDetailedTracking()) {
             return;
@@ -3184,8 +3677,35 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         GymStore.saveCurrentEntry();
     }
 
+    (:compactWorkoutMode96)
+    function activate(delta) {
+        if (!GymWorkoutMode.allowsDetailedTracking()) { return; }
+        if (view.selected == 0) {
+            GymStore.nextExercise(delta);
+        } else if (view.selected == 1) {
+            GymStore.weight += GymStore.weightStep * delta;
+            if (GymStore.weight < 0.0) {
+                GymStore.weight = 0.0;
+            } else if (GymStore.weight > GymStore.maxWeight) {
+                GymStore.weight = GymStore.maxWeight;
+            }
+        } else if (view.selected == 2) {
+            GymStore.reps += delta;
+            if (GymStore.reps < 1) {
+                GymStore.reps = 1;
+            } else if (GymStore.reps > GymStore.maxReps) {
+                GymStore.reps = GymStore.maxReps;
+            }
+        } else if (view.selected == 3) {
+            if (delta > 0) { recordSet(); }
+            return;
+        }
+        GymStore.saveCurrentEntry();
+    }
+
     function recordSet() { view.changeSet(-1); }
 
+    (:richWorkoutMode)
     function rejectSetPrompt() {
         if (!GymWorkoutMode.allowsDetailedTracking()) {
             return;
@@ -3196,8 +3716,13 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
+    (:compactWorkoutMode96)
+    function rejectSetPrompt() {}
+
+    (:richWorkoutMode)
     function undoLastSet() { view.changeSet(-2); }
 
+    (:notFr55Memory, :richWorkoutMode)
     function handleSettings(delta) {
         if (GymWorkoutMode.isFree()) {
             return;
@@ -3223,6 +3748,20 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.settingsSelected == 6) {
             view.page = 7;
             view.startTutorial();
+        }
+    }
+
+    (:fr55Memory)
+    function handleSettings(delta) {
+        if (GymWorkoutMode.isFree()) {
+            return;
+        }
+        if (view.settingsSelected == 0) {
+            GymStore.toggleAutoPrompt();
+        } else if (view.settingsSelected == 1) {
+            GymStore.adjustSensitivity(delta);
+        } else if (view.settingsSelected == 2) {
+            GymStore.adjustRestDefault(delta);
         }
     }
 

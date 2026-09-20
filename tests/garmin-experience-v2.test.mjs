@@ -67,7 +67,12 @@ test("Garmin tutorial is once per account, defers recovery, and remains replayab
   assert.match(store, /tutorialHistoryV1/);
   assert.match(store, /maxTutorialAccounts = 4/);
   assert.match(store, /shouldStartTutorial\(\)[\s\S]*!hasUnfinishedWorkout\(\)[\s\S]*!hasPreparedWorkout\(\)/);
-  assert.match(store, /next\.add\(accountBinding\.toString\(\)\)[\s\S]*while \(next\.size\(\) > maxTutorialAccounts\)/);
+  const markTutorialHandled = section(
+    store,
+    "static function markTutorialHandled()",
+    "static function workoutMessage("
+  );
+  assert.match(markTutorialHandled, /next\.add\(accountBinding\);[\s\S]*while \(next\.size\(\) > maxTutorialAccounts\)[\s\S]*next\.remove\(next\[0\]\)/);
   assert.match(view, /page == 7 && GymStore\.shouldStartTutorial\(\)[\s\S]*startTutorial\(\)/);
   assert.match(view, /settingsCount = 7/);
   assert.match(view, /"TUTORIAL", "НАВЧАННЯ", "ОБУЧЕНИЕ"/);
@@ -92,18 +97,34 @@ test("96 KiB watches keep cloud-plan outcome through phone sync without duplicat
 
 test("Forerunner 55 compact summary keeps the action below workout metrics", async () => {
   const view = await read("garmin/source/WorkoutView.mc");
-  const compactStart = view.indexOf("(:compactRichRecovery)\n    function drawSummary");
-  const compactEnd = view.indexOf("(:fullLegacyState)\n    function drawSummaryValue", compactStart);
+  const compactStart = view.indexOf("(:fr55Memory)\n    function drawSummary");
+  const compactEnd = view.indexOf("(:richWorkoutMode)\n    function drawFreeSummary(dc, w, h)", compactStart);
   assert.notEqual(compactStart, -1);
   assert.notEqual(compactEnd, -1);
   const compactSummary = view.slice(compactStart, compactEnd);
 
-  assert.match(compactSummary, /drawCentered\(dc, 62,[\s\S]*drawCentered\(dc, 112,[\s\S]*drawCentered\(dc, 146,[\s\S]*drawCentered\(dc, 190,/);
-  assert.doesNotMatch(compactSummary, /drawMenuRow\(/);
+  assert.match(compactSummary, /drawTinyDashboard\(dc, w, h,[\s\S]*readyStatusText\(\)\)[\s\S]*drawCentered\(dc, 190,/);
+  assert.doesNotMatch(compactSummary, /fitRecoveryPending\(\)|drawFitRecoverySummary\(|drawMenuRow\(/);
 });
 
-test("Forerunner 55 upgrade bridges full-v3 into indexed v4 and merges its runtime journal", async () => {
-  const store = await read("garmin/source/GymStore.mc");
+test("128 KiB Garmin profiles bridge full-v3 into indexed v4 and merge their runtime journal", async () => {
+  const [store, jungle] = await Promise.all([
+    read("garmin/source/GymStore.mc"),
+    read("garmin/monkey.jungle")
+  ]);
+  const bridgeProducts = ["enduro", "fenix6", "fenix6s", "fr245", "venusq"];
+  for (const product of bridgeProducts) {
+    assert.match(
+      jungle,
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory$`, "m"),
+      `${product} keeps the full-v3 bridge for its released active-workout schema`
+    );
+  }
+  assert.match(
+    jungle,
+    /^fr55\.excludeAnnotations = fullLegacyState;fr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory$/m,
+    "FR55 excludes the full-v3 active-workout bridge"
+  );
   const runtimeBridge = section(
     store,
     "static function fullRuntimeForCompactMigration(active)",
@@ -423,7 +444,7 @@ test("96 KiB phase-zero retry is sets-only, idempotent, and cannot race an ACK",
   const compactFinish = section(
     view,
     "(:compactRecovery96)\n    function buildFinishWorkoutMessage()",
-    "(:richRecovery)\n    function finishFitRecovery(activityFound)"
+    "(:richRecovery, :notFr55Memory)\n    function finishFitRecovery(activityFound)"
   );
   const compactSave = section(
     view,

@@ -8,17 +8,35 @@ class NavigationTestView extends WorkoutView {
     function initialize() { WorkoutView.initialize(); }
     function readyActionCount() { return actions; }
     function isUndoOverlayActive() { return undoVisible; }
+
+    (:richWorkoutMode)
+    function detectorPromptEnabled() { return GymSession.autoLogPrompt; }
+
+    (:compactWorkoutMode96)
+    function detectorPromptEnabled() { return false; }
+
+    (:richWorkoutMode)
+    function supportsDetectorPrompt() { return true; }
+
+    (:compactWorkoutMode96)
+    function supportsDetectorPrompt() { return false; }
+
+    (:richWorkoutMode)
+    function setDetectorPromptEnabled(value) { GymSession.autoLogPrompt = value; }
+
+    (:compactWorkoutMode96)
+    function setDetectorPromptEnabled(value) { }
 }
 
 (:test)
 function pageKeysPreserveCyclicMenusAndModalGuards(logger as Test.Logger) as Lang.Boolean {
     var previousMode = GymWorkoutMode.state;
-    var previousPrompt = GymSession.autoLogPrompt;
     var previousPrepared = GymStore.preparedWorkout;
-    GymWorkoutMode.state = GymWorkoutMode.MODE_PLANNED;
-    GymSession.autoLogPrompt = false;
-    GymStore.preparedWorkout = null;
     var view = new NavigationTestView();
+    var previousPrompt = view.detectorPromptEnabled();
+    GymWorkoutMode.state = GymWorkoutMode.MODE_PLANNED;
+    view.setDetectorPromptEnabled(false);
+    GymStore.preparedWorkout = null;
     var input = new WorkoutDelegate(view);
     // page, initial selection, direction, expected page, expected selection
     var rows = [[7, 0, -1, 7, 3], [7, 3, 1, 7, 0],
@@ -60,17 +78,19 @@ function pageKeysPreserveCyclicMenusAndModalGuards(logger as Test.Logger) as Lan
     input.onNextPage();
     ok = ok && view.page == 1 && view.selected == 0;
     view.undoVisible = false;
-    GymSession.autoLogPrompt = true;
-    input.onPreviousPage();
-    ok = ok && view.page == 1 && view.selected == 0;
-    GymSession.autoLogPrompt = false;
+    if (view.supportsDetectorPrompt()) {
+        view.setDetectorPromptEnabled(true);
+        input.onPreviousPage();
+        ok = ok && view.page == 1 && view.selected == 0;
+        view.setDetectorPromptEnabled(false);
+    }
     GymWorkoutMode.state = GymWorkoutMode.MODE_FREE;
     view.page = 0;
     input.onNextPage();
     input.onPreviousPage();
     ok = ok && view.page == 0;
     GymWorkoutMode.state = previousMode;
-    GymSession.autoLogPrompt = previousPrompt;
+    view.setDetectorPromptEnabled(previousPrompt);
     GymStore.preparedWorkout = previousPrepared;
     return ok;
 }
@@ -78,10 +98,10 @@ function pageKeysPreserveCyclicMenusAndModalGuards(logger as Test.Logger) as Lan
 (:test)
 function hardwareArrowsCannotActivateHiddenSave(logger as Test.Logger) as Lang.Boolean {
     var oldMode = GymWorkoutMode.state;
-    var oldPrompt = GymSession.autoLogPrompt;
-    GymWorkoutMode.state = GymWorkoutMode.MODE_PLANNED;
-    GymSession.autoLogPrompt = false;
     var view = new NavigationTestView();
+    var oldPrompt = view.detectorPromptEnabled();
+    GymWorkoutMode.state = GymWorkoutMode.MODE_PLANNED;
+    view.setDetectorPromptEnabled(false);
     var input = new WorkoutDelegate(view);
     view.page = 7;
     view.selected = 0;
@@ -102,27 +122,29 @@ function hardwareArrowsCannotActivateHiddenSave(logger as Test.Logger) as Lang.B
     ok = ok && view.page == 1 && view.selected == 3 &&
         GymStore.sets == originalSets && GymStore.weight == originalWeight;
     view.undoVisible = false;
-    GymSession.autoLogPrompt = true;
-    input.dispatchHardwareKey(Toybox.WatchUi.KEY_RIGHT);
-    ok = ok && GymStore.sets == originalSets && view.page == 1;
+    view.setDetectorPromptEnabled(true);
+    if (view.detectorPromptEnabled()) {
+        input.dispatchHardwareKey(Toybox.WatchUi.KEY_RIGHT);
+        ok = ok && GymStore.sets == originalSets && view.page == 1;
+    }
     view.saveStage = 1;
     input.dispatchHardwareKey(Toybox.WatchUi.KEY_START);
     input.dispatchHardwareKey(Toybox.WatchUi.KEY_ESC);
     ok = ok && view.saveStage == 1 && GymStore.sets == originalSets;
     GymWorkoutMode.state = oldMode;
-    GymSession.autoLogPrompt = oldPrompt;
+    view.setDetectorPromptEnabled(oldPrompt);
     return ok;
 }
 
 (:test)
 function backLeavesDiscardAndSummaryWithoutErasingWorkout(logger as Test.Logger) as Lang.Boolean {
     var oldRecording = GymSession.recording;
-    var oldPrompt = GymSession.autoLogPrompt;
     var oldPrepared = GymStore.preparedWorkout;
-    GymSession.recording = false;
-    GymSession.autoLogPrompt = false;
-    GymStore.preparedWorkout = null;
     var view = new NavigationTestView();
+    var oldPrompt = view.detectorPromptEnabled();
+    GymSession.recording = false;
+    view.setDetectorPromptEnabled(false);
+    GymStore.preparedWorkout = null;
     var input = new WorkoutDelegate(view);
     var originalSets = GymStore.sets;
     view.page = 6;
@@ -146,7 +168,7 @@ function backLeavesDiscardAndSummaryWithoutErasingWorkout(logger as Test.Logger)
     input.onBack();
     ok = ok && view.page == 3 && GymStore.sets == originalSets;
     GymSession.recording = oldRecording;
-    GymSession.autoLogPrompt = oldPrompt;
+    view.setDetectorPromptEnabled(oldPrompt);
     GymStore.preparedWorkout = oldPrepared;
     return ok;
 }

@@ -105,8 +105,18 @@ test("Garmin render localization never replaces synchronized exercise identity",
   );
   assert.match(
     garminStoreSource,
-    /var flatName = flatNames\[f\]\.toString\(\);[\s\S]*"exerciseName" => flatName/,
+    /static function syncedPlanRow\(name, setWeight, setReps\) \{\s*return \{"exerciseName" => name,\s*"weight" => setWeight,\s*"reps" => setReps\};/,
     "plans must retain their raw synchronized identity"
+  );
+  assert.match(
+    garminStoreSource,
+    /static function syncedPlanRow\(name, setWeight, setReps\) \{\s*return GymRecordedSet\.create\(name, setWeight, setReps, null\);/,
+    "compact plans must keep that same identity in their tagged row"
+  );
+  assert.match(
+    garminStoreSource,
+    /flatPlan\.add\(syncedPlanRow\(flatName, flatWeights\[f\], flatReps\[f\]\)\)/,
+    "validated plan names must pass through the profile-specific row factory"
   );
   assert.match(androidSyncSource, /"planNames" to compactPlan\.map \{ it\.exerciseName \}/);
   assert.doesNotMatch(androidSyncSource, /"planNames"[^\n]*displayName/);

@@ -57,7 +57,7 @@ test("Garmin full profile throttles static redraws and caches plan progress", as
 
   assert.match(tick, /if \(page == 7 \|\| !GymSession\.recording\) \{[\s\S]*staticRefreshTicks \+= 1/);
   assert.ok(
-    tick.indexOf("if (GymSession.paused)") < tick.indexOf("GymSession.tick()"),
+    tick.indexOf("if (GymSession.paused)") < tick.indexOf("GymSession.tick(page == 4)"),
     "paused menus should not execute or redraw the live dashboard tick"
   );
   assert.match(
@@ -124,7 +124,8 @@ test("Garmin recording polls incoming messages without allocating periodic outbo
   const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
   for (const tick of view.matchAll(/function tick\(\) \{[\s\S]*?(?=\n    (?:\(:|function ))/g)) {
     assert.match(tick[0], /getApp\(\)\.pollMailbox\(\)/);
-    assert.match(tick[0], /GymSession\.tick\(\)/);
+    assert.match(tick[0], /GymSession\.tick\(page == 4\)/,
+      "sensor diagnostics are enabled only on the diagnostics page");
     assert.doesNotMatch(tick[0], /requestSyncNow\(\)/);
   }
   const retry = section(view, "function maybeRetryPending()", "function hasWorkoutToResume()");

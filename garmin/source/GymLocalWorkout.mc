@@ -7,6 +7,7 @@ using Toybox.WatchUi as Ui;
 // Watch-only FREE recovery has no account, device or phone queue payload.
 // One atomic value: version, FIT phase (active/prepared/saved), origin, metrics.
 // Never infer an account binding from this journal or include it in sync.
+(:notFr55Memory, :richWorkoutMode)
 class GymLocalWorkout {
     static var snapshot as Lang.Array or Null = null;
     static var readFailed = false;
@@ -152,6 +153,81 @@ class GymLocalWorkout {
     }
 }
 
+// The FR55 has too little memory for a second crash-recovery journal. Keep
+// the startup and workout call surface, while letting normal FIT completion
+// proceed without allocating the recovery menu or writing recovery state.
+(:fr55Memory)
+class GymLocalWorkout {
+    static var snapshot as Lang.Array or Null = null;
+    static var readFailed = false;
+
+    static function restore() as Void {
+    }
+
+    (:inline)
+    static function blocksPairing() as Lang.Boolean {
+        return false;
+    }
+
+    static function checkpoint(force as Lang.Boolean) as Lang.Boolean {
+        return true;
+    }
+
+    static function clear() as Lang.Boolean {
+        return true;
+    }
+
+    static function finish() as Lang.Boolean {
+        return false;
+    }
+
+    static function needsDecision() as Lang.Boolean {
+        return false;
+    }
+
+    static function recoveryView() as Lang.Array {
+        return [];
+    }
+}
+
+// 96 KiB products keep owner-bound active workouts and FIT state, but omit the
+// separate ownerless free-workout recovery journal. Leave any released value
+// untouched so this build never reassigns or silently deletes user data.
+(:compactWorkoutMode96)
+class GymLocalWorkout {
+    static var snapshot as Lang.Array or Null = null;
+    static var readFailed = false;
+
+    static function restore() as Void {
+    }
+
+    (:inline)
+    static function blocksPairing() as Lang.Boolean {
+        return false;
+    }
+
+    static function checkpoint(force as Lang.Boolean) as Lang.Boolean {
+        return true;
+    }
+
+    static function clear() as Lang.Boolean {
+        return true;
+    }
+
+    static function finish() as Lang.Boolean {
+        return false;
+    }
+
+    static function needsDecision() as Lang.Boolean {
+        return false;
+    }
+
+    static function recoveryView() as Lang.Array {
+        return [];
+    }
+}
+
+(:notFr55Memory, :richWorkoutMode)
 class GymLocalRecoveryDelegate extends Ui.Menu2InputDelegate {
     function initialize() {
         Menu2InputDelegate.initialize();
@@ -184,6 +260,7 @@ class GymLocalRecoveryDelegate extends Ui.Menu2InputDelegate {
     }
 }
 
+(:notFr55Memory, :richWorkoutMode)
 class GymLocalFinishDelegate extends Ui.Menu2InputDelegate {
     var menu;
     function initialize(confirmation) {
