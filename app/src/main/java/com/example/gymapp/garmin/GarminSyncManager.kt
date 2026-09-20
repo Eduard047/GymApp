@@ -594,6 +594,10 @@ class GarminSyncManager(
                 "Clearing previous Garmin account data; reconnect the trusted watch"
             return false
         }
+        if (!isWithinNewGarminPlanSetLimit(sets.size)) {
+            lastPlanSyncStatus = "Garmin plan exceeds the 30-set limit"
+            return false
+        }
         val plan = validatedGarminPlanOrNull(sets) ?: run {
             lastPlanSyncStatus = "Workout plan is outside Garmin limits"
             return false

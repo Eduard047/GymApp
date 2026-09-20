@@ -468,6 +468,8 @@ internal fun planSyncErrorText(error: Throwable): LocalizedText {
         message == "Workout plan is empty" -> R.string.message_workout_plan_empty
         message == "Workout plan is outside Garmin limits" ->
             R.string.message_plan_outside_garmin_limits
+        message == "Garmin plan exceeds the 30-set limit" ->
+            R.string.message_garmin_plan_set_limit
         message.contains("Garmin SDK", ignoreCase = true) ->
             R.string.message_garmin_sdk_not_ready
         message == "Sign in before Garmin sync" -> R.string.message_garmin_sign_in_required

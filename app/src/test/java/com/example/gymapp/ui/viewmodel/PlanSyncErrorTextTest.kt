@@ -10,6 +10,7 @@ class PlanSyncErrorTextTest {
         val cases = listOf(
             "Workout plan is empty" to R.string.message_workout_plan_empty,
             "Workout plan is outside Garmin limits" to R.string.message_plan_outside_garmin_limits,
+            "Garmin plan exceeds the 30-set limit" to R.string.message_garmin_plan_set_limit,
             "Garmin SDK not ready" to R.string.message_garmin_sdk_not_ready,
             "Sign in before Garmin sync" to R.string.message_garmin_sign_in_required,
             "Garmin account changed during sync" to R.string.message_garmin_account_changed,

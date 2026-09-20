@@ -32,6 +32,19 @@ class GarminPlanSubmissionTest {
     private val exerciseCatalog = listOf("Squat", "Bench Press", "Deadlift")
 
     @Test
+    fun newGarminPlanLimitIsThirtyWhileCompatibilityValidatorStillAcceptsSixty() {
+        assertTrue(isWithinNewGarminPlanSetLimit(30))
+        assertFalse(isWithinNewGarminPlanSetLimit(31))
+
+        val valid = NamedWorkoutSetDraft("Squat", 80.0, 8)
+        assertEquals(31, validatedGarminPlanOrNull(List(31) { valid })?.size)
+        assertEquals(
+            MAX_GARMIN_WORKOUT_SETS,
+            validatedGarminPlanOrNull(List(MAX_GARMIN_WORKOUT_SETS) { valid })?.size
+        )
+    }
+
+    @Test
     fun unchangedExactDraftReusesRequestIdRevisionAndZeroWeight() {
         val key = key()
         val first = prepareGarminPlanSubmission(

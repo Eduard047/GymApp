@@ -577,6 +577,7 @@
     <string name="message_plan_sync_failed">Не удалось синхронизировать план. Открой GymApp на Garmin и проверь Connect IQ/Bluetooth.</string>
     <string name="message_workout_plan_empty">Добавь хотя бы один корректный подход перед синхронизацией.</string>
     <string name="message_plan_outside_garmin_limits">План тренировки выходит за ограничения Garmin.</string>
+    <string name="message_garmin_plan_set_limit">В плане Garmin может быть не больше 30 подходов.</string>
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ ещё не готов. Проверь подключение и попробуй снова.</string>
     <string name="message_no_trusted_garmin_watch">Нет подключённых доверенных часов Garmin.</string>
     <string name="message_garmin_ack_missing">Часы не подтвердили план. Открой GymApp на часах и попробуй снова.</string>

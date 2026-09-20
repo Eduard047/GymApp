@@ -12849,6 +12849,59 @@ final class CoreParityTests: XCTestCase {
         ))
     }
 
+    func testNewGarminDraftPlanAccepts30AndRejects31WhilePhoneProtocolKeeps60() throws {
+        let exercises = [Exercise(name: "Squat"), Exercise(name: "Bench Press")]
+        let workoutDate = Date(timeIntervalSince1970: 1_786_500_000)
+        func key(setCounts: [Int]) throws -> GarminDraftSyncKey {
+            let drafts = zip(exercises, setCounts).map { exercise, setCount in
+                WorkoutEditorExerciseDraft(
+                    exerciseID: exercise.id,
+                    sets: (0 ..< setCount).map { _ in
+                        WorkoutEditorSetDraft(weight: 80, reps: 8)
+                    }
+                )
+            }
+            return try makeGarminDraftSyncKey(
+                accountStorageKey: "cloud_a",
+                deviceID: "30000000-0000-4000-8000-000000000003",
+                title: "Workout plan",
+                workoutDate: workoutDate,
+                note: "",
+                drafts: drafts,
+                exercises: Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
+            )
+        }
+
+        XCTAssertEqual(try key(setCounts: [30]).exercises.flatMap(\.sets).count, 30)
+        XCTAssertEqual(try key(setCounts: [15, 15]).exercises.flatMap(\.sets).count, 30)
+        XCTAssertThrowsError(try key(setCounts: [31])) { error in
+            XCTAssertEqual(
+                (error as? GarminCloudError)?.errorDescription,
+                "Garmin plans support up to 30 sets."
+            )
+        }
+        XCTAssertThrowsError(try key(setCounts: [15, 16])) { error in
+            XCTAssertEqual(
+                (error as? GarminCloudError)?.errorDescription,
+                "Garmin plans support up to 30 sets."
+            )
+        }
+
+        let legacyPlan = Array(
+            repeating: NamedWorkoutSetDraft(exerciseName: "Squat", weight: 80, reps: 8),
+            count: 60
+        )
+        XCTAssertEqual(GarminPhoneSyncProtocol.validatedPlan(legacyPlan)?.count, 60)
+        XCTAssertEqual(
+            gymErrorMessage(GarminCloudError.planSetLimitExceeded, languageCode: "uk"),
+            "План Garmin може містити не більше ніж 30 підходів."
+        )
+        XCTAssertEqual(
+            gymErrorMessage(GarminCloudError.planSetLimitExceeded, languageCode: "ru"),
+            "В плане Garmin может быть не больше 30 подходов."
+        )
+    }
+
     func testWeeklyGuidanceUsesLocalMondayDistinctDaysAndProfileTarget() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "en_US_POSIX")

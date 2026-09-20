@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v153";
-// v153 updates exercise counts and workout-frequency sorting.
+const CACHE_VERSION = "v154";
+// v154 caps new Garmin plan submissions at 30 sets.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -52,7 +52,7 @@ const SHELL_ASSETS = [
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v72.js",
-  "./garmin-cloud-sync.v57.js",
+  "./garmin-cloud-sync.v58.js",
   "./progression-rules.v57.js",
   "./shared-workout.v66.js",
   "./shared-workout-flow.v71.js",
@@ -61,7 +61,7 @@ const SHELL_ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v87.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v110.js",
+  "./app.v111.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",

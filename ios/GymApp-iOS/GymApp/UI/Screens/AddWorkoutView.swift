@@ -85,6 +85,13 @@ func makeGarminDraftSyncKey(
     drafts: [WorkoutEditorExerciseDraft],
     exercises: [UUID: Exercise]
 ) throws -> GarminDraftSyncKey {
+    var totalSetCount = 0
+    for draft in drafts {
+        guard draft.sets.count <= GarminNewPlanDraftLimits.maximumTotalSets - totalSetCount else {
+            throw GarminCloudError.planSetLimitExceeded
+        }
+        totalSetCount += draft.sets.count
+    }
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let planExercises = try drafts.map { draft -> GarminPlanExercise in

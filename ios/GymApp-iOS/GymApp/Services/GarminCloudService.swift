@@ -487,6 +487,10 @@ private func canonicalGarminCapabilityDeviceID(_ value: String) -> String? {
     return canonical
 }
 
+enum GarminNewPlanDraftLimits {
+    static let maximumTotalSets = 30
+}
+
 enum GarminPlanValidator {
     static let maximumExercises = 60
     static let maximumTotalSets = 60
@@ -576,6 +580,7 @@ enum GarminPlanValidator {
 
 enum GarminCloudError: LocalizedError {
     case invalidPlan
+    case planSetLimitExceeded
     case invalidRequest
     case invalidResponse
     case invalidBinding
@@ -592,6 +597,7 @@ enum GarminCloudError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidPlan: return "Add at least one valid exercise set before syncing."
+        case .planSetLimitExceeded: return "Garmin plans support up to 30 sets."
         case .invalidRequest: return "The Garmin sync request is too large or malformed."
         case .invalidResponse: return "Garmin cloud sync returned an invalid response."
         case .invalidBinding: return "The selected Garmin watch binding is invalid. Select or pair the watch again."

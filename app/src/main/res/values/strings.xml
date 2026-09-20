@@ -571,6 +571,7 @@
     <string name="message_plan_sync_failed">Unable to sync plan to watch. Open GymApp on Garmin and check Connect IQ/Bluetooth connection.</string>
     <string name="message_workout_plan_empty">Add at least one valid set before syncing.</string>
     <string name="message_plan_outside_garmin_limits">The workout plan is outside Garmin limits.</string>
+    <string name="message_garmin_plan_set_limit">Garmin plans support up to 30 sets.</string>
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ is not ready. Check the connection and try again.</string>
     <string name="message_no_trusted_garmin_watch">No trusted Garmin watch is paired.</string>
     <string name="message_garmin_ack_missing">The watch did not confirm the plan. Open GymApp on the watch and try again.</string>

@@ -70,6 +70,53 @@ test("empty or invalid draft is rejected before Supabase queueing", () => {
   ] }), null);
 });
 
+test("new Garmin drafts stop at 30 sets while stored cloud plans still allow 60", () => {
+  const draft = setCount => ({
+    startedAt: Date.UTC(2026, 5, 29, 10, 30, 0),
+    blocks: [{
+      exerciseName: "Squat",
+      sets: Array.from({ length: setCount }, () => ({ weight: 80, reps: 8 }))
+    }]
+  });
+  const splitDraft = (squatSetCount, benchSetCount) => ({
+    startedAt: Date.UTC(2026, 5, 29, 10, 30, 0),
+    blocks: [
+      {
+        exerciseName: "Squat",
+        sets: Array.from({ length: squatSetCount }, () => ({ weight: 80, reps: 8 }))
+      },
+      {
+        exerciseName: "Bench Press",
+        sets: Array.from({ length: benchSetCount }, () => ({ weight: 60, reps: 8 }))
+      }
+    ]
+  });
+
+  assert.equal(PLAN_LIMITS.newPlanSubmissionSets, 30);
+  assert.equal(draftToGarminPlan(draft(30)).exercises[0].sets.length, 30);
+  assert.equal(draftToGarminPlan(draft(31)), null);
+  assert.equal(draftToGarminPlan(splitDraft(15, 15)).exercises.length, 2);
+  assert.equal(draftToGarminPlan(splitDraft(15, 16)), null);
+
+  const storedPlan = {
+    source: "pwa",
+    version: 1,
+    title: "Stored plan",
+    createdAt: "2026-06-29T12:00:00.000Z",
+    startedAt: "2026-06-29T10:30:00.000Z",
+    note: "",
+    exercises: [{
+      name: "Squat",
+      sets: Array.from({ length: 60 }, (_, orderIndex) => ({
+        weight: 80,
+        reps: 8,
+        orderIndex
+      }))
+    }]
+  };
+  assert.equal(validateGarminPlan(storedPlan).ok, true);
+});
+
 test("repeated exercise names fit Garmin's per-value storage byte budget", () => {
   const plan = {
     source: "pwa",
@@ -359,10 +406,10 @@ test("PWA, Supabase, and Garmin code are wired to the same cloud sync contract",
     readFile("scripts/build-garmin.ps1", "utf8")
   ]);
 
-  assert.match(indexHtml, /garmin-cloud-sync\.v57\.js/);
-  assert.match(indexHtml, /app\.v110\.js/);
-  assert.match(swJs, /garmin-cloud-sync\.v57\.js/);
-  assert.match(swJs, /app\.v110\.js/);
+  assert.match(indexHtml, /garmin-cloud-sync\.v58\.js/);
+  assert.match(indexHtml, /app\.v111\.js/);
+  assert.match(swJs, /garmin-cloud-sync\.v58\.js/);
+  assert.match(swJs, /app\.v111\.js/);
   assert.match(appJs, /\/functions\/v1\/garmin-sync/);
   assert.match(appJs, /\/rest\/v1\/rpc\/garmin_enqueue_plan/);
   assert.doesNotMatch(appJs, /supabaseRequest\("\/rest\/v1\/garmin_plans"/);

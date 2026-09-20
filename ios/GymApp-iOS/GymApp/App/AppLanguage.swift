@@ -553,6 +553,7 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
     if let garminError = error as? GarminCloudError {
         switch garminError {
         case .invalidPlan,
+             .planSetLimitExceeded,
              .invalidRequest,
              .invalidResponse,
              .invalidBinding,

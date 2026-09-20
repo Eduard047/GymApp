@@ -14,6 +14,10 @@ import java.security.MessageDigest
 internal const val GARMIN_PLAN_SUBMISSION_STORAGE_PREFIX = "plan_submission_v1"
 private const val GARMIN_PLAN_SUBMISSION_VERSION = 1
 private const val MAX_GARMIN_PLAN_SUBMISSION_CHARS = 512
+internal const val MAX_NEW_GARMIN_PLAN_SETS = 30
+
+internal fun isWithinNewGarminPlanSetLimit(setCount: Int): Boolean =
+    setCount in 0..MAX_NEW_GARMIN_PLAN_SETS
 
 /**
  * Exact, bounded inputs that make one editor plan submission safe to replay.
