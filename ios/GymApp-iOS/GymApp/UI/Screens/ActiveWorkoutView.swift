@@ -319,7 +319,7 @@ struct ActiveWorkoutView: View {
             collapseCompletedExercises()
             reconcileRestProjection()
         }
-        .onChange(of: liveWorkoutCoordinator.attachedRoomID) { roomID in
+        .onChange(of: liveWorkoutCoordinator.attachedRoomID) { _, roomID in
             if roomID == nil { liveParticipantSelection = .current }
         }
     }

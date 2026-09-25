@@ -183,6 +183,8 @@ struct AddWorkoutView: View {
     @State private var secondaryOptionsExpanded = false
     @State private var showingDiscardConfirmation = false
     @State private var showingClearPlanConfirmation = false
+    @State private var showingVoiceWorkoutDraft = false
+    @State private var voiceTranscriptionService: any VoiceTranscriptionService
 
     @State private var baselinePlanSnapshot: PlanEditorSnapshot
 
@@ -212,6 +214,7 @@ struct AddWorkoutView: View {
         launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
         restoredDraft: WorkoutPlanEditorDraftState? = nil,
         liveInviteRecipient: SocialFriendSummary? = nil,
+        voiceTranscriptionService: (any VoiceTranscriptionService)? = nil,
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onClose: @escaping () -> Void = {},
@@ -231,6 +234,7 @@ struct AddWorkoutView: View {
             launchSeedDrafts: launchSeedDrafts,
             restoredDraft: restoredDraft,
             liveInviteRecipient: liveInviteRecipient,
+            voiceTranscriptionService: voiceTranscriptionService,
             onStarted: onStarted,
             onSaved: onSaved,
             onClose: onClose,
@@ -271,6 +275,7 @@ struct AddWorkoutView: View {
         launchSeedDrafts: [WorkoutEditorExerciseDraft]? = nil,
         restoredDraft: WorkoutPlanEditorDraftState? = nil,
         liveInviteRecipient: SocialFriendSummary? = nil,
+        voiceTranscriptionService: (any VoiceTranscriptionService)? = nil,
         onStarted: @escaping (UUID) -> Void,
         onSaved: @escaping (UUID) -> Void,
         onClose: @escaping () -> Void = {},
@@ -346,6 +351,9 @@ struct AddWorkoutView: View {
         self.sendLiveWorkoutInvite = sendLiveWorkoutInvite
         self.refreshSocialWorkoutInbox = refreshSocialWorkoutInbox
         self.liveInviteRecipient = liveInviteRecipient ?? restoredDraft?.liveInviteRecipient
+        _voiceTranscriptionService = State(
+            initialValue: voiceTranscriptionService ?? makeVoiceTranscriptionService()
+        )
         rejectsInitialState = (requestedRestoredDraft != nil && restoredDraft == nil)
             || (restoredDraft == nil && requestedLaunchSeed != nil && launchSeed == nil)
         _baselinePlanSnapshot = State(
@@ -385,7 +393,7 @@ struct AddWorkoutView: View {
                     .padding(.bottom, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of: drafts.isEmpty) { isEmpty in
+                .onChange(of: drafts.isEmpty) { _, isEmpty in
                     guard isEmpty else { return }
                     DispatchQueue.main.async {
                         withAnimation(.easeOut(duration: 0.2)) {
@@ -494,6 +502,16 @@ struct AddWorkoutView: View {
                 languageCode: gymCurrentLanguageCode()
             ))
         }
+        .sheet(isPresented: $showingVoiceWorkoutDraft) {
+            VoiceWorkoutDraftSheet(
+                exercises: store.exercises,
+                existingDrafts: drafts,
+                transcriptionService: voiceTranscriptionService,
+                languageCode: gymCurrentLanguageCode(),
+                onApply: applyVoiceWorkoutDraft
+            )
+            .presentationDetents([.medium, .large])
+        }
         .sheet(isPresented: $showingExercisePicker) {
             ExercisePickerSheet(
                 exercises: store.exercises,
@@ -526,14 +544,14 @@ struct AddWorkoutView: View {
             workoutShareChooser
                 .presentationDetents([.medium, .large])
         }
-        .onChange(of: profile) { newProfile in
+        .onChange(of: profile) { _, newProfile in
             smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty
             TrainingProfileStore().save(newProfile, accountStorageKey: store.accountStorageKey)
         }
-        .onChange(of: selectedEffort) { _ in
+        .onChange(of: selectedEffort) { _, _ in
             smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty
         }
-        .onChange(of: currentEditorDraftState) { draft in
+        .onChange(of: currentEditorDraftState) { _, draft in
             onDraftChange(draft)
         }
         .onAppear {
@@ -913,6 +931,26 @@ struct AddWorkoutView: View {
             )
             .layoutPriority(1)
             Spacer(minLength: 4)
+            Button {
+                showingVoiceWorkoutDraft = true
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.headline.weight(.semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(gymText(
+                "Create workout plan by voice",
+                "Створити план тренування голосом",
+                "Создать план тренировки голосом",
+                languageCode: gymCurrentLanguageCode()
+            ))
+            .accessibilityHint(gymText(
+                "Dictates exercises, sets, repetitions, and weight locally",
+                "Диктує вправи, підходи, повторення і вагу локально",
+                "Диктует упражнения, подходы, повторы и вес локально",
+                languageCode: gymCurrentLanguageCode()
+            ))
             if !drafts.isEmpty {
                 Button(role: .destructive) {
                     showingClearPlanConfirmation = true
@@ -988,6 +1026,17 @@ struct AddWorkoutView: View {
                 }
             }
         }
+    }
+
+    private func applyVoiceWorkoutDraft(_ voiceDrafts: [WorkoutEditorExerciseDraft], _ mode: VoiceWorkoutApplyMode) {
+        switch mode {
+        case .add:
+            drafts.append(contentsOf: voiceDrafts)
+        case .replace:
+            drafts = voiceDrafts
+        }
+        latestSmartPlan = nil
+        smartGeneratedDraftIDs.removeAll()
     }
 
     private var garminPanel: some View {

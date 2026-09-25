@@ -2764,6 +2764,9 @@ internal fun GymAppRoot(
                                 uiState = uiState,
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
                                 onWorkoutDateSelected = viewModel::updateWorkoutDate,
+                                onApplyVoiceWorkout = { drafts, replace ->
+                                    viewModel.applyVoiceWorkoutDrafts(drafts, replace)
+                                },
                                 onNoteChange = viewModel::updateNote,
                                 onTrainingSplitSelected = viewModel::updateTrainingSplit,
                                 onWorkoutsPerWeekSelected = viewModel::updateWorkoutsPerWeek,

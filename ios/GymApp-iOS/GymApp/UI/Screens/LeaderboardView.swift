@@ -244,7 +244,7 @@ struct FriendsView: View {
             await Task.yield()
             focusedNativePushTarget = nativePushAccessibilityTarget
         }
-        .onChange(of: appState.socialDashboard?.currentUser.settingsRevision) { _ in
+        .onChange(of: appState.socialDashboard?.currentUser.settingsRevision) { _, _ in
             guard !privacyIsDirty else { return }
             privacyDraft = appState.socialDashboard?.currentUser.privacy
         }

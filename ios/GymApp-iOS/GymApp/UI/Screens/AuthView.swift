@@ -54,13 +54,13 @@ public struct AuthView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .onChange(of: mode) { _ in
+        .onChange(of: mode) { _, _ in
             clearSensitiveDrafts()
             localMessage = nil
             authService.message = nil
             focusedField = .email
         }
-        .onChange(of: authService.pendingConfirmationEmail) { pendingEmail in
+        .onChange(of: authService.pendingConfirmationEmail) { _, pendingEmail in
             if pendingEmail != nil {
                 clearSensitiveDrafts()
             }

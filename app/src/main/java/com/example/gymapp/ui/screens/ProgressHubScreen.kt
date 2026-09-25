@@ -46,6 +46,18 @@ internal enum class ProgressHubSection {
     Program
 }
 
+/**
+ * Training programs are paused on every client (Android, iOS, PWA) until the
+ * redesigned scheduling ships everywhere. Stored programs stay intact and are
+ * still removed with the account.
+ */
+internal const val TRAINING_PROGRAM_ENABLED = false
+
+internal val visibleProgressHubSections: List<ProgressHubSection>
+    get() = ProgressHubSection.entries.filter {
+        it != ProgressHubSection.Program || TRAINING_PROGRAM_ENABLED
+    }
+
 @Composable
 internal fun ProgressHubScreen(
     overviewState: WorkoutListUiState,
@@ -74,13 +86,13 @@ internal fun ProgressHubScreen(
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var selectedIndex by rememberSaveable { mutableIntStateOf(initialSection.ordinal) }
-    val selected = ProgressHubSection.entries.getOrElse(selectedIndex) {
-        ProgressHubSection.Overview
-    }
+    val selected = ProgressHubSection.entries.getOrNull(selectedIndex)
+        ?.takeIf { it in visibleProgressHubSections }
+        ?: ProgressHubSection.Overview
 
     Column(modifier = modifier.fillMaxSize()) {
         GymSegmentedControl(
-            items = listOf(
+            items = listOfNotNull(
                 GymSegmentItem(
                     ProgressHubSection.Overview,
                     stringResource(R.string.progress_section_overview)
@@ -90,7 +102,11 @@ internal fun ProgressHubScreen(
                     stringResource(R.string.progress_section_exercises)
                 ),
                 GymSegmentItem(ProgressHubSection.Goals, stringResource(R.string.progress_section_goals)),
-                GymSegmentItem(ProgressHubSection.Program, stringResource(R.string.training_program_tab))
+                if (TRAINING_PROGRAM_ENABLED) {
+                    GymSegmentItem(ProgressHubSection.Program, stringResource(R.string.training_program_tab))
+                } else {
+                    null
+                }
             ),
             selected = selected,
             onSelected = { selectedIndex = it.ordinal },

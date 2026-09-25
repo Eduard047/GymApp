@@ -18,6 +18,7 @@ import com.example.gymapp.data.repository.WorkoutRecommendationEngine
 import com.example.gymapp.data.repository.SmartWorkoutAlternative
 import com.example.gymapp.data.repository.SmartWorkoutLaunchPlan
 import com.example.gymapp.data.repository.SmartWorkoutEffort
+import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.data.repository.SmartWorkoutEffortAdjustment
 import com.example.gymapp.data.repository.SmartWorkoutFocus
 import com.example.gymapp.data.repository.SmartWorkoutVariant
@@ -1298,6 +1299,39 @@ class AddWorkoutViewModel internal constructor(
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
         exerciseDrafts.value = emptyList()
+        hasValidationError.value = false
+        markDraftDirty()
+        return true
+    }
+
+    /** Applies a reviewed voice draft; the sheet has already required every value to be valid. */
+    fun applyVoiceWorkoutDrafts(drafts: List<WorkoutExerciseDraft>, replace: Boolean): Boolean {
+        val catalogIds = exerciseCatalogState.value.exercises.map { it.id }.toSet()
+        if (drafts.isEmpty() || drafts.any { draft ->
+                draft.exerciseId !in catalogIds || draft.sets.isEmpty() ||
+                    draft.sets.size > WorkoutDataLimits.MAX_SETS_PER_EXERCISE ||
+                    draft.sets.any { !VoiceWorkoutDraftParser.isValidWeight(it.weight) || !VoiceWorkoutDraftParser.isValidReps(it.reps) }
+            }
+        ) {
+            hasValidationError.value = true
+            return false
+        }
+        val current = exerciseDrafts.value
+        if ((if (replace) 0 else current.size) + drafts.size > WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+            hasValidationError.value = true
+            return false
+        }
+        resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
+        val added = drafts.map { draft ->
+            ExerciseInputState(
+                draftId = nextDraftId++,
+                exerciseId = draft.exerciseId,
+                sets = draft.sets.map { SetInputState(VoiceWorkoutDraftParser.formatWeight(it.weight), it.reps.toString()) }
+            )
+        }
+        exerciseDrafts.value = if (replace) added else current + added
         hasValidationError.value = false
         markDraftDirty()
         return true

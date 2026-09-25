@@ -41,6 +41,9 @@ final class TrainingToolsTests: XCTestCase {
         XCTAssertTrue(WorkoutAdaptation.preservesCompleted(source, result!))
     }
 
+    // Training programs are paused on every client. These cases target the
+    // pre-redesign program API and return with the redesigned feature.
+    #if TRAINING_PROGRAMS_ENABLED
     @MainActor func testProgramsAreIsolatedByAccountAndRejectWrongOwnerOrOversizeData() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -118,6 +121,7 @@ final class TrainingToolsTests: XCTestCase {
         XCTAssertNotEqual(first.program?.id, id)
         XCTAssertEqual(first.program?.slots.count, 16)
     }
+    #endif
 
     private func entry(_ exercise: UUID, date: Date, weight: Double, reps: Int) -> ExerciseHistoryEntry {
         ExerciseHistoryEntry(setID: UUID(), workoutID: UUID(), sessionDate: date, exerciseID: exercise,

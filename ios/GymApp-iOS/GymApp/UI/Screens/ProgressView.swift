@@ -7,7 +7,6 @@ struct ProgressHubView: View {
         case overview
         case exercises
         case goals
-        case program
 
         var id: String { rawValue }
 
@@ -19,8 +18,6 @@ struct ProgressHubView: View {
                 gymText("Exercises", "Вправи", "Упражнения", languageCode: languageCode)
             case .goals:
                 gymText("Goals", "Цілі", "Цели", languageCode: languageCode)
-            case .program:
-                gymText("Program", "Програма", "Программа", languageCode: languageCode)
             }
         }
     }
@@ -37,12 +34,10 @@ struct ProgressHubView: View {
     @State private var selectedMuscleID: String?
 
     private let onOpenRanks: () -> Void
-    private let onPrepareProgram: () -> Void
 
-    init(store: WorkoutStore, onOpenRanks: @escaping () -> Void, onPrepareProgram: @escaping () -> Void = {}) {
+    init(store: WorkoutStore, onOpenRanks: @escaping () -> Void) {
         self.store = store
         self.onOpenRanks = onOpenRanks
-        self.onPrepareProgram = onPrepareProgram
     }
 
     var body: some View {
@@ -68,16 +63,13 @@ struct ProgressHubView: View {
                     ExerciseProgressView(store: store, showsHeader: false)
                 case .goals:
                     MissionsView(store: store, onOpenRanks: onOpenRanks, embedded: true)
-                case .program:
-                    TrainingProgramView(workouts: store, onPrepare: onPrepareProgram)
-                        .id(store.accountStorageKey)
                 }
             }
         }
         .environment(\.locale, appLocale)
         .onAppear { referenceDate = Date() }
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active { referenceDate = Date() }
         }
     }
@@ -328,7 +320,7 @@ struct ExerciseProgressView: View {
         }
         .environment(\.locale, appLocale)
         .onAppear(perform: selectDefaultExerciseIfNeeded)
-        .onChange(of: store.exercises) { _ in selectDefaultExerciseIfNeeded() }
+        .onChange(of: store.exercises) { _, _ in selectDefaultExerciseIfNeeded() }
         .sheet(isPresented: $showingExerciseSelector) {
             ProgressExerciseSelectorSheet(
                 store: store,

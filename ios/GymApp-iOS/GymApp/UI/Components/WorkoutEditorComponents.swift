@@ -364,7 +364,7 @@ struct WorkoutDraftExerciseCard: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .onChange(of: showingMedia) { isShowing in
+        .onChange(of: showingMedia) { _, isShowing in
             if !isShowing { mediaReloadToken &+= 1 }
         }
     }
@@ -597,7 +597,7 @@ struct ExerciseMediaButton: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .onChange(of: showingMedia) { isShowing in
+        .onChange(of: showingMedia) { _, isShowing in
             if !isShowing { mediaReloadToken &+= 1 }
         }
     }
@@ -863,7 +863,7 @@ struct ExerciseMediaSheet: View {
                 frameIndex = (frameIndex + 1) % bundledImages.count
             }
         }
-        .onChange(of: selectedItem) { item in
+        .onChange(of: selectedItem) { _, item in
             guard editable, let item else { return }
             Task {
                 do {

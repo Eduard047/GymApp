@@ -2707,10 +2707,10 @@ final class CoreParityTests: XCTestCase {
 
         let source = try iosSource("GymApp/UI/Screens/AuthView.swift")
         XCTAssertTrue(source.contains(
-            ".onChange(of: mode) { _ in\n            clearSensitiveDrafts()"
+            ".onChange(of: mode) { _, _ in\n            clearSensitiveDrafts()"
         ))
         XCTAssertTrue(source.contains(
-            ".onChange(of: authService.pendingConfirmationEmail) { pendingEmail in"
+            ".onChange(of: authService.pendingConfirmationEmail) { _, pendingEmail in"
         ))
         XCTAssertTrue(source.contains(
             "if pendingEmail != nil {\n                clearSensitiveDrafts()"
@@ -12479,7 +12479,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(editorStack.contains("hero"))
         XCTAssertTrue(editorSource.contains("ScrollViewReader { scrollProxy in"))
         XCTAssertTrue(editorSource.contains(".id(\"workout-plan-editor-top\")"))
-        XCTAssertTrue(editorSource.contains(".onChange(of: drafts.isEmpty) { isEmpty in"))
+        XCTAssertTrue(editorSource.contains(".onChange(of: drafts.isEmpty) { _, isEmpty in"))
         XCTAssertTrue(editorSource.contains("guard isEmpty else { return }"))
         XCTAssertTrue(editorSource.contains(
             "scrollProxy.scrollTo(\"workout-plan-editor-top\", anchor: .top)"
@@ -18031,8 +18031,8 @@ final class CoreParityTests: XCTestCase {
         // compact workout notation. Their Ukrainian rendering intentionally equals
         // the source template, so catalog fallback does not expose English prose.
         let localeNeutralTemplates: Set<String> = [
-            "%@ / %@", "%@ %lld", "%@ • %@", "%@ XP", "%@, %@", "%@: %@",
-            "%lld", "+%lld XP", "+2.5", "0", "0:00", "2.5 kg", "5 kg",
+            "%@ / %@", "%@ %lld", "%@ %@ × %lld", "%@ • %@", "%@ XP", "%@, %@", "%@: %@",
+            "%@ – %@", "%lld", "+%lld XP", "+15", "+2.5", "0", "0:00", "2.5 kg", "5 kg", "−15",
             "S%lld", "Z%lld %lld%@"
         ]
         // These must remain exact identities: DELETE is the server confirmation

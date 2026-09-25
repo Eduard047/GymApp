@@ -139,7 +139,7 @@ struct PasswordUpdateView: View {
                                         .textContentType(.oneTimeCode)
                                         .keyboardType(.numberPad)
                                         .gymTextFieldChrome()
-                                        .onChange(of: drafts.verificationCode) { value in
+                                        .onChange(of: drafts.verificationCode) { _, value in
                                             let bounded = String(value.prefix(8))
                                             if bounded != value {
                                                 drafts.verificationCode = bounded

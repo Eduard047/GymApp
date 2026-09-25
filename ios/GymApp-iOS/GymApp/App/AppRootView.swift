@@ -82,17 +82,17 @@ struct AppRootView: View {
                 showsPasswordUpdate = false
             }
         }
-        .onChange(of: auth.needsPasswordUpdate) { needsUpdate in
+        .onChange(of: auth.needsPasswordUpdate) { _, needsUpdate in
             showsPasswordUpdate = needsUpdate
         }
-        .onChange(of: appState.isAccountReady) { isReady in
+        .onChange(of: appState.isAccountReady) { _, isReady in
             guard isReady, auth.session?.cloud != nil else { return }
             Task {
                 await nativePush.activateIfNeeded()
                 await refreshSocialSurfaces()
             }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .background {
                 appState.saveBeforeBackgrounding()
             } else if phase == .active, appState.isAccountReady, auth.session?.cloud != nil {
@@ -949,14 +949,14 @@ private struct MainTabShell: View {
             workoutLaunchConsumerID = nil
             workoutLaunchDrafts = nil
         }
-        .onChange(of: appState.pendingSharedWorkout?.id) { _ in
+        .onChange(of: appState.pendingSharedWorkout?.id) { _, _ in
             if appState.pendingSharedWorkout != nil {
                 yieldTutorialToExternalNavigation()
             }
             presentSharedWorkoutPreviewIfPossible()
             scheduleAutomaticTutorial()
         }
-        .onChange(of: showsAddWorkout) { isPresented in
+        .onChange(of: showsAddWorkout) { _, isPresented in
             if isPresented {
                 yieldTutorialToExternalNavigation()
             } else {
@@ -969,13 +969,13 @@ private struct MainTabShell: View {
                 scheduleAutomaticTutorial()
             }
         }
-        .onChange(of: workoutEditorDraft) { draft in
+        .onChange(of: workoutEditorDraft) { _, draft in
             WorkoutPlanEditorDraftStore().save(
                 draft,
                 accountStorageKey: store.accountStorageKey
             )
         }
-        .onChange(of: showsActiveWorkout) { isPresented in
+        .onChange(of: showsActiveWorkout) { _, isPresented in
             if isPresented {
                 yieldTutorialToExternalNavigation()
             } else {
@@ -983,17 +983,17 @@ private struct MainTabShell: View {
                 scheduleAutomaticTutorial()
             }
         }
-        .onChange(of: liveWorkoutCoordinator.sidecar.attachment?.localDraftID) { draftID in
+        .onChange(of: liveWorkoutCoordinator.sidecar.attachment?.localDraftID) { _, draftID in
             guard let draftID, activeWorkoutStore.draft?.id == draftID else { return }
             workoutEditorDraft = nil
             workoutEditorLiveRecipient = nil
             showsAddWorkout = false
             showsActiveWorkout = true
         }
-        .onChange(of: liveWorkoutCoordinator.confirmedDraftConsumption) { _ in
+        .onChange(of: liveWorkoutCoordinator.confirmedDraftConsumption) { _, _ in
             reconcileConfirmedLiveDraftConsumption()
         }
-        .onChange(of: nativePush.pendingRoute?.id) { _ in
+        .onChange(of: nativePush.pendingRoute?.id) { _, _ in
             if nativePush.pendingRoute != nil {
                 yieldTutorialToExternalNavigation()
             }
@@ -1650,26 +1650,7 @@ private struct MainTabShell: View {
         NavigationStack(path: $missionPath) {
             ProgressHubView(
                 store: store,
-                onOpenRanks: { missionPath.append(.ranks) },
-                onPrepareProgram: {
-                    if activeWorkoutStore.draft != nil { showsActiveWorkout = true }
-                    else {
-                        if workoutEditorDraft == nil && workoutEditorLiveRecipient == nil && sharedWorkoutDraftSeed.isEmpty {
-                            let profile = TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
-                            let plan = RecommendationEngine.buildWorkoutPlan(
-                                exercises: store.exercises, history: store.allExerciseHistory(),
-                                muscleMappings: store.muscleMappings, trainingProfile: profile,
-                                effort: .auto, latestFeedback: store.latestWorkoutFeedbackContext()
-                            )
-                            sharedWorkoutDraftSeed = plan.exercises.map { item in
-                                WorkoutExerciseDraft(exerciseID: item.exercise.id, sets: item.recommendation.sets.map {
-                                    WorkoutSetDraft(weight: $0.weight ?? 0, reps: $0.reps)
-                                })
-                            }
-                        }
-                        showsAddWorkout = true
-                    }
-                }
+                onOpenRanks: { missionPath.append(.ranks) }
             )
                 .gymLanguageToolbar()
                 .navigationDestination(for: MissionRoute.self) { route in

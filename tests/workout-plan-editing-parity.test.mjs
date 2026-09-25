@@ -871,7 +871,7 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   assert.doesNotMatch(androidEmpty, /R\.string\.action_generate_smart_workout/);
   assert.match(
     androidEditor,
-    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,900}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*Button\(onClick = onAddExerciseDraft\)/
+    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,1500}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*Button\(onClick = onAddExerciseDraft\)/
   );
   assert.match(
     androidEditor,
@@ -957,10 +957,11 @@ test("Garmin sync submits the edited draft without starting or writing workout h
   const iosSync = functionBody(iosEditor, "private func syncPlanToGarmin()");
   const iosSyncKey = functionBody(
     iosEditor,
-    "private func currentGarminSyncKey(binding: GarminDeviceBinding)"
+    "private func currentGarminSyncKey(deviceID: String) throws -> GarminDraftSyncKey"
   );
   assert.match(iosSyncKey, /accountStorageKey: store\.accountStorageKey/);
-  assert.match(iosSyncKey, /deviceID: binding\.deviceID/);
+  assert.match(iosSyncKey, /deviceID: deviceID/);
+  assert.match(iosSync, /currentGarminSyncKey\(deviceID: binding\.deviceID\)/);
   assert.match(iosSyncKey, /drafts: drafts/);
   assert.match(iosSync, /garminCloud\.submit\(/);
   assert.match(iosSync, /prepareGarminDraftSubmission\([\s\S]*existing: garminDraftSubmission/);
@@ -970,7 +971,7 @@ test("Garmin sync submits the edited draft without starting or writing workout h
   );
   assert.match(
     iosSync,
-    /store\.accountStorageKey == submission\.key\.accountStorageKey[\s\S]*selectedDevice\?\.deviceID == submission\.key\.deviceID[\s\S]*currentGarminSyncKey\(binding: binding\) == submission\.key/
+    /store\.accountStorageKey == submission\.key\.accountStorageKey[\s\S]*selectedDevice\?\.deviceID == submission\.key\.deviceID[\s\S]*currentGarminSyncKey\(deviceID: binding\.deviceID\) == submission\.key/
   );
   assert.doesNotMatch(iosSync, /store\.createWorkout\(|activeWorkoutStore\.start\(|onSaved\(|onStarted\(/);
 });

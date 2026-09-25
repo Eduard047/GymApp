@@ -2,7 +2,16 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-DESTINATION="${DESTINATION:-platform=iOS Simulator,name=iPhone 17 Pro}"
+if [ -z "${DESTINATION:-}" ]; then
+  # Use the first available iPhone simulator instead of a fixed model whose
+  # runtime may not be installed on this Mac.
+  DEVICE_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ { print $2; exit }')"
+  if [ -z "$DEVICE_ID" ]; then
+    echo "No available iPhone simulator. Set DESTINATION explicitly." >&2
+    exit 1
+  fi
+  DESTINATION="platform=iOS Simulator,id=$DEVICE_ID"
+fi
 CREATED_DERIVED_DATA=""
 
 cleanup() {

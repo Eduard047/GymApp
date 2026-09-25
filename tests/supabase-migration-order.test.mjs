@@ -14,6 +14,7 @@ const reviewedForwardMigrations = [
   "20260902162407_meter_friend_code_requests.sql",
   "20260902162432_linearize_account_deletion_commit.sql",
   "20260902162456_authorize_push_delivery_send.sql",
+  "20260917191202_fix_social_direct_reservation_ambiguity.sql",
 ];
 
 function migrationVersion(fileName) {

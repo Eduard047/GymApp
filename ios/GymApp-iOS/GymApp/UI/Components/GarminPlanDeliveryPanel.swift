@@ -58,7 +58,7 @@ struct GarminPlanDeliveryPanel: View {
             }
         }
         .onAppear(perform: reconcileSelection)
-        .onChange(of: ids) { _ in reconcileSelection() }
+        .onChange(of: ids) { _, _ in reconcileSelection() }
     }
 
     private var message: String {

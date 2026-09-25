@@ -138,10 +138,10 @@ struct ProfileView: View {
                     allowFallback: true
                 )
             }
-            .onChange(of: appState.socialDashboard != nil) { _ in
+            .onChange(of: appState.socialDashboard != nil) { _, _ in
                 retryPendingNativePushScroll(using: proxy, allowFallback: true)
             }
-            .onChange(of: liveWorkoutCoordinator.inbox) { _ in
+            .onChange(of: liveWorkoutCoordinator.inbox) { _, _ in
                 retryPendingNativePushScroll(using: proxy, allowFallback: false)
             }
         }

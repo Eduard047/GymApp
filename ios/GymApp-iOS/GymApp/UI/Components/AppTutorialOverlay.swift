@@ -55,7 +55,7 @@ extension View {
                     GeometryReader { proxy in
                         Color.clear
                             .onAppear { onChange(proxy.frame(in: .global)) }
-                            .onChange(of: proxy.frame(in: .global)) { frame in
+                            .onChange(of: proxy.frame(in: .global)) { _, frame in
                                 onChange(frame)
                             }
                     }
@@ -588,7 +588,7 @@ struct AppTutorialOverlay: View {
         }
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
         .onAppear { dialogFocused = true }
-        .onChange(of: step.id) { _ in
+        .onChange(of: step.id) { _, _ in
             measuredCardHeight = 0
             dialogFocused = true
         }

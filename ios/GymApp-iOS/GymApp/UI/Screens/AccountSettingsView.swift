@@ -915,10 +915,10 @@ private struct GarminTokenView: View {
         } message: {
             Text("Only continue if you will paste it directly into this watch’s Garmin Connect IQ settings. Do not send or save it elsewhere.")
         }
-        .onChange(of: selectedDeviceID) { currentID in
+        .onChange(of: selectedDeviceID) { _, currentID in
             if currentID != presentation.credential.id { close() }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase != .active { close() }
         }
     }

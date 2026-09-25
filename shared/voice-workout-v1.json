@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "clients": ["android", "ios", "pwa"],
+  "privacy": {
+    "recognition": "onDeviceOnly",
+    "storesAudio": false,
+    "storesTranscript": false,
+    "unavailableFallback": "manualTextEntry",
+    "autoStopSeconds": 60
+  },
+  "limits": {
+    "maxTranscriptBytes": 8192,
+    "maxBlocks": 100,
+    "maxSetsPerBlock": 100,
+    "maxWeight": 1000000,
+    "maxReps": 10000
+  },
+  "locales": { "en": "en-US", "uk": "uk-UA", "ru": "ru-RU" },
+  "rules": {
+    "separatorPhrases": [
+      "и потом", "а потом", "после этого", "потом", "затем", "далее", "дальше",
+      "після цього", "потім", "далі",
+      "and then", "after that", "then", "next"
+    ],
+    "setWords": [
+      "подход", "подхода", "подходов", "подходы",
+      "підхід", "підходи", "підходів", "підхода",
+      "set", "sets"
+    ],
+    "repWords": [
+      "повтор", "повтора", "повторов", "повторы", "повторение", "повторения", "повторений", "раз", "раза",
+      "повтори", "повторів", "повторення", "повторень", "рази", "разів",
+      "rep", "reps", "repetition", "repetitions", "times"
+    ],
+    "weightWords": [
+      "кг", "кило", "килограмм", "килограмма", "килограммов", "килограм",
+      "кілограм", "кілограми", "кілограмів", "кілограма", "кіло",
+      "kg", "kgs", "kilo", "kilos", "kilogram", "kilograms", "kilogramme", "kilogrammes"
+    ],
+    "weightPrefixWords": ["вес", "весом", "веса", "вага", "вагою", "ваги", "weight", "weighing"],
+    "connectorWords": [
+      "по", "на", "x", "х", "×", "с", "со", "з", "зі", "із", "и", "і", "й", "та", "а", "без", "каждый", "кожен",
+      "for", "of", "by", "with", "at", "and", "each", "bodyweight"
+    ],
+    "numberWords": {
+      "units": {
+        "ноль": 0, "один": 1, "одна": 1, "одно": 1, "два": 2, "две": 2, "три": 3, "четыре": 4, "пять": 5,
+        "шесть": 6, "семь": 7, "восемь": 8, "девять": 9,
+        "нуль": 0, "одне": 1, "дві": 2, "чотири": 4, "п'ять": 5, "шість": 6, "сім": 7, "вісім": 8, "дев'ять": 9,
+        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9
+      },
+      "teens": {
+        "десять": 10, "одиннадцать": 11, "двенадцать": 12, "тринадцать": 13, "четырнадцать": 14,
+        "пятнадцать": 15, "шестнадцать": 16, "семнадцать": 17, "восемнадцать": 18, "девятнадцать": 19,
+        "одинадцять": 11, "дванадцять": 12, "тринадцять": 13, "чотирнадцять": 14, "п'ятнадцять": 15,
+        "шістнадцять": 16, "сімнадцять": 17, "вісімнадцять": 18, "дев'ятнадцять": 19,
+        "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+        "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19
+      },
+      "tens": {
+        "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50, "шестьдесят": 60,
+        "семьдесят": 70, "восемьдесят": 80, "девяносто": 90,
+        "двадцять": 20, "тридцять": 30, "п'ятдесят": 50, "шістдесят": 60, "сімдесят": 70,
+        "вісімдесят": 80, "дев'яносто": 90,
+        "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90
+      },
+      "hundreds": {
+        "сто": 100, "двести": 200, "триста": 300, "четыреста": 400, "пятьсот": 500,
+        "двісті": 200, "чотириста": 400, "п'ятсот": 500
+      },
+      "hundredMultipliers": ["hundred"]
+    },
+    "voiceAliases": {
+      "bench_press": ["жим лежа", "жим лежачи", "жим штанги лежа", "жим штанги лежачи", "bench"],
+      "squat": ["присед", "присед со штангой", "приседания", "приседания со штангой", "присідання", "присідання зі штангою", "присід", "barbell squat", "back squat", "squats"],
+      "pull_up": ["подтягивания", "подтягивание", "підтягування", "pull ups", "pullups", "chin ups"],
+      "push_up": ["отжимания", "отжимания от пола", "віджимання", "віджимання від підлоги", "push ups", "pushups"],
+      "dips": ["брусья", "отжимания на брусьях", "бруси", "віджимання на брусах"],
+      "deadlift": ["становая", "становая тяга", "станова", "станова тяга"],
+      "romanian_deadlift": ["румынская тяга", "румунська тяга", "rdl"],
+      "leg_press": ["жим ногами", "жим ногами в тренажере", "жим ногами у тренажері"],
+      "lat_pulldown": ["тяга верхнего блока", "тяга верхнього блока", "вертикальная тяга"],
+      "barbell_row": ["тяга штанги в наклоне", "тяга штанги в нахилі"],
+      "shoulder_press": ["жим над головой", "армейский жим", "жим над головою", "армійський жим", "overhead press"],
+      "biceps_curl": ["подъем на бицепс", "бицепс", "біцепс", "curls"],
+      "lunge": ["выпады", "випади", "lunges"],
+      "plank": ["планка"],
+      "calf_raise": ["подъем на носки", "підйом на носки", "calf raises"],
+      "lateral_raise": ["махи в стороны", "махи гантелями в стороны", "розведення в сторони", "lateral raises"]
+    },
+    "containsMatchMinimumLength": 8
+  },
+  "fixtureExercises": {
+    "bench": { "id": "11111111-1111-4111-8111-111111111101", "name": "Bench Press", "catalogKey": "bench_press" },
+    "incline": { "id": "11111111-1111-4111-8111-111111111102", "name": "Incline Bench Press", "catalogKey": "incline_bench_press" },
+    "squat": { "id": "11111111-1111-4111-8111-111111111103", "name": "Squat", "catalogKey": "squat" },
+    "bulgarian": { "id": "11111111-1111-4111-8111-111111111104", "name": "Bulgarian Split Squat", "catalogKey": "bulgarian_split_squat" },
+    "pullup": { "id": "11111111-1111-4111-8111-111111111105", "name": "Pull Up", "catalogKey": "pull_up" },
+    "pressA": { "id": "11111111-1111-4111-8111-111111111106", "name": "Press", "catalogKey": null },
+    "pressB": { "id": "11111111-1111-4111-8111-111111111107", "name": "Press", "catalogKey": null }
+  },
+  "defaultFixtures": ["bench", "incline", "squat", "bulgarian", "pullup"],
+  "cases": [
+    { "id": "ru-sets-reps-weight", "language": "ru", "transcript": "Жим лёжа, 3 подхода по 10 повторений, 80 килограмм",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": { "repeat": 3, "set": [80, 10] } }], "diagnostics": [] },
+    { "id": "uk-sets-reps-weight", "language": "uk", "transcript": "Жим лежачи, 3 підходи по 10 повторень, 80 кілограмів",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": { "repeat": 3, "set": [80, 10] } }], "diagnostics": [] },
+    { "id": "en-sets-reps-weight", "language": "en", "transcript": "Bench press, 3 sets of 10 reps, 80 kilograms",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": { "repeat": 3, "set": [80, 10] } }], "diagnostics": [] },
+    { "id": "en-weight-rep-pairs", "language": "en", "transcript": "Squat: 60 for 12, 80 for 10, 100 for 8",
+      "blocks": [{ "exercise": "squat", "match": "resolved", "sets": [[60, 12], [80, 10], [100, 8]] }], "diagnostics": [] },
+    { "id": "mixed-explicit-separator", "language": "uk", "transcript": "Bench Press: 60 for 12, 80 for 10; присідання: 100 на 8",
+      "blocks": [
+        { "exercise": "bench", "match": "resolved", "sets": [[60, 12], [80, 10]] },
+        { "exercise": "squat", "match": "resolved", "sets": [[100, 8]] }
+      ], "diagnostics": [] },
+    { "id": "repeated-exercise-merges", "language": "en", "transcript": "Bench Press: 60 for 12; Bench Press: 80 for 10",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": [[60, 12], [80, 10]] }], "diagnostics": [] },
+    { "id": "ru-two-exercises-without-separator", "language": "ru", "transcript": "Жим лёжа 3 подхода по 10 по 80 присед 60 на 12 80 на 10",
+      "blocks": [
+        { "exercise": "bench", "match": "resolved", "sets": { "repeat": 3, "set": [80, 10] } },
+        { "exercise": "squat", "match": "resolved", "sets": [[60, 12], [80, 10]] }
+      ], "diagnostics": [] },
+    { "id": "ru-spoken-then", "language": "ru", "transcript": "жим лежа 80 на 10 потом приседания 100 на 5",
+      "blocks": [
+        { "exercise": "bench", "match": "resolved", "sets": [[80, 10]] },
+        { "exercise": "squat", "match": "resolved", "sets": [[100, 5]] }
+      ], "diagnostics": [] },
+    { "id": "en-sentences-and-bodyweight", "language": "en", "transcript": "Bench press 3 sets of 8 at 90 kg. Pull-ups 3 sets of 10.",
+      "blocks": [
+        { "exercise": "bench", "match": "resolved", "sets": { "repeat": 3, "set": [90, 8] } },
+        { "exercise": "pullup", "match": "resolved", "sets": { "repeat": 3, "set": [0, 10] } }
+      ], "diagnostics": [] },
+    { "id": "ru-bodyweight-sets-reps", "language": "ru", "transcript": "Подтягивания 3 подхода по 10",
+      "blocks": [{ "exercise": "pullup", "match": "resolved", "sets": { "repeat": 3, "set": [0, 10] } }], "diagnostics": [] },
+    { "id": "ru-weight-before-reps", "language": "ru", "transcript": "Жим лёжа 3 подхода по 80 кг на 10 повторений",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": { "repeat": 3, "set": [80, 10] } }], "diagnostics": [] },
+    { "id": "ru-reps-before-weight", "language": "ru", "transcript": "Присед 12 повторений 60 кг",
+      "blocks": [{ "exercise": "squat", "match": "resolved", "sets": [[60, 12]] }], "diagnostics": [] },
+    { "id": "ru-number-words", "language": "ru", "transcript": "Присед три подхода по восемь повторений сто двадцать килограмм",
+      "blocks": [{ "exercise": "squat", "match": "resolved", "sets": { "repeat": 3, "set": [120, 8] } }], "diagnostics": [] },
+    { "id": "uk-number-words", "language": "uk", "transcript": "Жим лежачи чотири підходи по шість повторень вісімдесят п'ять кілограмів",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": { "repeat": 4, "set": [85, 6] } }], "diagnostics": [] },
+    { "id": "en-number-words-hundred", "language": "en", "transcript": "Squat two sets of five reps one hundred twenty kg",
+      "blocks": [{ "exercise": "squat", "match": "resolved", "sets": { "repeat": 2, "set": [120, 5] } }], "diagnostics": [] },
+    { "id": "ru-decimal-comma", "language": "ru", "transcript": "Жим лёжа 82,5 на 8",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": [[82.5, 8]] }], "diagnostics": [] },
+    { "id": "dash-between-values", "language": "ru", "transcript": "Присед 60-12",
+      "blocks": [{ "exercise": "squat", "match": "resolved", "sets": [[60, 12]] }], "diagnostics": [] },
+    { "id": "exact-name-wins-over-contained-name", "language": "en", "transcript": "Incline bench press 60 for 10",
+      "blocks": [{ "exercise": "incline", "match": "resolved", "sets": [[60, 10]] }], "diagnostics": [] },
+    { "id": "short-name-no-false-substring", "language": "en", "transcript": "Bulgarian split squat: 40 for 10",
+      "blocks": [{ "exercise": "bulgarian", "match": "resolved", "sets": [[40, 10]] }], "diagnostics": [] },
+    { "id": "ambiguous-duplicate-names", "language": "en", "transcript": "Press: 40 for 10", "fixtures": ["bench", "pressA", "pressB"],
+      "blocks": [{ "exercise": null, "match": "ambiguous", "candidates": ["pressA", "pressB"], "sets": [[40, 10]] }],
+      "diagnostics": ["ambiguousExercise:0"] },
+    { "id": "unknown-exercise", "language": "en", "transcript": "Mystery lift: 40 for 10",
+      "blocks": [{ "exercise": null, "match": "unresolved", "sets": [[40, 10]] }], "diagnostics": ["unknownExercise:0"] },
+    { "id": "unknown-word-starts-new-block", "language": "en", "transcript": "Bench press 80 for 10 banana 20 for 5",
+      "blocks": [
+        { "exercise": "bench", "match": "resolved", "sets": [[80, 10]] },
+        { "exercise": null, "match": "unresolved", "sets": [[20, 5]] }
+      ], "diagnostics": ["unknownExercise:1"] },
+    { "id": "missing-exercise-name", "language": "ru", "transcript": "3 подхода по 10 повторений, 80 килограмм",
+      "blocks": [{ "exercise": null, "match": "unresolved", "sets": { "repeat": 3, "set": [80, 10] } }], "diagnostics": ["missingExercise:0"] },
+    { "id": "missing-values", "language": "en", "transcript": "Bench press, 3 sets",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": [[null, null]] }], "diagnostics": ["missingSets:0"] },
+    { "id": "weight-only", "language": "en", "transcript": "Bench press: 80",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": [[80, null]] }], "diagnostics": ["missingSets:0"] },
+    { "id": "negative-weight", "language": "en", "transcript": "Bench press: -10 for 8",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": [[-10, 8]] }], "diagnostics": ["invalidNumber:0"] },
+    { "id": "oversized-weight", "language": "en", "transcript": "Bench press: 1000001 for 8",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": [[1000001, 8]] }], "diagnostics": ["invalidNumber:0"] },
+    { "id": "fractional-reps", "language": "en", "transcript": "Bench press: 80 for 8.5",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": [[80, null]] }], "diagnostics": ["invalidNumber:0"] },
+    { "id": "too-many-sets-truncated", "language": "en", "transcript": "Bench press: 101 sets of 10 reps, 80 kilograms",
+      "blocks": [{ "exercise": "bench", "match": "resolved", "sets": { "repeat": 100, "set": [80, 10] } }], "diagnostics": ["limitsExceeded:0"] },
+    { "id": "empty", "language": "en", "transcript": "   ", "blocks": [], "diagnostics": ["empty"] },
+    { "id": "too-long", "language": "en", "transcriptRepeat": { "text": "x", "count": 8193 }, "blocks": [], "diagnostics": ["transcriptTooLong"] }
+  ]
+}

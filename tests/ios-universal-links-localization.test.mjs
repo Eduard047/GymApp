@@ -61,10 +61,12 @@ test("AASA binds exact workout and native-auth routes to the exact iOS app", asy
   await access("pwa/.nojekyll");
 });
 
-test("Bluetooth permission copy has exact English fallback plus Ukrainian and Russian localizations", () => {
+test("Bluetooth and voice permission copy has exact English fallback plus Ukrainian and Russian localizations", () => {
   const expectedKeys = [
     "NSBluetoothAlwaysUsageDescription",
-    "NSBluetoothPeripheralUsageDescription"
+    "NSBluetoothPeripheralUsageDescription",
+    "NSMicrophoneUsageDescription",
+    "NSSpeechRecognitionUsageDescription"
   ];
   const locales = [
     ["en", infoPlistStrings(englishInfo)],
@@ -72,8 +74,12 @@ test("Bluetooth permission copy has exact English fallback plus Ukrainian and Ru
     ["ru", infoPlistStrings(russianInfo)]
   ];
   for (const [locale, values] of locales) {
-    assert.deepEqual(Object.keys(values).sort(), expectedKeys, `${locale} must localize both Bluetooth prompts`);
-    for (const value of Object.values(values)) {
+    assert.deepEqual(Object.keys(values).sort(), expectedKeys, `${locale} must localize the Bluetooth and voice prompts`);
+    for (const key of ["NSMicrophoneUsageDescription", "NSSpeechRecognitionUsageDescription"]) {
+      assert.ok(values[key].length >= 50 && values[key].length <= 220, `${locale} ${key} must be bounded and explanatory`);
+      assert.match(values[key], /GymApp/);
+    }
+    for (const value of [values.NSBluetoothAlwaysUsageDescription, values.NSBluetoothPeripheralUsageDescription]) {
       assert.ok(value.length >= 50 && value.length <= 220, `${locale} permission text must be bounded and explanatory`);
       assert.match(value, /GymApp/);
       assert.match(value, /Bluetooth/);

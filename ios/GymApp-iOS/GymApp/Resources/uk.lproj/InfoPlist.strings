@@ -1,2 +1,4 @@
 "NSBluetoothAlwaysUsageDescription" = "GymApp використовує Bluetooth, щоб отримувати завершені тренування та показники підходів із вибраного годинника Garmin.";
 "NSBluetoothPeripheralUsageDescription" = "GymApp використовує Bluetooth для обміну планами тренувань і завершеними тренуваннями з вибраним годинником Garmin.";
+"NSMicrophoneUsageDescription" = "GymApp використовує мікрофон, щоб розпізнати план тренування на цьому пристрої.";
+"NSSpeechRecognitionUsageDescription" = "GymApp використовує розпізнавання мовлення на пристрої, щоб створити план тренування з твого голосу.";

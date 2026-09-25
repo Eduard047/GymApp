@@ -7,11 +7,11 @@ const expected = Object.freeze({
   androidVersionCode: "2000320909",
   iosBuildNumber: "45",
   garminVersion: "3.3.0",
-  pwaBundle: "app.v110.js",
-  pwaStyleBundle: "styles.v85.css",
+  pwaBundle: "app.v112.js",
+  pwaStyleBundle: "styles.v86.css",
   pwaRussianBundle: "russian-text.v87.js",
   pwaLiveWorkoutBundle: "live-workout.v3.js",
-  pwaCache: "gym-pwa-v153",
+  pwaCache: "gym-pwa-v155",
 });
 
 const [

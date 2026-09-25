@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v154";
-// v154 caps new Garmin plan submissions at 30 sets.
+const CACHE_VERSION = "v155";
+// v155 adds on-device voice workout dictation; v154 capped Garmin plans at 30 sets.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,7 +48,7 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v85.css",
+  "./styles.v86.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v72.js",
@@ -61,7 +61,8 @@ const SHELL_ASSETS = [
   "./live-workout-state.v1.js",
   "./russian-text.v87.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v111.js",
+  "./voice-workout.v1.js",
+  "./app.v112.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
@@ -234,7 +235,7 @@ function withDocumentSecurityHeaders(response, url, { noStore = false } = {}) {
   headers.set("Content-Security-Policy", policy);
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
   headers.set("Origin-Agent-Cluster", "?1");
-  headers.set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()");
+  headers.set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(self), payment=(), usb=()");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");

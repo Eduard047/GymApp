@@ -1,6 +1,6 @@
 # GymApp for iOS
 
-Native SwiftUI port of the Android GymApp. The project targets iOS 16 and is built with Xcode 26 / the iOS 26 SDK. It intentionally has no advertising, analytics, tracking, or third-party runtime SDKs.
+Native SwiftUI port of the Android GymApp. The project targets iOS 18 and is built with Xcode 27 / the iOS 27 SDK. It intentionally has no advertising, analytics, tracking, or third-party runtime SDKs.
 
 ## Included
 

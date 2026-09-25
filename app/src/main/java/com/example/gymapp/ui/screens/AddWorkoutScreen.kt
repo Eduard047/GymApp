@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -73,6 +74,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -161,6 +163,7 @@ fun AddWorkoutScreen(
     onExternalCloseRequestHandled: () -> Unit,
     onDirtyStateChanged: (Boolean) -> Unit,
     onInteractionLockChanged: (Boolean) -> Unit = {},
+    onApplyVoiceWorkout: (List<com.example.gymapp.data.repository.WorkoutExerciseDraft>, Boolean) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -173,6 +176,7 @@ fun AddWorkoutScreen(
     var secondaryOptionsExpanded by rememberSaveable { mutableStateOf(false) }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showVoiceWorkoutSheet by rememberSaveable { mutableStateOf(false) }
     val requestClose = onNavigateToHistory
     val noteTemplates = listOf(
         stringResource(R.string.note_template_push),
@@ -236,6 +240,15 @@ fun AddWorkoutScreen(
                     title = stringResource(R.string.title_exercises),
                     modifier = Modifier.weight(1f)
                 )
+                val voiceLabel = stringResource(R.string.voice_workout_open)
+                OutlinedButton(
+                    onClick = { showVoiceWorkoutSheet = true },
+                    modifier = Modifier
+                        .testTag("voice_workout_open")
+                        .semantics { contentDescription = voiceLabel }
+                ) {
+                    Icon(imageVector = Icons.Default.Mic, contentDescription = null)
+                }
                 if (uiState.exerciseDrafts.isNotEmpty()) {
                     TextButton(onClick = { showClearConfirmation = true }) {
                         Text(
@@ -667,6 +680,17 @@ fun AddWorkoutScreen(
                     Text(stringResource(R.string.workout_plan_keep_editing))
                 }
             }
+        )
+    }
+    if (showVoiceWorkoutSheet && !editorInteractionsLocked) {
+        VoiceWorkoutDraftSheet(
+            exercises = uiState.exercises,
+            existingExerciseCount = uiState.exerciseDrafts.size,
+            onApply = { drafts, replace ->
+                onApplyVoiceWorkout(drafts, replace)
+                showVoiceWorkoutSheet = false
+            },
+            onDismiss = { showVoiceWorkoutSheet = false }
         )
     }
     if (showClearConfirmation && !editorInteractionsLocked) {

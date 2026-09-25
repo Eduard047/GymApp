@@ -421,7 +421,7 @@ public struct WorkoutsView: View {
         }
         .onAppear { referenceDate = Date() }
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
-        .onChange(of: store.accountStorageKey) { storageKey in
+        .onChange(of: store.accountStorageKey) { _, storageKey in
             referenceDate = Date()
             monthOffset = 0
             weekOffset = 0
@@ -434,7 +434,7 @@ public struct WorkoutsView: View {
                 accountStorageKey: storageKey
             )
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active { referenceDate = Date() }
         }
         .alert(
