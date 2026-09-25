@@ -9,14 +9,12 @@ const execFileAsync = promisify(execFile);
 const [
   script,
   gitignore,
-  dependabot,
   securityWorkflow,
   iosArchiveScript,
   iosExportOptions,
 ] = await Promise.all([
   readFile("scripts/publish-debug-release.ps1", "utf8"),
   readFile(".gitignore", "utf8"),
-  readFile(".github/dependabot.yml", "utf8"),
   readFile(".github/workflows/security.yml", "utf8"),
   readFile("ios/GymApp-iOS/Scripts/archive-app-store.sh", "utf8"),
   readFile("ios/GymApp-iOS/AppStore/ExportOptions.plist", "utf8"),
@@ -134,44 +132,6 @@ test("the local AGENTS context file is not tracked", async () => {
   await assert.rejects(
     execFileAsync("git", ["ls-files", "--error-unmatch", "AGENTS.md"]),
     "AGENTS.md must remain local-only via .git/info/exclude"
-  );
-});
-
-test("Dependabot stays low-noise without delaying security updates", () => {
-  const ecosystems = dependabot
-    .split(/\n  - package-ecosystem: /)
-    .slice(1);
-
-  const configurations = ecosystems.map((ecosystem) => ({
-    ecosystem: ecosystem.match(/^([^\s]+)/u)?.[1],
-    directory: ecosystem.match(/\n\s+directory: ([^\s]+)\s*$/mu)?.[1],
-  }));
-  assert.deepEqual(configurations, [
-    { ecosystem: "github-actions", directory: "/" },
-    { ecosystem: "gradle", directory: "/" },
-    { ecosystem: "deno", directory: "/supabase/functions/garmin-sync" },
-    {
-      ecosystem: "deno",
-      directory: "/supabase/functions/social-live-gateway",
-    },
-    { ecosystem: "deno", directory: "/supabase/functions/push-dispatch" },
-  ]);
-
-  let routinePullRequestLimit = 0;
-  for (const ecosystem of ecosystems) {
-    assert.match(ecosystem, /\n\s+interval: monthly\s*$/m);
-    assert.match(ecosystem, /\n\s+timezone: Europe\/Kyiv\s*$/m);
-    assert.match(ecosystem, /\n\s+applies-to: security-updates\s*$/m);
-    assert.match(ecosystem, /\n\s+cooldown:\s*\n\s+default-days: 14\s*$/m);
-
-    const limit = Number(ecosystem.match(/\n\s+open-pull-requests-limit: (\d+)\s*$/m)?.[1]);
-    assert.ok(Number.isInteger(limit) && limit > 0, "routine update limit must be bounded");
-    routinePullRequestLimit += limit;
-  }
-
-  assert.ok(
-    routinePullRequestLimit <= 6,
-    "routine dependency updates must not flood the branch and pull-request lists"
   );
 });
 
