@@ -1,5 +1,6 @@
 import Combine
 import CoreFoundation
+import CryptoKit
 import Foundation
 
 public enum WorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
@@ -1340,8 +1341,31 @@ public final class WorkoutStore: ObservableObject {
 
         var storedWorkout: WorkoutSession?
         try mutate { state in
+            // Block/set IDs that upstream callers derive from a stable source (catalog
+            // exercise ID, a deterministic Smart Coach recommendation ID, a repeat-previous
+            // copy, etc.) can collide with an ID already used by an unrelated, already
+            // stored workout. Remap only the colliding ones to a fresh ID derived
+            // deterministically from this commit intent, so a retry of the exact same
+            // intent (no other commits in between) recomputes the identical remap and
+            // stays idempotent, instead of failing `validate`'s global uniqueness check.
+            let otherWorkouts = state.workouts.filter { $0.id != intent.workoutID }
+            let existingBlockIDs = Set(otherWorkouts.flatMap { $0.exercises.map(\.id) })
+            let existingSetIDs = Set(
+                otherWorkouts.flatMap { $0.exercises.flatMap { $0.sets.map(\.id) } }
+            )
+            let remappedExercises = Self.remappedCommitExercises(
+                intent,
+                avoidingBlockIDs: existingBlockIDs,
+                avoidingSetIDs: existingSetIDs
+            )
+
             if let existing = state.workouts.first(where: { $0.id == intent.workoutID }) {
-                guard Self.workout(existing, matches: intent, exercises: state.exercises) else {
+                guard Self.workout(
+                    existing,
+                    matches: intent,
+                    remappedExercises: remappedExercises,
+                    exercises: state.exercises
+                ) else {
                     throw WorkoutStoreError.invalidWorkout(
                         "Existing history does not match the committed active workout."
                     )
@@ -1363,15 +1387,15 @@ public final class WorkoutStore: ObservableObject {
             }
 
             var resolvedExerciseIDs: [UUID: UUID] = [:]
-            for committedExercise in intent.exercises {
+            for committedExercise in remappedExercises {
                 resolvedExerciseIDs[committedExercise.id] = try Self.resolveOrRestoreExercise(
                     for: committedExercise,
                     in: &state
                 )
             }
             var completedBlocks: [WorkoutExercise] = []
-            completedBlocks.reserveCapacity(intent.exercises.count)
-            for committedExercise in intent.exercises {
+            completedBlocks.reserveCapacity(remappedExercises.count)
+            for committedExercise in remappedExercises {
                 guard let resolvedExerciseID = resolvedExerciseIDs[committedExercise.id] else {
                     throw WorkoutStoreError.persistenceFailure(
                         "The active workout exercise resolution was incomplete."
@@ -4565,16 +4589,17 @@ public final class WorkoutStore: ObservableObject {
     private static func workout(
         _ workout: WorkoutSession,
         matches intent: ActiveWorkoutCommitIntent,
+        remappedExercises: [ActiveWorkoutCommitExercise],
         exercises: [Exercise]
     ) -> Bool {
         guard workout.id == intent.workoutID,
               workout.date == intent.workoutDate,
               workout.note == intent.note,
-              workout.exercises.count == intent.exercises.count else {
+              workout.exercises.count == remappedExercises.count else {
             return false
         }
         let committedByBlockID = Dictionary(
-            uniqueKeysWithValues: intent.exercises.map { ($0.id, $0) }
+            uniqueKeysWithValues: remappedExercises.map { ($0.id, $0) }
         )
         for block in workout.exercises {
             guard let committedExercise = committedByBlockID[block.id],
@@ -4587,6 +4612,78 @@ public final class WorkoutStore: ObservableObject {
             }
         }
         return true
+    }
+
+    /// Remaps only the block/set IDs in `intent` that collide with `avoidingBlockIDs`/
+    /// `avoidingSetIDs` (IDs already used by other stored workouts) to a fresh ID derived
+    /// deterministically from this commit's workout ID and the original ID. Same intent,
+    /// same `avoiding` sets in → same remap out, so a retry (with no other commit
+    /// racing in between) reproduces the exact remap used the first time.
+    private static func remappedCommitExercises(
+        _ intent: ActiveWorkoutCommitIntent,
+        avoidingBlockIDs existingBlockIDs: Set<UUID>,
+        avoidingSetIDs existingSetIDs: Set<UUID>
+    ) -> [ActiveWorkoutCommitExercise] {
+        var usedBlockIDs = existingBlockIDs
+        var usedSetIDs = existingSetIDs
+        return intent.exercises.map { committed in
+            let blockID = Self.remappedID(
+                seed: "block|\(intent.workoutID.uuidString)|\(committed.id.uuidString)",
+                original: committed.id,
+                avoiding: &usedBlockIDs
+            )
+            let sets = committed.sets.map { set -> WorkoutSet in
+                let setID = Self.remappedID(
+                    seed: "set|\(intent.workoutID.uuidString)|\(set.id.uuidString)",
+                    original: set.id,
+                    avoiding: &usedSetIDs
+                )
+                return WorkoutSet(id: setID, weight: set.weight, reps: set.reps)
+            }
+            return ActiveWorkoutCommitExercise(
+                id: blockID,
+                preferredExerciseID: committed.preferredExerciseID,
+                exerciseName: committed.exerciseName,
+                exerciseCatalogKey: committed.exerciseCatalogKey,
+                sets: sets
+            )
+        }
+    }
+
+    private static func remappedID(
+        seed: String,
+        original: UUID,
+        avoiding used: inout Set<UUID>
+    ) -> UUID {
+        guard used.contains(original) else {
+            used.insert(original)
+            return original
+        }
+        var attempt = 0
+        var candidate = deterministicUUID(seed: seed)
+        while used.contains(candidate) {
+            attempt += 1
+            candidate = deterministicUUID(seed: "\(seed)|\(attempt)")
+        }
+        used.insert(candidate)
+        return candidate
+    }
+
+    /// Deterministic UUIDv4-shaped ID derived from `seed` via SHA-256. Not
+    /// cryptographically meaningful as identity, only used so the same seed always
+    /// remaps to the same ID (retry idempotency).
+    private static func deterministicUUID(seed: String) -> UUID {
+        let digest = Array(SHA256.hash(data: Data(seed.utf8)).prefix(16))
+        var bytes = digest
+        bytes[6] = (bytes[6] & 0x0F) | 0x40
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        let raw = uuid_t(
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        )
+        return UUID(uuid: raw)
     }
 
     private static func nameKey(_ value: String) -> String {

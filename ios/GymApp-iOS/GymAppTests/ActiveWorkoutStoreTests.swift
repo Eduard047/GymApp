@@ -1254,6 +1254,204 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertNil(context.active.draft)
     }
 
+    /// Regression for the "Duplicate workout exercise identifier" crash: repeating the
+    /// same exercise across two separate live-tracked workouts must not collide, because
+    /// the block/set identity constructed at start time (AddWorkoutView.startWorkout /
+    /// TrainingGuidance.DirectWorkoutPlanStarter.start, both fixed to mint a fresh UUID
+    /// per instance instead of reusing the catalog exercise ID or a deterministic
+    /// recommendation ID) is now always per-instance, not derived from the shared
+    /// catalog exercise.
+    func testTwoLiveWorkoutsWithSameExerciseFromSmartPlanPathBothCommit() throws {
+        let context = try makeContext(account: "active-smart-plan-repeat-exercise")
+        let firstStart = Date(timeIntervalSince1970: 1_800_000_500)
+
+        // Mirrors the fixed call sites: fresh UUID for the block and each set, the
+        // catalog exercise ID only feeds `exerciseID`.
+        func smartCoachBlock(weight: Double, reps: Int) -> ActiveWorkoutExercise {
+            ActiveWorkoutExercise(
+                id: UUID(),
+                exerciseID: context.exercise.id,
+                exerciseName: context.exercise.name,
+                exerciseCatalogKey: context.exercise.catalogKey,
+                sets: [ActiveWorkoutSet(id: UUID(), weight: weight, reps: reps)]
+            )
+        }
+
+        let firstDraft = try context.active.start(
+            workoutDate: firstStart,
+            note: nil,
+            exercises: [smartCoachBlock(weight: 60, reps: 8)],
+            workoutStore: context.history,
+            now: firstStart
+        )
+        let firstSetID = firstDraft.exercises[0].sets[0].id
+        let firstRecorded = try context.active.recordSet(
+            draftID: firstDraft.id,
+            setID: firstSetID,
+            expectedRevision: firstDraft.revision,
+            now: firstStart.addingTimeInterval(30)
+        )
+        let firstWorkout = try context.active.finish(
+            draftID: firstRecorded.id,
+            expectedRevision: firstRecorded.revision,
+            into: context.history
+        )
+
+        let secondStart = firstStart.addingTimeInterval(3600)
+        let secondDraft = try context.active.start(
+            workoutDate: secondStart,
+            note: nil,
+            // Same exercise, same recommended weight/reps as a repeat Smart Coach build
+            // could plausibly produce — only the per-instance IDs must differ.
+            exercises: [smartCoachBlock(weight: 60, reps: 8)],
+            workoutStore: context.history,
+            now: secondStart
+        )
+        let secondSetID = secondDraft.exercises[0].sets[0].id
+        let secondRecorded = try context.active.recordSet(
+            draftID: secondDraft.id,
+            setID: secondSetID,
+            expectedRevision: secondDraft.revision,
+            now: secondStart.addingTimeInterval(30)
+        )
+        let secondWorkout = try context.active.finish(
+            draftID: secondRecorded.id,
+            expectedRevision: secondRecorded.revision,
+            into: context.history
+        )
+
+        XCTAssertEqual(context.history.workouts.count, 2)
+        XCTAssertNotEqual(firstWorkout.exercises[0].id, secondWorkout.exercises[0].id)
+        XCTAssertNotEqual(firstWorkout.exercises[0].sets[0].id, secondWorkout.exercises[0].sets[0].id)
+        XCTAssertEqual(firstWorkout.exercises[0].exerciseID, context.exercise.id)
+        XCTAssertEqual(secondWorkout.exercises[0].exerciseID, context.exercise.id)
+    }
+
+    /// Defensive choke-point fix: a commit intent whose block ID collides with a block ID
+    /// already used by a different, already-stored workout (e.g. replaying a stale
+    /// commit intent seeded by an older app build) must be remapped to a fresh ID and
+    /// still commit, instead of failing WorkoutStore.validate's global uniqueness check.
+    func testCommitRemapsCollidingBlockIDFromAnotherStoredWorkout() throws {
+        let context = try makeContext(account: "active-commit-remap-block")
+        let collidingBlockID = UUID()
+
+        let firstWorkoutID = UUID()
+        let firstWorkout = try context.history.commitActiveWorkout(
+            ActiveWorkoutCommitIntent(
+                workoutID: firstWorkoutID,
+                workoutDate: Date(timeIntervalSince1970: 1_800_001_000),
+                note: nil,
+                preparedAt: Date(timeIntervalSince1970: 1_800_001_010),
+                exercises: [
+                    ActiveWorkoutCommitExercise(
+                        id: collidingBlockID,
+                        preferredExerciseID: context.exercise.id,
+                        exerciseName: context.exercise.name,
+                        exerciseCatalogKey: context.exercise.catalogKey,
+                        sets: [WorkoutSet(id: UUID(), weight: 50, reps: 5)]
+                    )
+                ]
+            ),
+            expectedAccountStorageKey: context.history.accountStorageKey
+        )
+        XCTAssertEqual(firstWorkout.exercises[0].id, collidingBlockID)
+
+        let secondWorkoutID = UUID()
+        let secondIntent = ActiveWorkoutCommitIntent(
+            workoutID: secondWorkoutID,
+            workoutDate: Date(timeIntervalSince1970: 1_800_002_000),
+            note: nil,
+            preparedAt: Date(timeIntervalSince1970: 1_800_002_010),
+            exercises: [
+                ActiveWorkoutCommitExercise(
+                    // Same block ID as the first workout's block: this is the exact
+                    // failure mode from the stuck simulator draft.
+                    id: collidingBlockID,
+                    preferredExerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: [WorkoutSet(id: UUID(), weight: 55, reps: 5)]
+                )
+            ]
+        )
+        let secondWorkout = try context.history.commitActiveWorkout(
+            secondIntent,
+            expectedAccountStorageKey: context.history.accountStorageKey
+        )
+
+        XCTAssertEqual(context.history.workouts.count, 2)
+        XCTAssertNotEqual(secondWorkout.exercises[0].id, collidingBlockID)
+        XCTAssertEqual(secondWorkout.exercises[0].sets[0].weight, 55)
+        XCTAssertEqual(secondWorkout.exercises[0].sets[0].reps, 5)
+        XCTAssertEqual(secondWorkout.exercises[0].exerciseID, context.exercise.id)
+
+        // Retrying the exact same intent after a successful commit must be a no-op: same
+        // remap recomputed, matches the stored workout, no duplicate created.
+        let retried = try context.history.commitActiveWorkout(
+            secondIntent,
+            expectedAccountStorageKey: context.history.accountStorageKey
+        )
+        XCTAssertEqual(retried, secondWorkout)
+        XCTAssertEqual(context.history.workouts.count, 2)
+    }
+
+    /// Set IDs are seeded the same deterministic way as block IDs (e.g.
+    /// RecommendationEngine.recommendedSetID) and must be remapped independently: a set-ID
+    /// collision must not touch an already-unique block ID, and vice versa.
+    func testCommitRemapsCollidingSetIDIndependentlyOfBlockID() throws {
+        let context = try makeContext(account: "active-commit-remap-set")
+        let collidingSetID = UUID()
+
+        let firstWorkout = try context.history.commitActiveWorkout(
+            ActiveWorkoutCommitIntent(
+                workoutID: UUID(),
+                workoutDate: Date(timeIntervalSince1970: 1_800_003_000),
+                note: nil,
+                preparedAt: Date(timeIntervalSince1970: 1_800_003_010),
+                exercises: [
+                    ActiveWorkoutCommitExercise(
+                        id: UUID(),
+                        preferredExerciseID: context.exercise.id,
+                        exerciseName: context.exercise.name,
+                        exerciseCatalogKey: context.exercise.catalogKey,
+                        sets: [WorkoutSet(id: collidingSetID, weight: 40, reps: 10)]
+                    )
+                ]
+            ),
+            expectedAccountStorageKey: context.history.accountStorageKey
+        )
+        let firstBlockID = firstWorkout.exercises[0].id
+
+        let secondBlockID = UUID()
+        let secondWorkout = try context.history.commitActiveWorkout(
+            ActiveWorkoutCommitIntent(
+                workoutID: UUID(),
+                workoutDate: Date(timeIntervalSince1970: 1_800_004_000),
+                note: nil,
+                preparedAt: Date(timeIntervalSince1970: 1_800_004_010),
+                exercises: [
+                    ActiveWorkoutCommitExercise(
+                        // Block ID is already unique: it must survive untouched.
+                        id: secondBlockID,
+                        preferredExerciseID: context.exercise.id,
+                        exerciseName: context.exercise.name,
+                        exerciseCatalogKey: context.exercise.catalogKey,
+                        // Set ID collides with the first workout's set: this one must move.
+                        sets: [WorkoutSet(id: collidingSetID, weight: 45, reps: 9)]
+                    )
+                ]
+            ),
+            expectedAccountStorageKey: context.history.accountStorageKey
+        )
+
+        XCTAssertEqual(secondWorkout.exercises[0].id, secondBlockID)
+        XCTAssertNotEqual(secondWorkout.exercises[0].sets[0].id, collidingSetID)
+        XCTAssertNotEqual(secondWorkout.exercises[0].sets[0].id, firstWorkout.exercises[0].sets[0].id)
+        XCTAssertEqual(secondWorkout.exercises[0].sets[0].weight, 45)
+        XCTAssertEqual(secondWorkout.exercises[0].sets[0].reps, 9)
+        XCTAssertNotEqual(firstBlockID, secondBlockID)
+    }
+
     func testFinishAtomicallyRestoresExerciseDeletedAfterWorkoutStarted() throws {
         let context = try makeContext(account: "active-finish-restores-exercise")
         let startedAt = Date(timeIntervalSince1970: 1_800_000_392)
@@ -1597,6 +1795,98 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveSlotURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: liveDraftConsumptionURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: workoutInviteJournalURL.path))
+    }
+
+    // MARK: Skip-remaining-sets candidate builder
+
+    /// The exercise-card "Finish" confirmation's "Skip them" action, and the
+    /// `WorkoutAdaptationSheet`'s own time-cut reason, both go through this
+    /// same pure builder before `ActiveWorkoutStore.applyAdaptation` commits
+    /// it — there is no dedicated "delete set" store API.
+    func testSkipCandidateDropsOnlyUncompletedSetsInTargetBlockAndPreservesEverythingElse() throws {
+        let targetID = UUID()
+        let otherID = UUID()
+        let completedSet = ActiveWorkoutSet(weight: 40, reps: 8, completedAt: Date(timeIntervalSince1970: 100))
+        let uncompletedSetA = ActiveWorkoutSet(weight: 0, reps: 8)
+        let uncompletedSetB = ActiveWorkoutSet(weight: 0, reps: 8)
+        let otherCompletedSet = ActiveWorkoutSet(weight: 20, reps: 10, completedAt: Date(timeIntervalSince1970: 50))
+        let otherUncompletedSet = ActiveWorkoutSet(weight: 0, reps: 12)
+        let source = ActiveWorkoutDraft(
+            workoutDate: Date(),
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: targetID, exerciseID: targetID, exerciseName: "Shoulder Press",
+                    sets: [completedSet, uncompletedSetA, uncompletedSetB]
+                ),
+                ActiveWorkoutExercise(
+                    id: otherID, exerciseID: otherID, exerciseName: "Leg Press",
+                    sets: [otherCompletedSet, otherUncompletedSet]
+                )
+            ]
+        )
+
+        let candidate = try XCTUnwrap(WorkoutAdaptation.buildSkipCandidate(source, exerciseBlockID: targetID))
+
+        XCTAssertEqual(candidate.exercises.count, 2)
+        XCTAssertEqual(candidate.exercises[0].id, targetID)
+        XCTAssertEqual(candidate.exercises[0].sets, [completedSet])
+        // Every set anywhere that was already completed is untouched — the
+        // other exercise's own uncompleted set is untouched too, since only
+        // the target block's uncompleted sets are ever dropped.
+        XCTAssertEqual(candidate.exercises[1].sets, [otherCompletedSet, otherUncompletedSet])
+        XCTAssertTrue(WorkoutAdaptation.preservesCompleted(source, candidate))
+    }
+
+    func testSkipCandidateRemovesTheWholeBlockWhenNothingInItWasRecordedAndAnotherExerciseRemains() throws {
+        let targetID = UUID()
+        let otherID = UUID()
+        let otherCompletedSet = ActiveWorkoutSet(weight: 20, reps: 10, completedAt: Date(timeIntervalSince1970: 50))
+        let source = ActiveWorkoutDraft(
+            workoutDate: Date(),
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: targetID, exerciseID: targetID, exerciseName: "Side Hyperextension",
+                    sets: [ActiveWorkoutSet(weight: 0, reps: 10), ActiveWorkoutSet(weight: 0, reps: 10)]
+                ),
+                ActiveWorkoutExercise(
+                    id: otherID, exerciseID: otherID, exerciseName: "Leg Press", sets: [otherCompletedSet]
+                )
+            ]
+        )
+
+        let candidate = try XCTUnwrap(WorkoutAdaptation.buildSkipCandidate(source, exerciseBlockID: targetID))
+
+        XCTAssertEqual(candidate.exercises.map(\.id), [otherID])
+        XCTAssertEqual(candidate.exercises[0].sets, [otherCompletedSet])
+        XCTAssertTrue(WorkoutAdaptation.preservesCompleted(source, candidate))
+    }
+
+    func testSkipCandidateIsNilWhenTheOnlyExerciseHasNothingRecorded() {
+        let onlyID = UUID()
+        let source = ActiveWorkoutDraft(
+            workoutDate: Date(),
+            exercises: [
+                ActiveWorkoutExercise(
+                    id: onlyID, exerciseID: onlyID, exerciseName: "Barbell Row",
+                    sets: [ActiveWorkoutSet(weight: 0, reps: 8), ActiveWorkoutSet(weight: 0, reps: 8)]
+                )
+            ]
+        )
+
+        XCTAssertNil(WorkoutAdaptation.buildSkipCandidate(source, exerciseBlockID: onlyID))
+    }
+
+    func testSkipCandidateIsNilWhenTheBlockHasNothingUnrecordedToSkip() {
+        let onlyID = UUID()
+        let completed = ActiveWorkoutSet(weight: 40, reps: 8, completedAt: Date(timeIntervalSince1970: 100))
+        let source = ActiveWorkoutDraft(
+            workoutDate: Date(),
+            exercises: [
+                ActiveWorkoutExercise(id: onlyID, exerciseID: onlyID, exerciseName: "Shoulder Press", sets: [completed])
+            ]
+        )
+
+        XCTAssertNil(WorkoutAdaptation.buildSkipCandidate(source, exerciseBlockID: onlyID))
     }
 
     private struct Context {

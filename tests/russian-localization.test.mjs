@@ -100,7 +100,12 @@ test("iOS String Catalog has Russian values for every key and preserves format p
     catalog.strings["Add planned set"].localizations.ru.stringUnit.value,
     "Добавить запланированный подход"
   );
-  assert.match(workoutEditor, /Label\("Add planned set"/);
+  // DESIGN.md "Workout plan editor": "'+ Set' one-line text button replaces
+  // 'Add planned set'" — the visible label is now "+ Set", with "Add planned
+  // set" kept as the accessibility label so the assistive-tech string is
+  // unchanged.
+  assert.match(workoutEditor, /Text\("\+ Set"\)/);
+  assert.match(workoutEditor, /\.accessibilityLabel\(Text\("Add planned set"\)\)/);
   const draftCard = workoutEditor.match(/struct WorkoutDraftExerciseCard:[\s\S]*?private func binding/)[0];
   assert.doesNotMatch(draftCard, /restTimers\.start|WorkoutRestTimerControls/);
   assert.equal(
@@ -296,7 +301,11 @@ test("runtime language switches invalidate cached labels on every client", async
   assert.doesNotMatch(iosProgress, /Сравнивай силу, объём и регулярность отдельно для каждого упражнения\./);
   assert.match(iosMedia, /"Открыть демонстрацию упражнения"/);
   assert.match(iosMedia, /"Выбрать своё фото"/);
-  assert.match(iosAccountSettings, /"Перед заменой или сбросом устройства воспользуйтесь экспортом резервной копии/);
+  // DESIGN.md "Account": the local-profile backup explanation card collapses
+  // into one compact hint row ("Backup" / "Make one before switching
+  // phones") instead of a whole explanation paragraph.
+  assert.match(iosAccountSettings, /"Резервная копия"/);
+  assert.match(iosAccountSettings, /"Сделай перед сменой телефона"/);
   assert.match(iosAccountSettings, /"Выходит из этого профиля\. Его тренировки останутся на устройстве/);
   assert.match(
     pwaApp,

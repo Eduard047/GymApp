@@ -296,14 +296,20 @@ test("active-workout hero disambiguates elapsed, completed, and start time on ev
   assert.match(pwaSource, /active-workout-metrics compact/);
   assert.match(pwaSource, /active-workout-started/);
 
-  for (const copy of [
-    ...Object.values(hero.elapsed),
-    ...Object.values(hero.completed),
-    ...Object.values(hero.startedAt)
-  ]) {
+  // DESIGN.md "Active workout": the iOS hero collapses elapsed/completed/
+  // started-at into one combined accessibility element (elapsed clock +
+  // sets-done sentence + current exercise) instead of three separately
+  // labeled metric tiles. "Started at" is dropped from the hero entirely.
+  // TODO(DESIGN.md "Active workout"): mirror this consolidated hero copy on
+  // Android/PWA when they get the same redesign; until then their labels
+  // stay separate and are still asserted above/below unchanged.
+  for (const copy of Object.values(hero.elapsed)) {
     assert.ok(iosActiveWorkoutSource.includes(`"${copy}`));
   }
-  assert.match(iosActiveWorkoutSource, /GymMetricTile/);
+  assert.match(iosActiveWorkoutSource, /accessibilityElement\(children: \.ignore\)/);
+  assert.match(iosActiveWorkoutSource, /heroAccessibilitySummary\(/);
+  assert.match(iosActiveWorkoutSource, /"Now: \\\(exerciseName\)"/);
+  assert.match(iosActiveWorkoutSource, /"\\\(draft\.completedSetCount\)\/\\\(draft\.plannedSetCount\)"/);
 
   for (const [source, locale] of [
     [androidEnglish, "en"],

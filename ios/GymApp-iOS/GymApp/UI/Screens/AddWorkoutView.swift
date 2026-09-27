@@ -1950,12 +1950,17 @@ struct AddWorkoutView: View {
                 workoutDate: date,
                 note: note,
                 exercises: drafts.map { exercise in
+                    // `exercise.id`/`set.id` may be seeded from the catalog exercise ID or a
+                    // deterministic recommendation ID (Smart Coach) for editor identity and
+                    // launch-seed equality. Those are stable across separate workouts, so the
+                    // active-workout block/set identity must be a fresh per-instance UUID
+                    // instead, or repeating the same exercise later collides in WorkoutStore.
                     ActiveWorkoutExercise(
-                        id: exercise.id,
+                        id: UUID(),
                         exerciseID: exercise.exerciseID,
                         sets: exercise.sets.map { set in
                             ActiveWorkoutSet(
-                                id: set.id,
+                                id: UUID(),
                                 weight: set.weight,
                                 reps: set.reps
                             )

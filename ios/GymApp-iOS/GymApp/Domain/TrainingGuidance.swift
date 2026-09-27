@@ -303,12 +303,17 @@ enum DirectWorkoutPlanStarter {
         }
 
         let exercises = seed.plan.exercises.map { planned in
+            // `planned.exercise.id` is the catalog exercise ID and `set.id` is a
+            // deterministic recommendation ID (see RecommendationEngine.recommendedSetID);
+            // both are stable across separate workouts. The active-workout block/set
+            // identity must be a fresh per-instance UUID instead, or repeating the same
+            // exercise in a later direct-start workout collides in WorkoutStore.
             ActiveWorkoutExercise(
-                id: planned.exercise.id,
+                id: UUID(),
                 exerciseID: planned.exercise.id,
                 sets: planned.recommendation.sets.map { set in
                     ActiveWorkoutSet(
-                        id: set.id,
+                        id: UUID(),
                         weight: set.weight ?? 0,
                         reps: set.reps
                     )

@@ -93,6 +93,7 @@ private enum LiveParticipantSelection: String {
 struct ActiveWorkoutView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
@@ -108,10 +109,48 @@ struct ActiveWorkoutView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var showingDiscardConfirmation = false
+    /// The exercise block a "Finish" tap is asking to confirm, when it has
+    /// unrecorded sets. Stores only the id; `pendingFinishExercisePair`
+    /// re-derives the live exercise/draft so the dialog's buttons never act
+    /// on stale data.
+    @State private var pendingFinishExerciseID: UUID?
     @State private var collapsedExerciseIDs = Set<UUID>()
     @State private var expandedSetIDs = Set<UUID>()
     @FocusState private var focusedWeightSetID: UUID?
     @State private var liveParticipantSelection: LiveParticipantSelection = .current
+
+    // Voice set-logging (in-workout commands): mirrors AddWorkoutView's own
+    // voice dictation state. No transcript/audio is ever persisted or
+    // logged; recognition is stopped in cancelVoiceCommand() below.
+    @State private var voiceTranscriptionService: any VoiceTranscriptionService
+    @State private var voiceCommandSetID: UUID?
+    @State private var voiceCommandPhase: VoiceCommandPhase?
+    @State private var voiceCommandFallbackText = ""
+    @State private var voiceCommandPartialTranscript = ""
+    @State private var voiceCommandListeningTask: Task<Void, Never>?
+    @State private var voiceCommandGeneration = UUID()
+    /// Shown after ANY set is logged — by the "Log set" button or by voice —
+    /// so only one banner ever appears (see `recordSet(_:exercise:exerciseName:draft:)`).
+    @State private var recordedSetConfirmation: (message: String, setID: UUID)?
+
+    /// - `requesting`: `start()` is awaiting speech/mic authorization; the UI
+    ///   stays in its normal (idle) look until this resolves.
+    /// - `listening`: authorization was granted and recognition is running.
+    /// - `typed`: on-device recognition is unavailable/denied, or the user
+    ///   chose "ввести текстом" — inline typed-command entry, never server
+    ///   recognition.
+    private enum VoiceCommandPhase: Equatable {
+        case requesting
+        case listening
+        case typed
+    }
+
+    /// Mirrors `RecommendationEngine`'s bodyweight-load exercise set (that
+    /// table is private to this module), used only to decide whether a
+    /// zero-weight "previous" caption still means something ("previous × 8").
+    private static let bodyweightCatalogKeys: Set<String> = [
+        "push_up", "dips", "pull_up", "plank", "hanging_leg_raise", "band_assisted_pull_up"
+    ]
 
     init(
         workoutStore: WorkoutStore,
@@ -122,7 +161,8 @@ struct ActiveWorkoutView: View {
         onFinished: @escaping (UUID) -> Void,
         onClose: @escaping () -> Void,
         onDiscarded: @escaping () -> Void,
-        onStatus: @escaping (String, Bool) -> Void = { _, _ in }
+        onStatus: @escaping (String, Bool) -> Void = { _, _ in },
+        voiceTranscriptionService: (any VoiceTranscriptionService)? = nil
     ) {
         _workoutStore = ObservedObject(wrappedValue: workoutStore)
         _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
@@ -133,6 +173,9 @@ struct ActiveWorkoutView: View {
         self.onClose = onClose
         self.onDiscarded = onDiscarded
         self.reportStatus = onStatus
+        _voiceTranscriptionService = State(
+            initialValue: voiceTranscriptionService ?? makeVoiceTranscriptionService()
+        )
     }
 
     var body: some View {
@@ -150,6 +193,10 @@ struct ActiveWorkoutView: View {
 
                             if let statusMessage {
                                 GymStatusBanner(message: statusMessage, isError: statusIsError)
+                            }
+
+                            if let recordedSetConfirmation {
+                                recordedSetConfirmationBanner(recordedSetConfirmation)
                             }
 
                             ForEach(draft.exercises) { exercise in
@@ -328,6 +375,51 @@ struct ActiveWorkoutView: View {
                 )
             )
         }
+        .confirmationDialog(
+            finishExerciseDialogTitle(unrecordedCount: pendingFinishExerciseUnrecordedCount),
+            isPresented: Binding(
+                get: { pendingFinishExerciseID != nil },
+                set: { isPresented in if !isPresented { pendingFinishExerciseID = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let pair = pendingFinishExercisePair {
+                Button(
+                    gymText(
+                        "Log as planned", "Записати як у плані", "Записать как в плане",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                ) {
+                    saveExercise(pair.exercise, draft: pair.draft)
+                    pendingFinishExerciseID = nil
+                }
+                // Hidden (not just disabled) whenever it would not be
+                // possible: skipping replaces the shared plan's set list,
+                // which `ActiveWorkoutStore.applyAdaptation` itself refuses
+                // once a live room is attached, and `buildSkipCandidate`
+                // returns nil when this is the workout's only exercise and
+                // nothing in it has been recorded yet (skipping would leave
+                // the draft with zero exercises, which is invalid).
+                if !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
+                   WorkoutAdaptation.buildSkipCandidate(pair.draft, exerciseBlockID: pair.exercise.id) != nil {
+                    Button(
+                        gymText(
+                            "Skip them", "Пропустити їх", "Пропустить их",
+                            languageCode: gymCurrentLanguageCode()
+                        )
+                    ) {
+                        skipRemainingSets(pair.exercise, draft: pair.draft)
+                        pendingFinishExerciseID = nil
+                    }
+                }
+            }
+            Button(
+                gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()),
+                role: .cancel
+            ) {
+                pendingFinishExerciseID = nil
+            }
+        }
         .onAppear {
             liveParticipantSelection = .current
             collapseCompletedExercises()
@@ -335,6 +427,12 @@ struct ActiveWorkoutView: View {
         }
         .onChange(of: liveWorkoutCoordinator.attachedRoomID) { _, roomID in
             if roomID == nil { liveParticipantSelection = .current }
+        }
+        .onDisappear {
+            cancelVoiceCommand()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { cancelVoiceCommand() }
         }
     }
 
@@ -1084,7 +1182,7 @@ struct ActiveWorkoutView: View {
                         )
 
                         Button {
-                            saveExercise(exercise, draft: draft)
+                            beginFinishExercise(exercise, draft: draft)
                         } label: {
                             Text(
                                 gymText(
@@ -1164,6 +1262,15 @@ struct ActiveWorkoutView: View {
         let preceding = exercise.sets.prefix(position).last(where: { $0.isCompleted })
         let repeatWeight = preceding?.weight ?? last?.weight
         let repeatReps = preceding?.reps ?? last?.reps
+        let isBodyweightExercise = Self.bodyweightCatalogKeys.contains(
+            workoutStore.exercise(id: exercise.exerciseID)?.catalogKey ?? exercise.exerciseCatalogKey ?? ""
+        )
+        // A 0 kg "previous" only means something for a bodyweight exercise
+        // ("previous × 8"); for everything else it is noise from an
+        // unrecorded/zeroed set and stays hidden.
+        let showsPrevious = last != nil && (last!.weight > 0 || isBodyweightExercise)
+        let isListeningHere = voiceCommandSetID == set.id && voiceCommandPhase == .listening
+        let isTypedHere = voiceCommandSetID == set.id && voiceCommandPhase == .typed
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -1180,42 +1287,17 @@ struct ActiveWorkoutView: View {
 
                 Spacer(minLength: 8)
 
-                if let last, let repeatWeight, let repeatReps {
-                    Button {
-                        updateSet(draft: draft, setID: set.id, weight: repeatWeight, reps: repeatReps)
-                    } label: {
-                        Text(
-                            gymText(
-                                "previous \(last.weight.formatted()) × \(last.reps)",
-                                "минулого разу \(last.weight.formatted()) × \(last.reps)",
-                                "прошлый раз \(last.weight.formatted()) × \(last.reps)",
-                                languageCode: gymCurrentLanguageCode()
-                            )
-                        )
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(GymTheme.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(draft.commitIntent != nil)
-                    .accessibilityLabel(
-                        gymText(
-                            "Repeat previous, \(last.weight.formatted()) kilograms by \(last.reps)",
-                            "Повторити попередні, \(last.weight.formatted()) кілограмів на \(last.reps)",
-                            "Повторить предыдущие, \(last.weight.formatted()) килограммов на \(last.reps)",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    )
-                    .accessibilityHint(
-                        gymText(
-                            "Double tap to reuse this weight and reps",
-                            "Двічі торкніться, щоб повторити цю вагу й повторення",
-                            "Дважды нажмите, чтобы повторить этот вес и повторения",
-                            languageCode: gymCurrentLanguageCode()
-                        )
+                if showsPrevious, let last, let repeatWeight, let repeatReps {
+                    previousPerformanceButton(
+                        last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
+                        isBodyweight: isBodyweightExercise, set: set, draft: draft
                     )
                 }
             }
 
+            if isListeningHere {
+                voiceListeningValueLine()
+            } else {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Spacer(minLength: 0)
                 TextField(
@@ -1252,40 +1334,32 @@ struct ActiveWorkoutView: View {
                     .accessibilityHidden(true)
                 Spacer(minLength: 0)
             }
+            }
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 8) {
-                    weightStepCapsule(set: set, position: position, exercise: exercise, draft: draft, disabled: fieldsDisabled)
-                    repsStepCapsule(set: set, position: position, disabled: fieldsDisabled)
+            if !isListeningHere {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 8) {
+                        weightStepCapsule(set: set, position: position, exercise: exercise, draft: draft, disabled: fieldsDisabled)
+                        repsStepCapsule(set: set, position: position, disabled: fieldsDisabled)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        weightStepCapsule(set: set, position: position, exercise: exercise, draft: draft, disabled: fieldsDisabled)
+                        repsStepCapsule(set: set, position: position, disabled: fieldsDisabled)
+                    }
                 }
+            }
+
+            if isTypedHere {
+                voiceTypedActionRow(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+            } else if isListeningHere {
+                voiceListeningActionRow(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
             } else {
                 HStack(spacing: 8) {
-                    weightStepCapsule(set: set, position: position, exercise: exercise, draft: draft, disabled: fieldsDisabled)
-                    repsStepCapsule(set: set, position: position, disabled: fieldsDisabled)
+                    voiceMicButton(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+                    logButton(set: set, exercise: exercise, exerciseName: exerciseName, draft: draft, restSeconds: restSeconds)
                 }
             }
-
-            Button {
-                recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)
-            } label: {
-                // No extra vertical padding/minHeight here: GymPrimaryButtonStyle
-                // already adds its own vertical padding + minHeight 48, and
-                // stacking another minHeight on top of that padding was what
-                // pushed this button to ~68pt tall.
-                logButtonText(restSeconds: restSeconds)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(GymPrimaryButtonStyle())
-            .disabled(draft.commitIntent != nil)
-            .accessibilityLabel(logButtonLabel(restSeconds: restSeconds))
-            .accessibilityHint(
-                gymText(
-                    "Saves this set before starting its movement-based rest timer",
-                    "Зберігає цей підхід перед запуском таймера відпочинку для цієї вправи",
-                    "Сохраняет этот подход перед запуском таймера отдыха для этого упражнения",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
         }
         .padding(10)
         .background(GymTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
@@ -1296,24 +1370,289 @@ struct ActiveWorkoutView: View {
         )
     }
 
+    /// "Записать подход · отдых 3:00" button, extracted so the action row can
+    /// place it beside the mic button.
+    private func logButton(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        draft: ActiveWorkoutDraft,
+        restSeconds: Int
+    ) -> some View {
+        Button {
+            recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)
+        } label: {
+            // No extra vertical padding/minHeight here: GymPrimaryButtonStyle
+            // already adds its own vertical padding + minHeight 48, and
+            // stacking another minHeight on top of that padding was what
+            // pushed this button to ~68pt tall.
+            logButtonText(restSeconds: restSeconds)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GymPrimaryButtonStyle())
+        .disabled(draft.commitIntent != nil)
+        .accessibilityLabel(logButtonLabel(restSeconds: restSeconds))
+        .accessibilityHint(
+            gymText(
+                "Saves this set before starting its movement-based rest timer",
+                "Зберігає цей підхід перед запуском таймера відпочинку для цієї вправи",
+                "Сохраняет этот подход перед запуском таймера отдыха для этого упражнения",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
+    }
+
+    /// "прошлый раз 60 × 8" caption/button (tap = repeat previous, i.e. fill
+    /// the current set's fields only — recording still needs "Log set"/mic).
+    /// For a bodyweight exercise whose last set was 0 kg, drops the weight
+    /// number entirely: "прошлый раз × 8".
+    private func previousPerformanceButton(
+        last: (weight: Double, reps: Int),
+        repeatWeight: Double,
+        repeatReps: Int,
+        isBodyweight: Bool,
+        set: ActiveWorkoutSet,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        let showsWeight = !(isBodyweight && last.weight == 0)
+        return Button {
+            updateSet(draft: draft, setID: set.id, weight: repeatWeight, reps: repeatReps)
+        } label: {
+            Text(
+                showsWeight
+                    ? gymText(
+                        "previous \(last.weight.formatted()) × \(last.reps)",
+                        "минулого разу \(last.weight.formatted()) × \(last.reps)",
+                        "прошлый раз \(last.weight.formatted()) × \(last.reps)",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                    : gymText(
+                        "previous × \(last.reps)",
+                        "минулого разу × \(last.reps)",
+                        "прошлый раз × \(last.reps)",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(GymTheme.primary)
+        }
+        .buttonStyle(.plain)
+        .disabled(draft.commitIntent != nil)
+        .accessibilityLabel(
+            showsWeight
+                ? gymText(
+                    "Repeat previous, \(last.weight.formatted()) kilograms by \(last.reps)",
+                    "Повторити попередні, \(last.weight.formatted()) кілограмів на \(last.reps)",
+                    "Повторить предыдущие, \(last.weight.formatted()) килограммов на \(last.reps)",
+                    languageCode: gymCurrentLanguageCode()
+                )
+                : gymText(
+                    "Repeat previous, \(last.reps) bodyweight reps",
+                    "Повторити попередні, \(last.reps) повторень з власною вагою",
+                    "Повторить предыдущие, \(last.reps) повторений с собственным весом",
+                    languageCode: gymCurrentLanguageCode()
+                )
+        )
+        .accessibilityHint(
+            gymText(
+                "Double tap to reuse this weight and reps",
+                "Двічі торкніться, щоб повторити цю вагу й повторення",
+                "Дважды нажмите, чтобы повторить этот вес и повторения",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
+    }
+
+    /// 48×48 rounded-rect mic toggle for in-workout voice commands ("80 на
+    /// 8", "повтори", "дальше"). Tapping again while a permission prompt is
+    /// pending for this same set cancels the attempt.
+    private func voiceMicButton(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        Button {
+            toggleVoiceCommand(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+        } label: {
+            Image(systemName: "mic")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(GymTheme.primary)
+                .frame(width: 48, height: 48)
+                .background(GymTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(draft.commitIntent != nil)
+        .accessibilityLabel(
+            gymText("Voice command", "Голосова команда", "Голосовая команда", languageCode: gymCurrentLanguageCode())
+        )
+        .accessibilityHint(
+            gymText(
+                "Say a weight and reps, repeat, or next",
+                "Скажи вагу й повторення, «повтори» або «далі»",
+                "Скажи вес и повторения, «повтори» или «дальше»",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
+    }
+
+    /// The listening state's value line: live partial transcript (large,
+    /// quoted) plus the phrase hint, replacing the weight/×/reps line only.
+    private func voiceListeningValueLine() -> some View {
+        VStack(spacing: 4) {
+            Text(
+                voiceCommandPartialTranscript.isEmpty
+                    ? gymText("Listening…", "Слухаю…", "Слушаю…", languageCode: gymCurrentLanguageCode())
+                    : "«\(voiceCommandPartialTranscript)»"
+            )
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(GymTheme.textPrimary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .accessibilityLabel(
+                voiceCommandPartialTranscript.isEmpty
+                    ? gymText("Listening", "Слухаю", "Слушаю", languageCode: gymCurrentLanguageCode())
+                    : voiceCommandPartialTranscript
+            )
+
+            Text(
+                gymText(
+                    "Say: \"80 by 8\", \"repeat\", \"next\"",
+                    "Скажи: «80 на 8», «повтори», «далі»",
+                    "Скажи: «80 на 8», «повтори», «дальше»",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(GymTheme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    /// Listening state's action row: a filled stop button plus a capsule
+    /// ("Слушаю…" + waveform) with a trailing "ввести текстом" escape hatch
+    /// into the typed state.
+    private func voiceListeningActionRow(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                stopVoiceCommandAndProcess(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 48, height: 48)
+                    .background(GymTheme.brandFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                gymText("Stop voice command", "Зупинити голосову команду", "Остановить голосовую команду", languageCode: gymCurrentLanguageCode())
+            )
+
+            HStack(spacing: 8) {
+                Image(systemName: "waveform")
+                    .foregroundStyle(GymTheme.primary)
+                    .accessibilityHidden(true)
+                Text(gymText("Listening…", "Слухаю…", "Слушаю…", languageCode: gymCurrentLanguageCode()))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                Spacer(minLength: 8)
+                Button {
+                    switchVoiceCommandToTyped(set: set)
+                } label: {
+                    Text(gymText("Type instead", "Ввести текстом", "ввести текстом", languageCode: gymCurrentLanguageCode()))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.primary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(GymTheme.surface, in: Capsule())
+        }
+    }
+
+    /// Typed state's action row: a cancel button plus a rounded text field
+    /// with its send control inside the field's trailing edge. `.onSubmit`
+    /// and the send button both call `submitVoiceFallback`, which trims the
+    /// captured `@State` text directly rather than depending on focus loss
+    /// to commit it first.
+    private func voiceTypedActionRow(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        let isEmpty = voiceCommandFallbackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(spacing: 8) {
+            Button {
+                cancelVoiceCommand()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .frame(width: 48, height: 48)
+                    .background(GymTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()))
+
+            ZStack(alignment: .trailing) {
+                TextField("80 на 8", text: $voiceCommandFallbackText)
+                    .font(.body)
+                    .padding(.leading, 14)
+                    .padding(.trailing, 44)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(GymTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .submitLabel(.send)
+                    .onSubmit {
+                        submitVoiceFallback(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+                    }
+                    .accessibilityLabel(gymText("Type a command", "Введи команду", "Введи команду", languageCode: gymCurrentLanguageCode()))
+
+                Button {
+                    submitVoiceFallback(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.white)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            isEmpty ? GymTheme.brandFill.opacity(0.4) : GymTheme.brandFill,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(isEmpty)
+                .padding(.trailing, 6)
+                .accessibilityLabel(gymText("Send", "Надіслати", "Отправить", languageCode: gymCurrentLanguageCode()))
+            }
+        }
+    }
+
     /// "Записать подход · отдых 3:00" as one line, with the rest suffix in a
     /// lighter weight/secondary-on-blue tint. Drops the suffix entirely when
     /// no rest timer applies.
+    /// Single-line visible label: "Записать · 3:00". The fuller phrasing
+    /// ("Записать подход · отдых 3:00") stays as the accessibility label via
+    /// `logButtonLabel(restSeconds:)` below — only the on-screen text was
+    /// shortened, so it never wraps to two lines.
     private func logButtonText(restSeconds: Int) -> Text {
         let main = Text(
-            gymText("Log set", "Записати підхід", "Записать подход", languageCode: gymCurrentLanguageCode())
+            gymText("Log", "Записати", "Записать", languageCode: gymCurrentLanguageCode())
         )
         .font(.headline)
         guard restSeconds > 0 else { return main }
         let mmss = String(format: "%d:%02d", restSeconds / 60, restSeconds % 60)
-        let suffix = Text(
-            " · " + gymText(
-                "rest \(mmss)",
-                "відпочинок \(mmss)",
-                "отдых \(mmss)",
-                languageCode: gymCurrentLanguageCode()
-            )
-        )
+        let suffix = Text(verbatim: " · \(mmss)")
         .font(.subheadline)
         .foregroundStyle(Color.white.opacity(0.75))
         return main + suffix
@@ -1538,84 +1877,208 @@ struct ActiveWorkoutView: View {
         .padding(.vertical, 10)
     }
 
-    /// A recorded set: one line with a checkmark. The latest recorded set
-    /// keeps its rest timer and "Undo latest set" action underneath.
+    /// A completed row is one compact line — checkmark, weight×reps, and
+    /// (only for the latest completed set, only while resting) a trailing
+    /// countdown + three small rest-control capsules. Undo lives in the
+    /// "Записано: …" confirmation banner while it's showing, and stays
+    /// reachable afterward via long-press ("Отменить подход") and the
+    /// equivalent VoiceOver accessibility action — never as a standing
+    /// full-width button.
     private func completedSetRow(
         _ set: ActiveWorkoutSet,
         position: Int,
         draft: ActiveWorkoutDraft
     ) -> some View {
         let isLatestCompleted = draft.undoableSetID == set.id
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(GymTheme.secondary)
-                    .frame(width: 22, height: 22)
-                    .background(GymTheme.secondary.opacity(0.18), in: Circle())
-                Text(weightRepsSummary(weight: set.weight, reps: set.reps))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
-                Spacer(minLength: 8)
-                if isLatestCompleted, let deadline = draft.timing?.restingUntil {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        let remaining = max(0, Int(ceil(deadline.timeIntervalSince(context.date))))
-                        if remaining > 0 {
-                            Text(
-                                gymText(
-                                    "rest \(Self.clock(TimeInterval(remaining)))",
-                                    "відпочинок \(Self.clock(TimeInterval(remaining)))",
-                                    "отдых \(Self.clock(TimeInterval(remaining)))",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                            )
-                            .font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(GymTheme.primary)
-                            .accessibilityHidden(true)
+        let canUndo = isLatestCompleted && draft.commitIntent == nil
+        let label = gymText(
+            "Set \(position + 1) recorded, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+            "Підхід \(position + 1) записано, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+            "Подход \(position + 1) записан, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+            languageCode: gymCurrentLanguageCode()
+        )
+        let undoActionName = gymText(
+            "Undo set", "Скасувати підхід", "Отменить подход", languageCode: gymCurrentLanguageCode()
+        )
+
+        let content = Group {
+            if isLatestCompleted, let deadline = draft.timing?.restingUntil {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let remaining = max(0, Int(ceil(deadline.timeIntervalSince(context.date))))
+                    compactCompletedRow(
+                        set: set, draft: draft, remainingRestSeconds: remaining > 0 ? remaining : nil
+                    )
+                }
+            } else {
+                compactCompletedRow(set: set, draft: draft, remainingRestSeconds: nil)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+
+        return Group {
+            if canUndo {
+                content
+                    .accessibilityAction(named: undoActionName) {
+                        undoLatestSet(set, draft: draft)
+                    }
+                    .contextMenu {
+                        Button {
+                            undoLatestSet(set, draft: draft)
+                        } label: {
+                            Label(undoActionName, systemImage: "arrow.uturn.backward")
                         }
                     }
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                gymText(
-                    "Set \(position + 1) recorded, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
-                    "Підхід \(position + 1) записано, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
-                    "Подход \(position + 1) записан, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-
-            if isLatestCompleted {
-                activeRestPanel(draft: draft)
-
-                Button {
-                    undoLatestSet(set, draft: draft)
-                } label: {
-                    Label(
-                        gymText(
-                            "Undo latest set",
-                            "Скасувати останній підхід",
-                            "Отменить последний подход",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "arrow.uturn.backward.circle"
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .disabled(draft.commitIntent != nil)
-                .accessibilityHint(
-                    gymText(
-                        "Restores the latest recorded set for editing and stops its rest timer",
-                        "Повертає останній записаний підхід до редагування й зупиняє таймер відпочинку",
-                        "Возвращает последний записанный подход к редактированию и останавливает таймер отдыха",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
+            } else {
+                content
             }
         }
         .padding(.vertical, 10)
+    }
+
+    /// The row's visible content: checkmark + weight×reps, and, only while
+    /// `remainingRestSeconds` is non-nil, the trailing compact rest control.
+    /// Wraps the rest control under the summary at accessibility Dynamic
+    /// Type sizes via `ViewThatFits`.
+    private func compactCompletedRow(
+        set: ActiveWorkoutSet,
+        draft: ActiveWorkoutDraft,
+        remainingRestSeconds: Int?
+    ) -> some View {
+        let summary = HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.secondary)
+                .frame(width: 22, height: 22)
+                .background(GymTheme.secondary.opacity(0.18), in: Circle())
+            Text(weightRepsSummary(weight: set.weight, reps: set.reps))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .layoutPriority(1)
+
+        return Group {
+            if let remainingRestSeconds {
+                let controls = compactRestControls(draft: draft, remainingSeconds: remainingRestSeconds)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        summary
+                        Spacer(minLength: 8)
+                        controls
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        summary
+                        controls
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    summary
+                    Spacer(minLength: 8)
+                }
+            }
+        }
+    }
+
+    /// Trailing rest control on the latest completed row: a monospaced,
+    /// never-compressed countdown plus "−15"/"+15"/stop-icon capsules — the
+    /// exact same `adjustManualRest`/`stopManualRest` actions the old full
+    /// rest panel used, just laid out compactly. `.fixedSize()` on the
+    /// countdown (and the capsules never compressing their own content) is
+    /// what lets `ViewThatFits` in `compactCompletedRow` correctly detect an
+    /// overflow and fall back to the two-line layout, instead of everything
+    /// silently shrinking to fit and defeating that measurement.
+    private func compactRestControls(draft: ActiveWorkoutDraft, remainingSeconds: Int) -> some View {
+        let locked = draft.commitIntent != nil
+        return HStack(spacing: 6) {
+            Text(Self.clock(TimeInterval(remainingSeconds)))
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(GymTheme.primary)
+                .lineLimit(1)
+                .fixedSize()
+                .accessibilityHidden(true)
+            compactRestCapsuleButton(
+                title: "−15",
+                accessibilityLabel: gymText(
+                    "Decrease rest by 15 seconds",
+                    "Зменшити відпочинок на 15 секунд",
+                    "Уменьшить отдых на 15 секунд",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                disabled: locked
+            ) {
+                adjustManualRest(-15)
+            }
+            compactRestCapsuleButton(
+                title: "+15",
+                accessibilityLabel: gymText(
+                    "Increase rest by 15 seconds",
+                    "Збільшити відпочинок на 15 секунд",
+                    "Увеличить отдых на 15 секунд",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                disabled: locked
+            ) {
+                adjustManualRest(15)
+            }
+            compactRestCapsuleButton(
+                systemImage: "stop.fill",
+                accessibilityLabel: gymText(
+                    "Stop rest", "Зупинити відпочинок", "Остановить отдых", languageCode: gymCurrentLanguageCode()
+                ),
+                disabled: locked
+            ) {
+                stopManualRest()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            gymText("Rest timer", "Таймер відпочинку", "Таймер отдыха", languageCode: gymCurrentLanguageCode())
+        )
+        .accessibilityValue(Self.clock(TimeInterval(remainingSeconds)))
+    }
+
+    /// One capsule button: ~32pt visual height, at least a 44×44 tap target
+    /// (the button's own frame is 44pt; the capsule background is centered
+    /// inside it at its visual size), mirroring the weight/reps step
+    /// capsules' own technique. Either a short fixed-size caption (`title`,
+    /// never compressed/truncated) or a single SF Symbol (`systemImage`) —
+    /// exactly one of the two is passed.
+    private func compactRestCapsuleButton(
+        title: String? = nil,
+        systemImage: String? = nil,
+        accessibilityLabel: String,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Group {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption.weight(.bold))
+                } else {
+                    Text(title ?? "")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(GymTheme.primary)
+        .background(alignment: .center) {
+            Capsule().fill(GymTheme.surface).frame(height: 32)
+        }
+        .overlay(alignment: .center) {
+            Capsule()
+                .strokeBorder(GymTheme.outlineSoft, lineWidth: GymTheme.hairlineWidth)
+                .frame(height: 32)
+        }
+        .disabled(disabled)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     /// Previous session's weight/reps at this set position (or its closest
@@ -1681,104 +2144,6 @@ struct ActiveWorkoutView: View {
             "Записать · отдых \(mmss)",
             languageCode: gymCurrentLanguageCode()
         )
-    }
-
-    @ViewBuilder
-    private func activeRestPanel(draft: ActiveWorkoutDraft) -> some View {
-        if let deadline = draft.timing?.restingUntil {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let remaining = max(0, Int(ceil(deadline.timeIntervalSince(context.date))))
-                if remaining > 0 {
-                    GymPanel(highlighted: true) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(
-                                gymText(
-                                    "Set saved. Rest timer",
-                                    "Підхід збережено. Таймер відпочинку",
-                                    "Подход сохранён. Таймер отдыха",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                            )
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(GymTheme.primary)
-
-                            Text(Self.clock(TimeInterval(remaining)))
-                                .font(.title2.monospacedDigit().bold())
-                                .foregroundStyle(GymTheme.textPrimary)
-
-                            activeRestControls
-                        }
-                    }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(
-                        gymText(
-                            "Rest timer",
-                            "Таймер відпочинку",
-                            "Таймер отдыха",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    )
-                    .accessibilityValue(Self.clock(TimeInterval(remaining)))
-                }
-            }
-        }
-    }
-
-    private var activeRestControls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                restAdjustmentButton(-15)
-                restAdjustmentButton(15)
-                stopRestButton
-            }
-            VStack(spacing: 8) {
-                restAdjustmentButton(-15)
-                restAdjustmentButton(15)
-                stopRestButton
-            }
-        }
-    }
-
-    private func restAdjustmentButton(_ deltaSeconds: Int) -> some View {
-        Button {
-            adjustManualRest(deltaSeconds)
-        } label: {
-            Text(deltaSeconds < 0 ? "−15" : "+15")
-                .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityLabel(
-            deltaSeconds < 0
-                ? gymText(
-                    "Subtract 15 seconds",
-                    "Зменшити на 15 секунд",
-                    "Убавить 15 секунд",
-                    languageCode: gymCurrentLanguageCode()
-                )
-                : gymText(
-                    "Add 15 seconds",
-                    "Додати 15 секунд",
-                    "Добавить 15 секунд",
-                    languageCode: gymCurrentLanguageCode()
-                )
-        )
-    }
-
-    private var stopRestButton: some View {
-        Button {
-            stopManualRest()
-        } label: {
-            Text(
-                gymText(
-                    "Stop rest",
-                    "Зупинити відпочинок",
-                    "Остановить отдых",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-            .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(.bordered)
     }
 
     private func finishPanel(_ draft: ActiveWorkoutDraft) -> some View {
@@ -1951,7 +2316,12 @@ struct ActiveWorkoutView: View {
                     }
                 }
             }
-            applyActiveWorkoutActionStatus(
+            // One confirmation only (see `recordedSetConfirmation`): the plain
+            // "Set recorded. Rest timer started." success text is suppressed
+            // here — the banner below says the same thing with the actual
+            // weight/reps/rest — but a live-queue failure or rest-projection
+            // warning still surfaces exactly as before.
+            let resolved = activeWorkoutActionStatus(
                 liveQueueFailure: liveQueueFailureMessage,
                 restProjectionWarning: restOutcome == .synchronized
                     ? nil
@@ -1968,9 +2338,57 @@ struct ActiveWorkoutView: View {
                     languageCode: gymCurrentLanguageCode()
                 )
             )
+            if resolved.isError {
+                statusMessage = resolved.message
+                statusIsError = true
+            } else {
+                statusMessage = nil
+            }
+            recordedSetConfirmation = (
+                message: recordedSetConfirmationMessage(weight: set.weight, reps: set.reps),
+                setID: set.id
+            )
+            // The banner itself drops the rest duration (the compact rest
+            // row already shows a live countdown), but the announcement
+            // keeps it — a VoiceOver user can't see that row at the same time.
+            announce(recordedSetAnnouncement(
+                weight: set.weight,
+                reps: set.reps,
+                restSeconds: restOutcome == .synchronized ? restSeconds : 0
+            ))
         } catch {
             showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
         }
+    }
+
+    /// "Записано: 40 кг × 10" — shared by the "Log set" button and every
+    /// voice `logSet`/`repeatPrevious` result, so only one confirmation
+    /// banner ever appears for a recorded set. Deliberately omits the rest
+    /// duration (unlike `recordedSetAnnouncement` below): the compact rest
+    /// row right underneath already shows a live countdown, and keeping
+    /// this one line matters more than repeating it here.
+    private func recordedSetConfirmationMessage(weight: Double, reps: Int) -> String {
+        gymText(
+            "Recorded: \(weightRepsSummary(weight: weight, reps: reps))",
+            "Записано: \(weightRepsSummary(weight: weight, reps: reps))",
+            "Записано: \(weightRepsSummary(weight: weight, reps: reps))",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    /// VoiceOver announcement for a just-recorded set: keeps the rest
+    /// duration that the banner itself now omits, since a VoiceOver user
+    /// can't see the compact rest row's own countdown at the same moment.
+    private func recordedSetAnnouncement(weight: Double, reps: Int, restSeconds: Int) -> String {
+        let base = recordedSetConfirmationMessage(weight: weight, reps: reps)
+        guard restSeconds > 0 else { return base }
+        let mmss = String(format: "%d:%02d", restSeconds / 60, restSeconds % 60)
+        return base + " · " + gymText(
+            "rest \(mmss)",
+            "відпочинок \(mmss)",
+            "отдых \(mmss)",
+            languageCode: gymCurrentLanguageCode()
+        )
     }
 
     private func recordAllSets(_ draft: ActiveWorkoutDraft) {
@@ -2244,6 +2662,114 @@ struct ActiveWorkoutView: View {
         return nil
     }
 
+    /// Re-derives the live exercise/draft for `pendingFinishExerciseID` on
+    /// every access, so the confirmation dialog's buttons never act on a
+    /// stale snapshot taken when the dialog was opened.
+    private var pendingFinishExercisePair: (exercise: ActiveWorkoutExercise, draft: ActiveWorkoutDraft)? {
+        guard let id = pendingFinishExerciseID, let draft = currentDraft,
+              let exercise = draft.exercises.first(where: { $0.id == id }) else { return nil }
+        return (exercise, draft)
+    }
+
+    private var pendingFinishExerciseUnrecordedCount: Int {
+        pendingFinishExercisePair?.exercise.sets.lazy.filter { !$0.isCompleted }.count ?? 0
+    }
+
+    /// "Осталось N подходов": platform-neutral count phrase reused as the
+    /// confirmation dialog's title.
+    private func finishExerciseDialogTitle(unrecordedCount: Int) -> String {
+        let countPhrase = gymCount(
+            unrecordedCount,
+            englishOne: "set", englishMany: "sets",
+            ukrainianOne: "підхід", ukrainianFew: "підходи", ukrainianMany: "підходів",
+            languageCode: gymCurrentLanguageCode()
+        )
+        return gymText(
+            "\(countPhrase) left",
+            "Залишилось \(countPhrase)",
+            "Осталось \(countPhrase)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    /// Routes the exercise card's "Finish" button through a confirmation
+    /// when sets remain unrecorded, instead of `saveExercise` silently
+    /// marking all of them done (even at a still-default 0 kg). With
+    /// nothing left unrecorded, behavior is unchanged: finish immediately.
+    private func beginFinishExercise(_ exercise: ActiveWorkoutExercise, draft: ActiveWorkoutDraft) {
+        guard exercise.sets.contains(where: { !$0.isCompleted }) else {
+            saveExercise(exercise, draft: draft)
+            return
+        }
+        pendingFinishExerciseID = exercise.id
+    }
+
+    /// "Пропустить их": finishes the exercise WITHOUT recording its
+    /// remaining unrecorded sets. There is no dedicated "delete set"/"skip
+    /// set" store API, so this reuses the exact mechanism the existing
+    /// "Adapt workout" → time-cut flow already uses to drop sets from a live
+    /// draft (`WorkoutAdaptation.build(reason: "timeCut")` filters out
+    /// uncompleted sets and drops a block that becomes empty, then commits
+    /// via `ActiveWorkoutStore.applyAdaptation`) — not new domain/
+    /// persistence logic, the same existing structural-change path. The
+    /// candidate itself comes from `WorkoutAdaptation.buildSkipCandidate`,
+    /// the same pure builder the confirmation dialog uses to decide whether
+    /// to offer "Skip them" at all, so the nil branch below is normally
+    /// unreachable — it is a defensive no-op, never a silent fallback to a
+    /// different action the user did not choose.
+    private func skipRemainingSets(_ exercise: ActiveWorkoutExercise, draft: ActiveWorkoutDraft) {
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        guard let candidate = WorkoutAdaptation.buildSkipCandidate(draft, exerciseBlockID: exercise.id) else {
+            let message = gymText(
+                "Can't skip: nothing here can be safely left unrecorded.",
+                "Неможливо пропустити: тут нічого не можна безпечно залишити незаписаним.",
+                "Нельзя пропустить: здесь нечего безопасно оставить незаписанным.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusMessage = message
+            statusIsError = true
+            return
+        }
+        do {
+            let updated = try activeWorkoutStore.applyAdaptation(
+                source: draft,
+                candidate: candidate,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            _ = withAnimation(.easeInOut(duration: 0.2)) {
+                collapsedExerciseIDs.insert(exercise.id)
+            }
+            applyActiveWorkoutActionStatus(
+                liveQueueFailure: nil,
+                restProjectionWarning: restOutcome == .synchronized
+                    ? nil
+                    : gymText(
+                        "Exercise saved, but old local rest controls could not be fully cleared.",
+                        "Вправу збережено, але старі локальні елементи відпочинку не вдалося повністю очистити.",
+                        "Упражнение сохранено, но старые локальные элементы отдыха не удалось полностью очистить.",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                success: gymText(
+                    "Exercise saved. Remaining sets skipped.",
+                    "Вправу збережено. Інші підходи пропущено.",
+                    "Упражнение сохранено. Остальные подходы пропущены.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        } catch {
+            show(error)
+        }
+    }
+
     private func saveExercise(_ exercise: ActiveWorkoutExercise, draft: ActiveWorkoutDraft) {
         guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
             show(LiveWorkoutSidecarError.invalidState)
@@ -2465,5 +2991,330 @@ struct ActiveWorkoutView: View {
     private func show(_ error: Error) {
         statusMessage = gymErrorMessage(error)
         statusIsError = true
+    }
+
+    // MARK: Voice set logging (in-workout commands)
+
+    /// "Записано: 80 кг × 8" with an "Отменить" action wired to the same
+    /// undo path as a completed row's long-press "Отменить подход".
+    private func recordedSetConfirmationBanner(_ confirmation: (message: String, setID: UUID)) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(GymTheme.primary)
+                .accessibilityHidden(true)
+            Text(confirmation.message)
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 8)
+            Button {
+                if let draft = currentDraft, let set = activeSet(id: confirmation.setID) {
+                    undoLatestSet(set, draft: draft)
+                }
+                recordedSetConfirmation = nil
+            } label: {
+                Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GymTheme.primary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                .fill(GymTheme.surface)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(GymTheme.primary.opacity(0.36), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The mic button (idle look) is only rendered outside the listening/
+    /// typed rows, so a matching `voiceCommandSetID` here always means a
+    /// permission request is pending for this set — cancel it.
+    private func toggleVoiceCommand(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) {
+        if voiceCommandSetID == set.id {
+            cancelVoiceCommand()
+        } else {
+            startVoiceCommand(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+        }
+    }
+
+    /// Checks availability first so a previously denied/unavailable device
+    /// never re-prompts: it goes straight to the typed state. Otherwise the
+    /// phase is set to `.requesting` — the UI stays in its normal, idle look
+    /// (per design) — and `service.start` is awaited; that call only returns
+    /// once speech + microphone authorization is granted and recognition is
+    /// actually running, at which point the phase flips to `.listening`.
+    private func startVoiceCommand(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) {
+        cancelVoiceCommand()
+        recordedSetConfirmation = nil
+        let language = gymCurrentLanguageCode()
+        guard case .available = voiceTranscriptionService.availability(languageCode: language) else {
+            voiceCommandSetID = set.id
+            voiceCommandPhase = .typed
+            voiceCommandFallbackText = ""
+            return
+        }
+        voiceCommandPartialTranscript = ""
+        voiceCommandSetID = set.id
+        voiceCommandPhase = .requesting
+        let generation = UUID()
+        voiceCommandGeneration = generation
+        let service = voiceTranscriptionService
+        voiceCommandListeningTask = Task { @MainActor in
+            do {
+                try await service.start(
+                    languageCode: language,
+                    onPartialResult: { value in
+                        guard voiceCommandGeneration == generation else { return }
+                        voiceCommandPartialTranscript = VoiceWorkoutDraftParser.truncatedUTF8(value)
+                    },
+                    onEvent: { event in
+                        guard voiceCommandGeneration == generation else { return }
+                        switch event {
+                        case .finished:
+                            // Auto-stop on end of speech (or the service's own
+                            // 60 s cap) lands here; the service has already
+                            // stopped itself.
+                            let transcript = voiceCommandPartialTranscript
+                            voiceCommandSetID = nil
+                            voiceCommandPhase = nil
+                            applyVoiceTranscript(
+                                transcript, set: set, exercise: exercise, exerciseName: exerciseName,
+                                position: position, draft: draft
+                            )
+                        case .failed:
+                            voiceCommandSetID = set.id
+                            voiceCommandPhase = .typed
+                            voiceCommandFallbackText = ""
+                        }
+                    }
+                )
+                // start() only returns once authorization was granted and the
+                // audio engine is actually running — that is "listening".
+                guard voiceCommandGeneration == generation else { return }
+                if voiceCommandPhase == .requesting { voiceCommandPhase = .listening }
+            } catch is CancellationError {
+                // Expected for manual stop, view disappearance, and restart.
+            } catch {
+                // Denied/unavailable/unsupported/audio-failure: go straight
+                // to the typed state, matching the availability() shortcut
+                // above. Never falls back to server recognition.
+                guard voiceCommandGeneration == generation else { return }
+                voiceCommandSetID = set.id
+                voiceCommandPhase = .typed
+                voiceCommandFallbackText = ""
+            }
+        }
+    }
+
+    private func stopVoiceCommandAndProcess(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) {
+        let transcript = voiceCommandPartialTranscript
+        voiceCommandGeneration = UUID()
+        voiceCommandListeningTask?.cancel()
+        voiceCommandListeningTask = nil
+        voiceTranscriptionService.stop()
+        voiceCommandSetID = nil
+        voiceCommandPhase = nil
+        applyVoiceTranscript(transcript, set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+    }
+
+    /// "ввести текстом": stops recognition without processing the partial
+    /// transcript and moves straight to the typed state for the same set.
+    private func switchVoiceCommandToTyped(set: ActiveWorkoutSet) {
+        voiceCommandGeneration = UUID()
+        voiceCommandListeningTask?.cancel()
+        voiceCommandListeningTask = nil
+        voiceTranscriptionService.stop()
+        voiceCommandPartialTranscript = ""
+        voiceCommandFallbackText = ""
+        voiceCommandSetID = set.id
+        voiceCommandPhase = .typed
+    }
+
+    /// Stops recognition without processing anything: view disappearance,
+    /// backgrounding, closing the typed state, and the start of a new voice
+    /// command all funnel through here. No transcript or audio is ever
+    /// persisted or logged.
+    private func cancelVoiceCommand() {
+        voiceCommandGeneration = UUID()
+        voiceCommandListeningTask?.cancel()
+        voiceCommandListeningTask = nil
+        voiceTranscriptionService.stop()
+        voiceCommandSetID = nil
+        voiceCommandPhase = nil
+        voiceCommandFallbackText = ""
+        voiceCommandPartialTranscript = ""
+    }
+
+    /// Trims and captures `voiceCommandFallbackText` synchronously (no
+    /// dependency on focus loss to commit the field first) before clearing
+    /// UI state, then routes through the exact same `applyVoiceTranscript`
+    /// pipeline a spoken command uses.
+    private func submitVoiceFallback(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) {
+        let text = voiceCommandFallbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+        voiceCommandFallbackText = ""
+        voiceCommandSetID = nil
+        voiceCommandPhase = nil
+        guard !text.isEmpty else { return }
+        applyVoiceTranscript(text, set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+    }
+
+    private func applyVoiceTranscript(
+        _ transcript: String,
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) {
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let command = VoiceWorkoutCommandParser.parse(transcript, locale: gymCurrentLanguageCode())
+        switch command {
+        case let .logSet(weightKg, reps):
+            performVoiceLogSet(weightKg: weightKg, reps: reps, set: set, exercise: exercise, exerciseName: exerciseName, draft: draft)
+        case .repeatPrevious:
+            performVoiceRepeatPrevious(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
+        case .skipRest:
+            performVoiceSkipRest()
+        case let .unknown(rawTranscript, _):
+            let message = gymText(
+                "Didn't understand: \"\(rawTranscript)\"",
+                "Не зрозумів: «\(rawTranscript)»",
+                "Не понял: «\(rawTranscript)»",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusMessage = message
+            statusIsError = true
+            announce(message)
+        }
+    }
+
+    /// Fills missing weight/reps from the current set's already-entered
+    /// values, then records the CURRENT set through the exact same
+    /// `updateSet`/`recordSet` path the visible "Log set" button uses,
+    /// respecting the same freeze/commit-lock rules.
+    private func performVoiceLogSet(
+        weightKg: Double?,
+        reps: Int?,
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        draft: ActiveWorkoutDraft
+    ) {
+        guard let liveDraft = currentDraft, liveDraft.id == draft.id,
+              let liveExercise = liveDraft.exercises.first(where: { $0.id == exercise.id }),
+              let liveSet = liveExercise.sets.first(where: { $0.id == set.id }), !liveSet.isCompleted else { return }
+        let fieldsDisabled = activeWorkoutValueEditorsAreDisabled(
+            isCompleted: liveSet.isCompleted,
+            hasCommitIntent: liveDraft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+        )
+        guard !fieldsDisabled else {
+            let message = gymText(
+                "Recording is locked while completion is confirmed.",
+                "Запис заблоковано, доки підтверджується завершення.",
+                "Запись заблокирована, пока подтверждается завершение.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusMessage = message
+            statusIsError = true
+            announce(message)
+            return
+        }
+        let resolvedWeight = weightKg ?? liveSet.weight
+        let resolvedReps = reps ?? liveSet.reps
+        if resolvedWeight != liveSet.weight || resolvedReps != liveSet.reps {
+            updateSet(draft: liveDraft, setID: liveSet.id, weight: resolvedWeight, reps: resolvedReps)
+        }
+        guard let refreshedDraft = currentDraft,
+              let refreshedExercise = refreshedDraft.exercises.first(where: { $0.id == exercise.id }),
+              let refreshedSet = refreshedExercise.sets.first(where: { $0.id == liveSet.id }) else { return }
+        // recordSet(...) itself sets the one confirmation banner and posts
+        // the VoiceOver announcement — the same call the "Log set" button
+        // makes, so a voice-triggered log never shows a second banner.
+        recordSet(refreshedSet, exercise: refreshedExercise, exerciseName: exerciseName, draft: refreshedDraft)
+    }
+
+    /// "повтори" → the same previous-session/preceding-set values the
+    /// header's own "прошлый раз" caption shows, then recorded (unlike that
+    /// caption's tap, which only fills the fields).
+    private func performVoiceRepeatPrevious(
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) {
+        guard let liveDraft = currentDraft else { return }
+        let last = previousPerformance(exercise: exercise, position: position, draft: liveDraft)
+        let preceding = exercise.sets.prefix(position).last(where: \.isCompleted)
+        let repeatWeight = preceding?.weight ?? last?.weight
+        let repeatReps = preceding?.reps ?? last?.reps
+        guard let repeatWeight, let repeatReps else {
+            let message = gymText(
+                "No previous set",
+                "Немає попереднього підходу",
+                "Нет предыдущего подхода",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusMessage = message
+            statusIsError = true
+            announce(message)
+            return
+        }
+        performVoiceLogSet(weightKg: repeatWeight, reps: repeatReps, set: set, exercise: exercise, exerciseName: exerciseName, draft: draft)
+    }
+
+    /// "дальше" → the same skip/ready action the active rest panel's "Stop
+    /// rest" control performs; a no-op message when no rest is running.
+    private func performVoiceSkipRest() {
+        guard let liveDraft = currentDraft, liveDraft.timing?.restingUntil != nil else {
+            let message = gymText(
+                "No active rest",
+                "Немає активного відпочинку",
+                "Нет активного отдыха",
+                languageCode: gymCurrentLanguageCode()
+            )
+            statusMessage = message
+            statusIsError = true
+            announce(message)
+            return
+        }
+        stopManualRest()
+        announce(gymText("Rest skipped", "Відпочинок пропущено", "Отдых пропущен", languageCode: gymCurrentLanguageCode()))
+    }
+
+    private func announce(_ message: String) {
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 }

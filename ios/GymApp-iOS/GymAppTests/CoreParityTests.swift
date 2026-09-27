@@ -13336,7 +13336,12 @@ final class CoreParityTests: XCTestCase {
             now: now
         ))
         XCTAssertEqual(started.exercises.map(\.exerciseID), [exercise.id])
-        XCTAssertEqual(started.exercises[0].sets.map(\.id), setIDs)
+        // Block/set IDs are fresh per-instance UUIDs, decoupled from the catalog exercise
+        // ID and the deterministic recommendation set IDs, so repeating this exercise in a
+        // later workout cannot collide (WorkoutStore.validate's global uniqueness check).
+        XCTAssertNotEqual(started.exercises[0].id, exercise.id)
+        XCTAssertEqual(started.exercises[0].sets.count, setIDs.count)
+        XCTAssertTrue(Set(started.exercises[0].sets.map(\.id)).isDisjoint(with: Set(setIDs)))
         XCTAssertEqual(started.exercises[0].sets.map(\.weight), [0, 52.5, 0])
         XCTAssertEqual(started.exercises[0].sets.map(\.reps), [8, 7, 10])
         XCTAssertTrue(store.workouts.isEmpty, "Direct start must not write completed history.")
@@ -17728,18 +17733,36 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(exercises.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
     }
 
+    /// Rest lives compactly on the latest completed row (no standing rest
+    /// panel or full-width "Undo" button any more): a countdown plus
+    /// "−15"/"+15"/"Стоп" capsules calling the same `adjustManualRest`/
+    /// `stopManualRest` actions, and undo reachable via long-press +
+    /// accessibility action instead of a standing button.
     func testIOSActiveWorkoutExposesRecordRestAndUndoLifecycle() throws {
         let source = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
 
         for reachableAction in [
             "recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)",
-            "activeRestPanel(draft: draft)",
-            "adjustManualRest(deltaSeconds)",
+            "compactRestControls(draft: draft, remainingSeconds: remainingRestSeconds)",
+            "adjustManualRest(-15)",
+            "adjustManualRest(15)",
             "stopManualRest()",
-            "undoLatestSet(set, draft: draft)"
+            "undoLatestSet(set, draft: draft)",
+            "stop.fill"
         ] {
             XCTAssertTrue(source.contains(reachableAction), reachableAction)
         }
+        // The countdown must never compress/wrap character-by-character:
+        // fixedSize + lineLimit(1) force ViewThatFits to measure its real
+        // width and correctly fall back to the two-line layout instead of
+        // everything silently shrinking to "fit".
+        XCTAssertTrue(source.contains(
+            "Text(Self.clock(TimeInterval(remainingSeconds)))\n"
+                + "                .font(.caption.weight(.semibold).monospacedDigit())\n"
+                + "                .foregroundStyle(GymTheme.primary)\n"
+                + "                .lineLimit(1)\n"
+                + "                .fixedSize()"
+        ))
         XCTAssertTrue(source.contains("let isCurrent = currentSetID(in: draft) == set.id"))
         XCTAssertTrue(source.contains("let isLatestCompleted = draft.undoableSetID == set.id"))
         XCTAssertTrue(source.contains(".disabled(draft.commitIntent != nil)"))
@@ -17753,32 +17776,81 @@ final class CoreParityTests: XCTestCase {
             3
         )
         XCTAssertTrue(source.contains("let undoableExerciseID = draft.undoableSetID.flatMap"))
+        // The compact rest capsules and the weight/reps step capsules each
+        // guarantee an explicit >=44pt tap target even where their visual
+        // pill is smaller.
         XCTAssertGreaterThanOrEqual(
-            source.components(separatedBy: "minHeight: 44").count - 1,
-            4
+            source.components(separatedBy: "minWidth: 44, minHeight: 44").count - 1,
+            3
         )
+        // Undo is reachable without a standing button: a long-press context
+        // menu and an equivalent VoiceOver accessibility action, both named
+        // the same, on the latest completed row only (`canUndo`).
+        XCTAssertTrue(source.contains(".accessibilityAction(named: undoActionName)"))
+        XCTAssertTrue(source.contains(".contextMenu {"))
+        XCTAssertFalse(source.contains("Undo latest set"), "the old standing full-width undo button text must be gone")
 
         for localizedCopy in [
             "Log · rest \\(mmss)",
             "Записати · відпочинок \\(mmss)",
             "Записать · отдых \\(mmss)",
-            "Subtract 15 seconds",
-            "Зменшити на 15 секунд",
-            "Убавить 15 секунд",
-            "Add 15 seconds",
-            "Додати 15 секунд",
-            "Добавить 15 секунд",
+            "Decrease rest by 15 seconds",
+            "Зменшити відпочинок на 15 секунд",
+            "Уменьшить отдых на 15 секунд",
+            "Increase rest by 15 seconds",
+            "Збільшити відпочинок на 15 секунд",
+            "Увеличить отдых на 15 секунд",
             "Stop rest",
             "Зупинити відпочинок",
             "Остановить отдых",
-            "Undo latest set",
-            "Скасувати останній підхід",
-            "Отменить последний подход"
+            "Undo set",
+            "Скасувати підхід",
+            "Отменить подход"
         ] {
             XCTAssertTrue(source.contains(localizedCopy), localizedCopy)
         }
-        XCTAssertTrue(source.contains(".accessibilityValue(Self.clock(TimeInterval(remaining)))"))
-        XCTAssertTrue(source.contains(".accessibilityLabel(\n            deltaSeconds < 0"))
+        XCTAssertTrue(source.contains(".accessibilityValue(Self.clock(TimeInterval(remainingSeconds)))"))
+
+        // Exactly one confirmation banner for both the button and voice log
+        // paths, wired to the same undo action, with no duplicate generic
+        // "set recorded" status text alongside it.
+        XCTAssertTrue(source.contains(
+            "recordedSetConfirmation = (\n"
+                + "                message: recordedSetConfirmationMessage(weight: set.weight, reps: set.reps),\n"
+                + "                setID: set.id\n"
+                + "            )"
+        ))
+        XCTAssertTrue(source.contains("statusMessage = nil"))
+        XCTAssertFalse(
+            source.contains("voiceConfirmation ="),
+            "the voice path must not set a second, separate confirmation banner any more"
+        )
+        // The banner itself is short — no rest suffix, one line, shrinkable
+        // rather than wrapping — but the VoiceOver announcement keeps the
+        // rest duration the banner no longer shows.
+        XCTAssertTrue(source.contains(
+            "private func recordedSetConfirmationMessage(weight: Double, reps: Int) -> String {"
+        ))
+        XCTAssertFalse(
+            source.contains("private func recordedSetConfirmationMessage(weight: Double, reps: Int, restSeconds: Int)"),
+            "the confirmation banner message must no longer take a rest duration"
+        )
+        XCTAssertTrue(source.contains(
+            "private func recordedSetAnnouncement(weight: Double, reps: Int, restSeconds: Int) -> String {"
+        ))
+        XCTAssertTrue(source.contains("announce(recordedSetAnnouncement("))
+        XCTAssertTrue(source.contains(
+            "Text(confirmation.message)\n"
+                + "                .font(.subheadline)\n"
+                + "                .foregroundStyle(GymTheme.textPrimary)\n"
+                + "                .lineLimit(1)\n"
+                + "                .minimumScaleFactor(0.85)"
+        ))
+
+        // The log button's visible text is single line; the fuller phrasing
+        // stays only in its accessibility label.
+        XCTAssertTrue(source.contains("gymText(\"Log\", \"Записати\", \"Записать\", languageCode: gymCurrentLanguageCode())"))
+        XCTAssertTrue(source.contains("logButtonText(restSeconds: restSeconds)\n                .lineLimit(1)"))
     }
 
     func testIOSLiveWorkoutLocksStructureButNotPendingSetValues() {

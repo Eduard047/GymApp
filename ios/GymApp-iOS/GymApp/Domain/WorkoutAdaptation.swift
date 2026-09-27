@@ -51,6 +51,33 @@ enum WorkoutAdaptation {
         return result
     }
 
+    /// Pure candidate-builder for "skip remaining sets" on one exercise
+    /// block: drops its uncompleted sets, or the whole block if that would
+    /// leave it empty — the same pattern `build(reason: "timeCut")` above
+    /// already uses for every block. Returns nil when there is nothing to
+    /// skip (no uncompleted sets in this block) or when skipping is not
+    /// possible without violating `ActiveWorkoutStore`'s own "at least one
+    /// exercise, each with at least one set" invariant (this block has no
+    /// completed sets and is the draft's only exercise). Callers use a nil
+    /// result to hide the "skip" option entirely rather than offering a
+    /// control that would error, and never fall back to a different action
+    /// on the user's behalf when it is nil.
+    static func buildSkipCandidate(_ source: ActiveWorkoutDraft, exerciseBlockID: UUID) -> ActiveWorkoutDraft? {
+        guard let exerciseIndex = source.exercises.firstIndex(where: { $0.id == exerciseBlockID }) else { return nil }
+        var block = source.exercises[exerciseIndex]
+        guard block.sets.contains(where: { !$0.isCompleted }) else { return nil }
+        let completed = block.sets.filter(\.isCompleted)
+        var candidate = source
+        if completed.isEmpty {
+            guard candidate.exercises.count > 1 else { return nil }
+            candidate.exercises.remove(at: exerciseIndex)
+        } else {
+            block.sets = completed
+            candidate.exercises[exerciseIndex] = block
+        }
+        return candidate
+    }
+
     static func preservesCompleted(_ source: ActiveWorkoutDraft, _ candidate: ActiveWorkoutDraft) -> Bool {
         let old = source.exercises.flatMap { block in block.sets.filter(\.isCompleted).map { (block.exerciseID, $0) } }
         let new = candidate.exercises.flatMap { block in block.sets.filter(\.isCompleted).map { (block.exerciseID, $0) } }

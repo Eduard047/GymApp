@@ -108,18 +108,27 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
 
   for (const path of [
     "ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift",
-    "ios/GymApp-iOS/GymApp/UI/Screens/ExercisesView.swift",
-    "ios/GymApp-iOS/GymApp/UI/Screens/PostWorkoutSummaryView.swift"
+    "ios/GymApp-iOS/GymApp/UI/Screens/ExercisesView.swift"
   ]) {
     assert.match(source(path), /gymFormattedDate\(/);
   }
+  // DESIGN.md "Post-workout summary": the hero subtitle now uses the shared
+  // short weekday/date formatter (same one workout-detail's hero uses)
+  // instead of the long-form gymFormattedDate.
+  assert.match(
+    source("ios/GymApp-iOS/GymApp/UI/Screens/PostWorkoutSummaryView.swift"),
+    /gymShortDate\(/
+  );
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/AddWorkoutView.swift"), /gymFormattedWeekday\(date\)/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/WorkoutDetailView.swift"), /gymFormattedWeekday\(date\)/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/LeaderboardView.swift"), /\.weekday\(\.abbreviated\)/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift"), /\.weekday\(\.narrow\)\.day\(\)/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/AccountSettingsView.swift"), /gymFormattedTimestamp\(/);
   assert.match(source("ios/GymApp-iOS/GymApp/Services/ExportService.swift"), /gymFormattedTimestamp\(/);
-  assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/ActiveWorkoutView.swift"), /date: \.omitted, time: \.shortened/);
+  // DESIGN.md "Active workout": the hero no longer shows a "Started at"
+  // clock-time readout (only elapsed + completed, see the active-workout
+  // hero parity test), so the shortened-time formatter it used is gone too.
+  assert.doesNotMatch(source("ios/GymApp-iOS/GymApp/UI/Screens/ActiveWorkoutView.swift"), /date: \.omitted, time: \.shortened/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Components/WorkoutDashboardComponents.swift"), /gymFormattedDateWithoutWeekday\(/);
 });
 

@@ -217,10 +217,12 @@ public enum VoiceWorkoutDraftParser {
     ]
 
     private static let setWordSet = Set(setWords)
-    private static let repWordSet = Set(repWords)
-    private static let weightWordSet = Set(weightWords)
+    // Not private: reused by VoiceWorkoutCommandParser (in-workout voice
+    // commands) so its vocabulary never drifts from plan dictation's.
+    static let repWordSet = Set(repWords)
+    static let weightWordSet = Set(weightWords)
     private static let weightPrefixSet = Set(weightPrefixWords)
-    private static let connectorSet = Set(connectorWords)
+    static let connectorSet = Set(connectorWords)
     private static let separatorTokens = separatorPhrases
         .map { $0.split(separator: " ").map(String.init) }
         .enumerated()
@@ -397,7 +399,9 @@ public enum VoiceWorkoutDraftParser {
 
     // MARK: Tokens
 
-    private enum Token {
+    // Not private: VoiceWorkoutCommandParser reuses this tokenizer/table set
+    // for in-workout voice commands instead of duplicating it.
+    enum Token {
         case word(raw: String, norm: String)
         case number(Double)
         case separator
@@ -413,7 +417,7 @@ public enum VoiceWorkoutDraftParser {
         }
     }
 
-    private static func tokenize(_ transcript: String) -> [Token] {
+    static func tokenize(_ transcript: String) -> [Token] {
         let characters = Array(transcript.precomposedStringWithCanonicalMapping)
         var tokens: [Token] = []
         var index = 0

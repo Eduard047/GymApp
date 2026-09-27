@@ -383,12 +383,35 @@ test("Coach settings use one account-profile editor and are not duplicated in Pr
   assert.equal(contract.coachSettings.sameSingleSurfaceAcrossFullClients, true);
 
   assert.match(androidEditor, /TrainingProfilePanel\(/);
-  assert.match(iosEditor, /private var profilePanel: some View/);
+  // DESIGN.md "Workout plan editor": "Coach settings summary row sits at
+  // the top of the single 'Smart coach' card; no separate 'Coach setup'
+  // card." — the former standalone profilePanel merged into
+  // smartCoachPanel's TrainingSettingsSummaryRow, which opens the single
+  // account-profile Training settings editor rather than editing inline.
+  assert.match(iosEditor, /private var smartCoachPanel: some View/);
+  assert.match(iosEditor, /TrainingSettingsSummaryRow\(/);
+  assert.match(iosEditor, /TrainingSettingsSheet\(profile: \$profile\)/);
   assert.match(iosEditor, /TrainingProfileStore\(\)/);
   assert.match(pwaSource, /\$\{trainingProfilePanel\(\)\}/);
 
   assert.doesNotMatch(androidProfile, /TrainingProfilePanel|TrainingProfileManager|training_profile/);
-  assert.doesNotMatch(iosProfile, /trainingPreferencesCard|TrainingProfileStore/);
+  // DESIGN.md "Profile": Profile → Training settings IS the one editor
+  // (row in settingsGroup opens the real TrainingSettingsView), so
+  // ProfileView legitimately loads/saves via TrainingProfileStore; it must
+  // not duplicate the picker UI itself (no inline Goal/Split/Calories
+  // pickers of its own outside the TrainingSettingsView sheet it presents).
+  assert.match(iosProfile, /TrainingProfileStore\(\)/);
+  assert.match(iosProfile, /TrainingSettingsView\(profile: \$trainingProfile\)/);
+  const iosProfileSettingsGroupStart = iosProfile.indexOf("private var settingsGroup: some View");
+  const iosProfileSettingsGroupEnd = iosProfile.indexOf(
+    "\n    private var",
+    iosProfileSettingsGroupStart + 1
+  );
+  assert.ok(iosProfileSettingsGroupStart >= 0 && iosProfileSettingsGroupEnd > iosProfileSettingsGroupStart);
+  assert.doesNotMatch(
+    iosProfile.slice(iosProfileSettingsGroupStart, iosProfileSettingsGroupEnd),
+    /optionSection|LazyVGrid/
+  );
 
   const pwaProfileStart = pwaSource.indexOf("function friendsProfileScreen()");
   const pwaProfileEnd = pwaSource.indexOf("\nfunction ", pwaProfileStart + 1);
@@ -448,7 +471,7 @@ test("Android exposes direct Start plan plus Edit plan and the canonical editor 
   }
 });
 
-test("iOS exposes the same direct Start plan, Edit plan, and editor order", () => {
+test("iOS exposes the same direct Start plan, Edit plan, and editor order", async () => {
   assert.match(
     iosWorkouts,
     /gymText\(\s*"Start plan",\s*"Почати план",\s*"Начать план"/s
@@ -479,8 +502,10 @@ test("iOS exposes the same direct Start plan, Edit plan, and editor order", () =
   const iosEditorStack = iosEditor.slice(iosEditorStackStart, iosEditorStackEnd);
   assert.doesNotMatch(iosEditorStack, /\bhero\b/);
   assert.doesNotMatch(iosEditor, /private var hero: some View/);
+  // DESIGN.md "Workout plan editor": the coach-settings summary row now
+  // lives inside smartCoachPanel itself (see the coach-settings test above)
+  // instead of a separate profilePanel step before it.
   assertOrdered(iosEditorStack, [
-    "profilePanel",
     "smartCoachPanel",
     "editorSection",
     "primaryWorkoutAction",
@@ -495,13 +520,29 @@ test("iOS exposes the same direct Start plan, Edit plan, and editor order", () =
   assert.match(iosCoach, /GridItem\(\.flexible\(\), spacing: 8\)[\s\S]*GridItem\(\.flexible\(\), spacing: 8\)/);
   assert.doesNotMatch(iosCoach, /ScrollView\(\.horizontal\)/);
 
+  // DESIGN.md Global: "All training-profile settings ... live in one
+  // editor: Profile → Training settings; other surfaces show a one-line
+  // summary with an 'edit' link." The redesign removed AddWorkoutView's own
+  // duplicate Program/Training-days picker (now just the summary row +
+  // sheet checked above) — the full picker copy now lives only in the new
+  // single editor, ios/GymApp-iOS/GymApp/UI/Components/TrainingSettings.swift.
+  assert.doesNotMatch(iosEditor, /"Program"/);
+  const iosTrainingSettings = await readFile(
+    "ios/GymApp-iOS/GymApp/UI/Components/TrainingSettings.swift",
+    "utf8"
+  );
   for (const copy of [
-    "Program", "Програма", "Программа",
-    "Training days", "Тренувальні дні", "Тренировочные дни",
+    "Goal", "Ціль", "Цель",
+    "Split", "Спліт", "Сплит",
+    "Workouts per week", "Тренувань на тиждень", "Тренировок в неделю"
+  ]) {
+    assert.ok(iosTrainingSettings.includes(`"${copy}"`), `Missing exact iOS Training settings copy: ${copy}`);
+  }
+  for (const copy of [
     "Upper / Lower", "Верх / низ", "Верх/низ",
     "Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка"
   ]) {
-    assert.ok(iosEditor.includes(`"${copy}"`), `Missing exact iOS Coach setting copy: ${copy}`);
+    assert.ok(iosTrainingGuidance.includes(`"${copy}"`), `Missing exact iOS Coach setting copy: ${copy}`);
   }
 
   for (const operation of [
