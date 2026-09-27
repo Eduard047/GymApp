@@ -24,19 +24,6 @@ struct MissionsView: View {
         store.gamificationSnapshot(calendar: calendar)
     }
 
-    private var trainingProfile: TrainingProfile {
-        TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
-    }
-
-    private var weeklyStreakWeeks: Int {
-        WeeklyStreakCalculator.current(
-            sessions: store.workoutSummaries,
-            targetTrainingDays: trainingProfile.workoutsPerWeek,
-            now: snapshot.generatedAt,
-            calendar: calendar
-        )
-    }
-
     private var missions: [MissionSnapshot] {
         snapshot.missions.missions(for: period)
     }
@@ -91,15 +78,15 @@ struct MissionsView: View {
                         period = item
                     } label: {
                         if period == item {
-                            Label(item.title(languageCode), systemImage: "checkmark")
+                            Label(item.shortTitle(languageCode), systemImage: "checkmark")
                         } else {
-                            Text(item.title(languageCode))
+                            Text(item.shortTitle(languageCode))
                         }
                     }
                 }
             } label: {
                 HStack(spacing: GymTheme.Spacing.small) {
-                    Text(period.title(languageCode))
+                    Text(period.shortTitle(languageCode))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: GymTheme.Spacing.small)
                     Image(systemName: "chevron.up.chevron.down")
@@ -108,95 +95,84 @@ struct MissionsView: View {
             }
             .buttonStyle(GymSecondaryButtonStyle())
             .accessibilityLabel(label)
-            .accessibilityValue(period.title(languageCode))
+            .accessibilityValue(period.shortTitle(languageCode))
         } else {
             Picker(label, selection: $period) {
                 ForEach(MissionCadence.allCases) { item in
-                    Text(item.title(languageCode)).tag(item)
+                    Text(item.shortTitle(languageCode)).tag(item)
                 }
             }
             .pickerStyle(.segmented)
         }
     }
 
-    private var hero: some View {
-        GymHeroPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(gymLocalized(snapshot.progression.title.name, languageCode: languageCode))
-                            .font(.title2.bold())
-                        Text(
-                            gymText(
-                                "Level \(snapshot.progression.level)",
-                                "Рівень \(snapshot.progression.level)",
-                                "Уровень \(snapshot.progression.level)",
-                                languageCode: languageCode
-                            )
-                        )
-                        .foregroundStyle(Color.white.opacity(0.78))
-                    }
-                    Spacer()
-                    Image(systemName: "scope")
-                        .font(.title.bold())
-                        .accessibilityHidden(true)
-                }
-
-                ProgressView(value: snapshot.progression.levelProgress)
-                    .tint(.white)
-
-                HStack(spacing: 10) {
-                    GymMetricTile(
-                        label: "XP",
-                        value: snapshot.progression.totalXP.formatted(),
-                        emphasized: true,
-                        onHero: true
-                    )
-                    GymMetricTile(
-                        label: gymText(
-                            "Week streak",
-                            "Серія тижнів",
-                            "Серия недель",
-                            languageCode: languageCode
-                        ),
-                        value: streakValue,
-                        onHero: true
-                    )
-                }
-
-                if embedded {
-                    Button(action: onOpenRanks) {
-                        Label(
-                            gymText("View ranks", "Переглянути ранги", "Посмотреть ранги", languageCode: languageCode),
-                            systemImage: "trophy.fill"
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.white)
-                }
-            }
-        }
+    private var levelSummaryText: String {
+        let levelText = gymText(
+            "Level \(snapshot.progression.level)",
+            "Рівень \(snapshot.progression.level)",
+            "Уровень \(snapshot.progression.level)",
+            languageCode: languageCode
+        )
+        let titleText = gymLocalized(snapshot.progression.title.name, languageCode: languageCode)
+        let xpText = "\(snapshot.progression.totalXP.formatted()) XP"
+        return "\(levelText) · \(titleText) · \(xpText)"
     }
 
-    private var streakValue: String {
-        return gymText(
-            "\(weeklyStreakWeeks) wk",
-            "\(weeklyStreakWeeks) тиж",
-            "\(weeklyStreakWeeks) нед",
-            languageCode: languageCode
+    private var hero: some View {
+        Button(action: onOpenRanks) {
+            HStack(spacing: 12) {
+                Image(systemName: "trophy.fill")
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+
+                Text(levelSummaryText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+            .background {
+                RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
+                    .fill(GymTheme.surface)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
+                            .strokeBorder(GymTheme.outlineSoft.opacity(0.68), lineWidth: GymTheme.hairlineWidth)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(levelSummaryText)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(
+            gymText("Opens ranks", "Відкриває ранги", "Открывает ранги", languageCode: languageCode)
         )
     }
 
     private func missionCard(_ mission: MissionSnapshot) -> some View {
         let progressLabel = missionValue(mission.progress)
         let targetLabel = missionValue(mission.target)
-        return GymPanel(highlighted: mission.completed) {
-            VStack(alignment: .leading, spacing: 11) {
+        return GymPanel(
+            highlighted: mission.completed,
+            contentPadding: EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16)
+        ) {
+            VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: mission.completed ? "checkmark.seal.fill" : mission.systemImage)
                         .font(.title3)
-                        .foregroundStyle(mission.completed ? GymTheme.primary : GymTheme.secondary)
+                        .foregroundStyle(GymTheme.primary)
                         .frame(width: 28)
                         .accessibilityHidden(true)
 
@@ -209,20 +185,21 @@ struct MissionsView: View {
                             .foregroundStyle(GymTheme.textSecondary)
                     }
                     Spacer(minLength: 6)
-                    if mission.completed {
-                        GymInfoPill(
-                            gymText("Completed", "Виконано", "Выполнено", languageCode: languageCode),
-                            systemImage: "checkmark"
-                        )
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(progressLabel) / \(targetLabel)")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(GymTheme.textSecondary)
+                        if mission.completed {
+                            GymInfoPill(
+                                gymText("Completed", "Виконано", "Выполнено", languageCode: languageCode),
+                                systemImage: "checkmark"
+                            )
+                        }
                     }
                 }
 
                 ProgressView(value: mission.fraction)
                     .tint(mission.completed ? GymTheme.primary : GymTheme.secondary)
-
-                Text("\(progressLabel) / \(targetLabel)")
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
             }
             .accessibilityElement(children: .combine)
             .accessibilityValue(
@@ -239,14 +216,14 @@ struct MissionsView: View {
 }
 
 private extension MissionCadence {
-    func title(_ languageCode: String) -> String {
+    func shortTitle(_ languageCode: String) -> String {
         switch self {
         case .daily:
-            gymText("Daily", "Щоденні", "Ежедневные", languageCode: languageCode)
+            gymText("Day", "День", "День", languageCode: languageCode)
         case .weekly:
-            gymText("Weekly", "Щотижневі", "Еженедельные", languageCode: languageCode)
+            gymText("Week", "Тиждень", "Неделя", languageCode: languageCode)
         case .monthly:
-            gymText("Monthly", "Щомісячні", "Ежемесячные", languageCode: languageCode)
+            gymText("Month", "Місяць", "Месяц", languageCode: languageCode)
         }
     }
 }

@@ -12419,14 +12419,15 @@ final class CoreParityTests: XCTestCase {
         let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
         XCTAssertTrue(source.contains("screenHeader {\n                            proxy.scrollTo(\"workout-history\""))
         XCTAssertTrue(source.contains("store.workoutSummaries.isEmpty, !activationDismissed"))
-        XCTAssertTrue(source.contains("activationGoalChoiceGrid("))
-        XCTAssertTrue(source.contains("options: TrainingActivationChoices.goals"))
-        XCTAssertTrue(source.contains("options: TrainingActivationChoices.days"))
+        XCTAssertFalse(source.contains("activationGoalChoiceGrid("))
+        XCTAssertFalse(source.contains("options: TrainingActivationChoices.goals"))
+        XCTAssertFalse(source.contains("options: TrainingActivationChoices.days"))
         XCTAssertTrue(source.contains("options: TrainingActivationChoices.efforts"))
-        XCTAssertTrue(source.contains("columns: [GridItem(.flexible()), GridItem(.flexible())]"))
-        XCTAssertTrue(source.contains("\"Days / week\""))
+        XCTAssertTrue(source.contains("TrainingSettingsSummaryRow("))
+        XCTAssertTrue(source.contains("profile: activationProfile"))
+        XCTAssertTrue(source.contains("showsTrainingSettings = true"))
+        XCTAssertFalse(source.contains("\"Days / week\""))
         XCTAssertTrue(source.contains("\"Today’s effort\""))
-        XCTAssertTrue(source.contains("\"Aesthetic Cut\""))
         XCTAssertTrue(source.contains("activationLensShape.fill(GymTheme.heroGradient)"))
         XCTAssertTrue(source.contains("topLeadingRadius: 28"))
         XCTAssertTrue(source.contains("topTrailingRadius: 28"))
@@ -12461,11 +12462,12 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(source.contains("launch: onStartPlan"))
         let guidanceSource = try iosSource("GymApp/Domain/TrainingGuidance.swift")
         for exactEffort in [
-            "Відновлювальне", "Звичайне", "Важке",
-            "Восстановительная", "Обычная", "Тяжёлая"
+            "Легка", "Звичайне", "Важке",
+            "Лёгкая", "Обычная", "Тяжёлая"
         ] {
             XCTAssertTrue(guidanceSource.contains(exactEffort))
         }
+        XCTAssertTrue(guidanceSource.contains("\"Aesthetic Cut\""))
 
         let editorSource = try iosSource("GymApp/UI/Screens/AddWorkoutView.swift")
         for title in ["Workout plan", "План тренування", "План тренировки"] {
@@ -12499,9 +12501,7 @@ final class CoreParityTests: XCTestCase {
         ] {
             XCTAssertFalse(editorSource.contains(removedCopy))
         }
-        let profilePosition = try XCTUnwrap(
-            editorSource.range(of: "                    profilePanel\n")?.lowerBound
-        )
+        XCTAssertFalse(editorSource.contains("                    profilePanel\n"))
         let coachPosition = try XCTUnwrap(
             editorSource.range(of: "                    smartCoachPanel\n")?.lowerBound
         )
@@ -12514,7 +12514,6 @@ final class CoreParityTests: XCTestCase {
         let morePosition = try XCTUnwrap(
             editorSource.range(of: "                    secondaryOptions\n")?.lowerBound
         )
-        XCTAssertLessThan(profilePosition, coachPosition)
         XCTAssertLessThan(coachPosition, exercisesPosition)
         XCTAssertLessThan(exercisesPosition, startPosition)
         XCTAssertLessThan(startPosition, morePosition)
@@ -12525,7 +12524,9 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(secondaryOptionsSource.contains("profilePanel"))
 
         let languageMenuSource = try iosSource("GymApp/UI/Components/AppLanguageMenu.swift")
-        XCTAssertTrue(source.contains("AppLanguageMenu()"))
+        XCTAssertFalse(source.contains("AppLanguageMenu("))
+        let profileSourceForLanguage = try iosSource("GymApp/UI/Screens/ProfileView.swift")
+        XCTAssertTrue(profileSourceForLanguage.contains("AppLanguageMenu("))
         XCTAssertTrue(languageMenuSource.contains("systemImage: \"globe\""))
         XCTAssertTrue(languageMenuSource.contains(
             "AppLanguage(rawValue: languageCode)?.title ?? AppLanguage.english.title"
@@ -12534,9 +12535,9 @@ final class CoreParityTests: XCTestCase {
             "Sync plan to Garmin",
             "Синхронізувати план із Garmin",
             "Синхронизировать план с Garmin",
-            "Back to history",
-            "До історії",
-            "К истории",
+            "Close",
+            "Закрити",
+            "Закрыть",
             "Discard plan changes?",
             "Відкинути зміни плану?",
             "Отменить изменения плана?",
@@ -12590,31 +12591,25 @@ final class CoreParityTests: XCTestCase {
             XCTAssertTrue(editorSource.contains("\"\(exactCopy)\""))
         }
         XCTAssertTrue(editorSource.contains("showingClearPlanConfirmation"))
-        let profilePanelSource = try XCTUnwrap(
-            editorSource.split(separator: "private var profilePanel: some View", maxSplits: 1)
-                .last?
-                .split(separator: "private func profilePicker", maxSplits: 1).first
-        )
-        for exactCopy in [
-            "Program", "Програма", "Программа",
-            "Goal", "Ціль", "Цель",
-            "Calories", "Калорії", "Калории",
-            "Training days", "Тренувальні дні", "Тренировочные дни"
-        ] {
-            XCTAssertTrue(profilePanelSource.contains("\"\(exactCopy)\""))
-        }
-        for exactValue in [
-            "Upper / Lower", "Верх / низ", "Верх/низ",
-            "Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка",
-            "Deficit", "Дефіцит", "Дефицит"
-        ] {
-            XCTAssertTrue(editorSource.contains("\"\(exactValue)\""))
-        }
         let smartCoachSource = try XCTUnwrap(
             editorSource.split(separator: "private var smartCoachPanel: some View", maxSplits: 1)
                 .last?
                 .split(separator: "private var editorSection: some View", maxSplits: 1).first
         )
+        XCTAssertTrue(smartCoachSource.contains("TrainingSettingsSummaryRow("))
+        XCTAssertTrue(smartCoachSource.contains("showsWeeklyTargetEditor = true"))
+        XCTAssertTrue(smartCoachSource.contains("TrainingSettingsSheet(profile: $profile)"))
+        XCTAssertFalse(smartCoachSource.contains("profilePicker("))
+        XCTAssertFalse(smartCoachSource.contains("selection: $profile.goal"))
+        XCTAssertFalse(smartCoachSource.contains("selection: $profile.calorieMode"))
+        XCTAssertFalse(smartCoachSource.contains("selection: $profile.split"))
+        for exactValue in [
+            "Upper / Lower", "Верх / низ", "Верх/низ",
+            "Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка",
+            "Deficit", "Дефіцит", "Дефицит"
+        ] {
+            XCTAssertTrue(guidanceSource.contains("\"\(exactValue)\""))
+        }
         XCTAssertTrue(smartCoachSource.contains("LazyVGrid("))
         XCTAssertEqual(
             smartCoachSource.components(separatedBy: "GridItem(.flexible(), spacing: 8)").count - 1,
@@ -12643,12 +12638,13 @@ final class CoreParityTests: XCTestCase {
         )
         XCTAssertEqual(
             editorHeaderSource.components(separatedBy: "if !drafts.isEmpty {").count - 1,
-            2
+            1
         )
         XCTAssertTrue(editorHeaderSource.contains("showingClearPlanConfirmation = true"))
         XCTAssertTrue(editorHeaderSource.contains("showingExercisePicker = true"))
         XCTAssertTrue(editorHeaderSource.contains("Image(systemName: \"plus\")"))
-        XCTAssertTrue(editorHeaderSource.contains(".accessibilityLabel(\"Add exercise\")"))
+        XCTAssertTrue(editorHeaderSource.contains(".accessibilityLabel(gymText("))
+        XCTAssertTrue(editorHeaderSource.contains("\"Add exercise\""))
         XCTAssertFalse(editorHeaderSource.contains("Label(\"Add\", systemImage: \"plus\")"))
         XCTAssertTrue(editorHeaderSource.contains("Clear plan"))
 
@@ -17375,7 +17371,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(stringsSource.contains("Completed mission rewards"))
         XCTAssertTrue(summarySource.contains("GamificationEngine.xpForSession"))
         XCTAssertTrue(summarySource.contains("\"How did it feel?\",\n                    \"Як було?\",\n                    \"Как было?\""))
-        XCTAssertTrue(summarySource.contains("gymText(\"Just right\", \"Саме так\", \"В самый раз\""))
+        XCTAssertTrue(summarySource.contains("gymText(\"Just right\", \"Саме те\", \"В самый раз\""))
 
         let calendar = utcCalendar()
         let now = try utcDate(year: 2026, month: 8, day: 15, calendar: calendar)
@@ -17706,10 +17702,10 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(summary.contains("minHeight: 44"))
 
         let auth = try iosSource("GymApp/UI/Screens/AuthView.swift")
-        XCTAssertTrue(auth.contains(".frame(minWidth: 44, minHeight: 44)"))
+        XCTAssertTrue(auth.contains(".frame(width: 44, height: 44)"))
 
         let dashboard = try iosSource("GymApp/UI/Components/WorkoutDashboardComponents.swift")
-        XCTAssertEqual(dashboard.components(separatedBy: ".frame(width: 44, height: 44)").count - 1, 2)
+        XCTAssertEqual(dashboard.components(separatedBy: ".frame(width: 44, height: 44)").count - 1, 4)
     }
 
     func testIOSPolishUsesAdaptiveControlsAndSelectedFilterSemantics() throws {
@@ -17724,19 +17720,19 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(missions.contains("private var missionPeriodControl"))
         XCTAssertTrue(activeWorkout.contains("if dynamicTypeSize.isAccessibilitySize"))
         XCTAssertTrue(activeWorkout.contains("private func liveSetIndicators"))
+        XCTAssertTrue(exercises.contains("isSelected: muscleFilter == nil"))
+        XCTAssertTrue(exercises.contains("isSelected: muscleFilter == muscle.id"))
         XCTAssertTrue(exercises.contains(
-            ".accessibilityAddTraits(muscleFilter == nil ? .isSelected : [])"
+            "private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View"
         ))
-        XCTAssertTrue(exercises.contains(
-            ".accessibilityAddTraits(muscleFilter == muscle.id ? .isSelected : [])"
-        ))
+        XCTAssertTrue(exercises.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
     }
 
     func testIOSActiveWorkoutExposesRecordRestAndUndoLifecycle() throws {
         let source = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
 
         for reachableAction in [
-            "recordSet(\n                        set,",
+            "recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)",
             "activeRestPanel(draft: draft)",
             "adjustManualRest(deltaSeconds)",
             "stopManualRest()",
@@ -17746,7 +17742,8 @@ final class CoreParityTests: XCTestCase {
         }
         XCTAssertTrue(source.contains("let isCurrent = currentSetID(in: draft) == set.id"))
         XCTAssertTrue(source.contains("let isLatestCompleted = draft.undoableSetID == set.id"))
-        XCTAssertTrue(source.contains(".disabled(!isCurrent || draft.commitIntent != nil)"))
+        XCTAssertTrue(source.contains(".disabled(draft.commitIntent != nil)"))
+        XCTAssertTrue(source.contains("if dynamicTypeSize.isAccessibilitySize"))
         XCTAssertGreaterThanOrEqual(
             source.components(separatedBy: "activeWorkoutValueEditorsAreDisabled(").count - 1,
             3
@@ -17756,16 +17753,15 @@ final class CoreParityTests: XCTestCase {
             3
         )
         XCTAssertTrue(source.contains("let undoableExerciseID = draft.undoableSetID.flatMap"))
-        XCTAssertTrue(source.contains("ViewThatFits(in: .horizontal)"))
         XCTAssertGreaterThanOrEqual(
             source.components(separatedBy: "minHeight: 44").count - 1,
             4
         )
 
         for localizedCopy in [
-            "Record set · rest \\(restSeconds) s",
-            "Записати підхід · відпочинок \\(restSeconds) с",
-            "Записать подход · отдых \\(restSeconds) с",
+            "Log · rest \\(mmss)",
+            "Записати · відпочинок \\(mmss)",
+            "Записать · отдых \\(mmss)",
             "Subtract 15 seconds",
             "Зменшити на 15 секунд",
             "Убавить 15 секунд",

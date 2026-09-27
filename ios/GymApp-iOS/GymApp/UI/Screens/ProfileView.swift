@@ -55,6 +55,7 @@ struct ProfileView: View {
     @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
     @State private var selectedSection: ProfileSection = .friends
     @State private var backupExpanded = false
+    @State private var trainingProfile: TrainingProfile
     private let canAcceptWorkoutInvites: Bool
     private let nativePushRequest: NativePushProfileRequest?
     private let onShowTutorial: () -> Void
@@ -83,6 +84,9 @@ struct ProfileView: View {
         self.onShowTutorial = onShowTutorial
         self.onCreateLiveWorkout = onCreateLiveWorkout
         self.onOpenLiveWorkout = onOpenLiveWorkout
+        _trainingProfile = State(initialValue: TrainingProfileStore().load(
+            accountStorageKey: store.accountStorageKey
+        ))
     }
 
     var body: some View {
@@ -91,13 +95,15 @@ struct ProfileView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
                         header
-                        sectionPicker
+                        if isCloudAccount {
+                            sectionPicker
+                        }
 
                         if let resultMessage {
                             GymStatusBanner(message: resultMessage, isError: false)
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
-                        if selectedSection == .friends {
+                        if selectedSection == .friends && isCloudAccount {
                             FriendsView(
                                 appState: appState,
                                 auth: auth,
@@ -116,10 +122,8 @@ struct ProfileView: View {
                                 equals: .friends
                             )
                         } else {
-                            accountCard
+                            settingsGroup
                             garminCard
-                            backupCard
-                            helpCard
                         }
                     }
                     .padding(.horizontal, GymTheme.screenHorizontalInset)
@@ -172,6 +176,9 @@ struct ProfileView: View {
         .task(id: auth.session?.storageKey) {
             guard isCloudAccount, !garminCloud.isWorking else { return }
             try? await garminCloud.refreshDevices()
+        }
+        .onChange(of: store.accountStorageKey) { _, key in
+            trainingProfile = TrainingProfileStore().load(accountStorageKey: key)
         }
     }
 
@@ -283,10 +290,6 @@ struct ProfileView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(gymText("Profile", "Профіль", "Профиль", languageCode: languageCode))
-                        .font(GymTheme.TypeScale.utility)
-                        .foregroundStyle(GymTheme.primary)
-                        .textCase(.uppercase)
                     Text(auth.session?.displayName ?? gymText(
                         "GymApp athlete",
                         "Атлет GymApp",
@@ -328,161 +331,287 @@ struct ProfileView: View {
                         "Требуют внимания: \(pendingCount)",
                         languageCode: languageCode
                     ))
-                } else {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(GymTheme.secondary)
-                        .accessibilityLabel(gymText(
-                            "Profile is up to date",
-                            "Профіль оновлено",
-                            "Профиль обновлён",
-                            languageCode: languageCode
-                        ))
                 }
             }
         }
     }
 
+    @ViewBuilder
     private var sectionPicker: some View {
-        GymPanel(
-            contentPadding: EdgeInsets(
-                top: 7,
-                leading: 7,
-                bottom: 7,
-                trailing: 7
-            )
-        ) {
-            Group {
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(spacing: 8) {
-                        profileSectionButton(.friends)
-                        profileSectionButton(.settings)
-                    }
-                } else {
-                    HStack(spacing: 8) {
-                        profileSectionButton(.friends)
-                        profileSectionButton(.settings)
+        let label = gymText("Profile section", "Розділ профілю", "Раздел профиля", languageCode: languageCode)
+        if dynamicTypeSize.isAccessibilitySize {
+            Menu {
+                ForEach(ProfileSection.allCases) { section in
+                    Button {
+                        selectedSection = section
+                    } label: {
+                        if selectedSection == section {
+                            Label(profileSectionTitle(section), systemImage: "checkmark")
+                        } else {
+                            Text(profileSectionTitle(section))
+                        }
                     }
                 }
+            } label: {
+                HStack(spacing: GymTheme.Spacing.small) {
+                    Text(profileSectionTitle(selectedSection))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: GymTheme.Spacing.small)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .accessibilityHidden(true)
+                }
+            }
+            .buttonStyle(GymSecondaryButtonStyle())
+            .accessibilityLabel(label)
+            .accessibilityValue(profileSectionTitle(selectedSection))
+        } else {
+            Picker(label, selection: $selectedSection) {
+                ForEach(ProfileSection.allCases) { section in
+                    Text(profileSectionTitle(section)).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel(label)
+        }
+    }
+
+    private func profileSectionTitle(_ section: ProfileSection) -> String {
+        section == .friends
+            ? gymText("Friends", "Друзі", "Друзья", languageCode: languageCode)
+            : gymText("Account", "Акаунт", "Аккаунт", languageCode: languageCode)
+    }
+
+    /// Groups the "Аккаунт", "Язык", "Настройки тренировок", "Резервная копия
+    /// и диагностика", and "Помощь" rows (and, for a local profile, the
+    /// cloud-upgrade row) into one panel of compact, same-style settings
+    /// rows separated by dividers.
+    private var settingsGroup: some View {
+        GymPanel(contentPadding: EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16)) {
+            VStack(spacing: 0) {
+                if !isCloudAccount {
+                    friendsCloudUpgradeRow
+                    settingsRowDivider
+                }
+                accountRow
+                settingsRowDivider
+                languageRow
+                settingsRowDivider
+                trainingSettingsRow
+                settingsRowDivider
+                backupRow
+                settingsRowDivider
+                helpRow
             }
         }
     }
 
-    private func profileSectionButton(_ section: ProfileSection) -> some View {
-        let isSelected = selectedSection == section
-        let title = section == .friends
-            ? gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode)
-            : gymText("Account & devices", "Акаунт і пристрої", "Аккаунт и устройства", languageCode: languageCode)
-        let icon = section == .friends ? "person.2.fill" : "applewatch"
-        return Button {
-            selectedSection = section
+    /// Icon column width shared by every row in `settingsGroup`, so titles
+    /// line up regardless of which SF Symbol a row uses.
+    private static let settingsRowIconWidth: CGFloat = 28
+    /// Divider leading inset = icon width + the row's icon/text spacing, so
+    /// the divider starts under the title, not under the icon.
+    private static let settingsRowDividerInset: CGFloat = settingsRowIconWidth + 12
+
+    private var settingsRowDivider: some View {
+        Divider()
+            .overlay(GymTheme.outlineSoft)
+            .padding(.leading, Self.settingsRowDividerInset)
+    }
+
+    private var friendsCloudUpgradeRow: some View {
+        Button {
+            showsAccountSettings = true
         } label: {
-            HStack(spacing: 7) {
-                Image(systemName: icon)
+            HStack(spacing: 12) {
+                Image(systemName: "person.2.slash")
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: Self.settingsRowIconWidth)
                     .accessibilityHidden(true)
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode))
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
+                        .lineLimit(1)
+                    Text(gymText(
+                        "Requires a cloud account",
+                        "Потрібен хмарний акаунт",
+                        "Нужен облачный аккаунт",
+                        languageCode: languageCode
+                    ))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .padding(.horizontal, 8)
-            .foregroundStyle(isSelected ? Color.white : GymTheme.textSecondary)
-            .background(
-                isSelected ? GymTheme.primary : Color.clear,
-                in: RoundedRectangle(cornerRadius: 14)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(
-                        isSelected ? GymTheme.primary : GymTheme.outlineSoft,
-                        lineWidth: 1
-                    )
-            }
+            .padding(.vertical, 12)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint(gymText(
+            "Open account settings",
+            "Відкрити налаштування акаунта",
+            "Открыть настройки аккаунта",
+            languageCode: languageCode
+        ))
     }
 
-    private var accountCard: some View {
-        GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: isCloudAccount ? "person.crop.circle.badge.checkmark" : "iphone")
-                        .font(.title2)
-                        .foregroundStyle(GymTheme.primary)
-                        .frame(width: 32)
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(gymLocalized(isCloudAccount ? "Cloud account" : "Local profile"))
-                            .font(.headline)
-                            .foregroundStyle(GymTheme.textPrimary)
-                        Text(accountSubtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(GymTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 4)
-                    GymInfoPill(
-                        isCloudAccount ? "Cloud" : "Local",
-                        systemImage: isCloudAccount ? "icloud" : "internaldrive"
-                    )
+    private var accountRow: some View {
+        Button {
+            showsAccountSettings = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isCloudAccount ? "person.crop.circle.badge.checkmark" : "iphone")
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: Self.settingsRowIconWidth)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gymText("Account", "Акаунт", "Аккаунт", languageCode: languageCode))
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
+                    Text(accountRowSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-
-                Button {
-                    showsAccountSettings = true
-                } label: {
-                    Label(
-                        gymText(
-                            "Manage account",
-                            "Керувати акаунтом",
-                            "Управлять аккаунтом",
-                            languageCode: languageCode
-                        ),
-                        systemImage: "gearshape"
-                    )
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint(gymText(
-                    "Opens identity, privacy, support, sign out, and account deletion.",
-                    "Відкриває профіль, приватність, підтримку, вихід і видалення акаунта.",
-                    "Открывает профиль, конфиденциальность, поддержку, выход и удаление аккаунта.",
-                    languageCode: languageCode
-                ))
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
             }
+            .padding(.vertical, 12)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityHint(gymText(
+            "Opens identity, privacy, support, sign out, and account deletion.",
+            "Відкриває профіль, приватність, підтримку, вихід і видалення акаунта.",
+            "Открывает профиль, конфиденциальность, поддержку, выход и удаление аккаунта.",
+            languageCode: languageCode
+        ))
     }
 
-    private var helpCard: some View {
-        GymPanel {
+    private var accountRowSubtitle: String {
+        isCloudAccount
+            ? accountSubtitle
+            : gymText("Local profile", "Локальний профіль", "Локальный профиль", languageCode: languageCode)
+    }
+
+    private var languageRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "globe")
+                .font(.title3)
+                .foregroundStyle(GymTheme.primary)
+                .frame(width: Self.settingsRowIconWidth)
+                .accessibilityHidden(true)
+            Text(gymText("Language", "Мова", "Язык", languageCode: languageCode))
+                .font(.body.weight(.semibold))
+                .foregroundStyle(GymTheme.textPrimary)
+            Spacer(minLength: 6)
+            AppLanguageMenu(style: .inline)
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: 48)
+    }
+
+    /// The help card's one action (replay the tutorial) as a compact,
+    /// whole-row-tappable settings row instead of its own card with a
+    /// trailing "Show" button.
+    private var helpRow: some View {
+        Button(action: onShowTutorial) {
             HStack(spacing: 12) {
                 Image(systemName: "questionmark.circle.fill")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
+                    .frame(width: Self.settingsRowIconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gymText("Help", "Допомога", "Помощь", languageCode: languageCode))
-                        .font(.headline)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
                     Text(gymText(
                         "Replay the quick GymApp tour.",
                         "Повтори короткий огляд GymApp.",
                         "Повтори короткий обзор GymApp.",
                         languageCode: languageCode
                     ))
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
                 }
                 Spacer(minLength: 6)
-                Button(action: onShowTutorial) {
-                    Text(gymText("Show", "Показати", "Показать", languageCode: languageCode))
-                }
-                .buttonStyle(.bordered)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
             }
+            .padding(.vertical, 12)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+
+    private var trainingSettingsRow: some View {
+        NavigationLink {
+            TrainingSettingsView(profile: $trainingProfile) { newValue in
+                TrainingProfileStore().save(newValue, accountStorageKey: store.accountStorageKey)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "target")
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: Self.settingsRowIconWidth)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gymText(
+                        "Training settings", "Налаштування тренувань", "Настройки тренировок",
+                        languageCode: languageCode
+                    ))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                    Text(trainingSettingsSummaryText)
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            .padding(.vertical, 12)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var trainingSettingsSummaryText: String {
+        [
+            trainingProfile.goal.gymDisplayName,
+            trainingProfile.calorieMode.gymDisplayName,
+            gymCount(
+                trainingProfile.workoutsPerWeek,
+                englishOne: "workout",
+                englishMany: "workouts",
+                ukrainianOne: "тренування",
+                ukrainianFew: "тренування",
+                ukrainianMany: "тренувань",
+                languageCode: languageCode
+            ) + " " + gymText("a week", "на тиждень", "в неделю", languageCode: languageCode)
+        ].joined(separator: " · ")
     }
 
     private var isCloudAccount: Bool { auth.session?.cloud != nil }
@@ -598,89 +727,106 @@ struct ProfileView: View {
         )
     }
 
-    private var backupCard: some View {
-        GymPanel {
-            DisclosureGroup(isExpanded: $backupExpanded) {
-                VStack(alignment: .leading, spacing: 12) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 10) {
-                            exportBackupButton
-                            importBackupButton
-                        }
-                        VStack(spacing: 10) {
-                            exportBackupButton
-                            importBackupButton
-                        }
+    /// Backup & diagnostics keeps its expand/collapse behavior (it holds
+    /// several actions, not one navigation target), but its collapsed label
+    /// now matches the other settings rows: icon column, semibold title,
+    /// one-line secondary subtitle. The system disclosure indicator serves
+    /// as this row's "chevron."
+    private var backupRow: some View {
+        DisclosureGroup(isExpanded: $backupExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        exportBackupButton
+                        importBackupButton
                     }
+                    VStack(spacing: 10) {
+                        exportBackupButton
+                        importBackupButton
+                    }
+                }
 
-                    Menu {
-                        Button {
-                            prepareDiagnosticsJSON()
-                        } label: {
-                            Label(
-                                gymText("Diagnostics JSON", "Діагностика JSON", "Диагностика JSON", languageCode: languageCode),
-                                systemImage: "curlybraces"
-                            )
-                        }
-
-                        Button {
-                            prepareDiagnosticsPDF()
-                        } label: {
-                            Label(
-                                gymText("Diagnostics PDF", "Діагностика PDF", "Диагностика PDF", languageCode: languageCode),
-                                systemImage: "doc.richtext"
-                            )
-                        }
+                Menu {
+                    Button {
+                        prepareDiagnosticsJSON()
                     } label: {
                         Label(
-                            gymText(
-                                "Export diagnostics",
-                                "Експортувати діагностику",
-                                "Экспортировать диагностику",
-                                languageCode: languageCode
-                            ),
-                            systemImage: "stethoscope"
+                            gymText("Diagnostics JSON", "Діагностика JSON", "Диагностика JSON", languageCode: languageCode),
+                            systemImage: "curlybraces"
                         )
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(GymSecondaryButtonStyle())
-                    .accessibilityHint(gymText(
-                        "Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens and workout details.",
-                        "Діагностика містить лише метадані застосунку та загальні підсумки, без токенів і деталей тренувань.",
-                        "Диагностика содержит только метаданные приложения и общие итоги, без токенов и деталей тренировок.",
-                        languageCode: languageCode
-                    ))
 
-                    Text(gymText(
-                        "Backups contain private workout details. Diagnostics contain only app metadata and aggregate counts.",
-                        "Резервні копії містять приватні деталі тренувань. Діагностика — лише метадані та загальні підсумки.",
-                        "Резервные копии содержат личные детали тренировок. Диагностика — только метаданные и общие итоги.",
-                        languageCode: languageCode
-                    ))
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        prepareDiagnosticsPDF()
+                    } label: {
+                        Label(
+                            gymText("Diagnostics PDF", "Діагностика PDF", "Диагностика PDF", languageCode: languageCode),
+                            systemImage: "doc.richtext"
+                        )
+                    }
+                } label: {
+                    Label(
+                        gymText(
+                            "Export diagnostics",
+                            "Експортувати діагностику",
+                            "Экспортировать диагностику",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "stethoscope"
+                    )
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(.top, 12)
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
+                .buttonStyle(GymSecondaryButtonStyle())
+                .accessibilityHint(gymText(
+                    "Diagnostics contain app metadata and aggregate counts only. They exclude authentication tokens and workout details.",
+                    "Діагностика містить лише метадані застосунку та загальні підсумки, без токенів і деталей тренувань.",
+                    "Диагностика содержит только метаданные приложения и общие итоги, без токенов и деталей тренировок.",
+                    languageCode: languageCode
+                ))
+
+                Text(gymText(
+                    "Backups contain private workout details. Diagnostics contain only app metadata and aggregate counts.",
+                    "Резервні копії містять приватні деталі тренувань. Діагностика — лише метадані та загальні підсумки.",
+                    "Резервные копии содержат личные детали тренировок. Диагностика — только метаданные и общие итоги.",
+                    languageCode: languageCode
+                ))
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 12)
+            .padding(.bottom, 12)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "tray.and.arrow.down.fill")
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: Self.settingsRowIconWidth)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(gymText(
                         "Backup & diagnostics",
                         "Резервна копія та діагностика",
                         "Резервная копия и диагностика",
                         languageCode: languageCode
                     ))
-                        .font(.headline)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
                     Text(gymText(
-                        "Export, import, or prepare a private support report.",
-                        "Експорт, імпорт або приватний звіт для підтримки.",
-                        "Экспорт, импорт или приватный отчёт для поддержки.",
+                        "Export, import, diagnostics",
+                        "Експорт, імпорт, діагностика",
+                        "Экспорт, импорт, диагностика",
                         languageCode: languageCode
                     ))
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
                 }
+                Spacer(minLength: 6)
             }
+            .padding(.vertical, 12)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
         }
     }
 

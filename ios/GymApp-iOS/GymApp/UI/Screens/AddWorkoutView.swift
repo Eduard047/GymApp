@@ -161,6 +161,7 @@ struct AddWorkoutView: View {
     @State private var date = Date()
     @State private var note = ""
     @State private var profile = TrainingProfile()
+    @State private var showsWeeklyTargetEditor = false
     @State private var selectedEffort: SmartWorkoutEffort = .auto
     @State private var latestSmartPlan: SmartWorkoutPlan?
     @State private var smartGeneratedDraftIDs = Set<UUID>()
@@ -382,7 +383,6 @@ struct AddWorkoutView: View {
                         if let liveInviteRecipient {
                             directLiveRecipientPanel(liveInviteRecipient)
                         }
-                        profilePanel
                         smartCoachPanel
                         editorSection
                         primaryWorkoutAction
@@ -417,9 +417,9 @@ struct AddWorkoutView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
                     gymText(
-                        "Back to history",
-                        "До історії",
-                        "К истории",
+                        "Close",
+                        "Закрити",
+                        "Закрыть",
                         languageCode: gymCurrentLanguageCode()
                     ),
                     action: onClose
@@ -678,126 +678,6 @@ struct AddWorkoutView: View {
         .disabled(store.workouts.isEmpty)
     }
 
-    private var profilePanel: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                GymSectionTitle(
-                    title: "Coach settings"
-                )
-
-                profilePicker(
-                    gymText(
-                        "Program",
-                        "Програма",
-                        "Программа",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
-                    selection: $profile.split,
-                    label: trainingSplitLabel
-                )
-                profilePicker(
-                    gymText(
-                        "Goal",
-                        "Ціль",
-                        "Цель",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
-                    selection: $profile.goal,
-                    label: trainingGoalLabel
-                )
-                profilePicker(
-                    gymText(
-                        "Calories",
-                        "Калорії",
-                        "Калории",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
-                    selection: $profile.calorieMode,
-                    label: calorieModeLabel
-                )
-
-                Stepper(value: $profile.workoutsPerWeek, in: 2 ... 6) {
-                    HStack {
-                        Text(gymText(
-                            "Training days",
-                            "Тренувальні дні",
-                            "Тренировочные дни",
-                            languageCode: gymCurrentLanguageCode()
-                        ))
-                        Spacer()
-                        Text(profile.workoutsPerWeek.formatted())
-                            .font(.body.monospacedDigit().weight(.bold))
-                            .foregroundStyle(GymTheme.primary)
-                    }
-                }
-                .accessibilityValue(
-                    gymCount(
-                        profile.workoutsPerWeek,
-                        englishOne: "workout per week",
-                        englishMany: "workouts per week",
-                        ukrainianOne: "тренування на тиждень",
-                        ukrainianFew: "тренування на тиждень",
-                        ukrainianMany: "тренувань на тиждень"
-                    )
-                )
-            }
-        }
-    }
-
-    private func profilePicker<Value: Hashable & CaseIterable>(
-        _ title: String,
-        selection: Binding<Value>,
-        label: @escaping (Value) -> String
-    ) -> some View where Value.AllCases: RandomAccessCollection {
-        HStack {
-            Text(title)
-            Spacer()
-            Picker(title, selection: selection) {
-                ForEach(Array(Value.allCases), id: \.self) { value in
-                    Text(label(value)).tag(value)
-                }
-            }
-            .pickerStyle(.menu)
-        }
-    }
-
-    private func trainingSplitLabel(_ split: TrainingSplit) -> String {
-        switch split {
-        case .upperLower:
-            gymText("Upper / Lower", "Верх / низ", "Верх/низ", languageCode: gymCurrentLanguageCode())
-        case .fullBody:
-            gymText("Full Body", "Все тіло", "Все тело", languageCode: gymCurrentLanguageCode())
-        case .pushPullLegs:
-            gymText("Push Pull Legs", "Жим / тяга / ноги", "Жим/тяга/ноги", languageCode: gymCurrentLanguageCode())
-        case .custom:
-            gymText("Custom", "Своя", "Своя", languageCode: gymCurrentLanguageCode())
-        }
-    }
-
-    private func trainingGoalLabel(_ goal: TrainingGoal) -> String {
-        switch goal {
-        case .aestheticFatLoss:
-            gymText("Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка", languageCode: gymCurrentLanguageCode())
-        case .muscleGain:
-            gymText("Muscle Gain", "Набір мʼязів", "Набор мышц", languageCode: gymCurrentLanguageCode())
-        case .strength:
-            gymText("Strength", "Сила", "Сила", languageCode: gymCurrentLanguageCode())
-        case .balanced:
-            gymText("Balanced", "Баланс", "Баланс", languageCode: gymCurrentLanguageCode())
-        }
-    }
-
-    private func calorieModeLabel(_ mode: CalorieMode) -> String {
-        switch mode {
-        case .deficit:
-            gymText("Deficit", "Дефіцит", "Дефицит", languageCode: gymCurrentLanguageCode())
-        case .maintenance:
-            gymText("Maintenance", "Підтримка", "Поддержание", languageCode: gymCurrentLanguageCode())
-        case .surplus:
-            gymText("Surplus", "Профіцит", "Профицит", languageCode: gymCurrentLanguageCode())
-        }
-    }
-
     private var smartCoachPanel: some View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
@@ -805,6 +685,13 @@ struct AddWorkoutView: View {
                     title: "Smart Coach",
                     supporting: nil
                 )
+
+                TrainingSettingsSummaryRow(
+                    profile: profile,
+                    languageCode: gymCurrentLanguageCode()
+                ) {
+                    showsWeeklyTargetEditor = true
+                }
 
                 LazyVGrid(
                     columns: [
@@ -854,21 +741,26 @@ struct AddWorkoutView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(GymTheme.tertiary)
                         }
-                        Text(
-                            gymText(
-                                "Focus: \(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
-                                "Фокус: \(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
-                                "Фокус: \(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
-                                languageCode: gymCurrentLanguageCode()
+                        Label {
+                            Text(
+                                gymText(
+                                    "\(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
+                                    "\(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
+                                    "\(latestSmartPlan.focus.displayName) · RIR \(latestSmartPlan.rirSummary)",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
                             )
-                        )
+                        } icon: {
+                            Image(systemName: "target")
+                                .foregroundStyle(GymTheme.textSecondary)
+                        }
                         .font(.subheadline.weight(.semibold))
                         if latestSmartPlan.requestedEffort != latestSmartPlan.appliedEffort {
                             Text(
                                 gymText(
-                                    "Requested: \(latestSmartPlan.requestedEffort.displayName). Applied: \(latestSmartPlan.appliedEffort.displayName).",
-                                    "Запитано: \(latestSmartPlan.requestedEffort.displayName). Застосовано: \(latestSmartPlan.appliedEffort.displayName).",
-                                    "Запрошено: \(latestSmartPlan.requestedEffort.displayName). Применено: \(latestSmartPlan.appliedEffort.displayName).",
+                                    "You chose \"\(latestSmartPlan.requestedEffort.displayName)\" → coach set \"\(latestSmartPlan.appliedEffort.displayName)\"",
+                                    "Обрано «\(latestSmartPlan.requestedEffort.displayName)» → тренер поставив «\(latestSmartPlan.appliedEffort.displayName)»",
+                                    "Выбрано «\(latestSmartPlan.requestedEffort.displayName)» → тренер поставил «\(latestSmartPlan.appliedEffort.displayName)»",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             )
@@ -921,6 +813,9 @@ struct AddWorkoutView: View {
                 )
             }
         }
+        .sheet(isPresented: $showsWeeklyTargetEditor) {
+            TrainingSettingsSheet(profile: $profile)
+        }
     }
 
     @ViewBuilder
@@ -931,62 +826,79 @@ struct AddWorkoutView: View {
             )
             .layoutPriority(1)
             Spacer(minLength: 4)
-            Button {
-                showingVoiceWorkoutDraft = true
-            } label: {
-                Image(systemName: "mic.fill")
-                    .font(.headline.weight(.semibold))
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel(gymText(
-                "Create workout plan by voice",
-                "Створити план тренування голосом",
-                "Создать план тренировки голосом",
-                languageCode: gymCurrentLanguageCode()
-            ))
-            .accessibilityHint(gymText(
-                "Dictates exercises, sets, repetitions, and weight locally",
-                "Диктує вправи, підходи, повторення і вагу локально",
-                "Диктует упражнения, подходы, повторы и вес локально",
-                languageCode: gymCurrentLanguageCode()
-            ))
-            if !drafts.isEmpty {
-                Button(role: .destructive) {
-                    showingClearPlanConfirmation = true
+            HStack(spacing: 8) {
+                Button {
+                    showingVoiceWorkoutDraft = true
                 } label: {
-                    Text(
-                        gymText(
-                            "Clear plan",
-                            "Очистити план",
-                            "Очистить план",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    )
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(GymTheme.error)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .frame(minHeight: 44)
+                    Image(systemName: "mic.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(GymTheme.primary)
+                        .frame(width: 44, height: 44)
+                        .background(GymTheme.surfaceVariant, in: Circle())
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint(gymText(
-                    "Removes exercises and sets from this editor only",
-                    "Видаляє вправи й підходи лише з цього редактора",
-                    "Удаляет упражнения и подходы только из этого редактора",
+                .accessibilityLabel(gymText(
+                    "Create workout plan by voice",
+                    "Створити план тренування голосом",
+                    "Создать план тренировки голосом",
                     languageCode: gymCurrentLanguageCode()
                 ))
-            }
-            if !drafts.isEmpty {
-                Button {
-                    showingExercisePicker = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.headline.weight(.bold))
-                        .frame(width: 44, height: 44)
+                .accessibilityHint(gymText(
+                    "Dictates exercises, sets, repetitions, and weight locally",
+                    "Диктує вправи, підходи, повторення і вагу локально",
+                    "Диктует упражнения, подходы, повторы и вес локально",
+                    languageCode: gymCurrentLanguageCode()
+                ))
+                if !drafts.isEmpty {
+                    Button {
+                        showingExercisePicker = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(GymTheme.brandFill, in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(gymText(
+                        "Add exercise",
+                        "Додати вправу",
+                        "Добавить упражнение",
+                        languageCode: gymCurrentLanguageCode()
+                    ))
+
+                    Menu {
+                        Button(role: .destructive) {
+                            showingClearPlanConfirmation = true
+                        } label: {
+                            Label(
+                                gymText(
+                                    "Clear plan",
+                                    "Очистити план",
+                                    "Очистить план",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "trash"
+                            )
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
+                            .frame(width: 44, height: 44)
+                            .background(GymTheme.surfaceVariant, in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(gymText(
+                        "More options",
+                        "Більше опцій",
+                        "Ещё действия",
+                        languageCode: gymCurrentLanguageCode()
+                    ))
                 }
-                .buttonStyle(.borderedProminent)
-                .accessibilityLabel("Add exercise")
             }
         }
         .padding(.horizontal, 4)

@@ -310,6 +310,66 @@ enum WorkoutDashboardDataBuilder {
     }
 }
 
+/// Compact inline month navigator (‹ month · Current month ›) with 44×44 chevron tap
+/// targets and no card background. Shared by the activity heatmap and any screen that
+/// needs a lightweight month switcher.
+struct GymMonthNavigator: View {
+    let month: Date
+    let isCurrentMonth: Bool
+    let locale: Locale
+    let onPrevious: () -> Void
+    let onCurrent: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button(action: onPrevious) {
+                Image(systemName: "chevron.left")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(gymLocalized("Previous month"))
+
+            Button(action: onCurrent) {
+                HStack(spacing: 5) {
+                    Text(month.formatted(.dateTime.month(.wide).year().locale(locale)))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    if isCurrentMonth {
+                        Text(gymLocalized("Current month"))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(monthAccessibilityLabel)
+
+            Button(action: onNext) {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(isCurrentMonth)
+            .accessibilityLabel(gymLocalized("Next month"))
+            .accessibilityHint(isCurrentMonth ? gymLocalized("The current month is already selected") : "")
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private var monthAccessibilityLabel: String {
+        let formatted = month.formatted(.dateTime.month(.wide).year().locale(locale))
+        return isCurrentMonth
+            ? gymText("Current month, \(formatted)", "Поточний місяць, \(formatted)", languageCode: gymCurrentLanguageCode())
+            : gymText("\(formatted). Return to current month", "\(formatted). Повернутися до поточного місяця", languageCode: gymCurrentLanguageCode())
+    }
+}
+
 struct WorkoutMonthSwitcher: View {
     let month: Date
     let isCurrentMonth: Bool
@@ -375,23 +435,29 @@ struct WorkoutProgressHero: View {
     private var progression: ProgressionSnapshot { snapshot.progression }
 
     var body: some View {
-        GymHeroPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("SOLO PROGRESS")
-                    .font(.caption.weight(.bold))
-                    .tracking(0.7)
-                    .foregroundStyle(Color.white.opacity(0.8))
+        GymHeroPanel(
+            contentPadding: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16),
+            gradient: LinearGradient(
+                colors: [GymTheme.brandFill, GymTheme.brandFillBright],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            solidFill: GymTheme.brandFill
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(
+                    gymText(
+                        "Solo progress",
+                        "Особистий прогрес",
+                        "Личный прогресс",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+                .font(.caption.weight(.semibold))
+                .tracking(0.3)
+                .foregroundStyle(Color.white.opacity(0.8))
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 12) {
-                        identity
-                        xpBlock
-                    }
-                    VStack(alignment: .leading, spacing: 12) {
-                        identity
-                        xpBlock
-                    }
-                }
+                identity
 
                 ProgressView(value: progression.levelProgress)
                     .tint(.white)
@@ -408,32 +474,25 @@ struct WorkoutProgressHero: View {
                         )
                     )
 
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 108), spacing: 8)],
-                    spacing: 8
-                ) {
+                HStack(spacing: 8) {
                     GymMetricTile(
                         label: "Month XP",
                         value: "\(monthXP) XP",
                         emphasized: true,
-                        onHero: true
+                        onHero: true,
+                        compactValue: true
                     )
-                    GymMetricTile(
-                        label: "Week streak",
-                        value: gymText(
-                            "\(weeklyStreakWeeks) wk",
-                            "\(weeklyStreakWeeks) тиж",
-                            "\(weeklyStreakWeeks) нед",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        onHero: true
-                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: "Next title",
                         value: progression.nextTitle?.name ?? "Top rank",
-                        onHero: true
+                        emphasized: true,
+                        onHero: true,
+                        compactValue: true
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
                 Button(action: onOpenRanks) {
                     Label("View ranks", systemImage: "trophy.fill")
@@ -450,15 +509,39 @@ struct WorkoutProgressHero: View {
     }
 
     private var identity: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("\(gymLocalized("LEVEL")) \(progression.level)")
-                .font(.caption.weight(.bold))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
-                .background(Color.white.opacity(0.13), in: Capsule())
-            Text(gymLocalized(progression.title.name))
-                .font(.title.bold())
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 8) {
+                    levelPill
+                    Text(gymLocalized(progression.title.name))
+                        .font(.title2.bold())
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Text(totalXPCompactLabel)
+                        .font(.title3.bold())
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .contentTransition(.numericText())
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        levelPill
+                        Text(gymLocalized(progression.title.name))
+                            .font(.title2.bold())
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(totalXPEarnedLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .contentTransition(.numericText())
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                gymText("Total XP", "Загалом XP", "Всего XP", languageCode: gymCurrentLanguageCode())
+            )
+            .accessibilityValue(progression.totalXP.formatted())
             Text(gymLocalized(progressSummary))
                 .font(.subheadline)
                 .foregroundStyle(Color.white.opacity(0.86))
@@ -467,24 +550,33 @@ struct WorkoutProgressHero: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var xpBlock: some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            Text("TOTAL XP")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.72))
-            Text(progression.totalXP.formatted())
-                .font(.title2.bold())
-                .contentTransition(.numericText())
-            Text("earned")
-                .font(.caption)
-                .foregroundStyle(Color.white.opacity(0.72))
-        }
-        .padding(12)
-        .frame(minWidth: 110, alignment: .trailing)
-        .background(Color.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 18))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Total XP")
-        .accessibilityValue(progression.totalXP.formatted())
+    private var levelPill: some View {
+        Text(
+            "\(gymText("Level", "Рівень", "Уровень", languageCode: gymCurrentLanguageCode())) \(progression.level)"
+        )
+        .font(.caption.weight(.bold))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.13), in: Capsule())
+        .fixedSize()
+    }
+
+    private var totalXPCompactLabel: String {
+        gymText(
+            "\(progression.totalXP.formatted()) XP",
+            "\(progression.totalXP.formatted()) XP",
+            "\(progression.totalXP.formatted()) XP",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    private var totalXPEarnedLabel: String {
+        gymText(
+            "\(progression.totalXP.formatted()) XP earned",
+            "\(progression.totalXP.formatted()) XP зароблено",
+            "\(progression.totalXP.formatted()) XP заработано",
+            languageCode: gymCurrentLanguageCode()
+        )
     }
 
     private var progressSummary: String {
@@ -636,6 +728,10 @@ struct WorkoutActivityHeatmap: View {
     let sessions: [WorkoutSessionSummary]
     let now: Date
     let calendar: Calendar
+    let isCurrentMonth: Bool
+    let onPreviousMonth: () -> Void
+    let onCurrentMonth: () -> Void
+    let onNextMonth: () -> Void
 
     private var days: [WorkoutActivityHeatmapDay] {
         WorkoutActivityHeatmapLayout.days(
@@ -681,17 +777,6 @@ struct WorkoutActivityHeatmap: View {
                         heatmapTitle
                         activeDaysPill
                     }
-                }
-
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 128), spacing: 8)],
-                    spacing: 8
-                ) {
-                    GymMetricTile(label: "Sessions", value: monthSessions.count.formatted())
-                    GymMetricTile(
-                        label: "Volume",
-                        value: compactNumber(monthSessions.reduce(0) { $0 + $1.totalVolume })
-                    )
                 }
 
                 Text("Color shows daily training volume. Orange marks the highest-load days.")
@@ -742,10 +827,19 @@ struct WorkoutActivityHeatmap: View {
             Text("Activity Heatmap")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-            Text(month.formatted(.dateTime.month(.wide).year().locale(appLocale)))
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
+            monthNavigator
         }
+    }
+
+    private var monthNavigator: some View {
+        GymMonthNavigator(
+            month: month,
+            isCurrentMonth: isCurrentMonth,
+            locale: appLocale,
+            onPrevious: onPreviousMonth,
+            onCurrent: onCurrentMonth,
+            onNext: onNextMonth
+        )
     }
 
     private var activeDaysPill: some View {
@@ -836,17 +930,13 @@ struct WorkoutMuscleLoadCard: View {
     var body: some View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Muscle Map")
-                            .font(.headline)
-                            .accessibilityAddTraits(.isHeader)
-                        Text("Compare which muscle groups carried your logged training load.")
-                            .font(.caption)
-                            .foregroundStyle(GymTheme.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                    GymInfoPill(period.title, systemImage: "figure.strengthtraining.traditional")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Muscle Map")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Compare which muscle groups carried your logged training load.")
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
                 }
 
                 Picker("Muscle load period", selection: $period) {
@@ -856,21 +946,27 @@ struct WorkoutMuscleLoadCard: View {
                 }
                 .pickerStyle(.segmented)
 
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
-                    spacing: 8
-                ) {
-                    GymMetricTile(label: "Sets", value: data.totalSets.formatted())
+                HStack(spacing: 8) {
+                    GymMetricTile(
+                        label: "Sets",
+                        value: data.totalSets.formatted(),
+                        emphasized: true
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: "Load",
                         value: compactNumber(data.totalLoad),
                         emphasized: true
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: "Mapped",
-                        value: "\(data.mappedExerciseCount)/\(data.totalExerciseCount)"
+                        value: "\(data.mappedExerciseCount)/\(data.totalExerciseCount)",
+                        emphasized: true
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
                 Text("Select a muscle to see the exercises behind its load.")
                     .font(.caption)
@@ -1158,29 +1254,114 @@ enum AchievementIconCatalog {
     }
 }
 
+/// Icon-inside-a-progress-ring tile shared by the achievements grid and the
+/// post-workout badges grid: a circular progress track, the badge's icon at
+/// its center (dimmed with a lock glyph when not yet unlocked), and a title
+/// below.
+struct GymBadgeRingTile: View {
+    let systemImage: String
+    let title: String
+    let accent: Color
+    var unlocked: Bool = true
+    var progress: Double = 1
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .stroke(GymTheme.outlineSoft, lineWidth: 4)
+                Circle()
+                    .trim(from: 0, to: min(1, max(0, progress)))
+                    .stroke(
+                        unlocked ? accent : GymTheme.primary,
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: systemImage)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(unlocked ? accent : GymTheme.textSecondary)
+                    .opacity(unlocked ? 1 : 0.4)
+
+                if !unlocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .padding(3)
+                        .background(GymTheme.surface, in: Circle())
+                        .overlay(Circle().strokeBorder(GymTheme.outlineSoft, lineWidth: 1))
+                        .offset(x: 18, y: 18)
+                }
+            }
+            .frame(width: 60, height: 60)
+
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(GymTheme.textPrimary)
+                .opacity(unlocked ? 1 : 0.55)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, minHeight: 108)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Shared rarity → accent color mapping for badge/achievement tiles.
+func gymBadgeAccent(_ rarity: BadgeRarity) -> Color {
+    switch rarity {
+    case .common: GymTheme.secondary
+    case .uncommon: GymTheme.primary
+    case .rare: GymTheme.tertiary
+    case .epic: .purple
+    case .legendary: .orange
+    }
+}
+
 struct AchievementGallery: View {
     let achievements: [AchievementSnapshot]
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var selectedAchievement: AchievementSnapshot?
 
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 250), spacing: 12, alignment: .top)]
+        let count = dynamicTypeSize.isAccessibilitySize ? 2 : 3
+        return Array(
+            repeating: GridItem(.flexible(), spacing: 12, alignment: .top),
+            count: count
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            GymSectionTitle(
-                eyebrow: gymLocalized("Achievements", languageCode: languageCode),
-                title: gymText(
-                    "Your badge collection",
-                    "Твоя колекція відзнак",
-                    languageCode: languageCode
-                ),
-                supporting: gymText(
-                    "Every canonical milestone, its progress, rarity, and unlock date.",
-                    "Усі основні цілі, їхній прогрес, рідкість і дата відкриття.",
-                    languageCode: languageCode
+            VStack(alignment: .leading, spacing: 5) {
+                Text(gymLocalized("Achievements", languageCode: languageCode))
+                    .font(GymTheme.TypeScale.utility)
+                    .foregroundStyle(GymTheme.primary)
+                    .tracking(0.55)
+                Text(
+                    gymText(
+                        "Your badge collection",
+                        "Твоя колекція відзнак",
+                        languageCode: languageCode
+                    )
                 )
-            )
+                .font(GymTheme.TypeScale.sectionTitle)
+                .foregroundStyle(GymTheme.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+                Text(
+                    gymText(
+                        "Every canonical milestone, its progress, rarity, and unlock date.",
+                        "Усі основні цілі, їхній прогрес, рідкість і дата відкриття.",
+                        languageCode: languageCode
+                    )
+                )
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+            }
 
             HStack(spacing: 8) {
                 GymInfoPill(
@@ -1193,95 +1374,109 @@ struct AchievementGallery: View {
                     .foregroundStyle(GymTheme.textSecondary)
             }
 
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                 ForEach(achievements) { achievement in
-                    achievementCard(achievement)
+                    achievementTile(achievement)
                 }
             }
+        }
+        .sheet(item: $selectedAchievement) { achievement in
+            achievementDetailSheet(achievement)
+                .presentationDetents([.medium])
         }
     }
 
-    private func achievementCard(_ achievement: AchievementSnapshot) -> some View {
+    private func achievementTile(_ achievement: AchievementSnapshot) -> some View {
         let accent = rarityColor(achievement.badge.rarity)
-        return VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .top, spacing: 11) {
-                Image(systemName: AchievementIconCatalog.icon(forID: achievement.id))
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(achievement.unlocked ? accent : GymTheme.textSecondary)
-                    .frame(width: 42, height: 42)
-                    .background(
-                        (achievement.unlocked ? accent : GymTheme.textSecondary).opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                    )
+        return Button {
+            selectedAchievement = achievement
+        } label: {
+            GymBadgeRingTile(
+                systemImage: AchievementIconCatalog.icon(forID: achievement.id),
+                title: localizedTitle(achievement),
+                accent: accent,
+                unlocked: achievement.unlocked,
+                progress: progressFraction(achievement)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tileAccessibilityLabel(achievement))
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func tileAccessibilityLabel(_ achievement: AchievementSnapshot) -> String {
+        let status = achievement.unlocked
+            ? gymLocalized("Unlocked", languageCode: languageCode)
+            : gymLocalized("Locked", languageCode: languageCode)
+        return "\(localizedTitle(achievement)), \(status), \(achievementProgressLabel(achievement))"
+    }
+
+    private func achievementDetailSheet(_ achievement: AchievementSnapshot) -> some View {
+        let accent = rarityColor(achievement.badge.rarity)
+        let name = localizedTitle(achievement)
+        let category = gymLocalized(achievement.badge.name, languageCode: languageCode)
+        let showCategory = category.caseInsensitiveCompare(name) != .orderedSame
+
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill((achievement.unlocked ? accent : GymTheme.textSecondary).opacity(0.12))
+                        Image(systemName: AchievementIconCatalog.icon(forID: achievement.id))
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(achievement.unlocked ? accent : GymTheme.textSecondary)
+                    }
+                    .frame(width: 84, height: 84)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(localizedTitle(achievement))
-                        .font(.subheadline.weight(.semibold))
+                    Text(name)
+                        .font(GymTheme.TypeScale.sectionTitle)
                         .foregroundStyle(GymTheme.textPrimary)
-                    Text(gymLocalized(achievement.badge.name, languageCode: languageCode))
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+
+                    if showCategory {
+                        Text(category)
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                    }
+
+                    GymInfoPill(rarityTitle(achievement.badge.rarity), accent: accent)
+                }
+                .frame(maxWidth: .infinity)
+
+                Text(localizedDescription(achievement))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ProgressView(value: progressFraction(achievement))
+                        .tint(achievement.unlocked ? accent : GymTheme.primary)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(achievementProgressLabel(achievement))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(GymTheme.textSecondary)
+                        Spacer(minLength: 8)
+                        Text("+\(achievement.rewardXP) XP")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(achievement.unlocked ? accent : GymTheme.primary)
+                    }
                 }
 
-                Spacer(minLength: 6)
-                GymInfoPill(
-                    rarityTitle(achievement.badge.rarity),
-                    systemImage: achievement.unlocked ? "checkmark" : "lock.fill",
-                    accent: achievement.unlocked ? accent : GymTheme.textSecondary
-                )
+                if let epochDay = achievement.unlockedAtEpochDay {
+                    Label(unlockedDateLabel(epochDay), systemImage: "calendar.badge.checkmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(accent)
+                } else {
+                    Label(gymLocalized("Locked", languageCode: languageCode), systemImage: "lock")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
             }
-
-            Text(localizedDescription(achievement))
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            ProgressView(value: progressFraction(achievement))
-                .tint(achievement.unlocked ? accent : GymTheme.primary)
-
-            HStack(alignment: .firstTextBaseline) {
-                Text(achievementProgressLabel(achievement))
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
-                Spacer(minLength: 8)
-                Text("+\(achievement.rewardXP) XP")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(achievement.unlocked ? accent : GymTheme.primary)
-            }
-
-            if let epochDay = achievement.unlockedAtEpochDay {
-                Label(
-                    unlockedDateLabel(epochDay),
-                    systemImage: "calendar.badge.checkmark"
-                )
-                .font(.caption2)
-                .foregroundStyle(GymTheme.textSecondary)
-            } else {
-                Label(gymLocalized("Locked", languageCode: languageCode), systemImage: "lock")
-                    .font(.caption2)
-                    .foregroundStyle(GymTheme.textSecondary)
-            }
+            .padding(20)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            GymTheme.surface,
-            in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
-                .strokeBorder(
-                    achievement.unlocked ? accent.opacity(0.42) : GymTheme.outlineSoft,
-                    lineWidth: 1
-                )
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(
-            achievement.unlocked
-                ? gymLocalized("Unlocked", languageCode: languageCode)
-                : "\(achievementProgressLabel(achievement)), \(gymLocalized("Locked", languageCode: languageCode))"
-        )
     }
 
     private func progressFraction(_ achievement: AchievementSnapshot) -> Double {

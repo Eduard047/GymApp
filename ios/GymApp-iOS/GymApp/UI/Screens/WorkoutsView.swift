@@ -324,10 +324,10 @@ public struct WorkoutsView: View {
     @State private var weekOffset = 0
     @State private var historyPeriod: TrainingHistoryPeriod = .week
     @State private var historyReturnWorkoutID: UUID?
-    @State private var activationGoal: TrainingGoal = .aestheticFatLoss
-    @State private var activationDays = 4
+    @State private var activationProfile: TrainingProfile
     @State private var activationEffort: SmartWorkoutEffort = .standard
     @State private var activationDismissed: Bool
+    @State private var showsTrainingSettings = false
     @State private var showsFocusDetails = false
     @State private var showsActiveFocusDetails = false
     @State private var showsActiveMoreActions = false
@@ -377,6 +377,11 @@ public struct WorkoutsView: View {
                 accountStorageKey: store.accountStorageKey
             )
         )
+        _activationProfile = State(
+            initialValue: TrainingProfileStore().load(
+                accountStorageKey: store.accountStorageKey
+            )
+        )
     }
 
     public var body: some View {
@@ -391,6 +396,9 @@ public struct WorkoutsView: View {
                             activeFocusLens
                         } else if store.workoutSummaries.isEmpty, !activationDismissed {
                             activationPanel
+                            if !hasRetainedWorkoutDraft {
+                                emptyStateHint
+                            }
                         } else {
                             focusLens
                         }
@@ -419,6 +427,11 @@ public struct WorkoutsView: View {
                 }
             }
         }
+        .sheet(isPresented: $showsTrainingSettings) {
+            TrainingSettingsSheet(profile: $activationProfile) { newValue in
+                TrainingProfileStore().save(newValue, accountStorageKey: store.accountStorageKey)
+            }
+        }
         .onAppear { referenceDate = Date() }
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
         .onChange(of: store.accountStorageKey) { _, storageKey in
@@ -431,6 +444,9 @@ public struct WorkoutsView: View {
             showsActiveFocusDetails = false
             showsActiveMoreActions = false
             activationDismissed = TrainingProfileStore().activationDismissed(
+                accountStorageKey: storageKey
+            )
+            activationProfile = TrainingProfileStore().load(
                 accountStorageKey: storageKey
             )
         }
@@ -482,7 +498,6 @@ public struct WorkoutsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                 }
-                AppLanguageMenu()
             }
             .fixedSize(horizontal: true, vertical: false)
         }
@@ -518,14 +533,49 @@ public struct WorkoutsView: View {
                     )
             } else {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(gymText(
-                        "Your first plan",
-                        "Твій перший план",
-                        "Твой первый план",
-                        languageCode: languageCode
-                    ))
-                    .font(.title2.bold())
-                    .foregroundStyle(Color.white)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(gymText(
+                            "Your first plan",
+                            "Твій перший план",
+                            "Твой первый план",
+                            languageCode: languageCode
+                        ))
+                        .font(.title2.bold())
+                        .foregroundStyle(Color.white)
+
+                        Spacer(minLength: 8)
+
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showsActivationOptions.toggle()
+                            }
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.headline)
+                                .foregroundStyle(
+                                    showsActivationOptions
+                                        ? GymTheme.brandFill
+                                        : Color.white
+                                )
+                                .frame(width: 44, height: 44)
+                                .background(
+                                    showsActivationOptions ? Color.white : Color.white.opacity(0.16),
+                                    in: Circle()
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(gymText(
+                            "Adjust recommendation",
+                            "Налаштувати пораду",
+                            "Настроить рекомендацию",
+                            languageCode: languageCode
+                        ))
+                        .accessibilityAddTraits(showsActivationOptions ? .isSelected : [])
+                        .accessibilityValue(showsActivationOptions
+                            ? gymText("Open", "Відкрито", "Открыто", languageCode: languageCode)
+                            : gymText("Closed", "Закрито", "Закрыто", languageCode: languageCode)
+                        )
+                    }
                     Text(gymText(
                         "Use the suggestion now or build the workout yourself. You can adjust every setting.",
                         "Скористайся порадою зараз або створи тренування самостійно. Усі налаштування можна змінити.",
@@ -535,6 +585,44 @@ public struct WorkoutsView: View {
                     .font(.subheadline)
                     .foregroundStyle(Color.white.opacity(0.86))
                     .fixedSize(horizontal: false, vertical: true)
+
+                    if showsActivationOptions {
+                        VStack(alignment: .leading, spacing: 14) {
+                            TrainingSettingsSummaryRow(
+                                profile: activationProfile,
+                                languageCode: languageCode,
+                                textColor: Color.white.opacity(0.86),
+                                linkColor: Color.white
+                            ) {
+                                showsTrainingSettings = true
+                            }
+                            activationEffortRow(
+                                title: gymText(
+                                    "Today’s effort", "Навантаження сьогодні", "Нагрузка сегодня",
+                                    languageCode: languageCode
+                                ),
+                                options: TrainingActivationChoices.efforts,
+                                selection: $activationEffort
+                            )
+                            Button(action: editActivationPlan) {
+                                Label(
+                                    gymText(
+                                        "Review exercises", "Переглянути вправи", "Посмотреть упражнения",
+                                        languageCode: languageCode
+                                    ),
+                                    systemImage: "pencil"
+                                )
+                                .font(.headline)
+                                .foregroundStyle(Color.white)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 8)
+                        .tint(.white)
+                        .foregroundStyle(Color.white)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
 
                 Button(action: startActivationPlan) {
@@ -566,74 +654,25 @@ public struct WorkoutsView: View {
                         "Собрать вручную",
                         languageCode: languageCode
                     ))
-                    .font(.headline)
-                    .foregroundStyle(Color.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius)
-                            .strokeBorder(Color.white.opacity(0.46), lineWidth: 1)
-                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.plain)
-
-                DisclosureGroup(
-                    gymText(
-                        "Adjust recommendation",
-                        "Налаштувати пораду",
-                        "Настроить рекомендацию",
-                        languageCode: languageCode
-                    ),
-                    isExpanded: $showsActivationOptions
-                ) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        activationGoalChoiceGrid(
-                            title: gymText("Goal", "Ціль", "Цель", languageCode: languageCode),
-                            options: TrainingActivationChoices.goals,
-                            selection: $activationGoal,
-                            label: activationGoalLabel
-                        )
-                        activationChoiceRow(
-                            title: gymText(
-                                "Days / week", "Днів / тиждень", "Дней / неделю",
-                                languageCode: languageCode
-                            ),
-                            options: TrainingActivationChoices.days,
-                            selection: $activationDays,
-                            label: { $0.formatted() }
-                        )
-                        activationChoiceRow(
-                            title: gymText(
-                                "Today’s effort", "Навантаження сьогодні", "Нагрузка сегодня",
-                                languageCode: languageCode
-                            ),
-                            options: TrainingActivationChoices.efforts,
-                            selection: $activationEffort,
-                            label: \.gymDisplayName
-                        )
-                        Button(action: editActivationPlan) {
-                            Label(
-                                gymText(
-                                    "Review exercises", "Переглянути вправи", "Посмотреть упражнения",
-                                    languageCode: languageCode
-                                ),
-                                systemImage: "pencil"
-                            )
-                            .font(.headline)
-                            .foregroundStyle(Color.white)
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 8)
-                }
-                .tint(.white)
-                .foregroundStyle(Color.white)
             }
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            activationLensShape.fill(GymTheme.heroGradient)
+            activationLensShape.fill(
+                hasRetainedWorkoutDraft
+                    ? GymTheme.heroGradient
+                    : LinearGradient(
+                        colors: [GymTheme.brandFill, GymTheme.brandFillBright],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+            )
         }
         .overlay {
             activationLensShape.strokeBorder(Color.white.opacity(0.34), lineWidth: 1)
@@ -659,6 +698,18 @@ public struct WorkoutsView: View {
         activationDismissed = true
     }
 
+    private var emptyStateHint: some View {
+        Text(gymLocalized(
+            "Your workouts and weekly progress will show up here.",
+            languageCode: languageCode
+        ))
+        .font(.subheadline)
+        .foregroundStyle(GymTheme.textSecondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 16)
+    }
+
     private var activationLensShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
             topLeadingRadius: 28,
@@ -667,19 +718,6 @@ public struct WorkoutsView: View {
             topTrailingRadius: 28,
             style: .continuous
         )
-    }
-
-    private func activationGoalLabel(_ goal: TrainingGoal) -> String {
-        switch goal {
-        case .aestheticFatLoss:
-            gymText("Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка", languageCode: languageCode)
-        case .muscleGain:
-            gymText("Muscle Gain", "Набір мʼязів", "Набор мышц", languageCode: languageCode)
-        case .strength:
-            gymText("Strength", "Сила", "Сила", languageCode: languageCode)
-        case .balanced:
-            gymText("Balanced", "Баланс", "Баланс", languageCode: languageCode)
-        }
     }
 
     private func activationChoiceRow<Value: Hashable>(
@@ -715,29 +753,28 @@ public struct WorkoutsView: View {
         .accessibilityLabel(title)
     }
 
-    private func activationGoalChoiceGrid(
+    /// A fixed single row of equal-width chips, used for the three-option
+    /// effort picker so every label stays fully visible (no clipping, no
+    /// two-column wrap) even for the longest supported-language string.
+    private func activationEffortRow(
         title: String,
-        options: [TrainingGoal],
-        selection: Binding<TrainingGoal>,
-        label: @escaping (TrainingGoal) -> String
+        options: [SmartWorkoutEffort],
+        selection: Binding<SmartWorkoutEffort>
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.86))
 
-            LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible())],
-                spacing: 8
-            ) {
+            HStack(spacing: 8) {
                 ForEach(options, id: \.self) { option in
                     let isSelected = selection.wrappedValue == option
                     Button {
                         selection.wrappedValue = option
                     } label: {
-                        Text(label(option))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
+                        Text(option.gymDisplayName)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(ActivationChipButtonStyle(isSelected: isSelected))
@@ -760,10 +797,7 @@ public struct WorkoutsView: View {
     private func commitActivationPlan(launch: (WorkoutLaunchSeed) -> Bool) {
         let now = Date()
         referenceDate = now
-        let profile = TrainingProfile.activationProfile(
-            goal: activationGoal,
-            workoutsPerWeek: activationDays
-        )
+        let profile = activationProfile
         let plan = RecommendationEngine.buildWorkoutPlan(
             exercises: store.exercises,
             history: [],
@@ -996,30 +1030,21 @@ public struct WorkoutsView: View {
         })
         let currentSetIndex = currentExercise?.sets.firstIndex(where: { !$0.isCompleted })
         return VStack(alignment: .leading, spacing: 14) {
-            Text(gymText(
-                "Continue workout",
-                "Продовжити тренування",
-                "Продолжить тренировку",
-                languageCode: languageCode
-            ))
-            .font(.system(.largeTitle, design: .rounded, weight: .bold))
-            .tracking(-0.8)
+            Text(
+                currentExercise.flatMap { store.exercise(id: $0.exerciseID) }
+                    .map { gymExerciseName($0) } ?? gymText(
+                        "Next exercise",
+                        "Наступна вправа",
+                        "Следующее упражнение",
+                        languageCode: languageCode
+                    )
+            )
+            .font(.title2.bold())
             .foregroundStyle(Color.white)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
 
             if let draft {
-                Text(
-                    currentExercise.flatMap { store.exercise(id: $0.exerciseID) }
-                        .map { gymExerciseName($0) } ?? gymText(
-                            "Next exercise",
-                            "Наступна вправа",
-                            "Следующее упражнение",
-                            languageCode: languageCode
-                        )
-                )
-                .font(.title3.bold())
-                .foregroundStyle(Color.white)
                 Text(gymText(
                     "Set \((currentSetIndex ?? 0) + 1) · \(draft.completedSetCount) / \(draft.plannedSetCount) completed",
                     "Підхід \((currentSetIndex ?? 0) + 1) · виконано \(draft.completedSetCount) / \(draft.plannedSetCount)",
@@ -1212,14 +1237,16 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(GymTheme.TypeScale.sectionTitle)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                     .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 8)
                     GymInfoPill(
                         historyPeriod == .week
                             ? gymText(
-                                "\(completedTrainingDays) / \(projection.trainingProfile.workoutsPerWeek) days",
-                                "\(completedTrainingDays) / \(projection.trainingProfile.workoutsPerWeek) днів",
-                                "\(completedTrainingDays) / \(projection.trainingProfile.workoutsPerWeek) дней",
+                                "Goal: \(completedTrainingDays) of \(projection.trainingProfile.workoutsPerWeek)",
+                                "Ціль: \(completedTrainingDays) з \(projection.trainingProfile.workoutsPerWeek)",
+                                "Цель: \(completedTrainingDays) из \(projection.trainingProfile.workoutsPerWeek)",
                                 languageCode: languageCode
                             )
                             : gymCount(
@@ -1231,7 +1258,29 @@ public struct WorkoutsView: View {
                                 ukrainianMany: "днів",
                                 languageCode: languageCode
                             ),
-                        systemImage: "figure.strengthtraining.traditional"
+                        systemImage: historyPeriod == .week
+                            && completedTrainingDays >= projection.trainingProfile.workoutsPerWeek
+                            ? "checkmark.circle.fill"
+                            : "figure.strengthtraining.traditional"
+                    )
+                    .lineLimit(1)
+                    .accessibilityLabel(
+                        historyPeriod == .week
+                            ? gymText(
+                                "Weekly goal: \(completedTrainingDays) of \(projection.trainingProfile.workoutsPerWeek)",
+                                "Ціль тижня: \(completedTrainingDays) з \(projection.trainingProfile.workoutsPerWeek)",
+                                "Цель недели: \(completedTrainingDays) из \(projection.trainingProfile.workoutsPerWeek)",
+                                languageCode: languageCode
+                            )
+                            : gymCount(
+                                completedTrainingDays,
+                                englishOne: "day",
+                                englishMany: "days",
+                                ukrainianOne: "день",
+                                ukrainianFew: "дні",
+                                ukrainianMany: "днів",
+                                languageCode: languageCode
+                            )
                     )
                 }
 
@@ -1577,12 +1626,7 @@ public struct WorkoutsView: View {
         } label: {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(gymFormattedDate(
-                        workout.date,
-                        date: .long,
-                        time: .omitted,
-                        languageCode: languageCode
-                    ))
+                    Text(gymShortDate(workout.date, calendar: calendar, languageCode: languageCode))
                     .font(.subheadline.bold())
                     .foregroundStyle(GymTheme.textPrimary)
                     .lineLimit(1)
@@ -1592,10 +1636,17 @@ public struct WorkoutsView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                GymInfoPill(
+                Text(
                     activityOnly
                         ? compactHistoryDuration(workout.durationSeconds ?? 0)
-                        : formattedTodayHeroVolume(workout.totalVolume)
+                        : "\(formattedTodayHeroVolume(workout.totalVolume)) \(gymLocalized("kg", languageCode: languageCode))"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+                .accessibilityLabel(
+                    activityOnly
+                        ? compactHistoryDuration(workout.durationSeconds ?? 0)
+                        : "\(formattedTodayHeroVolumeAccessibility(workout.totalVolume)) \(gymLocalized("kg", languageCode: languageCode))"
                 )
                 Image(systemName: "chevron.right")
                     .font(.caption.bold())

@@ -36,6 +36,8 @@ struct AccountSettingsView: View {
     @State private var showsPasswordChange = false
     @State private var isSyncing = false
     @State private var isChangingPushSetting = false
+    @State private var showsBackupExporter = false
+    @State private var backupExportDocument: AccountBackupExportDocument?
 
     private let showsCloseButton: Bool
     private let hasBlockingLiveWorkout: Bool
@@ -52,14 +54,16 @@ struct AccountSettingsView: View {
         GymBackground {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
-                    header
-
                     if let message = appState.statusMessage {
                         GymStatusBanner(message: message, isError: appState.statusIsError)
                     }
 
                     accountDetailsCard
-                    syncCard
+                    if isCloudAccount {
+                        syncCard
+                    } else {
+                        backupHintRow
+                    }
                     if isCloudAccount {
                         notificationsCard
                     }
@@ -78,7 +82,9 @@ struct AccountSettingsView: View {
                 .padding(.bottom, GymTheme.screenBottomInset)
             }
         }
-        .navigationTitle("Account settings")
+        .navigationTitle(
+            gymText("Account", "Акаунт", "Аккаунт", languageCode: gymCurrentLanguageCode())
+        )
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if showsCloseButton {
@@ -103,17 +109,32 @@ struct AccountSettingsView: View {
             }
             .environmentObject(appState)
         }
+        .fileExporter(
+            isPresented: $showsBackupExporter,
+            document: backupExportDocument,
+            contentType: .json,
+            defaultFilename: "GymApp-backup",
+            onCompletion: handleBackupExportCompletion
+        )
     }
 
-    private var header: some View {
-        GymScreenHeader(
-            title: "Account & privacy"
-        )
+    /// Icon column width shared by every compact row on this screen, so
+    /// titles line up regardless of which SF Symbol a row uses. Mirrors
+    /// `ProfileView.settingsRowIconWidth`.
+    private static let rowIconWidth: CGFloat = 28
+    /// Divider leading inset = icon width + the row's icon/text spacing, so
+    /// the divider starts under the title, not under the icon.
+    private static let rowDividerInset: CGFloat = rowIconWidth + 12
+
+    private var rowDivider: some View {
+        Divider()
+            .overlay(GymTheme.outlineSoft)
+            .padding(.leading, Self.rowDividerInset)
     }
 
     private var accountDetailsCard: some View {
         GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: isCloudAccount ? "person.crop.circle.badge.checkmark" : "iphone")
                         .font(.title2)
@@ -124,100 +145,177 @@ struct AccountSettingsView: View {
                         Text(auth.session?.displayName ?? gymLocalized("GymApp athlete"))
                             .font(.title3.bold())
                             .foregroundStyle(GymTheme.textPrimary)
-                        Text(gymLocalized(isCloudAccount ? "Supabase cloud account" : "Local-only profile"))
+                        Text(accountSubtitleText)
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.9)
                     }
 
                     Spacer(minLength: 4)
-                    GymInfoPill(
-                        isCloudAccount ? "Cloud" : "On device",
-                        systemImage: isCloudAccount ? "icloud" : "internaldrive"
-                    )
                 }
 
-                Divider()
-
                 if let cloud = auth.session?.cloud {
-                    detailRow(label: "Email", value: cloud.email)
-                    detailRow(label: "User ID", value: cloud.userID, monospaced: true)
-                    detailRow(label: "Storage", value: "Encrypted local cache + Supabase cloud")
+                    CopyableIDRow(label: "User ID", value: cloud.userID)
                 } else if case let .local(id, _) = auth.session {
-                    detailRow(label: "Profile ID", value: id, monospaced: true)
-                    detailRow(label: "Storage", value: "This device only")
-                } else {
-                    detailRow(label: "Status", value: "Signed out")
+                    CopyableIDRow(label: "Profile ID", value: id)
                 }
             }
         }
+    }
+
+    private var accountSubtitleText: String {
+        if let cloud = auth.session?.cloud {
+            return cloud.email
+        }
+        if case .local = auth.session {
+            return gymText(
+                "Local profile · this iPhone only",
+                "Локальний профіль · лише на цьому iPhone",
+                "Локальный профиль · только на этом iPhone",
+                languageCode: gymCurrentLanguageCode()
+            )
+        }
+        return gymLocalized("Signed out")
     }
 
     private var syncCard: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
-                    title: isCloudAccount ? "Cloud sync" : "Local storage",
-                    supporting: isCloudAccount
-                        ? "Workout changes sync automatically while you are signed in."
-                        : "This profile keeps workouts on this device and does not synchronize protected progress."
+                    title: "Cloud sync",
+                    supporting: "Workout changes sync automatically while you are signed in."
                 )
 
-                if isCloudAccount {
-                    detailRow(label: "Status", value: cloudSyncStatusText)
-                    detailRow(
-                        label: "Last synced",
-                        value: appState.cloudLastSuccessfulSyncAt.map {
-                            gymFormattedTimestamp($0, date: .abbreviated, time: .shortened)
-                        } ?? "Not yet"
-                    )
+                detailRow(label: "Status", value: cloudSyncStatusText)
+                detailRow(
+                    label: "Last synced",
+                    value: appState.cloudLastSuccessfulSyncAt.map {
+                        gymFormattedTimestamp($0, date: .abbreviated, time: .shortened)
+                    } ?? "Not yet"
+                )
 
-                    if case .failed(let message) = appState.cloudSyncStatus {
-                        GymStatusBanner(message: message, isError: true)
-                    } else if case .conflict = appState.cloudSyncStatus {
-                        GymStatusBanner(
-                            message: "Workout history changed on more than one device. Choose which complete version to keep.",
-                            isError: true
-                        )
-                    }
-
-                    Button {
-                        syncNow()
-                    } label: {
-                        if isSyncing || appState.cloudSync.isSyncing {
-                            HStack(spacing: 9) {
-                                ProgressView()
-                                    .tint(.white)
-                                Text("Syncing…")
-                            }
-                        } else {
-                            Label(
-                                isRetryableCloudState ? "Retry sync" : "Sync now",
-                                systemImage: "arrow.triangle.2.circlepath"
-                            )
-                        }
-                    }
-                    .buttonStyle(GymPrimaryButtonStyle())
-                    .disabled(isSyncing || appState.cloudSync.isSyncing)
-                    .accessibilityHint(
-                        gymText(
-                            "Reloads the cloud revision, reconciles changes, and uploads only when safe",
-                            "Повторно завантажує хмарну версію, узгоджує зміни й надсилає їх лише тоді, коли це безпечно",
-                            "Повторно загружает облачную версию, согласует изменения и отправляет их только тогда, когда это безопасно",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    )
-                } else {
-                    GymInlineState(
-                        gymText(
-                            "Use Export backup on the Profile screen before replacing or resetting this device.",
-                            "Перед заміною або скиданням пристрою скористайтеся експортом резервної копії на екрані профілю.",
-                            "Перед заменой или сбросом устройства воспользуйтесь экспортом резервной копии на экране профиля.",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "externaldrive"
+                if case .failed(let message) = appState.cloudSyncStatus {
+                    GymStatusBanner(message: message, isError: true)
+                } else if case .conflict = appState.cloudSyncStatus {
+                    GymStatusBanner(
+                        message: "Workout history changed on more than one device. Choose which complete version to keep.",
+                        isError: true
                     )
                 }
+
+                Button {
+                    syncNow()
+                } label: {
+                    if isSyncing || appState.cloudSync.isSyncing {
+                        HStack(spacing: 9) {
+                            ProgressView()
+                                .tint(.white)
+                            Text("Syncing…")
+                        }
+                    } else {
+                        Label(
+                            isRetryableCloudState ? "Retry sync" : "Sync now",
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                    }
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+                .disabled(isSyncing || appState.cloudSync.isSyncing)
+                .accessibilityHint(
+                    gymText(
+                        "Reloads the cloud revision, reconciles changes, and uploads only when safe",
+                        "Повторно завантажує хмарну версію, узгоджує зміни й надсилає їх лише тоді, коли це безпечно",
+                        "Повторно загружает облачную версию, согласует изменения и отправляет их только тогда, когда это безопасно",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
             }
+        }
+    }
+
+    /// Local-only replacement for the old "Local storage" explanation card:
+    /// a single tappable hint row that opens the same backup export action
+    /// `ProfileView.prepareBackupJSON()` uses (`appState.exportBackup()`),
+    /// via this screen's own `fileExporter`.
+    private var backupHintRow: some View {
+        GymPanel(contentPadding: EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16)) {
+            Button(action: prepareBackupExport) {
+                HStack(spacing: 12) {
+                    Image(systemName: "externaldrive")
+                        .font(.title3)
+                        .foregroundStyle(GymTheme.primary)
+                        .frame(width: Self.rowIconWidth)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(
+                            gymText(
+                                "Backup",
+                                "Резервна копія",
+                                "Резервная копия",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
+                        Text(
+                            gymText(
+                                "Make one before switching phones",
+                                "Зроби перед зміною телефона",
+                                "Сделай перед сменой телефона",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+                .padding(.vertical, 12)
+                .frame(minHeight: 56)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(
+                gymText(
+                    "Exports a JSON backup of this profile's workouts using the Files picker",
+                    "Експортує JSON-копію тренувань цього профілю через засіб вибору файлів",
+                    "Экспортирует JSON-копию тренировок этого профиля через выбор файлов",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        }
+    }
+
+    private func prepareBackupExport() {
+        do {
+            let data = try appState.exportBackup()
+            backupExportDocument = AccountBackupExportDocument(data: data)
+            showsBackupExporter = true
+        } catch {
+            appState.show(message: gymErrorMessage(error), isError: true)
+        }
+    }
+
+    private func handleBackupExportCompletion(_ result: Result<URL, Error>) {
+        backupExportDocument = nil
+        switch result {
+        case .success:
+            appState.show(
+                message: gymText(
+                    "Backup saved.",
+                    "Резервну копію збережено.",
+                    "Резервная копия сохранена.",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                isError: false
+            )
+        case .failure(let error):
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 
@@ -322,42 +420,67 @@ struct AccountSettingsView: View {
     }
 
     private var privacyAndSupportCard: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                GymSectionTitle(
-                    title: "Privacy and support"
-                )
-
-                Link(destination: GymAppConfiguration.privacyPolicyURL) {
-                    Label("Privacy policy", systemImage: "hand.raised")
-                        .frame(maxWidth: .infinity)
+        VStack(alignment: .leading, spacing: 10) {
+            GymPanel(contentPadding: EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16)) {
+                VStack(spacing: 0) {
+                    linkRow(
+                        title: "Privacy policy",
+                        systemImage: "hand.raised",
+                        destination: GymAppConfiguration.privacyPolicyURL,
+                        accessibilityHint: "Opens the GymApp privacy policy in your browser"
+                    )
+                    rowDivider
+                    linkRow(
+                        title: "Support",
+                        systemImage: "questionmark.circle",
+                        destination: GymAppConfiguration.supportURL,
+                        accessibilityHint: "Opens GymApp support in your browser"
+                    )
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Opens the GymApp privacy policy in your browser")
-
-                Link(destination: GymAppConfiguration.supportURL) {
-                    Label("Support", systemImage: "questionmark.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Opens GymApp support in your browser")
-
-                Label("GymApp has no advertising, cross-app tracking, or sale of personal data.", systemImage: "checkmark.shield")
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            Label("GymApp has no advertising, cross-app tracking, or sale of personal data.", systemImage: "checkmark.shield")
+                .font(.caption)
+                .foregroundStyle(GymTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func linkRow(
+        title: String,
+        systemImage: String,
+        destination: URL,
+        accessibilityHint: String
+    ) -> some View {
+        Link(destination: destination) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: Self.rowIconWidth)
+                    .accessibilityHidden(true)
+                Text(gymLocalized(title))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 6)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            .padding(.vertical, 12)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .accessibilityHint(accessibilityHint)
     }
 
     private var sessionCard: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: isCloudAccount ? "Sign out" : "Leave local profile",
-                    supporting: signOutSupportingText
-                )
-
                 if isCloudAccount {
                     Button {
                         showsPasswordChange = true
@@ -368,17 +491,7 @@ struct AccountSettingsView: View {
                     .accessibilityHint("Opens a form that requires the current password")
                 }
 
-                Button {
-                    prompt = .signOut
-                } label: {
-                    Label(
-                        gymLocalized(isCloudAccount ? "Sign out" : "Return to sign in"),
-                        systemImage: "rectangle.portrait.and.arrow.right"
-                    )
-                }
-                .buttonStyle(GymSecondaryButtonStyle())
-                .accessibilityHint("Asks for confirmation before ending this session")
-                .disabled(hasBlockingLiveWorkout)
+                signOutRow
 
                 if hasBlockingLiveWorkout {
                     Label(
@@ -398,38 +511,87 @@ struct AccountSettingsView: View {
         }
     }
 
-    private var dangerZone: some View {
-        GymPanel {
-            VStack(alignment: .leading, spacing: 13) {
-                GymSectionTitle(
-                    title: isCloudAccount ? "Delete account" : "Delete local profile"
-                )
-
-                Button(role: .destructive) {
-                    guard let session = auth.session else { return }
-                    prompt = .beginDeletion(
-                        AccountDeletionConfirmationTarget(session: session)
-                    )
-                } label: {
-                    Label(
-                        gymLocalized(isCloudAccount ? "Delete account and data" : "Delete local profile and data"),
-                        systemImage: "trash"
-                    )
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 13)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                            .fill(GymTheme.error)
-                    )
+    /// Compact row replacing the old "Leave local profile" card's button
+    /// (and, for cloud accounts, the old "Sign out" button). Same
+    /// confirmation flow (`prompt = .signOut`) and disabled state.
+    private var signOutRow: some View {
+        Button {
+            prompt = .signOut
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.title3)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(width: Self.rowIconWidth)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(gymLocalized(signOutRowTitle))
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
+                    Text(gymLocalized(signOutRowSubtitle))
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Starts a two-step permanent deletion confirmation")
-
+                Spacer(minLength: 6)
             }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("Asks for confirmation before ending this session")
+        .disabled(hasBlockingLiveWorkout)
+    }
+
+    private var signOutRowTitle: String {
+        isCloudAccount
+            ? gymLocalized("Sign out")
+            : gymText(
+                "Sign out of profile",
+                "Вийти з профілю",
+                "Выйти из профиля",
+                languageCode: gymCurrentLanguageCode()
+            )
+    }
+
+    /// Cloud keeps its own explanatory copy (`signOutSupportingText`, used
+    /// verbatim by the confirmation alert too). Local gets the short row
+    /// subtitle called for by design.
+    private var signOutRowSubtitle: String {
+        if isCloudAccount {
+            return signOutSupportingText
+        }
+        return gymText(
+            "Workouts stay on this iPhone",
+            "Тренування залишаться на цьому iPhone",
+            "Тренировки останутся на этом iPhone",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    /// Destructive text row replacing the old filled red button. Same
+    /// two-step deletion confirmation flow, unchanged.
+    private var dangerZone: some View {
+        Button(role: .destructive) {
+            guard let session = auth.session else { return }
+            prompt = .beginDeletion(
+                AccountDeletionConfirmationTarget(session: session)
+            )
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "trash")
+                    .accessibilityHidden(true)
+                Text(gymLocalized(isCloudAccount ? "Delete account and data" : "Delete local profile and data"))
+                    .font(.body.weight(.semibold))
+            }
+            .foregroundStyle(GymTheme.error)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Starts a two-step permanent deletion confirmation")
     }
 
     private var isCloudAccount: Bool {
@@ -520,6 +682,92 @@ struct AccountSettingsView: View {
         Task {
             await appState.forceCloudSync()
             isSyncing = false
+        }
+    }
+}
+
+/// Backup JSON produced by `appState.exportBackup()`, exported through this
+/// screen's own `fileExporter`. Mirrors `ProfileExportDocument` in
+/// `ProfileView.swift`, which is `private` to that file and not reusable here.
+private struct AccountBackupExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.data = data
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+/// Compact "ID + copy" row used by `accountDetailsCard` for the local
+/// profile ID and the cloud user ID. Copying briefly confirms in place
+/// instead of via a separate alert or toast.
+private struct CopyableIDRow: View {
+    let label: String
+    let value: String
+
+    @State private var copied = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(gymLocalized(label))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                Text(value)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(gymLocalized(label))
+            .accessibilityValue(value)
+
+            Spacer(minLength: 8)
+
+            Button(action: copy) {
+                Text(
+                    copied
+                        ? gymText("Copied", "Скопійовано", "Скопировано", languageCode: gymCurrentLanguageCode())
+                        : gymText("Copy", "Копіювати", "Скопировать", languageCode: gymCurrentLanguageCode())
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(GymTheme.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(GymTheme.primary.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(
+                gymText(
+                    "Copies the identifier to the clipboard",
+                    "Копіює ідентифікатор у буфер обміну",
+                    "Копирует идентификатор в буфер обмена",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        }
+    }
+
+    private func copy() {
+        UIPasteboard.general.string = value
+        copied = true
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            copied = false
         }
     }
 }

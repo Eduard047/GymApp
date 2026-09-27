@@ -170,7 +170,6 @@ struct PostWorkoutSummaryView: View {
                         rewardHero(workout)
                         metricsPanel(workout)
                         feedbackPanel
-                        progressionPanel
                         if !trainedMuscles.isEmpty {
                             musclesPanel
                         }
@@ -229,10 +228,6 @@ struct PostWorkoutSummaryView: View {
         store.workoutSummaries.first { $0.workoutID == workoutID }
     }
 
-    private var weeklyStreakWeeks: Int {
-        postWorkoutExperience?.weeklyStreakWeeks ?? 0
-    }
-
     private var sessionHistory: [ExerciseHistoryEntry] {
         store.allExerciseHistory().filter { $0.workoutID == workoutID }
     }
@@ -246,12 +241,21 @@ struct PostWorkoutSummaryView: View {
         .sorted { $0.load > $1.load }
     }
 
+    /// Groups the session's PRs one row per exercise, and drops any record
+    /// whose value is 0. A 0-weight "record" happens on an exercise with no
+    /// prior history: `previousMaxWeight`/`previousEstimatedMax` default to
+    /// -1 as a sentinel, so a first-time bodyweight set logged at weight 0
+    /// (e.g. an assisted or bodyweight movement) satisfies `0 > -1` and is
+    /// flagged as a new best even though it carries no real value. That
+    /// sentinel comparison lives in this computed property, not in a deeper
+    /// domain module, so the `> 0` guards below are the fix — no domain
+    /// logic changes.
     private var personalRecords: [SummaryPersonalRecord] {
         guard let workout = store.workout(id: workoutID),
               let current = sessionSummary else { return [] }
-        return workout.exercises.flatMap { block -> [SummaryPersonalRecord] in
+        return workout.exercises.compactMap { block -> SummaryPersonalRecord? in
             guard let exercise = store.exercise(id: block.exerciseID), !block.sets.isEmpty else {
-                return []
+                return nil
             }
             let previous = postWorkoutPreviousHistory(
                 store.exerciseHistory(exerciseID: block.exerciseID),
@@ -259,83 +263,137 @@ struct PostWorkoutSummaryView: View {
             )
             let previousMaxWeight = previous.map(\.weight).max() ?? -1
             let previousEstimatedMax = previous.map(\.estimatedOneRepMax).max() ?? -1
-            var values: [SummaryPersonalRecord] = []
+
+            var weightRecord: Double?
             if let bestWeight = block.sets.max(by: { $0.weight < $1.weight }),
-               bestWeight.weight > previousMaxWeight {
-                values.append(
-                    SummaryPersonalRecord(
-                        exerciseID: exercise.id,
-                        title: gymExerciseName(exercise),
-                        detail: gymText(
-                            "New weight best · \(bestWeight.weight.formatted(.number.precision(.fractionLength(0 ... 2))))",
-                            "Новий рекорд ваги · \(bestWeight.weight.formatted(.number.precision(.fractionLength(0 ... 2))))",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "dumbbell.fill"
-                    )
-                )
+               bestWeight.weight > previousMaxWeight, bestWeight.weight > 0 {
+                weightRecord = bestWeight.weight
             }
+            var oneRepMaxRecord: Double?
             if let bestEstimated = block.sets.max(by: {
                 $0.estimatedOneRepMax < $1.estimatedOneRepMax
-            }), bestEstimated.estimatedOneRepMax > previousEstimatedMax {
-                values.append(
-                    SummaryPersonalRecord(
-                        exerciseID: exercise.id,
-                        title: gymExerciseName(exercise),
-                        detail: gymText(
-                            "Estimated 1RM · \(bestEstimated.estimatedOneRepMax.formatted(.number.precision(.fractionLength(0 ... 1))))",
-                            "Розрахунковий 1ПМ · \(bestEstimated.estimatedOneRepMax.formatted(.number.precision(.fractionLength(0 ... 1))))",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "bolt.fill"
-                    )
-                )
+            }), bestEstimated.estimatedOneRepMax > previousEstimatedMax, bestEstimated.estimatedOneRepMax > 0 {
+                oneRepMaxRecord = bestEstimated.estimatedOneRepMax
             }
-            return values
+
+            guard weightRecord != nil || oneRepMaxRecord != nil else { return nil }
+            return SummaryPersonalRecord(
+                exerciseID: exercise.id,
+                title: gymExerciseName(exercise),
+                weight: weightRecord,
+                estimatedOneRepMax: oneRepMaxRecord
+            )
         }
+    }
+
+    private func recordDetail(_ record: SummaryPersonalRecord) -> String {
+        var parts: [String] = []
+        if let weight = record.weight {
+            parts.append(
+                gymText(
+                    "\(formattedRecordValue(weight)) kg",
+                    "\(formattedRecordValue(weight)) кг",
+                    "\(formattedRecordValue(weight)) кг",
+                    languageCode: languageCode
+                )
+            )
+        }
+        if let oneRepMax = record.estimatedOneRepMax {
+            parts.append(
+                gymText(
+                    "Est. 1RM \(formattedRecordValue(oneRepMax)) kg",
+                    "Розрах. 1ПМ \(formattedRecordValue(oneRepMax)) кг",
+                    "1ПМ \(formattedRecordValue(oneRepMax)) кг",
+                    languageCode: languageCode
+                )
+            )
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func formattedRecordValue(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0 ... 1)))
     }
 
     private func rewardHero(_ workout: WorkoutSession) -> some View {
         let xp = sessionSummary.map(GamificationEngine.xpForSession) ?? 0
+        let progression = gamification.progression
         return GymHeroPanel {
-            VStack(alignment: .leading, spacing: 15) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 38, weight: .bold))
+                        .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(Color.white)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Workout complete")
-                            .font(.title.bold())
-                            .accessibilityAddTraits(.isHeader)
-                        Text(gymFormattedDate(workout.date, date: .long, time: .shortened))
+                        Text(gymText(
+                            "Workout complete",
+                            "Тренування завершено",
+                            "Тренировка завершена",
+                            languageCode: languageCode
+                        ))
+                        .font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
+                        Text(summaryDateLine(workout))
                             .font(.subheadline)
                             .foregroundStyle(Color.white.opacity(0.82))
                     }
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
-                    GymMetricTile(label: "Session XP", value: "+\(xp)", emphasized: true, onHero: true)
-                    GymMetricTile(label: "Level", value: gamification.progression.level.formatted(), onHero: true)
-                    GymMetricTile(label: "Title", value: gamification.progression.title.name, onHero: true)
-                    GymMetricTile(
-                        label: gymText(
-                            "Week streak",
-                            "Серія тижнів",
-                            "Серия недель",
-                            languageCode: languageCode
-                        ),
-                        value: gymText(
-                            "\(weeklyStreakWeeks) wk",
-                            "\(weeklyStreakWeeks) тиж",
-                            "\(weeklyStreakWeeks) нед",
-                            languageCode: languageCode
-                        ),
-                        onHero: true
-                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("+\(xp) XP")
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.white)
+                    Text(gymText(
+                        "Session XP",
+                        "XP сесії",
+                        "XP сессии",
+                        languageCode: languageCode
+                    ))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.white.opacity(0.72))
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(gymText(
+                        "Level \(progression.level) · \(progression.title.name)",
+                        "Рівень \(progression.level) · \(gymLocalized(progression.title.name))",
+                        "Уровень \(progression.level) · \(gymLocalized(progression.title.name))",
+                        languageCode: languageCode
+                    ))
+                    .font(.subheadline.weight(.semibold))
+
+                    ProgressView(value: progression.levelProgress)
+                        .tint(Color.white)
+                        .frame(height: 4)
+                        .clipShape(Capsule())
+                        .accessibilityHidden(true)
+
+                    Text(gymText(
+                        "\(progression.xpToNextLevel) XP to level \(progression.level + 1)",
+                        "\(progression.xpToNextLevel) XP до рівня \(progression.level + 1)",
+                        "\(progression.xpToNextLevel) XP до уровня \(progression.level + 1)",
+                        languageCode: languageCode
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.72))
                 }
             }
+            .accessibilityElement(children: .combine)
         }
+    }
+
+    /// "Сб, 26 сент. · 4 ч 31 мин" — abbreviated weekday + day + abbreviated
+    /// month in the app's language locale, then the workout's duration
+    /// (omitted when unknown). The year is appended only when it differs
+    /// from the current year.
+    private func summaryDateLine(_ workout: WorkoutSession) -> String {
+        let datePart = gymShortDate(workout.date, calendar: calendar, languageCode: languageCode)
+        guard let seconds = workout.durationSeconds, seconds > 0 else { return datePart }
+        let durationText = gymCompactDuration(seconds, languageCode: languageCode)
+        guard !durationText.isEmpty else { return datePart }
+        return "\(datePart) · \(durationText)"
     }
 
     private func metricsPanel(_ workout: WorkoutSession) -> some View {
@@ -357,50 +415,6 @@ struct PostWorkoutSummaryView: View {
                         value: trainedMuscles.first.map(muscleTitle) ?? "—"
                     )
                 }
-            }
-        }
-    }
-
-    private var progressionPanel: some View {
-        GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: gymText(
-                        "Level \(gamification.progression.level) · \(gamification.progression.title.name)",
-                        "Рівень \(gamification.progression.level) · \(gymLocalized(gamification.progression.title.name))",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
-                    supporting: gymText(
-                        "\(gamification.progression.xpToNextLevel) XP to the next level",
-                        "\(gamification.progression.xpToNextLevel) XP до наступного рівня",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-                ProgressView(value: gamification.progression.levelProgress)
-                    .tint(GymTheme.primary)
-                    .accessibilityLabel("Level progress")
-                    .accessibilityValue(
-                        gamification.progression.levelProgress.formatted(.percent.precision(.fractionLength(0)))
-                    )
-                HStack {
-                    Text(
-                        gymText(
-                            "\(gamification.progression.xpIntoLevel) XP this level",
-                            "\(gamification.progression.xpIntoLevel) XP на цьому рівні",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    )
-                    Spacer()
-                    Text(
-                        gymText(
-                            "\(gamification.progression.totalXP) total XP",
-                            "\(gamification.progression.totalXP) XP загалом",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    )
-                }
-                .font(.caption)
-                .foregroundStyle(GymTheme.textSecondary)
             }
         }
     }
@@ -465,8 +479,8 @@ struct PostWorkoutSummaryView: View {
         } label: {
             Text(feedbackTitle(feedback))
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
-                .minimumScaleFactor(0.75)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(WorkoutFeedbackButtonStyle(selected: selected))
@@ -487,11 +501,11 @@ struct PostWorkoutSummaryView: View {
     private func feedbackTitle(_ feedback: WorkoutFeedback) -> String {
         switch feedback {
         case .easy:
-            gymText("Too easy", "Надто легко", "Слишком легко", languageCode: languageCode)
+            gymText("Easy", "Легко", "Легко", languageCode: languageCode)
         case .normal:
-            gymText("Just right", "Саме так", "В самый раз", languageCode: languageCode)
+            gymText("Just right", "Саме те", "В самый раз", languageCode: languageCode)
         case .hard:
-            gymText("Too hard", "Надто важко", "Слишком тяжело", languageCode: languageCode)
+            gymText("Hard", "Важко", "Тяжело", languageCode: languageCode)
         }
     }
 
@@ -529,24 +543,31 @@ struct PostWorkoutSummaryView: View {
                     title: "New bests"
                 )
                 ForEach(personalRecords) { record in
-                    HStack(alignment: .top, spacing: 11) {
+                    HStack(alignment: .center, spacing: 11) {
                         if let exercise = store.exercise(id: record.exerciseID) {
                             ExerciseMediaButton(
                                 rawExerciseName: exercise.name,
                                 catalogKey: exercise.catalogKey,
                                 exerciseID: exercise.id,
-                                ownerKey: store.accountStorageKey
+                                ownerKey: store.accountStorageKey,
+                                editable: false,
+                                width: 40,
+                                height: 40,
+                                playOverlayDiameter: 18
                             )
                         } else {
-                            Image(systemName: record.systemImage)
+                            Image(systemName: "trophy.fill")
                                 .foregroundStyle(GymTheme.tertiary)
-                                .frame(width: 24)
+                                .frame(width: 40, height: 40)
                         }
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(record.title).font(.subheadline.weight(.semibold))
-                            Text(gymLocalized(record.detail))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(record.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text(recordDetail(record))
                                 .font(.caption)
                                 .foregroundStyle(GymTheme.textSecondary)
+                                .lineLimit(1)
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -590,25 +611,23 @@ struct PostWorkoutSummaryView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 GymSectionTitle(
-                    title: "Unlocked badges"
+                    title: gymText("New badges", "Нові значки", "Новые значки", languageCode: languageCode)
                 )
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 9)], spacing: 9) {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3),
+                    alignment: .leading,
+                    spacing: 12
+                ) {
                     ForEach(badges) { badge in
-                        VStack(spacing: 7) {
-                            Image(systemName: "medal.fill")
-                                .font(.title2)
-                                .foregroundStyle(badgeColor(badge.rarity))
-                            Text(gymLocalized(badge.name))
-                                .font(.subheadline.weight(.bold))
-                                .multilineTextAlignment(.center)
-                            Text(badge.rarity.displayName)
-                                .font(.caption)
-                                .foregroundStyle(GymTheme.textSecondary)
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity)
-                        .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
-                        .accessibilityElement(children: .combine)
+                        GymBadgeRingTile(
+                            systemImage: AchievementIconCatalog.icon(forID: badge.id),
+                            title: gymLocalized(badge.name),
+                            accent: gymBadgeAccent(badge.rarity)
+                        )
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(
+                            "\(gymLocalized(badge.name)), \(badge.rarity.displayName)"
+                        )
                     }
                 }
             }
@@ -616,25 +635,30 @@ struct PostWorkoutSummaryView: View {
     }
 
     private var actions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) { actionButtons }
-            VStack(spacing: 10) { actionButtons }
-        }
-    }
+        VStack(spacing: 10) {
+            Button(action: onDone) {
+                Text(gymText("Done", "Готово", "Готово", languageCode: languageCode))
+            }
+            .buttonStyle(GymPrimaryButtonStyle())
 
-    @ViewBuilder
-    private var actionButtons: some View {
-        Button {
-            onOpenDetail(workoutID)
-        } label: {
-            Label("Workout detail", systemImage: "list.bullet.rectangle")
+            Button {
+                onOpenDetail(workoutID)
+            } label: {
+                Text(gymText(
+                    "Workout detail",
+                    "Деталі тренування",
+                    "Детали тренировки",
+                    languageCode: languageCode
+                ))
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GymTheme.primary)
         }
-        .buttonStyle(GymSecondaryButtonStyle())
-
-        Button(action: onDone) {
-            Label("Done", systemImage: "checkmark")
-        }
-        .buttonStyle(GymPrimaryButtonStyle())
     }
 
     private func muscleTitle(_ load: MuscleLoad) -> String {
@@ -647,24 +671,14 @@ struct PostWorkoutSummaryView: View {
     private func missionValue(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(0)))
     }
-
-    private func badgeColor(_ rarity: BadgeRarity) -> Color {
-        switch rarity {
-        case .common: GymTheme.textSecondary
-        case .uncommon: GymTheme.primary
-        case .rare: GymTheme.secondary
-        case .epic: .purple
-        case .legendary: GymTheme.tertiary
-        }
-    }
 }
 
 private struct SummaryPersonalRecord: Identifiable {
     let id = UUID()
     let exerciseID: UUID
     let title: String
-    let detail: String
-    let systemImage: String
+    let weight: Double?
+    let estimatedOneRepMax: Double?
 }
 
 private struct WorkoutFeedbackButtonStyle: ButtonStyle {

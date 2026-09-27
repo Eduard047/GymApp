@@ -66,22 +66,33 @@ public struct GymHeroPanel<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
+    private let contentPadding: EdgeInsets
+    private let gradient: LinearGradient
+    private let solidFill: Color
     private let content: Content
 
-    public init(@ViewBuilder content: () -> Content) {
+    public init(
+        contentPadding: EdgeInsets = EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20),
+        gradient: LinearGradient = GymTheme.heroGradient,
+        solidFill: Color = GymTheme.heroLeading,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.contentPadding = contentPadding
+        self.gradient = gradient
+        self.solidFill = solidFill
         self.content = content()
     }
 
     public var body: some View {
         content
-            .padding(20)
+            .padding(contentPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(GymTheme.onHero)
             .background {
                 if reduceTransparency {
-                    lensShape.fill(GymTheme.heroLeading)
+                    lensShape.fill(solidFill)
                 } else {
-                    lensShape.fill(GymTheme.heroGradient)
+                    lensShape.fill(gradient)
                 }
             }
             .overlay {
@@ -242,12 +253,23 @@ public struct GymMetricTile: View {
     private let value: String
     private let emphasized: Bool
     private let onHero: Bool
+    private let labelUppercase: Bool
+    private let compactValue: Bool
 
-    public init(label: String, value: String, emphasized: Bool = false, onHero: Bool = false) {
+    public init(
+        label: String,
+        value: String,
+        emphasized: Bool = false,
+        onHero: Bool = false,
+        labelUppercase: Bool = false,
+        compactValue: Bool = false
+    ) {
         self.label = label
         self.value = value
         self.emphasized = emphasized
         self.onHero = onHero
+        self.labelUppercase = labelUppercase
+        self.compactValue = compactValue
     }
 
     public var body: some View {
@@ -255,17 +277,20 @@ public struct GymMetricTile: View {
             Text(gymLocalized(label, locale: locale))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(onHero ? Color.white.opacity(0.76) : GymTheme.textSecondary)
-                .textCase(.uppercase)
-                .tracking(0.35)
-
-            Text(gymLocalized(value, locale: locale))
-                .font(emphasized ? .title2.bold() : GymTheme.TypeScale.metric)
-                .foregroundStyle(onHero ? Color.white : GymTheme.textPrimary)
+                .textCase(labelUppercase ? .uppercase : nil)
+                .tracking(labelUppercase ? 0.35 : 0)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text(gymLocalized(value, locale: locale))
+                .font(compactValue ? .headline.bold() : (emphasized ? .title2.bold() : GymTheme.TypeScale.metric))
+                .foregroundStyle(onHero ? Color.white : GymTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: !compactValue)
         }
         .padding(GymTheme.Spacing.medium)
-        .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 74, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
                 .fill(onHero ? Color.white.opacity(0.085) : GymTheme.surfaceVariant.opacity(0.58))
@@ -427,7 +452,11 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init() {}
+    private let fillColor: Color
+
+    public init(fillColor: Color = GymTheme.primaryAction) {
+        self.fillColor = fillColor
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -438,7 +467,7 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                    .fill(GymTheme.primaryAction)
+                    .fill(fillColor)
                     .brightness(configuration.isPressed ? -0.055 : 0)
             )
             .opacity(isEnabled ? 1 : 0.48)

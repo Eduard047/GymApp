@@ -13,6 +13,17 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .russian: "RU"
         }
     }
+    /// The language's own full name, in itself (not translated into the
+    /// currently selected app language) — e.g. for a trailing "current
+    /// language" label that should always read "Русский", never "RU" or a
+    /// translation of "Russian".
+    var fullTitle: String {
+        switch self {
+        case .english: "English"
+        case .ukrainian: "Українська"
+        case .russian: "Русский"
+        }
+    }
     var locale: Locale { Locale(identifier: rawValue) }
 
     static var firstRunDefault: AppLanguage {
@@ -474,6 +485,61 @@ func gymFormattedWeekday(
 ) -> String {
     let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
     return value.formatted(.dateTime.weekday(.wide).locale(locale))
+}
+
+/// Compact, locale-aware range like "21–27 сент." (same month) or
+/// "29 сент. – 5 окт." (cross-month), including the year only when it
+/// differs from the current year.
+func gymFormattedDateRange(
+    from start: Date,
+    to end: Date,
+    calendar: Calendar = .current,
+    now: Date = Date(),
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let includeYear = calendar.component(.year, from: end) != calendar.component(.year, from: now)
+    let formatter = DateIntervalFormatter()
+    formatter.locale = locale
+    formatter.calendar = calendar
+    formatter.dateTemplate = includeYear ? "d MMM yyyy" : "d MMM"
+    return formatter.string(from: start, to: end) ?? ""
+}
+
+/// "Сб, 26 сент." — abbreviated weekday + day + abbreviated month in the
+/// app's language locale. The year is appended only when it differs from
+/// `now`'s year.
+func gymShortDate(
+    _ value: Date,
+    calendar: Calendar = .current,
+    now: Date = Date(),
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let sameYear = calendar.component(.year, from: value) == calendar.component(.year, from: now)
+    let formatter = DateFormatter()
+    formatter.locale = locale
+    formatter.setLocalizedDateFormatFromTemplate(sameYear ? "EEE d MMM" : "EEE d MMM yyyy")
+    return formatter.string(from: value)
+}
+
+/// "3 ч 52 мин" — locale-aware, abbreviated hour/minute duration built from
+/// a `DateComponentsFormatter`. Returns "" when the duration is zero or the
+/// formatter has nothing to show.
+func gymCompactDuration(
+    _ seconds: Int,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    guard seconds > 0 else { return "" }
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let formatter = DateComponentsFormatter()
+    formatter.unitsStyle = .abbreviated
+    formatter.allowedUnits = [.hour, .minute]
+    formatter.maximumUnitCount = 2
+    var durationCalendar = Calendar(identifier: .gregorian)
+    durationCalendar.locale = locale
+    formatter.calendar = durationCalendar
+    return formatter.string(from: TimeInterval(seconds)) ?? ""
 }
 
 func gymErrorMessage(

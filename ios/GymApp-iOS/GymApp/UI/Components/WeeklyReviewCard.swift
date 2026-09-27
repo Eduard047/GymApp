@@ -4,12 +4,22 @@ struct WeeklyReviewCard: View {
     @ObservedObject var store: WorkoutStore
     @State private var offset = 0
     @State private var evidence: WeeklyReview.Insight?
+    @State private var showsWeeklyTargetEditor = false
     private func t(_ en: String, _ uk: String, _ ru: String) -> String {
         gymText(en, uk, ru, languageCode: gymCurrentLanguageCode())
     }
+    private func trainingProfileBinding(current: TrainingProfile) -> Binding<TrainingProfile> {
+        Binding(
+            get: { current },
+            set: { newValue in
+                TrainingProfileStore().save(newValue, accountStorageKey: store.accountStorageKey)
+            }
+        )
+    }
     var body: some View {
         let review = WeeklyReview.build(store.allExerciseHistory(), offset: offset)
-        let target = TrainingProfileStore().load(accountStorageKey: store.accountStorageKey).workoutsPerWeek
+        let trainingProfile = TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
+        let target = trainingProfile.workoutsPerWeek
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Text(t("Weekly review", "Підсумок тижня", "Итог недели")).font(.title3.bold())
@@ -17,13 +27,26 @@ struct WeeklyReviewCard: View {
                     Button { offset = max(-520, offset - 1) } label: { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44) }
                         .accessibilityLabel(t("Previous week", "Попередній тиждень", "Предыдущая неделя"))
                     Spacer()
-                    Text("\(gymFormattedDate(review.start, date: .abbreviated, time: .omitted)) – \(gymFormattedDate(review.end, date: .abbreviated, time: .omitted))").font(.caption)
+                    Text(gymFormattedDateRange(from: review.start, to: review.end)).font(.caption)
                     Spacer()
                     Button { offset = min(0, offset + 1) } label: { Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44) }
                         .disabled(offset == 0).accessibilityLabel(t("Next week", "Наступний тиждень", "Следующая неделя"))
                 }
                 if review.partial { Text(t("Week in progress", "Тиждень триває", "Неделя ещё идёт")).font(.caption).foregroundStyle(GymTheme.textSecondary) }
-                Text("\(review.trainingDays) / \(target) · " + t("training days", "тренувальних днів", "тренировочных дней")).font(.headline)
+                Text(t(
+                    "\(review.trainingDays) of \(target) workouts",
+                    "\(review.trainingDays) з \(target) тренувань",
+                    "\(review.trainingDays) из \(target) тренировок"
+                )).font(.headline)
+                Button {
+                    showsWeeklyTargetEditor = true
+                } label: {
+                    Text(t("Training settings", "Налаштування тренувань", "Настройки тренировок") + " · " + t("edit", "змінити", "изменить"))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.brandFill)
+                        .frame(minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain)
                 ForEach(review.insights) { insight in
                     Button { evidence = insight } label: {
                         VStack(alignment: .leading, spacing: 4) {
@@ -34,7 +57,11 @@ struct WeeklyReviewCard: View {
                 }
                 if review.insights.isEmpty {
                     Text(review.comparableCount == 0
-                         ? t("Not enough comparable history yet.", "Поки недостатньо зіставної історії.", "Пока недостаточно сопоставимой истории.")
+                         ? t(
+                             "Comparison with previous weeks appears after a couple of weeks of training.",
+                             "Порівняння з минулими тижнями з'явиться після кількох тижнів тренувань.",
+                             "Сравнение с прошлыми неделями появится после пары недель тренировок."
+                           )
                          : t("Best reps at matching weights are unchanged.", "Найкращі повтори з тією самою вагою не змінилися.", "Лучшие повторы с тем же весом не изменились."))
                         .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
                 }
@@ -46,6 +73,9 @@ struct WeeklyReviewCard: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showsWeeklyTargetEditor) {
+            TrainingSettingsSheet(profile: trainingProfileBinding(current: trainingProfile))
         }
         .sheet(item: $evidence) { insight in
             NavigationStack {

@@ -45,6 +45,7 @@ struct TrainingProgramView: View {
         .sheet(isPresented: $showsCreateProgram) {
             ProgramScheduleEditor(
                 profile: profile,
+                accountStorageKey: workouts.accountStorageKey,
                 selectedWeekdays: $selectedWeekdays,
                 onCancel: { showsCreateProgram = false },
                 onSave: {
@@ -190,11 +191,29 @@ struct TrainingProgramView: View {
 
 private struct ProgramScheduleEditor: View {
     let profile: TrainingProfile
+    let accountStorageKey: String
     @Binding var selectedWeekdays: Set<Int>
     let onCancel: () -> Void
     let onSave: () -> Void
 
+    @State private var editableProfile: TrainingProfile
+    @State private var showsWeeklyTargetEditor = false
     private let calendar = Calendar.current
+
+    init(
+        profile: TrainingProfile,
+        accountStorageKey: String,
+        selectedWeekdays: Binding<Set<Int>>,
+        onCancel: @escaping () -> Void,
+        onSave: @escaping () -> Void
+    ) {
+        self.profile = profile
+        self.accountStorageKey = accountStorageKey
+        self._selectedWeekdays = selectedWeekdays
+        self.onCancel = onCancel
+        self.onSave = onSave
+        self._editableProfile = State(initialValue: profile)
+    }
 
     private func t(_ en: String, _ uk: String, _ ru: String) -> String {
         gymText(en, uk, ru, languageCode: gymCurrentLanguageCode())
@@ -205,18 +224,26 @@ private struct ProgramScheduleEditor: View {
             Form {
                 Section {
                     Text(t(
-                        "Choose exactly \(profile.workoutsPerWeek) training days.",
-                        "Обери рівно \(profile.workoutsPerWeek) дні тренувань.",
-                        "Выберите ровно \(profile.workoutsPerWeek) дня тренировок."
+                        "Choose exactly \(editableProfile.workoutsPerWeek) training days.",
+                        "Обери рівно \(editableProfile.workoutsPerWeek) дні тренувань.",
+                        "Выберите ровно \(editableProfile.workoutsPerWeek) дня тренировок."
                     ))
                     .foregroundStyle(GymTheme.textSecondary)
+                    Button {
+                        showsWeeklyTargetEditor = true
+                    } label: {
+                        Text(t("change target", "змінити ціль", "изменить цель"))
+                            .foregroundStyle(GymTheme.brandFill)
+                            .frame(minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
                 }
                 Section(t("Training days", "Дні тренувань", "Дни тренировок")) {
                     ForEach(weekdayValues, id: \.self) { weekday in
                         Button {
                             if selectedWeekdays.contains(weekday) {
                                 selectedWeekdays.remove(weekday)
-                            } else if selectedWeekdays.count < profile.workoutsPerWeek {
+                            } else if selectedWeekdays.count < editableProfile.workoutsPerWeek {
                                 selectedWeekdays.insert(weekday)
                             }
                         } label: {
@@ -237,8 +264,13 @@ private struct ProgramScheduleEditor: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(t("Save", "Зберегти", "Сохранить"), action: onSave)
-                        .disabled(selectedWeekdays.count != profile.workoutsPerWeek)
+                        .disabled(selectedWeekdays.count != editableProfile.workoutsPerWeek)
                 }
+            }
+        }
+        .sheet(isPresented: $showsWeeklyTargetEditor) {
+            TrainingSettingsSheet(profile: $editableProfile) { newValue in
+                TrainingProfileStore().save(newValue, accountStorageKey: accountStorageKey)
             }
         }
     }

@@ -69,19 +69,27 @@ public struct AuthView: View {
     }
 
     private var brandHeader: some View {
-        GymHeroPanel {
+        GymHeroPanel(
+            contentPadding: EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16),
+            gradient: LinearGradient(
+                colors: [GymTheme.brandFill, GymTheme.brandFillBright],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            solidFill: GymTheme.brandFill
+        ) {
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 16) {
-                    GymBrandMark(size: 72)
+                HStack(alignment: .center, spacing: 12) {
+                    GymBrandMark(size: 48)
                     brandTitle
                     Spacer(minLength: 4)
                     heroLanguageMenu
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center) {
-                        GymBrandMark(size: 56)
-                        Spacer(minLength: 12)
+                        GymBrandMark(size: 40)
+                        Spacer(minLength: 10)
                         heroLanguageMenu
                     }
                     brandTitle
@@ -92,7 +100,7 @@ public struct AuthView: View {
 
     private var brandTitle: some View {
         Text("GymApp")
-            .font(.largeTitle.bold())
+            .font(.title2.weight(.bold))
             .accessibilityAddTraits(.isHeader)
     }
 
@@ -185,7 +193,7 @@ public struct AuthView: View {
                         )
                     }
                 }
-                .buttonStyle(GymPrimaryButtonStyle())
+                .buttonStyle(GymPrimaryButtonStyle(fillColor: GymTheme.brandFill))
                 .disabled(authService.isLoading)
                 .accessibilityHint(
                     gymLocalized(
@@ -209,8 +217,13 @@ public struct AuthView: View {
                     showOfflineSheet = true
                 } label: {
                     Label("Continue offline", systemImage: "iphone")
+                        .font(.subheadline)
+                        .imageScale(.small)
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
+                .buttonStyle(.plain)
+                .foregroundStyle(GymTheme.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
                 .disabled(authService.isLoading)
             }
         }
@@ -277,35 +290,42 @@ public struct AuthView: View {
         )
         return VStack(alignment: .leading, spacing: 6) {
             fieldLabel(title)
-            HStack(spacing: 8) {
-                Group {
-                    if isVisible.wrappedValue {
-                        TextField(gymLocalized(title, languageCode: languageCode), text: boundedText)
-                    } else {
-                        SecureField(gymLocalized(title, languageCode: languageCode), text: boundedText)
-                    }
+            Group {
+                if isVisible.wrappedValue {
+                    TextField(gymLocalized(title, languageCode: languageCode), text: boundedText)
+                } else {
+                    SecureField(gymLocalized(title, languageCode: languageCode), text: boundedText)
                 }
-                .textContentType(contentType)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(submitLabel)
-                .focused($focusedField, equals: field)
-                .onSubmit {
-                    if field == .password, mode == .signUp {
-                        focusedField = .repeatedPassword
-                    } else {
-                        submit()
-                    }
+            }
+            .textContentType(contentType)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .submitLabel(submitLabel)
+            .focused($focusedField, equals: field)
+            .onSubmit {
+                if field == .password, mode == .signUp {
+                    focusedField = .repeatedPassword
+                } else {
+                    submit()
                 }
-
+            }
+            .padding(.trailing, 30)
+            .gymTextFieldChrome()
+            // The toggle sits in an overlay (not a row sibling) so its ≥44pt
+            // tap target doesn't inflate this field's height beyond the
+            // email field's height — same font, same chrome padding.
+            .overlay(alignment: .trailing) {
                 Button {
                     isVisible.wrappedValue.toggle()
                 } label: {
                     Image(systemName: isVisible.wrappedValue ? "eye.slash" : "eye")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
                 .foregroundStyle(GymTheme.textSecondary)
+                .padding(.trailing, 2)
                 .accessibilityLabel(
                     gymText(
                         isVisible.wrappedValue ? "Hide \(title.lowercased())" : "Show \(title.lowercased())",
@@ -316,7 +336,6 @@ public struct AuthView: View {
                     )
                 )
             }
-            .gymTextFieldChrome()
         }
     }
 
@@ -326,9 +345,10 @@ public struct AuthView: View {
             Button("Forgot password?") {
                 requestPasswordReset()
             }
-            .font(.subheadline.weight(.semibold))
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(GymTheme.primary)
             .disabled(authService.isLoading)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .center)
         }
     }
 
@@ -408,7 +428,7 @@ public struct AuthView: View {
 
     private var legalLinks: some View {
         GymPanel {
-            VStack(spacing: 14) {
+            VStack(spacing: 8) {
                 Text("Workout data is handled under the Privacy Policy.")
                     .font(.footnote)
                     .foregroundStyle(GymTheme.textSecondary)
@@ -416,12 +436,19 @@ public struct AuthView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)
 
-                HStack(spacing: 28) {
-                    privacyLink
-                    supportLink
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 28) {
+                        privacyLink
+                        supportLink
+                    }
+
+                    VStack(spacing: 0) {
+                        privacyLink
+                        supportLink
+                    }
                 }
             }
-            .font(.subheadline.weight(.semibold))
+            .font(.subheadline)
             .frame(maxWidth: .infinity)
         }
     }
@@ -429,92 +456,100 @@ public struct AuthView: View {
     private var privacyLink: some View {
         Link(destination: GymAppConfiguration.privacyPolicyURL) {
             Label("Privacy Policy", systemImage: "hand.raised")
+                .lineLimit(1)
         }
+        .frame(minHeight: 44)
         .accessibilityHint("Opens the privacy policy in your browser")
     }
 
     private var supportLink: some View {
         Link(destination: GymAppConfiguration.supportURL) {
             Label("Support", systemImage: "questionmark.circle")
+                .lineLimit(1)
         }
+        .frame(minHeight: 44)
         .accessibilityHint("Opens GymApp support in your browser")
     }
 
     private var offlineSheet: some View {
         GymBackground {
             ScrollView {
-                GymPanel(highlighted: true) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(AuthCompactCopy.offlineTitle(languageCode: languageCode))
-                            .font(.title2.bold())
-                            .accessibilityAddTraits(.isHeader)
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(AuthCompactCopy.offlineTitle(languageCode: languageCode))
+                        .font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
 
-                        Text(AuthCompactCopy.offlineConsequence(languageCode: languageCode))
+                    Text(AuthCompactCopy.offlineConsequence(languageCode: languageCode))
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(AuthCompactCopy.profileName(languageCode: languageCode))
+                        .font(.subheadline.weight(.semibold))
+                    TextField(
+                        AuthCompactCopy.localPlaceholder,
+                        text: $offlineDisplayName
+                    )
+                    .textContentType(.nickname)
+                    .submitLabel(.done)
+                    .gymTextFieldChrome()
+                    .onSubmit(continueOffline)
+
+                    if let offlineMessage {
+                        GymStatusBanner(message: offlineMessage, isError: true)
+                    }
+
+                    Button(action: continueOffline) {
+                        Text(AuthCompactCopy.continueOffline(languageCode: languageCode))
+                    }
+                    .buttonStyle(GymPrimaryButtonStyle(fillColor: GymTheme.brandFill))
+
+                    Button {
+                        showOfflineSheet = false
+                    } label: {
+                        Text(AuthCompactCopy.cancel(languageCode: languageCode))
                             .font(.subheadline)
-                            .foregroundStyle(GymTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
 
-                        Text(AuthCompactCopy.profileName(languageCode: languageCode))
+                    if !authService.savedLocalProfiles.isEmpty {
+                        Divider()
+                            .overlay(GymTheme.outline.opacity(0.5))
+
+                        Text(AuthCompactCopy.savedProfiles(languageCode: languageCode))
                             .font(.subheadline.weight(.semibold))
-                        TextField(
-                            AuthCompactCopy.localPlaceholder,
-                            text: $offlineDisplayName
-                        )
-                        .textContentType(.nickname)
-                        .submitLabel(.done)
-                        .gymTextFieldChrome()
-                        .onSubmit(continueOffline)
 
-                        if let offlineMessage {
-                            GymStatusBanner(message: offlineMessage, isError: true)
-                        }
-
-                        Button(action: continueOffline) {
-                            Text(AuthCompactCopy.continueOffline(languageCode: languageCode))
-                        }
-                        .buttonStyle(GymPrimaryButtonStyle())
-
-                        Button(AuthCompactCopy.cancel(languageCode: languageCode)) {
-                            showOfflineSheet = false
-                        }
-                        .buttonStyle(GymSecondaryButtonStyle())
-
-                        if !authService.savedLocalProfiles.isEmpty {
-                            Divider()
-                                .overlay(GymTheme.outline.opacity(0.5))
-
-                            Text(AuthCompactCopy.savedProfiles(languageCode: languageCode))
-                                .font(.subheadline.weight(.semibold))
-
-                            ForEach(authService.savedLocalProfiles) { profile in
-                                Button {
-                                    resumeOfflineProfile(profile.id)
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "person.crop.circle")
-                                            .accessibilityHidden(true)
-                                        Text(profile.displayName)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 8)
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption.weight(.semibold))
-                                            .accessibilityHidden(true)
-                                    }
+                        ForEach(authService.savedLocalProfiles) { profile in
+                            Button {
+                                resumeOfflineProfile(profile.id)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "person.crop.circle")
+                                        .accessibilityHidden(true)
+                                    Text(profile.displayName)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .accessibilityHidden(true)
                                 }
-                                .buttonStyle(GymSecondaryButtonStyle())
-                                .accessibilityHint(
-                                    gymText(
-                                        "Opens this saved offline profile",
-                                        "Відкриває цей збережений офлайн-профіль",
-                                        "Открывает этот сохранённый офлайн-профиль",
-                                        languageCode: languageCode
-                                    )
-                                )
                             }
+                            .buttonStyle(GymSecondaryButtonStyle())
+                            .accessibilityHint(
+                                gymText(
+                                    "Opens this saved offline profile",
+                                    "Відкриває цей збережений офлайн-профіль",
+                                    "Открывает этот сохранённый офлайн-профиль",
+                                    languageCode: languageCode
+                                )
+                            )
                         }
                     }
                 }
-                .padding(16)
+                .padding(20)
             }
         }
     }

@@ -29,6 +29,18 @@ public enum GymTheme {
 
     public static let primary = adaptive(light: 0x216BD7, dark: 0x8BB9FF)
     public static let primaryAction = adaptive(light: 0x175BBE, dark: 0x2E72D2)
+    /// Brand blue (`active-current` in DESIGN.md) tuned as a *fill* that carries
+    /// `onPrimary` (white) text/icons directly on top of it, e.g. a solid button
+    /// or hero card background. Unlike `primary` (a light-mode-only accent that
+    /// intentionally pales in dark mode for use as foreground/tint), this stays
+    /// dark enough in both appearances for white-on-fill contrast: light
+    /// #216BD7 keeps ~5.1:1, dark #2E72D2 keeps ~4.7:1 against white.
+    public static let brandFill = adaptive(light: 0x216BD7, dark: 0x2E72D2)
+    /// Bright field of the brand blue (`active-current-bright` in DESIGN.md),
+    /// for the far end of a subtle `brandFill` → `brandFillBright` gradient.
+    /// Dark value #3F84E5 keeps ~3.7:1 against white, meeting the ≥3:1 large-text
+    /// bar for the bright end of a gradient (most text sits nearer `brandFill`).
+    public static let brandFillBright = adaptive(light: 0x3A8DFF, dark: 0x3F84E5)
     public static let onPrimary = Color.white
     public static let secondary = adaptive(light: 0x23815E, dark: 0x77DDB7)
     public static let tertiary = adaptive(light: 0x6753D6, dark: 0xB4A6FF)

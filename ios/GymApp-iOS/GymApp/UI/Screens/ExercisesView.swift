@@ -231,7 +231,6 @@ struct ExercisesView: View {
             title: "Exercises"
         ) {
             addExerciseButton
-                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -239,32 +238,22 @@ struct ExercisesView: View {
         Button {
             presentedSheet = .addExercise
         } label: {
-            Label("Add exercise", systemImage: "plus")
+            Image(systemName: "plus")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 44, height: 44)
+                .background(GymTheme.brandFill, in: Circle())
         }
-        .buttonStyle(GymPrimaryButtonStyle())
-        .accessibilityHint("Adds a custom exercise to your library")
+        .accessibilityLabel(gymLocalized("Add exercise"))
+        .accessibilityHint(gymLocalized("Adds a custom exercise to your library"))
     }
 
     private var exerciseLibrary: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .accessibilityHidden(true)
-                TextField("Search exercises", text: $searchText)
-                    .textInputAutocapitalization(.words)
-                    .submitLabel(.search)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(GymTheme.textSecondary)
-                    }
-                    .accessibilityLabel("Clear search")
-                }
+                searchField
+                filterMenuButton
             }
-            .gymTextFieldChrome()
 
             exerciseFilters
 
@@ -310,64 +299,107 @@ struct ExercisesView: View {
         }
     }
 
-    private var exerciseFilters: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    Button {
-                        favoritesOnly.toggle()
-                    } label: {
-                        Label(
-                            gymLocalized("Favorites"),
-                            systemImage: favoritesOnly ? "heart.fill" : "heart"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(favoritesOnly ? GymTheme.primary : GymTheme.textSecondary)
-                    .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
-                    .accessibilityHint(gymLocalized("Shows only favorite exercises"))
-
-                    ForEach(ExerciseBodyFilter.allCases) { filter in
-                        Button(filter.localizedTitle) { bodyFilter = filter }
-                            .buttonStyle(.bordered)
-                            .tint(bodyFilter == filter ? GymTheme.primary : GymTheme.textSecondary)
-                            .accessibilityAddTraits(bodyFilter == filter ? .isSelected : [])
-                    }
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(GymTheme.textSecondary)
+                .accessibilityHidden(true)
+            TextField("Search exercises", text: $searchText)
+                .textInputAutocapitalization(.words)
+                .submitLabel(.search)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(GymTheme.textSecondary)
                 }
+                .accessibilityLabel("Clear search")
             }
-            .scrollIndicators(.hidden)
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(ExerciseSortMode.allCases) { mode in
-                        Button(mode.localizedTitle) { sortMode = mode }
-                            .buttonStyle(.bordered)
-                            .tint(sortMode == mode ? GymTheme.primary : GymTheme.textSecondary)
-                            .accessibilityAddTraits(sortMode == mode ? .isSelected : [])
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    Button(gymLocalized("All muscles")) { muscleFilter = nil }
-                        .buttonStyle(.bordered)
-                        .tint(muscleFilter == nil ? GymTheme.primary : GymTheme.textSecondary)
-                        .accessibilityAddTraits(muscleFilter == nil ? .isSelected : [])
-                    ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
-                        Button(gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode())) {
-                            muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(muscleFilter == muscle.id ? GymTheme.primary : GymTheme.textSecondary)
-                        .accessibilityAddTraits(muscleFilter == muscle.id ? .isSelected : [])
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
-
         }
+        .gymTextFieldChrome()
+    }
+
+    private var isFilterCustomized: Bool {
+        favoritesOnly || bodyFilter != .all || sortMode != .name
+    }
+
+    private var filterMenuButton: some View {
+        Menu {
+            Toggle(isOn: $favoritesOnly) {
+                Label(gymLocalized("Favorites"), systemImage: "heart")
+            }
+
+            Picker(gymLocalized("Category"), selection: $bodyFilter) {
+                ForEach(ExerciseBodyFilter.allCases) { filter in
+                    Text(filter.localizedTitle).tag(filter)
+                }
+            }
+
+            Picker(gymLocalized("Sort"), selection: $sortMode) {
+                ForEach(ExerciseSortMode.allCases) { mode in
+                    Text(mode.localizedTitle).tag(mode)
+                }
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(
+                    systemName: isFilterCustomized
+                        ? "line.3.horizontal.decrease.circle.fill"
+                        : "line.3.horizontal.decrease.circle"
+                )
+                .font(.title3)
+                .foregroundStyle(isFilterCustomized ? GymTheme.primary : GymTheme.textSecondary)
+                .frame(width: 44, height: 44)
+
+                if isFilterCustomized {
+                    Circle()
+                        .fill(GymTheme.brandFill)
+                        .frame(width: 9, height: 9)
+                        .offset(x: -8, y: 8)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .accessibilityLabel(gymLocalized("Filters"))
+        .accessibilityAddTraits(isFilterCustomized ? .isSelected : [])
+    }
+
+    private var exerciseFilters: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                filterChip(
+                    title: gymLocalized("All muscles"),
+                    isSelected: muscleFilter == nil
+                ) {
+                    muscleFilter = nil
+                }
+                ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
+                    filterChip(
+                        title: gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode()),
+                        isSelected: muscleFilter == muscle.id
+                    ) {
+                        muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
+                    }
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.white : GymTheme.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule().fill(isSelected ? GymTheme.brandFill : GymTheme.surfaceVariant)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func clearFilters() {
@@ -380,22 +412,29 @@ struct ExercisesView: View {
     private func exerciseCard(_ exercise: Exercise) -> some View {
         let displayName = gymExerciseName(exercise)
 
-        return GymPanel {
+        return GymPanel(
+            contentPadding: EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
+        ) {
             HStack(alignment: .center, spacing: 10) {
                 ExerciseMediaButton(
                     rawExerciseName: exercise.name,
                     catalogKey: exercise.catalogKey,
                     exerciseID: exercise.id,
-                    ownerKey: store.accountStorageKey
+                    ownerKey: store.accountStorageKey,
+                    width: 60,
+                    height: 60,
+                    playOverlayDiameter: 20
                 )
                 Text(displayName)
                     .font(.headline)
+                    .lineLimit(2)
                     .foregroundStyle(GymTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
 
                 Spacer(minLength: 4)
 
+                HStack(spacing: 0) {
                 favoriteButton(exercise, displayName: displayName)
 
                 Menu {
@@ -450,6 +489,7 @@ struct ExercisesView: View {
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
+                }
             }
         }
     }

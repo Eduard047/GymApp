@@ -835,7 +835,7 @@ private struct MainTabShell: View {
                     .buttonStyle(.plain)
                 }
 
-                if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout {
+                if let activeDraft = activeWorkoutStore.draft, !showsActiveWorkout, selectedTab != .workouts {
                     HStack(alignment: .center, spacing: 12) {
                         Button {
                             showsAddWorkout = false
@@ -1642,7 +1642,6 @@ private struct MainTabShell: View {
     private var exercisesTab: some View {
         NavigationStack {
             ExercisesView()
-                .gymLanguageToolbar()
         }
     }
 
@@ -1652,7 +1651,6 @@ private struct MainTabShell: View {
                 store: store,
                 onOpenRanks: { missionPath.append(.ranks) }
             )
-                .gymLanguageToolbar()
                 .navigationDestination(for: MissionRoute.self) { route in
                     switch route {
                     case .ranks: RanksView(store: store)
@@ -1678,7 +1676,6 @@ private struct MainTabShell: View {
                     showsActiveWorkout = true
                 }
             )
-                .gymLanguageToolbar()
         }
         .id(profileNavigationID)
     }

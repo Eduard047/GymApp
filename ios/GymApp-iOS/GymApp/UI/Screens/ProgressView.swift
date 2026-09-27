@@ -124,14 +124,6 @@ struct ProgressHubView: View {
     private var overview: some View {
         ScrollView {
             LazyVStack(spacing: GymTheme.contentSpacing) {
-                WorkoutMonthSwitcher(
-                    month: selectedMonth,
-                    isCurrentMonth: monthOffset == 0,
-                    onPrevious: { monthOffset -= 1 },
-                    onCurrent: { monthOffset = 0 },
-                    onNext: { monthOffset = min(0, monthOffset + 1) }
-                )
-
                 WeeklyReviewCard(store: store)
 
                 WorkoutProgressHero(
@@ -148,7 +140,11 @@ struct ProgressHubView: View {
                     month: selectedMonth,
                     sessions: store.workoutSummaries,
                     now: referenceDate,
-                    calendar: calendar
+                    calendar: calendar,
+                    isCurrentMonth: monthOffset == 0,
+                    onPreviousMonth: { monthOffset -= 1 },
+                    onCurrentMonth: { monthOffset = 0 },
+                    onNextMonth: { monthOffset = min(0, monthOffset + 1) }
                 )
 
                 WorkoutMuscleLoadCard(
@@ -179,14 +175,13 @@ struct ProgressHubView: View {
                         languageCode: languageCode
                     )
                 )
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
-                    spacing: 8
-                ) {
+                HStack(spacing: 8) {
                     GymMetricTile(
                         label: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode),
-                        value: metrics.totalWorkouts.formatted()
+                        value: metrics.totalWorkouts.formatted(),
+                        emphasized: true
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: gymText("Week streak", "Серія тижнів", "Серия недель", languageCode: languageCode),
                         value: gymText(
@@ -194,8 +189,10 @@ struct ProgressHubView: View {
                             "\(metrics.weeklyStreakWeeks) тиж",
                             "\(metrics.weeklyStreakWeeks) нед",
                             languageCode: languageCode
-                        )
+                        ),
+                        emphasized: true
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode),
                         value: metrics.totalVolume.formatted(
@@ -203,7 +200,9 @@ struct ProgressHubView: View {
                         ),
                         emphasized: true
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -288,9 +287,10 @@ struct ExerciseProgressView: View {
                         )
                     }
 
-                    WorkoutMonthSwitcher(
+                    GymMonthNavigator(
                         month: selectedMonth,
                         isCurrentMonth: monthOffset == 0,
+                        locale: appLocale,
                         onPrevious: { monthOffset -= 1 },
                         onCurrent: { monthOffset = 0 },
                         onNext: { monthOffset = min(0, monthOffset + 1) }
@@ -301,12 +301,14 @@ struct ExerciseProgressView: View {
                     if let selectedExercise {
                         muscleBreakdown(for: selectedExercise)
                         summaryCard
-                        spotlightCard(for: selectedExercise)
-                        ExerciseProgressChartsCard(
-                            points: visibleChartPoints,
-                            languageCode: languageCode,
-                            locale: appLocale
-                        )
+                        if !monthHistory.isEmpty {
+                            spotlightCard(for: selectedExercise)
+                            ExerciseProgressChartsCard(
+                                points: visibleChartPoints,
+                                languageCode: languageCode,
+                                locale: appLocale
+                            )
+                        }
                         historySection
                     } else {
                         noExerciseState
@@ -418,34 +420,22 @@ struct ExerciseProgressView: View {
         let contributions = muscleContributions(for: exercise)
         return GymPanel(highlighted: !contributions.isEmpty) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 10) {
-                    ExerciseMediaButton(
-                        rawExerciseName: exercise.name,
-                        catalogKey: exercise.catalogKey,
-                        exerciseID: exercise.id,
-                        ownerKey: store.accountStorageKey
-                    )
-                    VStack(alignment: .leading, spacing: 3) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 10) {
                         Text(t("Muscle Breakdown", "Розподіл по м’язах"))
                             .font(.headline)
+                            .lineLimit(2)
                             .accessibilityAddTraits(.isHeader)
-                        Text(gymExerciseName(exercise))
-                            .font(.subheadline)
-                            .foregroundStyle(GymTheme.textSecondary)
+                        Spacer(minLength: 8)
+                        muscleGroupsPill(contributions.count)
                     }
-                    Spacer(minLength: 8)
-                    GymInfoPill(
-                        gymCount(
-                            contributions.count,
-                            englishOne: "group",
-                            englishMany: "groups",
-                            ukrainianOne: "група",
-                            ukrainianFew: "групи",
-                            ukrainianMany: "груп",
-                            languageCode: languageCode
-                        ),
-                        systemImage: "figure.strengthtraining.traditional"
-                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(t("Muscle Breakdown", "Розподіл по м’язах"))
+                            .font(.headline)
+                            .lineLimit(2)
+                            .accessibilityAddTraits(.isHeader)
+                        muscleGroupsPill(contributions.count)
+                    }
                 }
 
                 if contributions.isEmpty {
@@ -476,6 +466,21 @@ struct ExerciseProgressView: View {
         }
     }
 
+    private func muscleGroupsPill(_ count: Int) -> some View {
+        GymInfoPill(
+            gymCount(
+                count,
+                englishOne: "group",
+                englishMany: "groups",
+                ukrainianOne: "група",
+                ukrainianFew: "групи",
+                ukrainianMany: "груп",
+                languageCode: languageCode
+            ),
+            systemImage: "figure.strengthtraining.traditional"
+        )
+    }
+
     private var summaryCard: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
@@ -487,7 +492,7 @@ struct ExerciseProgressView: View {
                     .foregroundStyle(GymTheme.textSecondary)
 
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
+                    columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
                     spacing: 8
                 ) {
                     GymMetricTile(
@@ -759,9 +764,20 @@ struct ExerciseProgressView: View {
     }
 
     private var spotlightSubtitle: String {
-        t(
-            "\(progressPoints.count) \(progressPoints.count == 1 ? "session" : "sessions") in the selected month.",
-            "\(progressPoints.count) сес. у вибраному місяці."
+        let sessionsPhrase = gymCount(
+            progressPoints.count,
+            englishOne: "session",
+            englishMany: "sessions",
+            ukrainianOne: "сесія",
+            ukrainianFew: "сесії",
+            ukrainianMany: "сесій",
+            languageCode: languageCode
+        )
+        return gymText(
+            "\(sessionsPhrase) in the selected month.",
+            "\(sessionsPhrase) у вибраному місяці.",
+            "\(sessionsPhrase) в выбранном месяце.",
+            languageCode: languageCode
         )
     }
 
@@ -1082,7 +1098,7 @@ private struct ExerciseProgressChartsCard: View {
                     Text(t("Visual Trends", "Візуальні тренди"))
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
-                    Text(t("Last \(chartPoints.count) sessions in the selected month.", "Останні \(chartPoints.count) сес. у вибраному місяці."))
+                    Text(chartsSubtitle)
                         .font(.caption)
                         .foregroundStyle(GymTheme.textSecondary)
                 }
@@ -1262,5 +1278,23 @@ private struct ExerciseProgressChartsCard: View {
 
     private func t(_ english: String, _ ukrainian: String) -> String {
         gymText(english, ukrainian, languageCode: languageCode)
+    }
+
+    private var chartsSubtitle: String {
+        let sessionsPhrase = gymCount(
+            chartPoints.count,
+            englishOne: "session",
+            englishMany: "sessions",
+            ukrainianOne: "сесія",
+            ukrainianFew: "сесії",
+            ukrainianMany: "сесій",
+            languageCode: languageCode
+        )
+        return gymText(
+            "Last \(sessionsPhrase) in the selected month.",
+            "Останні \(sessionsPhrase) у вибраному місяці.",
+            "Последние \(sessionsPhrase) в выбранном месяце.",
+            languageCode: languageCode
+        )
     }
 }

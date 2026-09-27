@@ -97,6 +97,139 @@ enum WorkoutTemplatePreset: String, CaseIterable, Identifiable {
     }
 }
 
+/// Shared 24pt numbered badge used by compact set rows across the plan
+/// editor and the active-workout screen.
+struct GymSetBadge: View {
+    let position: Int
+
+    var body: some View {
+        Text("\(position + 1)")
+            .font(.caption.weight(.bold).monospacedDigit())
+            .foregroundStyle(.white)
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(GymTheme.brandFill))
+            .accessibilityHidden(true)
+    }
+}
+
+/// Shared compact weight entry field (76pt wide, "кг" suffix) used by
+/// compact set rows across the plan editor and the active-workout screen.
+struct GymSetWeightField: View {
+    @Binding var weight: Double
+    var disabled = false
+    let accessibilityLabel: Text
+
+    var body: some View {
+        HStack(spacing: 3) {
+            TextField(
+                "0",
+                value: $weight,
+                format: .number.precision(.fractionLength(0 ... 2))
+            )
+            .keyboardType(.decimalPad)
+            .multilineTextAlignment(.trailing)
+            .font(.subheadline.weight(.semibold))
+            .disabled(disabled)
+            Text(gymLocalized("kg"))
+                .font(.caption2)
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(1)
+                .layoutPriority(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .frame(width: 76)
+        .background(GymTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(GymTheme.outlineSoft, lineWidth: 1)
+        )
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// Shared compact reps stepper capsule (− value +) with an adjustable
+/// accessibility action, used by compact set rows across the plan editor
+/// and the active-workout screen.
+struct GymSetRepsCapsule: View {
+    @Binding var reps: Int
+    var minReps = 1
+    var maxReps = 10_000
+    var disabled = false
+    let accessibilityLabel: Text
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: decrementReps) {
+                Image(systemName: "minus")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 32, height: 32)
+            }
+            .disabled(disabled || reps <= minReps)
+            .accessibilityHidden(true)
+
+            Text(reps.formatted())
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .frame(minWidth: 28)
+                .accessibilityHidden(true)
+
+            Button(action: incrementReps) {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 32, height: 32)
+            }
+            .disabled(disabled || reps >= maxReps)
+            .accessibilityHidden(true)
+        }
+        .foregroundStyle(GymTheme.primary)
+        .background(GymTheme.surface.opacity(0.7), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(reps.formatted())
+        .accessibilityAdjustableAction { direction in
+            guard !disabled else { return }
+            switch direction {
+            case .increment: incrementReps()
+            case .decrement: decrementReps()
+            @unknown default: break
+            }
+        }
+    }
+
+    private func incrementReps() {
+        reps = min(reps + 1, maxReps)
+    }
+
+    private func decrementReps() {
+        reps = max(reps - 1, minReps)
+    }
+}
+
+/// Shared small pill button ("chip") used for quick actions under compact
+/// set rows across the plan editor and the active-workout screen.
+struct GymChip: View {
+    let title: Text
+    let accessibilityLabel: Text
+    var disabled = false
+    var accessibilityHint: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            title
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(disabled ? GymTheme.textSecondary : GymTheme.primary)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .background(GymTheme.surfaceVariant, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .disabled(disabled)
+        .accessibilityLabel(accessibilityLabel)
+        .modifier(OptionalAccessibilityHint(hint: accessibilityHint))
+    }
+}
+
 struct WorkoutSetDraftRow: View {
     @Binding var set: WorkoutEditorSetDraft
 
@@ -107,131 +240,163 @@ struct WorkoutSetDraftRow: View {
     let onDuplicate: () -> Void
     let onDelete: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(
-                    gymText(
-                        "Set \(position + 1)",
-                        "Підхід \(position + 1)",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(GymTheme.textPrimary)
-                Spacer(minLength: 8)
-                Button(role: .destructive, action: onDelete) {
-                    Label("Delete", systemImage: "trash")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 44, height: 44)
+        VStack(alignment: .leading, spacing: 8) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        setBadge
+                        weightField
+                        Spacer(minLength: 4)
+                        deleteButton
+                    }
+                    repsControl
                 }
-                .accessibilityLabel(
-                    gymText(
-                        "Delete set \(position + 1)",
-                        "Видалити підхід \(position + 1)",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
+            } else {
+                HStack(spacing: 8) {
+                    setBadge
+                    weightField
+                    timesSeparator
+                    repsControl
+                    Spacer(minLength: 4)
+                    deleteButton
+                }
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { editors }
-                VStack(spacing: 10) { editors }
-            }
-
-            ViewThatFits(in: .horizontal) {
+            ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) { quickActions }
-                VStack(alignment: .leading, spacing: 8) { quickActions }
+                    .padding(.vertical, 2)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
-        .padding(12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
         .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder
-    private var editors: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Weight")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(GymTheme.textSecondary)
-            TextField(
-                "0",
-                value: weightBinding,
-                format: .number.precision(.fractionLength(0 ... 2))
-            )
-            .keyboardType(.decimalPad)
-            .gymTextFieldChrome()
-            .accessibilityLabel(
+    private var setBadge: some View {
+        GymSetBadge(position: position)
+    }
+
+    private var weightField: some View {
+        GymSetWeightField(
+            weight: weightBinding,
+            accessibilityLabel: Text(
                 gymText(
                     "Weight for set \(position + 1)",
                     "Вага для підходу \(position + 1)",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
-        }
-        .frame(maxWidth: .infinity)
+        )
+    }
 
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Repetitions")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(GymTheme.textSecondary)
-            Stepper(value: $set.reps, in: 1 ... 10_000) {
-                Text(set.reps.formatted())
-                    .font(.body.monospacedDigit().weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(GymTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
-            .accessibilityLabel(
+    private var timesSeparator: some View {
+        Text(verbatim: "×")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(GymTheme.textSecondary)
+            .accessibilityHidden(true)
+    }
+
+    private var repsControl: some View {
+        GymSetRepsCapsule(
+            reps: $set.reps,
+            accessibilityLabel: Text(
                 gymText(
                     "Repetitions for set \(position + 1)",
                     "Повторення для підходу \(position + 1)",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
-            .accessibilityValue(set.reps.formatted())
+        )
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive, action: onDelete) {
+            Image(systemName: "trash")
+                .font(.body.weight(.semibold))
+                .frame(width: 36, height: 36)
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+        .accessibilityLabel(
+            gymText(
+                "Delete set \(position + 1)",
+                "Видалити підхід \(position + 1)",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
     }
 
     @ViewBuilder
     private var quickActions: some View {
-        Button {
-            if let lastWeight {
-                set.weight = lastWeight
-            }
-        } label: {
-            Label("Last", systemImage: "clock.arrow.circlepath")
-        }
-        .disabled(lastWeight == nil)
-        .accessibilityHint(
-            lastWeight.map {
+        chip(
+            title: Text(
+                gymText("Last", "Ост. вага", "Посл. вес", languageCode: gymCurrentLanguageCode())
+            ),
+            accessibilityLabel: Text(
+                gymText(
+                    "Last weight",
+                    "Остання вага",
+                    "Последний вес",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            ),
+            disabled: lastWeight == nil,
+            accessibilityHint: lastWeight.map {
                 gymText(
                     "Uses the last logged weight, \($0.formatted())",
                     "Використовує останню записану вагу: \($0.formatted())",
                     languageCode: gymCurrentLanguageCode()
                 )
             } ?? gymLocalized("No prior weight")
+        ) {
+            if let lastWeight {
+                set.weight = lastWeight
+            }
+        }
+
+        chip(
+            title: Text(
+                gymText("Prev.", "Попер.", "Пред.", languageCode: gymCurrentLanguageCode())
+            ),
+            accessibilityLabel: Text("Previous"),
+            disabled: !canCopyPrevious,
+            action: onCopyPrevious
         )
 
-        Button(action: onCopyPrevious) {
-            Label("Previous", systemImage: "arrow.up.doc")
-        }
-        .disabled(!canCopyPrevious)
-
-        Button {
+        chip(
+            title: Text("+2.5"),
+            accessibilityLabel: Text("+2.5")
+        ) {
             set.weight += 2.5
-        } label: {
-            Label("+2.5", systemImage: "plus")
         }
 
-        Button(action: onDuplicate) {
-            Label("Copy set", systemImage: "doc.on.doc")
-        }
+        chip(
+            title: Text(
+                gymText("Copy", "Копія", "Копия", languageCode: gymCurrentLanguageCode())
+            ),
+            accessibilityLabel: Text("Copy set"),
+            action: onDuplicate
+        )
+    }
+
+    private func chip(
+        title: Text,
+        accessibilityLabel: Text,
+        disabled: Bool = false,
+        accessibilityHint: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        GymChip(
+            title: title,
+            accessibilityLabel: accessibilityLabel,
+            disabled: disabled,
+            accessibilityHint: accessibilityHint,
+            action: action
+        )
     }
 
     private var weightBinding: Binding<Double> {
@@ -241,6 +406,18 @@ struct WorkoutSetDraftRow: View {
                 set.weight = value
             }
         )
+    }
+}
+
+struct OptionalAccessibilityHint: ViewModifier {
+    let hint: String?
+
+    func body(content: Content) -> some View {
+        if let hint {
+            content.accessibilityHint(hint)
+        } else {
+            content
+        }
     }
 }
 
@@ -288,14 +465,34 @@ struct WorkoutDraftExerciseCard: View {
                         }
                     }
                     Spacer(minLength: 8)
-                    Button(role: .destructive, action: onDeleteExercise) {
-                        Image(systemName: "trash")
+                    Menu {
+                        if let onShowSimilar {
+                            Button(action: onShowSimilar) {
+                                Label {
+                                    Text("Replace with similar")
+                                } icon: {
+                                    Image(systemName: "arrow.triangle.swap")
+                                }
+                            }
+                        }
+                        Button(role: .destructive, action: onDeleteExercise) {
+                            Label {
+                                Text("Delete")
+                            } icon: {
+                                Image(systemName: "trash")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.body.weight(.semibold))
                             .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel(
                         gymText(
-                            "Remove \(displayName)",
-                            "Видалити «\(displayName)»",
+                            "Exercise actions for \(displayName)",
+                            "Дії для «\(displayName)»",
+                            "Действия для «\(displayName)»",
                             languageCode: gymCurrentLanguageCode()
                         )
                     )
@@ -313,16 +510,6 @@ struct WorkoutDraftExerciseCard: View {
                     .accessibilityLabel(
                         "Smart Coach: \(recommendation.kind.coachCompactDisplayName), " +
                             "RIR \(recommendation.targetRIR.lowerBound) to \(recommendation.targetRIR.upperBound)"
-                    )
-                }
-
-                if let onShowSimilar {
-                    Button(action: onShowSimilar) {
-                        Label("Similar exercises", systemImage: "arrow.triangle.swap")
-                    }
-                    .buttonStyle(GymSecondaryButtonStyle())
-                    .accessibilityHint(
-                        gymLocalized("Shows safe replacements with a newly calculated prescription")
                     )
                 }
 
@@ -347,9 +534,14 @@ struct WorkoutDraftExerciseCard: View {
                         )
                     )
                 } label: {
-                    Label("Add planned set", systemImage: "plus.circle.fill")
+                    Text("+ Set")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.primary)
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
+                .buttonStyle(.borderless)
+                .tint(GymTheme.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(Text("Add planned set"))
                 .accessibilityHint("Copies the latest values into a planned set")
             }
         }
@@ -573,6 +765,9 @@ struct ExerciseMediaButton: View {
     let exerciseID: UUID
     let ownerKey: String
     var editable = true
+    var width: CGFloat = ExerciseMediaPresentation.thumbnailWidth
+    var height: CGFloat = ExerciseMediaPresentation.thumbnailHeight
+    var playOverlayDiameter: CGFloat = ExerciseMediaPresentation.playOverlayDiameter
     @State private var showingMedia = false
     @State private var mediaReloadToken = 0
 
@@ -584,6 +779,9 @@ struct ExerciseMediaButton: View {
             ownerKey: ownerKey,
             editable: editable,
             reloadToken: mediaReloadToken,
+            width: width,
+            height: height,
+            playOverlayDiameter: playOverlayDiameter,
             action: { showingMedia = true }
         )
         .sheet(isPresented: $showingMedia) {
@@ -610,6 +808,9 @@ struct ExerciseMediaThumbnail: View {
     let ownerKey: String
     var editable = true
     var reloadToken = 0
+    var width: CGFloat = ExerciseMediaPresentation.thumbnailWidth
+    var height: CGFloat = ExerciseMediaPresentation.thumbnailHeight
+    var playOverlayDiameter: CGFloat = ExerciseMediaPresentation.playOverlayDiameter
     let action: () -> Void
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @State private var loadedIdentity: LoadIdentity?
@@ -665,8 +866,8 @@ struct ExerciseMediaThumbnail: View {
                     }
                 }
                 .frame(
-                    width: ExerciseMediaPresentation.thumbnailWidth,
-                    height: ExerciseMediaPresentation.thumbnailHeight
+                    width: width,
+                    height: height
                 )
                 .clipped()
 
@@ -675,8 +876,8 @@ struct ExerciseMediaThumbnail: View {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(
-                            width: ExerciseMediaPresentation.playOverlayDiameter,
-                            height: ExerciseMediaPresentation.playOverlayDiameter
+                            width: playOverlayDiameter,
+                            height: playOverlayDiameter
                         )
                         .background(GymTheme.primary, in: Circle())
                         .padding(5)

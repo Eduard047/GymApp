@@ -1258,6 +1258,16 @@ enum WorkoutDetailDisclosurePolicy {
     }
 }
 
+/// Presented via `.sheet(item:)` so the share sheet's content is always
+/// built from a fully-formed plan — never from a flag that can toggle true
+/// before the dependent `@State` it reads has propagated (seen when the
+/// share action fires from a toolbar button).
+private struct WorkoutSharePayload: Identifiable {
+    let id: UUID
+    let date: Date
+    let plan: SharedWorkoutPlan
+}
+
 @MainActor
 struct WorkoutDetailView: View {
     private enum ActiveAlert: Identifiable {
@@ -1283,8 +1293,7 @@ struct WorkoutDetailView: View {
     @State private var statusMessage: String?
     @State private var pendingDeletion: WorkoutDetailDeletionTarget?
     @State private var deletionTask: Task<Void, Never>?
-    @State private var showingShareChooser = false
-    @State private var sharingPlan: SharedWorkoutPlan?
+    @State private var shareChooserPayload: WorkoutSharePayload?
     @State private var shareFriends: [SocialFriendSummary] = []
     @State private var shareFriendsAreLoading = false
     @State private var sharingFriendID: String?
@@ -1372,23 +1381,6 @@ struct WorkoutDetailView: View {
                     LazyVStack(spacing: 14) {
                         hero(workout, garminSummary: garminSummary)
 
-                        if !isEditing {
-                            Button {
-                                beginEditing()
-                            } label: {
-                                Label(
-                                    gymText(
-                                        activityOnly ? "Add exercises" : "Edit workout",
-                                        activityOnly ? "Додати вправи" : "Редагувати тренування",
-                                        activityOnly ? "Добавить упражнения" : "Редактировать тренировку",
-                                        languageCode: gymCurrentLanguageCode()
-                                    ),
-                                    systemImage: "pencil"
-                                )
-                            }
-                            .buttonStyle(GymSecondaryButtonStyle())
-                        }
-
                         if let summary = garminSummary,
                            summary.hasWorkoutMetrics || hasGarminSetDetails(summary) {
                             watchMetricsSection(summary, activityOnly: activityOnly)
@@ -1436,7 +1428,10 @@ struct WorkoutDetailView: View {
                 )
             }
         }
-        .navigationTitle("Workout detail")
+        .navigationTitle(gymText(
+            "Workout", "Тренування", "Тренировка",
+            languageCode: gymCurrentLanguageCode()
+        ))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -1450,6 +1445,28 @@ struct WorkoutDetailView: View {
 
                     Button(gymLocalized("Done"), action: finishEditing)
                         .disabled(pendingDeletion != nil)
+                } else if let workout = store.workout(id: workoutID) {
+                    Button {
+                        beginEditing()
+                    } label: {
+                        Text(gymText(
+                            "Edit", "Змінити", "Изменить",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                    }
+
+                    if sharedWorkoutURL(workout) != nil {
+                        Button {
+                            openWorkoutShareChooser(workout)
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel(gymText(
+                            "Share workout", "Поділитися тренуванням", "Поделиться тренировкой",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                    }
                 }
             }
         }
@@ -1465,27 +1482,27 @@ struct WorkoutDetailView: View {
             )
             .presentationDetents([.large])
         }
-        .sheet(isPresented: $showingShareChooser) {
-            if let sharingPlan {
-                SavedWorkoutShareChooser(
-                    plan: sharingPlan,
-                    friends: shareFriends,
-                    isCloudAccount: isCloudAccount,
-                    canStartLive: sendLiveWorkoutInvite != nil,
-                    isLoadingFriends: shareFriendsAreLoading,
-                    sharingFriendID: sharingFriendID,
-                    message: shareChooserMessage,
-                    messageIsError: shareChooserMessageIsError,
-                    onRefresh: { Task { await loadShareFriends(force: true) } },
-                    onSendCopy: { friend in
-                        Task { await sendWorkoutInvite(to: friend, live: false) }
-                    },
-                    onStartLive: { friend in
-                        Task { await sendWorkoutInvite(to: friend, live: true) }
-                    }
-                )
-                .presentationDetents([.medium, .large])
-            }
+        .sheet(item: $shareChooserPayload) { payload in
+            SavedWorkoutShareChooser(
+                date: payload.date,
+                plan: payload.plan,
+                friends: shareFriends,
+                isCloudAccount: isCloudAccount,
+                canStartLive: sendLiveWorkoutInvite != nil,
+                isLoadingFriends: shareFriendsAreLoading,
+                sharingFriendID: sharingFriendID,
+                message: shareChooserMessage,
+                messageIsError: shareChooserMessageIsError,
+                onRefresh: { Task { await loadShareFriends(force: true) } },
+                onSendCopy: { friend in
+                    Task { await sendWorkoutInvite(to: friend, live: false) }
+                },
+                onStartLive: { friend in
+                    Task { await sendWorkoutInvite(to: friend, live: true) }
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .alert(item: $activeAlert, content: makeAlert)
         .safeAreaInset(edge: .bottom) {
@@ -1506,24 +1523,35 @@ struct WorkoutDetailView: View {
         let activityOnly = isActivityOnly(workout)
         return GymHeroPanel {
             VStack(alignment: .leading, spacing: 12) {
-                Text(gymFormattedDate(workout.date, date: .long, time: .shortened))
+                Text(compactHeroTitle(workout.date, languageCode: languageCode))
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
-                Text(
-                    activityOnly
-                        ? gymText(
-                            "Garmin free workout",
-                            "Вільне тренування Garmin",
-                            "Свободная тренировка Garmin",
-                            languageCode: languageCode
-                        )
-                        : garminSummary == nil
-                        ? (workout.note?.isEmpty == false ? workout.note! : gymLocalized("Saved workout"))
-                        : GarminWorkoutDetailCopy.workoutTitle(languageCode: languageCode)
-                )
+
+                if activityOnly {
+                    Text(gymText(
+                        "Garmin free workout",
+                        "Вільне тренування Garmin",
+                        "Свободная тренировка Garmin",
+                        languageCode: languageCode
+                    ))
                     .font(.subheadline)
                     .foregroundStyle(Color.white.opacity(0.84))
                     .fixedSize(horizontal: false, vertical: true)
+                } else if garminSummary != nil {
+                    Text(GarminWorkoutDetailCopy.workoutTitle(languageCode: languageCode))
+                        .font(.subheadline)
+                        .foregroundStyle(Color.white.opacity(0.84))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let note = workout.note, !note.isEmpty {
+                    Text(note)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.white.opacity(0.84))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(heroMetricsLine(workout, languageCode: languageCode))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.88))
+                }
 
                 if garminSummary != nil && !activityOnly {
                     Text(GarminWorkoutDetailCopy.syncedSupporting(languageCode: languageCode))
@@ -1532,33 +1560,32 @@ struct WorkoutDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
-                    if !activityOnly {
-                        GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted(), onHero: true)
-                        GymMetricTile(label: "Sets", value: workout.setCount.formatted(), onHero: true)
-                        GymMetricTile(
-                            label: "Volume",
-                            value: workout.totalVolume.formatted(.number.precision(.fractionLength(0 ... 1))),
-                            onHero: true
-                        )
+                if activityOnly {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+                        if let duration = workout.durationSeconds {
+                            GymMetricTile(
+                                label: gymText(
+                                    "Duration", "Тривалість", "Время",
+                                    languageCode: languageCode
+                                ),
+                                value: compactWorkoutDuration(duration, languageCode: languageCode),
+                                onHero: true
+                            )
+                        }
+                        if let calories = garminSummary?.gymCalories {
+                            GymMetricTile(
+                                label: "GymApp",
+                                value: "\(calories) \(GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode))",
+                                onHero: true
+                            )
+                        }
                     }
-                    if let duration = workout.durationSeconds {
-                        GymMetricTile(
-                            label: gymText(
-                                "Duration", "Тривалість", "Время",
-                                languageCode: languageCode
-                            ),
-                            value: compactWorkoutDuration(duration, languageCode: languageCode),
-                            onHero: true
-                        )
-                    }
-                    if activityOnly, let calories = garminSummary?.gymCalories {
-                        GymMetricTile(
-                            label: "GymApp",
-                            value: "\(calories) \(GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode))",
-                            onHero: true
-                        )
-                    }
+                } else if workout.note?.isEmpty == false || garminSummary != nil {
+                    // A note or a Garmin summary already occupies the subtitle
+                    // line above, so surface the compact metrics separately.
+                    Text(heroMetricsLine(workout, languageCode: languageCode))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.88))
                 }
 
                 if activityOnly {
@@ -1571,30 +1598,57 @@ struct WorkoutDetailView: View {
                     .font(.caption)
                     .foregroundStyle(Color.white.opacity(0.78))
                 }
-
-                if sharedWorkoutURL(workout) != nil {
-                    Button {
-                        openWorkoutShareChooser(workout)
-                    } label: {
-                        Label(
-                            GarminWorkoutDetailCopy.shareWorkout(languageCode: languageCode),
-                            systemImage: "square.and.arrow.up"
-                        )
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 46)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.white)
-                    .accessibilityHint(
-                        GarminWorkoutDetailCopy.sharePrivacy(languageCode: languageCode)
-                    )
-
-                    Text(GarminWorkoutDetailCopy.sharePrivacy(languageCode: languageCode))
-                        .font(.caption)
-                        .foregroundStyle(Color.white.opacity(0.76))
-                }
             }
         }
+    }
+
+    /// "Сб, 26 сент. · 18:53" — the shared short date, then the time. The
+    /// year is appended by the shared helper only when it differs from the
+    /// current year.
+    private func compactHeroTitle(_ date: Date, languageCode: String) -> String {
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        let datePart = gymShortDate(date, languageCode: languageCode)
+        let timePart = date.formatted(.dateTime.hour().minute().locale(locale))
+        return "\(datePart) · \(timePart)"
+    }
+
+    /// "1 упражнение · 5 подходов · 3 ч 52 мин · 1 250 кг" — plural-aware
+    /// exercise/set counts, the compact duration (omitted when unknown), and
+    /// the total volume (omitted when zero).
+    private func heroMetricsLine(_ workout: WorkoutSession, languageCode: String) -> String {
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        var parts = [
+            gymCount(
+                workout.exercises.count,
+                englishOne: "exercise",
+                englishMany: "exercises",
+                ukrainianOne: "вправа",
+                ukrainianFew: "вправи",
+                ukrainianMany: "вправ",
+                languageCode: languageCode
+            ),
+            gymCount(
+                workout.setCount,
+                englishOne: "set",
+                englishMany: "sets",
+                ukrainianOne: "підхід",
+                ukrainianFew: "підходи",
+                ukrainianMany: "підходів",
+                languageCode: languageCode
+            )
+        ]
+        let durationText = gymCompactDuration(workout.durationSeconds ?? 0, languageCode: languageCode)
+        if !durationText.isEmpty {
+            parts.append(durationText)
+        }
+        var line = parts.joined(separator: " · ")
+        if workout.totalVolume > 0 {
+            let volume = workout.totalVolume.formatted(
+                .number.locale(locale).precision(.fractionLength(0 ... 1))
+            )
+            line += " · \(volume) \(gymLocalized("kg", languageCode: languageCode))"
+        }
+        return line
     }
 
     private func compactWorkoutDuration(_ seconds: Int, languageCode: String) -> String {
@@ -1646,10 +1700,10 @@ struct WorkoutDetailView: View {
     private func openWorkoutShareChooser(_ workout: WorkoutSession) {
         guard isStoreContextCurrent() else { return }
         do {
-            sharingPlan = try sharedWorkoutPlan(workout)
+            let plan = try sharedWorkoutPlan(workout)
             shareChooserMessage = nil
             shareChooserMessageIsError = false
-            showingShareChooser = true
+            shareChooserPayload = WorkoutSharePayload(id: workout.id, date: workout.date, plan: plan)
             Task { await loadShareFriends(force: false) }
         } catch {
             reportStatus(
@@ -1699,7 +1753,7 @@ struct WorkoutDetailView: View {
     private func sendWorkoutInvite(to friend: SocialFriendSummary, live: Bool) async {
         guard isStoreContextCurrent(),
               sharingFriendID == nil,
-              let plan = sharingPlan,
+              let plan = shareChooserPayload?.plan,
               let sender = live ? sendLiveWorkoutInvite : sendSocialWorkoutInvite else { return }
         sharingFriendID = friend.profileID
         shareChooserMessage = nil
@@ -2211,6 +2265,7 @@ struct WorkoutDetailView: View {
     }
 
     private func exerciseSummaryText(_ summary: StoredWorkoutExerciseSummary) -> String {
+        let languageCode = gymCurrentLanguageCode()
         let sets = gymCount(
             summary.setCount,
             englishOne: "set",
@@ -2218,7 +2273,7 @@ struct WorkoutDetailView: View {
             ukrainianOne: "підхід",
             ukrainianFew: "підходи",
             ukrainianMany: "підходів",
-            languageCode: gymCurrentLanguageCode()
+            languageCode: languageCode
         )
         let reps = gymCount(
             summary.repCount,
@@ -2227,11 +2282,14 @@ struct WorkoutDetailView: View {
             ukrainianOne: "повтор",
             ukrainianFew: "повтори",
             ukrainianMany: "повторів",
-            languageCode: gymCurrentLanguageCode()
+            languageCode: languageCode
         )
+        guard summary.volume > 0 else {
+            return "\(sets) · \(reps)"
+        }
         let volume = summary.volume.formatted(
             .number
-                .locale(AppLanguage(rawValue: gymCurrentLanguageCode())?.locale ?? AppLanguage.english.locale)
+                .locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
                 .notation(.compactName)
                 .precision(.fractionLength(0 ... 1))
         )
@@ -2239,7 +2297,7 @@ struct WorkoutDetailView: View {
             "\(sets) · \(reps) · \(volume) volume",
             "\(sets) · \(reps) · обсяг \(volume)",
             "\(sets) · \(reps) · объём \(volume)",
-            languageCode: gymCurrentLanguageCode()
+            languageCode: languageCode
         )
     }
 
@@ -2491,6 +2549,7 @@ struct WorkoutDetailView: View {
 }
 
 private struct SavedWorkoutShareChooser: View {
+    let date: Date
     let plan: SharedWorkoutPlan
     let friends: [SocialFriendSummary]
     let isCloudAccount: Bool
@@ -2503,8 +2562,39 @@ private struct SavedWorkoutShareChooser: View {
     let onSendCopy: (SocialFriendSummary) -> Void
     let onStartLive: (SocialFriendSummary) -> Void
 
+    /// Icon column width shared by the "Train together" row so it lines up
+    /// with `ProfileView`'s settings rows.
+    private static let rowIconWidth: CGFloat = 28
+
     private var shareURL: URL? {
         try? SharedWorkoutLinkEncoder.makeURL(plan: plan)
+    }
+
+    /// "Сб, 26 сент. · Жим штанги лёжа +2 · 5 подходов" — what is being
+    /// shared, shown once under the nav title instead of the old hero card.
+    private var summaryLine: String {
+        let languageCode = gymCurrentLanguageCode()
+        let dateText = gymShortDate(date, languageCode: languageCode)
+        let setsText = gymCount(
+            plan.totalSetCount,
+            englishOne: "set",
+            englishMany: "sets",
+            ukrainianOne: "підхід",
+            ukrainianFew: "підходи",
+            ukrainianMany: "підходів",
+            languageCode: languageCode
+        )
+        guard let first = plan.exercises.first else {
+            return "\(dateText) · \(setsText)"
+        }
+        let firstName = gymExerciseName(
+            first.name,
+            catalogKey: first.catalogKey,
+            languageCode: languageCode
+        )
+        let extra = plan.exercises.count - 1
+        let exercisesText = extra > 0 ? "\(firstName) +\(extra)" : firstName
+        return "\(dateText) · \(exercisesText) · \(setsText)"
     }
 
     var body: some View {
@@ -2512,119 +2602,96 @@ private struct SavedWorkoutShareChooser: View {
             GymBackground {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        GymHeroPanel {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Label(
-                                    t("Share saved workout", "Поділитися збереженим тренуванням", "Поделиться сохранённой тренировкой"),
-                                    systemImage: "person.2.wave.2.fill"
-                                )
-                                .font(.title2.bold())
-                                Text(
-                                    t(
-                                        "Send a copy, start one synchronized room, or use any other app.",
-                                        "Надішли копію, запусти одну синхронізовану кімнату або скористайся іншим застосунком.",
-                                        "Отправь копию, запусти одну синхронизированную комнату или используй другое приложение."
-                                    )
-                                )
-                                .font(.subheadline)
-                                .foregroundStyle(Color.white.opacity(0.84))
-                            }
-                        }
+                        Text(summaryLine)
+                            .font(.subheadline)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
                         if let message {
                             GymStatusBanner(message: message, isError: messageIsError)
                         }
 
                         if let shareURL {
-                            GymPanel {
+                            ShareLink(
+                                item: shareURL,
+                                subject: Text("GymApp workout"),
+                                message: Text(
+                                    GarminWorkoutDetailCopy.shareMessage(
+                                        languageCode: gymCurrentLanguageCode()
+                                    )
+                                )
+                            ) {
+                                Label(
+                                    t("Share link", "Поділитися посиланням", "Поделиться ссылкой"),
+                                    systemImage: "link"
+                                )
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(GymPrimaryButtonStyle())
+                        }
+
+                        GymPanel(
+                            highlighted: isCloudAccount,
+                            contentPadding: isCloudAccount
+                                ? EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
+                                : EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+                        ) {
+                            if isCloudAccount {
                                 VStack(alignment: .leading, spacing: 10) {
-                                    GymSectionTitle(
-                                        title: t("Share through another app", "Надіслати через інший застосунок", "Отправить через другое приложение")
-                                    )
-                                    ShareLink(
-                                        item: shareURL,
-                                        subject: Text("GymApp workout"),
-                                        message: Text(
-                                            GarminWorkoutDetailCopy.shareMessage(
-                                                languageCode: gymCurrentLanguageCode()
-                                            )
+                                    HStack(alignment: .firstTextBaseline) {
+                                        GymSectionTitle(
+                                            title: t("Train together", "Тренуватися разом", "Тренироваться вместе")
                                         )
-                                    ) {
-                                        Label(
-                                            t("Share link", "Поділитися посиланням", "Поделиться ссылкой"),
-                                            systemImage: "link"
-                                        )
-                                        .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(GymSecondaryButtonStyle())
-                                }
-                            }
-                        }
-
-                        GymPanel(highlighted: true) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    GymSectionTitle(
-                                        title: t("Train together", "Тренуватися разом", "Тренироваться вместе")
-                                    )
-                                    Spacer()
-                                    Button(action: onRefresh) {
-                                        Image(systemName: "arrow.clockwise")
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(isLoadingFriends)
-                                    .accessibilityLabel(t("Refresh friends", "Оновити друзів", "Обновить друзей"))
-                                }
-
-                                if !isCloudAccount {
-                                    Text(t(
-                                        "Sign in to send a private workout invitation.",
-                                        "Увійди, щоб надіслати приватне запрошення на тренування.",
-                                        "Войди, чтобы отправить личное приглашение на тренировку."
-                                    ))
-                                    .foregroundStyle(GymTheme.textSecondary)
-                                } else if isLoadingFriends && friends.isEmpty {
-                                    ProgressView()
-                                        .frame(maxWidth: .infinity)
-                                } else if friends.isEmpty {
-                                    Text(t(
-                                        "Add and confirm a friend first.",
-                                        "Спочатку додай і підтвердь друга.",
-                                        "Сначала добавь и подтверди друга."
-                                    ))
-                                    .foregroundStyle(GymTheme.textSecondary)
-                                } else {
-                                    ForEach(friends, id: \.profileID) { friend in
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text(friend.displayName)
-                                                .font(.headline)
-                                                .lineLimit(1)
-                                            ViewThatFits(in: .horizontal) {
-                                                HStack(spacing: 8) {
-                                                    friendShareButtons(friend)
-                                                }
-                                                VStack(spacing: 8) {
-                                                    friendShareButtons(friend)
-                                                }
-                                            }
-                                            .disabled(sharingFriendID != nil)
+                                        Spacer()
+                                        Button(action: onRefresh) {
+                                            Image(systemName: "arrow.clockwise")
                                         }
-                                        .padding(.vertical, 4)
+                                        .buttonStyle(.plain)
+                                        .disabled(isLoadingFriends)
+                                        .accessibilityLabel(t("Refresh friends", "Оновити друзів", "Обновить друзей"))
+                                    }
+
+                                    if isLoadingFriends && friends.isEmpty {
+                                        ProgressView()
+                                            .frame(maxWidth: .infinity)
+                                    } else if friends.isEmpty {
+                                        Text(t(
+                                            "Add and confirm a friend first.",
+                                            "Спочатку додай і підтвердь друга.",
+                                            "Сначала добавь и подтверди друга."
+                                        ))
+                                        .foregroundStyle(GymTheme.textSecondary)
+                                    } else {
+                                        ForEach(friends, id: \.profileID) { friend in
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                Text(friend.displayName)
+                                                    .font(.headline)
+                                                    .lineLimit(1)
+                                                ViewThatFits(in: .horizontal) {
+                                                    HStack(spacing: 8) {
+                                                        friendShareButtons(friend)
+                                                    }
+                                                    VStack(spacing: 8) {
+                                                        friendShareButtons(friend)
+                                                    }
+                                                }
+                                                .disabled(sharingFriendID != nil)
+                                            }
+                                            .padding(.vertical, 4)
+                                        }
                                     }
                                 }
+                            } else {
+                                trainTogetherUpgradeRow
                             }
                         }
 
-                        Label(
-                            t(
-                                "Only exercises and planned sets are shared.",
-                                "Передаються лише вправи й заплановані підходи.",
-                                "Передаются только упражнения и запланированные подходы."
-                            ),
-                            systemImage: "shield"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
+                        Text(GarminWorkoutDetailCopy.sharePrivacy(languageCode: gymCurrentLanguageCode()))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(14)
                     .padding(.bottom, 20)
@@ -2633,6 +2700,39 @@ private struct SavedWorkoutShareChooser: View {
             .navigationTitle(t("Share workout", "Поділитися", "Поделиться"))
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    /// Not-signed-in state: a compact, non-interactive row matching
+    /// `ProfileView.friendsCloudUpgradeRow`'s icon/title/subtitle layout,
+    /// but without its chevron — this row has no tap action (the previous
+    /// "Sign in…" text had none either), and a chevron would promise a tap
+    /// that does nothing.
+    private var trainTogetherUpgradeRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.2")
+                .font(.title3)
+                .foregroundStyle(GymTheme.primary)
+                .frame(width: Self.rowIconWidth)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t("Train together", "Тренуватися разом", "Тренироваться вместе"))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .lineLimit(1)
+                Text(t(
+                    "Requires a cloud account",
+                    "Потрібен хмарний акаунт",
+                    "Нужен облачный аккаунт"
+                ))
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 6)
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: 56)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder

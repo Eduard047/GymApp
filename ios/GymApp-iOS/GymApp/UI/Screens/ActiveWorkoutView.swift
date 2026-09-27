@@ -109,6 +109,8 @@ struct ActiveWorkoutView: View {
     @State private var statusIsError = false
     @State private var showingDiscardConfirmation = false
     @State private var collapsedExerciseIDs = Set<UUID>()
+    @State private var expandedSetIDs = Set<UUID>()
+    @FocusState private var focusedWeightSetID: UUID?
     @State private var liveParticipantSelection: LiveParticipantSelection = .current
 
     init(
@@ -145,16 +147,6 @@ struct ActiveWorkoutView: View {
                         if !liveWorkoutCoordinator.isAttachedToCurrentDraft ||
                             liveParticipantSelection == .current {
                             progressPanel(draft)
-                            if !liveWorkoutCoordinator.planIsFrozenForCurrentDraft, draft.commitIntent == nil,
-                               draft.exercises.contains(where: { $0.sets.contains(where: { !$0.isCompleted }) }) {
-                                DisclosureGroup(gymText("Adapt workout", "Адаптувати тренування", "Адаптировать тренировку", languageCode: languageCode)) {
-                                    ForEach(["equipmentUnavailable", "timeCut", "tooHard"], id: \.self) { reason in
-                                        Button(WorkoutAdaptationRequest.title(reason)) {
-                                            adaptationRequest = WorkoutAdaptationRequest(source: draft, reason: reason, store: workoutStore)
-                                        }.buttonStyle(GymSecondaryButtonStyle()).frame(minHeight: 48)
-                                    }
-                                }
-                            }
 
                             if let statusMessage {
                                 GymStatusBanner(message: statusMessage, isError: statusIsError)
@@ -209,9 +201,9 @@ struct ActiveWorkoutView: View {
         }
         .navigationTitle(
             gymText(
-                "Active workout",
-                "Активне тренування",
-                "Активная тренировка",
+                "Workout",
+                "Тренування",
+                "Тренировка",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -220,18 +212,18 @@ struct ActiveWorkoutView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
                     gymText(
-                        "Back",
-                        "Назад",
-                        "Назад",
+                        "Minimize",
+                        "Згорнути",
+                        "Свернуть",
                         languageCode: gymCurrentLanguageCode()
                     ),
                     action: onClose
                 )
                 .accessibilityHint(
                     gymText(
-                        "Closes the screen; all changes are already saved",
-                        "Закриває екран; усі зміни вже збережено",
-                        "Закрывает экран; все изменения уже сохранены",
+                        "Minimizes the screen; the workout keeps running and all changes are already saved",
+                        "Згортає екран; тренування продовжує йти, усі зміни вже збережено",
+                        "Сворачивает экран; тренировка продолжает идти, все изменения уже сохранены",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
@@ -239,6 +231,28 @@ struct ActiveWorkoutView: View {
             if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
+                        if let draft = currentDraft,
+                           !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
+                           draft.commitIntent == nil,
+                           draft.exercises.contains(where: { $0.sets.contains(where: { !$0.isCompleted }) }) {
+                            Menu {
+                                ForEach(["equipmentUnavailable", "timeCut", "tooHard"], id: \.self) { reason in
+                                    Button(WorkoutAdaptationRequest.title(reason)) {
+                                        adaptationRequest = WorkoutAdaptationRequest(source: draft, reason: reason, store: workoutStore)
+                                    }
+                                }
+                            } label: {
+                                Label(
+                                    gymText(
+                                        "Adapt workout",
+                                        "Адаптувати тренування",
+                                        "Адаптировать тренировку",
+                                        languageCode: gymCurrentLanguageCode()
+                                    ),
+                                    systemImage: "slider.horizontal.3"
+                                )
+                            }
+                        }
                         Button(role: .destructive) {
                             showingDiscardConfirmation = true
                         } label: {
@@ -330,19 +344,17 @@ struct ActiveWorkoutView: View {
     }
 
     private func progressPanel(_ draft: ActiveWorkoutDraft) -> some View {
-        GymHeroPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                Label(
-                    gymText(
-                        "Workout in progress",
-                        "Тренування триває",
-                        "Тренировка идёт",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
-                    systemImage: "figure.strengthtraining.traditional"
-                )
-                .font(.title2.bold())
-
+        let exerciseName = currentExerciseDisplayName(draft)
+        return GymHeroPanel(
+            contentPadding: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18),
+            gradient: LinearGradient(
+                colors: [GymTheme.brandFill, GymTheme.brandFillBright],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            solidFill: GymTheme.brandFill
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
                 if draft.commitIntent != nil {
                     Text(
                         gymText(
@@ -353,76 +365,143 @@ struct ActiveWorkoutView: View {
                         )
                     )
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.84))
+                    .foregroundStyle(Color.white.opacity(0.9))
                 }
 
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 8),
-                            GridItem(.flexible(), spacing: 8)
-                        ],
-                        alignment: .leading,
-                        spacing: 8
-                    ) {
-                        GymMetricTile(
-                            label: gymText(
-                                "Elapsed",
-                                "Минуло",
-                                "Прошло",
-                                languageCode: gymCurrentLanguageCode()
-                            ),
-                            value: Self.clock(draft.totalElapsedSeconds(at: context.date)),
-                            emphasized: true,
-                            onHero: true
-                        )
-                        GymMetricTile(
-                            label: gymText(
-                                "Completed",
-                                "Виконано",
-                                "Выполнено",
-                                languageCode: gymCurrentLanguageCode()
-                            ),
-                            value: gymText(
-                                "\(draft.completedSetCount) of \(draft.plannedSetCount)",
-                                "\(draft.completedSetCount) з \(draft.plannedSetCount)",
-                                "\(draft.completedSetCount) из \(draft.plannedSetCount)",
-                                languageCode: gymCurrentLanguageCode()
-                            ),
-                            onHero: true
-                        )
+                    let elapsed = draft.totalElapsedSeconds(at: context.date)
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 7, height: 7)
+                                Text(
+                                    gymText(
+                                        "In progress",
+                                        "Триває",
+                                        "Идёт",
+                                        languageCode: gymCurrentLanguageCode()
+                                    )
+                                )
+                                .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(Color.white.opacity(0.85))
+
+                            Text(Self.clock(elapsed))
+                                .font(.system(size: 36, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(.white)
+
+                            if let exerciseName {
+                                Text(
+                                    gymText(
+                                        "Now: \(exerciseName)",
+                                        "Зараз: \(exerciseName)",
+                                        "Сейчас: \(exerciseName)",
+                                        languageCode: gymCurrentLanguageCode()
+                                    )
+                                )
+                                .font(.caption)
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .lineLimit(1)
+                            }
+                        }
+
+                        Spacer(minLength: 8)
+
+                        ZStack {
+                            Circle()
+                                .stroke(Color.white.opacity(0.28), lineWidth: 7)
+                            Circle()
+                                .trim(
+                                    from: 0,
+                                    to: min(1, Double(draft.completedSetCount) / Double(max(1, draft.plannedSetCount)))
+                                )
+                                .stroke(Color.white, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                            VStack(spacing: 1) {
+                                Text("\(draft.completedSetCount)/\(draft.plannedSetCount)")
+                                    .font(.headline.monospacedDigit())
+                                    .foregroundStyle(.white)
+                                Text(
+                                    gymText(
+                                        "sets",
+                                        "підх.",
+                                        "подх.",
+                                        languageCode: gymCurrentLanguageCode()
+                                    )
+                                )
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                            }
+                        }
+                        .frame(width: 68, height: 68)
+                        .accessibilityHidden(true)
                     }
-                }
-
-                Label(
-                    gymText(
-                        "Started at \(gymFormattedDate(draft.startedAt, date: .omitted, time: .shortened))",
-                        "Початок о \(gymFormattedDate(draft.startedAt, date: .omitted, time: .shortened))",
-                        "Начало в \(gymFormattedDate(draft.startedAt, date: .omitted, time: .shortened))",
-                        languageCode: gymCurrentLanguageCode()
-                    ),
-                    systemImage: "clock"
-                )
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.82))
-
-                ProgressView(
-                    value: Double(draft.completedSetCount),
-                    total: Double(max(1, draft.plannedSetCount))
-                )
-                .tint(.white)
-                .accessibilityLabel(
-                    gymText(
-                        "Workout progress",
-                        "Прогрес тренування",
-                        "Прогресс тренировки",
-                        languageCode: gymCurrentLanguageCode()
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        heroAccessibilitySummary(
+                            elapsed: elapsed,
+                            draft: draft,
+                            exerciseName: exerciseName
+                        )
                     )
-                )
-                .accessibilityValue("\(draft.completedSetCount) / \(draft.plannedSetCount)")
-
+                }
             }
         }
+    }
+
+    /// First exercise with at least one uncompleted set, i.e. the exercise
+    /// shown in the hero card's "Now: …" caption.
+    private func currentExerciseDisplayName(_ draft: ActiveWorkoutDraft) -> String? {
+        guard let exercise = draft.exercises.first(where: { $0.sets.contains(where: { !$0.isCompleted }) }) else {
+            return nil
+        }
+        guard let stored = workoutStore.exercise(id: exercise.exerciseID) else { return nil }
+        return gymExerciseName(stored)
+    }
+
+    /// "Прошло 14:40, выполнено 3 из 15 подходов, сейчас жим…" — the hero
+    /// card's single combined accessibility element.
+    private func heroAccessibilitySummary(
+        elapsed: TimeInterval,
+        draft: ActiveWorkoutDraft,
+        exerciseName: String?
+    ) -> String {
+        let clock = Self.clock(elapsed)
+        let base = gymText(
+            "Elapsed \(clock), \(setsProgressSummary(draft)) done",
+            "Минуло \(clock), \(setsProgressSummary(draft)) виконано",
+            "Прошло \(clock), выполнено \(setsProgressSummary(draft))",
+            languageCode: gymCurrentLanguageCode()
+        )
+        guard let exerciseName else { return base }
+        return base + gymText(
+            ", now: \(exerciseName)",
+            ", зараз: \(exerciseName)",
+            ", сейчас: \(exerciseName)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    /// "0 of 15 sets" / "0 з 15 підходів" / "0 из 15 подходов", pluralized
+    /// against the planned total via `gymCount`.
+    private func setsProgressSummary(_ draft: ActiveWorkoutDraft) -> String {
+        let totalWord = gymCount(
+            draft.plannedSetCount,
+            englishOne: "set",
+            englishMany: "sets",
+            ukrainianOne: "підхід",
+            ukrainianFew: "підходи",
+            ukrainianMany: "підходів",
+            languageCode: gymCurrentLanguageCode()
+        )
+        return gymText(
+            "\(draft.completedSetCount) of \(totalWord)",
+            "\(draft.completedSetCount) з \(totalWord)",
+            "\(draft.completedSetCount) из \(totalWord)",
+            languageCode: gymCurrentLanguageCode()
+        )
     }
 
     private func livePeerPanel(_ draft: ActiveWorkoutDraft) -> some View {
@@ -863,6 +942,15 @@ struct ActiveWorkoutView: View {
         })?.id
         let isCurrent = currentExerciseID == exercise.id
         let isCollapsed = collapsedExerciseIDs.contains(exercise.id)
+        let setCountPhrase = gymCount(
+            exercise.sets.count,
+            englishOne: "set",
+            englishMany: "sets",
+            ukrainianOne: "підхід",
+            ukrainianFew: "підходи",
+            ukrainianMany: "підходів",
+            languageCode: gymCurrentLanguageCode()
+        )
         return GymPanel(highlighted: isCurrent) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
@@ -886,36 +974,40 @@ struct ActiveWorkoutView: View {
                                 Text(exerciseName)
                                     .font(.headline)
                                     .foregroundStyle(GymTheme.textPrimary)
-                                Label(
-                                    "\(completedCount) / \(exercise.sets.count)",
-                                    systemImage: fullyCompleted
-                                        ? "checkmark.seal.fill"
-                                        : "circle.dotted"
-                                )
-                                .font(.subheadline.monospacedDigit().weight(.bold))
-                                .foregroundStyle(
-                                    fullyCompleted ? GymTheme.secondary : GymTheme.textSecondary
-                                )
-                                Text(
-                                    isCurrent
-                                        ? gymText(
-                                            "Current exercise", "Поточна вправа", "Текущее упражнение",
-                                            languageCode: gymCurrentLanguageCode()
+                                if isCollapsed {
+                                    Label(
+                                        "\(completedCount) / \(exercise.sets.count)",
+                                        systemImage: fullyCompleted
+                                            ? "checkmark.seal.fill"
+                                            : "circle.dotted"
+                                    )
+                                    .font(.subheadline.monospacedDigit().weight(.bold))
+                                    .foregroundStyle(
+                                        fullyCompleted ? GymTheme.secondary : GymTheme.textSecondary
+                                    )
+                                    if !isCurrent {
+                                        Text(
+                                            fullyCompleted
+                                                ? gymText(
+                                                    "Completed", "Завершено", "Завершено",
+                                                    languageCode: gymCurrentLanguageCode()
+                                                )
+                                                : gymText(
+                                                    "Up next · \(setCountPhrase)",
+                                                    "Далі · \(setCountPhrase)",
+                                                    "Далее · \(setCountPhrase)",
+                                                    languageCode: gymCurrentLanguageCode()
+                                                )
                                         )
-                                        : fullyCompleted
-                                            ? gymText(
-                                                "Completed", "Завершено", "Завершено",
-                                                languageCode: gymCurrentLanguageCode()
-                                            )
-                                            : gymText(
-                                                "Up next", "Далі", "Далее",
-                                                languageCode: gymCurrentLanguageCode()
-                                            )
-                                )
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(
-                                    isCurrent ? GymTheme.primary : GymTheme.textSecondary
-                                )
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(GymTheme.textSecondary)
+                                    }
+                                } else {
+                                    Text(exerciseSetSubtitle(exercise: exercise, draft: draft))
+                                        .font(.caption)
+                                        .foregroundStyle(GymTheme.textSecondary)
+                                        .lineLimit(1)
+                                }
                             }
                             Spacer(minLength: 8)
                             Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
@@ -929,64 +1021,111 @@ struct ActiveWorkoutView: View {
                 }
 
                 if !isCollapsed {
-                    ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
-                        setRow(
-                            set,
-                            position: index,
-                            exercise: exercise,
-                            exerciseName: exerciseName,
-                            draft: draft
-                        )
+                    let currentID = currentSetID(in: draft)
+                    // Tight inner stack: the outer card's spacing: 14 is meant
+                    // for header/rows-block/footer, not between every single
+                    // row and divider — nesting the rows here keeps each row's
+                    // own vertical padding as the only gap between them.
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
+                            setRow(
+                                set,
+                                position: index,
+                                exercise: exercise,
+                                exerciseName: exerciseName,
+                                draft: draft
+                            )
+                            // A thin divider between two plain (upcoming/completed)
+                            // rows only — the current set's own tinted card already
+                            // separates itself visually, so no divider hugs it.
+                            if index < exercise.sets.count - 1,
+                               set.id != currentID,
+                               exercise.sets[index + 1].id != currentID {
+                                Divider().overlay(GymTheme.outlineSoft)
+                            }
+                        }
                     }
 
-                    Button {
-                        appendSet(to: exercise)
-                    } label: {
-                        Label(
+                    HStack(spacing: 8) {
+                        Button {
+                            appendSet(to: exercise)
+                        } label: {
+                            Text(
+                                gymText(
+                                    "+ Set",
+                                    "+ Підхід",
+                                    "+ Подход",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                        }
+                        .buttonStyle(.plain)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(GymTheme.primary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        )
+                        .accessibilityLabel(
                             gymText(
                                 "Add set",
                                 "Додати підхід",
                                 "Добавить подход",
                                 languageCode: gymCurrentLanguageCode()
-                            ),
-                            systemImage: "plus.circle"
+                            )
                         )
-                    }
-                    .buttonStyle(GymSecondaryButtonStyle())
-                    .disabled(
-                        activeWorkoutStructuralActionsAreDisabled(
-                            hasStoredExercise: storedExercise != nil,
-                            hasCommitIntent: draft.commitIntent != nil,
-                            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                        .disabled(
+                            activeWorkoutStructuralActionsAreDisabled(
+                                hasStoredExercise: storedExercise != nil,
+                                hasCommitIntent: draft.commitIntent != nil,
+                                isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                            )
                         )
-                    )
 
-                    Button {
-                        saveExercise(exercise, draft: draft)
-                    } label: {
-                        Label(
+                        Button {
+                            saveExercise(exercise, draft: draft)
+                        } label: {
+                            Text(
+                                gymText(
+                                    "Finish",
+                                    "Завершити",
+                                    "Завершить",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(GymTheme.primary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                        }
+                        .buttonStyle(.plain)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(GymTheme.primary.opacity(0.7), lineWidth: 1)
+                        )
+                        .accessibilityLabel(
                             gymText(
                                 "Save exercise",
                                 "Зберегти вправу",
                                 "Сохранить упражнение",
                                 languageCode: gymCurrentLanguageCode()
-                            ),
-                            systemImage: "checkmark.circle.fill"
+                            )
+                        )
+                        .disabled(
+                            activeWorkoutStructuralActionsAreDisabled(
+                                hasStoredExercise: storedExercise != nil,
+                                hasCommitIntent: draft.commitIntent != nil,
+                                isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                            )
                         )
                     }
-                    .buttonStyle(GymPrimaryButtonStyle())
-                    .disabled(
-                        activeWorkoutStructuralActionsAreDisabled(
-                            hasStoredExercise: storedExercise != nil,
-                            hasCommitIntent: draft.commitIntent != nil,
-                            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
-                        )
-                    )
+                    .padding(.top, 12)
                 }
             }
         }
     }
 
+    @ViewBuilder
     private func setRow(
         _ set: ActiveWorkoutSet,
         position: Int,
@@ -995,10 +1134,39 @@ struct ActiveWorkoutView: View {
         draft: ActiveWorkoutDraft
     ) -> some View {
         let isCurrent = currentSetID(in: draft) == set.id
-        let isLatestCompleted = draft.undoableSetID == set.id
+        if set.isCompleted {
+            completedSetRow(set, position: position, draft: draft)
+        } else if isCurrent {
+            currentSetRow(set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
+        } else {
+            upcomingSetRow(set, position: position, draft: draft)
+        }
+    }
+
+    /// The one editable set at a time: compact badge + weight + × + reps,
+    /// weight-step chips, then the primary "Log" button. Marked as current
+    /// via a themed border and an accessibility trait/value instead of a
+    /// separate "Current" pill.
+    private func currentSetRow(
+        _ set: ActiveWorkoutSet,
+        position: Int,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
         let restSeconds = restDurationSeconds(for: exercise)
+        let fieldsDisabled = activeWorkoutValueEditorsAreDisabled(
+            isCompleted: false,
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+        )
+        let last = previousPerformance(exercise: exercise, position: position, draft: draft)
+        let preceding = exercise.sets.prefix(position).last(where: { $0.isCompleted })
+        let repeatWeight = preceding?.weight ?? last?.weight
+        let repeatReps = preceding?.reps ?? last?.reps
+
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Text(
                     gymText(
                         "Set \(position + 1)",
@@ -1007,78 +1175,416 @@ struct ActiveWorkoutView: View {
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
-                .font(.subheadline.bold())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(GymTheme.primary)
+
                 Spacer(minLength: 8)
-                if isCurrent, !set.isCompleted {
-                    GymInfoPill(
+
+                if let last, let repeatWeight, let repeatReps {
+                    Button {
+                        updateSet(draft: draft, setID: set.id, weight: repeatWeight, reps: repeatReps)
+                    } label: {
+                        Text(
+                            gymText(
+                                "previous \(last.weight.formatted()) × \(last.reps)",
+                                "минулого разу \(last.weight.formatted()) × \(last.reps)",
+                                "прошлый раз \(last.weight.formatted()) × \(last.reps)",
+                                languageCode: gymCurrentLanguageCode()
+                            )
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(draft.commitIntent != nil)
+                    .accessibilityLabel(
                         gymText(
-                            "Current",
-                            "Поточний",
-                            "Текущий",
+                            "Repeat previous, \(last.weight.formatted()) kilograms by \(last.reps)",
+                            "Повторити попередні, \(last.weight.formatted()) кілограмів на \(last.reps)",
+                            "Повторить предыдущие, \(last.weight.formatted()) килограммов на \(last.reps)",
                             languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "location.fill"
+                        )
                     )
-                }
-                if set.isCompleted {
-                    Label(
+                    .accessibilityHint(
                         gymText(
-                            "Recorded",
-                            "Записано",
-                            "Записано",
+                            "Double tap to reuse this weight and reps",
+                            "Двічі торкніться, щоб повторити цю вагу й повторення",
+                            "Дважды нажмите, чтобы повторить этот вес и повторения",
                             languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "checkmark.circle.fill"
+                        )
                     )
-                    .font(.caption.bold())
-                    .foregroundStyle(GymTheme.secondary)
                 }
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
-                    setEditors(set: set, draft: draft)
-                }
-                VStack(spacing: 10) {
-                    setEditors(set: set, draft: draft)
-                }
-            }
-
-            if isCurrent, !set.isCompleted {
-                quickSetControls(set: set, exercise: exercise, position: position, draft: draft)
-            }
-
-            if !set.isCompleted {
-                Button {
-                    recordSet(
-                        set,
-                        exercise: exercise,
-                        exerciseName: exerciseName,
-                        draft: draft
-                    )
-                } label: {
-                    Label(
-                        gymText(
-                            "Record set · rest \(restSeconds) s",
-                            "Записати підхід · відпочинок \(restSeconds) с",
-                            "Записать подход · отдых \(restSeconds) с",
-                            languageCode: gymCurrentLanguageCode()
-                        ),
-                        systemImage: "checkmark.circle.fill"
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(GymPrimaryButtonStyle())
-                .disabled(!isCurrent || draft.commitIntent != nil)
-                .accessibilityHint(
-                    gymText(
-                        "Saves this set before starting its movement-based rest timer",
-                        "Зберігає цей підхід перед запуском таймера відпочинку для цієї вправи",
-                        "Сохраняет этот подход перед запуском таймера отдыха для этого упражнения",
-                        languageCode: gymCurrentLanguageCode()
-                    )
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Spacer(minLength: 0)
+                TextField(
+                    "0",
+                    value: weightBinding(setID: set.id),
+                    format: .number.precision(.fractionLength(0 ... 2))
                 )
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                .foregroundStyle(GymTheme.textPrimary)
+                .fixedSize()
+                .disabled(fieldsDisabled)
+                .focused($focusedWeightSetID, equals: set.id)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(focusedWeightSetID == set.id ? GymTheme.primary : Color.clear)
+                        .frame(height: 1.5)
+                }
+                .accessibilityLabel(weightAccessibilityLabel(position: position))
+
+                Text(gymLocalized("kg"))
+                    .font(.system(size: 15))
+                    .foregroundStyle(GymTheme.textSecondary)
+
+                Text(verbatim: "×")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .accessibilityHidden(true)
+
+                Text(set.reps.formatted())
+                    .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(GymTheme.textPrimary)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
             }
+
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 8) {
+                    weightStepCapsule(set: set, position: position, exercise: exercise, draft: draft, disabled: fieldsDisabled)
+                    repsStepCapsule(set: set, position: position, disabled: fieldsDisabled)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    weightStepCapsule(set: set, position: position, exercise: exercise, draft: draft, disabled: fieldsDisabled)
+                    repsStepCapsule(set: set, position: position, disabled: fieldsDisabled)
+                }
+            }
+
+            Button {
+                recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)
+            } label: {
+                // No extra vertical padding/minHeight here: GymPrimaryButtonStyle
+                // already adds its own vertical padding + minHeight 48, and
+                // stacking another minHeight on top of that padding was what
+                // pushed this button to ~68pt tall.
+                logButtonText(restSeconds: restSeconds)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GymPrimaryButtonStyle())
+            .disabled(draft.commitIntent != nil)
+            .accessibilityLabel(logButtonLabel(restSeconds: restSeconds))
+            .accessibilityHint(
+                gymText(
+                    "Saves this set before starting its movement-based rest timer",
+                    "Зберігає цей підхід перед запуском таймера відпочинку для цієї вправи",
+                    "Сохраняет этот подход перед запуском таймера отдыха для этого упражнения",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        }
+        .padding(10)
+        .background(GymTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isSelected)
+        .accessibilityValue(
+            gymText("Current set", "Поточний підхід", "Текущий подход", languageCode: gymCurrentLanguageCode())
+        )
+    }
+
+    /// "Записать подход · отдых 3:00" as one line, with the rest suffix in a
+    /// lighter weight/secondary-on-blue tint. Drops the suffix entirely when
+    /// no rest timer applies.
+    private func logButtonText(restSeconds: Int) -> Text {
+        let main = Text(
+            gymText("Log set", "Записати підхід", "Записать подход", languageCode: gymCurrentLanguageCode())
+        )
+        .font(.headline)
+        guard restSeconds > 0 else { return main }
+        let mmss = String(format: "%d:%02d", restSeconds / 60, restSeconds % 60)
+        let suffix = Text(
+            " · " + gymText(
+                "rest \(mmss)",
+                "відпочинок \(mmss)",
+                "отдых \(mmss)",
+                languageCode: gymCurrentLanguageCode()
+            )
+        )
+        .font(.subheadline)
+        .foregroundStyle(Color.white.opacity(0.75))
+        return main + suffix
+    }
+
+    /// One slim, equal-height pill shared by the weight and reps rows: a
+    /// step button at each end (44pt tap target via a larger button frame),
+    /// a tiny center label, and a 32–36pt-tall visual capsule centered
+    /// within that larger tap frame via `.background(alignment:)`.
+    private func stepCapsule(
+        minusLabel: String,
+        minusAccessibilityLabel: String,
+        minusDisabled: Bool,
+        minusAction: @escaping () -> Void,
+        centerLabel: String,
+        plusLabel: String,
+        plusAccessibilityLabel: String,
+        plusDisabled: Bool,
+        plusAction: @escaping () -> Void,
+        accessibilityLabel: String,
+        accessibilityValue: String,
+        useSymbolGlyphs: Bool = false,
+        adjustableAction: @escaping (AccessibilityAdjustmentDirection) -> Void
+    ) -> some View {
+        HStack(spacing: 0) {
+            Button(action: minusAction) {
+                Group {
+                    if useSymbolGlyphs {
+                        Image(systemName: minusLabel)
+                    } else {
+                        Text(minusLabel)
+                    }
+                }
+                .font(useSymbolGlyphs ? .body.weight(.semibold) : .caption2.weight(.bold))
+                .frame(minWidth: 44, minHeight: 44)
+            }
+            .disabled(minusDisabled)
+
+            Text(centerLabel)
+                .font(.caption2)
+                .foregroundStyle(GymTheme.textSecondary)
+                .frame(maxWidth: .infinity)
+
+            Button(action: plusAction) {
+                Group {
+                    if useSymbolGlyphs {
+                        Image(systemName: plusLabel)
+                    } else {
+                        Text(plusLabel)
+                    }
+                }
+                .font(useSymbolGlyphs ? .body.weight(.semibold) : .caption2.weight(.bold))
+                .frame(minWidth: 44, minHeight: 44)
+            }
+            .disabled(plusDisabled)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(GymTheme.primary)
+        .background(alignment: .center) {
+            Capsule().fill(GymTheme.surface).frame(height: 34)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityAdjustableAction { direction in
+            guard !(minusDisabled && plusDisabled) else { return }
+            adjustableAction(direction)
+        }
+    }
+
+    /// "−2,5   вес   +2,5" capsule: same nominal-step/disabled logic the
+    /// old weight-step chips used (honors a machine's `allowedWeightsKg`).
+    private func weightStepCapsule(
+        set: ActiveWorkoutSet,
+        position: Int,
+        exercise: ActiveWorkoutExercise,
+        draft: ActiveWorkoutDraft,
+        disabled: Bool
+    ) -> some View {
+        let allowed = workoutStore.exercise(id: exercise.exerciseID)?.machineLoadProfile?.allowedWeightsKg ?? []
+        // Nominal step shown even when that direction is blocked (e.g. at
+        // 0 kg or at the machine's lowest stop): the default 2.5 kg
+        // increment, or the smallest gap between the machine's allowed
+        // weights when it has one.
+        let nominalStep: Double = {
+            guard allowed.count >= 2 else { return 2.5 }
+            let gaps = zip(allowed, allowed.dropFirst()).map { $1 - $0 }
+            return gaps.min() ?? 2.5
+        }()
+        let minusWeight = TrainingTools.stepWeight(set.weight, direction: -1, allowed: allowed)
+        let minusCanMove = minusWeight != set.weight
+        let minusDelta = minusCanMove ? abs(minusWeight - set.weight) : nominalStep
+        let plusWeight = TrainingTools.stepWeight(set.weight, direction: 1, allowed: allowed)
+        let plusCanMove = plusWeight != set.weight
+        let plusDelta = plusCanMove ? abs(plusWeight - set.weight) : nominalStep
+
+        return stepCapsule(
+            minusLabel: "−" + minusDelta.formatted(),
+            minusAccessibilityLabel: gymText("Decrease weight by \(minusDelta.formatted())", "Зменшити вагу на \(minusDelta.formatted())", "Уменьшить вес на \(minusDelta.formatted())", languageCode: gymCurrentLanguageCode()),
+            minusDisabled: disabled || !minusCanMove,
+            minusAction: { updateSet(draft: draft, setID: set.id, weight: minusWeight, reps: set.reps) },
+            centerLabel: gymText("weight", "вага", "вес", languageCode: gymCurrentLanguageCode()),
+            plusLabel: "+" + plusDelta.formatted(),
+            plusAccessibilityLabel: gymText("Increase weight by \(plusDelta.formatted())", "Збільшити вагу на \(plusDelta.formatted())", "Увеличить вес на \(plusDelta.formatted())", languageCode: gymCurrentLanguageCode()),
+            plusDisabled: disabled || !plusCanMove,
+            plusAction: { updateSet(draft: draft, setID: set.id, weight: plusWeight, reps: set.reps) },
+            accessibilityLabel: gymText("Weight", "Вага", "Вес", languageCode: gymCurrentLanguageCode()),
+            accessibilityValue: "\(set.weight.formatted()) \(gymLocalized("kg"))",
+            adjustableAction: { direction in
+                switch direction {
+                case .increment: if plusCanMove { updateSet(draft: draft, setID: set.id, weight: plusWeight, reps: set.reps) }
+                case .decrement: if minusCanMove { updateSet(draft: draft, setID: set.id, weight: minusWeight, reps: set.reps) }
+                @unknown default: break
+                }
+            }
+        )
+    }
+
+    /// "−   повт.   +" capsule for reps.
+    private func repsStepCapsule(set: ActiveWorkoutSet, position: Int, disabled: Bool) -> some View {
+        let reps = repsBinding(setID: set.id)
+        return stepCapsule(
+            minusLabel: "minus",
+            minusAccessibilityLabel: gymText("Decrease reps", "Зменшити повторення", "Уменьшить повторения", languageCode: gymCurrentLanguageCode()),
+            minusDisabled: disabled || reps.wrappedValue <= 1,
+            minusAction: { reps.wrappedValue = max(1, reps.wrappedValue - 1) },
+            centerLabel: gymText("reps", "повт.", "повт.", languageCode: gymCurrentLanguageCode()),
+            plusLabel: "plus",
+            plusAccessibilityLabel: gymText("Increase reps", "Збільшити повторення", "Увеличить повторения", languageCode: gymCurrentLanguageCode()),
+            plusDisabled: disabled,
+            plusAction: { reps.wrappedValue += 1 },
+            accessibilityLabel: gymText("Reps", "Повторення", "Повторы", languageCode: gymCurrentLanguageCode()),
+            accessibilityValue: reps.wrappedValue.formatted(),
+            useSymbolGlyphs: true,
+            adjustableAction: { direction in
+                switch direction {
+                case .increment: reps.wrappedValue += 1
+                case .decrement: reps.wrappedValue = max(1, reps.wrappedValue - 1)
+                @unknown default: break
+                }
+            }
+        )
+    }
+
+    /// A not-yet-reached set: one compact read-only line, tappable to
+    /// expand into the same compact editor the current set uses (preserves
+    /// the prior ability to edit a non-current set inline).
+    private func upcomingSetRow(
+        _ set: ActiveWorkoutSet,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        let isExpanded = expandedSetIDs.contains(set.id)
+        let fieldsDisabled = activeWorkoutValueEditorsAreDisabled(
+            isCompleted: false,
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+        )
+        return VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isExpanded { expandedSetIDs.remove(set.id) } else { expandedSetIDs.insert(set.id) }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("\(position + 1)")
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Circle().strokeBorder(GymTheme.outlineSoft, lineWidth: 1.5)
+                        )
+                    Text(weightRepsSummary(weight: set.weight, reps: set.reps))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                    Spacer(minLength: 8)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                gymText(
+                    "Set \(position + 1), \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+                    "Підхід \(position + 1), \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+                    "Подход \(position + 1), \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+            .accessibilityHint(
+                gymText(
+                    "Double tap to edit this set",
+                    "Двічі торкніться, щоб редагувати цей підхід",
+                    "Дважды нажмите, чтобы редактировать этот подход",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+
+            if isExpanded {
+                HStack(spacing: 8) {
+                    GymSetWeightField(
+                        weight: weightBinding(setID: set.id),
+                        disabled: fieldsDisabled,
+                        accessibilityLabel: Text(weightAccessibilityLabel(position: position))
+                    )
+                    Text(verbatim: "×")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .accessibilityHidden(true)
+                    GymSetRepsCapsule(
+                        reps: repsBinding(setID: set.id),
+                        disabled: fieldsDisabled,
+                        accessibilityLabel: Text(repsAccessibilityLabel(position: position))
+                    )
+                    Spacer(minLength: 4)
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
+    /// A recorded set: one line with a checkmark. The latest recorded set
+    /// keeps its rest timer and "Undo latest set" action underneath.
+    private func completedSetRow(
+        _ set: ActiveWorkoutSet,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        let isLatestCompleted = draft.undoableSetID == set.id
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.secondary)
+                    .frame(width: 22, height: 22)
+                    .background(GymTheme.secondary.opacity(0.18), in: Circle())
+                Text(weightRepsSummary(weight: set.weight, reps: set.reps))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                Spacer(minLength: 8)
+                if isLatestCompleted, let deadline = draft.timing?.restingUntil {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        let remaining = max(0, Int(ceil(deadline.timeIntervalSince(context.date))))
+                        if remaining > 0 {
+                            Text(
+                                gymText(
+                                    "rest \(Self.clock(TimeInterval(remaining)))",
+                                    "відпочинок \(Self.clock(TimeInterval(remaining)))",
+                                    "отдых \(Self.clock(TimeInterval(remaining)))",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            )
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(GymTheme.primary)
+                            .accessibilityHidden(true)
+                        }
+                    }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                gymText(
+                    "Set \(position + 1) recorded, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+                    "Підхід \(position + 1) записано, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+                    "Подход \(position + 1) записан, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
 
             if isLatestCompleted {
                 activeRestPanel(draft: draft)
@@ -1109,116 +1615,72 @@ struct ActiveWorkoutView: View {
                 )
             }
         }
-        .padding(12)
-        .background(
-            set.isCompleted ? GymTheme.secondary.opacity(0.18) : GymTheme.surfaceVariant.opacity(0.48),
-            in: RoundedRectangle(cornerRadius: 16)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(
-                    set.isCompleted ? GymTheme.secondary.opacity(0.65) : Color.clear,
-                    lineWidth: set.isCompleted ? 1.5 : 0
-                )
-        }
+        .padding(.vertical, 10)
     }
 
-    private func quickSetControls(set: ActiveWorkoutSet, exercise: ActiveWorkoutExercise, position: Int, draft: ActiveWorkoutDraft) -> some View {
+    /// Previous session's weight/reps at this set position (or its closest
+    /// preceding one), used both by the exercise header's " · прошлый раз …"
+    /// caption and by the "Repeat previous" chip below.
+    private func previousPerformance(
+        exercise: ActiveWorkoutExercise,
+        position: Int,
+        draft: ActiveWorkoutDraft
+    ) -> (weight: Double, reps: Int)? {
         let history = workoutStore.exerciseHistory(exerciseID: exercise.exerciseID).filter { $0.sessionDate < draft.startedAt }
         let latestID = history.sorted { $0.sessionDate == $1.sessionDate ? $0.workoutID.uuidString > $1.workoutID.uuidString : $0.sessionDate > $1.sessionDate }.first?.workoutID
         let previous = history.filter { $0.workoutID == latestID }.sorted { $0.setOrderIndex < $1.setOrderIndex }
-        let last = previous.first(where: { $0.setOrderIndex == position }) ?? previous.last
-        let preceding = exercise.sets.prefix(position).last(where: { $0.isCompleted })
-        let repeatWeight = preceding?.weight ?? last?.weight
-        let repeatReps = preceding?.reps ?? last?.reps
-        let allowed = workoutStore.exercise(id: exercise.exerciseID)?.machineLoadProfile?.allowedWeightsKg ?? []
-        return VStack(alignment: .leading, spacing: 8) {
-            if let last {
-                Text(gymText("Previous", "Минулого разу", "В прошлый раз", languageCode: gymCurrentLanguageCode()) + ": \(last.weight.formatted()) kg × \(last.reps)")
-                    .font(.caption).foregroundStyle(GymTheme.textSecondary)
-            }
-            HStack {
-                ForEach([-1, 1], id: \.self) { direction in
-                    Button {
-                        updateSet(draft: draft, setID: set.id, weight: TrainingTools.stepWeight(set.weight, direction: direction, allowed: allowed), reps: set.reps)
-                    } label: {
-                        Text((direction < 0 ? "− " : "+ ") + gymText("Weight", "Вага", "Вес", languageCode: gymCurrentLanguageCode()))
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(GymSecondaryButtonStyle())
-                }
-            }
-            if let repeatWeight, let repeatReps {
-                Button {
-                    updateSet(draft: draft, setID: set.id, weight: repeatWeight, reps: repeatReps)
-                } label: {
-                    Text(gymText("Repeat previous values", "Повторити попередні значення", "Повторить предыдущие значения", languageCode: gymCurrentLanguageCode()))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }.buttonStyle(GymSecondaryButtonStyle())
-            }
-        }.disabled(draft.commitIntent != nil)
+        guard let last = previous.first(where: { $0.setOrderIndex == position }) ?? previous.last else { return nil }
+        return (last.weight, last.reps)
     }
 
-    @ViewBuilder
-    private func setEditors(
-        set: ActiveWorkoutSet,
-        draft: ActiveWorkoutDraft
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(
-                gymText(
-                    "Weight",
-                    "Вага",
-                    "Вес",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(GymTheme.textSecondary)
-            TextField(
-                "0",
-                value: weightBinding(setID: set.id),
-                format: .number.precision(.fractionLength(0 ... 2))
-            )
-            .keyboardType(.decimalPad)
-            .gymTextFieldChrome()
-            .disabled(
-                activeWorkoutValueEditorsAreDisabled(
-                    isCompleted: set.isCompleted,
-                    hasCommitIntent: draft.commitIntent != nil,
-                    isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
-                )
-            )
-        }
-        .frame(maxWidth: .infinity)
+    /// "Подход 2 из 3" for the exercise card header. The previous-session
+    /// performance moved into the current set block's own header row (see
+    /// `currentSetRow`), so this stays a plain position/total line.
+    private func exerciseSetSubtitle(exercise: ActiveWorkoutExercise, draft: ActiveWorkoutDraft) -> String {
+        let total = exercise.sets.count
+        let index = exercise.sets.firstIndex(where: { !$0.isCompleted }) ?? max(0, total - 1)
+        return gymText(
+            "Set \(index + 1) of \(total)",
+            "Підхід \(index + 1) з \(total)",
+            "Подход \(index + 1) из \(total)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
 
-        VStack(alignment: .leading, spacing: 5) {
-            Text(
-                gymText(
-                    "Repetitions",
-                    "Повторення",
-                    "Повторения",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(GymTheme.textSecondary)
-            Stepper(value: repsBinding(setID: set.id), in: 1 ... 10_000) {
-                Text(set.reps.formatted())
-                    .font(.body.monospacedDigit().weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(GymTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
-            .disabled(
-                activeWorkoutValueEditorsAreDisabled(
-                    isCompleted: set.isCompleted,
-                    hasCommitIntent: draft.commitIntent != nil,
-                    isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
-                )
-            )
+    private func weightAccessibilityLabel(position: Int) -> String {
+        gymText(
+            "Weight for set \(position + 1)",
+            "Вага для підходу \(position + 1)",
+            "Вес для подхода \(position + 1)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    private func repsAccessibilityLabel(position: Int) -> String {
+        gymText(
+            "Repetitions for set \(position + 1)",
+            "Повторення для підходу \(position + 1)",
+            "Повторения для подхода \(position + 1)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    private func weightRepsSummary(weight: Double, reps: Int) -> String {
+        "\(weight.formatted()) \(gymLocalized("kg")) × \(reps)"
+    }
+
+
+    private func logButtonLabel(restSeconds: Int) -> String {
+        guard restSeconds > 0 else {
+            return gymText("Log", "Записати", "Записать", languageCode: gymCurrentLanguageCode())
         }
-        .frame(maxWidth: .infinity)
+        let mmss = String(format: "%d:%02d", restSeconds / 60, restSeconds % 60)
+        return gymText(
+            "Log · rest \(mmss)",
+            "Записати · відпочинок \(mmss)",
+            "Записать · отдых \(mmss)",
+            languageCode: gymCurrentLanguageCode()
+        )
     }
 
     @ViewBuilder

@@ -415,9 +415,9 @@ public extension SmartWorkoutEffort {
             gymText("Auto", "Авто", "Авто", languageCode: gymCurrentLanguageCode())
         case .recovery:
             gymText(
-                "Recovery",
-                "Відновлювальне",
-                "Восстановительная",
+                "Light",
+                "Легка",
+                "Лёгкая",
                 languageCode: gymCurrentLanguageCode()
             )
         case .standard:
@@ -434,6 +434,49 @@ public extension SmartWorkoutEffort {
                 "Тяжёлая",
                 languageCode: gymCurrentLanguageCode()
             )
+        }
+    }
+}
+
+public extension TrainingGoal {
+    var gymDisplayName: String {
+        switch self {
+        case .aestheticFatLoss:
+            gymText("Aesthetic Cut", "Естетика / сушка", "Эстетика/сушка", languageCode: gymCurrentLanguageCode())
+        case .muscleGain:
+            gymText("Muscle Gain", "Набір мʼязів", "Набор мышц", languageCode: gymCurrentLanguageCode())
+        case .strength:
+            gymText("Strength", "Сила", "Сила", languageCode: gymCurrentLanguageCode())
+        case .balanced:
+            gymText("Balanced", "Баланс", "Баланс", languageCode: gymCurrentLanguageCode())
+        }
+    }
+}
+
+public extension CalorieMode {
+    var gymDisplayName: String {
+        switch self {
+        case .deficit:
+            gymText("Deficit", "Дефіцит", "Дефицит", languageCode: gymCurrentLanguageCode())
+        case .maintenance:
+            gymText("Maintenance", "Підтримка", "Поддержание", languageCode: gymCurrentLanguageCode())
+        case .surplus:
+            gymText("Surplus", "Профіцит", "Профицит", languageCode: gymCurrentLanguageCode())
+        }
+    }
+}
+
+public extension TrainingSplit {
+    var gymDisplayName: String {
+        switch self {
+        case .upperLower:
+            gymText("Upper / Lower", "Верх / низ", "Верх/низ", languageCode: gymCurrentLanguageCode())
+        case .fullBody:
+            gymText("Full Body", "Все тіло", "Все тело", languageCode: gymCurrentLanguageCode())
+        case .pushPullLegs:
+            gymText("Push Pull Legs", "Жим / тяга / ноги", "Жим/тяга/ноги", languageCode: gymCurrentLanguageCode())
+        case .custom:
+            gymText("Custom", "Своя", "Своя", languageCode: gymCurrentLanguageCode())
         }
     }
 }
