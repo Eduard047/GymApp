@@ -18124,7 +18124,7 @@ final class CoreParityTests: XCTestCase {
         // the source template, so catalog fallback does not expose English prose.
         let localeNeutralTemplates: Set<String> = [
             "%@ / %@", "%@ %lld", "%@ %@ × %lld", "%@ • %@", "%@ XP", "%@, %@", "%@: %@",
-            "%@ – %@", "%lld", "+%lld XP", "+15", "+2.5", "0", "0:00", "2.5 kg", "5 kg", "−15",
+            "%@ – %@", "%lld", "+%lld XP", "+15", "+2.5", "0", "0:00", "−15",
             "S%lld", "Z%lld %lld%@"
         ]
         // These must remain exact identities: DELETE is the server confirmation
@@ -18132,11 +18132,6 @@ final class CoreParityTests: XCTestCase {
         // example or language self-names already suitable for Ukrainian UI.
         let identityLiterals: Set<String> = [
             "DELETE", "GymApp", "you@example.com", "Мова", "Русский", "Українська"
-        ]
-        // The old browser-migration notice has no source reference in the current
-        // iOS client and remains in the catalog only as stale extraction history.
-        let staleUnusedKeys: Set<String> = [
-            "Legacy browser cloud data was loaded. Automatic cloud uploads are paused to preserve browser-only profile, language, and mapping fields."
         ]
         // Built-in exercise labels use stable catalog identity plus the reviewed
         // Ukrainian names below, instead of Localizable.xcstrings lookup.
@@ -18152,7 +18147,6 @@ final class CoreParityTests: XCTestCase {
             missingUkrainianKeys,
             localeNeutralTemplates
                 .union(identityLiterals)
-                .union(staleUnusedKeys)
                 .union(catalogDrivenExerciseNames)
         )
     }
