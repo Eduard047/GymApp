@@ -185,12 +185,17 @@ import com.example.gymapp.util.LocalizedText
 import com.example.gymapp.util.FirstRunTutorialCompletion
 import com.example.gymapp.util.RestTimerController
 import com.example.gymapp.util.restTimerAccountKey
+import com.example.gymapp.service.ActiveWorkoutNotifier
+import com.example.gymapp.service.activeWorkoutNotificationContent
+import com.example.gymapp.service.isLiveWorkout
+import com.example.gymapp.service.notificationExercises
 import com.example.gymapp.util.asString
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.collect
@@ -1884,6 +1889,45 @@ internal fun GymAppRoot(
                     throw cancellation
                 } catch (_: Exception) {
                     // A missed stamp only makes the cloud copy win a divergent edit.
+                }
+            }
+    }
+
+    LaunchedEffect(uiIsolationKey) {
+        // The ongoing "active workout" notification, Android's counterpart of the iOS Live
+        // Activity. It follows the workout and its rest timer and clears when the workout ends.
+        val session = authManager.authState.value.session ?: return@LaunchedEffect
+        val accountKey = restTimerAccountKey(session) ?: return@LaunchedEffect
+        combine(
+            repository.observeActiveWorkout(),
+            restTimerController.activeWorkoutTimerSnapshot
+        ) { details, timer -> details to timer }
+            .collectLatest { (details, timer) ->
+                if (details == null) {
+                    ActiveWorkoutNotifier.cancel(applicationContext)
+                    return@collectLatest
+                }
+                val restEndsAt = timer
+                    ?.takeIf { it.accountKey == accountKey && it.sessionStartedAt == details.activeWorkout.startedAt }
+                    ?.restEndsAt
+                val live = withContext(Dispatchers.IO) { isLiveWorkout(applicationContext, session, details) }
+                fun post() = ActiveWorkoutNotifier.show(
+                    applicationContext,
+                    activeWorkoutNotificationContent(
+                        sessionStartedAt = details.activeWorkout.startedAt,
+                        revision = details.activeWorkout.revision,
+                        exercises = details.notificationExercises(),
+                        restEndsAt = restEndsAt,
+                        nowMillis = System.currentTimeMillis(),
+                        isLiveWorkout = live
+                    )
+                )
+                post()
+                val untilRestEnds = (restEndsAt ?: 0L) - System.currentTimeMillis()
+                if (untilRestEnds > 0L) {
+                    // Switch from the countdown back to the next set once the rest is over.
+                    delay(untilRestEnds + 500L)
+                    post()
                 }
             }
     }

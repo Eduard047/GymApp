@@ -1454,4 +1454,14 @@
         <item quantity="one">%1$d day ago</item>
         <item quantity="other">%1$d days ago</item>
     </plurals>
+    <string name="active_workout_notification_channel_name">Active workout</string>
+    <string name="active_workout_notification_channel_description">Shows the current exercise, set and rest while a workout is running.</string>
+    <string name="active_workout_notification_title">Workout in progress</string>
+    <string name="active_workout_notification_progress">Sets %1$d / %2$d</string>
+    <string name="active_workout_notification_set">Set %1$d of %2$d</string>
+    <string name="active_workout_notification_next">Next: %1$s kg × %2$d</string>
+    <string name="active_workout_notification_resting">Rest</string>
+    <string name="active_workout_notification_all_done">All sets done. Finish in the app.</string>
+    <string name="active_workout_notification_log_set">Log set</string>
+    <string name="active_workout_notification_skip_rest">Skip rest</string>
 </resources>

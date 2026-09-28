@@ -1466,4 +1466,14 @@
         <item quantity="many">%1$d дней назад</item>
         <item quantity="other">%1$d дня назад</item>
     </plurals>
+    <string name="active_workout_notification_channel_name">Активная тренировка</string>
+    <string name="active_workout_notification_channel_description">Показывает текущее упражнение, подход и отдых во время тренировки.</string>
+    <string name="active_workout_notification_title">Тренировка идёт</string>
+    <string name="active_workout_notification_progress">Подходы %1$d / %2$d</string>
+    <string name="active_workout_notification_set">Подход %1$d из %2$d</string>
+    <string name="active_workout_notification_next">Далее: %1$s кг × %2$d</string>
+    <string name="active_workout_notification_resting">Отдых</string>
+    <string name="active_workout_notification_all_done">Все подходы выполнены. Завершите в приложении.</string>
+    <string name="active_workout_notification_log_set">Записать подход</string>
+    <string name="active_workout_notification_skip_rest">Пропустить отдых</string>
 </resources>

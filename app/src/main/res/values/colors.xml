@@ -2,4 +2,5 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="window_background">#F4F1EC</color>
+    <color name="active_workout_notification">#FF216BD7</color>
 </resources>

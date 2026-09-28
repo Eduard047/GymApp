@@ -82,6 +82,10 @@
             android:exported="false"
             android:foregroundServiceType="shortService" />
 
+        <receiver
+            android:name=".service.ActiveWorkoutNotificationReceiver"
+            android:exported="false" />
+
         <service
             android:name=".push.GymFirebaseMessagingService"
             android:directBootAware="false"
