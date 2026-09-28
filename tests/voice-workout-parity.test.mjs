@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const contract = JSON.parse(read("shared/voice-workout-v1.json"));
+const commandContract = JSON.parse(read("shared/voice-workout-command-v1.json"));
 const voice = require(path.join(root, "pwa", "voice-workout.js"));
 const vocabulary = JSON.parse(read("shared/exercise-search-vocabulary.json"));
 
@@ -82,6 +83,43 @@ for (const caseDefinition of contract.cases) {
     assert.deepEqual(diagnostics, caseDefinition.diagnostics);
   });
 }
+
+test("in-workout voice command contract fixes one on-device, bounded, cross-client format", () => {
+  assert.equal(commandContract.version, 1);
+  assert.equal(commandContract.mode, "inWorkoutCommand");
+  assert.deepEqual(commandContract.clients, ["android", "ios", "pwa"]);
+  assert.equal(commandContract.privacy.recognition, "onDeviceOnly");
+  assert.equal(commandContract.privacy.storesAudio, false);
+  assert.equal(commandContract.privacy.storesTranscript, false);
+  assert.equal(commandContract.privacy.unavailableFallback, "manualTextEntry");
+  assert.deepEqual({ ...voice.COMMAND_LIMITS }, commandContract.limits);
+  assert.deepEqual([...voice.COMMAND_FILLER_WORDS], commandContract.fillerWords);
+  assert.deepEqual([...voice.COMMAND_BODYWEIGHT_PHRASES], commandContract.intents.logSet.bodyweightPhrases);
+  assert.deepEqual([...voice.COMMAND_REPEAT_PHRASES], commandContract.intents.repeatPrevious.phrases);
+  assert.deepEqual([...voice.COMMAND_SKIP_PHRASES], commandContract.intents.skipRest.phrases);
+  assert.deepEqual([...voice.COMMAND_DIAGNOSTIC_CODES], commandContract.intents.unknown.diagnosticCodes);
+});
+
+for (const caseDefinition of commandContract.cases) {
+  test(`PWA voice command golden case ${caseDefinition.id}`, () => {
+    const transcript = transcriptFor(caseDefinition);
+    const locale = commandContract.locales?.[caseDefinition.language] ?? caseDefinition.language;
+    const result = voice.parseVoiceWorkoutCommand(transcript, locale);
+    const expected = caseDefinition.expected;
+
+    assert.equal(result.intent, expected.intent, "intent");
+    assert.equal(result.weightKg, expected.weightKg, "weightKg");
+    assert.equal(result.reps, expected.reps, "reps");
+    if (expected.code !== undefined) assert.equal(result.code, expected.code, "diagnostic code");
+    if (expected.intent === "unknown") assert.equal(typeof result.transcript, "string", "transcript present");
+  });
+}
+
+test("in-workout voice command parser never throws on hostile input", () => {
+  for (const input of [null, undefined, 42, {}, [], "\u0000\u0000", "a".repeat(20000)]) {
+    assert.doesNotThrow(() => voice.parseVoiceWorkoutCommand(input, "ru", {}));
+  }
+});
 
 test("transcript truncation and weight input keep byte and number bounds", () => {
   const cyrillic = "ж".repeat(5000);

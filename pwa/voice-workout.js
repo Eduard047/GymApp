@@ -89,6 +89,44 @@
     lateral_raise: ["махи в стороны", "махи гантелями в стороны", "розведення в сторони", "lateral raises"]
   });
 
+  // In-workout voice commands: shared/voice-workout-command-v1.json. Separate
+  // entry point from plan dictation (parseVoiceWorkoutCommand vs parse) with
+  // its own result shape; reuses REP_WORDS/WEIGHT_WORDS/CONNECTOR_WORDS/
+  // NUMBER_WORDS above instead of redefining vocabulary.
+  const COMMAND_LIMITS = Object.freeze({
+    maxTranscriptBytes: LIMITS.maxTranscriptBytes,
+    minWeightKg: 0,
+    maxWeightKg: 1000,
+    weightStepKg: 0.25,
+    minReps: 1,
+    maxReps: 200
+  });
+  const COMMAND_FILLER_WORDS = Object.freeze([
+    "ну", "эм", "окей", "ага",
+    "емм", "гаразд",
+    "um", "uh", "okay", "ok"
+  ]);
+  const COMMAND_BODYWEIGHT_PHRASES = Object.freeze([
+    "с собственным весом", "собственным весом", "своим весом",
+    "власною вагою", "власним вагою", "з власною вагою",
+    "bodyweight", "body weight", "own bodyweight"
+  ]);
+  const COMMAND_REPEAT_PHRASES = Object.freeze([
+    "повтори", "ещё раз так же", "то же самое", "повтор",
+    "ще раз",
+    "repeat", "same again"
+  ]);
+  const COMMAND_SKIP_PHRASES = Object.freeze([
+    "дальше", "пропусти отдых", "готов", "поехали",
+    "далі", "пропусти відпочинок", "готовий",
+    "next", "skip rest", "ready"
+  ]);
+  const COMMAND_DIAGNOSTIC_CODES = Object.freeze([
+    "empty", "transcriptTooLong",
+    "ambiguousNumbers", "weightOutOfRange", "repsOutOfRange", "invalidWeightStep",
+    "noMatch"
+  ]);
+
   const setWordSet = new Set(SET_WORDS);
   const repWordSet = new Set(REP_WORDS);
   const weightWordSet = new Set(WEIGHT_WORDS);
@@ -97,6 +135,14 @@
   const separatorTokens = SEPARATOR_PHRASES
     .map((phrase) => phrase.split(" "))
     .sort((left, right) => right.length - left.length);
+
+  const commandFillerSet = new Set(COMMAND_FILLER_WORDS);
+  const toPhraseWords = (phrase) => phrase.split(" ").map(normalizeWord);
+  const commandBodyweightPhraseWords = COMMAND_BODYWEIGHT_PHRASES
+    .map(toPhraseWords)
+    .sort((left, right) => right.length - left.length);
+  const commandRepeatPhraseWords = COMMAND_REPEAT_PHRASES.map(toPhraseWords);
+  const commandSkipPhraseWords = COMMAND_SKIP_PHRASES.map(toPhraseWords);
 
   const LETTER = /\p{L}/u;
   const DIGIT = /[0-9]/;
@@ -507,6 +553,148 @@
     return { blocks: entries.map((entry) => entry.block), diagnostics };
   }
 
+  function wordSequenceMatches(tokens, phraseWords) {
+    if (tokens.length !== phraseWords.length) return false;
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (token.type !== "word" || token.norm !== phraseWords[index]) return false;
+    }
+    return true;
+  }
+
+  function wordSequenceMatchesAny(tokens, phraseWordsList) {
+    return phraseWordsList.some((phraseWords) => wordSequenceMatches(tokens, phraseWords));
+  }
+
+  // First contiguous run of word tokens equal to one of phraseWordsList,
+  // longest phrase first so a longer bodyweight phrase wins over a shorter
+  // one it contains (e.g. "з власною вагою" over "власною вагою").
+  function findPhraseRun(tokens, phraseWordsList) {
+    for (const phraseWords of phraseWordsList) {
+      for (let start = 0; start + phraseWords.length <= tokens.length; start += 1) {
+        let matches = true;
+        for (let offset = 0; offset < phraseWords.length; offset += 1) {
+          const token = tokens[start + offset];
+          if (!token || token.type !== "word" || token.norm !== phraseWords[offset]) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) return { start, length: phraseWords.length };
+      }
+    }
+    return null;
+  }
+
+  function finalizeLogSetCommand(raw, weightKg, reps) {
+    if (weightKg !== undefined) {
+      if (!(typeof weightKg === "number" && Number.isFinite(weightKg) &&
+            weightKg >= COMMAND_LIMITS.minWeightKg && weightKg <= COMMAND_LIMITS.maxWeightKg)) {
+        return { intent: "unknown", transcript: raw, code: "weightOutOfRange" };
+      }
+      const scaled = weightKg / COMMAND_LIMITS.weightStepKg;
+      if (Math.abs(scaled - Math.round(scaled)) > 1e-6) {
+        return { intent: "unknown", transcript: raw, code: "invalidWeightStep" };
+      }
+    }
+    if (reps !== undefined) {
+      if (!(Number.isInteger(reps) && reps >= COMMAND_LIMITS.minReps && reps <= COMMAND_LIMITS.maxReps)) {
+        return { intent: "unknown", transcript: raw, code: "repsOutOfRange" };
+      }
+    }
+    const result = { intent: "logSet" };
+    if (weightKg !== undefined) result.weightKg = weightKg;
+    if (reps !== undefined) result.reps = reps;
+    return result;
+  }
+
+  // In-workout voice command entry point, separate from parse() (plan
+  // dictation). One utterance -> one typed intent; never throws. `locale`
+  // and `context` (e.g. the current set being edited) are accepted for
+  // callers/future tie-breaking; matching itself is locale-agnostic like
+  // parse() above, using the same cross-language tables.
+  function parseVoiceWorkoutCommand(transcript, locale, context) {
+    try {
+      const raw = String(transcript ?? "");
+      const trimmed = raw.trim();
+      if (!trimmed) return { intent: "unknown", transcript: raw, code: "empty" };
+      if (utf8Length(raw) > COMMAND_LIMITS.maxTranscriptBytes) {
+        return { intent: "unknown", transcript: truncateUtf8(raw), code: "transcriptTooLong" };
+      }
+
+      let tokens = tokenize(raw).filter((token) => token.type !== "break");
+      tokens = tokens.filter((token) => !(token.type === "word" && commandFillerSet.has(token.norm)));
+
+      const unknown = (code) => ({ intent: "unknown", transcript: raw, code });
+      const hasNumber = tokens.some((token) => token.type === "number");
+
+      if (!hasNumber) {
+        if (wordSequenceMatchesAny(tokens, commandRepeatPhraseWords)) return { intent: "repeatPrevious" };
+        if (wordSequenceMatchesAny(tokens, commandSkipPhraseWords)) return { intent: "skipRest" };
+        return unknown("noMatch");
+      }
+
+      let isBodyweight = false;
+      const bodyweightRun = findPhraseRun(tokens, commandBodyweightPhraseWords);
+      if (bodyweightRun) {
+        tokens = tokens.slice(0, bodyweightRun.start).concat(tokens.slice(bodyweightRun.start + bodyweightRun.length));
+        isBodyweight = true;
+      }
+
+      const numberEntries = [];
+      tokens.forEach((token, index) => {
+        if (token.type !== "number") return;
+        const next = tokens[index + 1];
+        let tag = null;
+        if (next && next.type === "word") {
+          if (weightWordSet.has(next.norm)) tag = "weight";
+          else if (repWordSet.has(next.norm)) tag = "rep";
+        }
+        numberEntries.push({ value: token.value, tag, index });
+      });
+
+      if (isBodyweight) {
+        if (numberEntries.length !== 1) return unknown("ambiguousNumbers");
+        return finalizeLogSetCommand(raw, 0, numberEntries[0].value);
+      }
+
+      if (numberEntries.length === 0) return unknown("noMatch");
+
+      if (numberEntries.length === 1) {
+        const only = numberEntries[0];
+        if (only.tag === "weight") return finalizeLogSetCommand(raw, only.value, undefined);
+        if (only.tag === "rep") return finalizeLogSetCommand(raw, undefined, only.value);
+        return unknown("ambiguousNumbers");
+      }
+
+      if (numberEntries.length === 2) {
+        const [first, second] = numberEntries;
+        const taggedWeight = numberEntries.filter((entry) => entry.tag === "weight");
+        const taggedRep = numberEntries.filter((entry) => entry.tag === "rep");
+        const untagged = numberEntries.filter((entry) => entry.tag === null);
+        if (taggedWeight.length === 1 && taggedRep.length === 1) {
+          return finalizeLogSetCommand(raw, taggedWeight[0].value, taggedRep[0].value);
+        }
+        if (taggedWeight.length === 1 && untagged.length === 1) {
+          return finalizeLogSetCommand(raw, taggedWeight[0].value, untagged[0].value);
+        }
+        if (taggedRep.length === 1 && untagged.length === 1) {
+          return finalizeLogSetCommand(raw, untagged[0].value, taggedRep[0].value);
+        }
+        if (untagged.length === 2) {
+          const between = tokens.slice(first.index + 1, second.index);
+          const hasConnector = between.some((token) => token.type === "word" && connectorSet.has(token.norm));
+          if (hasConnector) return finalizeLogSetCommand(raw, first.value, second.value);
+        }
+        return unknown("ambiguousNumbers");
+      }
+
+      return unknown("ambiguousNumbers");
+    } catch (error) {
+      return { intent: "unknown", transcript: String(transcript ?? ""), code: "noMatch" };
+    }
+  }
+
   // Live readiness used by every client's sheet; stored diagnostics only
   // describe what the transcript contained.
   function isBlockReady(block) {
@@ -552,10 +740,17 @@
     CONNECTOR_WORDS,
     NUMBER_WORDS,
     VOICE_ALIASES,
+    COMMAND_LIMITS,
+    COMMAND_FILLER_WORDS,
+    COMMAND_BODYWEIGHT_PHRASES,
+    COMMAND_REPEAT_PHRASES,
+    COMMAND_SKIP_PHRASES,
+    COMMAND_DIAGNOSTIC_CODES,
     normalizeName,
     utf8Length,
     truncateUtf8,
     parse,
+    parseVoiceWorkoutCommand,
     isValidSet,
     isBlockReady,
     blockIssue,

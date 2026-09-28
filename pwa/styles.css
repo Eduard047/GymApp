@@ -3961,6 +3961,37 @@ textarea:focus {
 
 .active-set-action { min-height: 48px; }
 
+.active-set-voice { grid-column: 1 / -1; }
+.active-set-voice-mic { justify-self: start; }
+.active-set-voice-listening {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.active-set-voice-listening::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: voice-workout-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .active-set-voice-listening::before { animation: none; } }
+.active-set-voice-interim { font-weight: 600; min-height: 20px; }
+.active-set-voice-hint { margin: 0; font-size: 13px; }
+.active-set-voice-listening .button { justify-self: start; }
+.active-set-voice-manual {
+  display: grid;
+  grid-template-columns: 1fr 48px;
+  gap: 8px;
+  align-items: center;
+}
+.active-set-voice-manual input { min-height: 44px; }
+
 .active-workout-more { margin-top: 10px; }
 .active-workout-more > summary {
   color: var(--muted);

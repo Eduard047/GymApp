@@ -11996,6 +11996,305 @@ function rememberActiveLiveDraftInput(input) {
   return true;
 }
 
+// In-workout voice set logging (shared/voice-workout-command-v1.json). Separate
+// from plan dictation above (parseVoiceWorkoutCommand vs parse) but reuses the
+// exact same on-device recognition gate (Recognition.available/install with
+// processLocally:true; browsers without it get manual text entry, never a
+// cloud service) via voiceWorkoutAvailability/voiceWorkoutRecognitionClass/
+// voiceWorkoutLocale. No audio or transcript is ever persisted: state lives
+// only in these module variables and is dropped as soon as a command is
+// resolved or the screen is left.
+let activeSetVoice = null; // { generation, setId, listening, transcript, recognition, stopTimer }
+let activeSetVoiceGeneration = 0;
+let activeSetVoiceManual = null; // { setId, text } shown when recognition is unavailable
+
+function activeSetVoiceHintText() {
+  return tx3(
+    'Say: "80 by 8", "repeat", "next"',
+    'Скажи: «80 на 8», «повтори», «далі»',
+    'Скажи: «80 на 8», «повтори», «дальше»'
+  );
+}
+
+function stopActiveSetVoiceRecognition() {
+  if (!activeSetVoice) return;
+  if (activeSetVoice.stopTimer) clearTimeout(activeSetVoice.stopTimer);
+  activeSetVoice.stopTimer = null;
+  const recognition = activeSetVoice.recognition;
+  activeSetVoice.recognition = null;
+  activeSetVoice.listening = false;
+  if (recognition) {
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try { recognition.abort(); } catch { /* Already stopped. */ }
+  }
+}
+
+function clearActiveSetVoice() {
+  stopActiveSetVoiceRecognition();
+  activeSetVoice = null;
+}
+
+// Called from bindEvents() after every render: leaving the active workout
+// screen, or the set the mic was attached to no longer being current, stops
+// the microphone immediately.
+function syncActiveSetVoiceLifecycle() {
+  if (route().name !== "active") {
+    if (activeSetVoice) clearActiveSetVoice();
+    if (activeSetVoiceManual) activeSetVoiceManual = null;
+    return;
+  }
+  if (activeSetVoice) {
+    const location = activeSetLocation(activeSetVoice.setId);
+    if (!location || location.set.completed) clearActiveSetVoice();
+  }
+}
+
+function bindActiveSetVoiceInputs() {
+  app.querySelectorAll("[data-active-set-voice-input]").forEach(input => {
+    input.addEventListener("keydown", ev => {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      submitActiveSetVoiceManualText(Number(input.dataset.activeSetVoiceInput), input.value);
+    });
+  });
+}
+
+// Re-renders only this set's mic/manual control, keeping the rest of the
+// screen (and any focus elsewhere) untouched.
+function refreshActiveSetVoice(setId) {
+  const container = app.querySelector(`#active-set-voice-${setId}`);
+  if (!container) return render();
+  container.innerHTML = activeSetVoiceControlMarkup(setId);
+  bindActiveSetVoiceInputs();
+}
+
+async function startActiveSetVoiceCommand(setId) {
+  if (route().name !== "active") return false;
+  const location = activeSetLocation(setId);
+  if (!location || location.set.completed) return false;
+  if (activeSetVoice && activeSetVoice.setId === setId && activeSetVoice.listening) return true;
+  clearActiveSetVoice();
+  activeSetVoiceManual = null;
+  const availability = await voiceWorkoutAvailability();
+  const stillCurrent = activeSetLocation(setId);
+  if (!stillCurrent || stillCurrent.set.completed || route().name !== "active") return false;
+  const Recognition = voiceWorkoutRecognitionClass();
+  if (availability.status !== "available" || !Recognition) {
+    activeSetVoiceManual = { setId, text: "" };
+    refreshActiveSetVoice(setId);
+    requestAnimationFrame(() => app.querySelector(`[data-active-set-voice-input="${setId}"]`)?.focus());
+    return true;
+  }
+  const generation = ++activeSetVoiceGeneration;
+  activeSetVoice = { generation, setId, listening: true, transcript: "", recognition: null, stopTimer: null };
+  try {
+    if (availability.install && typeof Recognition.install === "function") {
+      const installed = await Recognition.install({ langs: [voiceWorkoutLocale()], processLocally: true });
+      if (!activeSetVoice || activeSetVoice.generation !== generation) return false;
+      if (!installed) {
+        activeSetVoice = null;
+        activeSetVoiceManual = { setId, text: "" };
+        refreshActiveSetVoice(setId);
+        return true;
+      }
+    }
+    const recognition = new Recognition();
+    recognition.lang = voiceWorkoutLocale();
+    recognition.processLocally = true;
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = event => {
+      if (!activeSetVoice || activeSetVoice.generation !== generation) return;
+      const results = Array.from(event.results || []);
+      const text = results.map(result => result?.[0]?.transcript || "").join(" ").replace(/\s+/g, " ").trim();
+      activeSetVoice.transcript = text;
+      if (results.some(result => result?.isFinal)) {
+        clearActiveSetVoice();
+        applyActiveSetVoiceCommand(text, setId);
+        return;
+      }
+      refreshActiveSetVoice(setId);
+    };
+    recognition.onerror = event => {
+      if (!activeSetVoice || activeSetVoice.generation !== generation) return;
+      const code = String(event?.error || "");
+      clearActiveSetVoice();
+      if (code !== "aborted") activeSetVoiceManual = { setId, text: "" };
+      refreshActiveSetVoice(setId);
+    };
+    recognition.onend = () => {
+      if (!activeSetVoice || activeSetVoice.generation !== generation) return;
+      clearActiveSetVoice();
+      refreshActiveSetVoice(setId);
+    };
+    activeSetVoice.recognition = recognition;
+    activeSetVoice.stopTimer = setTimeout(() => {
+      if (!activeSetVoice || activeSetVoice.generation !== generation) return;
+      const transcript = activeSetVoice.transcript;
+      clearActiveSetVoice();
+      if (transcript) applyActiveSetVoiceCommand(transcript, setId);
+      else refreshActiveSetVoice(setId);
+    }, 60_000);
+    recognition.start();
+    refreshActiveSetVoice(setId);
+  } catch {
+    clearActiveSetVoice();
+    activeSetVoiceManual = { setId, text: "" };
+    refreshActiveSetVoice(setId);
+  }
+  return true;
+}
+
+function stopActiveSetVoiceCommand(setId) {
+  if (!activeSetVoice || activeSetVoice.setId !== setId) return false;
+  clearActiveSetVoice();
+  refreshActiveSetVoice(setId);
+  return true;
+}
+
+function cancelActiveSetVoiceManual(setId) {
+  if (!activeSetVoiceManual || activeSetVoiceManual.setId !== setId) return false;
+  activeSetVoiceManual = null;
+  refreshActiveSetVoice(setId);
+  return true;
+}
+
+function submitActiveSetVoiceManualText(setId, rawText) {
+  const text = String(rawText ?? "").trim();
+  activeSetVoiceManual = null;
+  if (!text) { refreshActiveSetVoice(setId); return false; }
+  applyActiveSetVoiceCommand(text, setId);
+  return true;
+}
+
+// Entry point shared by speech recognition and manual text entry. rawTranscript
+// is only ever held transiently here (to fill the set inputs / show a toast);
+// it is never persisted to any browser storage and never logged.
+function applyActiveSetVoiceCommand(rawTranscript, setId) {
+  refreshActiveSetVoice(setId);
+  const result = window.GymVoiceWorkout.parseVoiceWorkoutCommand(rawTranscript, voiceWorkoutLocale(), { setId });
+  if (result.intent === "logSet") return applyActiveSetVoiceLogSet(setId, result);
+  if (result.intent === "repeatPrevious") return applyActiveSetVoiceRepeatPrevious(setId);
+  if (result.intent === "skipRest") return applyActiveSetVoiceSkipRest();
+  showToast(tx3(
+    `Didn't catch that: "${result.transcript}"`,
+    `Не зрозумів: «${result.transcript}»`,
+    `Не понял: «${result.transcript}»`
+  ));
+  return false;
+}
+
+function activeSetVoiceInputs(setId) {
+  const weightInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="weight"]`);
+  const repsInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="reps"]`);
+  return weightInput && repsInput ? { weightInput, repsInput } : null;
+}
+
+// logSet/repeatPrevious both finish by writing into the CURRENT set's own
+// weight/reps inputs and then calling recordActiveSet(setId) — the exact
+// same function the visible "Record set" button (data-action="record-active-set")
+// calls, so live-room freeze/commit locks and mutation errors are respected
+// identically and produce the same user-facing messages.
+function applyActiveSetVoiceLogSet(setId, result) {
+  const location = activeSetLocation(setId);
+  if (!location || location.set.completed) return false;
+  const inputs = activeSetVoiceInputs(setId);
+  if (!inputs) return false;
+  const { weightInput, repsInput } = inputs;
+  if (Object.prototype.hasOwnProperty.call(result, "weightKg")) {
+    weightInput.value = window.GymVoiceWorkout.formatWeight(result.weightKg);
+    rememberActiveLiveDraftInput(weightInput);
+  }
+  if (Object.prototype.hasOwnProperty.call(result, "reps")) {
+    repsInput.value = String(result.reps);
+    rememberActiveLiveDraftInput(repsInput);
+  }
+  const weightUsed = weightInput.value;
+  const repsUsed = repsInput.value;
+  return Promise.resolve(recordActiveSet(setId)).then(ok => {
+    if (ok) {
+      showToast(tx3(
+        `Recorded: ${weightUsed} kg × ${repsUsed}`,
+        `Записано: ${weightUsed} кг × ${repsUsed}`,
+        `Записано: ${weightUsed} кг × ${repsUsed}`
+      ));
+    }
+    return ok;
+  });
+}
+
+function applyActiveSetVoiceRepeatPrevious(setId) {
+  const location = activeSetLocation(setId);
+  if (!location || location.set.completed) return false;
+  const values = activePreviousValues(setId).repeat;
+  if (!values) {
+    showToast(tx3("No previous set to repeat.", "Немає попереднього підходу.", "Нет предыдущего подхода."));
+    return false;
+  }
+  const inputs = activeSetVoiceInputs(setId);
+  if (!inputs) return false;
+  const { weightInput, repsInput } = inputs;
+  weightInput.value = window.GymVoiceWorkout.formatWeight(values.weight);
+  repsInput.value = String(values.reps);
+  rememberActiveLiveDraftInput(weightInput);
+  rememberActiveLiveDraftInput(repsInput);
+  const weightUsed = weightInput.value;
+  const repsUsed = repsInput.value;
+  return Promise.resolve(recordActiveSet(setId)).then(ok => {
+    if (ok) {
+      showToast(tx3(
+        `Recorded: ${weightUsed} kg × ${repsUsed}`,
+        `Записано: ${weightUsed} кг × ${repsUsed}`,
+        `Записано: ${weightUsed} кг × ${repsUsed}`
+      ));
+    }
+    return ok;
+  });
+}
+
+// Advances past the active rest period the same way the visible timer's
+// "Stop" control (data-action="timer-stop") does, via stopExerciseRestTimer.
+function applyActiveSetVoiceSkipRest() {
+  const workout = activeWorkout;
+  if (!workout) return false;
+  const latestCompleted = latestActiveCompletedEntry(workout);
+  const timerKey = latestCompleted ? `${workout.id}:${latestCompleted.block.exerciseName}` : null;
+  if (!timerKey || timerRemaining(timerKey) <= 0) {
+    showToast(tx3("No rest timer is running.", "Таймер відпочинку не запущено.", "Таймер отдыха не запущен."));
+    return false;
+  }
+  return Promise.resolve(stopExerciseRestTimer(timerKey)).then(ok => {
+    if (!ok) {
+      showToast(tx3(
+        "Rest timer could not be stopped.",
+        "Не вдалося зупинити таймер відпочинку.",
+        "Не удалось остановить таймер отдыха."
+      ));
+    }
+    render();
+    return ok;
+  });
+}
+
+function activeSetVoiceControlMarkup(setId) {
+  const listening = activeSetVoice && activeSetVoice.setId === setId ? activeSetVoice : null;
+  const manual = activeSetVoiceManual && activeSetVoiceManual.setId === setId ? activeSetVoiceManual : null;
+  if (listening) {
+    return `<div class="active-set-voice-listening" role="status"><span class="spinner" aria-hidden="true"></span><span class="active-set-voice-interim">${escapeHtml(listening.transcript) || tx3("Listening…", "Слухаю…", "Слушаю…")}</span><p class="muted active-set-voice-hint">${escapeHtml(activeSetVoiceHintText())}</p><button class="button ghost mini" type="button" data-action="active-set-voice-stop" data-id="${setId}">${tx3("Stop", "Стоп", "Стоп")}</button></div>`;
+  }
+  if (manual) {
+    return `<div class="active-set-voice-manual"><label class="sr-only" for="active-set-voice-input-${setId}">${escapeHtml(tx3('Type the same command, e.g. "80 by 8"', 'Введи ту саму команду, напр. «80 на 8»', 'Введи ту же команду, напр. «80 на 8»'))}</label><input id="active-set-voice-input-${setId}" type="text" inputmode="text" autocomplete="off" maxlength="120" data-active-set-voice-input="${setId}" placeholder="${escapeAttr(tx3('e.g. "80 by 8"', 'напр. «80 на 8»', 'напр. «80 на 8»'))}" value="${escapeAttr(manual.text)}"><button class="icon-button" type="button" data-action="active-set-voice-cancel-manual" data-id="${setId}" aria-label="${escapeAttr(tx3("Cancel", "Скасувати", "Отмена"))}">${svg("close")}</button></div>`;
+  }
+  return `<button class="icon-button active-set-voice-mic" type="button" data-action="active-set-voice-start" data-id="${setId}" aria-label="${escapeAttr(tx3("Log set by voice", "Записати підхід голосом", "Голосом записать подход"))}">${svg("mic", "small-icon")}</button>`;
+}
+
+function activeSetVoiceContainerMarkup(setId) {
+  return `<div id="active-set-voice-${setId}" class="active-set-voice">${activeSetVoiceControlMarkup(setId)}</div>`;
+}
+
 function trainingAdaptationLabels() {
   return {
     equipmentUnavailable: tx3("Equipment busy", "Тренажер зайнятий", "Тренажёр занят"),
@@ -12212,7 +12511,7 @@ function activeWorkoutSetMarkup(set, setIndex, options = {}) {
     : (current
       ? `<button class="button full active-set-action" data-action="record-active-set" data-id="${setId}">${svg("checkCircle", "small-icon")}${tx("Record set", "Записати підхід")}</button>`
       : "");
-  return `<div class="active-set-row ${set.completed ? "completed" : current ? "current" : ""}" data-active-set-row="${setId}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong><span>${set.completed ? svg("checkCircle", "small-icon") : ""}${current ? tx3("Do this now", "Виконай зараз", "Сделай сейчас") : status}</span></div><label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${setId}" data-active-field="weight" inputmode="decimal" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "weight"))}" ${disabled}></label><label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${setId}" data-active-field="reps" inputmode="numeric" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "reps"))}" ${disabled}></label>${current && !set.completed ? activeQuickEntryMarkup(set) : ""}${restTimer}${action}</div>`;
+  return `<div class="active-set-row ${set.completed ? "completed" : current ? "current" : ""}" data-active-set-row="${setId}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong><span>${set.completed ? svg("checkCircle", "small-icon") : ""}${current ? tx3("Do this now", "Виконай зараз", "Сделай сейчас") : status}</span></div><label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${setId}" data-active-field="weight" inputmode="decimal" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "weight"))}" ${disabled}></label><label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${setId}" data-active-field="reps" inputmode="numeric" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "reps"))}" ${disabled}></label>${current && !set.completed ? activeQuickEntryMarkup(set) : ""}${current && !set.completed ? activeSetVoiceContainerMarkup(setId) : ""}${restTimer}${action}</div>`;
 }
 
 function trainingProfilePanel() {
@@ -22998,6 +23297,8 @@ function bindEvents(preservedModalFocus = null) {
   });
   syncVoiceWorkoutLifecycle();
   bindVoiceWorkoutSheet();
+  syncActiveSetVoiceLifecycle();
+  bindActiveSetVoiceInputs();
   const pendingEmail = app.querySelector("#pending-confirmation-email");
   if (pendingEmail && pendingEmailConfirmation) {
     pendingEmail.textContent = pendingEmailConfirmation.email;
@@ -23915,6 +24216,21 @@ async function handleAction(action, el) {
     const setId = Number(el.dataset.id);
     if (route().name !== "active" || !Number.isSafeInteger(setId) || setId <= 0) return false;
     return undoLatestActiveSet(setId);
+  }
+  if (action === "active-set-voice-start") {
+    const setId = Number(el.dataset.id);
+    if (route().name !== "active" || !Number.isSafeInteger(setId) || setId <= 0) return false;
+    return startActiveSetVoiceCommand(setId);
+  }
+  if (action === "active-set-voice-stop") {
+    const setId = Number(el.dataset.id);
+    if (!Number.isSafeInteger(setId) || setId <= 0) return false;
+    return stopActiveSetVoiceCommand(setId);
+  }
+  if (action === "active-set-voice-cancel-manual") {
+    const setId = Number(el.dataset.id);
+    if (!Number.isSafeInteger(setId) || setId <= 0) return false;
+    return cancelActiveSetVoiceManual(setId);
   }
   if (action === "record-all-active-sets") return recordAllActiveSets();
   if (action === "finish-active-workout") return finishActiveWorkout();
@@ -28710,6 +29026,7 @@ document.addEventListener?.("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     clearTimeout(liveWorkoutPollTimer);
     liveWorkoutPollTimer = null;
+    if (activeSetVoice) stopActiveSetVoiceRecognition();
     return;
   }
   if (startupRemoteRefreshPending) return;
