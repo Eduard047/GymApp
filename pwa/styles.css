@@ -5528,3 +5528,5 @@ textarea:focus {
 .friend-ghost[hidden] { display: none; }
 
 .friend-ghost svg { width: 14px; height: 14px; flex: none; }
+
+.active-workout-screen-note { margin: 4px 0 0; font-size: 12px; line-height: 16px; }

@@ -12570,6 +12570,7 @@ function activeWorkoutScreen() {
       <div><h2>${tx("Active workout", "Активне тренування")}</h2></div>
       <div class="metric-grid active-workout-metrics compact"><div><span>${tx3("Elapsed", "Минуло", "Прошло")}</span><strong data-active-workout-elapsed aria-live="off">${formatActiveWorkoutElapsed(activeWorkoutElapsedMillis(workout))}</strong></div><div><span>${tx3("Completed", "Виконано", "Выполнено")}</span><strong>${counts.completed} / ${counts.total}</strong></div></div>
       <p class="muted active-workout-started">${tx3("Started at", "Початок о", "Начало в")} ${escapeHtml(fmtDate(workout.createdAt, { hour: "2-digit", minute: "2-digit" }))}</p>
+      <p class="muted active-workout-screen-note">${escapeHtml(activeWorkoutScreenOnNote())}</p>
       <div class="progress" role="progressbar" aria-label="${escapeAttr(activeWorkoutProgressLabel(counts.completed, counts.total))}" aria-valuemin="0" aria-valuemax="${counts.total}" aria-valuenow="${counts.completed}"><span class="${percentageClass(progress)}"></span></div>
       ${workout.note ? `<p class="active-workout-note"><strong>${t("note")}:</strong> ${escapeHtml(workout.note)}</p>` : ""}
     </section>
@@ -12748,6 +12749,58 @@ function stopActiveSetVoiceRecognition() {
 function clearActiveSetVoice() {
   stopActiveSetVoiceRecognition();
   activeSetVoice = null;
+}
+
+// Keeps the screen on while the active workout screen is open (the browser
+// counterpart of the native lock-screen surfaces). Browsers drop the lock when the
+// page is hidden, so it is requested again when the page becomes visible.
+let activeWorkoutWakeLock = null;
+let activeWorkoutWakeLockPending = false;
+
+function activeWorkoutWakeLockSupported() {
+  return typeof navigator !== "undefined" && typeof navigator.wakeLock?.request === "function";
+}
+
+function syncActiveWorkoutWakeLock() {
+  const wanted = Boolean(activeWorkout) && route().name === "active" &&
+    typeof document !== "undefined" && document.visibilityState !== "hidden";
+  if (!wanted) {
+    const lock = activeWorkoutWakeLock;
+    activeWorkoutWakeLock = null;
+    if (lock) lock.release().catch(() => {});
+    return;
+  }
+  if (activeWorkoutWakeLock || activeWorkoutWakeLockPending || !activeWorkoutWakeLockSupported()) return;
+  activeWorkoutWakeLockPending = true;
+  navigator.wakeLock.request("screen").then(lock => {
+    activeWorkoutWakeLockPending = false;
+    activeWorkoutWakeLock = lock;
+    lock.addEventListener?.("release", () => {
+      if (activeWorkoutWakeLock === lock) activeWorkoutWakeLock = null;
+    });
+    // The workout may have ended or the route changed while the request was pending.
+    syncActiveWorkoutWakeLock();
+  }).catch(() => {
+    activeWorkoutWakeLockPending = false;
+  });
+}
+
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+  document.addEventListener("visibilitychange", () => syncActiveWorkoutWakeLock());
+}
+
+function activeWorkoutScreenOnNote() {
+  return activeWorkoutWakeLockSupported()
+    ? tx3(
+      "The screen stays on during the workout. Browsers can't show workout controls on the lock screen.",
+      "Екран не гасне під час тренування. Браузер не може показувати керування тренуванням на екрані блокування.",
+      "Экран не гаснет во время тренировки. Браузер не может показывать управление тренировкой на экране блокировки."
+    )
+    : tx3(
+      "Browsers can't show workout controls on the lock screen, so keep this page open between sets.",
+      "Браузер не може показувати керування тренуванням на екрані блокування, тож тримай цю сторінку відкритою між підходами.",
+      "Браузер не может показывать управление тренировкой на экране блокировки, поэтому держите эту страницу открытой между подходами."
+    );
 }
 
 // Called from bindEvents() after every render: leaving the active workout
@@ -24061,6 +24114,7 @@ function bindEvents(preservedModalFocus = null) {
   syncVoiceWorkoutLifecycle();
   bindVoiceWorkoutSheet();
   syncActiveSetVoiceLifecycle();
+  syncActiveWorkoutWakeLock();
   bindActiveSetVoiceInputs();
   const pendingEmail = app.querySelector("#pending-confirmation-email");
   if (pendingEmail && pendingEmailConfirmation) {

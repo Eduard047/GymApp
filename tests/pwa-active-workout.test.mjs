@@ -2654,3 +2654,27 @@ test("counts and weights read naturally in every language", () => {
   assert.deepEqual(result.uk, ["1 підхід", "2 підходи", "5 підходів", "21 вправа", "3 тренування", "82,5 кг", "1,25 кг × 8"]);
   assert.deepEqual(result.ru, ["1 подход", "2 подхода", "5 подходов", "21 упражнение", "3 тренировки", "82,5 кг", "1,25 кг × 8"]);
 });
+
+test("the active workout screen keeps the screen on and releases it when left", async () => {
+  const { context } = loadContext();
+  const events = [];
+  context.navigator.wakeLock = {
+    request: async type => {
+      events.push(`request:${type}`);
+      return {
+        release: async () => { events.push("release"); },
+        addEventListener() {}
+      };
+    }
+  };
+  await startTwoSetWorkout(context);
+  vm.runInContext(`nav = [{ name: "active" }]; syncActiveWorkoutWakeLock();`, context);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  vm.runInContext("syncActiveWorkoutWakeLock();", context);
+  assert.deepEqual(events, ["request:screen"]);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), /The screen stays on during the workout/);
+
+  vm.runInContext(`nav = [{ name: "workouts" }]; syncActiveWorkoutWakeLock();`, context);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events, ["request:screen", "release"]);
+});
