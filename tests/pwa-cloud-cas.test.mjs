@@ -13,6 +13,10 @@ const activityOnlyMergeContract = JSON.parse(await readFile(
   "shared/activity-only-sync-v1.json",
   "utf8"
 ));
+const workoutMergeContract = JSON.parse(await readFile(
+  "shared/workout-sync-merge-v1.json",
+  "utf8"
+));
 const ACTIVE_USER_ID = "00000000-0000-4000-8000-000000000001";
 const DELETION_GRANT_ID = "00000000-0000-4000-8000-000000000011";
 const UUID_V4_PATTERN_FOR_TEST = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1758,7 +1762,7 @@ test("a mutation during an in-flight cloud write remains durably dirty", async (
   })()`, context), true);
 });
 
-test("browser and cloud edits since the confirmed baseline require an explicit choice", async () => {
+test("browser and cloud edits without a stored exact baseline require an explicit choice", async () => {
   const requests = [];
   let remotePayload;
   const context = loadContext(async (url, options) => {
@@ -1796,6 +1800,8 @@ test("browser and cloud edits since the confirmed baseline require an explicit c
       pending: null,
       updatedAt: Date.now()
     });
+    // A baseline confirmed before per-workout merging has no exact core stored.
+    localStorage.removeItem(WORKOUT_MERGE_BASELINE_PREFIX + activeAccount.userId);
   `, context);
 
   await vm.runInContext("pullRemoteState()", context);
@@ -1809,6 +1815,215 @@ test("browser and cloud edits since the confirmed baseline require an explicit c
   assert.equal(vm.runInContext("cloudSyncConflict.userId", context), ACTIVE_USER_ID);
   assert.match(vm.runInContext("cloudSyncConflictScreen()", context), /Keep browser version/);
   assert.match(vm.runInContext("cloudSyncConflictScreen()", context), /Use cloud version/);
+});
+
+function twoWorkoutStateExpression({ benchReps = 8, squatReps = 5 } = {}) {
+  return `(() => {
+    const next = defaultAppState();
+    next.sessions = [
+      {
+        id: 9301,
+        startedAt: 1785790000000,
+        note: "",
+        exerciseNames: ["Bench Press"],
+        sets: [{ id: 9302, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 80, reps: ${benchReps}, orderIndex: 0 }]
+      },
+      {
+        id: 9401,
+        startedAt: 1785876400000,
+        note: "",
+        exerciseNames: ["Squat"],
+        sets: [{ id: 9402, exerciseName: "Squat", catalogKey: "squat", weight: 100, reps: ${squatReps}, orderIndex: 0 }]
+      }
+    ];
+    return next;
+  })()`;
+}
+
+function confirmTwoWorkoutBaseline(context, revision) {
+  vm.runInContext(`
+    state = ${twoWorkoutStateExpression()};
+    saveState({ queueRemote: false, markDirty: false });
+    bindRemoteStateRevision({ userId: activeAccount.userId, exists: true, revision: ${JSON.stringify(revision)} });
+    saveSyncBaseline(syncedBaseline(
+      activeAccount.userId,
+      remoteStateSync,
+      remoteStateFingerprint(state, activeAccount.userId)
+    ));
+  `, context);
+}
+
+test("PWA workout merge matches every shared merge scenario", () => {
+  const context = loadContext(async () => {
+    throw new Error("the merge engine must not use the network");
+  });
+  context.__workoutMergeContract = workoutMergeContract;
+  const results = JSON.parse(vm.runInContext(`(() => {
+    const contract = globalThis.__workoutMergeContract;
+    const identity = exercise =>
+      exercise.name.trim().replace(/\\s+/gu, " ").toLowerCase() + "|" + (exercise.catalogKey ?? "");
+    const side = value => ({
+      sessions: (value?.sessions || []).map(name => contract.sessions[name]),
+      exercises: (value?.exercises || []).map(name => contract.exercises[name])
+    });
+    const merge = scenario => {
+      const localChangedAt = new Map(Object.entries(scenario.localChangedAt || {}).map(([fixture, time]) =>
+        [contract.sessions[fixture].date, contract.times[time]]));
+      return mergeWorkoutCloudCores({
+        base: side(scenario.base),
+        local: side(scenario.local),
+        remote: side(scenario.remote),
+        localChangedAt,
+        remoteRowUpdatedAt: contract.times.remoteRowUpdatedAt,
+        exerciseIdentity: identity,
+        requiresCatalogEntry: block => !block.catalogKey
+      });
+    };
+    const scenarios = contract.mergeScenarios.map(scenario => {
+      const expected = side(scenario.result);
+      const result = merge(scenario);
+      return {
+        name: scenario.name,
+        sessions: workoutMergeCanonicalJson(result.merged.sessions),
+        expectedSessions: workoutMergeCanonicalJson([...expected.sessions].sort((left, right) => left.date - right.date)),
+        exercises: workoutMergeCanonicalJson([...result.merged.exercises].sort((l, r) => identity(l) < identity(r) ? -1 : 1)),
+        expectedExercises: workoutMergeCanonicalJson([...expected.exercises].sort((l, r) => identity(l) < identity(r) ? -1 : 1))
+      };
+    });
+    const failClosed = contract.failClosedScenarios.map(scenario => {
+      try {
+        merge(scenario);
+        return false;
+      } catch (error) {
+        return error.workoutMergeDuplicate === true;
+      }
+    });
+    return JSON.stringify({ scenarios, failClosed });
+  })()`, context));
+
+  assert.ok(results.scenarios.length >= 20);
+  for (const scenario of results.scenarios) {
+    assert.equal(scenario.sessions, scenario.expectedSessions, scenario.name);
+    assert.equal(scenario.exercises, scenario.expectedExercises, scenario.name);
+  }
+  assert.deepEqual(results.failClosed, results.failClosed.map(() => true));
+});
+
+test("browser and cloud edits of different workouts merge workout by workout", async () => {
+  const requests = [];
+  let remotePayload;
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if ((options?.method || "GET") === "GET") {
+      return new Response(JSON.stringify([{
+        state: remotePayload,
+        updated_at: "2026-07-21T10:00:00.000001+00:00"
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (options.method === "PATCH") {
+      return new Response(JSON.stringify([{ updated_at: "2026-07-21T10:00:00.000002+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+  remotePayload = JSON.parse(vm.runInContext(
+    `JSON.stringify(remoteStatePayload(activeAccount.userId, ${twoWorkoutStateExpression({ squatReps: 7 })}))`,
+    context
+  ));
+  confirmTwoWorkoutBaseline(context, "2026-07-21T10:00:00.000000+00:00");
+  vm.runInContext(`
+    state.sessions[0].sets[0].reps = 10;
+    saveState({ queueRemote: false });
+  `, context);
+
+  await vm.runInContext("pullRemoteState()", context);
+
+  assert.equal(vm.runInContext("cloudSyncConflict", context), null);
+  assert.equal(vm.runInContext("state.sessions.find(session => session.id === 9301).sets[0].reps", context), 10);
+  assert.equal(vm.runInContext("state.sessions.find(session => session.id === 9401).sets[0].reps", context), 7);
+  const patches = requests.filter(request => request.options?.method === "PATCH");
+  assert.equal(patches.length, 1);
+  const uploaded = JSON.parse(patches[0].options.body).state;
+  assert.deepEqual(uploaded.sessions.map(session => session.exercises[0].sets[0].reps), [10, 7]);
+  assert.match(patches[0].url, /updated_at=eq\.2026-07-21T10%3A00%3A00\.000001/);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("a stale automatic save reloads, merges and uploads again", async () => {
+  const requests = [];
+  let remotePayload;
+  let patchCount = 0;
+  const context = loadContext(async (url, options) => {
+    requests.push({ url, options });
+    if ((options?.method || "GET") === "GET") {
+      return new Response(JSON.stringify([{
+        state: remotePayload,
+        updated_at: "2026-07-22T10:00:00.000001+00:00"
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (options.method === "PATCH") {
+      patchCount += 1;
+      const rows = patchCount === 1 ? [] : [{ updated_at: "2026-07-22T10:00:00.000002+00:00" }];
+      return new Response(JSON.stringify(rows), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(null, { status: 204 });
+  });
+  remotePayload = JSON.parse(vm.runInContext(
+    `JSON.stringify(remoteStatePayload(activeAccount.userId, ${twoWorkoutStateExpression({ squatReps: 7 })}))`,
+    context
+  ));
+  confirmTwoWorkoutBaseline(context, "2026-07-22T10:00:00.000000+00:00");
+  vm.runInContext(`
+    state.sessions[0].sets[0].reps = 10;
+    saveState({ queueRemote: false });
+  `, context);
+
+  const result = await vm.runInContext("startRemoteSave()", context);
+
+  assert.equal(result.stateSaved, true);
+  assert.equal(patchCount, 2);
+  assert.equal(vm.runInContext("cloudSyncConflict", context), null);
+  const lastPatch = requests.filter(request => request.options?.method === "PATCH").at(-1);
+  const uploaded = JSON.parse(lastPatch.options.body).state;
+  assert.deepEqual(uploaded.sessions.map(session => session.exercises[0].sets[0].reps), [10, 7]);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).pending", context), null);
+  assert.equal(vm.runInContext("loadSyncBaseline(activeAccount.userId).dirty", context), false);
+});
+
+test("a newer browser edit wins over a cloud edit of the same workout", async () => {
+  let remotePayload;
+  const context = loadContext(async (url, options) => {
+    if ((options?.method || "GET") === "GET") {
+      return new Response(JSON.stringify([{
+        state: remotePayload,
+        updated_at: "2026-07-23T10:00:00.000001+00:00"
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (options.method === "PATCH") {
+      return new Response(JSON.stringify([{ updated_at: "2026-07-23T10:00:00.000002+00:00" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+  remotePayload = JSON.parse(vm.runInContext(
+    `JSON.stringify(remoteStatePayload(activeAccount.userId, ${twoWorkoutStateExpression({ benchReps: 6 })}))`,
+    context
+  ));
+  confirmTwoWorkoutBaseline(context, "2026-07-23T10:00:00.000000+00:00");
+  // The browser edit is stamped now, after the cloud row's 2026-07-23 update time.
+  vm.runInContext(`
+    state.sessions[0].sets[0].reps = 12;
+    saveState({ queueRemote: false });
+  `, context);
+
+  await vm.runInContext("pullRemoteState()", context);
+
+  assert.equal(vm.runInContext("cloudSyncConflict", context), null);
+  assert.equal(vm.runInContext("state.sessions.find(session => session.id === 9301).sets[0].reps", context), 12);
 });
 
 test("a dirty edit survives reload before debounce and uploads after reconciliation", async () => {

@@ -16,6 +16,8 @@ const CLOUD_ACCOUNT_DELETION_JOURNAL_KEY = "gym-pwa-cloud-account-deletion-v1";
 const SYNC_BASELINE_PREFIX = "gym-pwa-sync-baseline-v1:";
 const ACTIVITY_ONLY_SYNC_BASELINE_PREFIX = "gym-pwa-activity-only-sync-v1:";
 const ACTIVITY_ONLY_SYNC_REQUEST_PREFIX = "gym-pwa-activity-only-request-v1:";
+const WORKOUT_MERGE_BASELINE_PREFIX = "gym-pwa-workout-merge-baseline-v1:";
+const WORKOUT_MERGE_JOURNAL_PREFIX = "gym-pwa-workout-merge-journal-v1:";
 const TRAINING_GUIDANCE_PREFIX = "gym-pwa-training-guidance-v1:";
 const ONBOARDING_TOUR_PREFIX = "gym-pwa-onboarding-v1:";
 const WORKOUT_DRAFT_PREFIX = "gym-pwa-workout-draft-v1:";
@@ -6567,9 +6569,11 @@ function prepareNativeCloudEnvelope(value, expectedUserId) {
   // The native cloud format intentionally omits this local migration marker. Mark the local
   // projection current without seeding: a deleted built-in must not be resurrected and uploaded.
   appStateInput.catalogSeedVersion = defaultAppState().catalogSeedVersion;
+  const fingerprint = canonicalValueFingerprint(identityProjection);
+  rememberWorkoutProjection(fingerprint, identityProjection);
   return {
     appStateInput,
-    fingerprint: canonicalValueFingerprint(identityProjection),
+    fingerprint,
     identityProjection,
     extensions
   };
@@ -6627,6 +6631,7 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
   cachedState = activityReconciliation.state;
   let remoteState = defaultAppState();
   let remoteFingerprint = null;
+  let remoteProjection = null;
   let catalogChanged = false;
   let remoteFormat = "empty";
   try {
@@ -6649,6 +6654,7 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
         });
         preserveLocalProgressExerciseSelection(remoteState, cachedState);
         remoteFingerprint = prepared.fingerprint;
+        remoteProjection = prepared.identityProjection;
         catalogChanged = remoteStateFingerprint(remoteState, userId) !== prepared.fingerprint;
       } else {
         remoteFormat = "legacy-pwa";
@@ -6690,6 +6696,8 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
 
   let baseline = loadSyncBaseline(userId);
   const localFingerprint = remoteStateFingerprint(cachedState, userId);
+  // Keep the exact remote core at hand so a confirmed baseline can store it.
+  if (remoteProjection) rememberWorkoutProjection(remoteFingerprint, remoteProjection);
   if (cloudState.exists && baseline && !baseline.dirty && baseline.pending === null &&
       baseline.revision === cloudState.revision &&
       baseline.syncedFingerprint !== remoteFingerprint) {
@@ -6868,6 +6876,39 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
   }
   if (localMatchesBase && !remoteMatchesBase) return acceptRemote();
   if (remoteMatchesBase && localMatchesBase) return acceptRemote();
+  const mergedState = cloudState.exists && !catalogChanged
+    ? tryMergeDivergedWorkoutState({
+        userId,
+        syncedFingerprint: baseline.syncedFingerprint,
+        cachedState,
+        remoteProjection,
+        revision: cloudState.revision
+      })
+    : null;
+  if (mergedState) {
+    // Both sides changed and were merged workout by workout. The cloud still holds the
+    // remote copy, so it stays the synced base until the upload below replaces it.
+    state = mergedState;
+    bindRemoteStateRevision(cloudState);
+    cloudStateRecovery = null;
+    cloudSyncConflict = null;
+    saveState({ queueRemote: false, markDirty: false });
+    const mergedFingerprint = remoteStateFingerprint(state, userId);
+    baseline = saveSyncBaseline({
+      version: 1,
+      userId,
+      remoteExists: true,
+      revision: cloudState.revision,
+      syncedFingerprint: remoteIdentityFingerprint,
+      localFingerprint: mergedFingerprint,
+      dirty: mergedFingerprint !== remoteIdentityFingerprint,
+      pending: null,
+      lastSyncedAt: baseline?.lastSyncedAt ?? null,
+      updatedAt: Date.now()
+    });
+    if (baseline.dirty) await saveRemoteState();
+    return true;
+  }
   return blockConflict(null);
 }
 
@@ -7695,7 +7736,10 @@ function canonicalValueFingerprint(value) {
 }
 
 function remoteStateFingerprint(sourceState = state, userId = activeAccount?.userId) {
-  return canonicalValueFingerprint(remoteStateCore(sourceState, userId));
+  const core = remoteStateCore(sourceState, userId);
+  const fingerprint = canonicalValueFingerprint(core);
+  rememberWorkoutProjection(fingerprint, core);
+  return fingerprint;
 }
 
 function validStateFingerprint(value) {
@@ -7771,6 +7815,7 @@ function saveSyncBaseline(baseline) {
       stored.updatedAt !== normalized.updatedAt) {
     throw new Error("Cloud sync baseline could not be saved.");
   }
+  persistWorkoutMergeBaseline(stored);
   return stored;
 }
 
@@ -8043,6 +8088,342 @@ function reconcileActivityOnlySnapshot(snapshot, cachedState, userId) {
   return { state: mergedState, items: mergedItems, baseline: nextBaseline };
 }
 
+// Per-workout three-way merge of the shared cloud row (shared/workout-sync-merge-v1.json).
+// The v2 row must stay readable by released 2.2.9 clients, which rewrite it whole, so it
+// cannot carry per-workout revisions. Each client keeps the exact core it last agreed with
+// the cloud and compares workouts by start time: one-sided changes apply, additions and
+// deletions combine, and divergent edits of one workout go to the newer side. The local
+// change time comes from the journal below; the remote one is the row's updated_at.
+const WORKOUT_MERGE_JOURNAL_LIMIT = 10000;
+const WORKOUT_MERGE_RECENT_PROJECTIONS = 6;
+const recentWorkoutProjections = new Map();
+let lastSeenWorkoutCore = null;
+
+function workoutMergeCanonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(workoutMergeCanonicalJson).join(",")}]`;
+  return `{${Object.keys(value).sort()
+    .filter(key => value[key] !== undefined)
+    .map(key => `${JSON.stringify(key)}:${workoutMergeCanonicalJson(value[key])}`)
+    .join(",")}}`;
+}
+
+function workoutMergeSessionStart(session) {
+  const start = session?.date ?? session?.startedAt;
+  if (!Number.isSafeInteger(start)) throw new Error("A cloud workout has no exact start time.");
+  return start;
+}
+
+function workoutMergeExerciseIdentity(exercise) {
+  return pwaExerciseForNativeCloud(exercise).identity;
+}
+
+function mergeWorkoutCloudCores({
+  base,
+  local,
+  remote,
+  localChangedAt = new Map(),
+  remoteRowUpdatedAt,
+  exerciseIdentity = workoutMergeExerciseIdentity,
+  requiresCatalogEntry = () => true
+}) {
+  const byKey = (items, identity) => {
+    const result = new Map();
+    for (const item of items || []) {
+      const key = identity(item);
+      if (result.has(key)) {
+        const error = new Error("Two workouts or catalog entries share one identity.");
+        error.workoutMergeDuplicate = true;
+        throw error;
+      }
+      result.set(key, { item, json: workoutMergeCanonicalJson(item) });
+    }
+    return result;
+  };
+  const threeWay = (baseMap, localMap, remoteMap, resolveConflict) => {
+    const result = new Map();
+    const keys = new Set([...baseMap.keys(), ...localMap.keys(), ...remoteMap.keys()]);
+    for (const key of keys) {
+      const baseJson = baseMap.get(key)?.json;
+      const localEntry = localMap.get(key);
+      const remoteEntry = remoteMap.get(key);
+      let chosen;
+      if (localEntry?.json === remoteEntry?.json) chosen = localEntry;
+      else if (localEntry?.json === baseJson) chosen = remoteEntry;
+      else if (remoteEntry?.json === baseJson) chosen = localEntry;
+      else chosen = resolveConflict(key, localEntry, remoteEntry);
+      if (chosen) result.set(key, chosen.item);
+    }
+    return result;
+  };
+  const localWins = new Set();
+  const remoteWins = new Set();
+  const sessions = threeWay(
+    byKey(base.sessions, workoutMergeSessionStart),
+    byKey(local.sessions, workoutMergeSessionStart),
+    byKey(remote.sessions, workoutMergeSessionStart),
+    (key, localEntry, remoteEntry) => {
+      const localTime = localChangedAt.get(key);
+      if (localTime !== undefined && localTime > remoteRowUpdatedAt) {
+        localWins.add(key);
+        return localEntry;
+      }
+      remoteWins.add(key);
+      return remoteEntry;
+    }
+  );
+  const localExercises = byKey(local.exercises, exerciseIdentity);
+  const remoteExercises = byKey(remote.exercises, exerciseIdentity);
+  // Catalog entries only appear or disappear; differing details keep the local copy.
+  const exercises = threeWay(
+    byKey(base.exercises, exerciseIdentity),
+    localExercises,
+    remoteExercises,
+    (_key, localEntry, remoteEntry) => localEntry || remoteEntry
+  );
+  // A workout that survives the merge keeps every catalog entry it uses.
+  for (const session of sessions.values()) {
+    for (const block of session.exercises || []) {
+      if (!requiresCatalogEntry(block)) continue;
+      const entry = { name: block.name, ...(block.catalogKey ? { catalogKey: block.catalogKey } : {}) };
+      const key = exerciseIdentity(entry);
+      if (exercises.has(key)) continue;
+      exercises.set(key, localExercises.get(key)?.item || remoteExercises.get(key)?.item || entry);
+    }
+  }
+  return {
+    merged: {
+      exercises: [...exercises.entries()]
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([, exercise]) => exercise),
+      sessions: [...sessions.entries()].sort(([left], [right]) => left - right).map(([, session]) => session)
+    },
+    localWins,
+    remoteWins
+  };
+}
+
+function changedWorkoutStarts(before, after) {
+  const index = core => new Map((core?.sessions || []).map(session => [
+    Number(session.date),
+    workoutMergeCanonicalJson(session)
+  ]));
+  const beforeByStart = index(before);
+  const afterByStart = index(after);
+  const changed = new Set();
+  for (const start of new Set([...beforeByStart.keys(), ...afterByStart.keys()])) {
+    if (beforeByStart.get(start) !== afterByStart.get(start)) changed.add(start);
+  }
+  return changed;
+}
+
+function rememberWorkoutProjection(fingerprint, projection) {
+  if (!validStateFingerprint(fingerprint) || !projection) return;
+  recentWorkoutProjections.delete(fingerprint);
+  recentWorkoutProjections.set(fingerprint, projection);
+  while (recentWorkoutProjections.size > WORKOUT_MERGE_RECENT_PROJECTIONS) {
+    recentWorkoutProjections.delete(recentWorkoutProjections.keys().next().value);
+  }
+}
+
+function workoutMergeStorageKey(prefix, userId) {
+  if (!UUID_PATTERN.test(userId || "")) throw new Error("Workout merge owner is invalid.");
+  return `${prefix}${userId}`;
+}
+
+function loadWorkoutMergeBaseline(userId) {
+  try {
+    const value = JSON.parse(localStorage.getItem(workoutMergeStorageKey(WORKOUT_MERGE_BASELINE_PREFIX, userId)) || "null");
+    if (!value || value.version !== 1 || value.userId !== userId || !validStateFingerprint(value.fingerprint) ||
+        !Array.isArray(value.exercises) || !Array.isArray(value.sessions)) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+// Keeps the exact core behind the confirmed sync fingerprint. Losing it (quota, private
+// mode) only means the next divergence falls back to the whole-history choice.
+function persistWorkoutMergeBaseline(baseline) {
+  const userId = baseline?.userId;
+  const fingerprint = baseline?.syncedFingerprint;
+  if (!UUID_PATTERN.test(userId || "") || !validStateFingerprint(fingerprint)) return;
+  if (!baseline.dirty && baseline.pending == null) saveWorkoutMergeJournal(userId, new Map());
+  if (loadWorkoutMergeBaseline(userId)?.fingerprint === fingerprint) return;
+  const projection = recentWorkoutProjections.get(fingerprint);
+  const key = workoutMergeStorageKey(WORKOUT_MERGE_BASELINE_PREFIX, userId);
+  try {
+    if (!projection) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify({
+      version: 1,
+      userId,
+      fingerprint,
+      exercises: projection.exercises,
+      sessions: projection.sessions
+    }));
+  } catch {
+    try { localStorage.removeItem(key); } catch {}
+  }
+}
+
+function loadWorkoutMergeJournal(userId) {
+  try {
+    const value = JSON.parse(localStorage.getItem(workoutMergeStorageKey(WORKOUT_MERGE_JOURNAL_PREFIX, userId)) || "[]");
+    if (!Array.isArray(value)) return new Map();
+    return new Map(value.filter(entry => Array.isArray(entry) && entry.length === 2 &&
+      Number.isSafeInteger(entry[0]) && Number.isSafeInteger(entry[1])));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveWorkoutMergeJournal(userId, journal) {
+  const key = workoutMergeStorageKey(WORKOUT_MERGE_JOURNAL_PREFIX, userId);
+  try {
+    if (!journal.size) {
+      localStorage.removeItem(key);
+      return;
+    }
+    const entries = [...journal.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, WORKOUT_MERGE_JOURNAL_LIMIT);
+    localStorage.setItem(key, JSON.stringify(entries));
+  } catch {
+    // A missed stamp only makes the cloud copy win a divergent edit.
+  }
+}
+
+function persistedWorkoutCore(userId) {
+  try {
+    const raw = localStorage.getItem(activeStorageKey());
+    if (!raw) return null;
+    const persisted = JSON.parse(raw);
+    // Persisted sessions omit durations, so activity-only sessions are left out here the
+    // same way the cloud core leaves them out.
+    return remoteStateCore({
+      ...persisted,
+      sessions: (persisted.sessions || []).filter(session => (session.sets || []).length > 0)
+    }, userId);
+  } catch {
+    return null;
+  }
+}
+
+// Records when each workout changed in this browser, for the newer-wins rule.
+function trackLocalWorkoutChanges(nextState, userId, { stamp }) {
+  let current;
+  try {
+    current = remoteStateCore(nextState, userId);
+  } catch {
+    lastSeenWorkoutCore = null;
+    return;
+  }
+  const previous = lastSeenWorkoutCore?.userId === userId
+    ? lastSeenWorkoutCore.core
+    : (stamp ? persistedWorkoutCore(userId) : null);
+  lastSeenWorkoutCore = { userId, core: current };
+  if (!stamp || !previous) return;
+  const changed = changedWorkoutStarts(previous, current);
+  if (!changed.size) return;
+  const journal = loadWorkoutMergeJournal(userId);
+  const now = Date.now();
+  changed.forEach(start => journal.set(start, now));
+  saveWorkoutMergeJournal(userId, journal);
+}
+
+// Rebuilds the browser state for a merged core. Workouts whose merged copy equals the
+// local one keep their objects (ids, durations); a changed workout keeps its id and takes
+// the merged note and sets; activity-only sessions stay; new workouts get fresh ids.
+function workoutMergedPwaState(mergedCore, localCore, cachedState, userId) {
+  let setCount = 0;
+  let totalVolume = 0;
+  for (const session of mergedCore.sessions) {
+    for (const block of session.exercises) {
+      for (const set of block.sets) {
+        setCount += 1;
+        totalVolume += set.weight * set.reps;
+      }
+    }
+  }
+  const envelope = {
+    schemaVersion: 2,
+    exportedAt: Date.now(),
+    app: "GymApp",
+    diagnostics: false,
+    owner: { accountId: userId, userId, remote: true },
+    exercises: mergedCore.exercises,
+    sessions: mergedCore.sessions,
+    summary: {
+      exerciseCount: mergedCore.exercises.length,
+      sessionCount: mergedCore.sessions.length,
+      setCount,
+      totalVolume: totalVolume === 0 ? 0 : totalVolume
+    }
+  };
+  const prepared = prepareNativeCloudEnvelope(nativeCloudClone(envelope), userId);
+  const imported = normalizeImportedState(prepared.appStateInput, cachedState);
+  const localByStart = new Map(localCore.sessions.map(session => [session.date, workoutMergeCanonicalJson(session)]));
+  const mergedByStart = new Map(mergedCore.sessions.map(session => [session.date, session]));
+  const importedByStart = new Map(imported.sessions.map(session => [Number(session.startedAt), session]));
+  const sessions = [];
+  for (const session of cachedState.sessions) {
+    if (!(session.sets || []).length) {
+      sessions.push(session);
+      continue;
+    }
+    const start = Number(session.startedAt);
+    const desired = mergedByStart.get(start);
+    if (!desired) continue;
+    mergedByStart.delete(start);
+    if (localByStart.get(start) === workoutMergeCanonicalJson(desired)) {
+      sessions.push(session);
+      continue;
+    }
+    const fresh = importedByStart.get(start);
+    if (!fresh) throw new Error("Merged workout could not be imported.");
+    sessions.push({ ...session, note: fresh.note, exerciseNames: fresh.exerciseNames, sets: fresh.sets });
+  }
+  for (const start of mergedByStart.keys()) {
+    const fresh = importedByStart.get(start);
+    if (!fresh) throw new Error("Merged workout could not be imported.");
+    sessions.push(fresh);
+  }
+  const next = { ...cachedState, exercises: imported.exercises, sessions };
+  preserveExerciseFavorites(next, cachedState, { preferPrevious: true, preserveMissingLoadProfiles: true });
+  preserveLocalProgressExerciseSelection(next, cachedState);
+  if (remoteStateFingerprint(next, userId) !== prepared.fingerprint) {
+    throw new Error("Merged workout history did not round-trip exactly.");
+  }
+  return next;
+}
+
+// Returns the merged browser state when both sides changed since the stored exact
+// baseline, or null when no usable baseline exists and the whole-history choice remains.
+function tryMergeDivergedWorkoutState({ userId, syncedFingerprint, cachedState, remoteProjection, revision }) {
+  const stored = loadWorkoutMergeBaseline(userId);
+  if (!stored || !remoteProjection || stored.fingerprint !== syncedFingerprint) return null;
+  try {
+    const localCore = remoteStateCore(cachedState, userId);
+    trackLocalWorkoutChanges(cachedState, userId, { stamp: true });
+    const remoteRowUpdatedAt = Date.parse(revision);
+    const result = mergeWorkoutCloudCores({
+      base: stored,
+      local: localCore,
+      remote: remoteProjection,
+      localChangedAt: loadWorkoutMergeJournal(userId),
+      remoteRowUpdatedAt: Number.isFinite(remoteRowUpdatedAt) ? remoteRowUpdatedAt : Number.MAX_SAFE_INTEGER
+    });
+    return workoutMergedPwaState(result.merged, localCore, cachedState, userId);
+  } catch {
+    return null;
+  }
+}
+
 function syncedBaseline(userId, cloudState, fingerprint) {
   const now = Date.now();
   return {
@@ -8123,7 +8504,28 @@ function startRemoteSave(options = {}) {
       if (baseline && !baseline.dirty && activityBaseline?.dirty !== true && !activityRequest) {
         return { stateSaved: true, profileUpdated: true, reconciled: true };
       }
-      return saveRemoteState(options);
+      let staleError = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          if (staleError) {
+            // Another client wrote first: reload the row, merge it workout by workout
+            // against the stored baseline, and upload the result.
+            await pullRemoteState();
+            if (cloudSyncConflict?.userId === expectedUserId || cloudStateRecovery?.userId === expectedUserId) {
+              throw staleError;
+            }
+            const reconciled = loadSyncBaseline(expectedUserId);
+            if (reconciled && !reconciled.dirty && !reconciled.pending) {
+              return { stateSaved: true, profileUpdated: true, reconciled: true };
+            }
+          }
+          return await saveRemoteState(options);
+        } catch (error) {
+          if (!error?.staleRemoteState) throw error;
+          staleError = error;
+        }
+      }
+      throw staleError;
     });
   remoteSaveInFlight = operation;
   operation.then(
@@ -8269,6 +8671,13 @@ async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = 
       body: JSON.stringify({ user_id: expectedUserId, state: payload })
     });
   }
+  if (Array.isArray(rows) && rows.length === 0 && remoteStateSync.exists) {
+    // No row matched the revision, so nothing was written: another client wrote first.
+    saveSyncBaseline({ ...pendingBaseline, pending: null, updatedAt: Date.now() });
+    const stale = new Error("Cloud state changed on another client.");
+    stale.staleRemoteState = true;
+    throw stale;
+  }
   if (!Array.isArray(rows) || rows.length !== 1 || !validRemoteStateRevision(rows[0]?.updated_at)) {
     throw new Error("Cloud state changed on another client.");
   }
@@ -8288,6 +8697,8 @@ async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = 
   }
   const confirmedState = { userId: expectedUserId, exists: true, revision: rows[0].updated_at };
   const currentFingerprint = remoteStateFingerprint(state, expectedUserId);
+  // Re-derive the uploaded core so the confirmed baseline below can store it exactly.
+  remoteStateFingerprint(attemptState, expectedUserId);
   const confirmedAt = Date.now();
   saveSyncBaseline({
     version: 1,
@@ -9880,6 +10291,9 @@ function saveState({ queueRemote = true, markDirty = true } = {}) {
     ...runtimeState,
     sessions: runtimeState.sessions.map(({ durationSeconds: _durationSeconds, ...session }) => session)
   };
+  if (activeAccount?.remote === "supabase" && UUID_PATTERN.test(activeAccount.userId || "")) {
+    trackLocalWorkoutChanges(state, activeAccount.userId, { stamp: markDirty });
+  }
   if (markDirty) markRemoteStateDirtyBeforeWrite(state);
   localStorage.setItem(activeStorageKey(), JSON.stringify(persistedState));
   if (queueRemote) queueRemoteSave();
@@ -15853,6 +16267,12 @@ function purgeDeletedCloudAccountFromBrowser(account) {
     const key = activityOnlySyncRequestKey(account.userId);
     localStorage.removeItem(key);
     return localStorage.getItem(key) === null;
+  });
+  attempt(() => {
+    const keys = [WORKOUT_MERGE_BASELINE_PREFIX, WORKOUT_MERGE_JOURNAL_PREFIX]
+      .map(prefix => workoutMergeStorageKey(prefix, account.userId));
+    keys.forEach(key => localStorage.removeItem(key));
+    return keys.every(key => localStorage.getItem(key) === null);
   });
   attempt(() => {
     const session = loadRemoteSession();
