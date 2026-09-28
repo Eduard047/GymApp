@@ -42,11 +42,23 @@ data class SmartCoachFeedback(
     val feedback: WorkoutFeedback
 )
 
+/**
+ * A stored profile that already matches the requested goal and frequency is kept as-is so
+ * activation never overwrites the split or calorie mode the user chose in training settings.
+ * Only a mismatch (or an out-of-range stored profile) falls back to the derived split and mode.
+ */
 internal fun trainingProfileForActivation(
     goal: TrainingGoal,
-    workoutsPerWeek: Int
+    workoutsPerWeek: Int,
+    stored: TrainingProfile? = null
 ): TrainingProfile {
     require(workoutsPerWeek in 2..6) { "Training frequency is outside the supported bounds." }
+    if (stored != null &&
+        stored.goal == goal &&
+        stored.workoutsPerWeek == workoutsPerWeek
+    ) {
+        return stored
+    }
     return TrainingProfile(
         split = when {
             workoutsPerWeek <= 3 -> TrainingSplit.FullBody

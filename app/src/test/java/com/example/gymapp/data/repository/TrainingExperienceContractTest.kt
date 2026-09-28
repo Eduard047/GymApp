@@ -104,6 +104,66 @@ class TrainingExperienceContractTest {
     }
 
     @Test
+    fun activationKeepsStoredSplitAndCaloriesWhenGoalAndDaysMatch() {
+        val stored = TrainingProfile(
+            split = TrainingSplit.UpperLower,
+            workoutsPerWeek = 4,
+            goal = TrainingGoal.AestheticFatLoss,
+            calorieMode = CalorieMode.Deficit
+        )
+        assertEquals(
+            stored,
+            trainingProfileForActivation(TrainingGoal.AestheticFatLoss, 4, stored)
+        )
+
+        val nonDefault = TrainingProfile(
+            split = TrainingSplit.PushPullLegs,
+            workoutsPerWeek = 3,
+            goal = TrainingGoal.Balanced,
+            calorieMode = CalorieMode.Surplus
+        )
+        assertEquals(
+            nonDefault,
+            trainingProfileForActivation(TrainingGoal.Balanced, 3, nonDefault)
+        )
+    }
+
+    @Test
+    fun activationDerivesProfileWhenStoredGoalOrDaysDiffer() {
+        val stored = TrainingProfile(
+            split = TrainingSplit.PushPullLegs,
+            workoutsPerWeek = 3,
+            goal = TrainingGoal.Balanced,
+            calorieMode = CalorieMode.Surplus
+        )
+        assertEquals(
+            TrainingProfile(
+                split = TrainingSplit.FullBody,
+                workoutsPerWeek = 3,
+                goal = TrainingGoal.MuscleGain,
+                calorieMode = CalorieMode.Surplus
+            ),
+            trainingProfileForActivation(TrainingGoal.MuscleGain, 3, stored)
+        )
+        assertEquals(
+            TrainingProfile(
+                split = TrainingSplit.UpperLower,
+                workoutsPerWeek = 4,
+                goal = TrainingGoal.Balanced,
+                calorieMode = CalorieMode.Maintenance
+            ),
+            trainingProfileForActivation(TrainingGoal.Balanced, 4, stored)
+        )
+        assertEquals(
+            trainingProfileForActivation(TrainingGoal.Strength, 5),
+            trainingProfileForActivation(TrainingGoal.Strength, 5, stored)
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            trainingProfileForActivation(TrainingGoal.Balanced, 7, stored)
+        }
+    }
+
+    @Test
     fun feedbackWireValuesAreExactAndFailNeutral() {
         assertEquals(listOf("easy", "normal", "hard"), WorkoutFeedback.entries.map { it.wireValue })
         assertEquals(WorkoutFeedback.Easy, WorkoutFeedback.fromWireValue("easy"))

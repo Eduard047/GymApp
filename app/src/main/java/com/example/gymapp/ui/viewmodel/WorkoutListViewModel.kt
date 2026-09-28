@@ -688,7 +688,7 @@ class WorkoutListViewModel(
         effort: FirstWorkoutEffort
     ): String? {
         val profile = runCatching {
-            trainingProfileForActivation(goal, workoutsPerWeek)
+            trainingProfileForActivation(goal, workoutsPerWeek, trainingProfileManager.profile.value)
         }.getOrNull() ?: return null
         val expectedAccountBinding = accountBinding ?: return null
         if (trainingGuidanceManager.activeBinding != expectedAccountBinding) return null

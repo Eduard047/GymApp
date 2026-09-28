@@ -61,11 +61,11 @@ class ActiveWorkoutHeroUiTest {
         }
 
         composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.active_workout_elapsed_label).uppercase(locale)
+            composeRule.activity.getString(R.string.active_workout_elapsed_label)
         ).assertIsDisplayed()
         composeRule.onNodeWithText(formatActiveWorkoutTime(123, locale)).assertIsDisplayed()
         composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.active_workout_completed_label).uppercase(locale)
+            composeRule.activity.getString(R.string.active_workout_completed_label)
         ).assertIsDisplayed()
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.active_workout_completed_value, 2, 4)
