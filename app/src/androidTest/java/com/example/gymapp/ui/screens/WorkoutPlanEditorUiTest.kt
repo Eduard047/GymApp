@@ -102,7 +102,7 @@ class WorkoutPlanEditorUiTest {
             onClear = { clearCount += 1 }
         )
 
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(2)
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(1)
         composeRule.onNodeWithText(clearAction()).performClick()
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.workout_plan_clear_title)
@@ -112,7 +112,7 @@ class WorkoutPlanEditorUiTest {
         ).performClick()
         composeRule.runOnIdle { assertEquals(0, clearCount) }
 
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(2)
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(1)
         composeRule.onNodeWithText(clearAction()).performClick()
         composeRule.onAllNodesWithText(clearAction()).onLast().performClick()
         composeRule.runOnIdle { assertEquals(1, clearCount) }
@@ -122,14 +122,14 @@ class WorkoutPlanEditorUiTest {
     fun emptyPlanOffersOneAddAndKeepsCoachAsTheOnlyBuildAction() {
         setEditorContent(isDirty = true, drafts = emptyList())
 
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(3)
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(2)
         composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.action_add_exercise)
         ).assertCountEquals(1)
         composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.action_generate_smart_workout)
         ).assertCountEquals(1)
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(4)
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(3)
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.action_start_workout)
         ).assertIsNotEnabled()
@@ -142,20 +142,12 @@ class WorkoutPlanEditorUiTest {
         composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.title_workout_plan)
         ).assertCountEquals(0)
-        composeRule.onNodeWithText(
+        // Coach settings are one summary line inside the Smart coach card, not a separate card.
+        composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.training_profile_title)
-        ).assertIsDisplayed()
+        ).assertCountEquals(0)
         composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.training_profile_split)
-        ).assertIsDisplayed()
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.training_profile_goal)
-        ).assertIsDisplayed()
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.training_profile_calories)
-        ).assertIsDisplayed()
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.training_profile_frequency)
+            composeRule.activity.getString(R.string.training_settings_edit)
         ).assertIsDisplayed()
         composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.smart_coach_title)
@@ -198,11 +190,11 @@ class WorkoutPlanEditorUiTest {
         composeRule.activity.getString(R.string.workout_plan_clear_action)
 
     private fun openDiscardAction() {
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(5)
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(4)
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.workout_plan_more_options)
         ).performClick()
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(9)
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(8)
         composeRule.onNodeWithTag("workout_plan_discard_draft").performClick()
     }
 

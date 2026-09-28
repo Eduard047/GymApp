@@ -1,5 +1,6 @@
 package com.example.gymapp.navigation
 
+import com.example.gymapp.util.TrainingProfile
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -730,6 +731,10 @@ internal fun GymAppRoot(
     val accountDeletionScope = rememberCoroutineScope()
     val applicationContext = LocalContext.current.applicationContext
     val gymApplication = remember(applicationContext) { applicationContext.gymApplication }
+    val trainingProfile by gymApplication.trainingProfileManager.profile.collectAsStateWithLifecycle()
+    val updateTrainingProfile: (TrainingProfile) -> Unit = { profile ->
+        gymApplication.trainingProfileManager.updateProfile(profile)
+    }
     val trainingGuidanceManager = gymApplication.trainingGuidanceManager
     val tutorialProgress by trainingGuidanceManager.tutorialProgress.collectAsStateWithLifecycle()
     val tutorialAnchors = remember(uiIsolationKey) { TutorialAnchorRegistry() }
@@ -2744,6 +2749,8 @@ internal fun GymAppRoot(
                                             room.status in setOf("waiting", "ready", "active")
                                         } == true
                                 ),
+                                trainingProfile = trainingProfile,
+                                onTrainingProfileChange = updateTrainingProfile,
                                 friendChoices = friendsState?.dashboard?.friends.orEmpty().map { friend ->
                                     TodayFriendChoice(friend.profileId, friend.displayName)
                                 },
@@ -3893,6 +3900,8 @@ internal fun GymAppRoot(
                                 focusedLiveRoomId = focusedLivePushRoomId,
                                 focusRequest = profileFocusRequest,
                                 onFocusRequestHandled = { profileFocusRequest = null },
+                                trainingProfile = trainingProfile,
+                                onTrainingProfileChange = updateTrainingProfile,
                                 cloudSyncStatus = cloudSyncStatus,
                                 onSyncNow = {
                                     cloudSession?.let { session ->

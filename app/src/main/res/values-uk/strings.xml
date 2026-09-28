@@ -429,6 +429,21 @@
     <string name="add_workout_active_exercises">Вправи: %1$d</string>
     <string name="add_workout_total_sets">Підходи: %1$d</string>
     <string name="add_workout_plan_templates">Швидкі шаблони сесії</string>
+    <string name="training_settings_title">Налаштування тренувань</string>
+    <string name="training_settings_done">Готово</string>
+    <string name="training_settings_split">Спліт</string>
+    <string name="training_settings_workouts_per_week">Тренувань на тиждень</string>
+    <string name="training_settings_edit">змінити</string>
+    <string name="training_settings_edit_description">Змінити налаштування тренувань</string>
+    <plurals name="training_settings_workouts_a_week">
+        <item quantity="one">%1$d тренування на тиждень</item>
+        <item quantity="few">%1$d тренування на тиждень</item>
+        <item quantity="many">%1$d тренувань на тиждень</item>
+        <item quantity="other">%1$d тренування на тиждень</item>
+    </plurals>
+    <string name="activation_effort_light">Легка</string>
+    <string name="activation_effort_normal">Звичайна</string>
+    <string name="activation_effort_hard">Важка</string>
     <string name="training_profile_title">Налаштування тренера</string>
     <string name="training_profile_supporting">Розумний тренер враховує програму, ціль і відновлення.</string>
     <string name="training_profile_split">Програма</string>
@@ -757,17 +772,17 @@
     <string name="smart_coach_rir_guidance">Ціль: залишати %1$d–%2$d повтори в запасі (RIR).</string>
     <string name="smart_coach_effort_title">Наскільки важко тренуватися сьогодні?</string>
     <string name="smart_effort_auto">Авто</string>
-    <string name="smart_effort_recovery">Відновлювальне</string>
+    <string name="smart_effort_recovery">Легка</string>
     <string name="smart_effort_standard">Звичайне</string>
     <string name="smart_effort_hard">Важке</string>
-    <string name="smart_effort_auto_description">Обирає звичайне або відновлювальне навантаження за нещодавньою роботою м’язів. Авто ніколи не вмикає важкий режим.</string>
+    <string name="smart_effort_auto_description">Обирає звичайне або легке навантаження за нещодавньою роботою м’язів. Авто ніколи не вмикає важкий режим.</string>
     <string name="smart_effort_recovery_description">Знижує вагу й обсяг тренування, зберігаючи корисну технічну роботу.</string>
     <string name="smart_effort_standard_description">Збалансований обсяг і прогресія для звичайного тренувального дня.</string>
     <string name="smart_effort_hard_description">Додає важку роботу лише підготовленим базовим вправам. За слабкого відновлення або недостатньої історії режим буде пом’якшено.</string>
     <string name="smart_coach_generated_focus">Тренування: %1$s · Варіант %2$s</string>
     <string name="smart_coach_applied_effort">Застосоване навантаження: %1$s</string>
-    <string name="smart_effort_adjustment_auto_recovery">Авто обрало відновлювальне навантаження: цільові м’язи тренувалися нещодавно.</string>
-    <string name="smart_effort_adjustment_readiness_low">Після сьогоднішньої низької готовності обрано відновлювальне навантаження.</string>
+    <string name="smart_effort_adjustment_auto_recovery">Авто обрало легке навантаження: цільові м’язи тренувалися нещодавно.</string>
+    <string name="smart_effort_adjustment_readiness_low">Після сьогоднішньої низької готовності обрано легке навантаження.</string>
     <string name="smart_effort_adjustment_history">Важке навантаження замінено звичайним: поки бракує історії тренувань.</string>
     <string name="smart_effort_adjustment_break">Важке навантаження замінено звичайним після тривалої перерви.</string>
     <string name="smart_effort_adjustment_recovery">Важке навантаження замінено звичайним: цільові м’язи ще відновлюються.</string>
@@ -848,7 +863,7 @@
     <string name="workout_feedback_easy">Надто легко</string>
     <string name="workout_feedback_normal">Саме так</string>
     <string name="workout_feedback_hard">Надто важко</string>
-    <string name="smart_effort_adjustment_feedback_hard">Після останнього відгуку обрано відновлення.</string>
+    <string name="smart_effort_adjustment_feedback_hard">Після останнього відгуку обрано легке навантаження.</string>
     <string name="smart_effort_adjustment_feedback_easy">Після останнього відгуку додано один безпечний підхід.</string>
     <string name="action_replace_with_similar">Замінити схожою вправою</string>
     <string name="smart_alternatives_title">Схожі вправи</string>
@@ -884,7 +899,7 @@
     <string name="smart_reason_aesthetic_goal">Ціль естетики: план більше тримається за чистий обсяг і техніку.</string>
     <string name="smart_reason_calorie_deficit">Дефіцит калорій: прогресія обережніша, щоб не вбити відновлення.</string>
     <string name="smart_reason_upper_lower">Верх/низ 4 рази: навантаження лишає запас для наступної сесії.</string>
-    <string name="smart_reason_recovery_effort">Відновлювальне навантаження: вагу й обсяг навмисно знижено.</string>
+    <string name="smart_reason_recovery_effort">Легке навантаження: вагу й обсяг навмисно знижено.</string>
     <string name="smart_reason_hard_effort">Важке навантаження: низький RIR застосовується лише до цієї підготовленої базової вправи.</string>
 
     <string name="progress_summary_title">Зведення прогресу</string>

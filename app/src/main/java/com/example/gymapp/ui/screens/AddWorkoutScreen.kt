@@ -1,5 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
+import com.example.gymapp.ui.components.TrainingSettingsSummaryRow
+import com.example.gymapp.ui.components.TrainingSettingsSheet
 import android.app.DatePickerDialog
 import android.content.Context
 import androidx.activity.compose.BackHandler
@@ -174,6 +176,23 @@ fun AddWorkoutScreen(
         (primaryAction == WorkoutPlanPrimaryAction.SendLiveInvite && isLiveInviteSending)
     val editorInteractionsLocked = workoutPlanEditorInteractionsLocked(isLiveInviteSending)
     var secondaryOptionsExpanded by rememberSaveable { mutableStateOf(false) }
+    var showTrainingSettings by rememberSaveable { mutableStateOf(false) }
+    if (showTrainingSettings) {
+        val profile = uiState.trainingProfile
+        TrainingSettingsSheet(
+            profile = profile,
+            onProfileChange = { updated ->
+                when {
+                    updated.goal != profile.goal -> onTrainingGoalSelected(updated.goal)
+                    updated.calorieMode != profile.calorieMode -> onCalorieModeSelected(updated.calorieMode)
+                    updated.split != profile.split -> onTrainingSplitSelected(updated.split)
+                    updated.workoutsPerWeek != profile.workoutsPerWeek ->
+                        onWorkoutsPerWeekSelected(updated.workoutsPerWeek)
+                }
+            },
+            onDismiss = { showTrainingSettings = false }
+        )
+    }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     var showVoiceWorkoutSheet by rememberSaveable { mutableStateOf(false) }
@@ -208,17 +227,9 @@ fun AddWorkoutScreen(
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
     ) {
         item {
-            TrainingProfilePanel(
-                profile = uiState.trainingProfile,
-                onTrainingSplitSelected = onTrainingSplitSelected,
-                onWorkoutsPerWeekSelected = onWorkoutsPerWeekSelected,
-                onTrainingGoalSelected = onTrainingGoalSelected,
-                onCalorieModeSelected = onCalorieModeSelected
-            )
-        }
-
-        item {
             SmartCoachPanel(
+                trainingProfile = uiState.trainingProfile,
+                onEditTrainingSettings = { showTrainingSettings = true },
                 selectedEffort = uiState.smartWorkoutEffort,
                 generatedPlan = uiState.generatedSmartPlan,
                 generatedPlanNeedsRefresh = uiState.generatedSmartPlanNeedsRefresh,
@@ -799,128 +810,9 @@ private fun showWorkoutDatePicker(
 }
 
 @Composable
-private fun TrainingProfilePanel(
-    profile: TrainingProfile,
-    onTrainingSplitSelected: (TrainingSplit) -> Unit,
-    onWorkoutsPerWeekSelected: (Int) -> Unit,
-    onTrainingGoalSelected: (TrainingGoal) -> Unit,
-    onCalorieModeSelected: (CalorieMode) -> Unit
-) {
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SectionTitle(
-                eyebrow = "",
-                title = stringResource(R.string.training_profile_title)
-            )
-
-            ProfileMenuRow(
-                label = stringResource(R.string.training_profile_split),
-                selectedLabel = profile.split.label(),
-                options = TrainingSplit.entries,
-                optionLabel = { it.label() },
-                onSelected = onTrainingSplitSelected
-            )
-
-            ProfileMenuRow(
-                label = stringResource(R.string.training_profile_goal),
-                selectedLabel = profile.goal.label(),
-                options = TrainingGoal.entries,
-                optionLabel = { it.label() },
-                onSelected = onTrainingGoalSelected
-            )
-
-            ProfileMenuRow(
-                label = stringResource(R.string.training_profile_calories),
-                selectedLabel = profile.calorieMode.label(),
-                options = CalorieMode.entries,
-                optionLabel = { it.label() },
-                onSelected = onCalorieModeSelected
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.training_profile_frequency),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = { onWorkoutsPerWeekSelected(profile.workoutsPerWeek - 1) },
-                    enabled = profile.workoutsPerWeek > 2
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Remove,
-                        contentDescription = stringResource(R.string.training_profile_decrease_days)
-                    )
-                }
-                Text(
-                    text = profile.workoutsPerWeek.toString(),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                IconButton(
-                    onClick = { onWorkoutsPerWeekSelected(profile.workoutsPerWeek + 1) },
-                    enabled = profile.workoutsPerWeek < 6
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = stringResource(R.string.training_profile_increase_days)
-                    )
-                }
-            }
-
-        }
-    }
-}
-
-@Composable
-private fun <T> ProfileMenuRow(
-    label: String,
-    selectedLabel: String,
-    options: List<T>,
-    optionLabel: @Composable (T) -> String,
-    onSelected: (T) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f)
-        )
-        Box {
-            TextButton(onClick = { expanded = true }) {
-                Text(selectedLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Icon(imageVector = Icons.Default.KeyboardArrowDown, contentDescription = null)
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                options.forEach { option ->
-                    val text = optionLabel(option)
-                    DropdownMenuItem(
-                        text = { Text(text) },
-                        onClick = {
-                            expanded = false
-                            onSelected(option)
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SmartCoachPanel(
+    trainingProfile: TrainingProfile,
+    onEditTrainingSettings: () -> Unit,
     selectedEffort: SmartWorkoutEffort,
     generatedPlan: SmartWorkoutPlanSummaryUiModel?,
     generatedPlanNeedsRefresh: Boolean,
@@ -936,6 +828,8 @@ private fun SmartCoachPanel(
                 eyebrow = "",
                 title = stringResource(R.string.smart_coach_title)
             )
+            // The coach settings summary sits at the top of this card; the full editor is shared.
+            TrainingSettingsSummaryRow(profile = trainingProfile, onEdit = onEditTrainingSettings)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmartWorkoutEffort.entries.chunked(2).forEach { rowEfforts ->
                     Row(
@@ -1048,35 +942,6 @@ private fun SmartWorkoutFocus.smartCoachLabel(): String = when (this) {
     SmartWorkoutFocus.Pull -> stringResource(R.string.smart_focus_pull)
     SmartWorkoutFocus.Legs -> stringResource(R.string.smart_focus_legs)
     SmartWorkoutFocus.FullBody -> stringResource(R.string.smart_focus_full_body)
-}
-
-@Composable
-private fun TrainingSplit.label(): String {
-    return when (this) {
-        TrainingSplit.UpperLower -> stringResource(R.string.training_split_upper_lower)
-        TrainingSplit.FullBody -> stringResource(R.string.training_split_full_body)
-        TrainingSplit.PushPullLegs -> stringResource(R.string.training_split_push_pull_legs)
-        TrainingSplit.Custom -> stringResource(R.string.training_split_custom)
-    }
-}
-
-@Composable
-private fun TrainingGoal.label(): String {
-    return when (this) {
-        TrainingGoal.AestheticFatLoss -> stringResource(R.string.training_goal_aesthetic_fat_loss)
-        TrainingGoal.MuscleGain -> stringResource(R.string.training_goal_muscle_gain)
-        TrainingGoal.Strength -> stringResource(R.string.training_goal_strength)
-        TrainingGoal.Balanced -> stringResource(R.string.training_goal_balanced)
-    }
-}
-
-@Composable
-private fun CalorieMode.label(): String {
-    return when (this) {
-        CalorieMode.Deficit -> stringResource(R.string.calorie_mode_deficit)
-        CalorieMode.Maintenance -> stringResource(R.string.calorie_mode_maintenance)
-        CalorieMode.Surplus -> stringResource(R.string.calorie_mode_surplus)
-    }
 }
 
 @Composable

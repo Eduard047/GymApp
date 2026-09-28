@@ -429,6 +429,19 @@
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
     <string name="add_workout_total_sets">Sets: %1$d</string>
     <string name="add_workout_plan_templates">Quick session templates</string>
+    <string name="training_settings_title">Training settings</string>
+    <string name="training_settings_done">Done</string>
+    <string name="training_settings_split">Split</string>
+    <string name="training_settings_workouts_per_week">Workouts per week</string>
+    <string name="training_settings_edit">edit</string>
+    <string name="training_settings_edit_description">Edit training settings</string>
+    <plurals name="training_settings_workouts_a_week">
+        <item quantity="one">%1$d workout a week</item>
+        <item quantity="other">%1$d workouts a week</item>
+    </plurals>
+    <string name="activation_effort_light">Light</string>
+    <string name="activation_effort_normal">Normal</string>
+    <string name="activation_effort_hard">Hard</string>
     <string name="training_profile_title">Coach settings</string>
     <string name="training_profile_supporting">Smart Coach uses this to match your plan, goal and recovery.</string>
     <string name="training_profile_split">Program</string>
@@ -751,17 +764,17 @@
     <string name="smart_coach_rir_guidance">Target: leave %1$d–%2$d reps in reserve (RIR).</string>
     <string name="smart_coach_effort_title">How hard should today feel?</string>
     <string name="smart_effort_auto">Auto</string>
-    <string name="smart_effort_recovery">Recovery</string>
+    <string name="smart_effort_recovery">Light</string>
     <string name="smart_effort_standard">Standard</string>
     <string name="smart_effort_hard">Hard</string>
-    <string name="smart_effort_auto_description">Chooses Standard or Recovery from recent muscle work. Auto never promotes the session to Hard.</string>
+    <string name="smart_effort_auto_description">Chooses Standard or Light from recent muscle work. Auto never promotes the session to Hard.</string>
     <string name="smart_effort_recovery_description">Reduces load and session size while keeping useful technique work.</string>
     <string name="smart_effort_standard_description">Balanced volume and progression for a normal training day.</string>
     <string name="smart_effort_hard_description">Adds demanding work only to prepared compound lifts. It is reduced automatically when recovery or history is insufficient.</string>
     <string name="smart_coach_generated_focus">%1$s workout · Variant %2$s</string>
     <string name="smart_coach_applied_effort">Applied effort: %1$s</string>
-    <string name="smart_effort_adjustment_auto_recovery">Auto selected Recovery because the target muscles were trained recently.</string>
-    <string name="smart_effort_adjustment_readiness_low">Recovery selected from today’s low-readiness check-in.</string>
+    <string name="smart_effort_adjustment_auto_recovery">Auto selected Light because the target muscles were trained recently.</string>
+    <string name="smart_effort_adjustment_readiness_low">Light selected from today’s low-readiness check-in.</string>
     <string name="smart_effort_adjustment_history">Hard was reduced to Standard: more training history is needed.</string>
     <string name="smart_effort_adjustment_break">Hard was reduced to Standard after a longer training break.</string>
     <string name="smart_effort_adjustment_recovery">Hard was reduced to Standard because the target muscles are still recovering.</string>
@@ -840,7 +853,7 @@
     <string name="workout_feedback_easy">Too easy</string>
     <string name="workout_feedback_normal">Just right</string>
     <string name="workout_feedback_hard">Too hard</string>
-    <string name="smart_effort_adjustment_feedback_hard">Recovery selected after your latest feedback.</string>
+    <string name="smart_effort_adjustment_feedback_hard">Light selected after your latest feedback.</string>
     <string name="smart_effort_adjustment_feedback_easy">One safe set was added after your latest feedback.</string>
     <string name="action_replace_with_similar">Replace with a similar exercise</string>
     <string name="smart_alternatives_title">Similar exercises</string>
@@ -876,7 +889,7 @@
     <string name="smart_reason_aesthetic_goal">Aesthetic goal: the plan favors clean volume and technique.</string>
     <string name="smart_reason_calorie_deficit">Calorie deficit: progression is more conservative to protect recovery.</string>
     <string name="smart_reason_upper_lower">Upper/lower 4-day plan: the load leaves room for the next session.</string>
-    <string name="smart_reason_recovery_effort">Recovery effort: load and volume are intentionally reduced.</string>
+    <string name="smart_reason_recovery_effort">Light effort: load and volume are intentionally reduced.</string>
     <string name="smart_reason_hard_effort">Hard effort: use the lower RIR only for this prepared compound lift.</string>
 
     <string name="progress_summary_title">Progress Summary</string>

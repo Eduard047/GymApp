@@ -1,5 +1,8 @@
 package com.example.gymapp.ui.screens
 
+import com.example.gymapp.util.TrainingProfile
+import com.example.gymapp.ui.components.TrainingSettingsSummaryRow
+import com.example.gymapp.ui.components.TrainingSettingsSheet
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -127,6 +130,8 @@ internal fun ProfileScreen(
     focusedLiveRoomId: String? = null,
     focusRequest: ProfileFocusRequest? = null,
     onFocusRequestHandled: () -> Unit = {},
+    trainingProfile: TrainingProfile? = null,
+    onTrainingProfileChange: (TrainingProfile) -> Unit = {},
     cloudSyncStatus: CloudSyncUiStatus?,
     onSyncNow: () -> Unit,
     cloudSyncChoiceRequired: Boolean,
@@ -165,6 +170,14 @@ internal fun ProfileScreen(
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
     var showLocalProfileDeletion by rememberSaveable { mutableStateOf(false) }
     var selectedSection by rememberSaveable { mutableStateOf(ProfileSection.Training) }
+    var showTrainingSettings by rememberSaveable { mutableStateOf(false) }
+    if (showTrainingSettings && trainingProfile != null) {
+        TrainingSettingsSheet(
+            profile = trainingProfile,
+            onProfileChange = onTrainingProfileChange,
+            onDismiss = { showTrainingSettings = false }
+        )
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -290,7 +303,9 @@ internal fun ProfileScreen(
                     onExportDiagnostics = onExportDiagnostics,
                     onOpenImport = onOpenImport,
                     onShowTutorial = onShowTutorial,
-                    onRetryLoad = onRetryLoad
+                    onRetryLoad = onRetryLoad,
+                    trainingProfile = trainingProfile,
+                    onEditTrainingSettings = { showTrainingSettings = true }
                 )
             }
         }
@@ -506,7 +521,9 @@ private fun LazyListScope.profileSettingsContent(
     onExportDiagnostics: () -> Unit,
     onOpenImport: () -> Unit,
     onShowTutorial: () -> Unit,
-    onRetryLoad: () -> Unit
+    onRetryLoad: () -> Unit,
+    trainingProfile: TrainingProfile?,
+    onEditTrainingSettings: () -> Unit
 ) {
     if (accountState.isLoading) {
         item {
@@ -582,6 +599,19 @@ private fun LazyListScope.profileSettingsContent(
                 enabled = !isAccountActionLoading,
                 onDeleteProfile = onDeleteLocalProfile
             )
+        }
+    }
+    if (trainingProfile != null) {
+        // The one place every training-profile field is edited; other screens link here.
+        item { SettingsSectionHeader(stringResource(R.string.training_settings_title)) }
+        item {
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
+                TrainingSettingsSummaryRow(
+                    profile = trainingProfile,
+                    onEdit = onEditTrainingSettings,
+                    modifier = Modifier.padding(horizontal = GymSpacing.Large, vertical = GymSpacing.XSmall)
+                )
+            }
         }
     }
     item { SettingsSectionHeader(stringResource(R.string.profile_settings_data)) }

@@ -8,6 +8,9 @@ FIRST VIEWPORT: A large asymmetric lens leads; core facts live inside it and the
 FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. Android structure remains Material 3 with native back, insets, semantics, and motion.
 */
 
+import com.example.gymapp.util.TrainingProfile
+import com.example.gymapp.ui.components.TrainingSettingsSummaryRow
+import com.example.gymapp.ui.components.TrainingSettingsSheet
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -154,6 +157,8 @@ fun WorkoutListScreen(
     onCancelRetainedPlan: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
     tutorialAnchors: TutorialAnchorRegistry? = null,
+    trainingProfile: TrainingProfile = TrainingProfile(),
+    onTrainingProfileChange: (TrainingProfile) -> Unit = {},
     friendEntryState: TodayFriendEntryState = TodayFriendEntryState.Hidden,
     friendChoices: List<TodayFriendChoice> = emptyList(),
     onFriendEntryAction: (TodayFriendTapAction) -> Unit = {},
@@ -238,6 +243,8 @@ fun WorkoutListScreen(
                         onEdit = onEditFirstWorkout,
                         onCreateManually = onSkipFirstWorkout,
                         tutorialAnchors = tutorialAnchors,
+                        trainingProfile = trainingProfile,
+                        onTrainingProfileChange = onTrainingProfileChange,
                         friendPill = { friendPill(false) }
                     )
                 }
@@ -1543,11 +1550,22 @@ private fun FirstWorkoutActivationCard(
     onEdit: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
     onCreateManually: () -> Unit,
     tutorialAnchors: TutorialAnchorRegistry?,
+    trainingProfile: TrainingProfile = TrainingProfile(),
+    onTrainingProfileChange: (TrainingProfile) -> Unit = {},
     friendPill: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var goal by rememberSaveable { mutableStateOf(TrainingGoal.AestheticFatLoss) }
-    var days by rememberSaveable { mutableStateOf(4) }
+    // Goal and weekly target come from the stored training settings, edited in one place.
+    val goal = trainingProfile.goal
+    val days = trainingProfile.workoutsPerWeek
+    var showTrainingSettings by rememberSaveable { mutableStateOf(false) }
+    if (showTrainingSettings) {
+        TrainingSettingsSheet(
+            profile = trainingProfile,
+            onProfileChange = onTrainingProfileChange,
+            onDismiss = { showTrainingSettings = false }
+        )
+    }
     var effort by rememberSaveable { mutableStateOf(FirstWorkoutEffort.Standard) }
     var showRecommendationOptions by rememberSaveable { mutableStateOf(false) }
     val darkTheme = isSystemInDarkTheme()
@@ -1659,29 +1677,21 @@ private fun FirstWorkoutActivationCard(
                 Text(stringResource(R.string.activation_adjust_recommendation))
             }
             if (showRecommendationOptions) {
-                ActivationChoiceRow(
-                    label = stringResource(R.string.activation_goal),
-                    options = TrainingGoal.entries.map { value ->
-                        value to stringResource(value.labelResource())
-                    },
-                    selected = goal,
-                    onSelected = { goal = it },
-                    columns = 2
+                TrainingSettingsSummaryRow(
+                    profile = trainingProfile,
+                    onEdit = { showTrainingSettings = true },
+                    textColor = Color.White.copy(alpha = 0.86f),
+                    linkColor = Color.White
                 )
-                ActivationChoiceRow(
-                    label = stringResource(R.string.activation_days),
-                    options = (2..6).map { value -> value to value.toString() },
-                    selected = days,
-                    onSelected = { days = it }
-                )
+                // Short one-word labels keep the three efforts in one equal-width row.
                 ActivationChoiceRow(
                     label = stringResource(R.string.activation_effort),
                     options = listOf(
                         FirstWorkoutEffort.Recovery to
-                            stringResource(R.string.smart_effort_recovery),
+                            stringResource(R.string.activation_effort_light),
                         FirstWorkoutEffort.Standard to
-                            stringResource(R.string.smart_effort_standard),
-                        FirstWorkoutEffort.Hard to stringResource(R.string.smart_effort_hard)
+                            stringResource(R.string.activation_effort_normal),
+                        FirstWorkoutEffort.Hard to stringResource(R.string.activation_effort_hard)
                     ),
                     selected = effort,
                     onSelected = { effort = it }
@@ -1914,13 +1924,6 @@ private fun SmartWorkoutEffortAdjustment?.recoveryReasonResource(): Int = when (
     SmartWorkoutEffortAdjustment.ReadinessLowRecovery ->
         R.string.smart_effort_adjustment_readiness_low
     else -> R.string.smart_reason_recovery_effort
-}
-
-private fun TrainingGoal.labelResource(): Int = when (this) {
-    TrainingGoal.AestheticFatLoss -> R.string.training_goal_aesthetic_fat_loss
-    TrainingGoal.MuscleGain -> R.string.training_goal_muscle_gain
-    TrainingGoal.Strength -> R.string.training_goal_strength
-    TrainingGoal.Balanced -> R.string.training_goal_balanced
 }
 
 @Composable
