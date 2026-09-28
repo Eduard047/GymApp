@@ -2678,3 +2678,105 @@ test("the active workout screen keeps the screen on and releases it when left", 
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(events, ["request:screen", "release"]);
 });
+
+test("the train-with-a-friend pill follows the shared rules", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const entry = (isCloudAccount, friendCount, pendingInvitationCount, hasBlockingLiveWorkout) =>
+      todayFriendEntryState({ isCloudAccount, friendCount, pendingInvitationCount, hasBlockingLiveWorkout });
+    return JSON.stringify({
+      local: todayFriendTapAction(entry(false, 0, 0, false), false),
+      noFriends: todayFriendTapAction(entry(true, 0, 0, false), false),
+      pick: todayFriendTapAction(entry(true, 2, 0, false), false),
+      invite: entry(true, 2, 3, false),
+      inviteTap: todayFriendTapAction(entry(true, 2, 3, false), false),
+      live: entry(true, 2, 1, true).kind,
+      soloBlocked: todayFriendTapAction(entry(true, 2, 0, false), true),
+      soloInvite: todayFriendTapAction(entry(true, 2, 1, false), true)
+    });
+  })()`, context));
+
+  assert.equal(result.local, "open-account");
+  assert.equal(result.noFriends, "open-friends");
+  assert.equal(result.pick, "pick-friend");
+  assert.deepEqual(result.invite, { kind: "invite", count: 3 });
+  assert.equal(result.inviteTap, "open-invites");
+  assert.equal(result.live, "hidden");
+  assert.equal(result.soloBlocked, "blocked");
+  assert.equal(result.soloInvite, "open-invites");
+});
+
+test("Today shows the friend pill to beginners and during a solo workout", async () => {
+  const { context } = loadContext();
+  vm.runInContext(`state.language = "ru"`, context);
+  assert.match(vm.runInContext("activationCard()", context), /data-action="today-friend"[^>]*>.*<span>С другом<\/span>/);
+
+  await startTwoSetWorkout(context);
+  vm.runInContext(`state.language = "en"; nav = [{ name: "workouts" }]; modal = null;`, context);
+  const markup = vm.runInContext("focusLensCard(state.sessions)", context);
+  assert.match(markup, /class="today-friend-pill "/);
+  assert.match(markup, /Finish your current workout before starting a live workout with a friend/);
+  assert.equal(vm.runInContext("openTodayFriendEntry()", context), true);
+  assert.equal(vm.runInContext("route().name", context), "workouts");
+});
+
+test("a local account's friend pill opens cloud sign-in in Profile", () => {
+  const { context } = loadContext();
+  vm.runInContext(`nav = [{ name: "workouts" }]; modal = null; profileHubSection = "settings";`, context);
+  assert.equal(vm.runInContext("openTodayFriendEntry()", context), true);
+  assert.equal(vm.runInContext("route().name", context), "leaderboard");
+  assert.equal(vm.runInContext("profileHubSection", context), "training");
+});
+
+test("picking a friend from Today opens the live workout editor with that friend", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const userId = "11111111-2222-4333-8444-555555555555";
+    const profileId = "p_" + "a".repeat(32);
+    activeAccount = { ...activeAccount, remote: "supabase", userId };
+    loadRemoteSession = () => ({ user: { id: userId } });
+    remoteAuthEnabled = () => true;
+    persistWorkoutDraft = () => true;
+    socialState.dashboard = { friends: [{ profileId, displayName: "Саша", friendshipId: "f1", friendshipRevision: 4 }] };
+    liveWorkoutState.inbox = { invitations: [], rooms: [] };
+    nav = [{ name: "workouts" }];
+    modal = null;
+    const pill = activationCard();
+    const opened = openTodayFriendEntry();
+    const picker = modalMarkup();
+    const stale = startLiveWorkoutDraftForFriend(profileId, () => false);
+    const picked = pickTodayFriend({ dataset: { profileId } });
+    return JSON.stringify({
+      pill: /today-friend-pill/.test(pill),
+      opened,
+      modalAfterOpen: picker.includes("Саша") && picker.includes('data-action="today-friend-pick"'),
+      stale,
+      picked,
+      recipient: workoutDraftLiveRecipient,
+      route: route().name,
+      modal
+    });
+  })()`, context));
+
+  assert.equal(result.pill, true);
+  assert.equal(result.opened, true);
+  assert.equal(result.modalAfterOpen, true);
+  assert.equal(result.stale, false);
+  assert.equal(result.picked, true);
+  assert.deepEqual(result.recipient, { profileId: "p_" + "a".repeat(32), friendshipId: "f1", friendshipRevision: 4 });
+  assert.equal(result.route, "add");
+  assert.equal(result.modal, null);
+});
+
+test("a live room hides the friend pill", () => {
+  const { context } = loadContext();
+  const markup = vm.runInContext(`(() => {
+    const userId = "11111111-2222-4333-8444-555555555555";
+    activeAccount = { ...activeAccount, remote: "supabase", userId };
+    loadRemoteSession = () => ({ user: { id: userId } });
+    remoteAuthEnabled = () => true;
+    liveWorkoutState.inbox = { invitations: [], rooms: [{ roomId: "r1", status: "active" }] };
+    return activationCard();
+  })()`, context);
+  assert.doesNotMatch(markup, /today-friend-pill/);
+});

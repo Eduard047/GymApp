@@ -289,7 +289,9 @@ test("completed Today takes precedence and offers one follow-up action", () => {
   })()`, sandbox);
   assert.match(markup, /TODAY COMPLETE/);
   assert.match(markup, /data-action="open-blank-add"/);
-  assert.equal((markup.match(/data-action=/g) || []).length, 1);
+  // The "With a friend" pill is a separate entry point, not a new-plan action.
+  assert.match(markup, /data-action="today-friend"/);
+  assert.equal((markup.match(/data-action="(?!today-friend")/g) || []).length, 1);
   assert.doesNotMatch(markup, /start-recommended|edit-recommended|Train anyway|data-action="open-add"/);
 });
 
@@ -319,7 +321,7 @@ test("retained drafts visibly override every Today and first-activation new-plan
     assert.match(markup, /Continue plan/);
     assert.match(markup, /Cancel plan/);
     assert.match(markup, /data-action="cancel-retained-plan"/);
-    assert.equal((markup.match(/data-action=/g) || []).length, 2);
+    assert.equal((markup.match(/data-action="(?!today-friend")/g) || []).length, 2);
     assert.doesNotMatch(markup, /Add another workout|Start plan|Train anyway|Create manually/);
   }
 });

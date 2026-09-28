@@ -5530,3 +5530,41 @@ textarea:focus {
 .friend-ghost svg { width: 14px; height: 14px; flex: none; }
 
 .active-workout-screen-note { margin: 4px 0 0; font-size: 12px; line-height: 16px; }
+
+.today-friend-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 18px;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.today-friend-pill.invite {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.today-friend-pill:hover,
+.today-friend-pill:focus-visible { background: rgba(255, 255, 255, 0.18); }
+
+.today-friend-badge {
+  min-width: 22px;
+  padding: 2px 6px;
+  color: #123560;
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.today-friend-picker { display: grid; gap: 12px; }
+.today-friend-picker h2 { margin: 0; }

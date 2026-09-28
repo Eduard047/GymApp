@@ -11640,6 +11640,7 @@ function focusLensCard(sessions) {
       ${focusLensDetailsMarkup()}
       <div class="focus-lens-actions"><button class="focus-lens-action" data-action="continue-active-workout" data-coach-target="today-primary">${svg("fitness", "small-icon")}<span>${tx("Continue workout", "Продовжити тренування")}</span></button></div>
       <details class="focus-lens-more"><summary>${tx3("More workout options", "Інші дії", "Другие действия")}</summary><button class="focus-lens-discard" data-action="discard-active-workout">${tx("Discard", "Відкинути")}</button></details>
+      ${todayFriendPillMarkup(true)}
     </section>`;
   }
   const completedToday = completedWorkoutsToday();
@@ -11651,6 +11652,7 @@ function focusLensCard(sessions) {
         <p>${tx3("Today's work is saved in your history.", "Сьогоднішнє тренування збережено в історії.", "Сегодняшняя тренировка сохранена в истории.")}</p>
       </div>
       ${hasRetainedDraft ? continuePlanAction : `<div class="focus-lens-actions"><button class="focus-lens-edit" data-action="open-blank-add" data-coach-target="today-primary">${svg("add", "small-icon")}<span>${tx3("Add another workout", "Додати ще одне тренування", "Добавить ещё одну тренировку")}</span></button></div>`}
+      ${todayFriendPillMarkup()}
     </section>`;
   }
   const decision = smartWeeklyDecision();
@@ -11668,6 +11670,7 @@ function focusLensCard(sessions) {
     ${launch ? smartPlanMetricsMarkup(launch.plan) : ""}
     ${focusLensDetailsMarkup({ includeManualAction: !hasRetainedDraft })}
     ${hasRetainedDraft ? continuePlanAction : launch ? `<div class="focus-lens-actions plan-actions"><button class="focus-lens-action ${resting ? "secondary" : ""}" data-action="start-recommended" data-index="0" data-coach-target="today-primary">${svg("fitness", "small-icon")}<span>${resting ? tx("Train anyway", "Усе одно тренуватися") : tx("Start plan", "Почати план")}</span></button><button class="focus-lens-edit" data-action="edit-recommended" data-index="0">${tx("Edit plan", "Редагувати план")}</button></div>` : `<button class="focus-lens-action" data-action="open-add" data-coach-target="today-primary">${svg("add", "small-icon")}<span>${tx("Edit plan", "Редагувати план")}</span></button>`}
+    ${todayFriendPillMarkup()}
   </section>`;
 }
 
@@ -11687,7 +11690,7 @@ async function startPreparedSmartWorkout(launch) {
 
 function activationCard() {
   if (workoutDraft) {
-    return `<section class="panel highlighted activation-card" data-coach-target="today-focus"><div class="activation-plan-heading"><span class="eyebrow">${tx3("SAVED PLAN", "ЗБЕРЕЖЕНИЙ ПЛАН", "СОХРАНЁННЫЙ ПЛАН")}</span><h2>${tx3("Continue your plan", "Продовж свій план", "Продолжи свой план")}</h2></div><div class="activation-actions"><button class="button full" data-action="activation-edit" data-coach-target="today-primary">${tx3("Continue plan", "Продовжити план", "Продолжить план")}</button><button class="button secondary full" data-action="cancel-retained-plan">${tx3("Cancel plan", "Скасувати план", "Отменить план")}</button></div></section>`;
+    return `<section class="panel highlighted activation-card" data-coach-target="today-focus"><div class="activation-plan-heading"><span class="eyebrow">${tx3("SAVED PLAN", "ЗБЕРЕЖЕНИЙ ПЛАН", "СОХРАНЁННЫЙ ПЛАН")}</span><h2>${tx3("Continue your plan", "Продовж свій план", "Продолжи свой план")}</h2></div><div class="activation-actions"><button class="button full" data-action="activation-edit" data-coach-target="today-primary">${tx3("Continue plan", "Продовжити план", "Продолжить план")}</button><button class="button secondary full" data-action="cancel-retained-plan">${tx3("Cancel plan", "Скасувати план", "Отменить план")}</button></div>${todayFriendPillMarkup()}</section>`;
   }
   const draft = activationDraftForActiveAccount() || defaultActivationDraft();
   pendingActivationPlan = prepareFirstActivationPlan(draft);
@@ -11707,6 +11710,7 @@ function activationCard() {
       <div class="chip-row">${efforts.map(effort => `<button class="chip buttonlike ${draft.effort === effort ? "selected" : ""}" data-action="activation-option" data-field="effort" data-value="${escapeAttr(effort)}" aria-pressed="${draft.effort === effort}">${smartWorkoutEffortLabel(effort)}</button>`).join("")}</div>
       <button class="button ghost full" data-action="activation-edit" ${plan ? "" : "disabled"}>${tx3("Review exercises", "Переглянути вправи", "Посмотреть упражнения")}</button>
     </div></details>
+    ${todayFriendPillMarkup()}
   </section>`;
 }
 
@@ -22279,8 +22283,116 @@ function boundWorkoutDraftLiveRecipient(value = workoutDraftLiveRecipient) {
   };
 }
 
+const TODAY_FRIEND_BLOCKING_ROOM_STATUSES = new Set(["waiting", "ready", "active"]);
+
+// The "With a friend" pill on Today, the same rules as iOS and Android: a live workout hides it,
+// a pending invitation wins over everything else, then cloud sign-in, then adding friends.
+function todayFriendEntryState({ isCloudAccount, friendCount, pendingInvitationCount, hasBlockingLiveWorkout }) {
+  if (hasBlockingLiveWorkout) return { kind: "hidden" };
+  if (pendingInvitationCount > 0) return { kind: "invite", count: pendingInvitationCount };
+  if (!isCloudAccount) return { kind: "account" };
+  if (!(friendCount > 0)) return { kind: "friends" };
+  return { kind: "pick" };
+}
+
+// A solo workout keeps the pill visible, but a tap only asks to finish it first,
+// unless an invitation is waiting, which still opens the invitations.
+function todayFriendTapAction(entry, soloWorkoutInProgress) {
+  if (soloWorkoutInProgress) return entry.kind === "invite" ? "open-invites" : "blocked";
+  return {
+    account: "open-account",
+    friends: "open-friends",
+    pick: "pick-friend",
+    invite: "open-invites"
+  }[entry.kind] || "none";
+}
+
+function currentTodayFriendEntryState() {
+  const isCloudAccount = Boolean(remoteAuthEnabled() && activeAccount?.remote === "supabase" &&
+    loadRemoteSession()?.user?.id);
+  const inbox = isCloudAccount ? liveWorkoutState.inbox : null;
+  return todayFriendEntryState({
+    isCloudAccount,
+    friendCount: isCloudAccount ? socialState.dashboard?.friends?.length || 0 : 0,
+    pendingInvitationCount: inbox?.invitations?.length || 0,
+    hasBlockingLiveWorkout: isCloudAccount && (Boolean(liveWorkoutBinding?.roomId) ||
+      Boolean(inbox?.rooms?.some(room => TODAY_FRIEND_BLOCKING_ROOM_STATUSES.has(room.status))))
+  });
+}
+
+function todayFriendPillMarkup(soloWorkoutInProgress = false) {
+  const entry = currentTodayFriendEntryState();
+  if (entry.kind === "hidden") return "";
+  const invite = entry.kind === "invite";
+  const title = invite
+    ? tx3("Invitation", "Запрошення", "Приглашение")
+    : tx3("With a friend", "З другом", "С другом");
+  const hint = soloWorkoutInProgress && !invite
+    ? tx3("Finish your current workout before starting a live workout with a friend", "Заверши поточне тренування, перш ніж почати живе тренування з другом", "Заверши текущую тренировку, прежде чем начать живую тренировку с другом")
+    : entry.kind === "account"
+      ? tx3("Opens cloud sign-in in your profile", "Відкриває вхід у хмарний акаунт у профілі", "Открывает вход в облачный аккаунт в профиле")
+      : entry.kind === "friends"
+        ? tx3("Opens your friends to add a friend", "Відкриває друзів, щоб додати друга", "Открывает друзей, чтобы добавить друга")
+        : invite
+          ? tx3("Opens your pending live workout invitation", "Відкриває запрошення на живе тренування, що очікує", "Открывает ожидающее приглашение на живую тренировку")
+          : tx3("Choose a friend to start a live workout together", "Обери друга, щоб почати спільне живе тренування", "Выбери друга, чтобы начать совместную живую тренировку");
+  return `<button class="today-friend-pill ${invite ? "invite" : ""}" data-action="today-friend" aria-label="${escapeAttr(`${title}. ${hint}`)}">${svg("group", "small-icon")}<span>${title}</span>${invite ? `<span class="today-friend-badge" aria-hidden="true">${entry.count}</span>` : ""}</button>`;
+}
+
+function openTodayFriendEntry() {
+  if (route().name !== "workouts" || modal) return false;
+  const action = todayFriendTapAction(currentTodayFriendEntryState(), Boolean(activeWorkout));
+  if (action === "blocked") {
+    showToast(tx3(
+      "Finish your current workout before starting a live workout with a friend.",
+      "Заверши поточне тренування, перш ніж почати живе тренування з другом.",
+      "Заверши текущую тренировку, прежде чем начать живую тренировку с другом."
+    ));
+    return true;
+  }
+  if (action === "pick-friend") {
+    modal = { type: "today-friend-picker" };
+    render();
+    return true;
+  }
+  const target = {
+    "open-account": ".friends-sign-in-card",
+    "open-friends": ".social-code-card",
+    "open-invites": ".profile-urgent-stack"
+  }[action];
+  if (!target) return false;
+  nav = [{ name: "leaderboard" }];
+  profileHubSection = "training";
+  workoutDetailEditSessionId = null;
+  replaceNavigationHistory();
+  routeScrollPositions.delete("leaderboard:root");
+  render();
+  requestAnimationFrame(() => {
+    if (route().name !== "leaderboard") return;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+    app.querySelector(target)?.scrollIntoView({ block: "start", behavior: reducedMotion ? "auto" : "smooth" });
+  });
+  return true;
+}
+
+function todayFriendPickerMarkup() {
+  const friends = socialState.dashboard?.friends || [];
+  const hint = tx3("Starts a live workout with this friend", "Починає живе тренування з цим другом", "Начинает живую тренировку с этим другом");
+  const rows = friends.map(friend => `<button class="leaderboard-row social-friend-row today-friend-row" data-action="today-friend-pick" data-profile-id="${escapeAttr(friend.profileId)}" aria-label="${escapeAttr(`${friend.displayName}. ${hint}`)}"><div>${svg("person", "small-icon")}</div><div><strong>${escapeHtml(friend.displayName)}</strong><small>${escapeHtml(hint)}</small></div>${svg("fitness", "small-icon")}</button>`).join("");
+  return `<div class="today-friend-picker"><h2 id="today-friend-picker-title">${tx3("Train with a friend", "Тренуватися з другом", "Тренироваться с другом")}</h2>${rows ? `<div class="leaderboard-list">${rows}</div>` : `<p class="muted">${tx3("No friends yet", "Поки що немає друзів", "Пока нет друзей")}</p>`}</div>`;
+}
+
+function pickTodayFriend(element) {
+  return startLiveWorkoutDraftForFriend(element.dataset.profileId, () => modal?.type === "today-friend-picker");
+}
+
 function createLiveWorkoutForFriend(element) {
   const profileId = element.dataset.profileId;
+  return startLiveWorkoutDraftForFriend(profileId, () =>
+    modal?.type === "friend-detail" && modal.profileId === profileId);
+}
+
+function startLiveWorkoutDraftForFriend(profileId, modalIsCurrent) {
   const expectedUserId = activeAccount?.userId;
   if (activeWorkout) {
     showToast(tx3(
@@ -22291,7 +22403,7 @@ function createLiveWorkoutForFriend(element) {
     return false;
   }
   const friend = socialState.dashboard?.friends.find(row => row.profileId === profileId);
-  if (modal?.type !== "friend-detail" || modal.profileId !== profileId ||
+  if (!modalIsCurrent() ||
       !SOCIAL_PROFILE_ID_PATTERN.test(profileId || "") || !UUID_PATTERN.test(expectedUserId || "") ||
       activeAccount?.remote !== "supabase" || loadRemoteSession()?.user?.id !== expectedUserId ||
       !friend) return false;
@@ -23737,6 +23849,7 @@ function modalMarkup() {
   if (modal.type === "workout-exercise-picker") return bottomSheet(workoutExercisePickerMarkup(modal));
   if (modal.type === "progress-exercise-picker") return bottomSheet(progressExercisePickerSheetMarkup());
   if (modal.type === "friend-workout-picker") return bottomSheet(friendWorkoutPickerMarkup());
+  if (modal.type === "today-friend-picker") return bottomSheet(todayFriendPickerMarkup(), "today-friend-picker-title");
   if (modal.type === "workout-share") return bottomSheet(workoutShareSheetMarkup());
   if (modal.type === "live-invitation-sent") return bottomSheet(`<div class="live-invitation-sent"><span class="eyebrow">LIVE</span><h2>${tx3("Invitation sent", "Запрошення надіслано", "Приглашение отправлено")}</h2><p class="muted">${tx3("GymApp already notified", "GymApp уже сповістив", "GymApp уже уведомил")} ${escapeHtml(modal.friendName)}. ${tx3("This link only navigates to the account-bound room; it does not grant access.", "Це посилання лише відкриває прив’язану до акаунта кімнату й не надає доступу.", "Эта ссылка только открывает привязанную к аккаунту комнату и не предоставляет доступ.")}</p><input id="live-invitation-link" readonly value="${escapeAttr(modal.url)}"><div class="actions vertical"><button class="button full" data-action="share-live-invitation-link">${svg("share", "small-icon")}${tx3("Share invitation link", "Поділитися посиланням-запрошенням", "Поделиться ссылкой-приглашением")}</button><button class="button ghost full" data-action="close-modal">${tx3("Done", "Готово", "Готово")}</button></div></div>`);
   if (modal.type === "live-workout-room") return bottomSheet(liveWorkoutRoomMarkup());
@@ -24559,6 +24672,8 @@ async function handleAction(action, el) {
     return render();
   }
   if (action === "create-live-workout-for-friend") return createLiveWorkoutForFriend(el);
+  if (action === "today-friend") return openTodayFriendEntry();
+  if (action === "today-friend-pick") return pickTodayFriend(el);
   if (action === "open-friend-workout-picker") return openFriendWorkoutPicker(el);
   if (action === "choose-friend-workout") return chooseFriendWorkout(el);
   if (action === "remove-friend") return removeFriend(el);
