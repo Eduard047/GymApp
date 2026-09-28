@@ -6,42 +6,64 @@ final class LivePersonalRecordsTests: XCTestCase {
     private let squatID = UUID()
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
 
+    private struct PlannedSet {
+        let weight: Double
+        let reps: Int
+        let completed: Bool
+    }
+
+    private struct PlannedExercise {
+        let id: UUID
+        let sets: [PlannedSet]
+    }
+
+    private func done(_ weight: Double, _ reps: Int) -> PlannedSet {
+        PlannedSet(weight: weight, reps: reps, completed: true)
+    }
+
+    private func pending(_ weight: Double, _ reps: Int) -> PlannedSet {
+        PlannedSet(weight: weight, reps: reps, completed: false)
+    }
+
     private func history(
         exerciseID: UUID,
-        _ sets: [(weight: Double, reps: Int)],
+        weights: [Double],
+        reps: [Int],
         daysAgo: Double = 3
     ) -> [ExerciseHistoryEntry] {
         let workoutID = UUID()
-        return sets.enumerated().map { index, set in
-            ExerciseHistoryEntry(
-                setID: UUID(),
-                workoutID: workoutID,
-                sessionDate: start.addingTimeInterval(-daysAgo * 86_400),
-                exerciseID: exerciseID,
-                exerciseName: "Custom lift",
-                weight: set.weight,
-                reps: set.reps,
-                setOrderIndex: index
+        let sessionDate: Date = start.addingTimeInterval(-daysAgo * 86_400)
+        var entries: [ExerciseHistoryEntry] = []
+        for index in weights.indices {
+            entries.append(
+                ExerciseHistoryEntry(
+                    setID: UUID(),
+                    workoutID: workoutID,
+                    sessionDate: sessionDate,
+                    exerciseID: exerciseID,
+                    exerciseName: "Custom lift",
+                    weight: weights[index],
+                    reps: reps[index],
+                    setOrderIndex: index
+                )
             )
         }
+        return entries
     }
 
     /// Each set is completed one minute after the previous one, across exercises
-    /// in list order, unless `completed` is false.
-    private func draft(_ exercises: [(id: UUID, sets: [(weight: Double, reps: Int, completed: Bool)])]) -> ActiveWorkoutDraft {
-        var minute = 0.0
-        let blocks = exercises.map { exercise in
-            ActiveWorkoutExercise(
-                exerciseID: exercise.id,
-                sets: exercise.sets.map { set in
-                    minute += 1
-                    return ActiveWorkoutSet(
-                        weight: set.weight,
-                        reps: set.reps,
-                        completedAt: set.completed ? start.addingTimeInterval(minute * 60) : nil
-                    )
-                }
-            )
+    /// in list order, unless it is pending.
+    private func draft(_ exercises: [PlannedExercise]) -> ActiveWorkoutDraft {
+        var minute: Double = 0
+        var blocks: [ActiveWorkoutExercise] = []
+        for exercise in exercises {
+            var sets: [ActiveWorkoutSet] = []
+            for planned in exercise.sets {
+                minute += 1
+                let completedAt: Date? = planned.completed ? start.addingTimeInterval(minute * 60) : nil
+                sets.append(ActiveWorkoutSet(weight: planned.weight, reps: planned.reps, completedAt: completedAt))
+            }
+            blocks.append(ActiveWorkoutExercise(exerciseID: exercise.id, sets: sets))
         }
         return ActiveWorkoutDraft(startedAt: start, workoutDate: start, exercises: blocks)
     }
@@ -51,56 +73,66 @@ final class LivePersonalRecordsTests: XCTestCase {
             in: draft,
             baselines: LivePersonalRecords.baselines(history: history)
         )
-        return draft.exercises.flatMap(\.sets).map { ids.contains($0.id) }
+        var flags: [Bool] = []
+        for exercise in draft.exercises {
+            for set in exercise.sets {
+                flags.append(ids.contains(set.id))
+            }
+        }
+        return flags
     }
 
     func testHeavierWeightOrBetterEstimateIsARecord() {
-        let past = history(exerciseID: benchID, [(80, 8), (80, 8)])
-        let workout = draft([(benchID, [(85, 3, true), (80, 10, true), (80, 8, true)])])
+        let past = history(exerciseID: benchID, weights: [80, 80], reps: [8, 8])
+        let workout = draft([PlannedExercise(id: benchID, sets: [done(85, 3), done(80, 10), done(80, 8)])])
 
         // 85 kg beats the weight best; 80×10 beats the 80×8 estimate; 80×8 equals it.
         XCTAssertEqual(records(workout, history: past), [true, true, false])
     }
 
     func testEqualToTheBestIsNotARecord() {
-        let past = history(exerciseID: benchID, [(100, 5)])
-        let workout = draft([(benchID, [(100, 5, true)])])
+        let past = history(exerciseID: benchID, weights: [100], reps: [5])
+        let workout = draft([PlannedExercise(id: benchID, sets: [done(100, 5)])])
 
         XCTAssertEqual(records(workout, history: past), [false])
     }
 
     func testFirstSessionOfAnExerciseNeverSetsARecord() {
-        let workout = draft([(benchID, [(60, 8, true), (70, 8, true)])])
+        let workout = draft([PlannedExercise(id: benchID, sets: [done(60, 8), done(70, 8)])])
 
         XCTAssertEqual(records(workout, history: []), [false, false])
     }
 
     func testZeroKilogramSetIsNeverARecord() {
-        let past = history(exerciseID: benchID, [(0, 8)])
-        let workout = draft([(benchID, [(0, 20, true), (5, 8, true)])])
+        let past = history(exerciseID: benchID, weights: [0], reps: [8])
+        let workout = draft([PlannedExercise(id: benchID, sets: [done(0, 20), done(5, 8)])])
 
         XCTAssertEqual(records(workout, history: past), [false, true])
     }
 
     func testLaterSetsCompareAgainstTheBestSoFarInThisWorkout() {
-        let past = history(exerciseID: benchID, [(80, 5)])
-        let workout = draft([(benchID, [(90, 5, true), (85, 5, true), (95, 5, true), (95, 5, true)])])
+        let past = history(exerciseID: benchID, weights: [80], reps: [5])
+        let workout = draft([
+            PlannedExercise(id: benchID, sets: [done(90, 5), done(85, 5), done(95, 5), done(95, 5)])
+        ])
 
         XCTAssertEqual(records(workout, history: past), [true, false, true, false])
     }
 
     func testIncompleteSetsAndOtherExercisesDoNotInterfere() {
-        let past = history(exerciseID: benchID, [(80, 5)]) + history(exerciseID: squatID, [(140, 5)])
+        let benchHistory = history(exerciseID: benchID, weights: [80], reps: [5])
+        let squatHistory = history(exerciseID: squatID, weights: [140], reps: [5])
+        let past: [ExerciseHistoryEntry] = benchHistory + squatHistory
         let workout = draft([
-            (benchID, [(120, 5, false), (82.5, 5, true)]),
-            (squatID, [(100, 5, true)])
+            PlannedExercise(id: benchID, sets: [pending(120, 5), done(82.5, 5)]),
+            PlannedExercise(id: squatID, sets: [done(100, 5)])
         ])
 
         XCTAssertEqual(records(workout, history: past), [false, true, false])
     }
 
     func testCompletionOrderDecidesWhichSetHoldsTheRecord() {
-        let past = history(exerciseID: benchID, [(80, 5)])
+        let past = history(exerciseID: benchID, weights: [80], reps: [5])
         let first = ActiveWorkoutSet(weight: 90, reps: 5, completedAt: start.addingTimeInterval(120))
         let second = ActiveWorkoutSet(weight: 90, reps: 5, completedAt: start.addingTimeInterval(60))
         let workout = ActiveWorkoutDraft(
@@ -118,11 +150,13 @@ final class LivePersonalRecordsTests: XCTestCase {
     }
 
     func testBaselinesUseHistoryBestsAndTheSharedEstimate() {
-        let past = history(exerciseID: benchID, [(100, 1), (80, 10)])
+        let past = history(exerciseID: benchID, weights: [100, 80], reps: [1, 10])
         let baseline = LivePersonalRecords.baselines(history: past)[benchID]
 
         XCTAssertEqual(baseline?.bestWeight, 100)
-        XCTAssertEqual(baseline?.bestEstimatedOneRepMax ?? 0, 80 * (1 + 10.0 / 30), accuracy: 1e-9)
+        let expectedEstimate: Double = 80.0 * (1.0 + 10.0 / 30.0)
+        let actualEstimate: Double = baseline?.bestEstimatedOneRepMax ?? 0
+        XCTAssertEqual(actualEstimate, expectedEstimate, accuracy: 1e-9)
         XCTAssertEqual(past[1].estimatedOneRepMax, GymOneRepMax.estimate(weight: 80, reps: 10))
     }
 }

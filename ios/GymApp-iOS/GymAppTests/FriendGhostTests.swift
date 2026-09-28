@@ -3,36 +3,61 @@ import XCTest
 
 @MainActor
 final class FriendGhostTests: XCTestCase {
-    private func page(
-        _ name: String,
-        _ workouts: [(startedAt: String, day: String, exercises: [SocialFriendWorkoutExercise])]
-    ) -> SocialFriendWorkoutPage {
-        SocialFriendWorkoutPage(
-            profileID: "p_" + String(repeating: "a", count: 32),
-            displayName: name,
-            activityRevision: nil,
-            items: workouts.enumerated().map { index, workout in
+    private struct WorkoutFixture {
+        let startedAt: String
+        let day: String
+        let exercises: [SocialFriendWorkoutExercise]
+    }
+
+    private func workout(
+        _ startedAt: String,
+        _ day: String,
+        _ exercises: [SocialFriendWorkoutExercise]
+    ) -> WorkoutFixture {
+        WorkoutFixture(startedAt: startedAt, day: day, exercises: exercises)
+    }
+
+    private func page(_ name: String, _ workouts: [WorkoutFixture]) -> SocialFriendWorkoutPage {
+        let profileID: String = "p_" + String(repeating: "a", count: 32)
+        var items: [SocialFriendWorkout] = []
+        for (index, fixture) in workouts.enumerated() {
+            var setCount = 0
+            for exercise in fixture.exercises {
+                setCount += exercise.sets.count
+            }
+            items.append(
                 SocialFriendWorkout(
                     workoutID: "w\(index)-\(name)",
-                    startedAt: workout.startedAt,
-                    workoutDay: workout.day,
-                    exerciseCount: workout.exercises.count,
-                    setCount: workout.exercises.reduce(0) { $0 + $1.sets.count },
+                    startedAt: fixture.startedAt,
+                    workoutDay: fixture.day,
+                    exerciseCount: fixture.exercises.count,
+                    setCount: setCount,
                     durationSeconds: nil,
                     truncated: false,
-                    exercises: workout.exercises
+                    exercises: fixture.exercises
                 )
-            },
+            )
+        }
+        return SocialFriendWorkoutPage(
+            profileID: profileID,
+            displayName: name,
+            activityRevision: nil,
+            items: items,
             nextCursor: nil
         )
     }
 
-    private func exercise(_ catalogKey: String?, _ name: String, _ sets: [(Double, Int)]) -> SocialFriendWorkoutExercise {
-        SocialFriendWorkoutExercise(
-            catalogKey: catalogKey,
-            name: name,
-            sets: sets.map { SocialFriendWorkoutSet(weightKg: $0.0, reps: $0.1) }
-        )
+    private func exercise(
+        _ catalogKey: String?,
+        _ name: String,
+        weights: [Double],
+        reps: [Int]
+    ) -> SocialFriendWorkoutExercise {
+        var sets: [SocialFriendWorkoutSet] = []
+        for index in weights.indices {
+            sets.append(SocialFriendWorkoutSet(weightKg: weights[index], reps: reps[index]))
+        }
+        return SocialFriendWorkoutExercise(catalogKey: catalogKey, name: name, sets: sets)
     }
 
     func testBuiltInExercisesMatchByCatalogKeyAndCustomOnesByNormalizedName() {
@@ -47,15 +72,16 @@ final class FriendGhostTests: XCTestCase {
     }
 
     func testLatestWorkoutWinsAcrossFriendsAndTheTopSetIsShown() {
+        let sashaBench = exercise("bench_press", "Bench Press", weights: [80, 85, 85], reps: [8, 8, 6])
+        let sashaOlderBench = exercise("bench_press", "Bench Press", weights: [90], reps: [3])
         let sasha = page("Саша", [
-            ("2026-09-25T10:00:00Z", "2026-09-25", [exercise("bench_press", "Bench Press", [(80, 8), (85, 8), (85, 6)])]),
-            ("2026-09-20T10:00:00Z", "2026-09-20", [exercise("bench_press", "Bench Press", [(90, 3)])])
+            workout("2026-09-25T10:00:00Z", "2026-09-25", [sashaBench]),
+            workout("2026-09-20T10:00:00Z", "2026-09-20", [sashaOlderBench])
         ])
+        let olenaBench = exercise("bench_press", "Bench Press", weights: [60], reps: [10])
+        let olenaKickback = exercise(nil, "Cable Kickback", weights: [15], reps: [12])
         let olena = page("Олена", [
-            ("2026-09-22T10:00:00.123Z", "2026-09-22", [
-                exercise("bench_press", "Bench Press", [(60, 10)]),
-                exercise(nil, "Cable Kickback", [(15, 12)])
-            ])
+            workout("2026-09-22T10:00:00.123Z", "2026-09-22", [olenaBench, olenaKickback])
         ])
 
         let ghosts = FriendGhosts.ghosts(from: [olena, sasha])
@@ -67,10 +93,13 @@ final class FriendGhostTests: XCTestCase {
     }
 
     func testEmptyExercisesAndUnparseableTimestampsAreSkipped() {
-        let ghosts = FriendGhosts.ghosts(from: [page("Саша", [
-            ("not-a-date", "2026-09-25", [exercise("squat", "Squat", [(100, 5)])]),
-            ("2026-09-24T10:00:00Z", "2026-09-24", [exercise("deadlift", "Deadlift", [])])
-        ])])
+        let squat = exercise("squat", "Squat", weights: [100], reps: [5])
+        let emptyDeadlift = exercise("deadlift", "Deadlift", weights: [], reps: [])
+        let sasha = page("Саша", [
+            workout("not-a-date", "2026-09-25", [squat]),
+            workout("2026-09-24T10:00:00Z", "2026-09-24", [emptyDeadlift])
+        ])
+        let ghosts = FriendGhosts.ghosts(from: [sasha])
 
         XCTAssertTrue(ghosts.isEmpty)
     }
@@ -106,18 +135,32 @@ final class FriendGhostTests: XCTestCase {
     }
 
     func testAtMostTenFriendsAreQueriedMostRecentlyActiveFirst() {
-        let friends = (0 ..< 12).map { index in
-            SocialFriendSummary(
-                friendshipID: "f\(index)",
-                profileID: "p_" + String(repeating: String(index % 10), count: 32),
-                displayName: "Friend \(index)",
-                xp: nil,
-                level: nil,
-                workouts: nil,
-                progressShared: true,
-                statsAvailable: true,
-                progressUpdatedAt: index == 11 ? "2026-09-27T10:00:00Z" : (index == 0 ? nil : "2026-09-0\(index % 9 + 1)T10:00:00Z"),
-                friendshipRevision: 1
+        var friends: [SocialFriendSummary] = []
+        for index in 0 ..< 12 {
+            let updatedAt: String?
+            if index == 11 {
+                updatedAt = "2026-09-27T10:00:00Z"
+            } else if index == 0 {
+                updatedAt = nil
+            } else {
+                let day: Int = index % 9 + 1
+                updatedAt = "2026-09-0\(day)T10:00:00Z"
+            }
+            let digit: String = String(index % 10)
+            let profileID: String = "p_" + String(repeating: digit, count: 32)
+            friends.append(
+                SocialFriendSummary(
+                    friendshipID: "f\(index)",
+                    profileID: profileID,
+                    displayName: "Friend \(index)",
+                    xp: nil,
+                    level: nil,
+                    workouts: nil,
+                    progressShared: true,
+                    statsAvailable: true,
+                    progressUpdatedAt: updatedAt,
+                    friendshipRevision: 1
+                )
             )
         }
 
