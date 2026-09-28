@@ -290,6 +290,7 @@ final class RestTimerManager: ObservableObject {
         content.body = gymText(
             "Time for the next \(title) set.",
             "Час наступного підходу: \(title).",
+            "Время следующего подхода: \(title).",
             languageCode: gymCurrentLanguageCode()
         )
         content.sound = .default

@@ -376,7 +376,7 @@ struct ExercisesView: View {
                 }
                 ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
                     filterChip(
-                        title: gymText(muscle.titleEn, muscle.titleUk, languageCode: gymCurrentLanguageCode()),
+                        title: gymText(muscle.titleEn, muscle.titleUk, muscle.titleRu, languageCode: gymCurrentLanguageCode()),
                         isSelected: muscleFilter == muscle.id
                     ) {
                         muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
@@ -486,6 +486,7 @@ struct ExercisesView: View {
                     gymText(
                         "More actions for \(displayName)",
                         "Більше дій для «\(displayName)»",
+                        "Другие действия для «\(displayName)»",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
@@ -664,6 +665,7 @@ struct ExercisesView: View {
                     gymText(
                         "Delete \(target.displayName)?",
                         "Видалити «\(target.displayName)»?",
+                        "Удалить «\(target.displayName)»?",
                         languageCode: languageCode
                     )
                 ),
@@ -954,6 +956,7 @@ private struct ExerciseHistorySheet: View {
                                             gymText(
                                                 "Set \(entry.setOrderIndex + 1)",
                                                 "Підхід \(entry.setOrderIndex + 1)",
+                                                "Подход \(entry.setOrderIndex + 1)",
                                                 languageCode: gymCurrentLanguageCode()
                                             )
                                         )
@@ -971,6 +974,7 @@ private struct ExerciseHistorySheet: View {
                                             gymText(
                                                 "Volume \(entry.volume.formatted(.number.precision(.fractionLength(0...1)))) kg",
                                                 "Обсяг \(entry.volume.formatted(.number.precision(.fractionLength(0...1)))) кг",
+                                                "Объём \(entry.volume.formatted(.number.precision(.fractionLength(0...1)))) кг",
                                                 languageCode: gymCurrentLanguageCode()
                                             )
                                         )
@@ -983,6 +987,7 @@ private struct ExerciseHistorySheet: View {
                                     gymText(
                                         "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), set \(entry.setOrderIndex + 1), \(entry.weight.formatted()) kilograms, \(entry.reps) repetitions",
                                         "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), підхід \(entry.setOrderIndex + 1), \(entry.weight.formatted()) кілограмів, повторень: \(entry.reps)",
+                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), подход \(entry.setOrderIndex + 1), вес: \(entry.weight.formatted()) кг, повторений: \(entry.reps)",
                                         languageCode: gymCurrentLanguageCode()
                                     )
                                 )
@@ -1073,6 +1078,7 @@ private struct ExerciseMuscleMappingSheet: View {
                         let localizedMuscleTitle = gymText(
                             muscle.titleEn,
                             muscle.titleUk,
+                            muscle.titleRu,
                             languageCode: languageCode
                         )
                         GymPanel(
@@ -1097,6 +1103,7 @@ private struct ExerciseMuscleMappingSheet: View {
                                 gymText(
                                     "Adds or removes \(localizedMuscleTitle) from the manual mapping",
                                     "Додає або видаляє «\(localizedMuscleTitle)» у ручному зіставленні",
+                                    "Добавляет или удаляет «\(localizedMuscleTitle)» в ручном сопоставлении",
                                     languageCode: languageCode
                                 )
                             )

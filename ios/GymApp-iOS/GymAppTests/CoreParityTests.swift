@@ -2186,149 +2186,84 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(restored.workouts.first?.exercises.first?.sets.first?.weight, 50)
     }
 
-    func testRussianDynamicDeletionFallbackDoesNotLeakUkrainianText() {
-        let exerciseName = "Жим штанги лёжа"
-        XCTAssertEqual(
-            gymText(
-                "Delete \(exerciseName) from workout",
-                "Видалити «\(exerciseName)» із тренування",
-                languageCode: "ru"
-            ),
-            "Удалить «\(exerciseName)» из тренировки"
-        )
-
-        let date = "20 июля 2026 г."
-        XCTAssertEqual(
-            gymText(
-                "The workout from \(date) and all of its sets will be removed from this device.",
-                "Тренування за \(date) і всі його підходи буде видалено з цього пристрою.",
-                languageCode: "ru"
-            ),
-            "Тренировка за \(date) и все её подходы будут удалены с этого устройства."
-        )
-    }
-
-    func testRussianDynamicDashboardAndGarminFallbacksAreFullyLocalized() {
-        let muscleName = gymText("Shoulders", "Плечі", languageCode: "ru")
-        XCTAssertEqual(muscleName, "Плечи")
-        XCTAssertEqual(
-            gymText(
-                "\(muscleName) loaded by",
-                "Навантаження для «\(muscleName)»",
-                languageCode: "ru"
-            ),
-            "Нагрузка для «Плечи»"
-        )
-
-        let error = "Сервер недоступен."
-        XCTAssertEqual(
-            gymText(
-                "Workout saved, but Garmin queue failed: \(error)",
-                "Тренування збережено, але додати до черги Garmin не вдалося: \(error)",
-                languageCode: "ru"
-            ),
-            "Тренировка сохранена, но не удалось добавить в очередь Garmin: \(error)"
-        )
-
-        let date = "20 июля 2026 г."
-        XCTAssertEqual(
-            gymText(
-                "Workout · \(date)",
-                "Тренування · \(date)",
-                languageCode: "ru"
-            ),
-            "Тренировка · \(date)"
-        )
-
-        XCTAssertEqual(
-            gymText(
-                "Adds or removes \(muscleName) from the manual mapping",
-                "Додає або видаляє «\(muscleName)» у ручному зіставленні",
-                languageCode: "ru"
-            ),
-            "Добавляет или удаляет «Плечи» в ручном сопоставлении"
-        )
-    }
-
-    func testRussianDynamicFallbackLocalizesEveryMuscleTitle() {
-        let titles = [
-            ("Chest", "Груди", "Грудь"),
-            ("Shoulders", "Плечі", "Плечи"),
-            ("Biceps", "Біцепс", "Бицепс"),
-            ("Triceps", "Тріцепс", "Трицепс"),
-            ("Forearms", "Передпліччя", "Предплечья"),
-            ("Abs", "Прес", "Пресс"),
-            ("Obliques", "Косі мʼязи", "Косые мышцы"),
-            ("Lats", "Широчайші", "Широчайшие"),
-            ("Upper back", "Верх спини", "Верх спины"),
-            ("Lower back", "Поперек", "Поясница"),
-            ("Glutes", "Сідниці", "Ягодицы"),
-            ("Quads", "Квадрицепси", "Квадрицепсы"),
-            ("Hamstrings", "Біцепс стегна", "Бицепс бедра"),
-            ("Adductors", "Привідні", "Приводящие мышцы"),
-            ("Calves", "Ікри", "Икры")
+    func testMuscleDefinitionsCarryExplicitRussianTitles() {
+        let expected = [
+            ("chest", "Грудь"),
+            ("shoulders", "Плечи"),
+            ("biceps", "Бицепс"),
+            ("triceps", "Трицепс"),
+            ("forearms", "Предплечья"),
+            ("abs", "Пресс"),
+            ("obliques", "Косые мышцы"),
+            ("lats", "Широчайшие"),
+            ("upperBack", "Верх спины"),
+            ("lowerBack", "Поясница"),
+            ("glutes", "Ягодицы"),
+            ("quads", "Квадрицепсы"),
+            ("hamstrings", "Бицепс бедра"),
+            ("adductors", "Приводящие мышцы"),
+            ("calves", "Икры")
         ]
-
-        for (english, ukrainian, russian) in titles {
-            XCTAssertEqual(
-                gymText(english, ukrainian, languageCode: "ru"),
-                russian,
-                english
-            )
+        XCTAssertEqual(MuscleMappingEngine.muscleDefinitions.map(\.id), expected.map(\.0))
+        for (definition, (id, russian)) in zip(MuscleMappingEngine.muscleDefinitions, expected) {
+            XCTAssertEqual(definition.titleRu, russian, id)
         }
     }
 
-    func testRussianExactFallbackLocalizesProtectedProgressCopy() {
-        let copies = [
-            (
-                "Protected progress",
-                "Захищений прогрес",
-                "Защищённый прогресс"
-            ),
-            (
-                "Report sent. The display name was added to the moderation queue.",
-                "Скаргу надіслано. Ім’я додано до черги модерації.",
-                "Жалоба отправлена. Имя добавлено в очередь модерации."
-            ),
-            (
-                "This is an offline account. Sign in with a cloud account to protect and synchronize your progress; your workouts remain available on this device.",
-                "Це офлайн-акаунт. Увійди у хмарний акаунт, щоб захистити й синхронізувати прогрес; твої тренування залишаються на цьому пристрої.",
-                "Это офлайн-аккаунт. Войди в облачный аккаунт, чтобы защитить и синхронизировать прогресс; твои тренировки останутся доступными на этом устройстве."
-            ),
-            (
-                "Exercise",
-                "Вправа",
-                "Упражнение"
-            ),
-            (
-                "Volume = weight × reps across all completed sets.",
-                "Обсяг = вага × повтори в усіх виконаних підходах.",
-                "Объём = вес × повторения во всех завершённых подходах."
-            ),
-            (
-                "This list changes with the selected month and exercise.",
-                "Список оновлюється для вибраного місяця і вправи.",
-                "Список меняется в зависимости от выбранных месяца и упражнения."
-            ),
-            (
-                "Delete this set?",
-                "Видалити цей підхід?",
-                "Удалить этот подход?"
-            ),
-            (
-                "Session volume chart",
-                "Графік обсягу сесій",
-                "График объёма по сессиям"
-            )
-        ]
-
-        for (english, ukrainian, russian) in copies {
+    func testBuiltInExerciseRussianNamesAreExplicit() {
+        let ukrainianOnlyLetters = CharacterSet(charactersIn: "іїєґІЇЄҐ")
+        for definition in BuiltInExerciseCatalog.definitions {
+            XCTAssertFalse(definition.russianName.trimmingCharacters(in: .whitespaces).isEmpty, definition.key)
+            XCTAssertNil(definition.russianName.rangeOfCharacter(from: ukrainianOnlyLetters), definition.key)
             XCTAssertEqual(
-                gymText(english, ukrainian, languageCode: "ru"),
-                russian,
-                english
+                BuiltInExerciseCatalog.displayName(
+                    catalogKey: definition.key,
+                    rawName: definition.englishName,
+                    languageCode: "ru"
+                ),
+                definition.key == "straight_arm_pulldown"
+                    ? "Журавель — тяга прямыми руками"
+                    : definition.russianName,
+                definition.key
             )
         }
+        XCTAssertEqual(BuiltInExerciseCatalog.definition(forKey: "bench_press")?.russianName, "Жим штанги лежа")
+        XCTAssertEqual(BuiltInExerciseCatalog.definition(forKey: "side_hyperextension")?.russianName, "Боковая гиперэкстензия")
+    }
+
+    func testPluralRulesFollowUkrainianAndRussianGrammar() {
+        let cases: [(Int, GymPluralCategory)] = [
+            (0, .many), (1, .one), (2, .few), (4, .few), (5, .many),
+            (11, .many), (12, .many), (14, .many), (21, .one), (22, .few),
+            (25, .many), (101, .one), (111, .many), (112, .many), (-1, .one), (-3, .few)
+        ]
+        for (count, expected) in cases {
+            XCTAssertEqual(gymPluralCategory(count, languageCode: "ru"), expected, "ru \(count)")
+            XCTAssertEqual(gymPluralCategory(count, languageCode: "uk"), expected, "uk \(count)")
+        }
+        XCTAssertEqual(gymPluralCategory(Int.min, languageCode: "ru"), .many)
+        XCTAssertEqual(gymPluralCategory(1, languageCode: "en"), .one)
+        XCTAssertEqual(gymPluralCategory(2, languageCode: "en"), .many)
+        XCTAssertEqual(gymPluralCategory(21, languageCode: "en"), .many)
+        XCTAssertEqual(gymPlural(2, one: "подход", few: "подхода", many: "подходов", languageCode: "ru"), "подхода")
+        XCTAssertEqual(gymPlural(5, one: "підхід", few: "підходи", many: "підходів", languageCode: "uk"), "підходів")
+
+        func sets(_ count: Int, _ languageCode: String) -> String {
+            gymCount(
+                count,
+                englishOne: "set",
+                englishMany: "sets",
+                ukrainianOne: "підхід",
+                ukrainianFew: "підходи",
+                ukrainianMany: "підходів",
+                languageCode: languageCode
+            )
+        }
+        XCTAssertEqual(sets(2, "ru"), "2 подхода")
+        XCTAssertEqual(sets(11, "ru"), "11 подходов")
+        XCTAssertEqual(sets(21, "uk"), "21 підхід")
+        XCTAssertEqual(sets(1, "en"), "1 set")
+        XCTAssertEqual(sets(3, "en"), "3 sets")
     }
 
     func testFinalCatalogQACopyIsExactInRussianAndUkrainian() {
@@ -2363,99 +2298,6 @@ final class CoreParityTests: XCTestCase {
         ]
         for (english, expected) in ukrainian {
             XCTAssertEqual(gymLocalized(english, languageCode: "uk"), expected, english)
-        }
-    }
-
-    func testRussianDynamicFallbackLocalizesLeaderboardAndProgressValues() {
-        let values = [
-            (
-                "Your current place: #4",
-                "Твоє поточне місце: №4",
-                "Твоё текущее место: №4"
-            ),
-            (
-                "Updated just now",
-                "Оновлено только что",
-                "Обновлено только что"
-            ),
-            (
-                "Place 2, Athlete",
-                "Місце 2, Athlete",
-                "Место 2, Athlete"
-            ),
-            (
-                "120 XP, level 3, 4 workouts, current user",
-                "120 XP, рівень 3, 4 тренировки, поточний користувач",
-                "120 XP, уровень 3, 4 тренировки, текущий пользователь"
-            ),
-            (
-                "3 this month",
-                "3 цього місяця",
-                "3 в этом месяце"
-            ),
-            (
-                "3 sets",
-                "3 підх.",
-                "3 подх."
-            ),
-            (
-                "8 reps",
-                "8 повторів",
-                "8 повторов"
-            ),
-            (
-                "3 sessions in the selected month.",
-                "3 сес. у вибраному місяці.",
-                "3 сес. в выбранном месяце."
-            ),
-            (
-                "No лучший вес in this month",
-                "Немає показника «лучший вес» цього місяця",
-                "Нет показателя «лучший вес» в этом месяце"
-            ),
-            (
-                "First month for объём",
-                "Перший місяць для «объём»",
-                "Первый месяц для «объём»"
-            ),
-            (
-                "+10 кг vs prior month",
-                "+10 кг до попереднього місяця",
-                "+10 кг по сравнению с предыдущим месяцем"
-            ),
-            (
-                "80 кг × 8 reps will be removed. If it is the final set, its exercise or workout will also be removed.",
-                "80 кг × 8 повт. буде видалено. Якщо це останній підхід, вправу або тренування також буде видалено.",
-                "80 кг × 8 повторений будет удалено. Если это последний подход, упражнение или тренировка также будут удалены."
-            ),
-            (
-                "Last 4 sessions in the selected month.",
-                "Останні 4 сес. у вибраному місяці.",
-                "Последние 4 сес. в выбранном месяце."
-            ),
-            (
-                "+5 кг vs first session",
-                "+5 кг до першої сесії",
-                "+5 кг по сравнению с первой сессией"
-            ),
-            (
-                "2 load, 3 sets, selected",
-                "навантаження 2, 3 подхода, вибрано",
-                "нагрузка 2, 3 подхода, выбрано"
-            ),
-            (
-                "Hide password",
-                "Сховати поле «пароль»",
-                "Скрыть поле «пароль»"
-            )
-        ]
-
-        for (english, ukrainian, russian) in values {
-            XCTAssertEqual(
-                gymText(english, ukrainian, languageCode: "ru"),
-                russian,
-                english
-            )
         }
     }
 

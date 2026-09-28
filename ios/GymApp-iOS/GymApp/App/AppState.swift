@@ -270,6 +270,7 @@ final class AppState: ObservableObject {
             statusMessage = gymText(
                 "A damaged local data file was preserved for recovery. Cloud data will restore after sign-in; offline profiles should contact support before deleting the app.",
                 "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку.",
+                "Повреждённый локальный файл сохранён для восстановления. Облачные данные восстановятся после входа; для офлайн-профиля обратись в поддержку перед удалением приложения.",
                 languageCode: gymCurrentLanguageCode(defaults: defaults)
             )
             statusIsError = true
@@ -888,6 +889,7 @@ final class AppState: ObservableObject {
                     message: gymText(
                         "This cloud row contains unsupported future workout fields. Automatic uploads are paused so another platform's data is not lost.",
                         "Цей хмарний запис містить непідтримувані майбутні поля тренувань. Автоматичне надсилання призупинено, щоб не втратити дані з іншої платформи.",
+                        "Эта облачная запись содержит неподдерживаемые поля тренировок из новой версии. Автоматическая отправка приостановлена, чтобы не потерять данные с другой платформы.",
                         languageCode: gymCurrentLanguageCode(defaults: defaults)
                     ),
                     isError: false
@@ -1007,11 +1009,13 @@ final class AppState: ObservableObject {
                     ? gymText(
                         "Cloud workout history was loaded on this iPhone.",
                         "Хмарну історію тренувань завантажено на цей iPhone.",
+                        "Облачная история тренировок загружена на этот iPhone.",
                         languageCode: gymCurrentLanguageCode(defaults: defaults)
                     )
                     : gymText(
                         "This iPhone's workout history was saved to the cloud.",
                         "Історію тренувань із цього iPhone збережено в хмарі.",
+                        "История тренировок с этого iPhone сохранена в облаке.",
                         languageCode: gymCurrentLanguageCode(defaults: defaults)
                     ),
                 isError: false
@@ -1024,6 +1028,7 @@ final class AppState: ObservableObject {
             accountPreparationError = gymText(
                 "The workout histories changed before your choice was applied. Review both versions again.",
                 "Історії тренувань змінилися до застосування вибору. Перевір обидві версії ще раз.",
+                "Истории тренировок изменились до применения выбора. Проверь обе версии ещё раз.",
                 languageCode: gymCurrentLanguageCode(defaults: defaults)
             )
             cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))

@@ -82,7 +82,7 @@ private struct StartupFailureView: View {
     var body: some View {
         GymContentUnavailableView {
             Label(
-                gymText("Storage unavailable", "Сховище недоступне", languageCode: languageCode),
+                gymText("Storage unavailable", "Сховище недоступне", "Хранилище недоступно", languageCode: languageCode),
                 systemImage: "externaldrive.badge.exclamationmark"
             )
         } description: {
@@ -90,12 +90,13 @@ private struct StartupFailureView: View {
                 message ?? gymText(
                     "GymApp could not open its protected local storage. Your data was not changed.",
                     "GymApp не вдалося відкрити захищене локальне сховище. Твої дані не змінено.",
+                    "GymApp не удалось открыть защищенное локальное хранилище. Твои данные не изменены.",
                     languageCode: languageCode
                 )
             )
         } actions: {
             Button(
-                gymText("Try again", "Спробувати ще раз", languageCode: languageCode),
+                gymText("Try again", "Спробувати ще раз", "Попробовать еще раз", languageCode: languageCode),
                 action: retry
             )
             .buttonStyle(.borderedProminent)

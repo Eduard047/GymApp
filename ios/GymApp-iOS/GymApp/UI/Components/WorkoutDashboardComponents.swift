@@ -299,7 +299,7 @@ enum WorkoutDashboardDataBuilder {
     }
 
     private static func localizedMuscleName(_ definition: MuscleDefinition) -> String {
-        gymText(definition.titleEn, definition.titleUk, languageCode: gymCurrentLanguageCode())
+        gymText(definition.titleEn, definition.titleUk, definition.titleRu, languageCode: gymCurrentLanguageCode())
     }
 
     private static func mostRecentDate(
@@ -365,8 +365,8 @@ struct GymMonthNavigator: View {
     private var monthAccessibilityLabel: String {
         let formatted = month.formatted(.dateTime.month(.wide).year().locale(locale))
         return isCurrentMonth
-            ? gymText("Current month, \(formatted)", "Поточний місяць, \(formatted)", languageCode: gymCurrentLanguageCode())
-            : gymText("\(formatted). Return to current month", "\(formatted). Повернутися до поточного місяця", languageCode: gymCurrentLanguageCode())
+            ? gymText("Current month, \(formatted)", "Поточний місяць, \(formatted)", "Текущий месяц, \(formatted)", languageCode: gymCurrentLanguageCode())
+            : gymText("\(formatted). Return to current month", "\(formatted). Повернутися до поточного місяця", "\(formatted). Вернуться к текущему месяцу", languageCode: gymCurrentLanguageCode())
     }
 }
 
@@ -420,8 +420,8 @@ struct WorkoutMonthSwitcher: View {
         let locale = AppLanguage(rawValue: gymCurrentLanguageCode())?.locale ?? AppLanguage.english.locale
         let formatted = month.formatted(.dateTime.month(.wide).year().locale(locale))
         return isCurrentMonth
-            ? gymText("Current month, \(formatted)", "Поточний місяць, \(formatted)", languageCode: gymCurrentLanguageCode())
-            : gymText("\(formatted). Return to current month", "\(formatted). Повернутися до поточного місяця", languageCode: gymCurrentLanguageCode())
+            ? gymText("Current month, \(formatted)", "Поточний місяць, \(formatted)", "Текущий месяц, \(formatted)", languageCode: gymCurrentLanguageCode())
+            : gymText("\(formatted). Return to current month", "\(formatted). Повернутися до поточного місяця", "\(formatted). Вернуться к текущему месяцу", languageCode: gymCurrentLanguageCode())
     }
 }
 
@@ -898,6 +898,7 @@ struct WorkoutActivityHeatmap: View {
         return gymText(
             "\(workouts), \(compactNumber(day.volume)) volume",
             "\(workouts), обсяг \(compactNumber(day.volume))",
+            "\(workouts), объём \(compactNumber(day.volume))",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -1045,6 +1046,7 @@ struct WorkoutMuscleLoadCard: View {
                     gymText(
                         "\(compactNumber(muscle.load)) load",
                         "навантаження \(compactNumber(muscle.load))",
+                        "нагрузка \(compactNumber(muscle.load))",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
@@ -1082,6 +1084,7 @@ struct WorkoutMuscleLoadCard: View {
                     gymText(
                         "\(muscle.label) loaded by",
                         "Навантаження для «\(muscle.label)»",
+                        "Нагрузка для «\(muscle.label)»",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
@@ -1171,6 +1174,7 @@ struct WorkoutMuscleLoadCard: View {
         return gymText(
             "\(compactNumber(contribution.load)) load • \(sets) • \(sessions)",
             "навантаження \(compactNumber(contribution.load)) • \(sets) • \(sessions)",
+            "нагрузка \(compactNumber(contribution.load)) • \(sets) • \(sessions)",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -1187,6 +1191,7 @@ struct WorkoutMuscleLoadCard: View {
         return gymText(
             "\(compactNumber(muscle.load)) load, \(sets), \(selected ? "selected" : "not selected")",
             "навантаження \(compactNumber(muscle.load)), \(sets), \(selected ? "вибрано" : "не вибрано")",
+            "нагрузка \(compactNumber(muscle.load)), \(sets), \(selected ? "выбрано" : "не выбрано")",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -1344,6 +1349,7 @@ struct AchievementGallery: View {
                     gymText(
                         "Your badge collection",
                         "Твоя колекція відзнак",
+                        "Твоя коллекция значков",
                         languageCode: languageCode
                     )
                 )
@@ -1354,6 +1360,7 @@ struct AchievementGallery: View {
                     gymText(
                         "Every canonical milestone, its progress, rarity, and unlock date.",
                         "Усі основні цілі, їхній прогрес, рідкість і дата відкриття.",
+                        "Все основные цели, их прогресс, редкость и дата открытия.",
                         languageCode: languageCode
                     )
                 )

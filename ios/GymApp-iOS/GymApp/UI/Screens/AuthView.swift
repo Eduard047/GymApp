@@ -332,6 +332,9 @@ public struct AuthView: View {
                         isVisible.wrappedValue
                             ? "Сховати поле «\(gymLocalized(title, languageCode: languageCode).lowercased())»"
                             : "Показати поле «\(gymLocalized(title, languageCode: languageCode).lowercased())»",
+                        isVisible.wrappedValue
+                            ? "Скрыть поле «\(gymLocalized(title, languageCode: languageCode).lowercased())»"
+                            : "Показать поле «\(gymLocalized(title, languageCode: languageCode).lowercased())»",
                         languageCode: languageCode
                     )
                 )

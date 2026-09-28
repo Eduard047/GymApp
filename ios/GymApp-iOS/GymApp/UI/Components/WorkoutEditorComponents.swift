@@ -287,6 +287,7 @@ struct WorkoutSetDraftRow: View {
                 gymText(
                     "Weight for set \(position + 1)",
                     "Вага для підходу \(position + 1)",
+                    "Вес для подхода \(position + 1)",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
@@ -307,6 +308,7 @@ struct WorkoutSetDraftRow: View {
                 gymText(
                     "Repetitions for set \(position + 1)",
                     "Повторення для підходу \(position + 1)",
+                    "Повторения для подхода \(position + 1)",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
@@ -325,6 +327,7 @@ struct WorkoutSetDraftRow: View {
             gymText(
                 "Delete set \(position + 1)",
                 "Видалити підхід \(position + 1)",
+                "Удалить подход \(position + 1)",
                 languageCode: gymCurrentLanguageCode()
             )
         )
@@ -349,6 +352,7 @@ struct WorkoutSetDraftRow: View {
                 gymText(
                     "Uses the last logged weight, \($0.formatted())",
                     "Використовує останню записану вагу: \($0.formatted())",
+                    "Использует последний записанный вес: \($0.formatted())",
                     languageCode: gymCurrentLanguageCode()
                 )
             } ?? gymLocalized("No prior weight")
@@ -457,6 +461,7 @@ struct WorkoutDraftExerciseCard: View {
                                 gymText(
                                     "Last logged: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
                                     "Остання вага: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
+                                    "Последний вес: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             )
@@ -1119,6 +1124,7 @@ struct WorkoutRestTimerControls: View {
                             gymText(
                                 "\(remaining) seconds remaining",
                                 "Залишилося \(remaining) с",
+                                "Осталось \(remaining) с",
                                 languageCode: gymCurrentLanguageCode()
                             )
                         )
@@ -1175,7 +1181,7 @@ struct WorkoutRestTimerControls: View {
             }
         } else {
             ForEach([60, 90, 120, 180], id: \.self) { seconds in
-                Button(gymText("\(seconds)s", "\(seconds) с", languageCode: gymCurrentLanguageCode())) {
+                Button(gymText("\(seconds)s", "\(seconds) с", "\(seconds) с", languageCode: gymCurrentLanguageCode())) {
                     if let onStart { onStart(seconds) }
                     else { manager.start(id: timerID, seconds: seconds, title: exerciseName) }
                 }
@@ -1183,6 +1189,7 @@ struct WorkoutRestTimerControls: View {
                     gymText(
                         "Start \(seconds) second rest timer for \(exerciseName)",
                         "Запустити таймер відпочинку на \(seconds) с для «\(exerciseName)»",
+                        "Запустить таймер отдыха на \(seconds) с для «\(exerciseName)»",
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
@@ -1215,9 +1222,9 @@ enum ExerciseBodyFilter: String, CaseIterable, Identifiable {
     var localizedTitle: String {
         switch self {
         case .all: gymLocalized("All")
-        case .upper: gymText("Upper body", "Верх тіла", languageCode: gymCurrentLanguageCode())
-        case .lower: gymText("Lower body", "Низ тіла", languageCode: gymCurrentLanguageCode())
-        case .core: gymText("Core", "Кор", languageCode: gymCurrentLanguageCode())
+        case .upper: gymText("Upper body", "Верх тіла", "Верх тела", languageCode: gymCurrentLanguageCode())
+        case .lower: gymText("Lower body", "Низ тіла", "Низ тела", languageCode: gymCurrentLanguageCode())
+        case .core: gymText("Core", "Кор", "Кор", languageCode: gymCurrentLanguageCode())
         }
     }
 }
@@ -1232,11 +1239,11 @@ enum ExerciseSortMode: String, CaseIterable, Identifiable {
     var localizedTitle: String {
         switch self {
         case .name:
-            gymText("By name", "За назвою", languageCode: gymCurrentLanguageCode())
+            gymText("By name", "За назвою", "По названию", languageCode: gymCurrentLanguageCode())
         case .mostFrequent:
-            gymText("Most frequent", "Найчастіші", languageCode: gymCurrentLanguageCode())
+            gymText("Most frequent", "Найчастіші", "Самые частые", languageCode: gymCurrentLanguageCode())
         case .leastFrequent:
-            gymText("Least frequent", "Найрідші", languageCode: gymCurrentLanguageCode())
+            gymText("Least frequent", "Найрідші", "Реже всего", languageCode: gymCurrentLanguageCode())
         }
     }
 }
@@ -2108,6 +2115,7 @@ struct ExercisePickerSheet: View {
                                     gymText(
                                         muscle.titleEn,
                                         muscle.titleUk,
+                                        muscle.titleRu,
                                         languageCode: gymCurrentLanguageCode()
                                     )
                                 ) {

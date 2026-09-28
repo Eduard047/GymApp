@@ -283,7 +283,7 @@ struct ExerciseProgressView: View {
                 LazyVStack(spacing: GymTheme.contentSpacing) {
                     if showsHeader {
                         GymScreenHeader(
-                            title: t("Progress", "Прогрес")
+                            title: t("Progress", "Прогрес", "Прогресс")
                         )
                     }
 
@@ -345,7 +345,7 @@ struct ExerciseProgressView: View {
                 )
 
                 if sortedExercises.isEmpty {
-                    Text(t("Add an exercise and log a workout to see progress.", "Додай вправу й запиши тренування, щоб побачити прогрес."))
+                    Text(t("Add an exercise and log a workout to see progress.", "Додай вправу й запиши тренування, щоб побачити прогрес.", "Добавь упражнение и запиши тренировку, чтобы увидеть прогресс."))
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
                 } else if let selectedExercise {
@@ -422,7 +422,7 @@ struct ExerciseProgressView: View {
             VStack(alignment: .leading, spacing: 12) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 10) {
-                        Text(t("Muscle Breakdown", "Розподіл по м’язах"))
+                        Text(t("Muscle Breakdown", "Розподіл по м’язах", "Распределение по мышцам"))
                             .font(.headline)
                             .lineLimit(2)
                             .accessibilityAddTraits(.isHeader)
@@ -430,7 +430,7 @@ struct ExerciseProgressView: View {
                         muscleGroupsPill(contributions.count)
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(t("Muscle Breakdown", "Розподіл по м’язах"))
+                        Text(t("Muscle Breakdown", "Розподіл по м’язах", "Распределение по мышцам"))
                             .font(.headline)
                             .lineLimit(2)
                             .accessibilityAddTraits(.isHeader)
@@ -439,7 +439,7 @@ struct ExerciseProgressView: View {
                 }
 
                 if contributions.isEmpty {
-                    Text(t("No muscle mapping is available for this exercise yet.", "Для цієї вправи ще немає мапи м’язів."))
+                    Text(t("No muscle mapping is available for this exercise yet.", "Для цієї вправи ще немає мапи м’язів.", "Для этого упражнения пока нет сопоставления с мышцами."))
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
                 } else {
@@ -484,10 +484,10 @@ struct ExerciseProgressView: View {
     private var summaryCard: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
-                Text(t("Progress Summary", "Зведення прогресу"))
+                Text(t("Progress Summary", "Зведення прогресу", "Сводка прогресса"))
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
-                Text(t("Volume = weight × reps across all completed sets.", "Обсяг = вага × повтори в усіх виконаних підходах."))
+                Text(t("Volume = weight × reps across all completed sets.", "Обсяг = вага × повтори в усіх виконаних підходах.", "Объём = вес × повторения во всех завершённых подходах."))
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
 
@@ -496,28 +496,28 @@ struct ExerciseProgressView: View {
                     spacing: 8
                 ) {
                     GymMetricTile(
-                        label: t("Sessions", "Сесії"),
+                        label: t("Sessions", "Сесії", "Сессии"),
                         value: progressPoints.count.formatted()
                     )
                     GymMetricTile(
-                        label: t("Total Sets", "Підходи"),
+                        label: t("Total Sets", "Підходи", "Всего подходов"),
                         value: monthHistory.count.formatted()
                     )
                     GymMetricTile(
-                        label: t("Total Reps", "Повторів"),
+                        label: t("Total Reps", "Повторів", "Всего повторений"),
                         value: totalReps.formatted()
                     )
                     GymMetricTile(
-                        label: t("Best Weight", "Найкраща вага"),
+                        label: t("Best Weight", "Найкраща вага", "Лучший вес"),
                         value: bestWeight.map(formatWeight) ?? "—",
                         emphasized: true
                     )
                     GymMetricTile(
-                        label: t("Average Max", "Середній максимум"),
+                        label: t("Average Max", "Середній максимум", "Средний максимум"),
                         value: averageMaximumWeight.map(formatWeight) ?? "—"
                     )
                     GymMetricTile(
-                        label: t("Total Volume", "Загальний обсяг"),
+                        label: t("Total Volume", "Загальний обсяг", "Общий объем"),
                         value: formatNumber(totalVolume)
                     )
                 }
@@ -540,13 +540,13 @@ struct ExerciseProgressView: View {
                     spacing: 8
                 ) {
                     GymMetricTile(
-                        label: t("Month best", "Найкраще за місяць"),
+                        label: t("Month best", "Найкраще за місяць", "Лучшее за месяц"),
                         value: bestWeight.map(formatWeight) ?? "—",
                         emphasized: true,
                         onHero: true
                     )
                     GymMetricTile(
-                        label: t("Month volume", "Обсяг за місяць"),
+                        label: t("Month volume", "Обсяг за місяць", "Объём за месяц"),
                         value: formatNumber(totalVolume),
                         onHero: true
                     )
@@ -562,13 +562,13 @@ struct ExerciseProgressView: View {
                     spacing: 8
                 ) {
                     GymMetricTile(
-                        label: t("All-time PR", "Особистий рекорд"),
+                        label: t("All-time PR", "Особистий рекорд", "Личный рекорд"),
                         value: allTimeBestWeight.map { "PR \(formatWeight($0))" } ?? "PR —",
                         onHero: true
                     )
                     GymMetricTile(
-                        label: t("Consistency", "Регулярність"),
-                        value: t("\(progressPoints.count) this month", "\(progressPoints.count) цього місяця"),
+                        label: t("Consistency", "Регулярність", "Регулярность"),
+                        value: t("\(progressPoints.count) this month", "\(progressPoints.count) цього місяця", "\(progressPoints.count) в этом месяце"),
                         onHero: true
                     )
                 }
@@ -592,9 +592,9 @@ struct ExerciseProgressView: View {
         if historyGroups.isEmpty {
             GymPanel {
                 GymContentUnavailableView {
-                    Label(t("No progress this month", "Немає прогресу за цей місяць"), systemImage: "chart.xyaxis.line")
+                    Label(t("No progress this month", "Немає прогресу за цей місяць", "В этом месяце прогресса пока нет"), systemImage: "chart.xyaxis.line")
                 } description: {
-                    Text(t("Log sets for the selected exercise to unlock trends.", "Додай підходи для вибраної вправи, щоб відкрити тренди."))
+                    Text(t("Log sets for the selected exercise to unlock trends.", "Додай підходи для вибраної вправи, щоб відкрити тренди.", "Запиши подходы выбранного упражнения, чтобы открыть тренды."))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -624,7 +624,15 @@ struct ExerciseProgressView: View {
                         .font(.headline)
                     Spacer(minLength: 8)
                     GymInfoPill(
-                        t("\(group.entries.count) sets", "\(group.entries.count) підх."),
+                        gymCount(
+                            group.entries.count,
+                            englishOne: "set",
+                            englishMany: "sets",
+                            ukrainianOne: "підхід",
+                            ukrainianFew: "підходи",
+                            ukrainianMany: "підходів",
+                            languageCode: languageCode
+                        ),
                         systemImage: "list.number"
                     )
                 }
@@ -632,7 +640,8 @@ struct ExerciseProgressView: View {
                 Text(
                     t(
                         "\(group.totalReps) reps • \(formatNumber(group.totalVolume)) volume",
-                        "\(group.totalReps) повт. • обсяг \(formatNumber(group.totalVolume))"
+                        "\(group.totalReps) повт. • обсяг \(formatNumber(group.totalVolume))",
+                        "\(group.totalReps) повт. • объём \(formatNumber(group.totalVolume))"
                     )
                 )
                 .font(.caption)
@@ -653,16 +662,16 @@ struct ExerciseProgressView: View {
     private func setRow(_ entry: ExerciseHistoryEntry, index: Int) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
-                Text(t("Set \(index + 1)", "Підхід \(index + 1)"))
+                Text(t("Set \(index + 1)", "Підхід \(index + 1)", "Подход \(index + 1)"))
                     .font(.subheadline.weight(.semibold))
                 Spacer(minLength: 4)
                 Text(formatWeight(entry.weight))
-                Text(t("\(entry.reps) reps", "\(entry.reps) повт."))
+                Text(t("\(entry.reps) reps", "\(entry.reps) повт.", "\(entry.reps) повт."))
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text(t("Set \(index + 1)", "Підхід \(index + 1)"))
+                Text(t("Set \(index + 1)", "Підхід \(index + 1)", "Подход \(index + 1)"))
                     .font(.subheadline.weight(.semibold))
-                Text("\(formatWeight(entry.weight)) • \(t("\(entry.reps) reps", "\(entry.reps) повт."))")
+                Text("\(formatWeight(entry.weight)) • \(t("\(entry.reps) reps", "\(entry.reps) повт.", "\(entry.reps) повт."))")
                     .font(.subheadline)
             }
         }
@@ -673,9 +682,9 @@ struct ExerciseProgressView: View {
     private var noExerciseState: some View {
         GymPanel {
             GymContentUnavailableView {
-                Label(t("No exercises yet", "Ще немає вправ"), systemImage: "dumbbell")
+                Label(t("No exercises yet", "Ще немає вправ", "Упражнений еще нет"), systemImage: "dumbbell")
             } description: {
-                Text(t("Create an exercise and log a workout first.", "Спочатку створи вправу й запиши тренування."))
+                Text(t("Create an exercise and log a workout first.", "Спочатку створи вправу й запиши тренування.", "Сначала создай упражнение и запиши тренировку."))
             }
             .frame(maxWidth: .infinity)
         }
@@ -785,8 +794,8 @@ struct ExerciseProgressView: View {
         deltaLabel(
             current: bestWeight,
             previous: previousMonthPoints.map(\.maxWeight).max(),
-            unit: t("kg", "кг"),
-            metric: t("best weight", "найкраща вага")
+            unit: t("kg", "кг", "кг"),
+            metric: t("best weight", "найкраща вага", "лучший вес")
         )
     }
 
@@ -795,8 +804,8 @@ struct ExerciseProgressView: View {
         return deltaLabel(
             current: monthHistory.isEmpty ? nil : totalVolume,
             previous: previousMonthHistory.isEmpty ? nil : previousVolume,
-            unit: t("volume", "обсягу"),
-            metric: t("volume", "обсяг")
+            unit: t("volume", "обсягу", "объёма"),
+            metric: t("volume", "обсяг", "объём")
         )
     }
 
@@ -806,7 +815,7 @@ struct ExerciseProgressView: View {
             uniqueKeysWithValues: MuscleMappingEngine.muscleDefinitions.map { definition in
                 (
                     definition.id,
-                    gymText(definition.titleEn, definition.titleUk, languageCode: languageCode)
+                    gymText(definition.titleEn, definition.titleUk, definition.titleRu, languageCode: languageCode)
                 )
             }
         )
@@ -828,19 +837,20 @@ struct ExerciseProgressView: View {
         metric: String
     ) -> String {
         guard let current else {
-            return t("No \(metric) in this month", "Немає показника «\(metric)» цього місяця")
+            return t("No \(metric) in this month", "Немає показника «\(metric)» цього місяця", "Нет показателя «\(metric)» в этом месяце")
         }
         guard let previous else {
-            return t("First month for \(metric)", "Перший місяць для «\(metric)»")
+            return t("First month for \(metric)", "Перший місяць для «\(metric)»", "Первый месяц для «\(metric)»")
         }
         let delta = current - previous
         if abs(delta) < 0.05 {
-            return t("No change vs prior month", "Без змін до попереднього місяця")
+            return t("No change vs prior month", "Без змін до попереднього місяця", "Как в прошлом месяце")
         }
         let prefix = delta > 0 ? "+" : "−"
         return t(
             "\(prefix)\(formatNumber(abs(delta))) \(unit) vs prior month",
-            "\(prefix)\(formatNumber(abs(delta))) \(unit) до попереднього місяця"
+            "\(prefix)\(formatNumber(abs(delta))) \(unit) до попереднього місяця",
+            "\(prefix)\(formatNumber(abs(delta))) \(unit) к прошлому месяцу"
         )
     }
 
@@ -857,7 +867,7 @@ struct ExerciseProgressView: View {
     }
 
     private func formatWeight(_ value: Double) -> String {
-        "\(formatDecimal(value, maximumFractionDigits: 1)) \(t("kg", "кг"))"
+        "\(formatDecimal(value, maximumFractionDigits: 1)) \(t("kg", "кг", "кг"))"
     }
 
     private func formatNumber(_ value: Double) -> String {
@@ -877,8 +887,8 @@ struct ExerciseProgressView: View {
         )
     }
 
-    private func t(_ english: String, _ ukrainian: String) -> String {
-        gymText(english, ukrainian, languageCode: languageCode)
+    private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
+        gymText(english, ukrainian, russian, languageCode: languageCode)
     }
 }
 
@@ -1095,7 +1105,7 @@ private struct ExerciseProgressChartsCard: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(t("Visual Trends", "Візуальні тренди"))
+                    Text(t("Visual Trends", "Візуальні тренди", "Визуальные тренды"))
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
                     Text(chartsSubtitle)
@@ -1104,7 +1114,7 @@ private struct ExerciseProgressChartsCard: View {
                 }
 
                 if chartPoints.isEmpty {
-                    Text(t("No chart data", "Немає даних для графіка"))
+                    Text(t("No chart data", "Немає даних для графіка", "Нет данных для графика"))
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
                 } else {
@@ -1116,11 +1126,11 @@ private struct ExerciseProgressChartsCard: View {
                         spacing: 8
                     ) {
                         GymMetricTile(
-                            label: t("Peak weight", "Пікова вага"),
+                            label: t("Peak weight", "Пікова вага", "Пиковый вес"),
                             value: formatWeight(chartPoints.map(\.maxWeight).max() ?? 0)
                         )
                         GymMetricTile(
-                            label: t("Avg volume", "Сер. обсяг"),
+                            label: t("Avg volume", "Сер. обсяг", "Сред. объём"),
                             value: formatNumber(
                                 chartPoints.reduce(0) { $0 + $1.totalVolume } /
                                     Double(max(1, chartPoints.count))
@@ -1134,7 +1144,7 @@ private struct ExerciseProgressChartsCard: View {
 
     private var weightChart: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(t("Max Weight Trend", "Тренд максимальної ваги"))
+            Text(t("Max Weight Trend", "Тренд максимальної ваги", "Динамика максимального веса"))
                 .font(.subheadline.weight(.semibold))
             Text(weightTrendLabel)
                 .font(.caption)
@@ -1142,9 +1152,9 @@ private struct ExerciseProgressChartsCard: View {
 
             Chart(chartPoints) { point in
                 AreaMark(
-                    x: .value(t("Session", "Сесія"), point.date),
-                    yStart: .value(t("Baseline", "Основа"), 0),
-                    yEnd: .value(t("Max weight", "Максимальна вага"), point.maxWeight)
+                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    yStart: .value(t("Baseline", "Основа", "Базовый уровень"), 0),
+                    yEnd: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
                 .foregroundStyle(
                     LinearGradient(
@@ -1155,16 +1165,16 @@ private struct ExerciseProgressChartsCard: View {
                 )
 
                 LineMark(
-                    x: .value(t("Session", "Сесія"), point.date),
-                    y: .value(t("Max weight", "Максимальна вага"), point.maxWeight)
+                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    y: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
                 .interpolationMethod(.catmullRom)
                 .foregroundStyle(GymTheme.primary)
                 .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
 
                 PointMark(
-                    x: .value(t("Session", "Сесія"), point.date),
-                    y: .value(t("Max weight", "Максимальна вага"), point.maxWeight)
+                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    y: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
                 .foregroundStyle(point.id == latestPointID ? GymTheme.tertiary : GymTheme.primary)
                 .symbolSize(point.id == latestPointID ? 75 : 40)
@@ -1185,14 +1195,14 @@ private struct ExerciseProgressChartsCard: View {
                 }
             }
             .frame(minHeight: 210)
-            .accessibilityLabel(t("Maximum weight chart", "Графік максимальної ваги"))
+            .accessibilityLabel(t("Maximum weight chart", "Графік максимальної ваги", "График максимального веса"))
             .accessibilityValue(weightTrendLabel)
         }
     }
 
     private var volumeChart: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(t("Volume by Session", "Обсяг по сесіях"))
+            Text(t("Volume by Session", "Обсяг по сесіях", "Объём по сессиям"))
                 .font(.subheadline.weight(.semibold))
             Text(volumeTrendLabel)
                 .font(.caption)
@@ -1200,8 +1210,8 @@ private struct ExerciseProgressChartsCard: View {
 
             Chart(chartPoints) { point in
                 BarMark(
-                    x: .value(t("Session", "Сесія"), point.date),
-                    y: .value(t("Volume", "Обсяг"), point.totalVolume)
+                    x: .value(t("Session", "Сесія", "Сессия"), point.date),
+                    y: .value(t("Volume", "Обсяг", "Объём"), point.totalVolume)
                 )
                 .foregroundStyle(
                     point.id == latestPointID
@@ -1213,7 +1223,8 @@ private struct ExerciseProgressChartsCard: View {
                 .accessibilityValue(
                     t(
                         "\(formatNumber(point.totalVolume)) volume, \(point.totalReps) reps",
-                        "обсяг \(formatNumber(point.totalVolume)), \(point.totalReps) повт."
+                        "обсяг \(formatNumber(point.totalVolume)), \(point.totalReps) повт.",
+                        "объём \(formatNumber(point.totalVolume)), \(point.totalReps) повт."
                     )
                 )
             }
@@ -1231,7 +1242,7 @@ private struct ExerciseProgressChartsCard: View {
                 }
             }
             .frame(minHeight: 210)
-            .accessibilityLabel(t("Session volume chart", "Графік обсягу сесій"))
+            .accessibilityLabel(t("Session volume chart", "Графік обсягу сесій", "График объёма по сессиям"))
             .accessibilityValue(volumeTrendLabel)
         }
     }
@@ -1240,7 +1251,7 @@ private struct ExerciseProgressChartsCard: View {
         trendLabel(
             start: chartPoints.first?.maxWeight,
             end: chartPoints.last?.maxWeight,
-            unit: t("kg", "кг")
+            unit: t("kg", "кг", "кг")
         )
     }
 
@@ -1248,23 +1259,24 @@ private struct ExerciseProgressChartsCard: View {
         trendLabel(
             start: chartPoints.first?.totalVolume,
             end: chartPoints.last?.totalVolume,
-            unit: t("volume", "обсягу")
+            unit: t("volume", "обсягу", "объёма")
         )
     }
 
     private func trendLabel(start: Double?, end: Double?, unit: String) -> String {
-        guard let start, let end else { return t("No trend yet", "Тренду ще немає") }
+        guard let start, let end else { return t("No trend yet", "Тренду ще немає", "Пока нет тренда") }
         let delta = end - start
-        if abs(delta) < 0.05 { return t("Holding steady", "Стабільно") }
+        if abs(delta) < 0.05 { return t("Holding steady", "Стабільно", "Стабильно") }
         let prefix = delta > 0 ? "+" : "−"
         return t(
             "\(prefix)\(formatNumber(abs(delta))) \(unit) vs first session",
-            "\(prefix)\(formatNumber(abs(delta))) \(unit) до першої сесії"
+            "\(prefix)\(formatNumber(abs(delta))) \(unit) до першої сесії",
+            "\(prefix)\(formatNumber(abs(delta))) \(unit) к первой сессии"
         )
     }
 
     private func formatWeight(_ value: Double) -> String {
-        "\(value.formatted(.number.locale(locale).precision(.fractionLength(0 ... 1)))) \(t("kg", "кг"))"
+        "\(value.formatted(.number.locale(locale).precision(.fractionLength(0 ... 1)))) \(t("kg", "кг", "кг"))"
     }
 
     private func formatNumber(_ value: Double) -> String {
@@ -1276,8 +1288,8 @@ private struct ExerciseProgressChartsCard: View {
         )
     }
 
-    private func t(_ english: String, _ ukrainian: String) -> String {
-        gymText(english, ukrainian, languageCode: languageCode)
+    private func t(_ english: String, _ ukrainian: String, _ russian: String) -> String {
+        gymText(english, ukrainian, russian, languageCode: languageCode)
     }
 
     private var chartsSubtitle: String {

@@ -665,7 +665,7 @@ struct PostWorkoutSummaryView: View {
         guard let definition = MuscleMappingEngine.muscleDefinitions.first(where: { $0.id == load.muscleID }) else {
             return load.muscleID
         }
-        return gymText(definition.titleEn, definition.titleUk, languageCode: gymCurrentLanguageCode())
+        return gymText(definition.titleEn, definition.titleUk, definition.titleRu, languageCode: gymCurrentLanguageCode())
     }
 
     private func missionValue(_ value: Double) -> String {

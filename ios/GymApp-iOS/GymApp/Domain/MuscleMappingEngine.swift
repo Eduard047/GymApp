@@ -4,11 +4,13 @@ public struct MuscleDefinition: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let titleEn: String
     public let titleUk: String
+    public let titleRu: String
 
-    public init(id: String, titleEn: String, titleUk: String) {
+    public init(id: String, titleEn: String, titleUk: String, titleRu: String) {
         self.id = id
         self.titleEn = titleEn
         self.titleUk = titleUk
+        self.titleRu = titleRu
     }
 }
 
@@ -29,21 +31,21 @@ public enum MuscleMappingEngine {
     public static let setCompletionLoad = 35.0
 
     public static let muscleDefinitions: [MuscleDefinition] = [
-        MuscleDefinition(id: "chest", titleEn: "Chest", titleUk: "Груди"),
-        MuscleDefinition(id: "shoulders", titleEn: "Shoulders", titleUk: "Плечі"),
-        MuscleDefinition(id: "biceps", titleEn: "Biceps", titleUk: "Біцепс"),
-        MuscleDefinition(id: "triceps", titleEn: "Triceps", titleUk: "Тріцепс"),
-        MuscleDefinition(id: "forearms", titleEn: "Forearms", titleUk: "Передпліччя"),
-        MuscleDefinition(id: "abs", titleEn: "Abs", titleUk: "Прес"),
-        MuscleDefinition(id: "obliques", titleEn: "Obliques", titleUk: "Косі мʼязи"),
-        MuscleDefinition(id: "lats", titleEn: "Lats", titleUk: "Широчайші"),
-        MuscleDefinition(id: "upperBack", titleEn: "Upper back", titleUk: "Верх спини"),
-        MuscleDefinition(id: "lowerBack", titleEn: "Lower back", titleUk: "Поперек"),
-        MuscleDefinition(id: "glutes", titleEn: "Glutes", titleUk: "Сідниці"),
-        MuscleDefinition(id: "quads", titleEn: "Quads", titleUk: "Квадрицепси"),
-        MuscleDefinition(id: "hamstrings", titleEn: "Hamstrings", titleUk: "Біцепс стегна"),
-        MuscleDefinition(id: "adductors", titleEn: "Adductors", titleUk: "Привідні"),
-        MuscleDefinition(id: "calves", titleEn: "Calves", titleUk: "Ікри")
+        MuscleDefinition(id: "chest", titleEn: "Chest", titleUk: "Груди", titleRu: "Грудь"),
+        MuscleDefinition(id: "shoulders", titleEn: "Shoulders", titleUk: "Плечі", titleRu: "Плечи"),
+        MuscleDefinition(id: "biceps", titleEn: "Biceps", titleUk: "Біцепс", titleRu: "Бицепс"),
+        MuscleDefinition(id: "triceps", titleEn: "Triceps", titleUk: "Тріцепс", titleRu: "Трицепс"),
+        MuscleDefinition(id: "forearms", titleEn: "Forearms", titleUk: "Передпліччя", titleRu: "Предплечья"),
+        MuscleDefinition(id: "abs", titleEn: "Abs", titleUk: "Прес", titleRu: "Пресс"),
+        MuscleDefinition(id: "obliques", titleEn: "Obliques", titleUk: "Косі мʼязи", titleRu: "Косые мышцы"),
+        MuscleDefinition(id: "lats", titleEn: "Lats", titleUk: "Широчайші", titleRu: "Широчайшие"),
+        MuscleDefinition(id: "upperBack", titleEn: "Upper back", titleUk: "Верх спини", titleRu: "Верх спины"),
+        MuscleDefinition(id: "lowerBack", titleEn: "Lower back", titleUk: "Поперек", titleRu: "Поясница"),
+        MuscleDefinition(id: "glutes", titleEn: "Glutes", titleUk: "Сідниці", titleRu: "Ягодицы"),
+        MuscleDefinition(id: "quads", titleEn: "Quads", titleUk: "Квадрицепси", titleRu: "Квадрицепсы"),
+        MuscleDefinition(id: "hamstrings", titleEn: "Hamstrings", titleUk: "Біцепс стегна", titleRu: "Бицепс бедра"),
+        MuscleDefinition(id: "adductors", titleEn: "Adductors", titleUk: "Привідні", titleRu: "Приводящие мышцы"),
+        MuscleDefinition(id: "calves", titleEn: "Calves", titleUk: "Ікри", titleRu: "Икры")
     ]
 
     private static let exactMuscleMap: [String: [MuscleContribution]] = [

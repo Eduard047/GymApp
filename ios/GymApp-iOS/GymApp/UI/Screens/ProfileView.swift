@@ -1058,6 +1058,7 @@ struct ProfileView: View {
         return gymText(
             "\(sessions) imported · \(exercises) added · \(duplicates) skipped · \(invalidSets) ignored",
             "Імпортовано: \(sessions) · додано: \(exercises) · пропущено: \(duplicates) · проігноровано: \(invalidSets)",
+            "Импортировано: \(sessions) · добавлено: \(exercises) · пропущено: \(duplicates) · проигнорировано: \(invalidSets)",
             languageCode: gymCurrentLanguageCode()
         )
     }

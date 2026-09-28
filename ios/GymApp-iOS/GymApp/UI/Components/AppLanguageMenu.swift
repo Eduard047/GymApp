@@ -64,7 +64,7 @@ struct AppLanguageMenu: View {
                 .contentShape(Rectangle())
             }
         }
-        .accessibilityLabel(gymText("Language", "Мова", languageCode: languageCode))
+        .accessibilityLabel(gymText("Language", "Мова", "Язык", languageCode: languageCode))
         .accessibilityValue(languageCode == "uk" ? "Українська" : languageCode == "ru" ? "Русский" : "English")
     }
 }

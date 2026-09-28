@@ -64,20 +64,6 @@ func gymCurrentLanguageCode(
     ).rawValue
 }
 
-func gymText(_ english: String, _ ukrainian: String, languageCode: String) -> String {
-    switch languageCode {
-    case AppLanguage.ukrainian.rawValue:
-        return ukrainian
-    case AppLanguage.russian.rawValue:
-        let localized = gymLocalized(english, languageCode: languageCode)
-        if localized != english { return localized }
-        if let exact = gymRussianEnglishFallbacks[english] { return exact }
-        return gymRussianFromUkrainian(ukrainian)
-    default:
-        return english
-    }
-}
-
 func gymText(
     _ english: String,
     _ ukrainian: String,
@@ -169,237 +155,6 @@ private func gymRussianDynamicFallback(_ english: String) -> String {
         return "Что-то пошло не так. Попробуй ещё раз."
     }
     return english
-}
-
-private let gymRussianExactFallbacks: [String: String] = [
-    "Груди": "Грудь",
-    "Плечі": "Плечи",
-    "Біцепс": "Бицепс",
-    "Тріцепс": "Трицепс",
-    "Передпліччя": "Предплечья",
-    "Прес": "Пресс",
-    "Косі мʼязи": "Косые мышцы",
-    "Широчайші": "Широчайшие",
-    "Верх спини": "Верх спины",
-    "Поперек": "Поясница",
-    "Сідниці": "Ягодицы",
-    "Квадрицепси": "Квадрицепсы",
-    "Біцепс стегна": "Бицепс бедра",
-    "Привідні": "Приводящие мышцы",
-    "Ікри": "Икры"
-]
-
-private let gymRussianEnglishFallbacks: [String: String] = [
-    "Workout sync": "Синхронизация тренировок",
-    "Which workout history should GymApp keep?": "Какую историю тренировок сохранить?",
-    "This iPhone and the cloud contain different changes. Nothing has been deleted or overwritten.":
-        "На этом iPhone и в облаке разные изменения. Пока ничего не удалено и не перезаписано.",
-    "On this iPhone": "На этом iPhone",
-    "In the cloud": "В облаке",
-    "Saved workouts": "Сохранено тренировок",
-    "Choose this if your latest workouts were recorded on this iPhone. This history will replace the cloud copy.":
-        "Выбери это, если последние тренировки записывал на этом iPhone. Эта история заменит облачную копию.",
-    "Keep workouts from this iPhone": "Сохранить тренировки с этого iPhone",
-    "Choose this if your latest workouts were recorded on another device or in the PWA. The cloud history will replace workouts on this iPhone.":
-        "Выбери это, если последние тренировки записывал на другом устройстве или в PWA. Облачная история заменит тренировки на этом iPhone.",
-    "Use workouts from the cloud": "Загрузить тренировки из облака",
-    "Back up this iPhone first": "Сначала сделать копию этого iPhone",
-    "Sign out without changes": "Выйти без изменений",
-    "Checking both histories again…": "Снова проверяем обе истории…",
-    "The workout histories changed before your choice was applied. Review both versions again.":
-        "Истории тренировок изменились до применения выбора. Проверь обе версии ещё раз.",
-    "Cloud workout history was loaded on this iPhone.":
-        "Облачная история тренировок загружена на этот iPhone.",
-    "This iPhone's workout history was saved to the cloud.":
-        "История тренировок с этого iPhone сохранена в облаке.",
-    "Protected progress": "Защищённый прогресс",
-    "Rating status": "Статус рейтинга",
-    "Rating not available yet": "Рейтинг пока недоступен",
-    "Workouts are currently scored on your device, so public ranking is disabled, not queued for review. It will appear only after a future app and server update adds verified scoring; no release date is set. Your private progress remains available.":
-        "Сейчас тренировки оцениваются на устройстве, поэтому публичный рейтинг отключён, а не поставлен в очередь на проверку. Он появится только после будущего обновления приложения и сервера с проверяемым подсчётом; даты выпуска пока нет. Твой приватный прогресс остаётся доступным.",
-    "Private progress only": "Только приватный прогресс",
-    "YOUR PROGRESS": "ТВОЙ ПРОГРЕСС",
-    "Your synced progress": "Твой синхронизированный прогресс",
-    "Loading protected cloud progress…": "Загружаем защищённый облачный прогресс…",
-    "Your own cloud progress is up to date.": "Твой собственный облачный прогресс актуален.",
-    "Refresh updates only your own cloud XP. It does not start a rating check.":
-        "Обновление загружает только твои собственные XP из облака. Оно не запускает проверку рейтинга.",
-    "Uploads and reloads your protected progress": "Загружает и обновляет твой защищённый прогресс",
-    "Local progress": "Локальный прогресс",
-    "No synced progress yet": "Синхронизированного прогресса пока нет",
-    "Sign in and sync to restore your protected progress here.":
-        "Войди и синхронизируй данные, чтобы восстановить здесь свой защищённый прогресс.",
-    "This is an offline account. Sign in with a cloud account to protect and synchronize your progress; your workouts remain available on this device.":
-        "Это офлайн-аккаунт. Войди в облачный аккаунт, чтобы защитить и синхронизировать прогресс; твои тренировки останутся доступными на этом устройстве.",
-    "Protected cloud progress is unavailable, so the latest on-device XP, level and workouts are shown. Pull down or tap Refresh to try again.":
-        "Защищённый облачный прогресс недоступен, поэтому показаны актуальные XP, уровень и тренировки с этого устройства. Потяни вниз или нажми «Обновить», чтобы повторить попытку.",
-    "Report this display name?": "Пожаловаться на это имя?",
-    "GymApp will send the profile identifier and a fixed offensive-name reason to the moderation queue. No free-form text is sent.":
-        "GymApp отправит идентификатор профиля и фиксированную причину «неприемлемое имя» в очередь модерации. Произвольный текст не отправляется.",
-    "Report": "Пожаловаться",
-    "Showing on-device stats.": "Показана статистика с этого устройства.",
-    "Synced through Supabase.": "Синхронизировано через Supabase.",
-    "Show blocked athletes again": "Снова показывать заблокированных атлетов",
-    "Blocked athletes are visible again.": "Заблокированные атлеты снова видны.",
-    "Loading": "Загрузка",
-    "Refresh": "Обновить",
-    "Refresh progress": "Обновить прогресс",
-    "Sign in with a cloud account to refresh": "Войди в облачный аккаунт, чтобы обновить",
-    "Refreshes only your cloud progress; it does not start a rating check":
-        "Обновляет только твой облачный прогресс и не запускает проверку рейтинга",
-    "Uploads your latest stats and reloads the ranking": "Загружает твою актуальную статистику и обновляет рейтинг",
-    "Report display name": "Пожаловаться на имя",
-    "Block from leaderboard": "Заблокировать в рейтинге",
-    "Safety options": "Параметры безопасности",
-    "You": "Ты",
-    "Report sent. The display name was added to the moderation queue.": "Жалоба отправлена. Имя добавлено в очередь модерации.",
-    "Athlete blocked from your leaderboard.": "Атлет заблокирован в твоём рейтинге.",
-    "Exercise": "Упражнение",
-    "Add an exercise and log a workout to see progress.": "Добавь упражнение и запиши тренировку, чтобы увидеть прогресс.",
-    "Selects which exercise to analyze": "Выбирает упражнение для анализа",
-    "Muscle Breakdown": "Распределение по мышцам",
-    "No muscle mapping is available for this exercise yet.": "Для этого упражнения пока нет сопоставления с мышцами.",
-    "Progress Summary": "Сводка прогресса",
-    "Volume = weight × reps across all completed sets.": "Объём = вес × повторения во всех завершённых подходах.",
-    "Month best": "Лучшее за месяц",
-    "Month volume": "Объём за месяц",
-    "All-time PR": "Личный рекорд",
-    "No progress this month": "В этом месяце прогресса пока нет",
-    "Log sets for the selected exercise to unlock trends.": "Запиши подходы выбранного упражнения, чтобы открыть тренды.",
-    "Recent sessions": "Последние сессии",
-    "Workout History": "История тренировок",
-    "This list changes with the selected month and exercise.": "Список меняется в зависимости от выбранных месяца и упражнения.",
-    "Delete set": "Удалить подход",
-    "Create an exercise and log a workout first.": "Сначала создай упражнение и запиши тренировку.",
-    "best weight": "лучший вес",
-    "volume": "объём",
-    "No change vs prior month": "Без изменений по сравнению с прошлым месяцем",
-    "Delete this set?": "Удалить этот подход?",
-    "Couldn’t delete set": "Не удалось удалить подход",
-    "Visual Trends": "Визуальные тренды",
-    "No chart data": "Нет данных для графика",
-    "Max Weight Trend": "Динамика максимального веса",
-    "Baseline": "Базовый уровень",
-    "Maximum weight chart": "График максимального веса",
-    "Volume by Session": "Объём по сессиям",
-    "Session volume chart": "График объёма по сессиям",
-    "No trend yet": "Пока нет тренда",
-    "Holding steady": "Без изменений"
-]
-
-private func gymRussianFromUkrainian(_ ukrainian: String) -> String {
-    if let exact = gymRussianExactFallbacks[ukrainian] {
-        return exact
-    }
-    let replacements: [(String, String)] = [
-        ("Космічний воєвода", "Космический воевода"),
-        ("Понадмежний", "Запредельный"),
-        ("Нескінченний", "Бесконечный"),
-        ("Трансцендентний", "Трансцендентный"),
-        ("Галактичний", "Галактический"),
-        ("Сингулярність", "Сингулярность"),
-        ("Вознесений", "Вознесённый"),
-        ("Завойовник", "Завоеватель"),
-        ("Безсмертний", "Бессмертный"),
-        ("Міфічний", "Мифический"),
-        ("Незламний", "Несокрушимый"),
-        ("Вмотивований", "Мотивированный"),
-        ("Стартовий", "Начинающий"),
-        ("Стабільний", "Стабильный"),
-        ("Ударний", "Ударник"),
-        ("Домінатор", "Доминатор"),
-        ("Еліта", "Элита"),
-        ("Колос", "Колосс"),
-        ("Воїн", "Рождённый воином"),
-        ("Вічний", "Вечный"),
-        ("Володар", "Властелин"),
-        ("Омні", "Омни"),
-        ("Емпірей", "Эмпирей"),
-        ("Повернутися до поточного місяця", "Вернуться к текущему месяцу"),
-        ("із групами м’язів", "с группами мышц"),
-        ("у ручному зіставленні", "в ручном сопоставлении"),
-        ("з каталогу вправ", "из каталога упражнений"),
-        ("Навантаження для", "Нагрузка для"),
-        ("Тренування збережено, але", "Тренировка сохранена, но"),
-        ("Тренування ·", "Тренировка ·"),
-        ("Твоє поточне місце", "Твоё текущее место"),
-        ("Оновлено", "Обновлено"),
-        ("Місце", "Место"),
-        ("поточний користувач", "текущий пользователь"),
-        ("Сховати поле", "Скрыть поле"),
-        ("Показати поле", "Показать поле"),
-        ("у вибраному місяці", "в выбранном месяце"),
-        ("не вибрано", "не выбрано"),
-        ("вибрано", "выбрано"),
-        ("цього місяця", "в этом месяце"),
-        ("підх.", "подх."),
-        ("повторів", "повторов"),
-        ("Немає показника", "Нет показателя"),
-        ("Перший місяць для", "Первый месяц для"),
-        ("до попереднього місяця", "по сравнению с предыдущим месяцем"),
-        ("повт. буде видалено. Якщо це останній підхід, вправу або тренування також буде видалено.", "повторений будет удалено. Если это последний подход, упражнение или тренировка также будут удалены."),
-        ("Останні", "Последние"),
-        ("до першої сесії", "по сравнению с первой сессией"),
-        ("додати до черги Garmin не вдалося", "не удалось добавить в очередь Garmin"),
-        ("і всі його підходи буде видалено з цього пристрою", "и все её подходы будут удалены с этого устройства"),
-        ("усі його підходи буде видалено з цього пристрою", "все её подходы будут удалены с этого устройства"),
-        ("із тренування", "из тренировки"),
-        ("до наступного рівня", "до следующего уровня"),
-        ("на цьому рівні", "на этом уровне"),
-        ("за тренування", "за тренировку"),
-        ("Тренування за", "Тренировка за"),
-        ("Видалити тренування", "Удалить тренировку"),
-        ("Видалити підхід", "Удалить подход"),
-        ("Видалити", "Удалить"),
-        ("Додає або видаляє", "Добавляет или удаляет"),
-        ("Дає змогу вручну зіставити", "Позволяет вручную сопоставить"),
-        ("Показує всі збережені підходи", "Показывает все сохранённые подходы"),
-        ("Більше дій для", "Больше действий для"),
-        ("Попередній рекорд", "Предыдущий рекорд"),
-        ("Новий рекорд ваги", "Новый рекорд веса"),
-        ("Розрахунковий 1ПМ", "Расчётный 1ПМ"),
-        ("Розумний тренер створив тренування", "Умный тренер создал тренировку"),
-        ("завантажено", "загружен"),
-        ("Замінює вміст редактора шаблоном", "Заменяет содержимое редактора шаблоном"),
-        ("Запустити таймер відпочинку", "Запустить таймер отдыха"),
-        ("Залишилося", "Осталось"),
-        ("Використовує останню записану вагу", "Использует последний записанный вес"),
-        ("Остання вага", "Последний вес"),
-        ("Повторення для підходу", "Повторения для подхода"),
-        ("Вага для підходу", "Вес для подхода"),
-        ("Підхід", "Подход"),
-        ("підхід", "подход"),
-        ("підходи", "подходы"),
-        ("підходів", "подходов"),
-        ("Рівень", "Уровень"),
-        ("рівень", "уровень"),
-        ("Далі", "Далее"),
-        ("на рівні", "на уровне"),
-        ("Вправ", "Упражнений"),
-        ("вправи", "упражнения"),
-        ("вправ", "упражнений"),
-        ("зіставлено", "сопоставлено"),
-        ("Імпортовано", "Импортировано"),
-        ("додано", "добавлено"),
-        ("пропущено", "пропущено"),
-        ("проігноровано", "проигнорировано"),
-        ("Обсяг", "Объём"),
-        ("обсяг", "объём"),
-        ("навантаження", "нагрузка"),
-        ("Створено", "Создано"),
-        ("Час наступного підходу", "Время следующего подхода"),
-        ("секунд", "секунд"),
-        ("повт.", "повт."),
-        ("кілограмів", "килограммов"),
-        ("повторень", "повторений"),
-        ("Поточний місяць", "Текущий месяц"),
-        ("Серія у", "Серия в"),
-        ("створює справжній темп", "создаёт хороший темп"),
-        ("загалом", "всего")
-    ]
-    return replacements.reduce(ukrainian) { result, replacement in
-        result.replacingOccurrences(of: replacement.0, with: replacement.1)
-    }
 }
 
 private func gymUkrainianDynamicFallback(_ english: String, bundle _: Bundle) -> String {
@@ -703,6 +458,44 @@ private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
     return safeMessages.contains(message) ? message : gymGenericErrorMessage
 }
 
+enum GymPluralCategory: Equatable, Sendable {
+    case one
+    case few
+    case many
+}
+
+/// Ukrainian and Russian share the standard one/few/many rules: 1, 21, 101 → one;
+/// 2–4, 22–24 → few; 0, 5–20 (including 11–14), 25–30 → many. English only
+/// distinguishes exactly one from everything else.
+func gymPluralCategory(_ count: Int, languageCode: String) -> GymPluralCategory {
+    let absolute = count.magnitude
+    guard languageCode == AppLanguage.ukrainian.rawValue || languageCode == AppLanguage.russian.rawValue else {
+        return absolute == 1 ? .one : .many
+    }
+    let last = absolute % 10
+    let lastTwo = absolute % 100
+    if last == 1, lastTwo != 11 { return .one }
+    if (2 ... 4).contains(last), !(12 ... 14).contains(lastTwo) { return .few }
+    return .many
+}
+
+/// Returns the noun form that agrees with `count` in the app language. Callers pass
+/// the forms already localized (for example through `gymText`) and place the number
+/// themselves, so phrases such as "Осталось 3 подхода" keep natural word order.
+func gymPlural(
+    _ count: Int,
+    one: String,
+    few: String,
+    many: String,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    switch gymPluralCategory(count, languageCode: languageCode) {
+    case .one: one
+    case .few: few
+    case .many: many
+    }
+}
+
 func gymCount(
     _ count: Int,
     englishOne: String,
@@ -712,33 +505,19 @@ func gymCount(
     ukrainianMany: String,
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
-    if languageCode == AppLanguage.russian.rawValue {
+    let noun: String
+    switch languageCode {
+    case AppLanguage.russian.rawValue:
         let forms = gymRussianNounForms[englishOne] ?? [
             gymLocalized(englishOne, languageCode: languageCode),
             gymLocalized(englishMany, languageCode: languageCode),
             gymLocalized(englishMany, languageCode: languageCode)
         ]
-        let absolute = abs(count)
-        let lastTwo = absolute % 100
-        let last = absolute % 10
-        let noun = last == 1 && lastTwo != 11
-            ? forms[0]
-            : ((2 ... 4).contains(last) && !(12 ... 14).contains(lastTwo) ? forms[1] : forms[2])
-        return "\(count) \(noun)"
-    }
-    guard languageCode == AppLanguage.ukrainian.rawValue else {
-        return "\(count) \(count == 1 ? englishOne : englishMany)"
-    }
-    let absolute = abs(count)
-    let lastTwo = absolute % 100
-    let last = absolute % 10
-    let noun: String
-    if last == 1, lastTwo != 11 {
-        noun = ukrainianOne
-    } else if (2 ... 4).contains(last), !(12 ... 14).contains(lastTwo) {
-        noun = ukrainianFew
-    } else {
-        noun = ukrainianMany
+        noun = gymPlural(count, one: forms[0], few: forms[1], many: forms[2], languageCode: languageCode)
+    case AppLanguage.ukrainian.rawValue:
+        noun = gymPlural(count, one: ukrainianOne, few: ukrainianFew, many: ukrainianMany, languageCode: languageCode)
+    default:
+        noun = gymPlural(count, one: englishOne, few: englishMany, many: englishMany, languageCode: languageCode)
     }
     return "\(count) \(noun)"
 }

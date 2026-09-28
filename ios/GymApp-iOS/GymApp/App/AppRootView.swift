@@ -150,16 +150,19 @@ private struct CloudSyncConflictView: View {
                         eyebrow: gymText(
                             "Workout sync",
                             "Синхронізація тренувань",
+                            "Синхронизация тренировок",
                             languageCode: languageCode
                         ),
                         title: gymText(
                             "Which workout history should GymApp keep?",
                             "Яку історію тренувань зберегти?",
+                            "Какую историю тренировок сохранить?",
                             languageCode: languageCode
                         ),
                         supporting: gymText(
                             "This iPhone and the cloud contain different changes. Nothing has been deleted or overwritten.",
                             "На цьому iPhone та в хмарі різні зміни. Поки що нічого не видалено й не перезаписано.",
+                            "На этом iPhone и в облаке разные изменения. Пока ничего не удалено и не перезаписано.",
                             languageCode: languageCode
                         )
                     )
@@ -170,6 +173,7 @@ private struct CloudSyncConflictView: View {
                                 title: gymText(
                                     "On this iPhone",
                                     "На цьому iPhone",
+                                    "На этом iPhone",
                                     languageCode: languageCode
                                 ),
                                 count: summary.localWorkoutCount,
@@ -179,6 +183,7 @@ private struct CloudSyncConflictView: View {
                                 title: gymText(
                                     "In the cloud",
                                     "У хмарі",
+                                    "В облаке",
                                     languageCode: languageCode
                                 ),
                                 count: summary.cloudWorkoutCount,
@@ -197,6 +202,7 @@ private struct CloudSyncConflictView: View {
                                 gymText(
                                     "Choose this if your latest workouts were recorded on this iPhone. This history will replace the cloud copy.",
                                     "Вибери це, якщо останні тренування записував на цьому iPhone. Ця історія замінить хмарну копію.",
+                                    "Выбери это, если последние тренировки записывал на этом iPhone. Эта история заменит облачную копию.",
                                     languageCode: languageCode
                                 )
                             )
@@ -208,6 +214,7 @@ private struct CloudSyncConflictView: View {
                                     gymText(
                                         "Keep workouts from this iPhone",
                                         "Зберегти тренування з цього iPhone",
+                                        "Сохранить тренировки с этого iPhone",
                                         languageCode: languageCode
                                     ),
                                     systemImage: "iphone.and.arrow.forward"
@@ -221,6 +228,7 @@ private struct CloudSyncConflictView: View {
                                 gymText(
                                     "Choose this if your latest workouts were recorded on another device or in the PWA. The cloud history will replace workouts on this iPhone.",
                                     "Вибери це, якщо останні тренування записував на іншому пристрої або в PWA. Хмарна історія замінить тренування на цьому iPhone.",
+                                    "Выбери это, если последние тренировки записывал на другом устройстве или в PWA. Облачная история заменит тренировки на этом iPhone.",
                                     languageCode: languageCode
                                 )
                             )
@@ -232,6 +240,7 @@ private struct CloudSyncConflictView: View {
                                     gymText(
                                         "Use workouts from the cloud",
                                         "Завантажити тренування з хмари",
+                                        "Загрузить тренировки из облака",
                                         languageCode: languageCode
                                     ),
                                     systemImage: "icloud.and.arrow.down"
@@ -247,6 +256,7 @@ private struct CloudSyncConflictView: View {
                                     gymText(
                                         "Back up this iPhone first",
                                         "Спочатку зробити копію цього iPhone",
+                                        "Сначала сделать копию этого iPhone",
                                         languageCode: languageCode
                                     ),
                                     systemImage: "square.and.arrow.up"
@@ -261,6 +271,7 @@ private struct CloudSyncConflictView: View {
                                     gymText(
                                         "Sign out without changes",
                                         "Вийти без змін",
+                                        "Выйти без изменений",
                                         languageCode: languageCode
                                     )
                                 )
@@ -278,6 +289,7 @@ private struct CloudSyncConflictView: View {
                                 gymText(
                                     "Checking both histories again…",
                                     "Знову перевіряємо обидві історії…",
+                                    "Снова проверяем обе истории…",
                                     languageCode: languageCode
                                 )
                             )
@@ -310,6 +322,7 @@ private struct CloudSyncConflictView: View {
         let savedWorkouts = gymText(
             "Saved workouts",
             "Збережено тренувань",
+            "Сохранено тренировок",
             languageCode: languageCode
         )
         return HStack(spacing: 12) {
@@ -370,7 +383,7 @@ private struct AccountPreparationView: View {
     var body: some View {
         GymContentUnavailableView {
             Label(
-                gymText("Preparing account", "Підготовка акаунта", languageCode: languageCode),
+                gymText("Preparing account", "Підготовка акаунта", "Подготовка аккаунта", languageCode: languageCode),
                 systemImage: isWorking ? "arrow.triangle.2.circlepath" : "person.crop.circle.badge.exclamationmark"
             )
         } description: {
@@ -378,6 +391,7 @@ private struct AccountPreparationView: View {
                 message ?? gymText(
                     "Opening this account's protected workout data.",
                     "Відкриваємо захищені дані тренувань цього акаунта.",
+                    "Открываем защищенные данные тренировок этого аккаунта.",
                     languageCode: languageCode
                 )
             )
@@ -386,12 +400,12 @@ private struct AccountPreparationView: View {
                 ProgressView()
             } else {
                 Button(
-                    gymText("Try again", "Спробувати ще раз", languageCode: languageCode),
+                    gymText("Try again", "Спробувати ще раз", "Попробовать еще раз", languageCode: languageCode),
                     action: retry
                 )
                 .buttonStyle(.borderedProminent)
                 Button(
-                    gymText("Sign out", "Вийти", languageCode: languageCode),
+                    gymText("Sign out", "Вийти", "Выйти", languageCode: languageCode),
                     action: signOut
                 )
                 .buttonStyle(.bordered)
@@ -452,9 +466,9 @@ private struct MainTabShell: View {
         func title(_ language: String) -> String {
             switch self {
             case .workouts: gymText("Today", "Сьогодні", "Сегодня", languageCode: language)
-            case .exercises: gymText("Exercises", "Вправи", languageCode: language)
-            case .progress: gymText("Progress", "Прогрес", languageCode: language)
-            case .profile: gymText("Profile", "Профіль", languageCode: language)
+            case .exercises: gymText("Exercises", "Вправи", "Упражнения", languageCode: language)
+            case .progress: gymText("Progress", "Прогрес", "Прогресс", languageCode: language)
+            case .profile: gymText("Profile", "Профіль", "Профиль", languageCode: language)
             }
         }
     }
@@ -751,6 +765,7 @@ private struct MainTabShell: View {
                         gymText(
                             "Double tap to dismiss",
                             "Торкнися двічі, щоб закрити",
+                            "Коснись дважды, чтобы закрыть",
                             languageCode: languageCode
                         )
                     )

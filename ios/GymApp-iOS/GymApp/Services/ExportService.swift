@@ -129,6 +129,7 @@ enum ExportService {
                 gymText(
                     "Generated \(gymFormattedTimestamp(Date(), date: .abbreviated, time: .standard))",
                     "Створено \(gymFormattedTimestamp(Date(), date: .abbreviated, time: .standard))",
+                    "Создано \(gymFormattedTimestamp(Date(), date: .abbreviated, time: .standard))",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 font: .systemFont(ofSize: 10),
