@@ -12248,6 +12248,281 @@ function smartRestSecondsForBlock(block) {
   return smartRestSecondsForAnalysis(analyzeSmartExercise(block));
 }
 
+// Live personal records, plate math and friends' latest results in the active
+// workout, with the same rules as iOS and Android.
+const PERSONAL_RECORD_ESTIMATE_TOLERANCE = 1e-9;
+const PLATE_BAR_WEIGHT = 20;
+const PLATE_WEIGHTS = Object.freeze([25, 20, 15, 10, 5, 2.5, 1.25]);
+const PLATE_BARBELL_KEYS = new Set([
+  "bench_press", "incline_bench_press", "barbell_row", "squat", "romanian_deadlift",
+  "deadlift", "hip_thrust", "barbell_curl", "upright_row", "french_press"
+]);
+const FRIEND_GHOST_MAXIMUM_FRIENDS = 10;
+let knownPersonalRecords = { workoutId: null, ids: null };
+let friendGhostState = { key: null, ghosts: new Map() };
+
+function oneRepMaxEstimate(weight, reps) {
+  return weight * (1 + reps / 30);
+}
+
+function activeBlockExerciseKey(block) {
+  return exerciseMatchKey({
+    name: block.exerciseName,
+    ...(block.catalogKey ? { catalogKey: block.catalogKey } : {})
+  });
+}
+
+// A completed set is a record when it beats the exercise's history best (heavier
+// weight or a better Epley estimate) and every set recorded earlier in this workout.
+// The first session of an exercise and 0 kg sets never count; matching is not a record.
+function personalRecordSetIds(workout = activeWorkout, sessions = state.sessions) {
+  const records = new Set();
+  if (!workout) return records;
+  const completed = [];
+  workout.blocks.forEach((block, blockIndex) => block.sets.forEach((set, setIndex) => {
+    if (set.completed && Number.isSafeInteger(set.completedAt)) {
+      completed.push({ key: activeBlockExerciseKey(block), set, blockIndex, setIndex });
+    }
+  }));
+  if (!completed.length) return records;
+  const wanted = new Set(completed.map(entry => entry.key));
+  const startedAt = Number(workout.createdAt);
+  const bests = new Map();
+  const remember = (key, weight, estimate) => {
+    const best = bests.get(key);
+    bests.set(key, best
+      ? { weight: Math.max(best.weight, weight), estimate: Math.max(best.estimate, estimate) }
+      : { weight, estimate });
+  };
+  for (const session of sessions || []) {
+    if (!(Number(session.startedAt) < startedAt)) continue;
+    for (const set of session.sets || []) {
+      const key = exerciseMatchKey(set);
+      const weight = Number(set.weight);
+      const reps = Number(set.reps);
+      if (!wanted.has(key) || !Number.isFinite(weight) || !Number.isFinite(reps)) continue;
+      remember(key, weight, oneRepMaxEstimate(weight, reps));
+    }
+  }
+  completed.sort((left, right) => left.set.completedAt - right.set.completedAt ||
+    left.blockIndex - right.blockIndex || left.setIndex - right.setIndex);
+  for (const entry of completed) {
+    const weight = Number(entry.set.weight);
+    const reps = Number(entry.set.reps);
+    const best = bests.get(entry.key);
+    if (!(weight > 0) || !best) continue;
+    const estimate = oneRepMaxEstimate(weight, reps);
+    if (weight > best.weight || estimate > best.estimate + PERSONAL_RECORD_ESTIMATE_TOLERANCE) {
+      records.add(entry.set.id);
+    }
+    remember(entry.key, weight, estimate);
+  }
+  return records;
+}
+
+// A newly logged record gets a short vibration where the browser supports it;
+// opening a workout that already holds records does not.
+function notifyNewPersonalRecords(workout, ids) {
+  const known = knownPersonalRecords.workoutId === workout.id ? knownPersonalRecords.ids : null;
+  if (known && [...ids].some(id => !known.has(id))) {
+    try { navigator.vibrate?.(40); } catch { /* Vibration is optional. */ }
+  }
+  knownPersonalRecords = { workoutId: workout.id, ids };
+}
+
+function personalRecordBadgeMarkup() {
+  return `<span class="pill personal-record-badge">${svg("trophy", "small-icon")}${tx3("Record", "Рекорд", "Рекорд")}</span>`;
+}
+
+function plateLoad(total) {
+  // Work in hundredths of a kilogram so 2.5 and 1.25 add up exactly.
+  const totalUnits = Number.isFinite(total) ? Math.round(total * 100) : 0;
+  const barUnits = Math.round(PLATE_BAR_WEIGHT * 100);
+  if (totalUnits < barUnits) return { status: "belowBar", platesPerSide: [], remainderPerSide: 0 };
+  // An odd hundredth cannot be split evenly; the leftover half stays in the remainder.
+  let remainingUnits = Math.floor((totalUnits - barUnits) / 2);
+  if (remainingUnits <= 0) return { status: "barOnly", platesPerSide: [], remainderPerSide: 0 };
+  const platesPerSide = [];
+  for (const plate of PLATE_WEIGHTS) {
+    const plateUnits = Math.round(plate * 100);
+    while (remainingUnits >= plateUnits) {
+      platesPerSide.push(plate);
+      remainingUnits -= plateUnits;
+    }
+  }
+  return { status: "loaded", platesPerSide, remainderPerSide: remainingUnits / 100 };
+}
+
+function plateCalculatorApplies(block) {
+  const catalogKey = persistedExerciseCatalogKey({
+    name: block.exerciseName,
+    ...(block.catalogKey ? { catalogKey: block.catalogKey } : {})
+  });
+  return Boolean(catalogKey && PLATE_BARBELL_KEYS.has(catalogKey));
+}
+
+function plateNumber(value) {
+  return new Intl.NumberFormat(displayLocale(), { maximumFractionDigits: 2 }).format(value);
+}
+
+function plateSummaryLines(load) {
+  const bar = `${plateNumber(PLATE_BAR_WEIGHT)} ${tx3("kg", "кг", "кг")}`;
+  if (load.status === "belowBar") return [tx3(`Less than the ${bar} bar`, `Менше за гриф ${bar}`, `Меньше грифа ${bar}`)];
+  if (load.status === "barOnly") return [tx3(`Bar only (${bar})`, `Лише гриф (${bar})`, `Только гриф (${bar})`)];
+  const lines = [];
+  if (load.platesPerSide.length) {
+    const plates = load.platesPerSide.map(plateNumber).join(" + ");
+    lines.push(tx3(`Per side: ${plates}`, `На кожну сторону: ${plates}`, `На каждую сторону: ${plates}`));
+  }
+  if (load.remainderPerSide > 0) {
+    const remainder = `${plateNumber(load.remainderPerSide)} ${tx3("kg", "кг", "кг")}`;
+    lines.push(tx3(`Remainder: ${remainder} per side`, `Залишок: ${remainder} на сторону`, `Остаток: ${remainder} на сторону`));
+  }
+  return lines;
+}
+
+function plateCalculatorMarkup(weight) {
+  if (!Number.isFinite(weight)) return "";
+  const lines = plateSummaryLines(plateLoad(weight));
+  return `<details class="plate-calculator"><summary class="plate-calculator-toggle" aria-label="${escapeAttr(tx3("Plates per side", "Диски на сторону", "Блины на сторону"))}">${tx3("Plates", "Диски", "Блины")}</summary><div class="plate-calculator-panel"><strong>${escapeHtml(`${plateNumber(weight)} ${tx3("kg", "кг", "кг")}`)}</strong>${lines.map(line => `<span>${escapeHtml(line)}</span>`).join("")}</div></details>`;
+}
+
+function slavicPluralIndex(count) {
+  const mod10 = Math.abs(count) % 10;
+  const mod100 = Math.abs(count) % 100;
+  if (mod10 === 1 && mod100 !== 11) return 0;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 1;
+  return 2;
+}
+
+function countedText(count, en, uk, ruForms) {
+  const noun = state.language === "uk"
+    ? uk[slavicPluralIndex(count)]
+    : state.language === "ru"
+      ? ruForms[slavicPluralIndex(count)]
+      : (count === 1 ? en[0] : en[1]);
+  return `${count} ${noun}`;
+}
+
+function friendGhostsToQuery(friends) {
+  return friends
+    .map((friend, index) => ({ friend, index, time: Date.parse(friend.progressUpdatedAt || "") }))
+    .sort((left, right) => {
+      const leftTime = Number.isFinite(left.time) ? left.time : -Infinity;
+      const rightTime = Number.isFinite(right.time) ? right.time : -Infinity;
+      return rightTime - leftTime || left.index - right.index;
+    })
+    .slice(0, FRIEND_GHOST_MAXIMUM_FRIENDS)
+    .map(entry => entry.friend);
+}
+
+// The latest result per exercise across friends' pages: the most recent workout wins,
+// and within it the heaviest set, then the most reps.
+function friendGhostsFromPages(pages) {
+  const ghosts = new Map();
+  for (const page of pages) {
+    for (const workout of page.items) {
+      const startedAt = Date.parse(workout.startedAt);
+      if (!Number.isFinite(startedAt)) continue;
+      for (const exercise of workout.exercises) {
+        const top = exercise.sets.reduce((best, set) => !best ||
+          set.weightKg > best.weightKg || (set.weightKg === best.weightKg && set.reps > best.reps) ? set : best, null);
+        if (!top || !(top.reps > 0)) continue;
+        const key = exerciseMatchKey({
+          name: exercise.name,
+          ...(exercise.catalogKey ? { catalogKey: exercise.catalogKey } : {})
+        });
+        const existing = ghosts.get(key);
+        if (existing && existing.startedAt >= startedAt) continue;
+        ghosts.set(key, {
+          friendName: page.friend.displayName,
+          weightKg: top.weightKg,
+          reps: top.reps,
+          workoutDay: workout.workoutDay,
+          startedAt
+        });
+      }
+    }
+  }
+  return ghosts;
+}
+
+function friendGhostDaysAgo(workoutDay, now = new Date()) {
+  const parts = String(workoutDay).split("-").map(Number);
+  if (parts.length !== 3 || parts.some(part => !Number.isInteger(part))) return 0;
+  const day = new Date(parts[0], parts[1] - 1, parts[2]);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((today - day) / 86400000));
+}
+
+// "Саша: 85 × 8 · 3 дня назад"; a bodyweight result reads "Саша: 12 повторений · вчера".
+function friendGhostLine(ghost, now = new Date()) {
+  const result = ghost.weightKg > 0
+    ? `${plateNumber(ghost.weightKg)} × ${ghost.reps}`
+    : countedText(ghost.reps, ["rep", "reps"], ["повторення", "повторення", "повторень"], ["повторение", "повторения", "повторений"]);
+  const days = friendGhostDaysAgo(ghost.workoutDay, now);
+  const when = days === 0
+    ? tx3("today", "сьогодні", "сегодня")
+    : days === 1
+      ? tx3("yesterday", "учора", "вчера")
+      : (() => {
+        const counted = countedText(days, ["day", "days"], ["день", "дні", "днів"], ["день", "дня", "дней"]);
+        return tx3(`${counted} ago`, `${counted} тому`, `${counted} назад`);
+      })();
+  return `${ghost.friendName}: ${result} · ${when}`;
+}
+
+function friendGhostMarkup(block) {
+  const key = activeBlockExerciseKey(block);
+  const ghost = friendGhostState.ghosts.get(key);
+  return `<p class="friend-ghost" data-friend-ghost-key="${escapeAttr(key)}" ${ghost ? "" : "hidden"}>${svg("person", "small-icon")}<span>${ghost ? escapeHtml(friendGhostLine(ghost)) : ""}</span></p>`;
+}
+
+// Loads friends' latest results once per workout. Only friends whose workout-detail
+// sharing is on are read; any failure simply leaves that friend out. The lines are
+// filled in place so typing in the set inputs is never interrupted.
+function ensureFriendGhostsLoaded(workout) {
+  if (!workout || !activeAccount?.remote || !remoteAuthEnabled()) return;
+  const session = loadRemoteSession();
+  if (!session?.user?.id) return;
+  const key = `${socialSourceKey()}:${workout.id}`;
+  if (friendGhostState.key === key) return;
+  friendGhostState = { key, ghosts: new Map() };
+  const expectedEpoch = accountEpoch;
+  const expectedUserId = activeAccount.userId;
+  (async () => {
+    const dashboard = parseSocialDashboard(await socialRpc("social_dashboard", {}, { session }));
+    const pages = [];
+    for (const friend of friendGhostsToQuery(dashboard.friends)) {
+      if (friendGhostState.key !== key || !socialIdentityIsCurrent(expectedEpoch, expectedUserId)) return;
+      try {
+        const capability = parseSocialFriendWorkoutDetailCapability(await socialRpc(
+          "social_friend_workout_detail_capability",
+          { p_profile_id: friend.profileId },
+          { session }
+        ));
+        if (!capability.available) continue;
+        const page = parseSocialFriendWorkoutPage(await socialRpc(
+          "social_friend_workout_page",
+          { p_profile_id: friend.profileId, p_cursor: null, p_limit: 5 },
+          { session }
+        ));
+        if (page.friend.profileId === friend.profileId) pages.push(page);
+      } catch {
+        continue;
+      }
+    }
+    if (friendGhostState.key !== key || !socialIdentityIsCurrent(expectedEpoch, expectedUserId)) return;
+    friendGhostState = { key, ghosts: friendGhostsFromPages(pages) };
+    app?.querySelectorAll?.("[data-friend-ghost-key]").forEach(element => {
+      const ghost = friendGhostState.ghosts.get(element.dataset.friendGhostKey);
+      if (!ghost) return;
+      element.querySelector("span").textContent = friendGhostLine(ghost);
+      element.hidden = false;
+    });
+  })().catch(() => {});
+}
+
 function activeWorkoutScreen() {
   const workout = activeWorkout;
   if (!workout) {
@@ -12264,6 +12539,9 @@ function activeWorkoutScreen() {
       activeWorkoutUndoMarker?.setId === latestCompletedSetId
     ? latestCompletedSetId
     : null;
+  const recordSetIds = personalRecordSetIds(workout);
+  notifyNewPersonalRecords(workout, recordSetIds);
+  ensureFriendGhostsLoaded(workout);
   const liveTabs = activeLiveParticipantTabsMarkup(workout);
   const hasLiveParticipants = liveTabs.length > 0;
   const selfPanelHidden = hasLiveParticipants && activeLiveParticipantView === "peer";
@@ -12285,7 +12563,8 @@ function activeWorkoutScreen() {
       index,
       currentBlockIndex,
       latestCompletedSetId,
-      undoableSetId
+      undoableSetId,
+      recordSetIds
     )).join("")}</section>
     <section class="panel active-workout-finish"><div class="actions vertical"><button class="button secondary full" data-action="record-all-active-sets" ${counts.completed < counts.total ? "" : "disabled"}>${svg("checkCircle", "small-icon")}${tx3("Save all", "Зберегти все", "Сохранить всё")}</button><button class="button full" data-action="finish-active-workout" ${counts.completed ? "" : "disabled"}>${svg("checkCircle", "small-icon")}${tx("Finish workout", "Завершити тренування")}</button></div><details class="active-workout-more"><summary>${tx3("More workout options", "Інші дії", "Другие действия")}</summary><button class="button danger full" data-action="discard-active-workout">${tx("Discard active workout", "Відкинути активне тренування")}</button></details></section></div>${hasLiveParticipants ? activeLivePeerWorkoutMarkup(workout) : ""}`;
 }
@@ -12352,9 +12631,11 @@ function activeWorkoutBlockMarkup(
   blockIndex,
   currentBlockIndex = -1,
   latestCompletedSetId = null,
-  undoableSetId = null
+  undoableSetId = null,
+  recordSetIds = new Set()
 ) {
   const completed = block.sets.filter(set => set.completed).length;
+  const usesPlates = plateCalculatorApplies(block);
   const fullyCompleted = completed === block.sets.length;
   const current = !fullyCompleted && blockIndex === currentBlockIndex;
   const firstIncompleteSetIndex = block.sets.findIndex(set => !set.completed);
@@ -12364,11 +12645,13 @@ function activeWorkoutBlockMarkup(
   const expanded = current || hasLatestCompletedSet;
   const timerKey = hasLatestCompletedSet ? `${activeWorkout.id}:${block.exerciseName}` : null;
   const remaining = timerKey ? timerRemaining(timerKey) : 0;
-  return `<section class="panel highlighted active-workout-exercise ${fullyCompleted ? "completed" : current ? "current" : "upcoming"}"><details ${expanded ? "open" : ""}><summary class="detail-summary active-workout-exercise-summary"><div><span class="eyebrow">${tx("Exercise", "Вправа")} ${blockIndex + 1}</span><h2>${escapeHtml(exerciseDisplayName(block))}</h2><p>${escapeHtml(stateLabel)}</p></div>${exerciseMediaThumbnail(block, { className: "compact" })}${fullyCompleted ? `<span class="pill completed-exercise-badge">${svg("checkCircle", "small-icon")}${tx("Done", "Готово")}</span>` : ""}</summary>
+  return `<section class="panel highlighted active-workout-exercise ${fullyCompleted ? "completed" : current ? "current" : "upcoming"}"><details ${expanded ? "open" : ""}><summary class="detail-summary active-workout-exercise-summary"><div><span class="eyebrow">${tx("Exercise", "Вправа")} ${blockIndex + 1}</span><h2>${escapeHtml(exerciseDisplayName(block))}</h2><p>${escapeHtml(stateLabel)}</p>${friendGhostMarkup(block)}</div>${exerciseMediaThumbnail(block, { className: "compact" })}${fullyCompleted ? `<span class="pill completed-exercise-badge">${svg("checkCircle", "small-icon")}${tx("Done", "Готово")}</span>` : ""}</summary>
     <div class="active-set-list">${block.sets.map((set, setIndex) => activeWorkoutSetMarkup(set, setIndex, {
       liveLocked,
       current: current && setIndex === firstIncompleteSetIndex,
       undoable: set.id === undoableSetId,
+      record: recordSetIds.has(set.id),
+      plates: usesPlates,
       timerKey: set.id === latestCompletedSetId ? timerKey : null,
       remaining: set.id === latestCompletedSetId ? remaining : 0
     })).join("")}</div>
@@ -12909,9 +13192,14 @@ function activeWorkoutSetMarkup(set, setIndex, options = {}) {
     liveLocked = false,
     current = false,
     undoable = false,
+    record = false,
+    plates = false,
     timerKey = null,
     remaining = 0
   } = options;
+  const plateWeight = plates && current && !set.completed
+    ? Number(String(activeLiveDraftInputValue(set, "weight")).replace(",", ".").trim() || NaN)
+    : NaN;
   const status = set.completed ? tx("Saved", "Збережено") : tx("Ready", "Готово");
   const disabled = set.completed ? "disabled" : "";
   const setId = escapeAttr(String(set.id));
@@ -12925,7 +13213,7 @@ function activeWorkoutSetMarkup(set, setIndex, options = {}) {
     : (current
       ? `<button class="button full active-set-action" data-action="record-active-set" data-id="${setId}">${svg("checkCircle", "small-icon")}${tx("Record set", "Записати підхід")}</button>`
       : "");
-  return `<div class="active-set-row ${set.completed ? "completed" : current ? "current" : ""}" data-active-set-row="${setId}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong><span>${set.completed ? svg("checkCircle", "small-icon") : ""}${current ? tx3("Do this now", "Виконай зараз", "Сделай сейчас") : status}</span></div><label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${setId}" data-active-field="weight" inputmode="decimal" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "weight"))}" ${disabled}></label><label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${setId}" data-active-field="reps" inputmode="numeric" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "reps"))}" ${disabled}></label>${current && !set.completed ? activeQuickEntryMarkup(set) : ""}${current && !set.completed ? activeSetVoiceContainerMarkup(setId) : ""}${restTimer}${action}</div>`;
+  return `<div class="active-set-row ${set.completed ? "completed" : current ? "current" : ""}" data-active-set-row="${setId}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong>${plateCalculatorMarkup(plateWeight)}${record ? personalRecordBadgeMarkup() : ""}<span>${set.completed ? svg("checkCircle", "small-icon") : ""}${current ? tx3("Do this now", "Виконай зараз", "Сделай сейчас") : status}</span></div><label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${setId}" data-active-field="weight" inputmode="decimal" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "weight"))}" ${disabled}></label><label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${setId}" data-active-field="reps" inputmode="numeric" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "reps"))}" ${disabled}></label>${current && !set.completed ? activeQuickEntryMarkup(set) : ""}${current && !set.completed ? activeSetVoiceContainerMarkup(setId) : ""}${restTimer}${action}</div>`;
 }
 
 function trainingProfilePanel() {

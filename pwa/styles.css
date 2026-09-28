@@ -5468,3 +5468,63 @@ textarea:focus {
 .training-program-week li { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid var(--outline-variant); }
 .training-program .button { white-space: normal; overflow-wrap: anywhere; }
 .training-adapt-row p { margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+
+/* Live personal records, plate math and friends' results in the active workout. */
+.active-set-label .personal-record-badge {
+  justify-self: start;
+  min-height: 24px;
+  padding: 0 8px;
+  border-color: transparent;
+  color: var(--on-primary);
+  background: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.active-set-label .personal-record-badge svg { width: 14px; height: 14px; }
+
+.plate-calculator { justify-self: start; }
+
+.plate-calculator-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.plate-calculator-toggle::-webkit-details-marker { display: none; }
+
+.plate-calculator-panel {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow);
+  font-variant-numeric: tabular-nums;
+}
+
+.active-set-label .plate-calculator-panel span { color: var(--text); font-size: 13px; line-height: 18px; }
+
+.friend-ghost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.friend-ghost[hidden] { display: none; }
+
+.friend-ghost svg { width: 14px; height: 14px; flex: none; }

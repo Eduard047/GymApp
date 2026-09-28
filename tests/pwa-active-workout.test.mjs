@@ -2478,3 +2478,163 @@ test("adaptation rejects stale history, live binding and account switching witho
     assert.equal(localStorage.getItem(key), before);
   }
 });
+
+test("live personal records follow the shared iOS and Android rules", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const history = (weights, reps, startedAt = 1000) => ({
+      id: startedAt,
+      startedAt,
+      note: "",
+      exerciseNames: ["Bench Press"],
+      sets: weights.map((weight, index) => ({
+        id: startedAt + index + 1,
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        weight,
+        reps: reps[index],
+        orderIndex: index
+      }))
+    });
+    const workout = sets => ({
+      id: 77,
+      createdAt: 5000,
+      blocks: [{
+        id: 1,
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        sets: sets.map(([weight, reps, completedAt], index) => ({
+          id: 100 + index,
+          weight,
+          reps,
+          completed: completedAt !== null,
+          completedAt
+        }))
+      }]
+    });
+    const ids = (sets, sessions) => [...personalRecordSetIds(workout(sets), sessions)].sort();
+    return JSON.stringify({
+      beats: ids([[85, 3, 6000], [80, 10, 6001], [80, 8, 6002], [120, 5, null]], [history([80, 80], [8, 8])]),
+      firstSession: ids([[60, 8, 6000], [70, 8, 6001]], []),
+      zeroKilograms: ids([[0, 20, 6000], [5, 8, 6001]], [history([0], [8])]),
+      bestSoFar: ids([[90, 5, 6000], [85, 5, 6001], [95, 5, 6002], [95, 5, 6003]], [history([80], [5])]),
+      completionOrder: ids([[90, 5, 7000], [90, 5, 6000]], [history([80], [5])]),
+      laterHistoryIgnored: ids([[85, 5, 6000]], [history([80], [5]), history([200], [5], 9000)])
+    });
+  })()`, context));
+
+  assert.deepEqual(result.beats, [100, 101]);
+  assert.deepEqual(result.firstSession, []);
+  assert.deepEqual(result.zeroKilograms, [101]);
+  assert.deepEqual(result.bestSoFar, [100, 102]);
+  assert.deepEqual(result.completionOrder, [101]);
+  assert.deepEqual(result.laterHistoryIgnored, [100]);
+});
+
+test("plate math splits a barbell total per side and is localized", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const lines = (total, language) => {
+      state.language = language;
+      return plateSummaryLines(plateLoad(total));
+    };
+    return JSON.stringify({
+      plates: [82.5, 100, 140, 22.5, 25].map(total => plateLoad(total).platesPerSide),
+      barOnly: plateLoad(20),
+      below: [plateLoad(15).status, plateLoad(0).status, plateLoad(Number.NaN).status],
+      remainder: plateLoad(83),
+      ru: lines(82.5, "ru"),
+      ruRemainder: lines(83, "ru"),
+      uk: lines(82.5, "uk"),
+      en: lines(82.5, "en"),
+      ruBelow: lines(15, "ru"),
+      enBar: lines(20, "en"),
+      barbell: plateCalculatorApplies({ exerciseName: "Bench Press", catalogKey: "bench_press" }),
+      dumbbell: plateCalculatorApplies({ exerciseName: "Dumbbell Bench Press", catalogKey: "dumbbell_bench_press" }),
+      custom: plateCalculatorApplies({ exerciseName: "Cable Kickback" })
+    });
+  })()`, context));
+
+  assert.deepEqual(result.plates, [[25, 5, 1.25], [25, 15], [25, 25, 10], [1.25], [2.5]]);
+  assert.deepEqual(result.barOnly, { status: "barOnly", platesPerSide: [], remainderPerSide: 0 });
+  assert.deepEqual(result.below, ["belowBar", "belowBar", "belowBar"]);
+  assert.deepEqual(result.remainder.platesPerSide, [25, 5, 1.25]);
+  assert.equal(result.remainder.remainderPerSide, 0.25);
+  assert.deepEqual(result.ru, ["На каждую сторону: 25 + 5 + 1,25"]);
+  assert.deepEqual(result.ruRemainder, ["На каждую сторону: 25 + 5 + 1,25", "Остаток: 0,25 кг на сторону"]);
+  assert.deepEqual(result.uk, ["На кожну сторону: 25 + 5 + 1,25"]);
+  assert.deepEqual(result.en, ["Per side: 25 + 5 + 1.25"]);
+  assert.deepEqual(result.ruBelow, ["Меньше грифа 20 кг"]);
+  assert.deepEqual(result.enBar, ["Bar only (20 kg)"]);
+  assert.equal(result.barbell, true);
+  assert.equal(result.dumbbell, false);
+  assert.equal(result.custom, false);
+});
+
+test("friend ghosts keep the latest top set per exercise and read naturally", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const page = (name, items) => ({ friend: { profileId: "p_" + "a".repeat(32), displayName: name }, items });
+    const workout = (startedAt, workoutDay, exercises) => ({ startedAt, workoutDay, exercises });
+    const exercise = (catalogKey, name, sets) => ({ catalogKey, name, sets: sets.map(([weightKg, reps]) => ({ weightKg, reps })) });
+    const ghosts = friendGhostsFromPages([
+      page("Олена", [workout("2026-09-22T10:00:00.123Z", "2026-09-22", [
+        exercise("bench_press", "Bench Press", [[60, 10]]),
+        exercise(null, "Cable Kickback", [[15, 12]])
+      ])]),
+      page("Саша", [
+        workout("2026-09-25T10:00:00Z", "2026-09-25", [exercise("bench_press", "Bench Press", [[80, 8], [85, 8], [85, 6]])]),
+        workout("2026-09-20T10:00:00Z", "2026-09-20", [exercise("bench_press", "Bench Press", [[90, 3]])])
+      ])
+    ]);
+    const now = new Date(2026, 8, 28, 12);
+    const line = (language, ghost) => {
+      state.language = language;
+      return friendGhostLine(ghost, now);
+    };
+    const bench = ghosts.get(exerciseMatchKey({ name: "Bench Press", catalogKey: "bench_press" }));
+    const kickback = ghosts.get(exerciseMatchKey({ name: "Cable Kickback" }));
+    const friends = Array.from({ length: 12 }, (_, index) => ({
+      displayName: "Friend " + index,
+      progressUpdatedAt: index === 11 ? "2026-09-27T10:00:00Z" : index === 0 ? null : "2026-09-0" + (index % 9 + 1) + "T10:00:00Z"
+    }));
+    const chosen = friendGhostsToQuery(friends).map(friend => friend.displayName);
+    return JSON.stringify({
+      bench: { name: bench.friendName, weight: bench.weightKg, reps: bench.reps },
+      kickback: kickback.friendName,
+      ru: line("ru", { friendName: "Саша", weightKg: 85, reps: 8, workoutDay: "2026-09-25" }),
+      uk: line("uk", { friendName: "Саша", weightKg: 82.5, reps: 5, workoutDay: "2026-09-23" }),
+      en: line("en", { friendName: "Саша", weightKg: 82.5, reps: 5, workoutDay: "2026-09-27" }),
+      bodyweight: line("ru", { friendName: "Саша", weightKg: 0, reps: 12, workoutDay: "2026-09-28" }),
+      oneDayForm: line("ru", { friendName: "Саша", weightKg: 100, reps: 1, workoutDay: "2026-09-07" }),
+      chosenCount: chosen.length,
+      chosenFirst: chosen[0],
+      skipsOldest: !chosen.includes("Friend 0")
+    });
+  })()`, context));
+
+  assert.deepEqual(result.bench, { name: "Саша", weight: 85, reps: 8 });
+  assert.equal(result.kickback, "Олена");
+  assert.equal(result.ru, "Саша: 85 × 8 · 3 дня назад");
+  assert.equal(result.uk, "Саша: 82,5 × 5 · 5 днів тому");
+  assert.equal(result.en, "Саша: 82.5 × 5 · yesterday");
+  assert.equal(result.bodyweight, "Саша: 12 повторений · сегодня");
+  assert.equal(result.oneDayForm, "Саша: 100 × 1 · 21 день назад");
+  assert.equal(result.chosenCount, 10);
+  assert.equal(result.chosenFirst, "Friend 11");
+  assert.equal(result.skipsOldest, true);
+});
+
+test("the current barbell set shows the plate capsule and records show a badge", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(markup, /class="plate-calculator"/);
+  assert.match(markup, /<strong>80 kg<\/strong><span>Per side: 25 \+ 5<\/span>/);
+  assert.doesNotMatch(markup, /personal-record-badge/);
+
+  const recordMarkup = vm.runInContext(`activeWorkoutBlockMarkup(
+    activeWorkout.blocks[0], 0, 0, null, null, new Set([activeWorkout.blocks[0].sets[0].id])
+  )`, context);
+  assert.match(recordMarkup, /personal-record-badge/);
+});
