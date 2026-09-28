@@ -211,6 +211,110 @@ class WorkoutRecommendationEngineTest {
     }
 
     @Test
+    fun baselinePaddingRepeatsTheLastWeightedSet() {
+        val resized = WorkoutRecommendationEngine.baselineSets(
+            latestSets = exerciseSession(sessionId = 1, daysAgo = 1, weights = listOf(5.0, 5.0), reps = listOf(10, 10)),
+            targetSetCount = 3,
+            fillsZeroWeights = true
+        )
+
+        assertEquals(listOf(5.0, 5.0, 5.0), resized.map { it.weight })
+    }
+
+    @Test
+    fun zeroKilogramSetOfAWeightedExerciseTakesThePositiveSessionWeight() {
+        val resized = WorkoutRecommendationEngine.baselineSets(
+            latestSets = exerciseSession(
+                sessionId = 1,
+                daysAgo = 1,
+                weights = listOf(0.0, 5.0, 0.0),
+                reps = listOf(12, 10, 10)
+            ),
+            targetSetCount = 4,
+            fillsZeroWeights = true
+        )
+
+        assertEquals(listOf(5.0, 5.0, 5.0, 5.0), resized.map { it.weight })
+        assertEquals(listOf(12, 10, 10, 10), resized.map { it.reps })
+    }
+
+    @Test
+    fun zeroKilogramSessionFallsBackToTheNewestOlderPositiveWeight() {
+        val resized = WorkoutRecommendationEngine.baselineSets(
+            latestSets = exerciseSession(sessionId = 3, daysAgo = 1, weights = listOf(0.0, 0.0), reps = listOf(10, 10)),
+            targetSetCount = 3,
+            olderSessions = listOf(
+                exerciseSession(sessionId = 2, daysAgo = 3, weights = listOf(55.0, 60.0), reps = listOf(8, 8)),
+                exerciseSession(sessionId = 1, daysAgo = 6, weights = listOf(40.0, 40.0), reps = listOf(8, 8))
+            ),
+            fillsZeroWeights = true
+        )
+
+        assertEquals(listOf(60.0, 60.0, 60.0), resized.map { it.weight })
+    }
+
+    @Test
+    fun zeroKilogramSetsStayZeroWithoutAnyPositiveWeightOrWhenNotFilled() {
+        val latest = exerciseSession(
+            sessionId = 1,
+            daysAgo = 1,
+            weights = listOf(0.0, 0.0),
+            reps = listOf(15, 15),
+            exerciseName = "Push Up"
+        )
+
+        assertEquals(
+            listOf(0.0, 0.0, 0.0),
+            WorkoutRecommendationEngine.baselineSets(latest, 3, fillsZeroWeights = true).map { it.weight }
+        )
+        assertEquals(
+            listOf(0.0, 0.0, 0.0),
+            WorkoutRecommendationEngine.baselineSets(latest, 3).map { it.weight }
+        )
+        assertTrue(WorkoutRecommendationEngine.baselineSets(emptyList(), 3, fillsZeroWeights = true).isEmpty())
+    }
+
+    @Test
+    fun weightedPlanNeverTargetsZeroKilogramsAfterAZeroSet() {
+        val recommendation = recommendation(
+            history = exerciseSession(
+                sessionId = 1,
+                daysAgo = 1,
+                weights = listOf(40.0, 0.0),
+                reps = listOf(8, 8)
+            ),
+            profile = TrainingProfile(
+                goal = TrainingGoal.AestheticFatLoss,
+                calorieMode = CalorieMode.Deficit
+            )
+        )
+
+        assertFalse(recommendation.sets.isEmpty())
+        assertTrue(recommendation.sets.toString(), recommendation.sets.all { (it.weight ?: 0.0) > 0.0 })
+    }
+
+    @Test
+    fun bodyweightAndAssistedPlansKeepZeroKilogramSets() {
+        for (name in listOf("Push Up", "Assisted Pull Up")) {
+            val recommendation = WorkoutRecommendationEngine.buildForExercise(
+                exerciseId = 1,
+                history = exerciseSession(
+                    sessionId = 1,
+                    daysAgo = 1,
+                    weights = listOf(0.0, 0.0),
+                    reps = listOf(8, 8),
+                    exerciseName = name
+                ),
+                nowMillis = nowMillis,
+                zoneId = zoneId
+            )
+
+            assertFalse(name, recommendation.sets.isEmpty())
+            assertTrue(name, recommendation.sets.all { (it.weight ?: 0.0) == 0.0 })
+        }
+    }
+
+    @Test
     fun strengthFiveRepSetsBuildToSixInsteadOfTriggeringDeload() {
         val recommendation = recommendation(
             history = exerciseSession(

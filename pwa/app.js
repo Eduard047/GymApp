@@ -13521,7 +13521,10 @@ function smartRecommendation(exercise, options = {}) {
   }
 
   const finalSetCount = ["Deload", "Comeback"].includes(kindId) ? 3 : targetSetCount;
-  const baselineSets = smartBaselineSets(latest.sets, finalSetCount, repRange);
+  const baselineSets = smartBaselineSets(latest.sets, finalSetCount, repRange, {
+    olderSessions: sessions.slice(1).map(session => session.sets),
+    fillsZeroWeights: loadMode === "Standard" && loadDirection === "higherIsHarder"
+  });
   const plateauUsesLowerRange = latest.averageReps >= (repRange.min + repRange.max) / 2;
   const sets = baselineSets.map(set => {
     const weight = smartBoundedWeight(set.weight);
@@ -13836,10 +13839,41 @@ function smartPerformanceDidNotDecline(latest, previous, targetSetCount, loadDir
   return weightDidNotDecline && latestReps >= previousReps;
 }
 
-function smartBaselineSets(latestSets, targetSetCount, repRange) {
-  const source = latestSets.slice(0, window.GymStateContract.LIMITS.setsPerExercise);
+// Trims or pads the latest session to the target set count. For exercises loaded with
+// external weight, a 0 kg set (a warm-up, a skipped entry) must not become a 0 kg
+// target: it takes the last positive weight earlier in the same session, else the
+// first one later in it, else the newest positive weight from older sessions.
+// Bodyweight and assisted exercises keep their 0 kg sets.
+function smartBaselineSets(latestSets, targetSetCount, repRange, options = {}) {
+  const limited = latestSets.slice(0, window.GymStateContract.LIMITS.setsPerExercise);
+  const source = options.fillsZeroWeights
+    ? smartFilledZeroWeights(limited, options.olderSessions || [])
+    : limited;
   const fallback = source.at(-1) || { weight: 0, reps: repRange.min };
   return Array.from({ length: targetSetCount }, (_, index) => source[index] || fallback);
+}
+
+function smartLastPositiveWeight(sets) {
+  for (let index = sets.length - 1; index >= 0; index -= 1) {
+    const weight = Number(sets[index].weight);
+    if (weight > 0) return weight;
+  }
+  return null;
+}
+
+function smartFilledZeroWeights(sets, olderSessions) {
+  let olderWeight = null;
+  for (const sessionSets of olderSessions) {
+    olderWeight = smartLastPositiveWeight(sessionSets);
+    if (olderWeight !== null) break;
+  }
+  return sets.map((set, index) => {
+    if (Number(set.weight) > 0) return set;
+    const later = sets.slice(index + 1).find(candidate => Number(candidate.weight) > 0);
+    const replacement = smartLastPositiveWeight(sets.slice(0, index)) ??
+      (later ? Number(later.weight) : olderWeight);
+    return replacement === null ? set : { ...set, weight: replacement };
+  });
 }
 
 function smartSessionRegressed(current, previous, loadDirection = "higherIsHarder") {

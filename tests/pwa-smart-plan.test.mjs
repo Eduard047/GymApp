@@ -313,6 +313,61 @@ test("PWA Strength 5-rep work builds to six without a false deload and preserves
   ]);
 });
 
+test("PWA weighted plans never target 0 kg after a 0 kg history set", () => {
+  const context = loadPwaContext();
+  const profile = { split: "Upper / Lower", days: 4, goal: "Cut", calories: "Deficit" };
+  const padded = recommendationFor(context, {
+    profile,
+    sessions: [exerciseSession(1, 1, "Bench Press", [[40, 8], [0, 8]])]
+  });
+  const inSession = vm.runInContext(`
+    smartBaselineSets(
+      [{ weight: 0, reps: 12 }, { weight: 5, reps: 10 }, { weight: 0, reps: 10 }],
+      4,
+      { min: 8, max: 12 },
+      { fillsZeroWeights: true }
+    );
+  `, context);
+  const fromOlder = vm.runInContext(`
+    smartBaselineSets(
+      [{ weight: 0, reps: 10 }, { weight: 0, reps: 10 }],
+      3,
+      { min: 8, max: 12 },
+      {
+        fillsZeroWeights: true,
+        olderSessions: [
+          [{ weight: 55, reps: 8 }, { weight: 60, reps: 8 }],
+          [{ weight: 40, reps: 8 }]
+        ]
+      }
+    );
+  `, context);
+
+  assert.ok(padded.sets.length > 0);
+  assert.ok(padded.sets.every(set => set.weight > 0), JSON.stringify(padded.sets));
+  assert.deepEqual(JSON.parse(JSON.stringify(inSession)).map(set => set.weight), [5, 5, 5, 5]);
+  assert.deepEqual(JSON.parse(JSON.stringify(inSession)).map(set => set.reps), [12, 10, 10, 10]);
+  assert.deepEqual(JSON.parse(JSON.stringify(fromOlder)).map(set => set.weight), [60, 60, 60]);
+});
+
+test("PWA bodyweight and assisted plans keep 0 kg sets", () => {
+  const context = loadPwaContext();
+  const profile = { split: "Upper / Lower", days: 4, goal: "Balanced", calories: "Maintenance" };
+  for (const exercise of ["Push Up", "Assisted Pull Up"]) {
+    const recommendation = recommendationFor(context, {
+      profile,
+      exercise,
+      sessions: [exerciseSession(1, 1, exercise, [[0, 8], [0, 8]])]
+    });
+    assert.ok(recommendation.sets.length > 0, exercise);
+    assert.ok(recommendation.sets.every(set => Number(set.weight || 0) === 0), exercise);
+  }
+  const unfilled = vm.runInContext(`
+    smartBaselineSets([{ weight: 0, reps: 15 }, { weight: 0, reps: 15 }], 3, { min: 8, max: 12 }, { fillsZeroWeights: true });
+  `, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(unfilled)).map(set => set.weight), [0, 0, 0]);
+});
+
 test("PWA rep ranges and fresh targets match the canonical iOS role matrix", () => {
   const context = loadPwaContext();
   const roles = ["Primary", "Secondary", "Isolation", "Core", "Warmup"];

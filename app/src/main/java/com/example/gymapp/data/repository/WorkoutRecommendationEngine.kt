@@ -357,7 +357,13 @@ object WorkoutRecommendationEngine {
             programmedSetCount
         }
 
-        val baselineSets = baselineSets(latest.sets, targetSetCount)
+        val baselineSets = baselineSets(
+            latestSets = latest.sets,
+            targetSetCount = targetSetCount,
+            olderSessions = sessions.drop(1).map { it.sets },
+            fillsZeroWeights = loadMode == ExerciseLoadMode.Standard &&
+                effectiveLoadDirection == ExerciseLoadDirection.HigherIsHarder
+        )
         val plateauUsesLowerRange = latest.averageReps >= (repRange.minimum + repRange.maximum) / 2.0
         val sets = baselineSets.map { baseline ->
             val weight = when {
@@ -1514,12 +1520,44 @@ object WorkoutRecommendationEngine {
         return score
     }
 
-    private fun baselineSets(
+    /**
+     * Trims or pads the latest session to [targetSetCount] sets. For exercises loaded
+     * with external weight, a 0 kg set (a warm-up, a skipped entry) must not become a
+     * 0 kg target: it takes the last positive weight earlier in the same session, else
+     * the first one later in it, else the newest positive weight from older sessions.
+     * Bodyweight and assisted exercises keep their 0 kg sets, and a history with no
+     * positive weight at all is left unchanged.
+     */
+    internal fun baselineSets(
         latestSets: List<ExerciseHistoryEntry>,
-        targetSetCount: Int
+        targetSetCount: Int,
+        olderSessions: List<List<ExerciseHistoryEntry>> = emptyList(),
+        fillsZeroWeights: Boolean = false
     ): List<ExerciseHistoryEntry> {
+        val baseline = if (fillsZeroWeights) {
+            filledZeroWeights(latestSets, olderSessions)
+        } else {
+            latestSets
+        }
+        if (baseline.isEmpty()) return emptyList()
         return List(targetSetCount) { index ->
-            latestSets.getOrElse(index) { latestSets.last() }
+            baseline.getOrElse(index) { baseline.last() }
+        }
+    }
+
+    private fun filledZeroWeights(
+        sets: List<ExerciseHistoryEntry>,
+        olderSessions: List<List<ExerciseHistoryEntry>>
+    ): List<ExerciseHistoryEntry> {
+        val olderWeight = olderSessions.firstNotNullOfOrNull { session ->
+            session.lastOrNull { it.weight > 0.0 }?.weight
+        }
+        return sets.mapIndexed { index, entry ->
+            if (entry.weight > 0.0) return@mapIndexed entry
+            val replacement = sets.subList(0, index).lastOrNull { it.weight > 0.0 }?.weight
+                ?: sets.subList(index + 1, sets.size).firstOrNull { it.weight > 0.0 }?.weight
+                ?: olderWeight
+            if (replacement == null) entry else entry.copy(weight = replacement)
         }
     }
 
