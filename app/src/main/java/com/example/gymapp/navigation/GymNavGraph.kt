@@ -1,5 +1,10 @@
 package com.example.gymapp.navigation
 
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.os.Build
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -1900,7 +1905,14 @@ internal fun GymAppRoot(
             }
     }
 
-    LaunchedEffect(uiIsolationKey) {
+    var workoutNotificationPermissionGeneration by remember { mutableIntStateOf(0) }
+    val workoutNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) workoutNotificationPermissionGeneration++
+    }
+
+    LaunchedEffect(uiIsolationKey, workoutNotificationPermissionGeneration) {
         // The ongoing "active workout" notification, Android's counterpart of the iOS Live
         // Activity. It follows the workout and its rest timer and clears when the workout ends.
         val session = authManager.authState.value.session ?: return@LaunchedEffect
@@ -1913,6 +1925,12 @@ internal fun GymAppRoot(
                 if (details == null) {
                     ActiveWorkoutNotifier.cancel(applicationContext)
                     return@collectLatest
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ActiveWorkoutNotifier.shouldRequestPermission(applicationContext)
+                ) {
+                    ActiveWorkoutNotifier.markPermissionRequested(applicationContext)
+                    workoutNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 val restEndsAt = timer
                     ?.takeIf { it.accountKey == accountKey && it.sessionStartedAt == details.activeWorkout.startedAt }

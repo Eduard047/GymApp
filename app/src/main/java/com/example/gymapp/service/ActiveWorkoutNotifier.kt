@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -71,14 +72,35 @@ internal object ActiveWorkoutNotifier {
     internal const val EXTRA_REVISION = "extra_revision"
     internal const val EXTRA_SET_ID = "extra_set_id"
     internal const val EXTRA_REST_ENDS_AT = "extra_rest_ends_at"
+    private const val PREFERENCES_NAME = "active_workout_notification"
+    private const val KEY_PERMISSION_REQUESTED = "permission_requested"
 
     fun show(context: Context, content: ActiveWorkoutNotificationContent) {
-        if (!canPost(context)) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
         ensureChannel(context)
-        runCatching {
+        try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, build(context, content))
+        } catch (_: SecurityException) {
+            // Notifications were turned off between the check and the post.
         }
     }
+
+    /**
+     * Android 13+ turns notifications off for new installs. The workout asks once, the first time
+     * a workout runs without the permission; after that the choice stays in system settings.
+     */
+    fun shouldRequestPermission(context: Context): Boolean =
+        !canPost(context) && !preferences(context).getBoolean(KEY_PERMISSION_REQUESTED, false)
+
+    fun markPermissionRequested(context: Context) {
+        preferences(context).edit().putBoolean(KEY_PERMISSION_REQUESTED, true).apply()
+    }
+
+    private fun preferences(context: Context) =
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
@@ -169,6 +191,9 @@ internal object ActiveWorkoutNotifier {
         REQUEST_LOG_SET,
         Intent(context, ActiveWorkoutNotificationReceiver::class.java).apply {
             action = ACTION_LOG_SET
+            // The data makes each set and revision its own PendingIntent, so updating the
+            // notification never rewrites the extras of a button that was already shown.
+            data = actionIdentity("log-set", content.sessionStartedAt, content.revision.toString(), setId)
             putExtra(EXTRA_SESSION_STARTED_AT, content.sessionStartedAt)
             putExtra(EXTRA_REVISION, content.revision)
             putExtra(EXTRA_SET_ID, setId)
@@ -185,11 +210,20 @@ internal object ActiveWorkoutNotifier {
         REQUEST_SKIP_REST,
         Intent(context, ActiveWorkoutNotificationReceiver::class.java).apply {
             action = ACTION_SKIP_REST
+            data = actionIdentity("skip-rest", content.sessionStartedAt, restEndsAt.toString())
             putExtra(EXTRA_SESSION_STARTED_AT, content.sessionStartedAt)
             putExtra(EXTRA_REST_ENDS_AT, restEndsAt)
         },
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
+
+    private fun actionIdentity(kind: String, sessionStartedAt: Long, vararg parts: String): Uri =
+        Uri.Builder()
+            .scheme("gymapp-workout")
+            .authority(kind)
+            .appendPath(sessionStartedAt.toString())
+            .apply { parts.forEach(::appendPath) }
+            .build()
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
