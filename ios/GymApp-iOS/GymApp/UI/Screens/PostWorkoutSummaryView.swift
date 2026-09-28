@@ -241,15 +241,10 @@ struct PostWorkoutSummaryView: View {
         .sorted { $0.load > $1.load }
     }
 
-    /// Groups the session's PRs one row per exercise, and drops any record
-    /// whose value is 0. A 0-weight "record" happens on an exercise with no
-    /// prior history: `previousMaxWeight`/`previousEstimatedMax` default to
-    /// -1 as a sentinel, so a first-time bodyweight set logged at weight 0
-    /// (e.g. an assisted or bodyweight movement) satisfies `0 > -1` and is
-    /// flagged as a new best even though it carries no real value. That
-    /// sentinel comparison lives in this computed property, not in a deeper
-    /// domain module, so the `> 0` guards below are the fix — no domain
-    /// logic changes.
+    /// Groups the session's PRs one row per exercise under the same rules as the
+    /// live record badge (`LivePersonalRecords`): an exercise's first session is
+    /// never a record, a 0 kg value is never a record, and matching the previous
+    /// best is not a record.
     private var personalRecords: [SummaryPersonalRecord] {
         guard let workout = store.workout(id: workoutID),
               let current = sessionSummary else { return [] }
@@ -261,8 +256,10 @@ struct PostWorkoutSummaryView: View {
                 store.exerciseHistory(exerciseID: block.exerciseID),
                 current: current
             )
-            let previousMaxWeight = previous.map(\.weight).max() ?? -1
-            let previousEstimatedMax = previous.map(\.estimatedOneRepMax).max() ?? -1
+            guard let previousMaxWeight = previous.map(\.weight).max(),
+                  let previousEstimatedMax = previous.map(\.estimatedOneRepMax).max() else {
+                return nil
+            }
 
             var weightRecord: Double?
             if let bestWeight = block.sets.max(by: { $0.weight < $1.weight }),
@@ -272,7 +269,7 @@ struct PostWorkoutSummaryView: View {
             var oneRepMaxRecord: Double?
             if let bestEstimated = block.sets.max(by: {
                 $0.estimatedOneRepMax < $1.estimatedOneRepMax
-            }), bestEstimated.estimatedOneRepMax > previousEstimatedMax, bestEstimated.estimatedOneRepMax > 0 {
+            }), bestEstimated.estimatedOneRepMax > previousEstimatedMax + 1e-9, bestEstimated.estimatedOneRepMax > 0 {
                 oneRepMaxRecord = bestEstimated.estimatedOneRepMax
             }
 

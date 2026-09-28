@@ -132,6 +132,10 @@ struct ActiveWorkoutView: View {
     /// Shown after ANY set is logged — by the "Log set" button or by voice —
     /// so only one banner ever appears (see `recordSet(_:exercise:exerciseName:draft:)`).
     @State private var recordedSetConfirmation: (message: String, setID: UUID)?
+    /// History-only bests per exercise, taken when the workout opens (and again
+    /// when its exercise list changes). Records are derived from the draft.
+    @State private var personalRecordBaselines: [UUID: PersonalRecordBaseline] = [:]
+    @State private var personalRecordFeedbackTrigger = 0
 
     /// - `requesting`: `start()` is awaiting speech/mic authorization; the UI
     ///   stays in its normal (idle) look until this resolves.
@@ -255,6 +259,10 @@ struct ActiveWorkoutView: View {
             )
         )
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: currentDraft.map { Set($0.exercises.map(\.exerciseID)) }) {
+            loadPersonalRecordBaselines()
+        }
+        .sensoryFeedback(.success, trigger: personalRecordFeedbackTrigger)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
@@ -1891,12 +1899,20 @@ struct ActiveWorkoutView: View {
     ) -> some View {
         let isLatestCompleted = draft.undoableSetID == set.id
         let canUndo = isLatestCompleted && draft.commitIntent == nil
-        let label = gymText(
+        let isPersonalRecord = LivePersonalRecords
+            .recordSetIDs(in: draft, baselines: personalRecordBaselines)
+            .contains(set.id)
+        let recordedLabel = gymText(
             "Set \(position + 1) recorded, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
             "Підхід \(position + 1) записано, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
             "Подход \(position + 1) записан, \(weightRepsSummary(weight: set.weight, reps: set.reps))",
             languageCode: gymCurrentLanguageCode()
         )
+        let label = isPersonalRecord
+            ? recordedLabel + ", " + gymText(
+                "personal record", "особистий рекорд", "личный рекорд", languageCode: gymCurrentLanguageCode()
+            )
+            : recordedLabel
         let undoActionName = gymText(
             "Undo set", "Скасувати підхід", "Отменить подход", languageCode: gymCurrentLanguageCode()
         )
@@ -1906,11 +1922,19 @@ struct ActiveWorkoutView: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let remaining = max(0, Int(ceil(deadline.timeIntervalSince(context.date))))
                     compactCompletedRow(
-                        set: set, draft: draft, remainingRestSeconds: remaining > 0 ? remaining : nil
+                        set: set,
+                        draft: draft,
+                        isPersonalRecord: isPersonalRecord,
+                        remainingRestSeconds: remaining > 0 ? remaining : nil
                     )
                 }
             } else {
-                compactCompletedRow(set: set, draft: draft, remainingRestSeconds: nil)
+                compactCompletedRow(
+                    set: set,
+                    draft: draft,
+                    isPersonalRecord: isPersonalRecord,
+                    remainingRestSeconds: nil
+                )
             }
         }
         .accessibilityElement(children: .contain)
@@ -1943,6 +1967,7 @@ struct ActiveWorkoutView: View {
     private func compactCompletedRow(
         set: ActiveWorkoutSet,
         draft: ActiveWorkoutDraft,
+        isPersonalRecord: Bool,
         remainingRestSeconds: Int?
     ) -> some View {
         let summary = HStack(spacing: 8) {
@@ -1955,6 +1980,9 @@ struct ActiveWorkoutView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(GymTheme.textSecondary)
                 .lineLimit(1)
+            if isPersonalRecord {
+                personalRecordBadge
+            }
         }
         .layoutPriority(1)
 
@@ -1979,6 +2007,34 @@ struct ActiveWorkoutView: View {
                 }
             }
         }
+    }
+
+    /// "Рекорд" capsule on a set that beats this exercise's best weight or
+    /// estimated 1RM. The row's accessibility label already says so.
+    private var personalRecordBadge: some View {
+        Label(
+            gymText("Record", "Рекорд", "Рекорд", languageCode: gymCurrentLanguageCode()),
+            systemImage: "trophy.fill"
+        )
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(.white)
+        .lineLimit(1)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(GymTheme.brandFill))
+        .fixedSize()
+        .accessibilityHidden(true)
+    }
+
+    private func loadPersonalRecordBaselines() {
+        guard let draft = currentDraft else {
+            personalRecordBaselines = [:]
+            return
+        }
+        let exerciseIDs = Set(draft.exercises.map(\.exerciseID))
+        personalRecordBaselines = LivePersonalRecords.baselines(
+            history: exerciseIDs.flatMap { workoutStore.exerciseHistory(exerciseID: $0) }
+        )
     }
 
     /// Trailing rest control on the latest completed row: a monospaced,
@@ -2348,6 +2404,9 @@ struct ActiveWorkoutView: View {
                 message: recordedSetConfirmationMessage(weight: set.weight, reps: set.reps),
                 setID: set.id
             )
+            if LivePersonalRecords.recordSetIDs(in: updated, baselines: personalRecordBaselines).contains(set.id) {
+                personalRecordFeedbackTrigger &+= 1
+            }
             // The banner itself drops the rest duration (the compact rest
             // row already shows a live countdown), but the announcement
             // keeps it — a VoiceOver user can't see that row at the same time.

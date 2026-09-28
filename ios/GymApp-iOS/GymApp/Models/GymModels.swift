@@ -131,7 +131,7 @@ public struct WorkoutSet: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var estimatedOneRepMax: Double {
-        weight * (1 + Double(reps) / 30)
+        GymOneRepMax.estimate(weight: weight, reps: reps)
     }
 }
 
@@ -299,7 +299,7 @@ public struct ExerciseHistoryEntry: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var estimatedOneRepMax: Double {
-        weight * (1 + Double(reps) / 30)
+        GymOneRepMax.estimate(weight: weight, reps: reps)
     }
 }
 
