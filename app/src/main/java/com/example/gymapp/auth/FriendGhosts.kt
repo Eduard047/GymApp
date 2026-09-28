@@ -11,7 +11,7 @@ import kotlinx.coroutines.CancellationException
  * A friend's latest result on one exercise, shown on the matching exercise card during a workout
  * ("Саша: 85 × 8 · 3 дня назад"), as on iOS.
  */
-internal data class FriendGhost(
+data class FriendGhost(
     val friendName: String,
     val weightKg: Double,
     val reps: Int,
