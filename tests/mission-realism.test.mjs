@@ -423,8 +423,8 @@ test("historical summaries use deterministic timestamp and id chronology", () =>
   assert.match(result.currentMarkup, new RegExp(`>Level ${result.currentProgress.level}<`));
   assert.match(result.currentMarkup, new RegExp(`>${result.currentProgress.currentLevelXp} XP into this level<`));
   assert.match(result.currentMarkup, /Week streak<\/span><strong>1 wk/);
-  assert.match(result.currentMarkup, /Previous best 10\.0 kg/);
-  assert.match(result.laterMarkup, /Previous best 20\.0 kg/);
+  assert.match(result.currentMarkup, /Previous best 10 kg/);
+  assert.match(result.laterMarkup, /Previous best 20 kg/);
   assert.ok(result.currentMissionIds.includes("daily-check-in"));
   assert.ok(!result.laterMissionIds.includes("daily-check-in"));
   assert.ok(result.firstSameTimeBadges.includes("First session"));

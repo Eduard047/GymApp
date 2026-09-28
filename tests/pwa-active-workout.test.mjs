@@ -2638,3 +2638,19 @@ test("the current barbell set shows the plate capsule and records show a badge",
   )`, context);
   assert.match(recordMarkup, /personal-record-badge/);
 });
+
+test("counts and weights read naturally in every language", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const at = language => {
+      state.language = language;
+      return [countNoun(1, "sets"), countNoun(2, "sets"), countNoun(5, "sets"), countNoun(21, "exercises"),
+        countNoun(3, "workouts"), formatLocalizedSetWeight(82.5), formatLocalizedWeightReps(1.25, 8)];
+    };
+    return JSON.stringify({ en: at("en"), uk: at("uk"), ru: at("ru") });
+  })()`, context));
+
+  assert.deepEqual(result.en, ["1 set", "2 sets", "5 sets", "21 exercises", "3 workouts", "82.5 kg", "1.25 kg × 8"]);
+  assert.deepEqual(result.uk, ["1 підхід", "2 підходи", "5 підходів", "21 вправа", "3 тренування", "82,5 кг", "1,25 кг × 8"]);
+  assert.deepEqual(result.ru, ["1 подход", "2 подхода", "5 подходов", "21 упражнение", "3 тренировки", "82,5 кг", "1,25 кг × 8"]);
+});
