@@ -327,15 +327,17 @@ object VoiceWorkoutDraftParser {
 
     // Tokens
 
-    private sealed interface Token {
+    // internal (not private): reused as-is by VoiceWorkoutCommandParser so in-workout
+    // voice commands share this tokenizer instead of duplicating vocabulary/parsing.
+    internal sealed interface Token {
         data class Word(val raw: String, val norm: String) : Token
         data class Number(val value: Double) : Token
         data object Separator : Token
     }
 
-    private val Token.norm: String? get() = (this as? Token.Word)?.norm
+    internal val Token.norm: String? get() = (this as? Token.Word)?.norm
 
-    private fun tokenize(transcript: String): List<Token> {
+    internal fun tokenize(transcript: String): List<Token> {
         val characters = Normalizer.normalize(transcript, Normalizer.Form.NFC)
         val tokens = mutableListOf<Token>()
         var index = 0

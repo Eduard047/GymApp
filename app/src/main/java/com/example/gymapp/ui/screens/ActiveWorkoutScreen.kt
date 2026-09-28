@@ -1,6 +1,10 @@
 package com.example.gymapp.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.text.format.DateFormat as AndroidDateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.BorderStroke
@@ -24,23 +28,31 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,16 +61,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.gymapp.R
+import com.example.gymapp.data.repository.VoiceWorkoutCommand
+import com.example.gymapp.data.repository.VoiceWorkoutCommandParser
+import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -79,6 +97,7 @@ import com.example.gymapp.ui.viewmodel.LiveConnectionMode
 import com.example.gymapp.ui.viewmodel.LivePeerExerciseSummary
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymSpacing
+import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.util.asString
 import java.time.Instant
@@ -86,6 +105,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.text.NumberFormat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
 internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
@@ -109,9 +130,20 @@ fun ActiveWorkoutScreen(
     onPreviewAdaptation: (String, Int, Long?) -> Unit = { _, _, _ -> },
     onApplyAdaptation: () -> Unit = {},
     onDismissAdaptation: () -> Unit = {},
+    voiceCommandSnackbarHostState: SnackbarHostState? = null,
     modifier: Modifier = Modifier
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
+    val voiceCommandScope = rememberCoroutineScope()
+    // Feedback channel for the in-workout voice mic (LogSet/RepeatPrevious/SkipRest/
+    // Unknown): a Snackbar with an optional action (e.g. "Отменить" after LogSet).
+    val onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = feedback@{ message, actionLabel, onAction ->
+        val hostState = voiceCommandSnackbarHostState ?: return@feedback
+        voiceCommandScope.launch {
+            val result = hostState.showSnackbar(message = message, actionLabel = actionLabel, withDismissAction = actionLabel == null)
+            if (result == SnackbarResult.ActionPerformed) onAction?.invoke()
+        }
+    }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showMoreWorkoutOptions by rememberSaveable { mutableStateOf(false) }
     var liveParticipantTab by rememberSaveable(uiState.livePeerName) {
@@ -299,7 +331,8 @@ fun ActiveWorkoutScreen(
                 onUndoLatestSet = onUndoLatestSet,
                 onAdjustRestTimer = onAdjustRestTimer,
                 onStopRestTimer = onStopRestTimer,
-                onDismissMessage = onDismissMessage
+                onDismissMessage = onDismissMessage,
+                onVoiceCommandFeedback = onVoiceCommandFeedback
             )
         }
 
@@ -677,7 +710,8 @@ private fun ActiveWorkoutExerciseCard(
     onUndoLatestSet: (String) -> Unit,
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit,
-    onDismissMessage: () -> Unit
+    onDismissMessage: () -> Unit,
+    onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = { _, _, _ -> }
 ) {
     val fullyCompleted = exercise.sets.isNotEmpty() &&
         exercise.sets.all(ActiveWorkoutSetUiState::isCompleted)
@@ -776,7 +810,9 @@ private fun ActiveWorkoutExerciseCard(
                     onUndo = { onUndoLatestSet(set.id) },
                     onAdjustRestTimer = onAdjustRestTimer,
                     onStopRestTimer = onStopRestTimer,
-                    onDismissMessage = onDismissMessage
+                    onDismissMessage = onDismissMessage,
+                    isRestActive = restSecondsRemaining > 0,
+                    onVoiceCommandFeedback = onVoiceCommandFeedback
                 )
             }
             if (isExpanded && allowExerciseActions) {
@@ -839,7 +875,9 @@ private fun ActiveWorkoutSetRow(
     onUndo: () -> Unit,
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit,
-    onDismissMessage: () -> Unit
+    onDismissMessage: () -> Unit,
+    isRestActive: Boolean = false,
+    onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = { _, _, _ -> }
 ) {
     val validSetInput = parseActiveWorkoutSetInput(set.weightInput, set.repsInput) != null
     val containerColor = when {
@@ -975,6 +1013,19 @@ private fun ActiveWorkoutSetRow(
                     )
                 }
                 Text(stringResource(R.string.action_log_set_and_rest, restDurationSeconds))
+            }
+            if (isCurrent) {
+                VoiceSetCommandButton(
+                    set = set,
+                    enabled = !operationInProgress,
+                    isRestActive = isRestActive,
+                    onWeightChanged = onWeightChanged,
+                    onRepsChanged = onRepsChanged,
+                    onRecord = onRecord,
+                    onUndo = onUndo,
+                    onStopRestTimer = onStopRestTimer,
+                    onFeedback = onVoiceCommandFeedback
+                )
             }
         }
         if (isLatestCompleted) {
@@ -1139,6 +1190,234 @@ private fun formatRestTime(totalSeconds: Int): String = String.format(
     totalSeconds.coerceAtLeast(0) / 60,
     totalSeconds.coerceAtLeast(0) % 60
 )
+
+/**
+ * In-workout voice command mic for the current set (shared/voice-workout-command-v1.json).
+ * On-device recognition only (reuses [OnDeviceVoiceTranscriber], the same wrapper
+ * [VoiceWorkoutDraftSheet] uses); when on-device recognition is unavailable this falls
+ * back to a typed-command text field, never a cloud recognizer. Recognized commands are
+ * routed through exactly the same [onRecord]/[onUndo]/[onStopRestTimer] actions the
+ * visible buttons use, so live-room freeze/commit locks and disabled states are
+ * respected identically. No audio or transcript is persisted or logged.
+ */
+@Composable
+private fun VoiceSetCommandButton(
+    set: ActiveWorkoutSetUiState,
+    enabled: Boolean,
+    isRestActive: Boolean,
+    onWeightChanged: (String) -> Unit,
+    onRepsChanged: (String) -> Unit,
+    onRecord: () -> Unit,
+    onUndo: () -> Unit,
+    onStopRestTimer: () -> Unit,
+    onFeedback: (message: String, actionLabel: String?, onAction: (() -> Unit)?) -> Unit
+) {
+    val context = LocalContext.current
+    val languageTag = currentAppLanguageTag()
+    var isListening by remember { mutableStateOf(false) }
+    var partialTranscript by remember { mutableStateOf("") }
+    var typedCommand by rememberSaveable { mutableStateOf("") }
+    var showTypedFallback by rememberSaveable { mutableStateOf(false) }
+    val unavailable = remember { voiceTranscriptionAvailability(context) }
+
+    fun noSpeechFeedback() {
+        onFeedback(context.getString(R.string.voice_command_no_speech), null, null)
+        showTypedFallback = true
+    }
+
+    fun handleTranscript(transcript: String) {
+        when (val command = VoiceWorkoutCommandParser.parse(transcript, languageTag)) {
+            is VoiceWorkoutCommand.LogSet -> {
+                if (!enabled) {
+                    onFeedback(context.getString(R.string.voice_command_busy), null, null)
+                    return
+                }
+                val weightText = command.weightKg?.let(VoiceWorkoutDraftParser::formatWeight) ?: set.weightInput
+                val repsText = command.reps?.toString() ?: set.repsInput
+                val parsed = parseActiveWorkoutSetInput(weightText, repsText)
+                if (parsed == null) {
+                    onFeedback(context.getString(R.string.voice_command_missing_values), null, null)
+                    return
+                }
+                onWeightChanged(weightText)
+                onRepsChanged(repsText)
+                onRecord()
+                onFeedback(
+                    context.getString(R.string.voice_command_logged, VoiceWorkoutDraftParser.formatWeight(parsed.weight), parsed.reps),
+                    context.getString(R.string.voice_command_undo),
+                    onUndo
+                )
+            }
+            VoiceWorkoutCommand.RepeatPrevious -> {
+                val weight = set.repeatWeight
+                val reps = set.repeatReps
+                if (weight == null || reps == null) {
+                    onFeedback(context.getString(R.string.voice_command_no_previous_set), null, null)
+                    return
+                }
+                if (!enabled) {
+                    onFeedback(context.getString(R.string.voice_command_busy), null, null)
+                    return
+                }
+                onWeightChanged(weight.toString())
+                onRepsChanged(reps.toString())
+                onRecord()
+                onFeedback(
+                    context.getString(R.string.voice_command_logged, VoiceWorkoutDraftParser.formatWeight(weight), reps),
+                    context.getString(R.string.voice_command_undo),
+                    onUndo
+                )
+            }
+            VoiceWorkoutCommand.SkipRest -> {
+                if (!isRestActive) {
+                    onFeedback(context.getString(R.string.voice_command_not_resting), null, null)
+                    return
+                }
+                onStopRestTimer()
+            }
+            is VoiceWorkoutCommand.Unknown -> {
+                onFeedback(context.getString(R.string.voice_command_unknown, command.transcript), null, null)
+            }
+        }
+    }
+
+    val transcriber = remember {
+        OnDeviceVoiceTranscriber(
+            context = context.applicationContext,
+            onPartial = { partialTranscript = it },
+            onFinished = { error ->
+                if (isListening) {
+                    isListening = false
+                    val transcript = partialTranscript
+                    partialTranscript = ""
+                    if (error == null && transcript.isNotBlank()) handleTranscript(transcript) else noSpeechFeedback()
+                }
+            }
+        )
+    }
+    // Tapping stop (or hitting the auto-stop cap) processes whatever partial transcript
+    // was heard so far: SpeechRecognizer.cancel() (used by transcriber.stop()) never
+    // delivers onResults, so this is the only path that acts on it in those cases.
+    fun stopListening() {
+        val heard = partialTranscript
+        transcriber.stop()
+        isListening = false
+        partialTranscript = ""
+        if (heard.isNotBlank()) handleTranscript(heard) else noSpeechFeedback()
+    }
+    DisposableEffect(transcriber) { onDispose { transcriber.stop() } }
+    LaunchedEffect(isListening) {
+        if (isListening) {
+            delay(VoiceWorkoutDraftParser.AUTO_STOP_SECONDS * 1_000L)
+            if (isListening) stopListening()
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            isListening = true
+            showTypedFallback = false
+            transcriber.start(languageTag)
+        } else {
+            onFeedback(context.getString(R.string.voice_workout_error_permission), null, null)
+        }
+    }
+
+    fun submitTyped() {
+        val command = typedCommand
+        typedCommand = ""
+        if (command.isNotBlank()) handleTranscript(command)
+    }
+
+    val micDescription = stringResource(R.string.voice_command_mic_description)
+    val stopDescription = stringResource(R.string.voice_command_stop_description)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (unavailable != null) {
+            Text(
+                stringResource(R.string.voice_command_unavailable),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isListening) {
+                    FilledIconButton(
+                        onClick = { stopListening() },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics { contentDescription = stopDescription }
+                    ) {
+                        Icon(imageVector = Icons.Default.Stop, contentDescription = null)
+                    }
+                } else {
+                    IconButton(
+                        onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                isListening = true
+                                showTypedFallback = false
+                                transcriber.start(languageTag)
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics { contentDescription = micDescription }
+                    ) {
+                        Icon(imageVector = Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Text(
+                    text = if (isListening) {
+                        partialTranscript.ifBlank { stringResource(R.string.voice_command_listening) }
+                    } else {
+                        stringResource(R.string.voice_command_hint)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { liveRegion = LiveRegionMode.Polite }
+                )
+                if (!isListening) {
+                    TextButton(onClick = { showTypedFallback = !showTypedFallback }) {
+                        Text(stringResource(R.string.voice_command_type_instead))
+                    }
+                }
+            }
+        }
+        if (unavailable != null || showTypedFallback) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = typedCommand,
+                    onValueChange = { typedCommand = it },
+                    placeholder = { Text(stringResource(R.string.voice_command_typed_placeholder)) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = ::submitTyped,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) { Text(stringResource(R.string.voice_command_typed_submit)) }
+            }
+        }
+    }
+}
 
 internal fun formatActiveWorkoutTime(
     totalSeconds: Long,

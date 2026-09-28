@@ -101,7 +101,9 @@ internal fun voiceTranscriptionAvailability(context: Context): VoiceTranscriptio
     return if (SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) null else VoiceTranscriptionError.Unavailable
 }
 
-private class OnDeviceVoiceTranscriber(
+// internal (not private): also reused by ActiveWorkoutScreen's in-workout voice
+// command mic, so both entry points share the same on-device-only recognizer.
+internal class OnDeviceVoiceTranscriber(
     private val context: Context,
     private val onPartial: (String) -> Unit,
     private val onFinished: (VoiceTranscriptionError?) -> Unit

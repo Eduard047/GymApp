@@ -3066,6 +3066,7 @@ internal fun GymAppRoot(
                                 onFinishWorkout = viewModel::finishWorkout,
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,
+                                voiceCommandSnackbarHostState = snackbarHostState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
