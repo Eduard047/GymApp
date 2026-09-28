@@ -312,7 +312,7 @@ struct PostWorkoutSummaryView: View {
     }
 
     private func formattedRecordValue(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0 ... 1)))
+        value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 1)))
     }
 
     private func rewardHero(_ workout: WorkoutSession) -> some View {
@@ -404,11 +404,11 @@ struct PostWorkoutSummaryView: View {
                     supporting: workout.note
                 )
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 10)], spacing: 10) {
-                    GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted())
-                    GymMetricTile(label: "Sets", value: workout.setCount.formatted())
+                    GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted(.number.locale(gymAppLocale())))
+                    GymMetricTile(label: "Sets", value: workout.setCount.formatted(.number.locale(gymAppLocale())))
                     GymMetricTile(
                         label: "Volume",
-                        value: workout.totalVolume.formatted(.number.precision(.fractionLength(0 ... 1)))
+                        value: workout.totalVolume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 1)))
                     )
                     GymMetricTile(
                         label: "Top muscle",
@@ -522,7 +522,7 @@ struct PostWorkoutSummaryView: View {
                             Text(muscleTitle(item))
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
-                            Text(item.load.formatted(.number.precision(.fractionLength(0))))
+                            Text(item.load.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0))))
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(GymTheme.textSecondary)
                         }
@@ -669,7 +669,7 @@ struct PostWorkoutSummaryView: View {
     }
 
     private func missionValue(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0)))
+        value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0)))
     }
 }
 

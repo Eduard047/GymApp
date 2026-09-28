@@ -279,7 +279,7 @@ private struct ProgramScheduleEditor: View {
 
     private func weekdayLabel(_ weekday: Int) -> String {
         let date = calendar.date(from: DateComponents(weekday: weekday)) ?? Date()
-        return date.formatted(.dateTime.weekday(.wide))
+        return date.formatted(.dateTime.weekday(.wide).locale(gymAppLocale()))
     }
 }
 

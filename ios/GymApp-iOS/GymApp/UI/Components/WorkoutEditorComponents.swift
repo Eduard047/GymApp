@@ -168,7 +168,7 @@ struct GymSetRepsCapsule: View {
             .disabled(disabled || reps <= minReps)
             .accessibilityHidden(true)
 
-            Text(reps.formatted())
+            Text(reps.formatted(.number.locale(gymAppLocale())))
                 .font(.subheadline.weight(.semibold).monospacedDigit())
                 .frame(minWidth: 28)
                 .accessibilityHidden(true)
@@ -185,7 +185,7 @@ struct GymSetRepsCapsule: View {
         .background(GymTheme.surface.opacity(0.7), in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(reps.formatted())
+        .accessibilityValue(reps.formatted(.number.locale(gymAppLocale())))
         .accessibilityAdjustableAction { direction in
             guard !disabled else { return }
             switch direction {
@@ -350,9 +350,9 @@ struct WorkoutSetDraftRow: View {
             disabled: lastWeight == nil,
             accessibilityHint: lastWeight.map {
                 gymText(
-                    "Uses the last logged weight, \($0.formatted())",
-                    "Використовує останню записану вагу: \($0.formatted())",
-                    "Использует последний записанный вес: \($0.formatted())",
+                    "Uses the last logged weight, \($0.formatted(.number.locale(gymAppLocale())))",
+                    "Використовує останню записану вагу: \($0.formatted(.number.locale(gymAppLocale())))",
+                    "Использует последний записанный вес: \($0.formatted(.number.locale(gymAppLocale())))",
                     languageCode: gymCurrentLanguageCode()
                 )
             } ?? gymLocalized("No prior weight")
@@ -459,9 +459,9 @@ struct WorkoutDraftExerciseCard: View {
                         if let lastWeight {
                             Text(
                                 gymText(
-                                    "Last logged: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
-                                    "Остання вага: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
-                                    "Последний вес: \(lastWeight.formatted(.number.precision(.fractionLength(0 ... 2))))",
+                                    "Last logged: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))))",
+                                    "Остання вага: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))))",
+                                    "Последний вес: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))))",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             )

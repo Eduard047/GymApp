@@ -975,15 +975,15 @@ private struct ExerciseHistorySheet: View {
                                     Spacer(minLength: 8)
                                     VStack(alignment: .trailing, spacing: 5) {
                                         Text(
-                                            "\(entry.weight.formatted(.number.precision(.fractionLength(0...2)))) " +
+                                            "\(entry.weight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...2)))) " +
                                                 "\(gymLocalized("kg")) × \(entry.reps)"
                                         )
                                             .font(.headline.monospacedDigit())
                                         Text(
                                             gymText(
-                                                "Volume \(entry.volume.formatted(.number.precision(.fractionLength(0...1)))) kg",
-                                                "Обсяг \(entry.volume.formatted(.number.precision(.fractionLength(0...1)))) кг",
-                                                "Объём \(entry.volume.formatted(.number.precision(.fractionLength(0...1)))) кг",
+                                                "Volume \(entry.volume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) kg",
+                                                "Обсяг \(entry.volume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) кг",
+                                                "Объём \(entry.volume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) кг",
                                                 languageCode: gymCurrentLanguageCode()
                                             )
                                         )
@@ -994,9 +994,9 @@ private struct ExerciseHistorySheet: View {
                                 .accessibilityElement(children: .combine)
                                 .accessibilityLabel(
                                     gymText(
-                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), set \(entry.setOrderIndex + 1), \(entry.weight.formatted()) kilograms, \(entry.reps) repetitions",
-                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), підхід \(entry.setOrderIndex + 1), \(entry.weight.formatted()) кілограмів, повторень: \(entry.reps)",
-                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), подход \(entry.setOrderIndex + 1), вес: \(entry.weight.formatted()) кг, повторений: \(entry.reps)",
+                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), set \(entry.setOrderIndex + 1), \(entry.weight.formatted(.number.locale(gymAppLocale()))) kilograms, \(entry.reps) repetitions",
+                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), підхід \(entry.setOrderIndex + 1), \(entry.weight.formatted(.number.locale(gymAppLocale()))) кілограмів, повторень: \(entry.reps)",
+                                        "\(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted)), подход \(entry.setOrderIndex + 1), вес: \(entry.weight.formatted(.number.locale(gymAppLocale()))) кг, повторений: \(entry.reps)",
                                         languageCode: gymCurrentLanguageCode()
                                     )
                                 )
@@ -1019,14 +1019,14 @@ private struct ExerciseHistorySheet: View {
 
     @ViewBuilder
     private var metricTiles: some View {
-        GymMetricTile(label: "Sessions", value: stats.sessionCount.formatted())
+        GymMetricTile(label: "Sessions", value: stats.sessionCount.formatted(.number.locale(gymAppLocale())))
         GymMetricTile(
             label: "Max weight",
-            value: "\(stats.maxWeight.formatted(.number.precision(.fractionLength(0...2)))) \(gymLocalized("kg"))"
+            value: "\(stats.maxWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...2)))) \(gymLocalized("kg"))"
         )
         GymMetricTile(
             label: "Total volume",
-            value: "\(stats.totalVolume.formatted(.number.precision(.fractionLength(0...1)))) \(gymLocalized("kg"))"
+            value: "\(stats.totalVolume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) \(gymLocalized("kg"))"
         )
     }
 

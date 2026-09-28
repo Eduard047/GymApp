@@ -100,8 +100,8 @@ struct WorkoutAdaptationSheet: View {
         var values: [String] = []
         for set in sets {
             let old = before.first { $0.id == set.id }
-            let prefix = !replaced ? old.map { "\($0.weight.formatted()) \(kg) × \($0.reps) → " } ?? "" : ""
-            let value = prefix + "\(set.weight.formatted()) \(kg) × \(set.reps)"
+            let prefix = !replaced ? old.map { "\($0.weight.formatted(.number.locale(gymAppLocale()))) \(kg) × \($0.reps) → " } ?? "" : ""
+            let value = prefix + "\(set.weight.formatted(.number.locale(gymAppLocale()))) \(kg) × \(set.reps)"
             if !values.contains(value) { values.append(value) }
         }
         return values

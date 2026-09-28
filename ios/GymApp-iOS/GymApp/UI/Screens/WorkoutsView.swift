@@ -1292,11 +1292,11 @@ public struct WorkoutsView: View {
         )
         return HStack(spacing: 8) {
             todayPlanMetric(
-                value: exerciseCount.formatted(),
+                value: exerciseCount.formatted(.number.locale(gymAppLocale())),
                 label: gymText("Exercises", "Вправи", "Упражнения", languageCode: languageCode)
             )
             todayPlanMetric(
-                value: setCount.formatted(),
+                value: setCount.formatted(.number.locale(gymAppLocale())),
                 label: gymText("Sets", "Підходи", "Подходы", languageCode: languageCode)
             )
             todayPlanMetric(
@@ -1508,14 +1508,14 @@ public struct WorkoutsView: View {
 
                 HStack(alignment: .top, spacing: 8) {
                     weeklyTrainingMetric(
-                        value: completedSessionCount.formatted(),
+                        value: completedSessionCount.formatted(.number.locale(gymAppLocale())),
                         label: gymText(
                             "Workouts", "Тренування", "Тренировки",
                             languageCode: languageCode
                         )
                     )
                     weeklyTrainingMetric(
-                        value: totalMinutes.formatted(),
+                        value: totalMinutes.formatted(.number.locale(gymAppLocale())),
                         label: gymText(
                             "Minutes", "Хвилини", "Минуты",
                             languageCode: languageCode
@@ -1706,7 +1706,7 @@ public struct WorkoutsView: View {
                             to: summary.monthStart
                         ) ?? summary.monthStart
                         let completed = summary.hasWorkout(on: day, calendar: calendar)
-                        Text(dayNumber.formatted())
+                        Text(dayNumber.formatted(.number.locale(gymAppLocale())))
                             .font(.caption.weight(completed ? .bold : .regular).monospacedDigit())
                             .foregroundStyle(
                                 completed ? GymTheme.textPrimary : GymTheme.textSecondary
@@ -1952,11 +1952,11 @@ public struct WorkoutsView: View {
 
             HStack(alignment: .top, spacing: 8) {
                 weeklyTrainingMetric(
-                    value: summary.completedSessionCount.formatted(),
+                    value: summary.completedSessionCount.formatted(.number.locale(gymAppLocale())),
                     label: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode)
                 )
                 weeklyTrainingMetric(
-                    value: summary.totalMinutes.formatted(),
+                    value: summary.totalMinutes.formatted(.number.locale(gymAppLocale())),
                     label: gymText("Minutes", "Хвилини", "Минуты", languageCode: languageCode)
                 )
                 weeklyTrainingMetric(
@@ -2009,7 +2009,7 @@ public struct WorkoutsView: View {
                 ))
                 .font(.subheadline.bold())
                 Spacer(minLength: 8)
-                Text(workouts.count.formatted())
+                Text(workouts.count.formatted(.number.locale(gymAppLocale())))
                     .font(.caption.bold().monospacedDigit())
                     .foregroundStyle(GymTheme.textSecondary)
             }
@@ -2699,9 +2699,9 @@ public struct WorkoutsView: View {
                                 HStack(spacing: 8) {
                                     workoutStat(
                                         label: "Exercises",
-                                        value: workout.exerciseCount.formatted()
+                                        value: workout.exerciseCount.formatted(.number.locale(gymAppLocale()))
                                     )
-                                    workoutStat(label: "Sets", value: workout.setCount.formatted())
+                                    workoutStat(label: "Sets", value: workout.setCount.formatted(.number.locale(gymAppLocale())))
                                     workoutStat(
                                         label: "Volume",
                                         value: formattedMetric(workout.totalVolume)
@@ -2710,9 +2710,9 @@ public struct WorkoutsView: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     workoutStat(
                                         label: "Exercises",
-                                        value: workout.exerciseCount.formatted()
+                                        value: workout.exerciseCount.formatted(.number.locale(gymAppLocale()))
                                     )
-                                    workoutStat(label: "Sets", value: workout.setCount.formatted())
+                                    workoutStat(label: "Sets", value: workout.setCount.formatted(.number.locale(gymAppLocale())))
                                     workoutStat(
                                         label: "Volume",
                                         value: formattedMetric(workout.totalVolume)

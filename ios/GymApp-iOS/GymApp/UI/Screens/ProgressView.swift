@@ -178,7 +178,7 @@ struct ProgressHubView: View {
                 HStack(spacing: 8) {
                     GymMetricTile(
                         label: gymText("Workouts", "Тренування", "Тренировки", languageCode: languageCode),
-                        value: metrics.totalWorkouts.formatted(),
+                        value: metrics.totalWorkouts.formatted(.number.locale(gymAppLocale())),
                         emphasized: true
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -196,7 +196,7 @@ struct ProgressHubView: View {
                     GymMetricTile(
                         label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode),
                         value: metrics.totalVolume.formatted(
-                            .number.notation(.compactName).precision(.fractionLength(0 ... 1))
+                            .number.locale(gymAppLocale()).notation(.compactName).precision(.fractionLength(0 ... 1))
                         ),
                         emphasized: true
                     )
@@ -457,7 +457,7 @@ struct ExerciseProgressView: View {
                                 .tint(contribution.weight >= 0.75 ? GymTheme.tertiary : GymTheme.primary)
                                 .accessibilityLabel(contribution.label)
                                 .accessibilityValue(
-                                    contribution.weight.formatted(.percent.precision(.fractionLength(0)))
+                                    contribution.weight.formatted(.percent.locale(gymAppLocale()).precision(.fractionLength(0)))
                                 )
                         }
                     }
@@ -497,15 +497,15 @@ struct ExerciseProgressView: View {
                 ) {
                     GymMetricTile(
                         label: t("Sessions", "Сесії", "Сессии"),
-                        value: progressPoints.count.formatted()
+                        value: progressPoints.count.formatted(.number.locale(gymAppLocale()))
                     )
                     GymMetricTile(
                         label: t("Total Sets", "Підходи", "Всего подходов"),
-                        value: monthHistory.count.formatted()
+                        value: monthHistory.count.formatted(.number.locale(gymAppLocale()))
                     )
                     GymMetricTile(
                         label: t("Total Reps", "Повторів", "Всего повторений"),
-                        value: totalReps.formatted()
+                        value: totalReps.formatted(.number.locale(gymAppLocale()))
                     )
                     GymMetricTile(
                         label: t("Best Weight", "Найкраща вага", "Лучший вес"),

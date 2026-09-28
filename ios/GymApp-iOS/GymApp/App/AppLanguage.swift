@@ -77,6 +77,12 @@ func gymText(
     }
 }
 
+/// The locale of the in-app language (not the device), for formatting numbers
+/// and dates so "82,5" and "1 250" follow the language the user picked.
+func gymAppLocale(languageCode: String = gymCurrentLanguageCode()) -> Locale {
+    AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+}
+
 func gymExerciseName(
     _ exercise: Exercise,
     languageCode: String = gymCurrentLanguageCode()

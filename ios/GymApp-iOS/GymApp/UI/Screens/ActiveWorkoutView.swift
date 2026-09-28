@@ -1328,7 +1328,7 @@ struct ActiveWorkoutView: View {
                     .foregroundStyle(GymTheme.textSecondary)
                     .accessibilityHidden(true)
 
-                Text(set.reps.formatted())
+                Text(set.reps.formatted(.number.locale(gymAppLocale())))
                     .font(.system(size: 30, weight: .semibold).monospacedDigit())
                     .foregroundStyle(GymTheme.textPrimary)
                     .accessibilityHidden(true)
@@ -1422,9 +1422,9 @@ struct ActiveWorkoutView: View {
             Text(
                 showsWeight
                     ? gymText(
-                        "previous \(last.weight.formatted()) × \(last.reps)",
-                        "минулого разу \(last.weight.formatted()) × \(last.reps)",
-                        "прошлый раз \(last.weight.formatted()) × \(last.reps)",
+                        "previous \(last.weight.formatted(.number.locale(gymAppLocale()))) × \(last.reps)",
+                        "минулого разу \(last.weight.formatted(.number.locale(gymAppLocale()))) × \(last.reps)",
+                        "прошлый раз \(last.weight.formatted(.number.locale(gymAppLocale()))) × \(last.reps)",
                         languageCode: gymCurrentLanguageCode()
                     )
                     : gymText(
@@ -1442,9 +1442,9 @@ struct ActiveWorkoutView: View {
         .accessibilityLabel(
             showsWeight
                 ? gymText(
-                    "Repeat previous, \(last.weight.formatted()) kilograms by \(last.reps)",
-                    "Повторити попередні, \(last.weight.formatted()) кілограмів на \(last.reps)",
-                    "Повторить предыдущие, \(last.weight.formatted()) килограммов на \(last.reps)",
+                    "Repeat previous, \(last.weight.formatted(.number.locale(gymAppLocale()))) kilograms by \(last.reps)",
+                    "Повторити попередні, \(last.weight.formatted(.number.locale(gymAppLocale()))) кілограмів на \(last.reps)",
+                    "Повторить предыдущие, \(last.weight.formatted(.number.locale(gymAppLocale()))) килограммов на \(last.reps)",
                     languageCode: gymCurrentLanguageCode()
                 )
                 : gymText(
@@ -1751,17 +1751,17 @@ struct ActiveWorkoutView: View {
         let plusDelta = plusCanMove ? abs(plusWeight - set.weight) : nominalStep
 
         return stepCapsule(
-            minusLabel: "−" + minusDelta.formatted(),
-            minusAccessibilityLabel: gymText("Decrease weight by \(minusDelta.formatted())", "Зменшити вагу на \(minusDelta.formatted())", "Уменьшить вес на \(minusDelta.formatted())", languageCode: gymCurrentLanguageCode()),
+            minusLabel: "−" + minusDelta.formatted(.number.locale(gymAppLocale())),
+            minusAccessibilityLabel: gymText("Decrease weight by \(minusDelta.formatted(.number.locale(gymAppLocale())))", "Зменшити вагу на \(minusDelta.formatted(.number.locale(gymAppLocale())))", "Уменьшить вес на \(minusDelta.formatted(.number.locale(gymAppLocale())))", languageCode: gymCurrentLanguageCode()),
             minusDisabled: disabled || !minusCanMove,
             minusAction: { updateSet(draft: draft, setID: set.id, weight: minusWeight, reps: set.reps) },
             centerLabel: gymText("weight", "вага", "вес", languageCode: gymCurrentLanguageCode()),
-            plusLabel: "+" + plusDelta.formatted(),
-            plusAccessibilityLabel: gymText("Increase weight by \(plusDelta.formatted())", "Збільшити вагу на \(plusDelta.formatted())", "Увеличить вес на \(plusDelta.formatted())", languageCode: gymCurrentLanguageCode()),
+            plusLabel: "+" + plusDelta.formatted(.number.locale(gymAppLocale())),
+            plusAccessibilityLabel: gymText("Increase weight by \(plusDelta.formatted(.number.locale(gymAppLocale())))", "Збільшити вагу на \(plusDelta.formatted(.number.locale(gymAppLocale())))", "Увеличить вес на \(plusDelta.formatted(.number.locale(gymAppLocale())))", languageCode: gymCurrentLanguageCode()),
             plusDisabled: disabled || !plusCanMove,
             plusAction: { updateSet(draft: draft, setID: set.id, weight: plusWeight, reps: set.reps) },
             accessibilityLabel: gymText("Weight", "Вага", "Вес", languageCode: gymCurrentLanguageCode()),
-            accessibilityValue: "\(set.weight.formatted()) \(gymLocalized("kg"))",
+            accessibilityValue: "\(set.weight.formatted(.number.locale(gymAppLocale()))) \(gymLocalized("kg"))",
             adjustableAction: { direction in
                 switch direction {
                 case .increment: if plusCanMove { updateSet(draft: draft, setID: set.id, weight: plusWeight, reps: set.reps) }
@@ -1786,7 +1786,7 @@ struct ActiveWorkoutView: View {
             plusDisabled: disabled,
             plusAction: { reps.wrappedValue += 1 },
             accessibilityLabel: gymText("Reps", "Повторення", "Повторы", languageCode: gymCurrentLanguageCode()),
-            accessibilityValue: reps.wrappedValue.formatted(),
+            accessibilityValue: reps.wrappedValue.formatted(.number.locale(gymAppLocale())),
             useSymbolGlyphs: true,
             adjustableAction: { direction in
                 switch direction {
@@ -2129,7 +2129,7 @@ struct ActiveWorkoutView: View {
     }
 
     private func weightRepsSummary(weight: Double, reps: Int) -> String {
-        "\(weight.formatted()) \(gymLocalized("kg")) × \(reps)"
+        "\(weight.formatted(.number.locale(gymAppLocale()))) \(gymLocalized("kg")) × \(reps)"
     }
 
 

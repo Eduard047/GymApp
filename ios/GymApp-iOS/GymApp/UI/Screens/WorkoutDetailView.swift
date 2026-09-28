@@ -759,7 +759,7 @@ private struct GarminSetMetricsCard: View {
 
             if let interval {
                 let gym = interval.gymCalories.formatted(
-                    .number.precision(.fractionLength(0 ... 2))
+                    .number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))
                 )
                 let unit = GarminWorkoutDetailCopy.calorieUnit(languageCode: languageCode)
                 LazyVGrid(

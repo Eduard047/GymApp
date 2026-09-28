@@ -39,9 +39,9 @@ struct RanksView: View {
                     .font(.title.bold())
                     .accessibilityAddTraits(.isHeader)
                 Text(gymText(
-                    "Level \(level) · \(totalXP.formatted()) XP",
-                    "Рівень \(level) · \(totalXP.formatted()) XP",
-                    "Уровень \(level) · \(totalXP.formatted()) XP",
+                    "Level \(level) · \(totalXP.formatted(.number.locale(gymAppLocale()))) XP",
+                    "Рівень \(level) · \(totalXP.formatted(.number.locale(gymAppLocale()))) XP",
+                    "Уровень \(level) · \(totalXP.formatted(.number.locale(gymAppLocale()))) XP",
                     languageCode: languageCode
                 ))
                 .foregroundStyle(Color.white.opacity(0.82))
@@ -54,9 +54,9 @@ struct RanksView: View {
                         .accessibilityHidden(true)
 
                     Text(gymText(
-                        "\(remaining.formatted()) XP to \(next.title(languageCode))",
-                        "\(remaining.formatted()) XP до «\(next.title(languageCode))»",
-                        "\(remaining.formatted()) XP до «\(next.title(languageCode))»",
+                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP to \(next.title(languageCode))",
+                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP до «\(next.title(languageCode))»",
+                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP до «\(next.title(languageCode))»",
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
@@ -101,9 +101,9 @@ struct RanksView: View {
                 Text(rank.title(languageCode))
                     .font(.headline)
                 Text(gymText(
-                    "Level \(rank.level) · from \(rank.requiredXP.formatted()) XP",
-                    "Рівень \(rank.level) · від \(rank.requiredXP.formatted()) XP",
-                    "Уровень \(rank.level) · от \(rank.requiredXP.formatted()) XP",
+                    "Level \(rank.level) · from \(rank.requiredXP.formatted(.number.locale(gymAppLocale()))) XP",
+                    "Рівень \(rank.level) · від \(rank.requiredXP.formatted(.number.locale(gymAppLocale()))) XP",
+                    "Уровень \(rank.level) · от \(rank.requiredXP.formatted(.number.locale(gymAppLocale()))) XP",
                     languageCode: languageCode
                 ))
                 .font(.caption)
@@ -113,9 +113,9 @@ struct RanksView: View {
                     RankProgressTrack(progress: nextRankProgress, trackColor: GymTheme.outlineSoft, fillColor: GymTheme.primary)
                         .frame(height: 6)
                     Text(gymText(
-                        "\(remaining.formatted()) XP to go",
-                        "ще \(remaining.formatted()) XP",
-                        "ещё \(remaining.formatted()) XP",
+                        "\(remaining.formatted(.number.locale(gymAppLocale()))) XP to go",
+                        "ще \(remaining.formatted(.number.locale(gymAppLocale()))) XP",
+                        "ещё \(remaining.formatted(.number.locale(gymAppLocale()))) XP",
                         languageCode: languageCode
                     ))
                     .font(.caption2.weight(.semibold))

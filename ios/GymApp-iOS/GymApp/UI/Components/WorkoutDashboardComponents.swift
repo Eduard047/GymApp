@@ -541,7 +541,7 @@ struct WorkoutProgressHero: View {
             .accessibilityLabel(
                 gymText("Total XP", "Загалом XP", "Всего XP", languageCode: gymCurrentLanguageCode())
             )
-            .accessibilityValue(progression.totalXP.formatted())
+            .accessibilityValue(progression.totalXP.formatted(.number.locale(gymAppLocale())))
             Text(gymLocalized(progressSummary))
                 .font(.subheadline)
                 .foregroundStyle(Color.white.opacity(0.86))
@@ -563,18 +563,18 @@ struct WorkoutProgressHero: View {
 
     private var totalXPCompactLabel: String {
         gymText(
-            "\(progression.totalXP.formatted()) XP",
-            "\(progression.totalXP.formatted()) XP",
-            "\(progression.totalXP.formatted()) XP",
+            "\(progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP",
+            "\(progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP",
+            "\(progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP",
             languageCode: gymCurrentLanguageCode()
         )
     }
 
     private var totalXPEarnedLabel: String {
         gymText(
-            "\(progression.totalXP.formatted()) XP earned",
-            "\(progression.totalXP.formatted()) XP зароблено",
-            "\(progression.totalXP.formatted()) XP заработано",
+            "\(progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP earned",
+            "\(progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP зароблено",
+            "\(progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP заработано",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -632,7 +632,7 @@ struct WorkoutKPICard: View {
                 ) {
                     GymMetricTile(
                         label: "Workouts",
-                        value: stats.workoutCount.formatted(),
+                        value: stats.workoutCount.formatted(.number.locale(gymAppLocale())),
                         emphasized: true,
                         onHero: true
                     )
@@ -873,7 +873,7 @@ struct WorkoutActivityHeatmap: View {
     }
 
     private func heatmapCell(_ day: WorkoutActivityHeatmapDay) -> some View {
-        Text(day.isInMonth ? calendar.component(.day, from: day.date).formatted() : "")
+        Text(day.isInMonth ? calendar.component(.day, from: day.date).formatted(.number.locale(gymAppLocale())) : "")
             .font(.system(size: 12, weight: .semibold, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(day.intensity > 0.62 ? Color.white : GymTheme.textPrimary)
@@ -962,7 +962,7 @@ struct WorkoutMuscleLoadCard: View {
                 HStack(spacing: 8) {
                     GymMetricTile(
                         label: "Sets",
-                        value: data.totalSets.formatted(),
+                        value: data.totalSets.formatted(.number.locale(gymAppLocale())),
                         emphasized: true
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -114,7 +114,7 @@ struct MissionsView: View {
             languageCode: languageCode
         )
         let titleText = RankCatalog.title(forLevel: snapshot.progression.level, languageCode: languageCode)
-        let xpText = "\(snapshot.progression.totalXP.formatted()) XP"
+        let xpText = "\(snapshot.progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP"
         return "\(levelText) · \(titleText) · \(xpText)"
     }
 
@@ -211,7 +211,7 @@ struct MissionsView: View {
     }
 
     private func missionValue(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0)))
+        value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0)))
     }
 }
 

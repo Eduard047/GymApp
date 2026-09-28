@@ -2390,7 +2390,7 @@ private struct FriendWorkoutReadOnlyDetailView: View {
     private func compactMetric(_ title: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption).foregroundStyle(GymTheme.textSecondary)
-            Text(value.formatted()).font(.headline.monospacedDigit())
+            Text(value.formatted(.number.locale(gymAppLocale()))).font(.headline.monospacedDigit())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

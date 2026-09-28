@@ -2231,6 +2231,25 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(BuiltInExerciseCatalog.definition(forKey: "side_hyperextension")?.russianName, "Боковая гиперэкстензия")
     }
 
+    func testNumbersFollowTheInAppLanguageLocale() {
+        XCTAssertEqual(gymAppLocale(languageCode: "ru").identifier, "ru")
+        XCTAssertEqual(gymAppLocale(languageCode: "uk").identifier, "uk")
+        XCTAssertEqual(gymAppLocale(languageCode: "xx").identifier, "en")
+        let value = 1250.5
+        XCTAssertEqual(
+            value.formatted(.number.locale(gymAppLocale(languageCode: "en")).precision(.fractionLength(0 ... 1))),
+            "1,250.5"
+        )
+        XCTAssertTrue(
+            value.formatted(.number.locale(gymAppLocale(languageCode: "ru")).precision(.fractionLength(0 ... 1)))
+                .hasSuffix("250,5")
+        )
+        XCTAssertEqual(gymWeightText(82.5, languageCode: "en"), "82.5 kg")
+        XCTAssertEqual(gymWeightText(82.5, languageCode: "ru"), "82,5 кг")
+        XCTAssertEqual(gymWeightText(80, languageCode: "uk"), "80 кг")
+        XCTAssertEqual(gymWeightRepsText(weight: 62.5, reps: 8, languageCode: "uk"), "62,5 кг × 8")
+    }
+
     func testPluralRulesFollowUkrainianAndRussianGrammar() {
         let cases: [(Int, GymPluralCategory)] = [
             (0, .many), (1, .one), (2, .few), (4, .few), (5, .many),

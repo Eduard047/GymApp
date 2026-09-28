@@ -331,3 +331,18 @@ test("iOS app code shows no bare kg or reps unit outside localization", () => {
   }
   assert.deepEqual(violations, []);
 });
+
+test("iOS number and date formatting uses the in-app language locale", () => {
+  const violations = [];
+  for (const { file, source, code } of scanned) {
+    for (const match of code.matchAll(/\.formatted\s*\(/g)) {
+      const open = match.index + match[0].length - 1;
+      const { end } = callArguments(code, open);
+      const argument = source.slice(open + 1, end - 1).trim();
+      // A named style (for example `style`) is built with an explicit locale.
+      if (/locale/.test(argument) || /^[A-Za-z_]\w*$/.test(argument)) continue;
+      violations.push(`${file}:${lineOf(source, match.index)} .formatted(${argument})`);
+    }
+  }
+  assert.deepEqual(violations, []);
+});

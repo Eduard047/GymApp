@@ -66,7 +66,7 @@ struct TrainingSettingsView: View {
                                 Button {
                                     profile.workoutsPerWeek = option
                                 } label: {
-                                    Text(option.formatted())
+                                    Text(option.formatted(.number.locale(gymAppLocale())))
                                         .font(.headline.weight(isSelected ? .semibold : .regular))
                                         .foregroundStyle(isSelected ? Color.white : GymTheme.textPrimary)
                                         .frame(maxWidth: .infinity, minHeight: 44)
