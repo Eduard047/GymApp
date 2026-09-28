@@ -343,6 +343,7 @@ class ExerciseProgressViewModel(
                 repsLabel = when {
                     isUkrainian -> "${point.totalReps} повт"
                     isRussian -> "${point.totalReps} повт"
+                    point.totalReps == 1 -> "1 rep"
                     else -> "${point.totalReps} reps"
                 },
                 weightRatio = (point.maxWeight / maxWeight).toFloat().coerceIn(0f, 1f),
