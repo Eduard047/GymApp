@@ -498,6 +498,9 @@ private struct MainTabShell: View {
 
     @State private var selectedTab: Tab
     @State private var workoutPath: [WorkoutRoute] = []
+    /// Friends' latest results by exercise, loaded once per active workout and
+    /// handed to the workout screen as a plain value.
+    @State private var friendGhosts: [String: FriendGhost] = [:]
     @State private var missionPath: [MissionRoute] = []
     @State private var showsAddWorkout = false
     @State private var showsActiveWorkout = false
@@ -605,6 +608,19 @@ private struct MainTabShell: View {
         .tint(GymTheme.primary)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
+        .task(id: FriendGhostLoader.Key(
+            draftID: activeWorkoutStore.draft?.id,
+            accountStorageKey: store.accountStorageKey,
+            friendProfileIDs: appState.socialDashboard?.friends.map(\.profileID) ?? []
+        )) {
+            friendGhosts = [:]
+            guard activeWorkoutStore.draft != nil,
+                  let friends = appState.socialDashboard?.friends,
+                  !friends.isEmpty else { return }
+            let loaded = await FriendGhostLoader.load(friends: friends, appState: appState)
+            guard !Task.isCancelled else { return }
+            friendGhosts = loaded
+        }
         .sheet(isPresented: $showsAddWorkout) {
             NavigationStack {
                 AddWorkoutView(
@@ -698,6 +714,7 @@ private struct MainTabShell: View {
                         liveWorkoutCoordinator: liveWorkoutCoordinator,
                         restTimers: appState.restTimers,
                         draftID: activeDraft.id,
+                        friendGhosts: friendGhosts,
                         onFinished: { workoutID in
                             appState.liveActivityController.endAfterDelay()
                             showsActiveWorkout = false

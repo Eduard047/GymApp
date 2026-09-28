@@ -100,6 +100,9 @@ struct ActiveWorkoutView: View {
     private let restTimers: RestTimerManager
 
     private let draftID: UUID
+    /// Friends' latest results keyed by `FriendGhosts.exerciseKey`; a plain value
+    /// so the screen never observes the social layer.
+    private let friendGhosts: [String: FriendGhost]
     private let onFinished: (UUID) -> Void
     private let onClose: () -> Void
     private let onDiscarded: () -> Void
@@ -162,6 +165,7 @@ struct ActiveWorkoutView: View {
         liveWorkoutCoordinator: LiveWorkoutCoordinator,
         restTimers: RestTimerManager,
         draftID: UUID,
+        friendGhosts: [String: FriendGhost] = [:],
         onFinished: @escaping (UUID) -> Void,
         onClose: @escaping () -> Void,
         onDiscarded: @escaping () -> Void,
@@ -173,6 +177,7 @@ struct ActiveWorkoutView: View {
         _liveWorkoutCoordinator = ObservedObject(wrappedValue: liveWorkoutCoordinator)
         self.restTimers = restTimers
         self.draftID = draftID
+        self.friendGhosts = friendGhosts
         self.onFinished = onFinished
         self.onClose = onClose
         self.onDiscarded = onDiscarded
@@ -1126,6 +1131,16 @@ struct ActiveWorkoutView: View {
                     .accessibilityValue("\(completedCount) / \(exercise.sets.count)")
                 }
 
+                if !isCollapsed, let ghost = friendGhost(for: exercise, storedExercise: storedExercise) {
+                    Label(
+                        FriendGhosts.line(for: ghost, languageCode: gymCurrentLanguageCode()),
+                        systemImage: "person.2.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(2)
+                }
+
                 if !isCollapsed {
                     let currentID = currentSetID(in: draft)
                     // Tight inner stack: the outer card's spacing: 14 is meant
@@ -1247,6 +1262,14 @@ struct ActiveWorkoutView: View {
         } else {
             upcomingSetRow(set, position: position, exercise: exercise, draft: draft)
         }
+    }
+
+    private func friendGhost(for exercise: ActiveWorkoutExercise, storedExercise: Exercise?) -> FriendGhost? {
+        guard !friendGhosts.isEmpty else { return nil }
+        let name = storedExercise?.name ?? exercise.exerciseName ?? ""
+        let catalogKey = storedExercise?.catalogKey ?? exercise.exerciseCatalogKey
+        guard catalogKey != nil || !name.isEmpty else { return nil }
+        return friendGhosts[FriendGhosts.exerciseKey(catalogKey: catalogKey, name: name)]
     }
 
     private func usesPlateCalculator(_ exercise: ActiveWorkoutExercise) -> Bool {
