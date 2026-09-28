@@ -30,6 +30,80 @@ enum TodayFocusPlanMetrics {
     }
 }
 
+/// Pure, testable decision logic for the "Train with a friend" hero entry
+/// point (the "С другом" pill). Computed from plain values passed into
+/// `WorkoutsView` — never from a live `LiveWorkoutCoordinator` or `AppState`
+/// observation, so the hero does not re-render on every coordinator poll
+/// tick (see `LiveWorkoutRefreshState`).
+enum TodayFriendEntryState: Equatable {
+    case needsCloudAccount
+    case needsFriends
+    case pickFriend
+    case pendingInvite(count: Int)
+    case hidden
+
+    init(
+        isCloudAccount: Bool,
+        friendCount: Int,
+        pendingInvitationCount: Int,
+        hasBlockingLiveWorkout: Bool
+    ) {
+        if hasBlockingLiveWorkout {
+            self = .hidden
+        } else if pendingInvitationCount > 0 {
+            self = .pendingInvite(count: pendingInvitationCount)
+        } else if !isCloudAccount {
+            self = .needsCloudAccount
+        } else if friendCount <= 0 {
+            self = .needsFriends
+        } else {
+            self = .pickFriend
+        }
+    }
+
+    var isHidden: Bool {
+        if case .hidden = self { return true }
+        return false
+    }
+
+    /// Pure decision for what a tap on the "С другом" hero pill should do.
+    /// `forcedVisible` means a solo workout is already active
+    /// (`activeFocusLens`): tapping never opens the friend picker there, but
+    /// a pending invite still opens the invites screen — accepting it is
+    /// guarded downstream by the existing live-workout logic.
+    func tapAction(forcedVisible: Bool) -> TodayFriendTapAction {
+        if forcedVisible {
+            if case .pendingInvite = self {
+                return .openInvites
+            }
+            return .blockedBySoloWorkout
+        }
+        switch self {
+        case .needsCloudAccount:
+            return .openAccount
+        case .needsFriends:
+            return .openFriends
+        case .pickFriend:
+            return .pickFriend
+        case .pendingInvite:
+            return .openInvites
+        case .hidden:
+            return .none
+        }
+    }
+}
+
+/// The effect a tap on the "С другом" hero pill should have, decided by
+/// `TodayFriendEntryState.tapAction(forcedVisible:)`.
+enum TodayFriendTapAction: Equatable {
+    case openAccount
+    case openFriends
+    case pickFriend
+    case openInvites
+    case blockedBySoloWorkout
+    case none
+}
+
 struct WeeklyTrainingSummary: Equatable {
     let weekStart: Date
     let completedSessionCount: Int
@@ -333,6 +407,7 @@ public struct WorkoutsView: View {
     @State private var showsActiveMoreActions = false
     @State private var showsActivationOptions = false
     @State private var showsRetainedPlanCancelConfirmation = false
+    @State private var showsFriendPicker = false
 
     private let onStartPlan: (WorkoutLaunchSeed) -> Bool
     private let onAddWorkout: (WorkoutLaunchSeed?) -> Bool
@@ -345,16 +420,34 @@ public struct WorkoutsView: View {
     private let onTutorialPrimaryActionFrameChange: @MainActor (CGRect?) -> Void
     private let onOpenWorkout: (UUID) -> Void
     private let onOpenRanks: () -> Void
+    private let isCloudAccount: Bool
+    private let friends: [SocialFriendSummary]
+    private let pendingInvitationCount: Int
+    private let hasBlockingLiveWorkout: Bool
+    private let onTrainWithFriend: (SocialFriendSummary) -> Void
+    private let onTrainWithFriendBlocked: () -> Void
+    private let onOpenFriends: () -> Void
+    private let onOpenInvites: () -> Void
+    private let onOpenAccount: () -> Void
 
     init(
         store: WorkoutStore,
         activeWorkoutDraft: ActiveWorkoutDraft? = nil,
         hasRetainedWorkoutDraft: Bool = false,
+        isCloudAccount: Bool = false,
+        friends: [SocialFriendSummary] = [],
+        pendingInvitationCount: Int = 0,
+        hasBlockingLiveWorkout: Bool = false,
         onStartPlan: @escaping (WorkoutLaunchSeed) -> Bool,
         onAddWorkout: @escaping (WorkoutLaunchSeed?) -> Bool,
         onContinueWorkout: @escaping () -> Void = {},
         onDiscardWorkout: @escaping () -> Void = {},
         onCancelPlan: @escaping () -> Void = {},
+        onTrainWithFriend: @escaping (SocialFriendSummary) -> Void = { _ in },
+        onTrainWithFriendBlocked: @escaping () -> Void = {},
+        onOpenFriends: @escaping () -> Void = {},
+        onOpenInvites: @escaping () -> Void = {},
+        onOpenAccount: @escaping () -> Void = {},
         tracksTutorialPrimaryActionFrame: Bool = false,
         onTutorialPrimaryActionFrameChange: @escaping @MainActor (CGRect?) -> Void = { _ in },
         onOpenWorkout: @escaping (UUID) -> Void,
@@ -363,11 +456,20 @@ public struct WorkoutsView: View {
         self.store = store
         self.activeWorkoutDraft = activeWorkoutDraft
         self.hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
+        self.isCloudAccount = isCloudAccount
+        self.friends = friends
+        self.pendingInvitationCount = pendingInvitationCount
+        self.hasBlockingLiveWorkout = hasBlockingLiveWorkout
         self.onStartPlan = onStartPlan
         self.onAddWorkout = onAddWorkout
         self.onContinueWorkout = onContinueWorkout
         self.onDiscardWorkout = onDiscardWorkout
         self.onCancelPlan = onCancelPlan
+        self.onTrainWithFriend = onTrainWithFriend
+        self.onTrainWithFriendBlocked = onTrainWithFriendBlocked
+        self.onOpenFriends = onOpenFriends
+        self.onOpenInvites = onOpenInvites
+        self.onOpenAccount = onOpenAccount
         self.tracksTutorialPrimaryActionFrame = tracksTutorialPrimaryActionFrame
         self.onTutorialPrimaryActionFrameChange = onTutorialPrimaryActionFrameChange
         self.onOpenWorkout = onOpenWorkout
@@ -431,6 +533,9 @@ public struct WorkoutsView: View {
             TrainingSettingsSheet(profile: $activationProfile) { newValue in
                 TrainingProfileStore().save(newValue, accountStorageKey: store.accountStorageKey)
             }
+        }
+        .sheet(isPresented: $showsFriendPicker) {
+            friendPickerSheet
         }
         .onAppear { referenceDate = Date() }
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
@@ -660,6 +765,8 @@ public struct WorkoutsView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            trainWithFriendPill()
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -952,6 +1059,8 @@ public struct WorkoutsView: View {
                 )
                 focusActionButtons(launchSeed: launchSeed, guidance: guidance)
             }
+
+            trainWithFriendPill()
         }
         .padding(completedToday ? 18 : 22)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1094,15 +1203,18 @@ public struct WorkoutsView: View {
                 onTutorialPrimaryActionFrameChange
             )
 
-            DisclosureGroup(
-                gymText(
-                    "More workout options",
-                    "Інші дії",
-                    "Другие действия",
-                    languageCode: languageCode
-                ),
-                isExpanded: $showsActiveMoreActions
-            ) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    trainWithFriendPill(forcedVisible: true)
+                    moreWorkoutOptionsPill
+                }
+                VStack(spacing: 10) {
+                    trainWithFriendPill(forcedVisible: true)
+                    moreWorkoutOptionsPill
+                }
+            }
+
+            if showsActiveMoreActions {
                 Button(role: .destructive, action: onDiscardWorkout) {
                     Text(gymText(
                         "Discard workout",
@@ -1115,9 +1227,10 @@ public struct WorkoutsView: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
                 }
                 .buttonStyle(.plain)
+                .background(Color.white.opacity(0.08), in: Capsule())
+                .overlay { Capsule().strokeBorder(Color.white.opacity(0.36), lineWidth: 1) }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .tint(.white)
-            .foregroundStyle(Color.white)
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1125,6 +1238,49 @@ public struct WorkoutsView: View {
         .clipShape(activationLensShape)
         .shadow(color: GymTheme.primary.opacity(0.24), radius: 24, x: 0, y: 14)
         .appTutorialTarget(.todayFocus)
+    }
+
+    /// Restyled trigger for the former "More workout options" disclosure so
+    /// it can sit as an equal-width pill next to the "С другом" pill. Keeps
+    /// the same toggle behavior and expand/collapse accessibility semantics
+    /// a `DisclosureGroup` would announce.
+    private var moreWorkoutOptionsPill: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showsActiveMoreActions.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(gymText(
+                    "More workout options",
+                    "Інші дії",
+                    "Другие действия",
+                    languageCode: languageCode
+                ))
+                .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.bold())
+                    .rotationEffect(.degrees(showsActiveMoreActions ? 180 : 0))
+            }
+            .font(.subheadline.bold())
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, minHeight: 48)
+        }
+        .buttonStyle(.plain)
+        .background(Color.white.opacity(0.08), in: Capsule())
+        .overlay { Capsule().strokeBorder(Color.white.opacity(0.36), lineWidth: 1) }
+        .accessibilityLabel(gymText(
+            "More workout options",
+            "Інші дії",
+            "Другие действия",
+            languageCode: languageCode
+        ))
+        .accessibilityValue(showsActiveMoreActions
+            ? gymText("Expanded", "Розгорнуто", "Развёрнуто", languageCode: languageCode)
+            : gymText("Collapsed", "Згорнуто", "Свёрнуто", languageCode: languageCode)
+        )
+        .accessibilityAddTraits(.isButton)
     }
 
     private func todayPlanMetrics(_ plan: SmartWorkoutPlan) -> some View {
@@ -2212,6 +2368,194 @@ public struct WorkoutsView: View {
         } else {
             button
                 .background(Color.white, in: Capsule())
+        }
+    }
+
+    private var friendEntryState: TodayFriendEntryState {
+        TodayFriendEntryState(
+            isCloudAccount: isCloudAccount,
+            friendCount: friends.count,
+            pendingInvitationCount: pendingInvitationCount,
+            hasBlockingLiveWorkout: hasBlockingLiveWorkout
+        )
+    }
+
+    /// The "С другом" hero pill. `forcedVisible` is used by `activeFocusLens`
+    /// (a solo workout is already in progress): the pill always shows there,
+    /// but tapping it only surfaces the same "finish current workout" guard
+    /// message `openDirectLiveWorkoutEditor` uses — it never opens the
+    /// friend picker while a solo workout is active.
+    @ViewBuilder
+    private func trainWithFriendPill(forcedVisible: Bool = false) -> some View {
+        let state = friendEntryState
+        if !forcedVisible, state.isHidden {
+            EmptyView()
+        } else {
+            let badgeCount: Int? = {
+                if case let .pendingInvite(count) = state { return count }
+                return nil
+            }()
+            let title = badgeCount != nil
+                ? gymText("Invitation", "Запрошення", "Приглашение", languageCode: languageCode)
+                : gymText("With a friend", "З другом", "С другом", languageCode: languageCode)
+            Button {
+                handleTrainWithFriendTap(forcedVisible: forcedVisible, state: state)
+            } label: {
+                HStack(spacing: 6) {
+                    Label(title, systemImage: "person.2.fill")
+                        .lineLimit(1)
+                    if let badgeCount {
+                        Text("\(badgeCount)")
+                            .font(.caption2.bold())
+                            .foregroundStyle(Color(red: 0.07, green: 0.21, blue: 0.38))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.white, in: Capsule())
+                    }
+                }
+                .font(.subheadline.bold())
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 18)
+                .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .buttonStyle(.plain)
+            .background(
+                badgeCount != nil ? Color.white.opacity(0.22) : Color.white.opacity(0.08),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule().strokeBorder(
+                    Color.white.opacity(badgeCount != nil ? 0.7 : 0.36),
+                    lineWidth: 1
+                )
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(title)
+            .accessibilityHint(trainWithFriendAccessibilityHint(forcedVisible: forcedVisible, state: state))
+        }
+    }
+
+    private func handleTrainWithFriendTap(forcedVisible: Bool, state: TodayFriendEntryState) {
+        switch state.tapAction(forcedVisible: forcedVisible) {
+        case .openAccount:
+            onOpenAccount()
+        case .openFriends:
+            onOpenFriends()
+        case .pickFriend:
+            showsFriendPicker = true
+        case .openInvites:
+            onOpenInvites()
+        case .blockedBySoloWorkout:
+            onTrainWithFriendBlocked()
+        case .none:
+            break
+        }
+    }
+
+    private func trainWithFriendAccessibilityHint(
+        forcedVisible: Bool,
+        state: TodayFriendEntryState
+    ) -> String {
+        if forcedVisible, state.tapAction(forcedVisible: true) != .openInvites {
+            return gymText(
+                "Finish your current workout before starting a live workout with a friend",
+                "Заверши поточне тренування, перш ніж почати живе тренування з другом",
+                "Заверши текущую тренировку, прежде чем начать живую тренировку с другом",
+                languageCode: languageCode
+            )
+        }
+        switch state {
+        case .needsCloudAccount:
+            return gymText(
+                "Opens account settings to sign in with a cloud account",
+                "Відкриває налаштування акаунта для входу в хмарний акаунт",
+                "Открывает настройки аккаунта для входа в облачный аккаунт",
+                languageCode: languageCode
+            )
+        case .needsFriends:
+            return gymText(
+                "Opens your friends list to add a friend",
+                "Відкриває список друзів, щоб додати друга",
+                "Открывает список друзей, чтобы добавить друга",
+                languageCode: languageCode
+            )
+        case .pickFriend:
+            return gymText(
+                "Choose a friend to start a live workout together",
+                "Обери друга, щоб почати спільне живе тренування",
+                "Выбери друга, чтобы начать совместную живую тренировку",
+                languageCode: languageCode
+            )
+        case .pendingInvite:
+            return gymText(
+                "Opens your pending live workout invitation",
+                "Відкриває запрошення на живе тренування, що очікує",
+                "Открывает ожидающее приглашение на живую тренировку",
+                languageCode: languageCode
+            )
+        case .hidden:
+            return ""
+        }
+    }
+
+    private var friendPickerSheet: some View {
+        NavigationStack {
+            Group {
+                if friends.isEmpty {
+                    ContentUnavailableView(
+                        gymText(
+                            "No friends yet",
+                            "Поки що немає друзів",
+                            "Пока нет друзей",
+                            languageCode: languageCode
+                        ),
+                        systemImage: "person.2.slash"
+                    )
+                } else {
+                    List(friends) { friend in
+                        Button {
+                            showsFriendPicker = false
+                            onTrainWithFriend(friend)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(GymTheme.primary)
+                                Text(friend.displayName)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(GymTheme.textPrimary)
+                                Spacer()
+                                Image(systemName: "figure.strengthtraining.traditional")
+                                    .foregroundStyle(GymTheme.textSecondary)
+                            }
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(friend.displayName)
+                        .accessibilityHint(gymText(
+                            "Starts a live workout with this friend",
+                            "Починає живе тренування з цим другом",
+                            "Начинает живую тренировку с этим другом",
+                            languageCode: languageCode
+                        ))
+                    }
+                }
+            }
+            .navigationTitle(gymText(
+                "Train with a friend",
+                "Тренуватися з другом",
+                "Тренироваться с другом",
+                languageCode: languageCode
+            ))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(gymText("Close", "Закрити", "Закрыть", languageCode: languageCode)) {
+                        showsFriendPicker = false
+                    }
+                }
+            }
         }
     }
 

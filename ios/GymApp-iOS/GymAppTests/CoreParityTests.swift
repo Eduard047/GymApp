@@ -12444,6 +12444,159 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(profileStore.activationDismissed(accountStorageKey: account))
     }
 
+    func testTodayHeroExposesTrainWithFriendPillUsingParityCopyAndHidesWhenBlocked() throws {
+        let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
+
+        // The pill exists as a first-class action in all three hero states.
+        XCTAssertTrue(source.contains("private func trainWithFriendPill(forcedVisible: Bool = false) -> some View"))
+        XCTAssertTrue(source.contains("enum TodayFriendEntryState: Equatable"))
+        let focusLensSource = try XCTUnwrap(
+            source.split(separator: "private var focusLens: some View {", maxSplits: 1).last?
+                .split(separator: "private func focusDetailsDisclosure(", maxSplits: 1).first
+        )
+        XCTAssertTrue(focusLensSource.contains("trainWithFriendPill()"))
+        let activationPanelSource = try XCTUnwrap(
+            source.split(separator: "private var activationPanel: some View {", maxSplits: 1).last?
+                .split(separator: "private func createActivationManually()", maxSplits: 1).first
+        )
+        XCTAssertTrue(activationPanelSource.contains("trainWithFriendPill()"))
+        let activeFocusLensSource = try XCTUnwrap(
+            source.split(separator: "private var activeFocusLens: some View {", maxSplits: 1).last?
+                .split(separator: "private func todayPlanMetrics(", maxSplits: 1).first
+        )
+        XCTAssertTrue(activeFocusLensSource.contains("trainWithFriendPill(forcedVisible: true)"))
+        XCTAssertTrue(activeFocusLensSource.contains("moreWorkoutOptionsPill"))
+
+        // Hidden whenever a live workout already blocks (only checked outside
+        // the forced-visible solo-workout hero).
+        XCTAssertTrue(source.contains("if !forcedVisible, state.isHidden {"))
+        XCTAssertTrue(source.contains("EmptyView()"))
+        XCTAssertTrue(source.contains("if hasBlockingLiveWorkout {\n            self = .hidden"))
+
+        // Exact 4-arg gymText copy required by the plan; never the 2-arg form.
+        XCTAssertTrue(source.contains(
+            "gymText(\"Invitation\", \"Запрошення\", \"Приглашение\", languageCode: languageCode)"
+        ))
+        XCTAssertTrue(source.contains(
+            "gymText(\"With a friend\", \"З другом\", \"С другом\", languageCode: languageCode)"
+        ))
+        XCTAssertTrue(source.contains("\"Train with a friend\""))
+        XCTAssertTrue(source.contains("\"Тренуватися з другом\""))
+        XCTAssertTrue(source.contains("\"Тренироваться с другом\""))
+        XCTAssertFalse(source.contains("gymText(\"With a friend\", \"З другом\")"))
+    }
+
+    func testTodayFriendEntryStateDecidesHeroPillFromPlainInputs() {
+        // Live workout already blocking wins over everything else, including
+        // a pending invite.
+        XCTAssertEqual(
+            TodayFriendEntryState(
+                isCloudAccount: true,
+                friendCount: 3,
+                pendingInvitationCount: 2,
+                hasBlockingLiveWorkout: true
+            ),
+            .hidden
+        )
+
+        // A pending invite is surfaced before the cloud/friends checks.
+        XCTAssertEqual(
+            TodayFriendEntryState(
+                isCloudAccount: false,
+                friendCount: 0,
+                pendingInvitationCount: 1,
+                hasBlockingLiveWorkout: false
+            ),
+            .pendingInvite(count: 1)
+        )
+
+        // Local-only account, no invite: prompt for a cloud account.
+        XCTAssertEqual(
+            TodayFriendEntryState(
+                isCloudAccount: false,
+                friendCount: 0,
+                pendingInvitationCount: 0,
+                hasBlockingLiveWorkout: false
+            ),
+            .needsCloudAccount
+        )
+
+        // Cloud account with zero friends: prompt to add a friend.
+        XCTAssertEqual(
+            TodayFriendEntryState(
+                isCloudAccount: true,
+                friendCount: 0,
+                pendingInvitationCount: 0,
+                hasBlockingLiveWorkout: false
+            ),
+            .needsFriends
+        )
+
+        // Cloud account with friends: open the picker.
+        XCTAssertEqual(
+            TodayFriendEntryState(
+                isCloudAccount: true,
+                friendCount: 4,
+                pendingInvitationCount: 0,
+                hasBlockingLiveWorkout: false
+            ),
+            .pickFriend
+        )
+
+        XCTAssertTrue(TodayFriendEntryState.hidden.isHidden)
+        XCTAssertFalse(TodayFriendEntryState.pickFriend.isHidden)
+    }
+
+    func testTodayFriendEntryStateTapActionOpensInvitesForPendingInviteEvenWhenForcedVisible() {
+        // A solo workout is active (forcedVisible) but a live-workout invite
+        // is pending: tapping must open the invite, not block with the
+        // "finish your workout" message. Accepting the invite is guarded
+        // downstream by the existing live-workout logic.
+        XCTAssertEqual(
+            TodayFriendEntryState.pendingInvite(count: 1).tapAction(forcedVisible: true),
+            .openInvites
+        )
+        // Every other forced-visible state still blocks, matching prior
+        // behavior.
+        XCTAssertEqual(
+            TodayFriendEntryState.pickFriend.tapAction(forcedVisible: true),
+            .blockedBySoloWorkout
+        )
+        XCTAssertEqual(
+            TodayFriendEntryState.needsCloudAccount.tapAction(forcedVisible: true),
+            .blockedBySoloWorkout
+        )
+        XCTAssertEqual(
+            TodayFriendEntryState.needsFriends.tapAction(forcedVisible: true),
+            .blockedBySoloWorkout
+        )
+        XCTAssertEqual(
+            TodayFriendEntryState.hidden.tapAction(forcedVisible: true),
+            .blockedBySoloWorkout
+        )
+        // Non-forced behavior is unchanged.
+        XCTAssertEqual(
+            TodayFriendEntryState.pendingInvite(count: 1).tapAction(forcedVisible: false),
+            .openInvites
+        )
+        XCTAssertEqual(
+            TodayFriendEntryState.pickFriend.tapAction(forcedVisible: false),
+            .pickFriend
+        )
+        XCTAssertEqual(
+            TodayFriendEntryState.needsCloudAccount.tapAction(forcedVisible: false),
+            .openAccount
+        )
+        XCTAssertEqual(
+            TodayFriendEntryState.needsFriends.tapAction(forcedVisible: false),
+            .openFriends
+        )
+        XCTAssertEqual(
+            TodayFriendEntryState.hidden.tapAction(forcedVisible: false),
+            .none
+        )
+    }
+
     func testFirstWorkoutActivationUsesParityChipRowsAndOneTodayHeader() throws {
         let source = try iosSource("GymApp/UI/Screens/WorkoutsView.swift")
         XCTAssertTrue(source.contains("screenHeader {\n                            proxy.scrollTo(\"workout-history\""))

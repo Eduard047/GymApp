@@ -1513,6 +1513,10 @@ private struct MainTabShell: View {
                 hasRetainedWorkoutDraft:
                     workoutEditorDraft?.belongs(to: store.accountStorageKey) == true
                     || workoutEditorLiveRecipient != nil,
+                isCloudAccount: auth.session?.cloud != nil,
+                friends: appState.socialDashboard?.friends ?? [],
+                pendingInvitationCount: liveWorkoutCoordinator.pendingInvitationCount,
+                hasBlockingLiveWorkout: liveWorkoutCoordinator.hasBlockingLiveWorkout,
                 onStartPlan: { launchSeed in
                     guard activeWorkoutStore.draft == nil,
                           !showsAddWorkout,
@@ -1617,6 +1621,11 @@ private struct MainTabShell: View {
                     workoutLaunchDrafts = nil
                     showsAddWorkout = false
                 },
+                onTrainWithFriend: openDirectLiveWorkoutEditor,
+                onTrainWithFriendBlocked: showLiveWorkoutBlockedMessage,
+                onOpenFriends: { openProfileFocus(.friends) },
+                onOpenInvites: { openProfileFocus(.liveWorkouts) },
+                onOpenAccount: { selectedTab = .profile },
                 tracksTutorialPrimaryActionFrame: appTutorialShouldMeasurePrimaryAction(
                     target: currentTutorialStep?.target
                 ),
@@ -1710,15 +1719,7 @@ private struct MainTabShell: View {
               !liveWorkoutCoordinator.hasBlockingLiveWorkout,
               !showsAddWorkout,
               !showsActiveWorkout else {
-            appState.show(
-                message: gymText(
-                    "Finish or discard the current workout, draft, or live room before creating another live workout.",
-                    "Заверши або відкинь поточне тренування, чернетку чи живу кімнату перед створенням нового живого тренування.",
-                    "Заверши или удали текущую тренировку, черновик или live-комнату перед созданием новой живой тренировки.",
-                    languageCode: languageCode
-                ),
-                isError: true
-            )
+            showLiveWorkoutBlockedMessage()
             return
         }
         sharedWorkoutDraftSeed = []
@@ -1728,6 +1729,26 @@ private struct MainTabShell: View {
         workoutEditorLiveRecipient = friend
         selectedTab = .workouts
         showsAddWorkout = true
+    }
+
+    /// Reused by both the "С другом" hero pill (while a solo workout is
+    /// active) and `openDirectLiveWorkoutEditor`'s own guard, so the message
+    /// stays identical across both entry points.
+    private func showLiveWorkoutBlockedMessage() {
+        appState.show(
+            message: gymText(
+                "Finish or discard the current workout, draft, or live room before creating another live workout.",
+                "Заверши або відкинь поточне тренування, чернетку чи живу кімнату перед створенням нового живого тренування.",
+                "Заверши или удали текущую тренировку, черновик или live-комнату перед созданием новой живой тренировки.",
+                languageCode: languageCode
+            ),
+            isError: true
+        )
+    }
+
+    private func openProfileFocus(_ focus: NativePushProfileFocus) {
+        selectedTab = .profile
+        nativePushProfileRequest = NativePushProfileRequest(id: UUID(), focus: focus)
     }
 }
 
