@@ -11595,6 +11595,11 @@ final class CoreParityTests: XCTestCase {
                     for: request,
                     json: #"[{"updated_at":"2026-08-05T09:00:02.000000Z"}]"#
                 )
+            case ("/rest/v1/profiles", "POST"):
+                // A successful state write is followed by the usual profile upsert.
+                return try AuthURLProtocolStub.response(for: request, json: "{}")
+            case ("/rest/v1/rpc/social_sync_workout_durations", "POST"):
+                return try workoutDurationSyncResponse(for: request)
             default:
                 XCTFail("Unexpected manual three-way request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(
