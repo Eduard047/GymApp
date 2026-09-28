@@ -458,6 +458,342 @@
         }
       }
     },
+    "Active workout progress could not be opened safely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно открыть прогресс активной тренировки."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно відкрити прогрес активного тренування."
+          }
+        }
+      }
+    },
+    "Active workout progress could not be saved." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось сохранить прогресс активной тренировки."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося зберегти прогрес активного тренування."
+          }
+        }
+      }
+    },
+    "Active workout storage is unavailable." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Хранилище активной тренировки недоступно."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сховище активного тренування недоступне."
+          }
+        }
+      }
+    },
+    "An exercise in this workout is no longer available." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Упражнение из этой тренировки больше недоступно."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вправа з цього тренування більше недоступна."
+          }
+        }
+      }
+    },
+    "Blocked in iOS Settings" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заблокировано в настройках iOS"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заблоковано в Параметрах iOS"
+          }
+        }
+      }
+    },
+    "Changes pending" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменения ждут отправки"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зміни очікують надсилання"
+          }
+        }
+      }
+    },
+    "Checking cloud…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверяем облако…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перевіряємо хмару…"
+          }
+        }
+      }
+    },
+    "Choice required" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужен выбор"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Потрібен вибір"
+          }
+        }
+      }
+    },
+    "Could not register — try again" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось зарегистрировать — попробуй ещё раз"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося зареєструвати — спробуй ще раз"
+          }
+        }
+      }
+    },
+    "Damaged active workout progress was preserved for recovery." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повреждённый прогресс активной тренировки сохранён для восстановления."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пошкоджений прогрес активного тренування збережено для відновлення."
+          }
+        }
+      }
+    },
+    "Date" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дата"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дата"
+          }
+        }
+      }
+    },
+    "Edit exercise" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменить упражнение"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Редагувати вправу"
+          }
+        }
+      }
+    },
+    "Finish or discard the active workout before starting another one." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заверши или отмени активную тренировку, прежде чем начать другую."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заверши або скасуй активне тренування, перш ніж почати інше."
+          }
+        }
+      }
+    },
+    "Friend notifications" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Уведомления от друзей"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сповіщення від друзів"
+          }
+        }
+      }
+    },
+    "Garmin receipt data is kept unchanged so charts remain accurate." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Данные, полученные с Garmin, не меняются, чтобы графики оставались точными."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дані, отримані з Garmin, не змінюються, щоб графіки залишалися точними."
+          }
+        }
+      }
+    },
+    "Idle" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ожидание"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очікування"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выключено"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вимкнено"
+          }
+        }
+      }
+    },
+    "On" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включено"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увімкнено"
+          }
+        }
+      }
+    },
+    "Only the latest recorded set can be undone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить можно только последний записанный подход."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скасувати можна лише останній записаний підхід."
+          }
+        }
+      }
+    },
+    "Receive account-bound friend, workout, and live-workout updates on this device. GymApp validates the current account before showing each notification." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Получай на этом устройстве обновления о друзьях, тренировках и совместных тренировках своего аккаунта. GymApp проверяет текущий аккаунт перед показом каждого уведомления."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отримуй на цьому пристрої оновлення про друзів, тренування й спільні тренування свого акаунта. GymApp перевіряє поточний акаунт перед показом кожного сповіщення."
+          }
+        }
+      }
+    },
+    "Record at least one set before finishing the workout." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запиши хотя бы один подход, прежде чем завершить тренировку."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запиши хоча б один підхід, перш ніж завершити тренування."
+          }
+        }
+      }
+    },
     "Record current set" : {
       "comment" : "Title of the Live Activity intent that records the current set.",
       "localizations" : {
@@ -475,6 +811,86 @@
         }
       }
     },
+    "Requesting permission…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запрашиваем разрешение…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запитуємо дозвіл…"
+          }
+        }
+      }
+    },
+    "Resolve the pending live workout before starting another workout." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сначала разберись с ожидающей совместной тренировкой, а потом начинай другую."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спершу розберися з очікуваним спільним тренуванням, а потім починай інше."
+          }
+        }
+      }
+    },
+    "Secure device storage unavailable" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Защищённое хранилище устройства недоступно"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Захищене сховище пристрою недоступне"
+          }
+        }
+      }
+    },
+    "Securing this device…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Защищаем это устройство…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Захищаємо цей пристрій…"
+          }
+        }
+      }
+    },
+    "Select or pair a Garmin watch in Account settings before syncing a plan." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перед синхронизацией плана выбери или подключи часы Garmin в настройках аккаунта."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перед синхронізацією плану вибери або підключи годинник Garmin у налаштуваннях акаунта."
+          }
+        }
+      }
+    },
     "Skip rest" : {
       "comment" : "Title of the Live Activity intent that ends the current rest.",
       "localizations" : {
@@ -488,6 +904,214 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пропустити відпочинок"
+          }
+        }
+      }
+    },
+    "Sync failed" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ошибка синхронизации"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Помилка синхронізації"
+          }
+        }
+      }
+    },
+    "The active workout changed. Review it and try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активная тренировка изменилась. Проверь её и попробуй ещё раз."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активне тренування змінилося. Перевір його й спробуй ще раз."
+          }
+        }
+      }
+    },
+    "The active workout contains invalid data." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активная тренировка содержит некорректные данные."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активне тренування містить некоректні дані."
+          }
+        }
+      }
+    },
+    "The active workout is too large." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активная тренировка слишком большая."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активне тренування завелике."
+          }
+        }
+      }
+    },
+    "There is no active workout to continue." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет активной тренировки, которую можно продолжить."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немає активного тренування, яке можна продовжити."
+          }
+        }
+      }
+    },
+    "This active workout belongs to another account." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта активная тренировка принадлежит другому аккаунту."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це активне тренування належить іншому акаунту."
+          }
+        }
+      }
+    },
+    "This set has already been recorded." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот подход уже записан."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей підхід уже записано."
+          }
+        }
+      }
+    },
+    "This set is no longer available." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот подход больше недоступен."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей підхід більше недоступний."
+          }
+        }
+      }
+    },
+    "This workout is already finishing. Retry completion instead of changing it." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренировка уже завершается. Повтори завершение вместо изменений."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренування вже завершується. Повтори завершення замість змін."
+          }
+        }
+      }
+    },
+    "Up to date" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Актуально"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Актуально"
+          }
+        }
+      }
+    },
+    "Waiting for Apple Push Notification service…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ждём ответа сервиса уведомлений Apple…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очікуємо на сервіс сповіщень Apple…"
+          }
+        }
+      }
+    },
+    "Workout history changed on more than one device. Choose which complete version to keep." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "История тренировок изменилась на нескольких устройствах. Выбери, какую полную версию сохранить."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Історію тренувань змінено на кількох пристроях. Обери, яку повну версію зберегти."
+          }
+        }
+      }
+    },
+    "Your workouts and weekly progress will show up here." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Здесь появятся твои тренировки и прогресс за неделю."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тут з’являться твої тренування й тижневий прогрес."
           }
         }
       }

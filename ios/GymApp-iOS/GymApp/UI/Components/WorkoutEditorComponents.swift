@@ -513,8 +513,12 @@ struct WorkoutDraftExerciseCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(
-                        "Smart Coach: \(recommendation.kind.coachCompactDisplayName), " +
-                            "RIR \(recommendation.targetRIR.lowerBound) to \(recommendation.targetRIR.upperBound)"
+                        gymText(
+                            "Smart Coach: \(recommendation.kind.coachCompactDisplayName), RIR \(recommendation.targetRIR.lowerBound) to \(recommendation.targetRIR.upperBound)",
+                            "Smart Coach: \(recommendation.kind.coachCompactDisplayName), RIR від \(recommendation.targetRIR.lowerBound) до \(recommendation.targetRIR.upperBound)",
+                            "Smart Coach: \(recommendation.kind.coachCompactDisplayName), RIR от \(recommendation.targetRIR.lowerBound) до \(recommendation.targetRIR.upperBound)",
+                            languageCode: gymCurrentLanguageCode()
+                        )
                     )
                 }
 
@@ -655,31 +659,6 @@ enum ExerciseMediaPresentation {
         editable
             ? gymText("Add image", "Додати фото", "Добавить фото", languageCode: languageCode)
             : gymText("No preview", "Немає демонстрації", "Нет демонстрации", languageCode: languageCode)
-    }
-}
-
-private extension WorkoutRecommendationReason {
-    var coachDisplayName: String {
-        switch self {
-        case .noHistory: "No history"
-        case .lastSessionStrong: "Last session strong"
-        case .lastSessionUnstable: "Recent performance unstable"
-        case .recentBreak: "Returning after a break"
-        case .volumeTrendingUp: "Volume trending up"
-        case .volumeDropped: "Volume dropped"
-        case .plateauDetected: "Plateau detected"
-        case .nearPersonalBest: "Near personal best"
-        case .conservativeIncrease: "Conservative increase"
-        case .loadBoundaryReached: "Machine load limit"
-        case .harderBodyweightVariation: "Harder variation needed"
-        case .recoverySession: "Recovery session"
-        case .hardSession: "Hard session"
-        case .aestheticGoal: "Fat-loss goal"
-        case .calorieDeficit: "Calorie deficit"
-        case .fourDayUpperLower: "Four-day upper/lower"
-        case .exerciseFeedbackTooHard: "Exercise feedback: too hard"
-        case .exerciseFeedbackRepeatedEasy: "Exercise feedback: ready to progress"
-        }
     }
 }
 

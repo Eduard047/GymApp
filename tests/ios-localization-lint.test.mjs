@@ -346,3 +346,20 @@ test("iOS number and date formatting uses the in-app language locale", () => {
   }
   assert.deepEqual(violations, []);
 });
+
+test("every literal passed to gymLocalized has Ukrainian and Russian catalog values", () => {
+  const violations = [];
+  for (const { file, source, code } of scanned) {
+    for (const call of findCalls(code, "gymLocalized")) {
+      if (call.argumentsList.length === 0) continue;
+      const argument = source.slice(...call.argumentsList[0]).trim();
+      const literal = argument.match(/^"((?:[^"\\]|\\.)*)"$/)?.[1];
+      if (literal === undefined || literal.includes("\\(")) continue;
+      const localizations = catalog.strings?.[literal.replace(/\\"/g, '"')]?.localizations;
+      if (!localizations?.uk || !localizations?.ru) {
+        violations.push(`${file}:${lineOf(source, call.index)} ${argument}`);
+      }
+    }
+  }
+  assert.deepEqual(violations, []);
+});
