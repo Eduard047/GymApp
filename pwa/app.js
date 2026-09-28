@@ -13583,12 +13583,16 @@ function profileFromActivation(value = activationDraft) {
   const effort = smartNormalizeWorkoutEffort(value?.effort, "");
   if (!goal || !Number.isInteger(days) || days < 2 || days > 6 ||
       !["Recovery", "Standard", "Hard"].includes(effort)) return null;
+  // Saved training settings win when they describe the same goal and weekly target.
+  const stored = state.profile;
+  const keepStored = stored?.goal === goal && stored?.days === days &&
+    TRAINING_SETTINGS_SPLITS.includes(stored.split) && TRAINING_SETTINGS_CALORIES.includes(stored.calories);
   return {
     profile: {
-      split: days <= 3 ? "Full Body" : days === 4 ? "Upper / Lower" : "Push Pull Legs",
+      split: keepStored ? stored.split : days <= 3 ? "Full Body" : days === 4 ? "Upper / Lower" : "Push Pull Legs",
       days,
       goal,
-      calories: goal === "Aesthetic Cut" ? "Deficit" : goal === "Muscle Gain" ? "Surplus" : "Maintenance"
+      calories: keepStored ? stored.calories : goal === "Aesthetic Cut" ? "Deficit" : goal === "Muscle Gain" ? "Surplus" : "Maintenance"
     },
     effort
   };
@@ -13601,6 +13605,8 @@ function activationPlanDraftFingerprint(draft, owner) {
     owner,
     goal: draft.goal,
     days: draft.days,
+    split: configured.profile.split,
+    calories: configured.profile.calories,
     effort: configured.effort
   });
 }

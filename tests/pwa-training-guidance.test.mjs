@@ -118,10 +118,11 @@ test("missing or corrupt profiles use the shared defaults while valid stored pro
   });
 });
 
-test("first-workout activation derives the exact profile matrix and skip stays account-local", () => {
+test("first-workout activation keeps matching saved settings, derives the rest, and skip stays account-local", () => {
   const sandbox = context();
   const matrix = plain(vm.runInContext(`(() => {
     const rows = [];
+    state.profile = { split: "Custom", days: 6, goal: "Strength", calories: "Surplus" };
     for (const days of [2, 3, 4, 5, 6]) {
       for (const goal of ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"]) {
         rows.push({ days, goal, result: profileFromActivation({ days, goal, effort: "Standard" }) });
@@ -130,10 +131,43 @@ test("first-workout activation derives the exact profile matrix and skip stays a
     return rows;
   })()`, sandbox));
   for (const { days, goal, result } of matrix) {
-    assert.equal(result.profile.split, days <= 3 ? "Full Body" : days === 4 ? "Upper / Lower" : "Push Pull Legs");
-    assert.equal(result.profile.calories, goal === "Aesthetic Cut" ? "Deficit" : goal === "Muscle Gain" ? "Surplus" : "Maintenance");
+    if (days === 6 && goal === "Strength") {
+      assert.deepEqual(result.profile, { split: "Custom", days: 6, goal: "Strength", calories: "Surplus" });
+    } else {
+      assert.equal(result.profile.split, days <= 3 ? "Full Body" : days === 4 ? "Upper / Lower" : "Push Pull Legs");
+      assert.equal(result.profile.calories, goal === "Aesthetic Cut" ? "Deficit" : goal === "Muscle Gain" ? "Surplus" : "Maintenance");
+    }
     assert.equal(result.effort, "Standard");
   }
+  const stored = plain(vm.runInContext(`(() => {
+    const draft = (goal, days) => ({ goal, days, effort: "Standard" });
+    state.profile = { split: "Upper / Lower", days: 4, goal: "Aesthetic Cut", calories: "Deficit" };
+    const cut = profileFromActivation(draft("Aesthetic Cut", 4)).profile;
+    state.profile = { split: "Push Pull Legs", days: 3, goal: "Balanced", calories: "Surplus" };
+    const balanced = profileFromActivation(draft("Balanced", 3)).profile;
+    state.profile = { split: "Push Pull Legs", days: 4, goal: "Aesthetic Cut", calories: "Maintenance" };
+    const fingerprintBefore = activationPlanDraftFingerprint(draft("Aesthetic Cut", 4), "local:alpha");
+    state.profile = { split: "Upper / Lower", days: 4, goal: "Aesthetic Cut", calories: "Maintenance" };
+    const fingerprintAfter = activationPlanDraftFingerprint(draft("Aesthetic Cut", 4), "local:alpha");
+    state.profile = { split: "<script>", days: 4, goal: "Aesthetic Cut", calories: "admin" };
+    const invalid = profileFromActivation(draft("Aesthetic Cut", 4)).profile;
+    state.profile = { split: "Push Pull Legs", days: 3, goal: "Balanced", calories: "Surplus" };
+    const otherGoal = profileFromActivation(draft("Muscle Gain", 3)).profile;
+    const otherDays = profileFromActivation(draft("Balanced", 5)).profile;
+    state.profile = undefined;
+    const missing = profileFromActivation(draft("Muscle Gain", 5)).profile;
+    return {
+      cut, balanced, invalid, otherGoal, otherDays, missing,
+      fingerprintChanged: fingerprintBefore !== fingerprintAfter
+    };
+  })()`, sandbox));
+  assert.deepEqual(stored.cut, { split: "Upper / Lower", days: 4, goal: "Aesthetic Cut", calories: "Deficit" });
+  assert.deepEqual(stored.balanced, { split: "Push Pull Legs", days: 3, goal: "Balanced", calories: "Surplus" });
+  assert.deepEqual(stored.invalid, { split: "Upper / Lower", days: 4, goal: "Aesthetic Cut", calories: "Deficit" });
+  assert.deepEqual(stored.otherGoal, { split: "Full Body", days: 3, goal: "Muscle Gain", calories: "Surplus" });
+  assert.deepEqual(stored.otherDays, { split: "Push Pull Legs", days: 5, goal: "Balanced", calories: "Maintenance" });
+  assert.deepEqual(stored.missing, { split: "Push Pull Legs", days: 5, goal: "Muscle Gain", calories: "Surplus" });
+  assert.equal(stored.fingerprintChanged, true);
   const canonicalDraft = plain(vm.runInContext(`(() => {
     state.profile = { split: "Push Pull Legs", days: 5, goal: "Strength", calories: "Maintenance" };
     return defaultActivationDraft();
