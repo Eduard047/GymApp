@@ -11489,6 +11489,7 @@ function render() {
     bindEvents(preservedModalFocus);
     bindOnboardingTour();
     requestAnimationFrame(restoreVisibleScroll);
+    requestAnimationFrame(fitMetricTileValues);
     startTimerTicker();
     if (!startupRemoteRefreshPending && (current.name === "leaderboard" ||
         (socialState.status === "idle" && activeAccount?.remote === "supabase"))) {
@@ -11734,6 +11735,22 @@ function smartPlanMetricsMarkup(plan) {
   const normalized = normalizedSmartWorkoutPlan(plan);
   if (!counts || !normalized) return "";
   return `<div class="focus-lens-plan-metrics" aria-label="${txAttr("Plan summary", "Підсумок плану")}"><div><strong>${escapeHtml(smartFocusLabel(normalized.focus))}</strong><span>${tx("Focus", "Фокус")}</span></div><div><strong>${counts.exerciseCount} / ${counts.setCount}</strong><span>${tx("Exercises / sets", "Вправи / підходи")}</span></div><div><strong>~${counts.estimatedMinutes} ${tx("min", "хв")}</strong><span>${tx("Estimated time", "Орієнтовний час")}</span></div></div>`;
+}
+
+const METRIC_TILE_MIN_VALUE_SCALE = 0.6;
+
+// Metric values stay on one line and shrink to fit their tile instead of wrapping or truncating.
+function fitMetricTileValues() {
+  if (typeof app?.querySelectorAll !== "function") return;
+  app.querySelectorAll(".metric-grid strong").forEach(value => {
+    value.style.fontSize = "";
+    const available = value.clientWidth;
+    const needed = value.scrollWidth;
+    if (!(available > 0) || needed <= available) return;
+    const baseSize = parseFloat(window.getComputedStyle(value).fontSize) || 22;
+    const scale = Math.max(METRIC_TILE_MIN_VALUE_SCALE, available / needed);
+    value.style.fontSize = `${Math.floor(baseSize * scale * 10) / 10}px`;
+  });
 }
 
 function soloProgressHero() {

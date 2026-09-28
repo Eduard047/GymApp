@@ -15,9 +15,10 @@
   --muted: #60708a;
   --sage: #216bd7;
   --primary: var(--sage);
-  --clay: #ff7a70;
+  --clay: #ff6f66;
   --blue: #3a8dff;
-  --violet: #806bff;
+  --violet: #6753d6;
+  --mint: #23815e;
   --rose: #ff7a9a;
   --gold: #c87908;
   --danger: #b42318;
@@ -37,8 +38,12 @@
   --shadow: 0 12px 32px rgba(34, 78, 138, 0.13);
   --radius-xs: 14px;
   --radius-sm: 18px;
-  --radius-md: 22px;
+  --radius-md: 20px;
   --radius-lg: 26px;
+  /* Fluid Focus geometry: controls, compact surfaces, panels. */
+  --radius-control: 18px;
+  --radius-compact: 20px;
+  --radius-panel: 26px;
   --radius-xl: 32px;
   --radius: var(--radius-sm);
   --bottom-nav-height: 72px;
@@ -84,6 +89,7 @@ html.frame-blocked body {
   --clay: #ff9d94;
   --blue: #79afff;
   --violet: #b4a6ff;
+  --mint: #77ddb7;
   --rose: #ff8fa9;
   --gold: #f2bf5b;
   --danger: #ffb4ab;
@@ -1436,14 +1442,19 @@ svg.filled-icon.small-icon {
 }
 
 .metric-grid span {
-  display: block;
+  display: -webkit-box;
   overflow: hidden;
   color: var(--muted);
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  hyphens: none;
+  overflow-wrap: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .hero-stat strong,
@@ -1454,8 +1465,9 @@ svg.filled-icon.small-icon {
   font-weight: 700;
   line-height: 28px;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  hyphens: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .hero-button {

@@ -2780,3 +2780,18 @@ test("a live room hides the friend pill", () => {
   })()`, context);
   assert.doesNotMatch(markup, /today-friend-pill/);
 });
+
+test("metric values shrink to fit their tile instead of wrapping", () => {
+  const { context, appNode } = loadContext();
+  const values = [
+    { clientWidth: 100, scrollWidth: 160, style: { fontSize: "" } },
+    { clientWidth: 100, scrollWidth: 90, style: { fontSize: "" } },
+    { clientWidth: 100, scrollWidth: 400, style: { fontSize: "" } }
+  ];
+  appNode.querySelectorAll = selector => selector === ".metric-grid strong" ? values : [];
+  vm.runInContext("window", context).getComputedStyle = () => ({ fontSize: "22px" });
+  vm.runInContext("fitMetricTileValues()", context);
+  assert.equal(values[0].style.fontSize, "13.7px");
+  assert.equal(values[1].style.fontSize, "");
+  assert.equal(values[2].style.fontSize, "13.2px");
+});
