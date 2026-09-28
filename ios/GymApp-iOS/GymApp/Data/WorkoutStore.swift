@@ -242,6 +242,8 @@ public final class WorkoutStore: ObservableObject {
     /// envelope rather than backup-eligible preferences.
     private var pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
     private var activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
+    /// Per-workout merge baseline and local change journal for the shared cloud row.
+    private var workoutCloudSyncState: WorkoutCloudSyncState?
 
     // These projections are read repeatedly by SwiftUI screens. They are derived only
     // from the published snapshot and are discarded before every committed publish,
@@ -317,6 +319,7 @@ public final class WorkoutStore: ObservableObject {
         var activityOnlyCloudItems: [ActivityOnlyWorkoutCloudItem]?
         var pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
         var activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
+        var workoutCloudSyncState: WorkoutCloudSyncState?
 
         private enum CodingKeys: String, CodingKey {
             case schemaVersion
@@ -329,6 +332,7 @@ public final class WorkoutStore: ObservableObject {
             case activityOnlyCloudItems
             case pendingActivityOnlyCloudSync
             case activityOnlyCloudBaseline
+            case workoutCloudSyncState
         }
 
         init(
@@ -341,7 +345,8 @@ public final class WorkoutStore: ObservableObject {
             workoutFeedback: [PersistedWorkoutFeedback]?,
             activityOnlyCloudItems: [ActivityOnlyWorkoutCloudItem]?,
             pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?,
-            activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
+            activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?,
+            workoutCloudSyncState: WorkoutCloudSyncState?
         ) {
             self.schemaVersion = schemaVersion
             self.accountStorageKey = accountStorageKey
@@ -353,6 +358,7 @@ public final class WorkoutStore: ObservableObject {
             self.activityOnlyCloudItems = activityOnlyCloudItems
             self.pendingActivityOnlyCloudSync = pendingActivityOnlyCloudSync
             self.activityOnlyCloudBaseline = activityOnlyCloudBaseline
+            self.workoutCloudSyncState = workoutCloudSyncState
         }
 
         init(from decoder: Decoder) throws {
@@ -385,6 +391,12 @@ public final class WorkoutStore: ObservableObject {
                 ActivityOnlyWorkoutCloudBaseline.self,
                 forKey: .activityOnlyCloudBaseline
             )
+            // A malformed optional sync cache must never make local history unreadable;
+            // without it the next divergence falls back to the whole-history choice.
+            workoutCloudSyncState = try? container.decodeIfPresent(
+                WorkoutCloudSyncState.self,
+                forKey: .workoutCloudSyncState
+            )
         }
     }
 
@@ -396,6 +408,7 @@ public final class WorkoutStore: ObservableObject {
         let activityOnlyCloudItems: [ActivityOnlyWorkoutCloudItem]
         let pendingActivityOnlyCloudSync: PendingActivityOnlyWorkoutCloudSync?
         let activityOnlyCloudBaseline: ActivityOnlyWorkoutCloudBaseline?
+        let workoutCloudSyncState: WorkoutCloudSyncState?
     }
 
     private struct NormalizedWorkoutFeedback {
@@ -442,6 +455,7 @@ public final class WorkoutStore: ObservableObject {
         self.activityOnlyCloudItems = loaded.activityOnlyCloudItems
         self.pendingActivityOnlyCloudSync = loaded.pendingActivityOnlyCloudSync
         self.activityOnlyCloudBaseline = loaded.activityOnlyCloudBaseline
+        self.workoutCloudSyncState = loaded.workoutCloudSyncState
     }
 
     /// Opens the account store while preserving an unreadable or mismatched envelope.
@@ -545,6 +559,7 @@ public final class WorkoutStore: ObservableObject {
         self.activityOnlyCloudItems = loaded.activityOnlyCloudItems
         self.pendingActivityOnlyCloudSync = loaded.pendingActivityOnlyCloudSync
         self.activityOnlyCloudBaseline = loaded.activityOnlyCloudBaseline
+        self.workoutCloudSyncState = loaded.workoutCloudSyncState
         self.workoutFeedbackByID = loaded.workoutFeedbackByID
         self.workoutFeedbackSessionDateByID = loaded.workoutFeedbackSessionDateByID
         publish(Self.normalized(loaded.snapshot))
@@ -554,15 +569,18 @@ public final class WorkoutStore: ObservableObject {
         let previousActivityOnlyCloudItems = activityOnlyCloudItems
         let previousPendingActivityOnlyCloudSync = pendingActivityOnlyCloudSync
         let previousActivityOnlyCloudBaseline = activityOnlyCloudBaseline
+        let previousWorkoutCloudSyncState = workoutCloudSyncState
         activityOnlyCloudItems = []
         pendingActivityOnlyCloudSync = nil
         activityOnlyCloudBaseline = nil
+        workoutCloudSyncState = nil
         do {
             try commit(WorkoutDataSnapshot())
         } catch {
             activityOnlyCloudItems = previousActivityOnlyCloudItems
             pendingActivityOnlyCloudSync = previousPendingActivityOnlyCloudSync
             activityOnlyCloudBaseline = previousActivityOnlyCloudBaseline
+            workoutCloudSyncState = previousWorkoutCloudSyncState
             throw error
         }
     }
@@ -641,6 +659,139 @@ public final class WorkoutStore: ObservableObject {
             pending: pendingActivityOnlyCloudSync,
             baseline: baseline
         )
+    }
+
+    func loadWorkoutCloudSyncState(ownerUserID: String) -> WorkoutCloudSyncState? {
+        guard let workoutCloudSyncState, workoutCloudSyncState.isOwned(by: ownerUserID) else {
+            return nil
+        }
+        return workoutCloudSyncState
+    }
+
+    /// Replaces the per-workout sync state without touching the published history.
+    func saveWorkoutCloudSyncState(_ state: WorkoutCloudSyncState?) throws {
+        let previous = workoutCloudSyncState
+        workoutCloudSyncState = state
+        do {
+            try persist(snapshot)
+        } catch {
+            workoutCloudSyncState = previous
+            throw error
+        }
+    }
+
+    /// Applies a per-workout merge result to local history. Workouts whose merged copy
+    /// equals the local one are untouched; a changed workout keeps its identifier,
+    /// duration, and feedback and takes the merged note and exercises; workouts absent
+    /// from the merge are removed and new ones are created. Activity-only workouts
+    /// belong to their own sidecar and are never touched. `local` must be the core the
+    /// merge was computed from, read in the same main-actor turn.
+    @discardableResult
+    func applyWorkoutCloudMerge(
+        _ merged: WorkoutCloudMerge.Core,
+        local: WorkoutCloudMerge.Core
+    ) throws -> Int {
+        var localByStart: [Int64: BackupSession] = [:]
+        for session in local.sessions {
+            guard let start = WorkoutCloudMerge.sessionIdentity(session) else { continue }
+            localByStart[start] = session
+        }
+        var mergedByStart: [Int64: BackupSession] = [:]
+        for session in merged.sessions {
+            guard let start = WorkoutCloudMerge.sessionIdentity(session) else {
+                throw CloudSyncError.invalidPayload
+            }
+            mergedByStart[start] = session
+        }
+        let mergedExerciseIdentities = Set(merged.configuredExercises.map(WorkoutCloudMerge.exerciseIdentity))
+        let removedExerciseIdentities = Set(local.configuredExercises.map(WorkoutCloudMerge.exerciseIdentity))
+            .subtracting(mergedExerciseIdentities)
+
+        var changed = 0
+        try mutate { state in
+            func exerciseID(name rawName: String, catalogKey: String?) throws -> UUID {
+                let name = rawName.gymTrimmed
+                guard !name.isEmpty else { throw CloudSyncError.invalidPayload }
+                if let id = try Self.resolvedStoredExerciseID(for: name, in: state.exercises) {
+                    return id
+                }
+                let resolvedKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
+                if let resolvedKey, let match = state.exercises.first(where: { candidate in
+                    BuiltInExerciseCatalog.resolvedKey(catalogKey: candidate.catalogKey, name: candidate.name) == resolvedKey
+                }) {
+                    return match.id
+                }
+                let exercise = Exercise(name: name, catalogKey: resolvedKey)
+                state.exercises.append(exercise)
+                return exercise.id
+            }
+
+            func workoutExercises(_ session: BackupSession) throws -> [WorkoutExercise] {
+                var result: [WorkoutExercise] = []
+                for block in session.exercises ?? [] {
+                    let id = try exerciseID(name: block.name, catalogKey: block.catalogKey)
+                    var sets: [WorkoutSet] = []
+                    for set in block.sets {
+                        sets.append(WorkoutSet(weight: set.weight <= 0 ? 0.0 : set.weight, reps: set.reps))
+                    }
+                    result.append(WorkoutExercise(exerciseID: id, sets: sets))
+                }
+                return result
+            }
+
+            var remaining = mergedByStart
+            var nextWorkouts: [WorkoutSession] = []
+            nextWorkouts.reserveCapacity(state.workouts.count + remaining.count)
+            for workout in state.workouts {
+                guard !workout.exercises.isEmpty else {
+                    nextWorkouts.append(workout)
+                    continue
+                }
+                let start = workout.date.gymEpochMilliseconds
+                guard let desired = remaining.removeValue(forKey: start) else {
+                    changed += 1
+                    continue
+                }
+                if localByStart[start] == desired {
+                    nextWorkouts.append(workout)
+                    continue
+                }
+                var updated = workout
+                updated.note = try Self.validatedNote(desired.note)
+                updated.exercises = try workoutExercises(desired)
+                nextWorkouts.append(updated)
+                changed += 1
+            }
+            for start in remaining.keys.sorted() {
+                guard let desired = remaining[start] else { continue }
+                nextWorkouts.append(WorkoutSession(
+                    date: Date(gymEpochMilliseconds: start),
+                    note: try Self.validatedNote(desired.note),
+                    exercises: try workoutExercises(desired)
+                ))
+                changed += 1
+            }
+            state.workouts = nextWorkouts
+
+            for exercise in merged.configuredExercises {
+                _ = try exerciseID(name: exercise.name, catalogKey: exercise.catalogKey)
+            }
+            let usedExerciseIDs = Set(nextWorkouts.flatMap { workout in workout.exercises.map(\.exerciseID) })
+            var removedNameKeys = Set<String>()
+            state.exercises.removeAll { exercise in
+                guard BuiltInExerciseCatalog.resolvedKey(catalogKey: exercise.catalogKey, name: exercise.name) == nil,
+                      !usedExerciseIDs.contains(exercise.id),
+                      removedExerciseIdentities.contains(
+                          Self.backupExerciseIdentity(name: exercise.name, catalogKey: exercise.catalogKey)
+                      ) else { return false }
+                removedNameKeys.insert(MuscleMappingEngine.normalizeExerciseName(exercise.name))
+                return true
+            }
+            if !removedNameKeys.isEmpty {
+                state.muscleMappings.removeAll { removedNameKeys.contains($0.exerciseNameKey) }
+            }
+        }
+        return changed
     }
 
     func clearActivityOnlyCloudSyncArtifacts() throws {
@@ -734,6 +885,7 @@ public final class WorkoutStore: ObservableObject {
         activityOnlyCloudItems = []
         pendingActivityOnlyCloudSync = nil
         activityOnlyCloudBaseline = nil
+        workoutCloudSyncState = nil
         workoutFeedbackByID = [:]
         workoutFeedbackSessionDateByID = [:]
         do {
@@ -3416,10 +3568,19 @@ public final class WorkoutStore: ObservableObject {
                 ? nil
                 : activityOnlyCloudItems,
             pendingActivityOnlyCloudSync: pendingActivityOnlyCloudSync,
-            activityOnlyCloudBaseline: activityOnlyCloudBaseline
+            activityOnlyCloudBaseline: activityOnlyCloudBaseline,
+            workoutCloudSyncState: workoutCloudSyncState
         )
         do {
-            let data = try Self.localEncoder().encode(envelope)
+            var data = try Self.localEncoder().encode(envelope)
+            if data.count > BackupImportLimits.standard.maximumFileBytes, workoutCloudSyncState != nil {
+                // The merge baseline duplicates the history. When both no longer fit,
+                // keep the history and fall back to the whole-history sync choice.
+                var trimmed = envelope
+                trimmed.workoutCloudSyncState = nil
+                data = try Self.localEncoder().encode(trimmed)
+                workoutCloudSyncState = nil
+            }
             guard data.count <= BackupImportLimits.standard.maximumFileBytes else {
                 throw WorkoutStoreError.persistenceFailure(
                     "The protected account envelope is too large."
@@ -3450,7 +3611,8 @@ public final class WorkoutStore: ObservableObject {
                 workoutFeedbackSessionDateByID: [:],
                 activityOnlyCloudItems: [],
                 pendingActivityOnlyCloudSync: nil,
-                activityOnlyCloudBaseline: nil
+                activityOnlyCloudBaseline: nil,
+                workoutCloudSyncState: nil
             )
         }
         do {
@@ -3557,7 +3719,8 @@ public final class WorkoutStore: ObservableObject {
                 workoutFeedbackSessionDateByID: normalizedFeedback.sessionDates,
                 activityOnlyCloudItems: decodedActivityItems,
                 pendingActivityOnlyCloudSync: decodedPendingActivityOnlyCloudSync,
-                activityOnlyCloudBaseline: decodedActivityOnlyCloudBaseline
+                activityOnlyCloudBaseline: decodedActivityOnlyCloudBaseline,
+                workoutCloudSyncState: envelope.workoutCloudSyncState
             )
         } catch let error as WorkoutStoreError {
             throw error

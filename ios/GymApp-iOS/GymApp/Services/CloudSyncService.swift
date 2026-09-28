@@ -1746,6 +1746,30 @@ final class CloudSyncService: ObservableObject {
         return (rows[0]["updated_at"] as? String)?.nonEmpty
     }
 
+    /// `updated_at` of the workout row last read or written for `userID`, in epoch
+    /// milliseconds. The per-workout merge uses it as the cloud side's change time.
+    func loadedStateRevisionMilliseconds(userID: String) -> Int64? {
+        guard case .loaded(let revisionUserID, let updatedAt) = stateRevision,
+              revisionUserID == userID,
+              let date = Self.parseRevisionTimestamp(updatedAt) else { return nil }
+        return date.gymEpochMilliseconds
+    }
+
+    static func parseRevisionTimestamp(_ value: String) -> Date? {
+        // Postgres may return microseconds; ISO8601DateFormatter reads milliseconds.
+        let normalized = value.replacingOccurrences(
+            of: #"(\.\d{3})\d+"#,
+            with: "$1",
+            options: .regularExpression
+        )
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: normalized) { return date }
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        return standard.date(from: normalized)
+    }
+
     private static func nextRevisionTimestamp(after previous: String?) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

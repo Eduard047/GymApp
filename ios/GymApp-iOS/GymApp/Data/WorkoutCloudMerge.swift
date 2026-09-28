@@ -13,7 +13,7 @@ import Foundation
 /// fetched row's `updated_at`, because the row has no per-workout edit time. A
 /// tie or a missing local time keeps the remote copy.
 enum WorkoutCloudMerge {
-    struct Core: Equatable, Sendable {
+    struct Core: Codable, Equatable, Sendable {
         /// Custom (non built-in) catalog entries.
         var configuredExercises: [BackupExercise]
         /// Canonical workouts: `date` set, `startedAt` and `durationSeconds` nil.
@@ -42,6 +42,23 @@ enum WorkoutCloudMerge {
 
     static func exerciseIdentity(_ exercise: BackupExercise) -> String {
         WorkoutStore.backupExerciseIdentity(name: exercise.name, catalogKey: exercise.catalogKey)
+    }
+
+    /// Start times of workouts that were added, removed, or changed between two cores.
+    static func changedSessionStarts(before: Core, after: Core) -> Set<Int64> {
+        var beforeByStart: [Int64: BackupSession] = [:]
+        for session in before.sessions {
+            if let start = sessionIdentity(session) { beforeByStart[start] = session }
+        }
+        var afterByStart: [Int64: BackupSession] = [:]
+        for session in after.sessions {
+            if let start = sessionIdentity(session) { afterByStart[start] = session }
+        }
+        var changed = Set<Int64>()
+        for start in Set(beforeByStart.keys).union(afterByStart.keys) where beforeByStart[start] != afterByStart[start] {
+            changed.insert(start)
+        }
+        return changed
     }
 
     static func merge(
@@ -159,5 +176,64 @@ enum WorkoutCloudMerge {
             result[key] = exercise
         }
         return result
+    }
+}
+
+/// Owner-bound per-workout sync state kept in the protected account envelope:
+/// the exact core last agreed with the cloud and when each workout last changed
+/// on this device.
+struct WorkoutCloudSyncState: Codable, Equatable, Sendable {
+    static let maximumJournalEntries = 10_000
+
+    let version: Int
+    let ownerUserID: String
+    var baseline: WorkoutCloudMerge.Core?
+    /// Epoch milliseconds of the latest local change, keyed by workout start time.
+    var localChangedAt: [Int64: Int64]
+
+    init(
+        ownerUserID: String,
+        baseline: WorkoutCloudMerge.Core?,
+        localChangedAt: [Int64: Int64]
+    ) throws {
+        guard let ownerUUID = UUID(uuidString: ownerUserID),
+              localChangedAt.count <= Self.maximumJournalEntries else {
+            throw CloudSyncError.invalidPayload
+        }
+        if let baseline, baseline.sessions.count > BackupImportLimits.standard.maximumSessions {
+            throw CloudSyncError.invalidPayload
+        }
+        version = 1
+        self.ownerUserID = ownerUUID.uuidString.lowercased()
+        self.baseline = baseline
+        self.localChangedAt = localChangedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try container.decode(Int.self, forKey: .version)
+        guard version == 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .version,
+                in: container,
+                debugDescription: "Unsupported workout sync state version."
+            )
+        }
+        self = try Self(
+            ownerUserID: try container.decode(String.self, forKey: .ownerUserID),
+            baseline: try container.decodeIfPresent(WorkoutCloudMerge.Core.self, forKey: .baseline),
+            localChangedAt: try container.decode([Int64: Int64].self, forKey: .localChangedAt)
+        )
+    }
+
+    func isOwned(by userID: String) -> Bool {
+        UUID(uuidString: userID)?.uuidString.lowercased() == ownerUserID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case ownerUserID
+        case baseline
+        case localChangedAt
     }
 }

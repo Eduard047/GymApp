@@ -11528,7 +11528,7 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
-    func testManualSyncReloadsStaleCASAndUsesPersistedThreeWayBaseline() async throws {
+    func testStaleCASMergesChangesFromBothDevicesWithPersistedBaseline() async throws {
         let directory = try temporaryDirectory(named: "manual-sync-three-way")
         let defaults = temporaryDefaults(named: "manual-sync-three-way")
         let recorder = AuthRequestRecorder()
@@ -11585,11 +11585,16 @@ final class CoreParityTests: XCTestCase {
                 // no longer matched and must trigger a fresh GET.
                 let requestNumber = patchProbe.beginRequest()
                 defer { patchProbe.finishRequest() }
-                if requestNumber == 1,
-                   !patchProbe.waitForFirstRequestRelease() {
-                    throw URLError(.timedOut)
+                if requestNumber == 1 {
+                    if !patchProbe.waitForFirstRequestRelease() {
+                        throw URLError(.timedOut)
+                    }
+                    return try AuthURLProtocolStub.response(for: request, json: "[]")
                 }
-                return try AuthURLProtocolStub.response(for: request, json: "[]")
+                return try AuthURLProtocolStub.response(
+                    for: request,
+                    json: #"[{"updated_at":"2026-08-05T09:00:02.000000Z"}]"#
+                )
             default:
                 XCTFail("Unexpected manual three-way request: \(request.url?.absoluteString ?? "nil")")
                 return try AuthURLProtocolStub.response(
@@ -11629,22 +11634,29 @@ final class CoreParityTests: XCTestCase {
         await manualSync.value
         try await Task.sleep(for: .seconds(2))
 
-        XCTAssertNotNil(appState.cloudSyncConflict)
-        XCTAssertEqual(appState.cloudSyncStatus, .conflict)
+        // The stale write is reloaded and merged workout by workout against the
+        // persisted baseline: the other device's workout edit and this device's new
+        // exercise both survive, and no whole-history choice is shown.
+        XCTAssertNil(appState.cloudSyncConflict)
+        XCTAssertNotEqual(appState.cloudSyncStatus, .conflict)
         XCTAssertEqual(getCount, 2)
         let patchRequests = recorder.requests.filter {
             $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
         }
-        XCTAssertEqual(patchRequests.count, 2)
-        let manualPatchBody = String(
+        XCTAssertGreaterThanOrEqual(patchRequests.count, 2)
+        let mergedPatchBody = String(
             decoding: try XCTUnwrap(patchRequests.last?.httpBody),
             as: UTF8.self
         )
-        XCTAssertTrue(manualPatchBody.contains("This Device Exercise"))
-        XCTAssertEqual(patchProbe.requestCount, 2)
+        XCTAssertTrue(mergedPatchBody.contains("This Device Exercise"))
+        XCTAssertTrue(mergedPatchBody.contains("Other Device Exercise"))
+        XCTAssertFalse(mergedPatchBody.contains("Shared Baseline Exercise"))
         XCTAssertEqual(patchProbe.maximumConcurrentRequestCount, 1)
-        XCTAssertTrue(customExerciseNames(in: appState.workoutStore).contains("This Device Exercise"))
-        XCTAssertFalse(customExerciseNames(in: appState.workoutStore).contains("Other Device Exercise"))
+        let localNames: Set<String> = Set(customExerciseNames(in: appState.workoutStore))
+        XCTAssertTrue(localNames.contains("This Device Exercise"))
+        XCTAssertTrue(localNames.contains("Other Device Exercise"))
+        XCTAssertFalse(localNames.contains("Shared Baseline Exercise"))
+        XCTAssertEqual(appState.workoutStore.workouts.count, 1)
     }
 
     func testSignOutFlushesPendingWritableCloudStateBeforeLogout() async throws {

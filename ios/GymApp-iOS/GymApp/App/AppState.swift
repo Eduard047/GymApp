@@ -138,6 +138,13 @@ final class AppState: ObservableObject {
     private var pendingCloudSave: Task<Void, Never>?
     private var cloudSavePhase = CloudSavePhase.idle
     private var cloudSaveQueued = false
+    /// Automatic retry after a transient network failure: 5 s, 30 s, then 2 min.
+    private var cloudRetryTask: Task<Void, Never>?
+    private var cloudRetryAttempt = 0
+    private var automaticReconciliationInFlight = false
+    /// The local workout core captured just before a local mutation, waiting to be
+    /// compared with the result so the per-workout change journal can be stamped.
+    private var pendingLocalChangeStamp: (storageKey: String, userID: String, before: WorkoutCloudMerge.Core, changedAt: Date)?
     private var cloudSaveGeneration: UInt64 = 0
     private var manualCloudSyncLease: ManualCloudSyncLease?
     private var accountActivationTask: Task<Void, Never>?
@@ -733,6 +740,7 @@ final class AppState: ObservableObject {
                         let keepLocalThreeWay = preparedBackup.roundTripSafe &&
                             Self.hasUserWorkoutData(localIdentity) && historiesDiffer &&
                             remoteMatchesBaseline && !localMatchesBaseline
+                        var mergedDivergedHistories = false
                         if preparedBackup.roundTripSafe,
                            Self.hasUserWorkoutData(localIdentity),
                            historiesDiffer,
@@ -741,6 +749,20 @@ final class AppState: ObservableObject {
                             try candidate.setCloudExtensionsData(
                                 preparedBackup.extensionsData
                             )
+                            mergedDivergedHistories = try mergeDivergedCloudState(
+                                store: candidate,
+                                storageKey: expectedStorageKey,
+                                userID: expectedUserID,
+                                localIdentity: localIdentity,
+                                remoteIdentity: remoteIdentity
+                            ) != nil
+                        }
+                        if !mergedDivergedHistories,
+                           preparedBackup.roundTripSafe,
+                           Self.hasUserWorkoutData(localIdentity),
+                           historiesDiffer,
+                           !localMatchesBaseline,
+                           !remoteMatchesBaseline {
                             pendingCloudSyncConflict = PendingCloudSyncConflict(
                                 generation: generation,
                                 storageKey: expectedStorageKey,
@@ -759,7 +781,7 @@ final class AppState: ObservableObject {
                             accountPreparationError = nil
                             return
                         }
-                        if keepLocalThreeWay {
+                        if keepLocalThreeWay || mergedDivergedHistories {
                             try candidate.setCloudExtensionsData(
                                 preparedBackup.extensionsData
                             )
@@ -767,7 +789,9 @@ final class AppState: ObservableObject {
                                 remoteIdentity,
                                 storageKey: expectedStorageKey,
                                 clean: false,
-                                successfulAt: nil
+                                successfulAt: nil,
+                                store: candidate,
+                                ownerUserID: expectedUserID
                             )
                         } else {
                             _ = try candidate.restoreBackup(
@@ -787,7 +811,9 @@ final class AppState: ObservableObject {
                                 recordCloudBaseline(
                                     remoteIdentity,
                                     storageKey: expectedStorageKey,
-                                    clean: !persistedCheckpoint.pending
+                                    clean: !persistedCheckpoint.pending,
+                                    store: candidate,
+                                    ownerUserID: expectedUserID
                                 )
                             }
                         }
@@ -795,7 +821,7 @@ final class AppState: ObservableObject {
                         loadedReadOnlyUnsupportedState = !preparedBackup.roundTripSafe
                         requiresCanonicalCloudUpload = preparedBackup.roundTripSafe &&
                             (preparedBackup.requiresCanonicalUpload || keepLocalThreeWay ||
-                                persistedCheckpoint.pending)
+                                mergedDivergedHistories || persistedCheckpoint.pending)
                     } catch is CancellationError {
                         return
                     } catch {
@@ -977,7 +1003,9 @@ final class AppState: ObservableObject {
                 recordCloudBaseline(
                     pending.remoteIdentity,
                     storageKey: pending.storageKey,
-                    clean: true
+                    clean: true,
+                    store: pending.localStore,
+                    ownerUserID: pending.userID
                 )
             } else {
                 try await cloudSync.withSyncIndicator {
@@ -1102,8 +1130,13 @@ final class AppState: ObservableObject {
         _ identity: CloudWorkoutIdentity,
         storageKey: String,
         clean: Bool,
-        successfulAt: Date? = Date()
+        successfulAt: Date? = Date(),
+        store: WorkoutStore? = nil,
+        ownerUserID: String? = nil
     ) {
+        if let store, let ownerUserID {
+            saveWorkoutMergeBaseline(identity, clean: clean, store: store, ownerUserID: ownerUserID)
+        }
         var checkpoint = cloudCheckpoint(for: storageKey)
         checkpoint.baselineDigest = Self.cloudIdentityDigest(identity)
         checkpoint.dirty = !clean
@@ -1175,6 +1208,139 @@ final class AppState: ObservableObject {
 
     private static func cloudIdentityDigest(_ identity: CloudWorkoutIdentity) -> Data {
         Data(SHA256.hash(data: identity.exactWire))
+    }
+
+    static func mergeCore(_ identity: CloudWorkoutIdentity) -> WorkoutCloudMerge.Core {
+        WorkoutCloudMerge.Core(
+            configuredExercises: identity.configuredExercises,
+            sessions: identity.sessions
+        )
+    }
+
+    /// Digest of a stored merge baseline, comparable with `cloudIdentityDigest`.
+    private static func cloudIdentityDigest(core: WorkoutCloudMerge.Core) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let exactWire = try encoder.encode(CloudWorkoutExactWire(
+            configuredExercises: core.configuredExercises,
+            sessions: core.sessions
+        ))
+        return Data(SHA256.hash(data: exactWire))
+    }
+
+    /// Keeps the exact core behind the checkpoint digest so a later divergence can be
+    /// merged workout by workout. A clean baseline means every local change reached
+    /// the cloud, so the local change journal starts over.
+    private func saveWorkoutMergeBaseline(
+        _ identity: CloudWorkoutIdentity,
+        clean: Bool,
+        store: WorkoutStore,
+        ownerUserID: String
+    ) {
+        let journal = clean
+            ? [:]
+            : (store.loadWorkoutCloudSyncState(ownerUserID: ownerUserID)?.localChangedAt ?? [:])
+        do {
+            let state = try WorkoutCloudSyncState(
+                ownerUserID: ownerUserID,
+                baseline: Self.mergeCore(identity),
+                localChangedAt: journal
+            )
+            try store.saveWorkoutCloudSyncState(state)
+        } catch {
+            // Without a stored baseline the next divergence uses the whole-history choice.
+            try? store.saveWorkoutCloudSyncState(nil)
+        }
+    }
+
+    /// When this device and the cloud both changed since the last agreed baseline,
+    /// merges them workout by workout (see `WorkoutCloudMerge`) and applies the result
+    /// locally. Returns nil when no exact baseline is stored or the histories cannot be
+    /// matched by start time, so the caller keeps the whole-history choice.
+    private func mergeDivergedCloudState(
+        store: WorkoutStore,
+        storageKey: String,
+        userID: String,
+        localIdentity: CloudWorkoutIdentity,
+        remoteIdentity: CloudWorkoutIdentity
+    ) throws -> WorkoutCloudMerge.Result? {
+        guard let state = store.loadWorkoutCloudSyncState(ownerUserID: userID),
+              let baseline = state.baseline,
+              let baselineDigest = cloudCheckpoint(for: storageKey).baselineDigest,
+              (try? Self.cloudIdentityDigest(core: baseline)) == baselineDigest else {
+            return nil
+        }
+        let local = Self.mergeCore(localIdentity)
+        let result: WorkoutCloudMerge.Result
+        do {
+            result = try WorkoutCloudMerge.merge(
+                base: baseline,
+                local: local,
+                remote: Self.mergeCore(remoteIdentity),
+                localChangedAt: state.localChangedAt,
+                // Without a known row time (a test loader) the cloud copy wins ties.
+                remoteRowUpdatedAt: cloudSync.loadedStateRevisionMilliseconds(userID: userID) ?? Int64.max
+            )
+        } catch is WorkoutCloudMerge.MergeError {
+            return nil
+        }
+        try performCloudStoreMutation {
+            _ = try store.applyWorkoutCloudMerge(result.merged, local: local)
+        }
+        return result
+    }
+
+    private func currentMergeCore(store: WorkoutStore, session: AppAccountSession) -> WorkoutCloudMerge.Core? {
+        let owner = Self.backupOwner(for: session, fallbackStorageKey: session.storageKey)
+        guard let backup = try? store.makeBackup(owner: owner),
+              let identity = try? Self.cloudWorkoutIdentity(backup) else { return nil }
+        return Self.mergeCore(identity)
+    }
+
+    /// Captures the local core before a local mutation; the stamp runs after it lands.
+    private func captureLocalChangeBeforeMutation(storageKey: String) {
+        guard pendingLocalChangeStamp == nil,
+              let session = auth.session,
+              session.storageKey == storageKey,
+              let cloud = session.cloud,
+              workoutStore.accountStorageKey == storageKey,
+              let before = currentMergeCore(store: workoutStore, session: session) else { return }
+        pendingLocalChangeStamp = (storageKey, cloud.userID, before, Date())
+        Task { @MainActor [weak self] in
+            self?.stampPendingLocalChange()
+        }
+    }
+
+    /// Records when each workout changed on this device, for the newer-wins rule.
+    private func stampPendingLocalChange() {
+        guard let pending = pendingLocalChangeStamp else { return }
+        pendingLocalChangeStamp = nil
+        guard let session = auth.session,
+              session.storageKey == pending.storageKey,
+              session.cloud?.userID == pending.userID,
+              workoutStore.accountStorageKey == pending.storageKey,
+              let after = currentMergeCore(store: workoutStore, session: session) else { return }
+        let changed = WorkoutCloudMerge.changedSessionStarts(before: pending.before, after: after)
+        guard !changed.isEmpty else { return }
+        let existing = workoutStore.loadWorkoutCloudSyncState(ownerUserID: pending.userID)
+        var journal = existing?.localChangedAt ?? [:]
+        let stamp = pending.changedAt.gymEpochMilliseconds
+        for start in changed {
+            journal[start] = stamp
+        }
+        let overflow = journal.count - WorkoutCloudSyncState.maximumJournalEntries
+        if overflow > 0 {
+            let oldest = journal.sorted { $0.value < $1.value }.prefix(overflow)
+            for entry in oldest {
+                journal.removeValue(forKey: entry.key)
+            }
+        }
+        guard let state = try? WorkoutCloudSyncState(
+            ownerUserID: pending.userID,
+            baseline: existing?.baseline,
+            localChangedAt: journal
+        ) else { return }
+        try? workoutStore.saveWorkoutCloudSyncState(state)
     }
 
     func forceCloudSync() async {
@@ -1325,7 +1491,9 @@ final class AppState: ObservableObject {
         store: WorkoutStore,
         session: AppAccountSession,
         userID: String,
-        owner: BackupOwner
+        owner: BackupOwner,
+        announce: Bool = true,
+        attempt: Int = 0
     ) async {
         let storageKey = session.storageKey
         do {
@@ -1376,7 +1544,7 @@ final class AppState: ObservableObject {
                 }
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
-                show(message: "Cloud data is up to date.", isError: false)
+                if announce { show(message: "Cloud data is up to date.", isError: false) }
                 return
             }
 
@@ -1399,7 +1567,13 @@ final class AppState: ObservableObject {
 
             try store.setCloudExtensionsData(prepared.extensionsData)
             if remoteIdentity == localIdentity {
-                recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                recordCloudBaseline(
+                    remoteIdentity,
+                    storageKey: storageKey,
+                    clean: true,
+                    store: store,
+                    ownerUserID: userID
+                )
                 try await finishManualActivityOnlyCloudSync(
                     store: store,
                     storageKey: storageKey,
@@ -1408,7 +1582,7 @@ final class AppState: ObservableObject {
                 )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
-                show(message: "Cloud data is up to date.", isError: false)
+                if announce { show(message: "Cloud data is up to date.", isError: false) }
                 return
             }
 
@@ -1428,7 +1602,7 @@ final class AppState: ObservableObject {
                 }
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
-                show(message: "Cloud data is up to date.", isError: false)
+                if announce { show(message: "Cloud data is up to date.", isError: false) }
                 return
             }
 
@@ -1444,7 +1618,13 @@ final class AppState: ObservableObject {
                         expectedLocalItems: postRestoreActivityItems
                     )
                 }
-                recordCloudBaseline(remoteIdentity, storageKey: storageKey, clean: true)
+                recordCloudBaseline(
+                    remoteIdentity,
+                    storageKey: storageKey,
+                    clean: true,
+                    store: store,
+                    ownerUserID: userID
+                )
                 try await finishManualActivityOnlyCloudSync(
                     store: store,
                     storageKey: storageKey,
@@ -1453,10 +1633,60 @@ final class AppState: ObservableObject {
                 )
                 cloudWritableAccountStorageKey = storageKey
                 cloudReconciliationRequiredStorageKey = nil
-                show(message: "Newer cloud workout data was loaded.", isError: false)
+                if announce { show(message: "Newer cloud workout data was loaded.", isError: false) }
                 return
             }
 
+            if try mergeDivergedCloudState(
+                store: store,
+                storageKey: storageKey,
+                userID: userID,
+                localIdentity: localIdentity,
+                remoteIdentity: remoteIdentity
+            ) != nil {
+                // Both sides changed. The merged history is now local; the cloud still
+                // holds the remote copy until the upload below replaces it.
+                recordCloudBaseline(
+                    remoteIdentity,
+                    storageKey: storageKey,
+                    clean: false,
+                    successfulAt: nil,
+                    store: store,
+                    ownerUserID: userID
+                )
+                cloudSyncStatus = .syncing
+                try await cloudSync.withSyncIndicator {
+                    try await self.uploadCurrentState(
+                        from: store,
+                        owner: owner,
+                        expectedStorageKey: storageKey,
+                        expectedUserID: userID,
+                        preparedActivityReport: preparedPendingActivityReport,
+                        activityPendingAlreadyReplayed: true
+                    )
+                }
+                cloudWritableAccountStorageKey = storageKey
+                cloudReconciliationRequiredStorageKey = nil
+                if announce {
+                    show(
+                        message: gymText(
+                            "Changes from this iPhone and the cloud were combined.",
+                            "Зміни з цього iPhone і з хмари об’єднано.",
+                            "Изменения с этого iPhone и из облака объединены.",
+                            languageCode: gymCurrentLanguageCode(defaults: defaults)
+                        ),
+                        isError: false
+                    )
+                }
+                return
+            }
+
+            guard announce else {
+                // An automatic sync never opens the whole-history choice by itself; the
+                // user sees it after tapping sync, as before per-workout merging.
+                cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(CloudSyncError.staleRemoteState))
+                return
+            }
             pendingCloudSyncConflict = PendingCloudSyncConflict(
                 generation: accountActivationGeneration,
                 storageKey: storageKey,
@@ -1471,6 +1701,16 @@ final class AppState: ObservableObject {
                 cloudWorkoutCount: remoteBackup.sessions.count
             )
             cloudSyncStatus = .conflict
+        } catch CloudSyncError.staleRemoteState where attempt < 2 {
+            // Another device wrote between our read and write: read and merge again.
+            await reconcileStaleManualSync(
+                store: store,
+                session: session,
+                userID: userID,
+                owner: owner,
+                announce: announce,
+                attempt: attempt + 1
+            )
         } catch {
             guard auth.session?.storageKey == storageKey else { return }
             cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
@@ -2495,6 +2735,69 @@ final class AppState: ObservableObject {
     /// finishing a deferred start). Cheap no-op when nothing changed.
     func handleAppDidBecomeActive() {
         liveActivityController.adoptRunningActivities(draft: activeWorkoutStore.draft)
+        resumeCloudSyncIfNeeded()
+    }
+
+    /// Picks up unsent workout changes when the app returns to the foreground: a
+    /// pending upload is retried, and an account that opened offline is reconciled
+    /// with a full cloud read and merge instead of waiting for a manual sync.
+    private func resumeCloudSyncIfNeeded() {
+        guard isAccountReady,
+              !isSigningOut,
+              manualCloudSyncLease == nil,
+              pendingCloudSyncConflict == nil,
+              !automaticReconciliationInFlight,
+              let session = auth.session,
+              let cloud = session.cloud else { return }
+        let storageKey = session.storageKey
+        if cloudReconciliationRequiredStorageKey == storageKey {
+            let store = workoutStore
+            let owner = Self.backupOwner(for: session, fallbackStorageKey: storageKey)
+            automaticReconciliationInFlight = true
+            Task { [weak self] in
+                guard let self else { return }
+                defer { self.automaticReconciliationInFlight = false }
+                await self.reconcileStaleManualSync(
+                    store: store,
+                    session: session,
+                    userID: cloud.userID,
+                    owner: owner,
+                    announce: false
+                )
+            }
+            return
+        }
+        let checkpoint = cloudCheckpoint(for: storageKey)
+        guard checkpoint.pending || checkpoint.dirty ||
+            checkpoint.activityPending == true || checkpoint.activityDirty == true else { return }
+        cloudRetryAttempt = 0
+        scheduleCloudSave(delay: .zero)
+    }
+
+    private static func isTransientCloudError(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .notConnectedToInternet, .timedOut, .networkConnectionLost,
+             .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Retries a failed upload after 5 s, 30 s, then every 2 min, at most five times.
+    private func scheduleCloudRetry() {
+        let delays: [Duration] = [.seconds(5), .seconds(30), .seconds(120)]
+        guard cloudRetryAttempt < 5 else { return }
+        let delay = delays[min(cloudRetryAttempt, delays.count - 1)]
+        cloudRetryAttempt += 1
+        cloudRetryTask?.cancel()
+        cloudRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.cloudRetryTask = nil
+            self.scheduleCloudSave(delay: .zero)
+        }
     }
 
 #if DEBUG
@@ -2558,6 +2861,7 @@ final class AppState: ObservableObject {
                       self.isAccountReady,
                       let storageKey = self.auth.session?.storageKey,
                       self.auth.session?.cloud != nil else { return }
+                self.captureLocalChangeBeforeMutation(storageKey: storageKey)
                 self.markCloudPending(storageKey: storageKey)
                 self.scheduleCloudSave()
             }
@@ -2651,6 +2955,15 @@ final class AppState: ObservableObject {
                 )
             } catch is CancellationError {
                 // Cancelling is allowed only during the debounce phase.
+            } catch CloudSyncError.staleRemoteState {
+                // Another device wrote first: merge its changes instead of failing.
+                await self.reconcileStaleManualSync(
+                    store: store,
+                    session: session,
+                    userID: cloud.userID,
+                    owner: owner,
+                    announce: false
+                )
             } catch {
                 CloudSyncDiagnostics.record(
                     operation: .workoutStateWrite,
@@ -2659,7 +2972,11 @@ final class AppState: ObservableObject {
                     error: error
                 )
                 self.cloudSyncStatus = .failed(gymSafeEnglishErrorMessage(error))
-                self.show(error: error)
+                if Self.isTransientCloudError(error) {
+                    self.scheduleCloudRetry()
+                } else {
+                    self.show(error: error)
+                }
             }
         }
     }
@@ -2678,6 +2995,10 @@ final class AppState: ObservableObject {
     private func abandonPendingCloudSave() {
         cloudSaveGeneration &+= 1
         cloudSaveQueued = false
+        cloudRetryTask?.cancel()
+        cloudRetryTask = nil
+        cloudRetryAttempt = 0
+        pendingLocalChangeStamp = nil
         if cloudSavePhase == .debouncing {
             pendingCloudSave?.cancel()
         }
@@ -3052,8 +3373,11 @@ final class AppState: ObservableObject {
         recordCloudBaseline(
             uploadedIdentity,
             storageKey: expectedStorageKey,
-            clean: currentIdentity == uploadedIdentity
+            clean: currentIdentity == uploadedIdentity,
+            store: store,
+            ownerUserID: expectedUserID
         )
+        cloudRetryAttempt = 0
         let currentActivityItems = try store.activityOnlyCloudSnapshotItems()
         try recordActivityOnlyCloudBaseline(
             activityReport.localItems,
