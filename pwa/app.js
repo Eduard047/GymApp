@@ -11740,8 +11740,26 @@ function smartPlanMetricsMarkup(plan) {
 const METRIC_TILE_MIN_VALUE_SCALE = 0.6;
 
 // Metric values stay on one line and shrink to fit their tile instead of wrapping or truncating.
+let metricTileResizeObserver = null;
+let metricTileFitPending = false;
+
+// A narrower window can make a value overflow without a new render, so refit on resize too.
+function observeMetricTileResize() {
+  if (metricTileResizeObserver || typeof window.ResizeObserver !== "function" || !app) return;
+  metricTileResizeObserver = new window.ResizeObserver(() => {
+    if (metricTileFitPending) return;
+    metricTileFitPending = true;
+    requestAnimationFrame(() => {
+      metricTileFitPending = false;
+      fitMetricTileValues();
+    });
+  });
+  metricTileResizeObserver.observe(app);
+}
+
 function fitMetricTileValues() {
   if (typeof app?.querySelectorAll !== "function") return;
+  observeMetricTileResize();
   app.querySelectorAll(".metric-grid strong").forEach(value => {
     value.style.fontSize = "";
     const available = value.clientWidth;

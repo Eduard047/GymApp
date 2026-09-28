@@ -2795,3 +2795,26 @@ test("metric values shrink to fit their tile instead of wrapping", () => {
   assert.equal(values[1].style.fontSize, "");
   assert.equal(values[2].style.fontSize, "13.2px");
 });
+
+test("metric values refit when the window narrows without a new render", async () => {
+  const { context, appNode } = loadContext();
+  const value = { clientWidth: 200, scrollWidth: 150, style: { fontSize: "" } };
+  appNode.querySelectorAll = selector => selector === ".metric-grid strong" ? [value] : [];
+  const windowObject = vm.runInContext("window", context);
+  windowObject.getComputedStyle = () => ({ fontSize: "22px" });
+  let onResize = null;
+  const observed = [];
+  windowObject.ResizeObserver = class {
+    constructor(callback) { onResize = callback; }
+    observe(target) { observed.push(target); }
+  };
+  vm.runInContext("fitMetricTileValues(); fitMetricTileValues();", context);
+  assert.equal(observed.length, 1);
+  assert.equal(value.style.fontSize, "");
+
+  value.clientWidth = 100;
+  onResize();
+  onResize();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(value.style.fontSize, "14.6px");
+});
