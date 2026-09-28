@@ -14,18 +14,22 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Mic
@@ -37,6 +41,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,7 +63,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -74,6 +82,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.gymapp.R
+import com.example.gymapp.auth.FriendGhost
+import com.example.gymapp.auth.FriendGhosts
+import com.example.gymapp.data.repository.PlateCalculator
+import com.example.gymapp.data.repository.PlateLoad
 import com.example.gymapp.data.repository.VoiceWorkoutCommand
 import com.example.gymapp.data.repository.VoiceWorkoutCommandParser
 import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
@@ -131,9 +143,26 @@ fun ActiveWorkoutScreen(
     onApplyAdaptation: () -> Unit = {},
     onDismissAdaptation: () -> Unit = {},
     voiceCommandSnackbarHostState: SnackbarHostState? = null,
+    friendGhosts: Map<String, FriendGhost> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
+    val haptics = LocalHapticFeedback.current
+    val recordSetIds = uiState.exercises.asSequence()
+        .flatMap { exercise -> exercise.sets.asSequence() }
+        .filter { set -> set.isPersonalRecord }
+        .map { set -> set.id }
+        .toSet()
+    var knownRecordSetIds by remember { mutableStateOf<Set<String>?>(null) }
+    LaunchedEffect(recordSetIds) {
+        // A newly logged record gets a short vibration; opening a workout that already holds
+        // records does not.
+        val known = knownRecordSetIds
+        if (known != null && (recordSetIds - known).isNotEmpty()) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+        knownRecordSetIds = recordSetIds
+    }
     val voiceCommandScope = rememberCoroutineScope()
     // Feedback channel for the in-workout voice mic (LogSet/RepeatPrevious/SkipRest/
     // Unknown): a Snackbar with an optional action (e.g. "Отменить" after LogSet).
@@ -314,6 +343,7 @@ fun ActiveWorkoutScreen(
                     }
                 ),
                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                friendGhost = friendGhosts[exercise.friendGhostKey],
                 operationInProgress = operationInProgress,
                 allowExerciseActions = uiState.liveConnectionMode == null,
                 currentSetId = currentSetId,
@@ -693,6 +723,7 @@ private fun ActiveWorkoutExerciseCard(
     initiallyExpanded: Boolean,
     statusLabel: String,
     exerciseMediaOwnerKey: String,
+    friendGhost: FriendGhost?,
     operationInProgress: Boolean,
     allowExerciseActions: Boolean,
     currentSetId: String?,
@@ -782,6 +813,25 @@ private fun ActiveWorkoutExerciseCard(
                     )
                 }
             }
+            friendGhost?.let { ghost ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Group,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = friendGhostLine(ghost),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
+            }
             if (!isExpanded && fullyCompleted) {
                 TextButton(
                     onClick = { isExpanded = true },
@@ -797,6 +847,7 @@ private fun ActiveWorkoutExerciseCard(
                     isRecording = set.id in inFlightSetIds,
                     isLatestCompleted = set.id == latestCompletedSetId,
                     isUndoing = set.id == undoingSetId,
+                    showsPlateCalculator = PlateCalculator.applies(exercise.catalogKey),
                     restDurationSeconds = exercise.restDurationSeconds,
                     restSecondsRemaining = if (set.id == latestCompletedSetId) {
                         restSecondsRemaining
@@ -866,6 +917,7 @@ private fun ActiveWorkoutSetRow(
     isRecording: Boolean,
     isLatestCompleted: Boolean,
     isUndoing: Boolean,
+    showsPlateCalculator: Boolean,
     restDurationSeconds: Int,
     restSecondsRemaining: Int,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
@@ -916,11 +968,19 @@ private fun ActiveWorkoutSetRow(
         ) {
             Text(
                 text = stringResource(R.string.label_set, set.orderIndex + 1),
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f)
+                style = MaterialTheme.typography.titleSmall
             )
+            if (showsPlateCalculator && isCurrent && !set.isCompleted) {
+                PlateCalculatorButton(
+                    weight = com.example.gymapp.util.parseWeightInputOrNull(set.weightInput)
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
             if (isCurrent && !set.isCompleted) {
                 InfoPill(text = stringResource(R.string.active_workout_set_current))
+            }
+            if (set.isPersonalRecord) {
+                PersonalRecordBadge()
             }
             if (set.isCompleted) {
                 Icon(
@@ -1093,6 +1153,118 @@ private fun ActiveWorkoutSetRow(
         }
     }
     }
+}
+
+@Composable
+private fun PersonalRecordBadge() {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.EmojiEvents,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = stringResource(R.string.active_workout_personal_record),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** Compact "Блины" capsule in the current set's header, like iOS; opens the per-side plates. */
+@Composable
+private fun PlateCalculatorButton(weight: Double?) {
+    var showsPlates by remember { mutableStateOf(false) }
+    val locale = LocalConfiguration.current.locales[0]
+    val numberFormat = remember(locale) {
+        NumberFormat.getNumberInstance(locale).apply { maximumFractionDigits = 2 }
+    }
+    val description = stringResource(R.string.plate_calculator_content_description)
+    Box {
+        Surface(
+            onClick = { showsPlates = true },
+            enabled = weight != null,
+            shape = RoundedCornerShape(percent = 50),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+            contentColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { contentDescription = description }
+        ) {
+            Text(
+                text = stringResource(R.string.plate_calculator_button),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+        DropdownMenu(expanded = showsPlates && weight != null, onDismissRequest = { showsPlates = false }) {
+            if (weight != null) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.plate_calculator_total, numberFormat.format(weight)),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    plateSummaryLines(PlateCalculator.load(weight)) { value -> numberFormat.format(value) }
+                        .forEach { line -> Text(text = line, style = MaterialTheme.typography.bodyMedium) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun plateSummaryLines(load: PlateLoad, format: (Double) -> String): List<String> {
+    val bar = format(PlateCalculator.BAR_WEIGHT)
+    return when (load.status) {
+        PlateLoad.Status.BelowBar -> listOf(stringResource(R.string.plate_calculator_below_bar, bar))
+        PlateLoad.Status.BarOnly -> listOf(stringResource(R.string.plate_calculator_bar_only, bar))
+        PlateLoad.Status.Loaded -> buildList {
+            if (load.platesPerSide.isNotEmpty()) {
+                add(
+                    stringResource(
+                        R.string.plate_calculator_per_side,
+                        load.platesPerSide.joinToString(separator = " + ", transform = format)
+                    )
+                )
+            }
+            if (load.remainderPerSide > 0.0) {
+                add(stringResource(R.string.plate_calculator_remainder, format(load.remainderPerSide)))
+            }
+        }
+    }
+}
+
+/** "Саша: 85 × 8 · 3 дня назад"; a bodyweight result reads "Саша: 12 повторений · вчера". */
+@Composable
+private fun friendGhostLine(ghost: FriendGhost): String {
+    val locale = LocalConfiguration.current.locales[0]
+    val numberFormat = remember(locale) {
+        NumberFormat.getNumberInstance(locale).apply { maximumFractionDigits = 2 }
+    }
+    val result = if (ghost.weightKg > 0.0) {
+        stringResource(R.string.friend_ghost_weight_reps, numberFormat.format(ghost.weightKg), ghost.reps)
+    } else {
+        pluralStringResource(R.plurals.friend_ghost_reps, ghost.reps, ghost.reps)
+    }
+    val days = FriendGhosts.daysAgo(ghost.workoutDay, java.time.LocalDate.now())
+    val day = when (days) {
+        0 -> stringResource(R.string.friend_ghost_today)
+        1 -> stringResource(R.string.friend_ghost_yesterday)
+        else -> pluralStringResource(R.plurals.friend_ghost_days_ago, days, days)
+    }
+    return stringResource(R.string.friend_ghost_line, ghost.friendName, result, day)
 }
 
 @Composable

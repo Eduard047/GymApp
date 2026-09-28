@@ -1442,4 +1442,28 @@
     <string name="voice_workout_error_permission">Потрібен доступ до мікрофона.</string>
     <string name="voice_workout_error_audio">Не вдалося запустити мікрофон.</string>
     <string name="voice_workout_error_recognition">Не вдалося розпізнати мовлення. Спробуй ще раз або введи фразу вручну.</string>
+    <string name="active_workout_personal_record">Рекорд</string>
+    <string name="plate_calculator_button">Диски</string>
+    <string name="plate_calculator_content_description">Диски на сторону</string>
+    <string name="plate_calculator_total">%1$s кг</string>
+    <string name="plate_calculator_below_bar">Менше за гриф %1$s кг</string>
+    <string name="plate_calculator_bar_only">Лише гриф (%1$s кг)</string>
+    <string name="plate_calculator_per_side">На кожну сторону: %1$s</string>
+    <string name="plate_calculator_remainder">Залишок: %1$s кг на сторону</string>
+    <string name="friend_ghost_line">%1$s: %2$s · %3$s</string>
+    <string name="friend_ghost_weight_reps">%1$s × %2$d</string>
+    <string name="friend_ghost_today">сьогодні</string>
+    <string name="friend_ghost_yesterday">учора</string>
+    <plurals name="friend_ghost_reps">
+        <item quantity="one">%1$d повторення</item>
+        <item quantity="few">%1$d повторення</item>
+        <item quantity="many">%1$d повторень</item>
+        <item quantity="other">%1$d повторення</item>
+    </plurals>
+    <plurals name="friend_ghost_days_ago">
+        <item quantity="one">%1$d день тому</item>
+        <item quantity="few">%1$d дні тому</item>
+        <item quantity="many">%1$d днів тому</item>
+        <item quantity="other">%1$d дня тому</item>
+    </plurals>
 </resources>

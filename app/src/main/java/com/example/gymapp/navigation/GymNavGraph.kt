@@ -52,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -151,6 +152,8 @@ import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListSurface
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
 import com.example.gymapp.ui.media.ExerciseMediaStore
+import com.example.gymapp.auth.FriendGhost
+import com.example.gymapp.auth.loadFriendGhosts
 import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.sync.ActivityOnlyWorkoutCloudBaseline
 import com.example.gymapp.sync.ActivityOnlyWorkoutReadResult
@@ -3267,6 +3270,20 @@ internal fun GymAppRoot(
                                 }
                             }
 
+                            val ghostSession = authState.session as? AccountSession.Cloud
+                            val friendGhosts by produceState(
+                                initialValue = emptyMap<String, FriendGhost>(),
+                                ghostSession?.sessionGeneration,
+                                uiState.startedAt
+                            ) {
+                                // Friends' latest results load once per workout; any failure
+                                // simply shows no friend lines.
+                                value = emptyMap()
+                                val session = ghostSession ?: return@produceState
+                                if (uiState.startedAt <= 0L) return@produceState
+                                value = loadFriendGhosts(authManager, session)
+                            }
+
                             ActiveWorkoutScreen(
                                 uiState = uiState,
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
@@ -3286,6 +3303,7 @@ internal fun GymAppRoot(
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,
                                 voiceCommandSnackbarHostState = snackbarHostState,
+                                friendGhosts = friendGhosts,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

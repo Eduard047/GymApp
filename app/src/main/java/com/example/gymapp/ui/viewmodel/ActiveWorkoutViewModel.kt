@@ -8,7 +8,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ActiveWorkoutDetails
+import com.example.gymapp.auth.FriendGhosts
 import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
+import com.example.gymapp.data.repository.LiveCompletedSet
+import com.example.gymapp.data.repository.LivePersonalRecords
 import com.example.gymapp.data.repository.WorkoutAdaptation
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.TrainingProfile
@@ -59,7 +62,9 @@ data class ActiveWorkoutSetUiState(
     val previousReps: Int? = null,
     val repeatWeight: Double? = null,
     val repeatReps: Int? = null,
-    val allowedWeights: List<Double> = emptyList()
+    val allowedWeights: List<Double> = emptyList(),
+    /** A completed set that beat this exercise's history best (see LivePersonalRecords). */
+    val isPersonalRecord: Boolean = false
 )
 
 data class ActiveWorkoutExerciseUiState(
@@ -68,7 +73,11 @@ data class ActiveWorkoutExerciseUiState(
     val exerciseName: String,
     val orderIndex: Int,
     val restDurationSeconds: Int,
-    val sets: List<ActiveWorkoutSetUiState>
+    val sets: List<ActiveWorkoutSetUiState>,
+    /** Built-in catalog key, used for the plate calculator. */
+    val catalogKey: String? = null,
+    /** Matches a friend's result on the same exercise (see FriendGhosts). */
+    val friendGhostKey: String = ""
 )
 
 data class ActiveWorkoutAdaptationValue(val weight: Double, val reps: Int, val previousWeight: Double?, val previousReps: Int?)
@@ -149,6 +158,41 @@ private data class ActiveWorkoutSourceState(
     val history: List<com.example.gymapp.data.entity.ExerciseHistoryEntry>,
     val loadProfiles: Map<Long, com.example.gymapp.data.repository.ExerciseLoadProfile>
 )
+
+/** Completed sets of the running workout that beat their exercise's history best. */
+private fun personalRecordSetIds(
+    activeWorkout: ActiveWorkoutDetails?,
+    source: ActiveWorkoutSourceState,
+    workoutStartedAt: Long
+): Set<String> {
+    if (activeWorkout == null) return emptySet()
+    val completed = mutableListOf<LiveCompletedSet>()
+    activeWorkout.exercises.forEachIndexed exercises@{ exerciseIndex, exercise ->
+        val exerciseId = resolveActiveWorkoutExerciseId(
+            exercises = source.exercises,
+            exerciseName = exercise.activeWorkoutExercise.exerciseName,
+            catalogKey = exercise.activeWorkoutExercise.catalogKey
+        ) ?: return@exercises
+        exercise.sets.forEachIndexed sets@{ setIndex, set ->
+            val completedAt = set.completedAt ?: return@sets
+            completed += LiveCompletedSet(
+                exerciseId = exerciseId,
+                setId = set.id,
+                weight = set.weight,
+                reps = set.reps,
+                completedAt = completedAt,
+                exerciseIndex = exerciseIndex,
+                setIndex = setIndex
+            )
+        }
+    }
+    if (completed.isEmpty()) return emptySet()
+    val exerciseIds = completed.mapTo(mutableSetOf()) { it.exerciseId }
+    val history = source.history.filter { entry ->
+        entry.exerciseId in exerciseIds && entry.sessionDate < workoutStartedAt
+    }
+    return LivePersonalRecords.recordSetIds(completed, LivePersonalRecords.baselines(history))
+}
 
 private data class ActiveWorkoutOperationState(
     val isRecordingAll: Boolean = false,
@@ -471,6 +515,8 @@ class ActiveWorkoutViewModel(
         liveSync?.activeLiveUiState ?: kotlinx.coroutines.flow.flowOf(ActiveLiveWorkoutUiState())
     ) { source, inFlight, operation, live ->
         val activeWorkout = source.details
+        val workoutStartedAt = activeWorkout?.activeWorkout?.startedAt ?: 0L
+        val recordSetIds = personalRecordSetIds(activeWorkout, source, workoutStartedAt)
         val exercises = activeWorkout?.exercises.orEmpty().map { exercise ->
             val resolvedId = resolveActiveWorkoutExerciseId(source.exercises,
                 exercise.activeWorkoutExercise.exerciseName, exercise.activeWorkoutExercise.catalogKey)
@@ -504,9 +550,18 @@ class ActiveWorkoutViewModel(
                         previousReps = last?.reps,
                         repeatWeight = preceding?.weight ?: last?.weight,
                         repeatReps = preceding?.reps ?: last?.reps,
-                        allowedWeights = source.loadProfiles[resolvedId]?.allowedWeightsKg.orEmpty()
+                        allowedWeights = source.loadProfiles[resolvedId]?.allowedWeightsKg.orEmpty(),
+                        isPersonalRecord = set.id in recordSetIds
                     )
-                }
+                },
+                catalogKey = BuiltInExerciseCatalog.resolvedKey(
+                    catalogKey = exercise.activeWorkoutExercise.catalogKey,
+                    rawName = exercise.activeWorkoutExercise.exerciseName
+                ),
+                friendGhostKey = FriendGhosts.exerciseKey(
+                    catalogKey = exercise.activeWorkoutExercise.catalogKey,
+                    name = exercise.activeWorkoutExercise.exerciseName
+                )
             )
         }
         val allSets = exercises.flatMap(ActiveWorkoutExerciseUiState::sets)
