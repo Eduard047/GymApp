@@ -2766,6 +2766,21 @@ private struct SavedWorkoutShareChooser: View {
     }
 }
 
+/// "32 kg × 10 reps" / "32 кг × 10 повт." — a set's weight and reps, with
+/// the unit routed through the app-language helper rather than hardcoded,
+/// so it does not always read "kg" regardless of the in-app language.
+func gymWorkoutSetValueLabelText(weight: Double, reps: Int, languageCode: String) -> String {
+    let weightText = weight.formatted(.number.precision(.fractionLength(0 ... 2)))
+    let unit = gymLocalized("kg", languageCode: languageCode)
+    let repsText = gymText(
+        "\(reps) reps",
+        "\(reps) повт.",
+        "\(reps) повт.",
+        languageCode: languageCode
+    )
+    return "\(weightText) \(unit) × \(repsText)"
+}
+
 private struct StoredWorkoutSetSummaryRow: View {
     let set: WorkoutSet
     let position: Int
@@ -2806,15 +2821,11 @@ private struct StoredWorkoutSetSummaryRow: View {
     }
 
     private var valueLabel: some View {
-        Text(
-            "\(set.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × " +
-                gymText(
-                    "\(set.reps) reps",
-                    "\(set.reps) повт.",
-                    "\(set.reps) повт.",
-                    languageCode: gymCurrentLanguageCode()
-                )
-        )
+        Text(gymWorkoutSetValueLabelText(
+            weight: set.weight,
+            reps: set.reps,
+            languageCode: gymCurrentLanguageCode()
+        ))
         .font(.subheadline.monospacedDigit())
         .foregroundStyle(GymTheme.textSecondary)
     }
