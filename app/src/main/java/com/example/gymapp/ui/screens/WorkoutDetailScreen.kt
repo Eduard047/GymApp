@@ -1,5 +1,6 @@
 ﻿package com.example.gymapp.ui.screens
 
+import androidx.compose.foundation.layout.IntrinsicSize
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.Canvas
@@ -975,7 +976,7 @@ private fun GarminWorkoutHeaderCard(
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 MetricTile(

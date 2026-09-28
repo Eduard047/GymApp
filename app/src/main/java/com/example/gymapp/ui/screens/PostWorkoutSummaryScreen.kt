@@ -1,5 +1,7 @@
 package com.example.gymapp.ui.screens
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -254,7 +256,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 MetricTile(
@@ -272,7 +274,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 MetricTile(
@@ -320,7 +322,7 @@ private fun SummaryMetrics(uiState: PostWorkoutSummaryUiState) {
                 } ?: stringResource(R.string.post_workout_no_muscle_impact)
             )
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 MetricTile(
@@ -335,7 +337,7 @@ private fun SummaryMetrics(uiState: PostWorkoutSummaryUiState) {
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 MetricTile(

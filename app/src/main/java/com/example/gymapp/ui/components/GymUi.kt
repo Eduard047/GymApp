@@ -1,5 +1,17 @@
 package com.example.gymapp.ui.components
 
+import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -213,8 +225,14 @@ fun MetricTile(
         MaterialTheme.colorScheme.outlineVariant
     }
 
+    val valueStyle = metricTileValueStyle(emphasized = emphasized, utilityValue = utilityValue)
+    // Values stay on one line and shrink to fit instead of wrapping or hyphenating.
+    var valueScale by remember(value, valueStyle) { mutableFloatStateOf(1f) }
+    var valueFits by remember(value, valueStyle) { mutableStateOf(false) }
+
     Column(
         modifier = modifier
+            .fillMaxHeight()
             .heightIn(min = 78.dp)
             .clip(shape)
             .background(tileContainerColor, shape)
@@ -222,29 +240,52 @@ fun MetricTile(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
+        // Sentence-case labels wrap to two lines at one size rather than truncating or shrinking.
         Text(
-            text = label.uppercase(),
-            style = MaterialTheme.typography.bodySmall,
+            text = label,
+            style = MaterialTheme.typography.bodySmall.copy(
+                hyphens = Hyphens.None,
+                lineBreak = LineBreak.Heading
+            ),
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.35.sp,
             color = labelColor,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
         Text(
             text = value,
-            style = when {
-                utilityValue && emphasized -> GymDataTypography.copy(fontSize = 20.sp, lineHeight = 26.sp)
-                utilityValue -> GymDataTypography.copy(fontSize = 16.sp, lineHeight = 22.sp)
-                emphasized -> MaterialTheme.typography.titleLarge
-                else -> MaterialTheme.typography.titleMedium
-            },
+            style = valueStyle.copy(
+                fontSize = valueStyle.fontSize * valueScale,
+                lineHeight = valueStyle.lineHeight * valueScale,
+                hyphens = Hyphens.None
+            ),
             fontWeight = FontWeight.Bold,
             color = tileContentColor,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            onTextLayout = { layout ->
+                if (layout.hasVisualOverflow && valueScale > METRIC_TILE_MIN_VALUE_SCALE) {
+                    valueScale = (valueScale - METRIC_TILE_VALUE_SCALE_STEP)
+                        .coerceAtLeast(METRIC_TILE_MIN_VALUE_SCALE)
+                } else {
+                    valueFits = true
+                }
+            },
+            modifier = Modifier.drawWithContent { if (valueFits) drawContent() }
         )
     }
+}
+
+private const val METRIC_TILE_MIN_VALUE_SCALE = 0.6f
+private const val METRIC_TILE_VALUE_SCALE_STEP = 0.08f
+
+@Composable
+private fun metricTileValueStyle(emphasized: Boolean, utilityValue: Boolean): TextStyle = when {
+    utilityValue && emphasized -> GymDataTypography.copy(fontSize = 20.sp, lineHeight = 26.sp)
+    utilityValue -> GymDataTypography.copy(fontSize = 16.sp, lineHeight = 22.sp)
+    emphasized -> MaterialTheme.typography.titleLarge
+    else -> MaterialTheme.typography.titleMedium
 }
 
 @Composable
@@ -472,7 +513,7 @@ fun MetricStrip(
                     )
                 } else {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                         horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)
                     ) {
                         rowMetrics.forEach { metric ->

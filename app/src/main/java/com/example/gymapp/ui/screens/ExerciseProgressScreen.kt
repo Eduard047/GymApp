@@ -1,5 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -356,7 +358,7 @@ private fun ProgressSummaryCard(
 
             metrics.chunked(2).forEach { rowMetrics ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     rowMetrics.forEach { metric ->

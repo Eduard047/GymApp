@@ -1,5 +1,7 @@
 package com.example.gymapp.ui.screens
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import android.Manifest
 import android.content.pm.PackageManager
 import android.text.format.DateFormat as AndroidDateFormat
@@ -571,7 +573,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
             val totalForProgress = uiState.totalSetCount.coerceAtLeast(0)
             val progressMaximum = totalForProgress.coerceAtLeast(1)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 MetricTile(

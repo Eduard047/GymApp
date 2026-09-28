@@ -4,10 +4,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
-// The journal uses compact, tool-like surfaces. The live Spotter Lens is the expressive form.
-val GymPanelShape = RoundedCornerShape(20.dp)
-val GymCompactShape = RoundedCornerShape(16.dp)
-val GymControlShape = RoundedCornerShape(14.dp)
+// Fluid Focus geometry: soft, concentric corners for panels, compact surfaces and controls.
+val GymPanelShape = RoundedCornerShape(26.dp)
+val GymCompactShape = RoundedCornerShape(20.dp)
+val GymControlShape = RoundedCornerShape(18.dp)
 
 val Shapes = Shapes(
     extraSmall = GymControlShape,
