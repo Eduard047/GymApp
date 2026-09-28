@@ -3,6 +3,7 @@ import XCTest
 
 /// Local side of the per-workout cloud merge: the owner-bound baseline and change
 /// journal, and applying a merged history to the store.
+@MainActor
 final class WorkoutCloudSyncStateTests: XCTestCase {
     private let ownerID = "00000000-0000-4000-8000-0000000001a1"
     private let otherOwnerID = "00000000-0000-4000-8000-0000000001a2"

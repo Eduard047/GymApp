@@ -4451,7 +4451,7 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
-    static func backupExerciseIdentity(name: String, catalogKey: String?) -> String {
+    nonisolated static func backupExerciseIdentity(name: String, catalogKey: String?) -> String {
         if let resolvedCatalogKey = BuiltInExerciseCatalog.resolvedKey(
             catalogKey: catalogKey,
             name: name
