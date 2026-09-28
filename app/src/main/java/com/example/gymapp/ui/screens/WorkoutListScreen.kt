@@ -46,6 +46,15 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import com.example.gymapp.ui.viewmodel.tapAction
+import com.example.gymapp.ui.viewmodel.TodayFriendTapAction
+import com.example.gymapp.ui.viewmodel.TodayFriendEntryState
+import com.example.gymapp.ui.viewmodel.TodayFriendChoice
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -144,9 +153,36 @@ fun WorkoutListScreen(
     onCancelRetainedPlan: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
     tutorialAnchors: TutorialAnchorRegistry? = null,
+    friendEntryState: TodayFriendEntryState = TodayFriendEntryState.Hidden,
+    friendChoices: List<TodayFriendChoice> = emptyList(),
+    onFriendEntryAction: (TodayFriendTapAction) -> Unit = {},
+    onTrainWithFriend: (TodayFriendChoice) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
+    var showFriendPicker by rememberSaveable { mutableStateOf(false) }
+    val friendPill: @Composable (Boolean) -> Unit = { forcedVisible ->
+        TrainWithFriendPill(
+            state = friendEntryState,
+            forcedVisible = forcedVisible,
+            onClick = {
+                when (val action = friendEntryState.tapAction(forcedVisible)) {
+                    TodayFriendTapAction.PickFriend -> showFriendPicker = true
+                    else -> onFriendEntryAction(action)
+                }
+            }
+        )
+    }
+    if (showFriendPicker) {
+        TrainWithFriendPicker(
+            friends = friendChoices,
+            onPick = { friend ->
+                showFriendPicker = false
+                onTrainWithFriend(friend)
+            },
+            onDismiss = { showFriendPicker = false }
+        )
+    }
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     var showActiveWorkoutDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showRetainedPlanCancelConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -200,7 +236,8 @@ fun WorkoutListScreen(
                         onStart = onStartFirstWorkout,
                         onEdit = onEditFirstWorkout,
                         onCreateManually = onSkipFirstWorkout,
-                        tutorialAnchors = tutorialAnchors
+                        tutorialAnchors = tutorialAnchors,
+                        friendPill = { friendPill(false) }
                     )
                 }
             } else {
@@ -220,7 +257,8 @@ fun WorkoutListScreen(
                         onCancelRetainedPlan = {
                             showRetainedPlanCancelConfirmation = true
                         },
-                        tutorialAnchors = tutorialAnchors
+                        tutorialAnchors = tutorialAnchors,
+                        friendPill = friendPill
                     )
                 }
             }
@@ -481,6 +519,7 @@ private fun FocusLens(
     onDiscardWorkout: () -> Unit,
     onCancelRetainedPlan: () -> Unit,
     tutorialAnchors: TutorialAnchorRegistry?,
+    friendPill: @Composable (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showPlanDetails by rememberSaveable { mutableStateOf(false) }
@@ -821,6 +860,8 @@ private fun FocusLens(
                 }
             }
         }
+        // A solo workout keeps the pill visible, but a tap only asks to finish it first.
+        friendPill(hasActiveWorkout)
     }
 }
 
@@ -1501,6 +1542,7 @@ private fun FirstWorkoutActivationCard(
     onEdit: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
     onCreateManually: () -> Unit,
     tutorialAnchors: TutorialAnchorRegistry?,
+    friendPill: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var goal by rememberSaveable { mutableStateOf(TrainingGoal.AestheticFatLoss) }
@@ -1650,6 +1692,121 @@ private fun FirstWorkoutActivationCard(
                     Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(R.string.activation_edit_plan), color = Color.White)
+                }
+            }
+        }
+        friendPill()
+    }
+}
+
+/** The "С другом" pill in the Today hero, variant B as on iOS. */
+@Composable
+private fun TrainWithFriendPill(
+    state: TodayFriendEntryState,
+    forcedVisible: Boolean,
+    onClick: () -> Unit
+) {
+    if (state == TodayFriendEntryState.Hidden) return
+    val inviteCount = (state as? TodayFriendEntryState.PendingInvite)?.count
+    val title = stringResource(
+        if (inviteCount != null) R.string.today_friend_pill_invite else R.string.today_friend_pill
+    )
+    val hint = stringResource(
+        when {
+            forcedVisible && inviteCount == null -> R.string.today_friend_hint_blocked
+            state == TodayFriendEntryState.NeedsCloudAccount -> R.string.today_friend_hint_account
+            state == TodayFriendEntryState.NeedsFriends -> R.string.today_friend_hint_friends
+            inviteCount != null -> R.string.today_friend_hint_invite
+            else -> R.string.today_friend_hint_pick
+        }
+    )
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .semantics { contentDescription = "$title. $hint" },
+        shape = RoundedCornerShape(50),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = Color.White.copy(alpha = if (inviteCount != null) 0.22f else 0.08f),
+            contentColor = Color.White
+        ),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = if (inviteCount != null) 0.7f else 0.36f))
+    ) {
+        Icon(imageVector = Icons.Default.Group, contentDescription = null)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(title, fontWeight = FontWeight.Bold, maxLines = 1)
+        if (inviteCount != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Surface(shape = RoundedCornerShape(50), color = Color.White, contentColor = Color(0xFF123560)) {
+                Text(
+                    text = inviteCount.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+/** Friend list for "С другом"; picking one opens the live workout editor with that friend. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrainWithFriendPicker(
+    friends: List<TodayFriendChoice>,
+    onPick: (TodayFriendChoice) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.today_friend_picker_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            if (friends.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.today_friend_picker_empty),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            val startHint = stringResource(R.string.today_friend_picker_row_hint)
+            friends.forEach { friend ->
+                TextButton(
+                    onClick = { onPick(friend) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                        .semantics { contentDescription = "${friend.displayName}. $startHint" }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AccountCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = friend.displayName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
+                    )
+                    Icon(
+                        imageVector = Icons.Default.FitnessCenter,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

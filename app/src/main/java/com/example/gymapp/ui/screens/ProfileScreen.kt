@@ -86,6 +86,13 @@ private enum class ProfileSection {
     Settings
 }
 
+/** Where the "С другом" pill on Today asks Profile to open. */
+enum class ProfileFocusRequest {
+    Account,
+    Friends,
+    Invites
+}
+
 @Composable
 internal fun ProfileScreen(
     accountState: ExerciseListUiState,
@@ -118,6 +125,8 @@ internal fun ProfileScreen(
     onClearLiveMessages: () -> Unit,
     focusedSocialPush: PushNavigationTarget.Social? = null,
     focusedLiveRoomId: String? = null,
+    focusRequest: ProfileFocusRequest? = null,
+    onFocusRequestHandled: () -> Unit = {},
     cloudSyncStatus: CloudSyncUiStatus?,
     onSyncNow: () -> Unit,
     cloudSyncChoiceRequired: Boolean,
@@ -170,6 +179,16 @@ internal fun ProfileScreen(
     }
     LaunchedEffect(Unit) {
         onRefreshGarminDevices()
+    }
+    LaunchedEffect(focusRequest) {
+        val request = focusRequest ?: return@LaunchedEffect
+        // Account and cloud sign-in live in Settings; friends and live invitations in Training.
+        selectedSection = if (request == ProfileFocusRequest.Account) {
+            ProfileSection.Settings
+        } else {
+            ProfileSection.Training
+        }
+        onFocusRequestHandled()
     }
     LaunchedEffect(focusedSocialPush, focusedLiveRoomId) {
         if (focusedSocialPush != null || focusedLiveRoomId != null) {

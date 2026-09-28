@@ -151,6 +151,10 @@ import com.example.gymapp.ui.viewmodel.durableDigest
 import com.example.gymapp.ui.viewmodel.WorkoutDetailViewModel
 import com.example.gymapp.ui.viewmodel.WorkoutListSurface
 import com.example.gymapp.ui.viewmodel.WorkoutListViewModel
+import com.example.gymapp.ui.viewmodel.TodayFriendTapAction
+import com.example.gymapp.ui.viewmodel.TodayFriendEntryState
+import com.example.gymapp.ui.viewmodel.TodayFriendChoice
+import com.example.gymapp.ui.screens.ProfileFocusRequest
 import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.auth.FriendGhost
 import com.example.gymapp.auth.loadFriendGhosts
@@ -813,6 +817,9 @@ internal fun GymAppRoot(
         // Consent must never survive process death: SharedWorkoutInbox is process-local and its
         // generation counter restarts, so restoring an old numeric id could approve a new link.
         remember { mutableStateOf<Long?>(null) }
+    }
+    var profileFocusRequest by key(uiIsolationKey) {
+        remember { mutableStateOf<ProfileFocusRequest?>(null) }
     }
     var preferredShareFriendProfileId by key(uiIsolationKey) {
         remember { mutableStateOf<String?>(null) }
@@ -2580,6 +2587,15 @@ internal fun GymAppRoot(
                                 shouldResume
                             }
 
+                            LaunchedEffect(cloudSession?.sessionGeneration) {
+                                // The "С другом" pill needs the friends list and invitations
+                                // before Profile has ever been opened.
+                                if (cloudSession != null && friendsState?.dashboard == null) {
+                                    friendsViewModel?.refreshDashboard()
+                                }
+                                liveWorkoutViewModel?.refresh()
+                            }
+
                             WorkoutListScreen(
                                 uiState = uiState,
                                 onSessionClick = { sessionId ->
@@ -2701,6 +2717,73 @@ internal fun GymAppRoot(
                                 },
                                 hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
                                 activeWorkoutProgress = activeWorkoutProgress,
+                                friendEntryState = TodayFriendEntryState.from(
+                                    isCloudAccount = cloudSession != null,
+                                    friendCount = friendsState?.dashboard?.friends?.size ?: 0,
+                                    pendingInvitationCount = liveWorkoutState.inbox?.invitations?.size ?: 0,
+                                    hasBlockingLiveWorkout = liveWorkoutState.activeRoomId != null ||
+                                        liveWorkoutState.inbox?.rooms?.any { room ->
+                                            room.status in setOf("waiting", "ready", "active")
+                                        } == true
+                                ),
+                                friendChoices = friendsState?.dashboard?.friends.orEmpty().map { friend ->
+                                    TodayFriendChoice(friend.profileId, friend.displayName)
+                                },
+                                onFriendEntryAction = { action ->
+                                    val focus = when (action) {
+                                        TodayFriendTapAction.OpenAccount -> ProfileFocusRequest.Account
+                                        TodayFriendTapAction.OpenFriends -> ProfileFocusRequest.Friends
+                                        TodayFriendTapAction.OpenInvites -> ProfileFocusRequest.Invites
+                                        else -> null
+                                    }
+                                    if (focus != null) {
+                                        profileFocusRequest = focus
+                                        navController.navigate(AppDestination.Profile.route) {
+                                            launchSingleTop = true
+                                        }
+                                    } else if (action == TodayFriendTapAction.BlockedBySoloWorkout) {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(R.string.today_friend_hint_blocked)
+                                            )
+                                        }
+                                    }
+                                },
+                                onTrainWithFriend = { choice ->
+                                    // The same path as "Live workout" on a friend's page.
+                                    val friend = friendsState?.dashboard?.friends
+                                        ?.firstOrNull { it.profileId == choice.profileId }
+                                    val session = cloudSession
+                                    when {
+                                        activeWorkout != null -> coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(R.string.live_workout_active_blocked)
+                                            )
+                                        }
+                                        session == null || friend == null -> coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                applicationContext.getString(R.string.live_workout_start_failed)
+                                            )
+                                        }
+                                        else -> {
+                                            setLiveWorkoutDraftTarget(LiveWorkoutDraftTarget(
+                                                binding = FriendWorkoutPickerBinding(
+                                                    userId = session.userId,
+                                                    sessionGeneration = session.sessionGeneration,
+                                                    profileId = friend.profileId,
+                                                    friendshipId = friend.friendshipId,
+                                                    friendshipRevision = friend.friendshipRevision
+                                                ),
+                                                displayName = friend.displayName,
+                                                draftBindingId = UUID.randomUUID().toString()
+                                            ))
+                                            preferredShareFriendProfileId = friend.profileId
+                                            navController.navigate(AppDestination.AddWorkout.route) {
+                                                launchSingleTop = true
+                                            }
+                                        }
+                                    }
+                                },
                                 onDiscardActiveWorkout = {
                                     activeWorkout?.activeWorkout?.revision?.let { activeRevision ->
                                         coroutineScope.launch {
@@ -3790,6 +3873,8 @@ internal fun GymAppRoot(
                                 },
                                 focusedSocialPush = focusedSocialPush,
                                 focusedLiveRoomId = focusedLivePushRoomId,
+                                focusRequest = profileFocusRequest,
+                                onFocusRequestHandled = { profileFocusRequest = null },
                                 cloudSyncStatus = cloudSyncStatus,
                                 onSyncNow = {
                                     cloudSession?.let { session ->

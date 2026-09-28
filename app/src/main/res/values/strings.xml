@@ -1464,4 +1464,14 @@
     <string name="active_workout_notification_all_done">All sets done. Finish in the app.</string>
     <string name="active_workout_notification_log_set">Log set</string>
     <string name="active_workout_notification_skip_rest">Skip rest</string>
+    <string name="today_friend_pill">With a friend</string>
+    <string name="today_friend_pill_invite">Invitation</string>
+    <string name="today_friend_hint_blocked">Finish your current workout before starting a live workout with a friend</string>
+    <string name="today_friend_hint_account">Opens account settings to sign in with a cloud account</string>
+    <string name="today_friend_hint_friends">Opens your friends list to add a friend</string>
+    <string name="today_friend_hint_invite">Opens your pending live workout invitation</string>
+    <string name="today_friend_hint_pick">Choose a friend to start a live workout together</string>
+    <string name="today_friend_picker_title">Train with a friend</string>
+    <string name="today_friend_picker_empty">No friends yet</string>
+    <string name="today_friend_picker_row_hint">Starts a live workout with this friend</string>
 </resources>

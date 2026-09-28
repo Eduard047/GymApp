@@ -1476,4 +1476,14 @@
     <string name="active_workout_notification_all_done">Все подходы выполнены. Завершите в приложении.</string>
     <string name="active_workout_notification_log_set">Записать подход</string>
     <string name="active_workout_notification_skip_rest">Пропустить отдых</string>
+    <string name="today_friend_pill">С другом</string>
+    <string name="today_friend_pill_invite">Приглашение</string>
+    <string name="today_friend_hint_blocked">Заверши текущую тренировку, прежде чем начать живую тренировку с другом</string>
+    <string name="today_friend_hint_account">Открывает настройки аккаунта для входа в облачный аккаунт</string>
+    <string name="today_friend_hint_friends">Открывает список друзей, чтобы добавить друга</string>
+    <string name="today_friend_hint_invite">Открывает ожидающее приглашение на живую тренировку</string>
+    <string name="today_friend_hint_pick">Выбери друга, чтобы начать совместную живую тренировку</string>
+    <string name="today_friend_picker_title">Тренироваться с другом</string>
+    <string name="today_friend_picker_empty">Пока нет друзей</string>
+    <string name="today_friend_picker_row_hint">Начинает живую тренировку с этим другом</string>
 </resources>
