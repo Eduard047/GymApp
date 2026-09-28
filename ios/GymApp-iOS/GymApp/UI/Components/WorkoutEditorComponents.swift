@@ -757,9 +757,7 @@ struct SmartExerciseAlternativesSheet: View {
     private func prescriptionText(_ recommendation: WorkoutRecommendation) -> String {
         guard let first = recommendation.sets.first else { return gymLocalized("No prescription") }
         let setCount = recommendation.sets.count
-        let weight = first.weight.map {
-            " · \($0.formatted(.number.precision(.fractionLength(0 ... 2)))) kg"
-        } ?? ""
+        let weight = first.weight.map { " · \(gymWeightText($0))" } ?? ""
         return "\(setCount) × \(first.reps)\(weight)"
     }
 }

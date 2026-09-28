@@ -719,10 +719,17 @@ private struct ExerciseEditorDraft {
 private enum ExerciseEditorValidationError: LocalizedError {
     case invalidWeights
 
-    var errorDescription: String? {
+    var errorDescription: String? { message(languageCode: gymCurrentLanguageCode()) }
+
+    func message(languageCode: String) -> String {
         switch self {
         case .invalidWeights:
-            return "Enter 1–128 valid machine weights between 0 and 1,000,000 kg."
+            gymText(
+                "Enter 1–128 valid machine weights between 0 and 1,000,000 kg.",
+                "Вкажи від 1 до 128 допустимих ваг тренажера в діапазоні від 0 до 1 000 000 кг.",
+                "Укажи от 1 до 128 допустимых весов тренажёра в диапазоне от 0 до 1 000 000 кг.",
+                languageCode: languageCode
+            )
         }
     }
 }
@@ -886,6 +893,8 @@ private struct ExerciseEditorSheet: View {
                 )
             )
             dismiss()
+        } catch let validationError as ExerciseEditorValidationError {
+            self.error = validationError.message(languageCode: gymCurrentLanguageCode())
         } catch {
             self.error = gymErrorMessage(error)
         }

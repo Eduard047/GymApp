@@ -2770,15 +2770,13 @@ private struct SavedWorkoutShareChooser: View {
 /// the unit routed through the app-language helper rather than hardcoded,
 /// so it does not always read "kg" regardless of the in-app language.
 func gymWorkoutSetValueLabelText(weight: Double, reps: Int, languageCode: String) -> String {
-    let weightText = weight.formatted(.number.precision(.fractionLength(0 ... 2)))
-    let unit = gymLocalized("kg", languageCode: languageCode)
     let repsText = gymText(
         "\(reps) reps",
         "\(reps) повт.",
         "\(reps) повт.",
         languageCode: languageCode
     )
-    return "\(weightText) \(unit) × \(repsText)"
+    return "\(gymWeightText(weight, languageCode: languageCode)) × \(repsText)"
 }
 
 private struct StoredWorkoutSetSummaryRow: View {

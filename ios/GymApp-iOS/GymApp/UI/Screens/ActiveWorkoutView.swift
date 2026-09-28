@@ -842,11 +842,11 @@ struct ActiveWorkoutView: View {
                         .foregroundStyle(GymTheme.textSecondary)
                         Spacer()
                         Text(completed.map {
-                            "\($0.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \($0.reps)"
+                            gymWeightRepsText(weight: $0.weight, reps: $0.reps)
                         } ?? gymText(
-                            "Not logged · \(planned.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(planned.reps)",
-                            "Не записано · \(planned.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(planned.reps)",
-                            "Не записано · \(planned.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(planned.reps)",
+                            "Not logged · \(gymWeightRepsText(weight: planned.weight, reps: planned.reps))",
+                            "Не записано · \(gymWeightRepsText(weight: planned.weight, reps: planned.reps))",
+                            "Не записано · \(gymWeightRepsText(weight: planned.weight, reps: planned.reps))",
                             languageCode: gymCurrentLanguageCode()
                         ))
                         .monospacedDigit()

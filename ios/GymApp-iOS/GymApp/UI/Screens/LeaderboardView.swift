@@ -48,7 +48,7 @@ private struct FinishedLiveWorkoutView: View {
                                                 Text(t("Set", "Підхід", "Подход") + " \(index + 1)")
                                                 Spacer()
                                                 Text(actual.map {
-                                                    "\($0.weight.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \($0.reps)"
+                                                    gymWeightRepsText(weight: $0.weight, reps: $0.reps)
                                                 } ?? t("Not recorded", "Не записано", "Не записано"))
                                                 .monospacedDigit()
                                             }
@@ -139,9 +139,9 @@ func socialRecordMetricLabels(
     _ record: SocialExerciseRecord,
     languageCode: String
 ) -> SocialRecordMetricLabels {
-    let weight = record.bestWeightKg.formatted(.number.precision(.fractionLength(0 ... 2)))
+    let weight = gymWeightText(record.bestWeightKg, languageCode: languageCode)
     return SocialRecordMetricLabels(
-        maximumWeight: "\(gymText("Max weight", "Макс. вага", "Макс. вес", languageCode: languageCode)): \(weight) kg",
+        maximumWeight: "\(gymText("Max weight", "Макс. вага", "Макс. вес", languageCode: languageCode)): \(weight)",
         maximumRepetitions: "\(gymText("Max reps", "Макс. повтори", "Макс. повторы", languageCode: languageCode)): \(record.bestReps)"
     )
 }
@@ -2364,7 +2364,7 @@ private struct FriendWorkoutReadOnlyDetailView: View {
                                         Text(t("Set", "Підхід", "Подход") + " \(index + 1)")
                                             .foregroundStyle(GymTheme.textSecondary)
                                         Spacer()
-                                        Text("\(set.weightKg.formatted(.number.precision(.fractionLength(0 ... 2)))) kg × \(set.reps)")
+                                        Text(gymWeightRepsText(weight: set.weightKg, reps: set.reps, languageCode: languageCode))
                                             .monospacedDigit()
                                     }
                                     .font(.subheadline)

@@ -458,6 +458,25 @@ private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
     return safeMessages.contains(message) ? message : gymGenericErrorMessage
 }
 
+/// "82,5 кг" — a weight with the decimal separator and unit of the app language.
+func gymWeightText(
+    _ weight: Double,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let number = weight.formatted(.number.precision(.fractionLength(0 ... 2)).locale(locale))
+    return "\(number) \(gymLocalized("kg", languageCode: languageCode))"
+}
+
+/// "82,5 кг × 8" — a set's weight and repetitions in the app language.
+func gymWeightRepsText(
+    weight: Double,
+    reps: Int,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    "\(gymWeightText(weight, languageCode: languageCode)) × \(reps)"
+}
+
 enum GymPluralCategory: Equatable, Sendable {
     case one
     case few
