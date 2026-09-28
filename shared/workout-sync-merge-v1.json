@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "session": "date",
+    "sessionIdentityDescription": "Canonical workout start time in epoch milliseconds (date, falling back to startedAt).",
+    "exercise": "name+catalogKey",
+    "exerciseIdentityDescription": "Custom catalog entries match by trimmed, whitespace-collapsed, case-folded name plus catalogKey."
+  },
+  "equality": "Exact canonical wire with sorted keys: date, optional trimmed note, and ordered exercises with their ordered sets.",
+  "newerWins": {
+    "appliesTo": [
+      "divergent edits of one workout",
+      "delete versus edit of one workout",
+      "different workouts added with the same start time"
+    ],
+    "localChangeTime": "Per-workout local change journal, epoch milliseconds, stamped when the local copy stops matching the baseline.",
+    "remoteChangeTime": "updated_at of the fetched user_states row; the shared v2 row carries no per-workout edit time.",
+    "localWinsWhen": "localChangeTime > remoteChangeTime",
+    "tie": "remote",
+    "missingLocalChangeTime": "remote"
+  },
+  "stateContract": {
+    "compatibilityRowUnchanged": true,
+    "baselineIsOwnerBound": true,
+    "baselineRetainsExactCanonicalCore": true,
+    "missingBaselineFallsBackToWholeHistoryChoice": true,
+    "duplicateIdentityOnOneSideFailsClosed": true,
+    "exercisesReferencedByMergedWorkoutsAreKept": true,
+    "casRetriesMergeAgainstFreshRemote": 3
+  },
+  "sessions": {
+    "a": {
+      "date": 1789000000000,
+      "exercises": [
+        { "name": "Bench Press", "catalogKey": "bench_press", "sets": [{ "weight": 60, "reps": 8 }, { "weight": 60, "reps": 8 }] }
+      ]
+    },
+    "aLocalEdit": {
+      "date": 1789000000000,
+      "exercises": [
+        { "name": "Bench Press", "catalogKey": "bench_press", "sets": [{ "weight": 62.5, "reps": 8 }, { "weight": 62.5, "reps": 8 }] }
+      ]
+    },
+    "aRemoteEdit": {
+      "date": 1789000000000,
+      "exercises": [
+        { "name": "Bench Press", "catalogKey": "bench_press", "sets": [{ "weight": 60, "reps": 10 }, { "weight": 60, "reps": 10 }] }
+      ]
+    },
+    "b": {
+      "date": 1789100000000,
+      "exercises": [
+        { "name": "Squat", "catalogKey": "squat", "sets": [{ "weight": 100, "reps": 5 }] }
+      ]
+    },
+    "bRemoteEdit": {
+      "date": 1789100000000,
+      "note": "Felt strong",
+      "exercises": [
+        { "name": "Squat", "catalogKey": "squat", "sets": [{ "weight": 100, "reps": 5 }, { "weight": 100, "reps": 5 }] }
+      ]
+    },
+    "c": {
+      "date": 1789200000000,
+      "exercises": [
+        { "name": "Deadlift", "catalogKey": "deadlift", "sets": [{ "weight": 140, "reps": 3 }] }
+      ]
+    },
+    "d": {
+      "date": 1789300000000,
+      "exercises": [
+        { "name": "Cable Kickback", "sets": [{ "weight": 15, "reps": 12 }] }
+      ]
+    },
+    "dOther": {
+      "date": 1789300000000,
+      "exercises": [
+        { "name": "Cable Kickback", "sets": [{ "weight": 17.5, "reps": 12 }] }
+      ]
+    }
+  },
+  "exercises": {
+    "kickback": { "name": "Cable Kickback" },
+    "bandFly": { "name": "Band Fly" }
+  },
+  "times": {
+    "remoteRowUpdatedAt": 1790000000000,
+    "localNewer": 1790000100000,
+    "localOlder": 1789990000000
+  },
+  "mergeScenarios": [
+    {
+      "name": "unchanged",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["a", "b"] },
+      "remote": { "sessions": ["a", "b"] },
+      "result": { "sessions": ["a", "b"] }
+    },
+    {
+      "name": "local edit wins against unchanged remote",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["aLocalEdit"] },
+      "remote": { "sessions": ["a"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["aLocalEdit"] }
+    },
+    {
+      "name": "remote edit wins against unchanged local",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["a"] },
+      "remote": { "sessions": ["aRemoteEdit"] },
+      "result": { "sessions": ["aRemoteEdit"] }
+    },
+    {
+      "name": "same edit on both sides",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["aLocalEdit"] },
+      "remote": { "sessions": ["aLocalEdit"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["aLocalEdit"] }
+    },
+    {
+      "name": "edits of different workouts on both devices both survive",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["aLocalEdit", "b"] },
+      "remote": { "sessions": ["a", "bRemoteEdit"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["aLocalEdit", "bRemoteEdit"] }
+    },
+    {
+      "name": "independent additions merge",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["a", "b"] },
+      "remote": { "sessions": ["a", "c"] },
+      "localChangedAt": { "b": "localOlder" },
+      "result": { "sessions": ["a", "b", "c"] }
+    },
+    {
+      "name": "local deletion propagates",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["b"] },
+      "remote": { "sessions": ["a", "b"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["b"] }
+    },
+    {
+      "name": "remote deletion propagates",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["a", "b"] },
+      "remote": { "sessions": ["b"] },
+      "result": { "sessions": ["b"] }
+    },
+    {
+      "name": "local deletion and unrelated remote edit both apply",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["b"] },
+      "remote": { "sessions": ["a", "bRemoteEdit"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["bRemoteEdit"] }
+    },
+    {
+      "name": "divergent edits: newer local edit wins",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["aLocalEdit"] },
+      "remote": { "sessions": ["aRemoteEdit"] },
+      "localChangedAt": { "a": "localNewer" },
+      "result": { "sessions": ["aLocalEdit"] }
+    },
+    {
+      "name": "divergent edits: newer remote row wins",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["aLocalEdit"] },
+      "remote": { "sessions": ["aRemoteEdit"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["aRemoteEdit"] }
+    },
+    {
+      "name": "divergent edits without a local change time: remote wins",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["aLocalEdit"] },
+      "remote": { "sessions": ["aRemoteEdit"] },
+      "result": { "sessions": ["aRemoteEdit"] }
+    },
+    {
+      "name": "divergent edits at the same time: remote wins",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["aLocalEdit"] },
+      "remote": { "sessions": ["aRemoteEdit"] },
+      "localChangedAt": { "a": "remoteRowUpdatedAt" },
+      "result": { "sessions": ["aRemoteEdit"] }
+    },
+    {
+      "name": "newer local deletion wins over remote edit",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["b"] },
+      "remote": { "sessions": ["aRemoteEdit", "b"] },
+      "localChangedAt": { "a": "localNewer" },
+      "result": { "sessions": ["b"] }
+    },
+    {
+      "name": "newer remote edit wins over local deletion",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["b"] },
+      "remote": { "sessions": ["aRemoteEdit", "b"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["aRemoteEdit", "b"] }
+    },
+    {
+      "name": "newer local edit wins over remote deletion",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["aLocalEdit", "b"] },
+      "remote": { "sessions": ["b"] },
+      "localChangedAt": { "a": "localNewer" },
+      "result": { "sessions": ["aLocalEdit", "b"] }
+    },
+    {
+      "name": "newer remote deletion wins over local edit",
+      "base": { "sessions": ["a", "b"] },
+      "local": { "sessions": ["aLocalEdit", "b"] },
+      "remote": { "sessions": ["b"] },
+      "localChangedAt": { "a": "localOlder" },
+      "result": { "sessions": ["b"] }
+    },
+    {
+      "name": "different workouts added at the same start time: newer local wins",
+      "base": { "sessions": [], "exercises": ["kickback"] },
+      "local": { "sessions": ["d"], "exercises": ["kickback"] },
+      "remote": { "sessions": ["dOther"], "exercises": ["kickback"] },
+      "localChangedAt": { "d": "localNewer" },
+      "result": { "sessions": ["d"], "exercises": ["kickback"] }
+    },
+    {
+      "name": "different workouts added at the same start time: newer remote wins",
+      "base": { "sessions": [], "exercises": ["kickback"] },
+      "local": { "sessions": ["d"], "exercises": ["kickback"] },
+      "remote": { "sessions": ["dOther"], "exercises": ["kickback"] },
+      "localChangedAt": { "d": "localOlder" },
+      "result": { "sessions": ["dOther"], "exercises": ["kickback"] }
+    },
+    {
+      "name": "custom exercises added on both sides merge",
+      "base": { "exercises": [] },
+      "local": { "exercises": ["kickback"] },
+      "remote": { "exercises": ["bandFly"] },
+      "result": { "exercises": ["bandFly", "kickback"] }
+    },
+    {
+      "name": "custom exercise deleted on one side is removed",
+      "base": { "exercises": ["kickback", "bandFly"] },
+      "local": { "exercises": ["bandFly"] },
+      "remote": { "exercises": ["kickback", "bandFly"] },
+      "result": { "exercises": ["bandFly"] }
+    },
+    {
+      "name": "custom exercise used by a merged workout is kept after a deletion",
+      "base": { "sessions": [], "exercises": ["kickback"] },
+      "local": { "sessions": [], "exercises": [] },
+      "remote": { "sessions": ["d"], "exercises": ["kickback"] },
+      "result": { "sessions": ["d"], "exercises": ["kickback"] }
+    }
+  ],
+  "failClosedScenarios": [
+    {
+      "name": "duplicate start time on one side",
+      "base": { "sessions": ["a"] },
+      "local": { "sessions": ["a", "aLocalEdit"] },
+      "remote": { "sessions": ["a"] }
+    }
+  ]
+}
