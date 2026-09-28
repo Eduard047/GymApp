@@ -707,38 +707,15 @@ public final class WorkoutStore: ObservableObject {
         let removedExerciseIdentities = Set(local.configuredExercises.map(WorkoutCloudMerge.exerciseIdentity))
             .subtracting(mergedExerciseIdentities)
 
+        var mergedNotes: [Int64: String] = [:]
+        for (start, session) in mergedByStart {
+            if let note = try Self.validatedNote(session.note) {
+                mergedNotes[start] = note
+            }
+        }
+
         var changed = 0
         try mutate { state in
-            func exerciseID(name rawName: String, catalogKey: String?) throws -> UUID {
-                let name = rawName.gymTrimmed
-                guard !name.isEmpty else { throw CloudSyncError.invalidPayload }
-                if let id = try Self.resolvedStoredExerciseID(for: name, in: state.exercises) {
-                    return id
-                }
-                let resolvedKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
-                if let resolvedKey, let match = state.exercises.first(where: { candidate in
-                    BuiltInExerciseCatalog.resolvedKey(catalogKey: candidate.catalogKey, name: candidate.name) == resolvedKey
-                }) {
-                    return match.id
-                }
-                let exercise = Exercise(name: name, catalogKey: resolvedKey)
-                state.exercises.append(exercise)
-                return exercise.id
-            }
-
-            func workoutExercises(_ session: BackupSession) throws -> [WorkoutExercise] {
-                var result: [WorkoutExercise] = []
-                for block in session.exercises ?? [] {
-                    let id = try exerciseID(name: block.name, catalogKey: block.catalogKey)
-                    var sets: [WorkoutSet] = []
-                    for set in block.sets {
-                        sets.append(WorkoutSet(weight: set.weight <= 0 ? 0.0 : set.weight, reps: set.reps))
-                    }
-                    result.append(WorkoutExercise(exerciseID: id, sets: sets))
-                }
-                return result
-            }
-
             var remaining = mergedByStart
             var nextWorkouts: [WorkoutSession] = []
             nextWorkouts.reserveCapacity(state.workouts.count + remaining.count)
@@ -757,24 +734,29 @@ public final class WorkoutStore: ObservableObject {
                     continue
                 }
                 var updated = workout
-                updated.note = try Self.validatedNote(desired.note)
-                updated.exercises = try workoutExercises(desired)
+                updated.note = mergedNotes[start]
+                updated.exercises = try Self.mergedWorkoutExercises(desired, exercises: &state.exercises)
                 nextWorkouts.append(updated)
                 changed += 1
             }
             for start in remaining.keys.sorted() {
                 guard let desired = remaining[start] else { continue }
+                let exercises = try Self.mergedWorkoutExercises(desired, exercises: &state.exercises)
                 nextWorkouts.append(WorkoutSession(
                     date: Date(gymEpochMilliseconds: start),
-                    note: try Self.validatedNote(desired.note),
-                    exercises: try workoutExercises(desired)
+                    note: mergedNotes[start],
+                    exercises: exercises
                 ))
                 changed += 1
             }
             state.workouts = nextWorkouts
 
             for exercise in merged.configuredExercises {
-                _ = try exerciseID(name: exercise.name, catalogKey: exercise.catalogKey)
+                _ = try Self.mergedExerciseID(
+                    name: exercise.name,
+                    catalogKey: exercise.catalogKey,
+                    exercises: &state.exercises
+                )
             }
             let usedExerciseIDs = Set(nextWorkouts.flatMap { workout in workout.exercises.map(\.exerciseID) })
             var removedNameKeys = Set<String>()
@@ -792,6 +774,46 @@ public final class WorkoutStore: ObservableObject {
             }
         }
         return changed
+    }
+
+    /// Finds the stored exercise a merged workout refers to, creating it when missing.
+    nonisolated private static func mergedExerciseID(
+        name rawName: String,
+        catalogKey: String?,
+        exercises: inout [Exercise]
+    ) throws -> UUID {
+        let name = rawName.gymTrimmed
+        guard !name.isEmpty else { throw CloudSyncError.invalidPayload }
+        if let id = try resolvedStoredExerciseID(for: name, in: exercises) {
+            return id
+        }
+        let resolvedKey = BuiltInExerciseCatalog.resolvedKey(catalogKey: catalogKey, name: name)
+        if let resolvedKey {
+            for candidate in exercises where
+                BuiltInExerciseCatalog.resolvedKey(catalogKey: candidate.catalogKey, name: candidate.name) == resolvedKey {
+                return candidate.id
+            }
+        }
+        let exercise = Exercise(name: name, catalogKey: resolvedKey)
+        exercises.append(exercise)
+        return exercise.id
+    }
+
+    nonisolated private static func mergedWorkoutExercises(
+        _ session: BackupSession,
+        exercises: inout [Exercise]
+    ) throws -> [WorkoutExercise] {
+        var result: [WorkoutExercise] = []
+        for block in session.exercises ?? [] {
+            let id = try mergedExerciseID(name: block.name, catalogKey: block.catalogKey, exercises: &exercises)
+            var sets: [WorkoutSet] = []
+            for set in block.sets {
+                let weight: Double = set.weight <= 0 ? 0.0 : set.weight
+                sets.append(WorkoutSet(weight: weight, reps: set.reps))
+            }
+            result.append(WorkoutExercise(exerciseID: id, sets: sets))
+        }
+        return result
     }
 
     func clearActivityOnlyCloudSyncArtifacts() throws {
@@ -4849,15 +4871,15 @@ public final class WorkoutStore: ObservableObject {
         return UUID(uuid: raw)
     }
 
-    private static func nameKey(_ value: String) -> String {
+    nonisolated private static func nameKey(_ value: String) -> String {
         MuscleMappingEngine.normalizeExerciseName(value)
     }
 
-    private static func legacyPersistedNameKey(_ value: String) -> String {
+    nonisolated private static func legacyPersistedNameKey(_ value: String) -> String {
         value.gymTrimmed.lowercased()
     }
 
-    private static func resolvedStoredExerciseID(
+    nonisolated private static func resolvedStoredExerciseID(
         for name: String,
         in exercises: [Exercise]
     ) throws -> UUID? {
