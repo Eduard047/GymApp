@@ -83,6 +83,10 @@
             android:foregroundServiceType="shortService" />
 
         <receiver
+            android:name=".service.RestTimerAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".service.ActiveWorkoutNotificationReceiver"
             android:exported="false" />
 
