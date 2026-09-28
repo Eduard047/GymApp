@@ -38,19 +38,29 @@ enum LivePersonalRecords {
         in draft: ActiveWorkoutDraft,
         baselines: [UUID: PersonalRecordBaseline]
     ) -> Set<UUID> {
-        let completed = draft.exercises.enumerated().flatMap { exerciseIndex, exercise in
-            exercise.sets.enumerated().compactMap { setIndex, set -> CompletedSet? in
-                guard let completedAt = set.completedAt else { return nil }
-                return CompletedSet(
-                    exerciseID: exercise.exerciseID,
-                    set: set,
-                    completedAt: completedAt,
-                    order: (exerciseIndex, setIndex)
+        var completed: [CompletedSet] = []
+        for (exerciseIndex, exercise) in draft.exercises.enumerated() {
+            for (setIndex, set) in exercise.sets.enumerated() {
+                guard let completedAt = set.completedAt else { continue }
+                completed.append(
+                    CompletedSet(
+                        exerciseID: exercise.exerciseID,
+                        set: set,
+                        completedAt: completedAt,
+                        exerciseIndex: exerciseIndex,
+                        setIndex: setIndex
+                    )
                 )
             }
         }
-        .sorted { left, right in
-            left.completedAt == right.completedAt ? left.order < right.order : left.completedAt < right.completedAt
+        completed.sort { (left: CompletedSet, right: CompletedSet) -> Bool in
+            if left.completedAt != right.completedAt {
+                return left.completedAt < right.completedAt
+            }
+            if left.exerciseIndex != right.exerciseIndex {
+                return left.exerciseIndex < right.exerciseIndex
+            }
+            return left.setIndex < right.setIndex
         }
 
         var bests = baselines
@@ -58,8 +68,9 @@ enum LivePersonalRecords {
         for entry in completed {
             guard entry.set.weight > 0, let best = bests[entry.exerciseID] else { continue }
             let estimate = GymOneRepMax.estimate(weight: entry.set.weight, reps: entry.set.reps)
-            if entry.set.weight > best.bestWeight
-                || estimate > best.bestEstimatedOneRepMax + estimateTolerance {
+            let beatsWeight: Bool = entry.set.weight > best.bestWeight
+            let beatsEstimate: Bool = estimate > best.bestEstimatedOneRepMax + estimateTolerance
+            if beatsWeight || beatsEstimate {
                 records.insert(entry.set.id)
             }
             bests[entry.exerciseID] = PersonalRecordBaseline(
@@ -74,6 +85,7 @@ enum LivePersonalRecords {
         let exerciseID: UUID
         let set: ActiveWorkoutSet
         let completedAt: Date
-        let order: (Int, Int)
+        let exerciseIndex: Int
+        let setIndex: Int
     }
 }

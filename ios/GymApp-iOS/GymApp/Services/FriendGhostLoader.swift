@@ -22,16 +22,22 @@ enum FriendGhostLoader {
             guard let raw = friend.progressUpdatedAt else { return .distantPast }
             return formatter.date(from: raw) ?? fallback.date(from: raw) ?? .distantPast
         }
-        return Array(
-            friends.enumerated()
-                .sorted { left, right in
-                    let leftDate = updatedAt(left.element)
-                    let rightDate = updatedAt(right.element)
-                    return leftDate == rightDate ? left.offset < right.offset : leftDate > rightDate
-                }
-                .map(\.element)
-                .prefix(maximumFriends)
-        )
+        var ranked: [(date: Date, index: Int, friend: SocialFriendSummary)] = []
+        for (index, friend) in friends.enumerated() {
+            ranked.append((date: updatedAt(friend), index: index, friend: friend))
+        }
+        ranked.sort { (left: (date: Date, index: Int, friend: SocialFriendSummary),
+                       right: (date: Date, index: Int, friend: SocialFriendSummary)) -> Bool in
+            if left.date != right.date {
+                return left.date > right.date
+            }
+            return left.index < right.index
+        }
+        var result: [SocialFriendSummary] = []
+        for entry in ranked.prefix(maximumFriends) {
+            result.append(entry.friend)
+        }
+        return result
     }
 
     static func load(friends: [SocialFriendSummary], appState: AppState) async -> [String: FriendGhost] {
