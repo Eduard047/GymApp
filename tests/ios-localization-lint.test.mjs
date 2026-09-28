@@ -363,3 +363,36 @@ test("every literal passed to gymLocalized has Ukrainian and Russian catalog val
   }
   assert.deepEqual(violations, []);
 });
+
+test("status messages shown in banners have Ukrainian and Russian catalog values", () => {
+  // These sinks reach GymStatusBanner, which resolves the text through gymLocalized.
+  const bannerCalls = ["publishStatus", "show", "GymStatusBanner"];
+  const statusAssignment = /\b(lastStatus|lastMessage|recoveryMessage)\s*=\s*$/;
+  const violations = [];
+  for (const { file, source, code, literals } of scanned) {
+    const ranges = [];
+    for (const name of bannerCalls) {
+      for (const call of findCalls(code, name)) {
+        const first = call.argumentsList[0];
+        if (!first) continue;
+        const text = code.slice(...first);
+        if (name !== "publishStatus" && !/^\s*message\s*:/.test(text)) continue;
+        ranges.push(first);
+      }
+    }
+    const localizedRanges = localizedArgumentRanges(code);
+    for (const literal of literals) {
+      if (literal.text.includes("\u0000") || !/[A-Za-z]{3}/.test(literal.text)) continue;
+      if (literalLanguage(localizedRanges, literal) !== null) continue;
+      const lineStart = source.lastIndexOf("\n", literal.start) + 1;
+      const prefix = code.slice(lineStart, literal.start);
+      const inCall = ranges.some(([from, to]) => literal.start >= from && literal.start < to);
+      if (!inCall && !statusAssignment.test(prefix)) continue;
+      const localizations = catalog.strings?.[literal.text.replace(/\\"/g, '"')]?.localizations;
+      if (!localizations?.uk || !localizations?.ru) {
+        violations.push(`${file}:${lineOf(source, literal.start)} ${JSON.stringify(literal.text)}`);
+      }
+    }
+  }
+  assert.deepEqual(violations, []);
+});

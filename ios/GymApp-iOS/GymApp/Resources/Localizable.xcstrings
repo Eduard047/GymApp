@@ -458,6 +458,86 @@
         }
       }
     },
+    "A conflicting Garmin workout replay was rejected." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторная отправка тренировки Garmin с конфликтом отклонена."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторне надсилання тренування Garmin із конфліктом відхилено."
+          }
+        }
+      }
+    },
+    "A damaged local data file was preserved for recovery." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повреждённый локальный файл данных сохранён для восстановления."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пошкоджений локальний файл даних збережено для відновлення."
+          }
+        }
+      }
+    },
+    "A malformed or unbound Garmin workout was rejected." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Некорректная или непривязанная тренировка Garmin отклонена."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Некоректне або неприв’язане тренування Garmin відхилено."
+          }
+        }
+      }
+    },
+    "A saved profile already uses this name." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранённый профиль уже использует это имя."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Збережений профіль уже має таке ім’я."
+          }
+        }
+      }
+    },
+    "Acceptance was confirmed. Restoring the started workout…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Принятие подтверждено. Восстанавливаем начатую тренировку…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прийняття підтверджено. Відновлюємо розпочате тренування…"
+          }
+        }
+      }
+    },
     "Active workout progress could not be opened safely." : {
       "localizations" : {
         "ru" : {
@@ -586,6 +666,38 @@
         }
       }
     },
+    "Cloud data contains unsupported future workout fields." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Облачные данные содержат неподдерживаемые поля тренировок из новой версии."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Хмарні дані містять непідтримувані поля тренувань із новішої версії."
+          }
+        }
+      }
+    },
+    "Cloud upload is paused because this row contains unsupported future workout fields." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отправка в облако приостановлена: эта запись содержит неподдерживаемые поля тренировок из новой версии."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Надсилання в хмару призупинено: цей запис містить непідтримувані поля тренувань із новішої версії."
+          }
+        }
+      }
+    },
     "Could not register — try again" : {
       "localizations" : {
         "ru" : {
@@ -682,6 +794,54 @@
         }
       }
     },
+    "Garmin device selection could not be prepared safely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно подготовить выбор устройства Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно підготувати вибір пристрою Garmin."
+          }
+        }
+      }
+    },
+    "Garmin message delivery failed. Keep both apps open and retry." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось доставить сообщение Garmin. Держи оба приложения открытыми и попробуй ещё раз."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося доставити повідомлення Garmin. Тримай обидва застосунки відкритими й спробуй ще раз."
+          }
+        }
+      }
+    },
+    "Garmin message delivery timed out. Reconnect the watch to retry." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Время доставки сообщения Garmin истекло. Переподключи часы и попробуй ещё раз."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Час доставки повідомлення Garmin вичерпано. Перепідключи годинник і спробуй ще раз."
+          }
+        }
+      }
+    },
     "Garmin receipt data is kept unchanged so charts remain accurate." : {
       "localizations" : {
         "ru" : {
@@ -698,6 +858,102 @@
         }
       }
     },
+    "Garmin returned too many watches. Select at most eight." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garmin вернул слишком много часов. Выбери не больше восьми."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garmin повернув забагато годинників. Вибери не більше восьми."
+          }
+        }
+      }
+    },
+    "Garmin token rotated. Paste the new one into the same watch now." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Токен Garmin обновлён. Вставь новый токен в те же часы сейчас."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Токен Garmin оновлено. Встав новий токен у той самий годинник зараз."
+          }
+        }
+      }
+    },
+    "Garmin watch revoked. Reset GymApp on that watch before pairing it with a new device ID." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доступ часов Garmin отозван. Сбрось GymApp на этих часах, прежде чем подключать их с новым идентификатором устройства."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доступ годинника Garmin відкликано. Скинь GymApp на цьому годиннику, перш ніж підключати його з новим ідентифікатором пристрою."
+          }
+        }
+      }
+    },
+    "Garmin watch synchronized securely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Часы Garmin безопасно синхронизированы."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Годинник Garmin безпечно синхронізовано."
+          }
+        }
+      }
+    },
+    "Garmin watches connected. Open GymApp on the watch to synchronize." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Часы Garmin подключены. Открой GymApp на часах для синхронизации."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Годинники Garmin підключено. Відкрий GymApp на годиннику для синхронізації."
+          }
+        }
+      }
+    },
+    "Garmin workout import is temporarily rate limited." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Импорт тренировок Garmin временно ограничен."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Імпорт тренувань Garmin тимчасово обмежено."
+          }
+        }
+      }
+    },
     "Idle" : {
       "localizations" : {
         "ru" : {
@@ -710,6 +966,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Очікування"
+          }
+        }
+      }
+    },
+    "Invitation submitted. The recipient may be unavailable." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приглашение отправлено. Получатель может быть недоступен."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запрошення надіслано. Отримувач може бути недоступний."
+          }
+        }
+      }
+    },
+    "Left the live room. Any local workout progress remains on this iPhone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выход из совместной тренировки выполнен. Локальный прогресс остаётся на этом iPhone."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вихід зі спільного тренування виконано. Локальний прогрес залишається на цьому iPhone."
+          }
+        }
+      }
+    },
+    "Live room cancelled. Any local workout progress remains on this iPhone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Совместная тренировка отменена. Локальный прогресс остаётся на этом iPhone."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спільне тренування скасовано. Локальний прогрес залишається на цьому iPhone."
+          }
+        }
+      }
+    },
+    "Live synchronization ended. Your local workout remains saved." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Совместная синхронизация завершена. Твоя локальная тренировка сохранена."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спільну синхронізацію завершено. Твоє локальне тренування збережено."
+          }
+        }
+      }
+    },
+    "Live workout invitation declined." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приглашение на совместную тренировку отклонено."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запрошення на спільне тренування відхилено."
+          }
+        }
+      }
+    },
+    "Live workout invitation sent. The plan is frozen for this room." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приглашение на совместную тренировку отправлено. План для неё зафиксирован."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запрошення на спільне тренування надіслано. План для нього зафіксовано."
+          }
+        }
+      }
+    },
+    "Live workout restored after sign-in. Queued updates will continue syncing." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Совместная тренировка восстановлена после входа. Обновления из очереди продолжат синхронизироваться."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спільне тренування відновлено після входу. Оновлення з черги продовжать синхронізуватися."
+          }
+        }
+      }
+    },
+    "Live workout started." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Совместная тренировка началась."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спільне тренування розпочато."
+          }
+        }
+      }
+    },
+    "Live workout started. Each person records only their own sets." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Совместная тренировка началась. Каждый записывает только свои подходы."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спільне тренування розпочато. Кожен записує лише свої підходи."
+          }
+        }
+      }
+    },
+    "Live workout synchronization state could not be opened safely. It was not replayed." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно открыть состояние синхронизации совместной тренировки. Оно не воспроизведено."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно відкрити стан синхронізації спільного тренування. Його не відтворено."
+          }
+        }
+      }
+    },
+    "Newer cloud workout data was loaded." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загружены более новые облачные данные тренировок."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Завантажено новіші хмарні дані тренувань."
+          }
+        }
+      }
+    },
+    "No Garmin watches are connected to this iPhone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "К этому iPhone не подключены часы Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "До цього iPhone не підключено жодного годинника Garmin."
           }
         }
       }
@@ -762,6 +1210,22 @@
         }
       }
     },
+    "Password reset email sent. Open the newest email on this iPhone, then tap Open GymApp to choose a new password." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Письмо для сброса пароля отправлено. Открой самое новое письмо на этом iPhone и нажми «Open GymApp», чтобы задать новый пароль."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Лист для скидання пароля надіслано. Відкрий найновіший лист на цьому iPhone і торкнися «Open GymApp», щоб задати новий пароль."
+          }
+        }
+      }
+    },
     "Receive account-bound friend, workout, and live-workout updates on this device. GymApp validates the current account before showing each notification." : {
       "localizations" : {
         "ru" : {
@@ -807,6 +1271,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Записати поточний підхід"
+          }
+        }
+      }
+    },
+    "Remove an unused local profile before creating another one." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удали ненужный локальный профиль, прежде чем создать новый."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Видали непотрібний локальний профіль, перш ніж створити новий."
           }
         }
       }
@@ -887,6 +1367,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перед синхронізацією плану вибери або підключи годинник Garmin у налаштуваннях акаунта."
+          }
+        }
+      }
+    },
+    "Sign in before connecting a Garmin watch." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Войди, прежде чем подключать часы Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увійди, перш ніж підключати годинник Garmin."
           }
         }
       }
@@ -972,6 +1468,198 @@
         }
       }
     },
+    "The Garmin account binding could not be stored safely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно сохранить привязку аккаунта Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно зберегти прив’язку акаунта Garmin."
+          }
+        }
+      }
+    },
+    "The Garmin account transition could not be stored safely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно сохранить смену аккаунта Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно зберегти зміну акаунта Garmin."
+          }
+        }
+      }
+    },
+    "The Garmin import receipt could not be stored." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось сохранить квитанцию импорта Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося зберегти квитанцію імпорту Garmin."
+          }
+        }
+      }
+    },
+    "The Garmin plan acknowledgement could not be stored safely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно сохранить подтверждение плана Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно зберегти підтвердження плану Garmin."
+          }
+        }
+      }
+    },
+    "The Garmin plan could not be read or stored safely. Retry sending the plan." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно прочитать или сохранить план Garmin. Отправь план ещё раз."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно прочитати або зберегти план Garmin. Надішли план ще раз."
+          }
+        }
+      }
+    },
+    "The Garmin sync payload is outside the supported limits." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Данные синхронизации Garmin выходят за поддерживаемые пределы."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дані синхронізації Garmin виходять за підтримувані межі."
+          }
+        }
+      }
+    },
+    "The Garmin sync revision could not be stored safely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно сохранить версию синхронизации Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно зберегти версію синхронізації Garmin."
+          }
+        }
+      }
+    },
+    "The Garmin workout could not be saved." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось сохранить тренировку Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося зберегти тренування Garmin."
+          }
+        }
+      }
+    },
+    "The live room is no longer available. Your local workout remains on this iPhone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Совместная тренировка больше недоступна. Твоя локальная тренировка остаётся на этом iPhone."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спільне тренування більше недоступне. Твоє локальне тренування залишається на цьому iPhone."
+          }
+        }
+      }
+    },
+    "The previous live room is no longer active. Your local workout remains on this iPhone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Предыдущая совместная тренировка уже неактивна. Твоя локальная тренировка остаётся на этом iPhone."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попереднє спільне тренування вже неактивне. Твоє локальне тренування залишається на цьому iPhone."
+          }
+        }
+      }
+    },
+    "The selected Garmin watches could not be stored safely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось безопасно сохранить выбранные часы Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося безпечно зберегти вибрані годинники Garmin."
+          }
+        }
+      }
+    },
+    "The workout was saved, but Garmin acknowledgement is waiting for receipt recovery." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренировка сохранена, но подтверждение для Garmin ждёт восстановления квитанции."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренування збережено, але підтвердження для Garmin чекає на відновлення квитанції."
+          }
+        }
+      }
+    },
     "There is no active workout to continue." : {
       "localizations" : {
         "ru" : {
@@ -1000,6 +1688,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Це активне тренування належить іншому акаунту."
+          }
+        }
+      }
+    },
+    "This friend request is no longer available." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта заявка в друзья больше недоступна."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей запит у друзі більше недоступний."
+          }
+        }
+      }
+    },
+    "This Garmin device selection is no longer valid. Start it again in GymApp." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот выбор устройства Garmin больше не действителен. Начни его заново в GymApp."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей вибір пристрою Garmin більше не дійсний. Почни його знову в GymApp."
+          }
+        }
+      }
+    },
+    "This saved profile is no longer available." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот сохранённый профиль больше недоступен."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей збережений профіль більше недоступний."
           }
         }
       }
@@ -1036,6 +1772,38 @@
         }
       }
     },
+    "This social profile is no longer available." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот профиль больше недоступен."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей профіль більше недоступний."
+          }
+        }
+      }
+    },
+    "This workout invitation is no longer available." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это приглашение на тренировку больше недоступно."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це запрошення на тренування більше недоступне."
+          }
+        }
+      }
+    },
     "This workout is already finishing. Retry completion instead of changing it." : {
       "localizations" : {
         "ru" : {
@@ -1048,6 +1816,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Тренування вже завершується. Повтори завершення замість змін."
+          }
+        }
+      }
+    },
+    "This workout was already submitted to the selected Garmin watch." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта тренировка уже отправлена на выбранные часы Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це тренування вже надіслано на вибраний годинник Garmin."
           }
         }
       }
@@ -1096,6 +1880,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Історію тренувань змінено на кількох пристроях. Обери, яку повну версію зберегти."
+          }
+        }
+      }
+    },
+    "Workout received from Garmin." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренировка получена с Garmin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тренування отримано з Garmin."
           }
         }
       }
