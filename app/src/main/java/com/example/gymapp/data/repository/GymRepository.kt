@@ -27,6 +27,14 @@ import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
 import com.example.gymapp.data.entity.WorkoutPlanDraftEntity
 import com.example.gymapp.data.entity.WorkoutSessionSummary
+import com.example.gymapp.sync.WorkoutMergeBlock
+import com.example.gymapp.sync.WorkoutMergeCore
+import com.example.gymapp.sync.WorkoutMergeExercise
+import com.example.gymapp.sync.WorkoutMergeSession
+import com.example.gymapp.sync.WorkoutMergeSet
+import com.example.gymapp.sync.WorkoutCloudSyncState
+import com.example.gymapp.sync.toValidatedBackup
+import com.example.gymapp.sync.workoutMergeExerciseIdentity
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.util.TrainingProfile
 import java.nio.ByteBuffer
@@ -1345,6 +1353,142 @@ class GymRepository(
 
     suspend fun getCloudWorkoutProjectionState(): CloudWorkoutProjectionState =
         database.withTransaction { currentCloudWorkoutProjectionState() }
+
+    /** The projection state and the per-workout merge core of the same Room snapshot. */
+    internal suspend fun getWorkoutMergeSnapshot(): Pair<CloudWorkoutProjectionState, WorkoutMergeCore> =
+        database.withTransaction { currentCloudWorkoutProjectionState() to currentWorkoutMergeCore() }
+
+    /**
+     * Applies a per-workout cloud merge. Workouts whose merged copy equals the local one keep
+     * their rows (identifiers, durations, Garmin provenance); a changed workout is rewritten at
+     * the same start time and keeps its duration and provenance; workouts absent from the merge
+     * are removed and new ones are created. Activity-only workouts belong to their own sidecar and
+     * are never touched. The whole change rolls back unless Room then matches the merge exactly.
+     */
+    internal suspend fun applyWorkoutCloudMerge(
+        merged: WorkoutMergeCore,
+        expectedLocalState: CloudWorkoutProjectionState
+    ): Int = withContext(Dispatchers.Default) {
+        val expectedDigest = canonicalV229CloudWorkoutDigest(merged.toValidatedBackup())
+        var changed = 0
+        database.withTransaction {
+            require(currentCloudWorkoutProjectionState() == expectedLocalState) {
+                "Local workout data changed while cloud state was loading. Automatic replacement is paused."
+            }
+            val provenanceSessionIds = database.garminWorkoutReceiptDao()
+                .getProvenanceSessionIds()
+                .toSet()
+            val exerciseIndex = ExerciseIdentityIndex(exerciseDao.getExercisesSnapshot())
+            var exerciseCount = exerciseDao.getExerciseCount()
+
+            suspend fun exerciseId(name: String, catalogKey: String?): Long {
+                val resolvedKey = BuiltInExerciseCatalog.resolvedKey(catalogKey = catalogKey, rawName = name)
+                exerciseIndex.resolve(name, resolvedKey)?.let { return it }
+                require(exerciseCount < WorkoutDataLimits.MAX_EXERCISES) {
+                    "Backup exceeds the exercise limit for this account."
+                }
+                val id = exerciseDao.insert(ExerciseEntity(name = name))
+                exerciseIndex.add(id, name, resolvedKey)
+                exerciseCount += 1
+                return id
+            }
+
+            suspend fun insertMergedSession(session: WorkoutMergeSession, durationSeconds: Long?): Long {
+                val drafts = session.blocks.map { block ->
+                    WorkoutExerciseDraft(
+                        exerciseId = exerciseId(block.name, block.catalogKey),
+                        sets = block.sets.map { set -> WorkoutSetDraft(weight = set.weight, reps = set.reps) }
+                    )
+                }
+                requireValidWorkout(date = session.date, note = session.note, workoutExercises = drafts)
+                return insertValidatedWorkoutSession(
+                    date = session.date,
+                    note = session.note,
+                    workoutExercises = drafts,
+                    durationSeconds = durationSeconds
+                )
+            }
+
+            val remaining = linkedMapOf<Long, WorkoutMergeSession>()
+            merged.sessions.forEach { remaining[it.date] = it }
+            val localSessions = workoutDao.getAllSessionDetailsForBackup()
+                .map(::sortSessionDetails)
+                .filter { it.workoutExercises.isNotEmpty() }
+            for (details in localSessions) {
+                val date = details.session.date
+                val desired = remaining.remove(date)
+                if (desired == workoutMergeSession(details)) continue
+                workoutDao.deleteSessionById(details.session.id)
+                changed += 1
+                if (desired == null) {
+                    restoreActivityOnlyMirrorIfUnshadowed(date)
+                    continue
+                }
+                val replacementId = insertMergedSession(desired, details.session.durationSeconds)
+                if (details.session.id in provenanceSessionIds) {
+                    database.garminWorkoutReceiptDao().insertProvenance(
+                        GarminWorkoutProvenanceEntity(workoutSessionId = replacementId)
+                    )
+                }
+            }
+            for (desired in remaining.values) {
+                require(workoutDao.getSessionCount() < WorkoutDataLimits.MAX_SESSIONS) {
+                    "Backup exceeds the workout limit for this account."
+                }
+                insertMergedSession(desired, durationSeconds = null)
+                changed += 1
+            }
+
+            merged.exercises.forEach { exercise -> exerciseId(exercise.name, exercise.catalogKey) }
+            val mergedIdentities = merged.exercises.map(::workoutMergeExerciseIdentity).toSet()
+            val usedExerciseIds = workoutDao.getAllSessionDetailsForBackup()
+                .flatMap { details -> details.workoutExercises.map { it.exercise.id } }
+                .toSet()
+            for (exercise in exerciseDao.getExercisesSnapshot()) {
+                val identity = workoutMergeExerciseIdentity(
+                    WorkoutMergeExercise(exercise.name, BuiltInExerciseCatalog.inferKey(exercise.name))
+                )
+                if (identity in mergedIdentities || exercise.id in usedExerciseIds) continue
+                exerciseDao.delete(exercise)
+                changed += 1
+            }
+
+            require(currentCloudWorkoutProjectionState().digest == expectedDigest) {
+                "Cloud state cannot be represented without loss. Local data was preserved."
+            }
+        }
+        changed
+    }
+
+    /** Must be called from [database]'s transaction. */
+    private suspend fun currentWorkoutMergeCore(): WorkoutMergeCore = WorkoutMergeCore(
+        exercises = exerciseDao.getExercisesSnapshot().map { exercise ->
+            WorkoutMergeExercise(exercise.name, BuiltInExerciseCatalog.inferKey(exercise.name))
+        },
+        sessions = workoutDao.getAllSessionDetailsForBackup()
+            .map(::sortSessionDetails)
+            .filter { it.workoutExercises.isNotEmpty() }
+            .sortedBy { it.session.date }
+            .map(::workoutMergeSession)
+    )
+
+    private fun workoutMergeSession(details: WorkoutSessionDetails): WorkoutMergeSession =
+        WorkoutMergeSession(
+            date = details.session.date,
+            note = details.session.note?.trim()?.takeIf { it.isNotEmpty() },
+            blocks = details.workoutExercises.map { workoutExercise ->
+                WorkoutMergeBlock(
+                    name = workoutExercise.exercise.name,
+                    catalogKey = BuiltInExerciseCatalog.inferKey(workoutExercise.exercise.name),
+                    sets = workoutExercise.sets.map { set ->
+                        WorkoutMergeSet(
+                            weight = WorkoutCloudSyncState.canonicalWeight(set.weight),
+                            reps = set.reps
+                        )
+                    }
+                )
+            }
+        )
 
     suspend fun importBackupJson(
         rawJson: String,

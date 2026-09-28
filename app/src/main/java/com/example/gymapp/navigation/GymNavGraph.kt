@@ -168,6 +168,14 @@ import com.example.gymapp.sync.prepareSharedCloudState
 import com.example.gymapp.sync.syncActivityOnlyWorkoutSidecar
 import com.example.gymapp.sync.workoutDurationSyncItems
 import com.example.gymapp.sync.runCurrentCloudSyncConflictAction
+import com.example.gymapp.sync.WorkoutCloudMerge
+import com.example.gymapp.sync.WorkoutCloudSyncState
+import com.example.gymapp.sync.WorkoutCloudSyncStateStore
+import com.example.gymapp.sync.WorkoutLocalChangeTracker
+import com.example.gymapp.sync.WorkoutMergeCore
+import com.example.gymapp.sync.WorkoutMergeException
+import com.example.gymapp.sync.workoutMergeCoreFromCloudState
+import com.example.gymapp.sync.workoutMergeExerciseIdentity
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.LocalizedText
@@ -185,6 +193,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -643,6 +652,9 @@ internal fun isRetryableCloudSyncMessage(message: LocalizedText?): Boolean =
         R.string.cloud_sync_resolution_failed
     )
 
+/** Automatic reload-and-merge rounds after a stale cloud write before the user is asked. */
+private const val MAX_STALE_CLOUD_SAVE_RETRIES = 3
+
 internal fun cloudSyncRetryModeForSaveFailure(message: LocalizedText): CloudSyncRetryMode =
     if (message.resourceId == R.string.cloud_sync_conflict) {
         CloudSyncRetryMode.Pull
@@ -728,6 +740,13 @@ internal fun GymAppRoot(
     }
     val cloudSyncStatusStore = remember(applicationContext) {
         CloudSyncStatusStore(applicationContext)
+    }
+    val workoutCloudSyncStateStore = remember(applicationContext) {
+        WorkoutCloudSyncStateStore(applicationContext)
+    }
+    val workoutLocalChangeTracker = remember(uiIsolationKey) { WorkoutLocalChangeTracker() }
+    var staleCloudSaveRetries by key(uiIsolationKey) {
+        remember { mutableStateOf(0) }
     }
     var cloudSyncStatus by key(uiIsolationKey) {
         val userId = (authState.session as? AccountSession.Cloud)?.userId
@@ -1326,6 +1345,116 @@ internal fun GymAppRoot(
             "Could not persist the last successful synchronization time."
         }
         cloudSyncStatus = CloudSyncUiStatus(CloudSyncPhase.Synced, timestamp)
+        staleCloudSaveRetries = 0
+    }
+
+    /**
+     * Keeps the exact core behind the sync baseline digest so a later divergence can be merged
+     * workout by workout. Journal entries up to [forgetChangesThrough] are already in the cloud;
+     * null keeps every entry because the cloud does not hold this device's changes yet.
+     */
+    fun recordWorkoutMergeBaseline(
+        session: AccountSession.Cloud,
+        core: WorkoutMergeCore,
+        digest: String,
+        forgetChangesThrough: Long?
+    ) {
+        val journal = workoutCloudSyncStateStore.read(session.userId)
+            ?.localChangedAt
+            .orEmpty()
+            .filterValues { changedAt -> forgetChangesThrough == null || changedAt > forgetChangesThrough }
+        // Without a stored baseline the next divergence falls back to the whole-history choice.
+        runCatching { WorkoutCloudSyncState(session.userId, digest, core, journal) }
+            .getOrNull()
+            ?.let(workoutCloudSyncStateStore::write)
+    }
+
+    suspend fun recordWorkoutMergeBaselineFromState(
+        session: AccountSession.Cloud,
+        state: JSONObject,
+        digest: String,
+        forgetChangesThrough: Long?
+    ) {
+        val core = try {
+            withContext(Dispatchers.Default) { workoutMergeCoreFromCloudState(state) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+        if (core != null) {
+            recordWorkoutMergeBaseline(session, core, digest, forgetChangesThrough)
+        } else {
+            workoutCloudSyncStateStore.read(session.userId)?.let { stored ->
+                workoutCloudSyncStateStore.write(stored.copy(baselineDigest = null, baseline = null))
+            }
+        }
+    }
+
+    /** Records when each workout changed on this device, for the newer-wins rule. */
+    fun stampLocalWorkoutChanges(session: AccountSession.Cloud, current: WorkoutMergeCore) {
+        val previous = workoutLocalChangeTracker.lastSeen
+        workoutLocalChangeTracker.lastSeen = current
+        if (previous == null) return
+        val changed = WorkoutCloudMerge.changedSessionStarts(previous, current)
+        if (changed.isEmpty()) return
+        val stored = workoutCloudSyncStateStore.read(session.userId)
+            ?: WorkoutCloudSyncState(session.userId, null, null, emptyMap())
+        workoutCloudSyncStateStore.write(stored.withChanges(changed, System.currentTimeMillis()))
+    }
+
+    /**
+     * When this device and the cloud both changed since the last agreed baseline, merges them
+     * workout by workout and applies the result to Room. Returns false when no exact baseline is
+     * stored or the histories cannot be matched by start time, so the caller keeps the
+     * whole-history choice. Autosave then uploads the merged history.
+     */
+    suspend fun mergeDivergedWorkoutHistories(
+        session: AccountSession.Cloud,
+        remoteState: JSONObject,
+        remoteDigest: String,
+        lastSyncedDigest: String?
+    ): Boolean {
+        val stored = workoutCloudSyncStateStore.read(session.userId) ?: return false
+        val base = stored.baseline ?: return false
+        if (lastSyncedDigest == null || stored.baselineDigest != lastSyncedDigest) return false
+        val remoteCore = withContext(Dispatchers.Default) {
+            workoutMergeCoreFromCloudState(remoteState)
+        }
+        return workoutLocalChangeTracker.mutex.withLock {
+            val (localState, localCore) = repository.getWorkoutMergeSnapshot()
+            stampLocalWorkoutChanges(session, localCore)
+            val journal = workoutCloudSyncStateStore.read(session.userId)?.localChangedAt
+                ?: stored.localChangedAt
+            // Without a known row time the cloud copy wins ties.
+            val remoteRowUpdatedAt = authManager.loadedRemoteStateRevisionMillis(session)
+                ?: Long.MAX_VALUE
+            val result = try {
+                withContext(Dispatchers.Default) {
+                    WorkoutCloudMerge.merge(
+                        base = base,
+                        local = localCore,
+                        remote = remoteCore,
+                        localChangedAt = journal,
+                        remoteRowUpdatedAt = remoteRowUpdatedAt,
+                        exerciseIdentity = ::workoutMergeExerciseIdentity
+                    )
+                }
+            } catch (_: WorkoutMergeException) {
+                return@withLock false
+            }
+            check(isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+                "Cloud account changed while confirming the sync baseline."
+            }
+            repository.applyWorkoutCloudMerge(result.merged, localState)
+            workoutLocalChangeTracker.lastSeen = repository.getWorkoutMergeSnapshot().second
+            // The cloud still holds the remote copy until autosave uploads the merged history.
+            recordWorkoutMergeBaseline(session, remoteCore, remoteDigest, forgetChangesThrough = null)
+            check(cloudSyncBaselineStore.write(session.userId, remoteDigest)) {
+                "Could not persist the cloud sync baseline. Automatic upload is paused."
+            }
+            true
+        }
     }
 
     suspend fun syncActivityOnlyFromBaseline(
@@ -1444,13 +1573,31 @@ internal fun GymAppRoot(
                     sharedCloudExtensions = preparedSharedState.extensions
                     val remoteDigest = preparedSharedState.workoutDigest
                     val localState = repository.getCloudWorkoutProjectionState()
+                    val lastSyncedDigest = cloudSyncBaselineStore.read(session.userId)
                     when (cloudSnapshotApplyDecision(
                         localDigest = localState.digest,
                         remoteDigest = remoteDigest,
-                        lastSyncedDigest = cloudSyncBaselineStore.read(session.userId),
+                        lastSyncedDigest = lastSyncedDigest,
                         localProjectionEmpty = localState.isEmpty
                     )) {
-                        CloudSnapshotApplyDecision.Conflict -> {
+                        CloudSnapshotApplyDecision.Conflict -> if (
+                            try {
+                                mergeDivergedWorkoutHistories(
+                                    session = session,
+                                    remoteState = remoteState,
+                                    remoteDigest = remoteDigest,
+                                    lastSyncedDigest = lastSyncedDigest
+                                )
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Exception) {
+                                false
+                            }
+                        ) {
+                            // Both sides changed and were merged workout by workout; autosave
+                            // uploads the merged history under the cached revision.
+                            true
+                        } else {
                             cloudSyncConflict = CloudSyncConflictSnapshot(
                                 userId = session.userId,
                                 sessionGeneration = session.sessionGeneration,
@@ -1471,6 +1618,12 @@ internal fun GymAppRoot(
                             check(cloudSyncBaselineStore.write(session.userId, checkNotNull(remoteDigest))) {
                                 "Could not persist the cloud sync baseline. Automatic upload is paused."
                             }
+                            recordWorkoutMergeBaselineFromState(
+                                session = session,
+                                state = remoteState,
+                                digest = remoteDigest,
+                                forgetChangesThrough = System.currentTimeMillis()
+                            )
                             check(isSameCloudSessionGeneration(
                                 session,
                                 authManager.authState.value.session
@@ -1480,12 +1633,16 @@ internal fun GymAppRoot(
                         }
 
                         CloudSnapshotApplyDecision.ReplaceAuthoritatively -> {
-                            repository.replaceWithBackupJsonObject(
-                                root = remoteState,
-                                expectedLocalState = localState,
-                                activeUserId = session.userId,
-                                activeRemote = true
-                            )
+                            workoutLocalChangeTracker.mutex.withLock {
+                                repository.replaceWithBackupJsonObject(
+                                    root = remoteState,
+                                    expectedLocalState = localState,
+                                    activeUserId = session.userId,
+                                    activeRemote = true
+                                )
+                                workoutLocalChangeTracker.lastSeen =
+                                    repository.getWorkoutMergeSnapshot().second
+                            }
                             val replacedState = repository.getCloudWorkoutProjectionState()
                             check(replacedState.digest == remoteDigest) {
                                 "Cloud state did not round-trip safely. Automatic upload is paused."
@@ -1497,6 +1654,12 @@ internal fun GymAppRoot(
                             check(cloudSyncBaselineStore.write(session.userId, replacedState.digest)) {
                                 "Could not persist the cloud sync baseline. Automatic upload is paused."
                             }
+                            recordWorkoutMergeBaselineFromState(
+                                session = session,
+                                state = remoteState,
+                                digest = replacedState.digest,
+                                forgetChangesThrough = System.currentTimeMillis()
+                            )
                             check(isSameCloudSessionGeneration(
                                 session,
                                 authManager.authState.value.session
@@ -1623,6 +1786,7 @@ internal fun GymAppRoot(
                         email = session.email,
                         remote = true
                     )
+                    val snapshotTakenAt = System.currentTimeMillis()
                     val canonicalState = repository.buildCloudBackupJson(owner = owner)
                     val state = attachSharedCloudExtensions(
                         canonicalCore = canonicalState,
@@ -1647,6 +1811,12 @@ internal fun GymAppRoot(
                     check(cloudSyncBaselineStore.write(session.userId, stateDigest)) {
                         "Could not persist the cloud sync baseline. Automatic upload is paused."
                     }
+                    recordWorkoutMergeBaselineFromState(
+                        session = session,
+                        state = state,
+                        digest = stateDigest,
+                        forgetChangesThrough = snapshotTakenAt
+                    )
                     activityOnlyCloudBaseline?.let { baseline ->
                         activityOnlyCloudBaseline = syncActivityOnlyFromBaseline(
                             session = session,
@@ -1667,6 +1837,15 @@ internal fun GymAppRoot(
                         )
                     ) {
                         val message = authErrorText(throwable, R.string.cloud_sync_save_failed)
+                        if (message.resourceId == R.string.cloud_sync_conflict &&
+                            staleCloudSaveRetries < MAX_STALE_CLOUD_SAVE_RETRIES
+                        ) {
+                            // Another device wrote first: reload the row, merge it workout by
+                            // workout against the stored baseline, and upload again.
+                            staleCloudSaveRetries += 1
+                            cloudSyncRetryVersion += 1
+                            return@onFailure
+                        }
                         cloudSyncRetryMode = cloudSyncRetryModeForSaveFailure(message)
                         updateCloudSyncPhase(
                             session,
@@ -1678,6 +1857,30 @@ internal fun GymAppRoot(
                         )
                         authManager.setMessage(message)
                     }
+                }
+            }
+    }
+
+    LaunchedEffect(cloudSession?.sessionGeneration) {
+        val session = cloudSession ?: return@LaunchedEffect
+        workoutLocalChangeTracker.lastSeen = null
+        combine(
+            repository.observeSessions(),
+            repository.observeExercises()
+        ) { sessions, exercises -> sessions.size + exercises.size }
+            .debounce(1_000)
+            .collect {
+                try {
+                    workoutLocalChangeTracker.mutex.withLock {
+                        if (!isSameCloudSessionGeneration(session, authManager.authState.value.session)) {
+                            return@withLock
+                        }
+                        stampLocalWorkoutChanges(session, repository.getWorkoutMergeSnapshot().second)
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    // A missed stamp only makes the cloud copy win a divergent edit.
                 }
             }
     }
@@ -1731,12 +1934,16 @@ internal fun GymAppRoot(
                             "Cloud state did not round-trip safely. Automatic upload is paused."
                         }
                         val acceptedDigest = acceptedPrepared.workoutDigest
-                        repository.replaceWithBackupJsonObject(
-                            root = acceptedRemote,
-                            expectedLocalState = localState,
-                            activeUserId = session.userId,
-                            activeRemote = true
-                        )
+                        workoutLocalChangeTracker.mutex.withLock {
+                            repository.replaceWithBackupJsonObject(
+                                root = acceptedRemote,
+                                expectedLocalState = localState,
+                                activeUserId = session.userId,
+                                activeRemote = true
+                            )
+                            workoutLocalChangeTracker.lastSeen =
+                                repository.getWorkoutMergeSnapshot().second
+                        }
                         val replacedState = repository.getCloudWorkoutProjectionState()
                         check(replacedState.digest == acceptedDigest) {
                             "Cloud state did not round-trip safely. Automatic upload is paused."
@@ -1748,6 +1955,12 @@ internal fun GymAppRoot(
                         check(cloudSyncBaselineStore.write(session.userId, acceptedDigest)) {
                             "Could not persist the cloud sync baseline. Automatic upload is paused."
                         }
+                        recordWorkoutMergeBaselineFromState(
+                            session = session,
+                            state = acceptedRemote,
+                            digest = acceptedDigest,
+                            forgetChangesThrough = System.currentTimeMillis()
+                        )
                     } else {
                         val owner = BackupOwner(
                             accountId = session.userId,
@@ -1786,6 +1999,12 @@ internal fun GymAppRoot(
                         check(cloudSyncBaselineStore.write(session.userId, localDigest)) {
                             "Could not persist the cloud sync baseline. Automatic upload is paused."
                         }
+                        recordWorkoutMergeBaselineFromState(
+                            session = session,
+                            state = localBackup,
+                            digest = localDigest,
+                            forgetChangesThrough = System.currentTimeMillis()
+                        )
                     }
                     // Apply additive public-catalog migrations only after the selected version is
                     // safely accepted; autosave will then publish the additive change if needed.
@@ -3667,9 +3886,13 @@ internal fun GymAppRoot(
                                                             capturedRepository.clearAllAccountData()
                                                         },
                                                         clearBaseline = {
-                                                            cloudSyncBaselineStore.clear(
+                                                            val baselineCleared = cloudSyncBaselineStore.clear(
                                                                 deletedSession.userId
                                                             )
+                                                            val mergeStateCleared = workoutCloudSyncStateStore.clear(
+                                                                deletedSession.userId
+                                                            )
+                                                            baselineCleared && mergeStateCleared
                                                         },
                                                         clearTrainingProfile = {
                                                             val profileCleared = applicationContext.gymApplication

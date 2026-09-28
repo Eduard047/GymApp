@@ -18,6 +18,7 @@ import com.example.gymapp.garmin.GarminSyncManager
 import com.example.gymapp.push.AndroidPushManager
 import com.example.gymapp.push.PushNavigationInbox
 import com.example.gymapp.sync.CloudSyncBaselineStore
+import com.example.gymapp.sync.WorkoutCloudSyncStateStore
 import com.example.gymapp.sync.CloudSyncStatusStore
 import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.ui.screens.clearPrivateBackupShareArtifacts
@@ -80,6 +81,7 @@ class GymApplication : Application() {
         if (pendingAccountDeletions.isNotEmpty()) {
             applicationScope.launch(Dispatchers.IO) {
                 val baselineStore = CloudSyncBaselineStore(this@GymApplication)
+                val workoutSyncStateStore = WorkoutCloudSyncStateStore(this@GymApplication)
                 val syncStatusStore = CloudSyncStatusStore(this@GymApplication)
                 pendingAccountDeletions.forEach { record ->
                     recoverPendingCloudAccountDeletion(
@@ -90,7 +92,11 @@ class GymApplication : Application() {
                                 physicalDatabaseName = record.databaseName
                             ).clearAllAccountData()
                         },
-                        clearBaseline = { baselineStore.clear(record.userId) },
+                        clearBaseline = {
+                            val baselineCleared = baselineStore.clear(record.userId)
+                            val mergeStateCleared = workoutSyncStateStore.clear(record.userId)
+                            baselineCleared && mergeStateCleared
+                        },
                         clearTrainingProfile = {
                             val profileCleared = profileManager.clearAccountByDatabaseName(
                                 record.databaseName

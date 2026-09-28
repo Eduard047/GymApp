@@ -17,6 +17,7 @@ import com.example.gymapp.sync.ActivityOnlyWorkoutSyncResponse
 import com.example.gymapp.sync.activityOnlyWorkoutSyncRequestJson
 import com.example.gymapp.sync.parseActivityOnlyWorkoutReadResponse
 import com.example.gymapp.sync.parseActivityOnlyWorkoutSyncResponse
+import com.example.gymapp.sync.remoteStateRevisionMillis
 import com.example.gymapp.push.PushRegistration
 import com.example.gymapp.push.PushRevocation
 import com.example.gymapp.push.PushRpcSerialGate
@@ -2532,6 +2533,17 @@ class CloudAuthManager internal constructor(
     ): AccountSession.Cloud = synchronized(authStateLock) {
         activeCloudSessionFor(_authState.value.session, expected)
             ?: error(INACTIVE_CLOUD_SESSION_MESSAGE)
+    }
+
+    /**
+     * `updated_at` of the workout row last read or written for this session, in epoch
+     * milliseconds. The per-workout merge uses it as the cloud side's change time.
+     */
+    internal fun loadedRemoteStateRevisionMillis(session: AccountSession.Cloud): Long? {
+        val revision = synchronized(authStateLock) {
+            remoteStateRevisions[remoteRevisionKey(session)]
+        } as? RemoteStateRevision.Present ?: return null
+        return remoteStateRevisionMillis(revision.updatedAt)
     }
 
     private fun remoteRevisionKey(session: AccountSession.Cloud): RemoteRevisionKey {
