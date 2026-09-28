@@ -4848,6 +4848,151 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(recommendation.sets.map(\.reps), [6, 6, 6, 6])
     }
 
+    func testBaselinePaddingRepeatsTheLastWeightedSet() {
+        let exerciseID = UUID()
+        let latest = coachSession(
+            exerciseID: exerciseID,
+            exerciseName: "Bench Press",
+            date: Date(timeIntervalSince1970: 1_780_000_000),
+            weights: [5, 5],
+            reps: [10, 10]
+        )
+
+        let resized = RecommendationEngine.resizedBaselineSets(
+            latest,
+            targetCount: 3,
+            fillsZeroWeights: true
+        )
+
+        XCTAssertEqual(resized.map(\.weight), [5, 5, 5])
+    }
+
+    func testZeroKilogramSetOfAWeightedExerciseTakesThePositiveSessionWeight() {
+        let exerciseID = UUID()
+        let latest = coachSession(
+            exerciseID: exerciseID,
+            exerciseName: "Bench Press",
+            date: Date(timeIntervalSince1970: 1_780_000_000),
+            weights: [0, 5, 0],
+            reps: [12, 10, 10]
+        )
+
+        let resized = RecommendationEngine.resizedBaselineSets(
+            latest,
+            targetCount: 4,
+            fillsZeroWeights: true
+        )
+
+        XCTAssertEqual(resized.map(\.weight), [5, 5, 5, 5])
+        XCTAssertEqual(resized.map(\.reps), [12, 10, 10, 10])
+    }
+
+    func testZeroKilogramSessionFallsBackToTheNewestOlderPositiveWeight() {
+        let exerciseID = UUID()
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let latest = coachSession(
+            exerciseID: exerciseID,
+            exerciseName: "Bench Press",
+            date: now,
+            weights: [0, 0],
+            reps: [10, 10]
+        )
+        let newerOlder = coachSession(
+            exerciseID: exerciseID,
+            exerciseName: "Bench Press",
+            date: now.addingTimeInterval(-2 * 86_400),
+            weights: [55, 60],
+            reps: [8, 8]
+        )
+        let oldest = coachSession(
+            exerciseID: exerciseID,
+            exerciseName: "Bench Press",
+            date: now.addingTimeInterval(-5 * 86_400),
+            weights: [40, 40],
+            reps: [8, 8]
+        )
+
+        let resized = RecommendationEngine.resizedBaselineSets(
+            latest,
+            targetCount: 3,
+            olderSessions: [newerOlder, oldest],
+            fillsZeroWeights: true
+        )
+
+        XCTAssertEqual(resized.map(\.weight), [60, 60, 60])
+    }
+
+    func testZeroKilogramSetsStayZeroWithoutAnyPositiveWeightOrForBodyweight() {
+        let exerciseID = UUID()
+        let latest = coachSession(
+            exerciseID: exerciseID,
+            exerciseName: "Push Up",
+            date: Date(timeIntervalSince1970: 1_780_000_000),
+            weights: [0, 0],
+            reps: [15, 15]
+        )
+
+        XCTAssertEqual(
+            RecommendationEngine.resizedBaselineSets(latest, targetCount: 3, fillsZeroWeights: true).map(\.weight),
+            [0, 0, 0]
+        )
+        XCTAssertEqual(
+            RecommendationEngine.resizedBaselineSets(latest, targetCount: 3).map(\.weight),
+            [0, 0, 0]
+        )
+        XCTAssertEqual(RecommendationEngine.resizedBaselineSets([], targetCount: 3, fillsZeroWeights: true), [])
+    }
+
+    func testWeightedPlanNeverTargetsZeroKilogramsAfterAZeroSet() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        let exercise = Exercise(name: "Bench Press")
+        let profile = TrainingProfile(
+            split: .upperLower,
+            workoutsPerWeek: 4,
+            goal: .aestheticFatLoss,
+            calorieMode: .deficit
+        )
+
+        let recommendation = RecommendationEngine.buildForExercise(
+            exerciseID: exercise.id,
+            history: coachSession(
+                exerciseID: exercise.id,
+                exerciseName: exercise.name,
+                date: now.addingTimeInterval(-86_400),
+                weights: [40, 0],
+                reps: [8, 8]
+            ),
+            trainingProfile: profile,
+            now: now,
+            calendar: utcCalendar()
+        )
+
+        XCTAssertFalse(recommendation.sets.isEmpty)
+        XCTAssertTrue(recommendation.sets.allSatisfy { ($0.weight ?? 0) > 0 }, "\(recommendation.sets)")
+    }
+
+    func testBodyweightAndAssistedPlansKeepZeroKilogramSets() {
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+        for name in ["Push Up", "Assisted Pull Up"] {
+            let exercise = Exercise(name: name)
+            let recommendation = RecommendationEngine.buildForExercise(
+                exerciseID: exercise.id,
+                history: coachSession(
+                    exerciseID: exercise.id,
+                    exerciseName: exercise.name,
+                    date: now.addingTimeInterval(-86_400),
+                    weights: [0, 0],
+                    reps: [8, 8]
+                ),
+                now: now,
+                calendar: utcCalendar()
+            )
+
+            XCTAssertFalse(recommendation.sets.isEmpty, name)
+            XCTAssertTrue(recommendation.sets.allSatisfy { ($0.weight ?? 0) == 0 }, name)
+        }
+    }
+
     func testCutDeficitCanEarnPerSetDoubleProgressionAtReducedVolume() {
         let now = Date(timeIntervalSince1970: 1_780_000_000)
         let exercise = Exercise(name: "Bench Press")

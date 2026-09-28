@@ -706,7 +706,12 @@ public enum RecommendationEngine {
             isCompound(programmingAnalysis) && !safetyOverridesIntensity
         let effectiveTargetSetCount = safetyOverridesIntensity ? 3 : targetSetCount
 
-        let baselineSets = resizedBaselineSets(latest.sets, targetCount: effectiveTargetSetCount)
+        let baselineSets = resizedBaselineSets(
+            latest.sets,
+            targetCount: effectiveTargetSetCount,
+            olderSessions: Array(sortedSnapshots.dropFirst()).map(\.sets),
+            fillsZeroWeights: loadMode == .standard && loadDirection == .higherIsHarder
+        )
         let plateauUsesLowerRange = latest.averageReps >= Double(repRange.lowerBound + repRange.upperBound) / 2
         let sets = baselineSets.enumerated().map { index, baseline -> RecommendedWorkoutSet in
             let target: (weight: Double?, reps: Int)
@@ -1715,15 +1720,53 @@ public enum RecommendationEngine {
         return weightDidNotDecline && latestAverageReps >= previousAverageReps
     }
 
-    private static func resizedBaselineSets(
+    /// Trims or pads the latest session to `targetCount` sets. For exercises loaded
+    /// with external weight, a 0 kg set (a warm-up, a skipped entry) must not become
+    /// a 0 kg target: it takes the last positive weight earlier in the same session,
+    /// else the first one later in it, else the newest positive weight from older
+    /// sessions. Bodyweight and assisted exercises keep their 0 kg sets, and a
+    /// history with no positive weight at all is left unchanged.
+    static func resizedBaselineSets(
         _ sets: [ExerciseHistoryEntry],
-        targetCount: Int
+        targetCount: Int,
+        olderSessions: [[ExerciseHistoryEntry]] = [],
+        fillsZeroWeights: Bool = false
     ) -> [ExerciseHistoryEntry] {
-        guard let finalSet = sets.last else { return [] }
-        if targetCount <= sets.count {
-            return Array(sets.prefix(targetCount))
+        let baseline = fillsZeroWeights
+            ? filledZeroWeights(sets, olderSessions: olderSessions)
+            : sets
+        guard let finalSet = baseline.last else { return [] }
+        if targetCount <= baseline.count {
+            return Array(baseline.prefix(targetCount))
         }
-        return sets + Array(repeating: finalSet, count: targetCount - sets.count)
+        return baseline + Array(repeating: finalSet, count: targetCount - baseline.count)
+    }
+
+    private static func filledZeroWeights(
+        _ sets: [ExerciseHistoryEntry],
+        olderSessions: [[ExerciseHistoryEntry]]
+    ) -> [ExerciseHistoryEntry] {
+        let olderWeight = olderSessions.lazy
+            .compactMap { session in session.last(where: { $0.weight > 0 })?.weight }
+            .first
+        return sets.enumerated().map { index, entry in
+            guard entry.weight <= 0 else { return entry }
+            let replacement = sets[..<index].last(where: { $0.weight > 0 })?.weight
+                ?? sets[(index + 1)...].first(where: { $0.weight > 0 })?.weight
+                ?? olderWeight
+            guard let replacement else { return entry }
+            return ExerciseHistoryEntry(
+                setID: entry.setID,
+                workoutID: entry.workoutID,
+                sessionDate: entry.sessionDate,
+                exerciseID: entry.exerciseID,
+                exerciseName: entry.exerciseName,
+                exerciseCatalogKey: entry.exerciseCatalogKey,
+                weight: replacement,
+                reps: entry.reps,
+                setOrderIndex: entry.setOrderIndex
+            )
+        }
     }
 
     private static func isComparableRegression(
