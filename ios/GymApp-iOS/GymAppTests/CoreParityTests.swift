@@ -2204,7 +2204,7 @@ final class CoreParityTests: XCTestCase {
             ("adductors", "Приводящие мышцы"),
             ("calves", "Икры")
         ]
-        XCTAssertEqual(MuscleMappingEngine.muscleDefinitions.map(\.id), expected.map(\.0))
+        XCTAssertEqual(MuscleMappingEngine.muscleDefinitions.map(\.id), expected.map { $0.0 })
         for (definition, (id, russian)) in zip(MuscleMappingEngine.muscleDefinitions, expected) {
             XCTAssertEqual(definition.titleRu, russian, id)
         }
