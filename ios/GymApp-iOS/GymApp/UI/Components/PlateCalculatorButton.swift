@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Small button next to a barbell weight field that shows the plates to load
-/// on each side of the bar for the current weight.
+/// Compact "Блины" capsule in the current set's header that shows the plates
+/// to load on each side of the bar for the current weight.
 struct PlateCalculatorButton: View {
     let weight: Double
     @State private var showsPlates = false
@@ -10,11 +10,15 @@ struct PlateCalculatorButton: View {
         Button {
             showsPlates = true
         } label: {
-            Image(systemName: "circle.grid.cross")
-                .font(.subheadline.weight(.semibold))
+            Text(gymText("Plates", "Диски", "Блины", languageCode: gymCurrentLanguageCode()))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(GymTheme.primary)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(GymTheme.primary.opacity(0.12)))
+                .fixedSize()
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
