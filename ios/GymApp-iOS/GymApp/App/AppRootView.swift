@@ -1832,7 +1832,7 @@ private struct SharedWorkoutPreviewView: View {
                             Spacer(minLength: 8)
                             Text(
                                 gymText(
-                                    "\(exercise.sets.count) sets",
+                                    "\(exercise.sets.count) \(exercise.sets.count == 1 ? "set" : "sets")",
                                     "\(exercise.sets.count) підх.",
                                     "\(exercise.sets.count) подх.",
                                     languageCode: languageCode

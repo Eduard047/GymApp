@@ -1120,7 +1120,7 @@ struct WorkoutRestTimerControls: View {
                         .foregroundStyle(GymTheme.primary)
                         .accessibilityLabel(
                             gymText(
-                                "\(remaining) seconds remaining",
+                                "\(remaining) \(remaining == 1 ? "second" : "seconds") remaining",
                                 "Залишилося \(remaining) с",
                                 "Осталось \(remaining) с",
                                 languageCode: gymCurrentLanguageCode()

@@ -1839,9 +1839,9 @@ public struct WorkoutsView: View {
                 Spacer(minLength: 8)
                 GymInfoPill(
                     gymText(
-                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) days",
-                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) днів",
-                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) дней",
+                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) \(targetTrainingDays == 1 ? "day" : "days")",
+                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) \(gymPlural(targetTrainingDays, one: "день", few: "дні", many: "днів", languageCode: "uk"))",
+                        "\(summary.completedTrainingDays.count) / \(targetTrainingDays) \(gymPlural(targetTrainingDays, one: "день", few: "дня", many: "дней", languageCode: "ru"))",
                         languageCode: languageCode
                     ),
                     systemImage: "figure.strengthtraining.traditional"
@@ -2182,10 +2182,11 @@ public struct WorkoutsView: View {
                     "Серия недель",
                     languageCode: languageCode
                 ),
-                accessibilityValue: gymText(
-                    "\(metrics.weeklyStreakWeeks) weeks",
-                    "\(metrics.weeklyStreakWeeks) тижнів",
-                    "\(metrics.weeklyStreakWeeks) недель",
+                accessibilityValue: "\(metrics.weeklyStreakWeeks) " + gymPlural(
+                    metrics.weeklyStreakWeeks,
+                    en: ("week", "weeks"),
+                    uk: ("тиждень", "тижні", "тижнів"),
+                    ru: ("неделя", "недели", "недель"),
                     languageCode: languageCode
                 )
             )

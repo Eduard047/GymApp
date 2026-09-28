@@ -2264,6 +2264,21 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(sets(21, "uk"), "21 підхід")
         XCTAssertEqual(sets(1, "en"), "1 set")
         XCTAssertEqual(sets(3, "en"), "3 sets")
+
+        func weeks(_ count: Int, _ languageCode: String) -> String {
+            gymPlural(
+                count,
+                en: ("week", "weeks"),
+                uk: ("тиждень", "тижні", "тижнів"),
+                ru: ("неделя", "недели", "недель"),
+                languageCode: languageCode
+            )
+        }
+        XCTAssertEqual(weeks(1, "en"), "week")
+        XCTAssertEqual(weeks(4, "en"), "weeks")
+        XCTAssertEqual(weeks(3, "uk"), "тижні")
+        XCTAssertEqual(weeks(21, "ru"), "неделя")
+        XCTAssertEqual(weeks(12, "ru"), "недель")
     }
 
     func testFinalCatalogQACopyIsExactInRussianAndUkrainian() {
@@ -16350,6 +16365,14 @@ final class CoreParityTests: XCTestCase {
                 languageCode: "ru"
             ),
             "Исходный результат Garmin: выполнено 0 из 3 запланированных подходов."
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.originalPartial(completed: 0, planned: 1, languageCode: "ru"),
+            "Исходный результат Garmin: выполнено 0 из 1 запланированного подхода."
+        )
+        XCTAssertEqual(
+            GarminWorkoutDetailCopy.originalPartial(completed: 0, planned: 1, languageCode: "en"),
+            "Original Garmin result: completed 0 of 1 planned set."
         )
         XCTAssertEqual(
             GarminWorkoutDetailCopy.intervalLabel(

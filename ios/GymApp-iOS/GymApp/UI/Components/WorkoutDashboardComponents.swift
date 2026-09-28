@@ -584,17 +584,29 @@ struct WorkoutProgressHero: View {
             return "Log a workout to start your momentum."
         }
         if weeklyStreakWeeks > 0 {
+            let targetWorkouts = gymPlural(
+                weeklyTarget,
+                en: ("workout", "workouts"),
+                uk: ("тренування", "тренування", "тренувань"),
+                ru: ("тренировку", "тренировки", "тренировок")
+            )
             return gymText(
                 "\(weeklyStreakWeeks) successful week\(weeklyStreakWeeks == 1 ? "" : "s") in a row.",
-                "\(weeklyStreakWeeks) тиж. поспіль із ціллю \(weeklyTarget) тренувань.",
-                "\(weeklyStreakWeeks) нед. подряд с целью \(weeklyTarget) тренировок.",
+                "\(weeklyStreakWeeks) тиж. поспіль із ціллю в \(weeklyTarget) \(targetWorkouts).",
+                "\(weeklyStreakWeeks) нед. подряд с целью в \(weeklyTarget) \(targetWorkouts).",
                 languageCode: gymCurrentLanguageCode()
             )
         }
+        let trainingDays = gymPlural(
+            weeklyTarget,
+            en: ("training day", "training days"),
+            uk: ("тренувальний день", "тренувальні дні", "тренувальних днів"),
+            ru: ("тренировочный день", "тренировочных дня", "тренировочных дней")
+        )
         return gymText(
-            "Reach \(weeklyTarget) training days to start your weekly rhythm.",
-            "Досягни \(weeklyTarget) тренувальних днів, щоб почати тижневий ритм.",
-            "Достигни \(weeklyTarget) тренировочных дней, чтобы начать недельный ритм.",
+            "Reach \(weeklyTarget) \(trainingDays) to start your weekly rhythm.",
+            "Набери \(weeklyTarget) \(trainingDays), щоб почати тижневий ритм.",
+            "Набери \(weeklyTarget) \(trainingDays), чтобы начать недельный ритм.",
             languageCode: gymCurrentLanguageCode()
         )
     }

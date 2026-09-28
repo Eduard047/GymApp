@@ -639,7 +639,7 @@ struct ExerciseProgressView: View {
 
                 Text(
                     t(
-                        "\(group.totalReps) reps • \(formatNumber(group.totalVolume)) volume",
+                        "\(group.totalReps) \(group.totalReps == 1 ? "rep" : "reps") • \(formatNumber(group.totalVolume)) volume",
                         "\(group.totalReps) повт. • обсяг \(formatNumber(group.totalVolume))",
                         "\(group.totalReps) повт. • объём \(formatNumber(group.totalVolume))"
                     )
@@ -666,12 +666,12 @@ struct ExerciseProgressView: View {
                     .font(.subheadline.weight(.semibold))
                 Spacer(minLength: 4)
                 Text(formatWeight(entry.weight))
-                Text(t("\(entry.reps) reps", "\(entry.reps) повт.", "\(entry.reps) повт."))
+                Text(t("\(entry.reps) \(entry.reps == 1 ? "rep" : "reps")", "\(entry.reps) повт.", "\(entry.reps) повт."))
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text(t("Set \(index + 1)", "Підхід \(index + 1)", "Подход \(index + 1)"))
                     .font(.subheadline.weight(.semibold))
-                Text("\(formatWeight(entry.weight)) • \(t("\(entry.reps) reps", "\(entry.reps) повт.", "\(entry.reps) повт."))")
+                Text("\(formatWeight(entry.weight)) • \(t("\(entry.reps) \(entry.reps == 1 ? "rep" : "reps")", "\(entry.reps) повт.", "\(entry.reps) повт."))")
                     .font(.subheadline)
             }
         }
@@ -1004,7 +1004,7 @@ private struct ProgressExerciseSelectorSheet: View {
                                 .multilineTextAlignment(.leading)
                         } else {
                             Text(gymText(
-                                "\(sessionCounts[exercise.id, default: 0]) sessions",
+                                "\(sessionCounts[exercise.id, default: 0]) \(sessionCounts[exercise.id, default: 0] == 1 ? "session" : "sessions")",
                                 "Сесій: \(sessionCounts[exercise.id, default: 0])",
                                 "Сессий: \(sessionCounts[exercise.id, default: 0])",
                                 languageCode: languageCode
@@ -1032,7 +1032,7 @@ private struct ProgressExerciseSelectorSheet: View {
             .buttonStyle(.plain)
             .accessibilityLabel(gymExerciseName(exercise))
             .accessibilityValue(gymText(
-                "\(sessionCounts[exercise.id, default: 0]) sessions",
+                "\(sessionCounts[exercise.id, default: 0]) \(sessionCounts[exercise.id, default: 0] == 1 ? "session" : "sessions")",
                 "Сесій: \(sessionCounts[exercise.id, default: 0])",
                 "Сессий: \(sessionCounts[exercise.id, default: 0])",
                 languageCode: languageCode
@@ -1222,7 +1222,7 @@ private struct ExerciseProgressChartsCard: View {
                 .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))
                 .accessibilityValue(
                     t(
-                        "\(formatNumber(point.totalVolume)) volume, \(point.totalReps) reps",
+                        "\(formatNumber(point.totalVolume)) volume, \(point.totalReps) \(point.totalReps == 1 ? "rep" : "reps")",
                         "обсяг \(formatNumber(point.totalVolume)), \(point.totalReps) повт.",
                         "объём \(formatNumber(point.totalVolume)), \(point.totalReps) повт."
                     )

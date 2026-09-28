@@ -20,6 +20,12 @@ struct WeeklyReviewCard: View {
         let review = WeeklyReview.build(store.allExerciseHistory(), offset: offset)
         let trainingProfile = TrainingProfileStore().load(accountStorageKey: store.accountStorageKey)
         let target = trainingProfile.workoutsPerWeek
+        let targetNoun = gymPlural(
+            target,
+            en: ("workout", "workouts"),
+            uk: ("тренування", "тренувань", "тренувань"),
+            ru: ("тренировки", "тренировок", "тренировок")
+        )
         GymPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Text(t("Weekly review", "Підсумок тижня", "Итог недели")).font(.title3.bold())
@@ -34,9 +40,9 @@ struct WeeklyReviewCard: View {
                 }
                 if review.partial { Text(t("Week in progress", "Тиждень триває", "Неделя ещё идёт")).font(.caption).foregroundStyle(GymTheme.textSecondary) }
                 Text(t(
-                    "\(review.trainingDays) of \(target) workouts",
-                    "\(review.trainingDays) з \(target) тренувань",
-                    "\(review.trainingDays) из \(target) тренировок"
+                    "\(review.trainingDays) of \(target) \(targetNoun)",
+                    "\(review.trainingDays) з \(target) \(targetNoun)",
+                    "\(review.trainingDays) из \(target) \(targetNoun)"
                 )).font(.headline)
                 Button {
                     showsWeeklyTargetEditor = true
@@ -51,7 +57,12 @@ struct WeeklyReviewCard: View {
                     Button { evidence = insight } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(gymExerciseName(insight.current.exerciseName)).font(.headline)
-                            Text("\(insight.current.weight.formatted()) \(t("kg", "кг", "кг")) · \(insight.previous.reps) → \(insight.current.reps) " + t("reps", "повторів", "повторений"))
+                            Text("\(gymWeightText(insight.current.weight)) · \(insight.previous.reps) → \(insight.current.reps) " + gymPlural(
+                                insight.current.reps,
+                                en: ("rep", "reps"),
+                                uk: ("повтор", "повтори", "повторів"),
+                                ru: ("повторение", "повторения", "повторений")
+                            ))
                         }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     }.buttonStyle(GymSecondaryButtonStyle())
                 }

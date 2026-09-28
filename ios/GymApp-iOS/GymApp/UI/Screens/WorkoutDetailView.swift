@@ -159,11 +159,18 @@ enum GarminWorkoutDetailCopy {
         planned: Int,
         languageCode: String
     ) -> String {
-        localized(
+        let plannedSets = gymPlural(
+            planned,
+            en: ("planned set", "planned sets"),
+            uk: ("запланованого підходу", "запланованих підходів", "запланованих підходів"),
+            ru: ("запланированного подхода", "запланированных подходов", "запланированных подходов"),
+            languageCode: languageCode
+        )
+        return localized(
             languageCode,
-            en: "Original Garmin result: completed \(completed) of \(planned) planned sets.",
-            uk: "Початковий результат Garmin: виконано \(completed) із \(planned) запланованих підходів.",
-            ru: "Исходный результат Garmin: выполнено \(completed) из \(planned) запланированных подходов."
+            en: "Original Garmin result: completed \(completed) of \(planned) \(plannedSets).",
+            uk: "Початковий результат Garmin: виконано \(completed) із \(planned) \(plannedSets).",
+            ru: "Исходный результат Garmin: выполнено \(completed) из \(planned) \(plannedSets)."
         )
     }
 
@@ -2771,7 +2778,7 @@ private struct SavedWorkoutShareChooser: View {
 /// so it does not always read "kg" regardless of the in-app language.
 func gymWorkoutSetValueLabelText(weight: Double, reps: Int, languageCode: String) -> String {
     let repsText = gymText(
-        "\(reps) reps",
+        "\(reps) \(reps == 1 ? "rep" : "reps")",
         "\(reps) повт.",
         "\(reps) повт.",
         languageCode: languageCode
@@ -2933,7 +2940,7 @@ private struct StoredWorkoutSetEditorRow: View {
         Stepper(value: $reps, in: 1 ... 10_000) {
             Text(
                 gymText(
-                    "\(reps) reps",
+                    "\(reps) \(reps == 1 ? "rep" : "reps")",
                     "\(reps) повт.",
                     "\(reps) повт.",
                     languageCode: gymCurrentLanguageCode()

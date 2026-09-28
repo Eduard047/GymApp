@@ -1448,9 +1448,9 @@ struct ActiveWorkoutView: View {
                     languageCode: gymCurrentLanguageCode()
                 )
                 : gymText(
-                    "Repeat previous, \(last.reps) bodyweight reps",
-                    "Повторити попередні, \(last.reps) повторень з власною вагою",
-                    "Повторить предыдущие, \(last.reps) повторений с собственным весом",
+                    "Repeat previous, \(last.reps) bodyweight \(last.reps == 1 ? "rep" : "reps")",
+                    "Повторити попередні, \(last.reps) \(gymPlural(last.reps, one: "повторення", few: "повторення", many: "повторень", languageCode: "uk")) з власною вагою",
+                    "Повторить предыдущие, \(last.reps) \(gymPlural(last.reps, one: "повторение", few: "повторения", many: "повторений", languageCode: "ru")) с собственным весом",
                     languageCode: gymCurrentLanguageCode()
                 )
         )

@@ -224,9 +224,9 @@ private struct ProgramScheduleEditor: View {
             Form {
                 Section {
                     Text(t(
-                        "Choose exactly \(editableProfile.workoutsPerWeek) training days.",
-                        "Обери рівно \(editableProfile.workoutsPerWeek) дні тренувань.",
-                        "Выберите ровно \(editableProfile.workoutsPerWeek) дня тренировок."
+                        "Choose exactly \(editableProfile.workoutsPerWeek) training \(editableProfile.workoutsPerWeek == 1 ? "day" : "days").",
+                        "Обери рівно \(editableProfile.workoutsPerWeek) \(gymPlural(editableProfile.workoutsPerWeek, one: "день", few: "дні", many: "днів", languageCode: "uk")) тренувань.",
+                        "Выбери ровно \(editableProfile.workoutsPerWeek) \(gymPlural(editableProfile.workoutsPerWeek, one: "день", few: "дня", many: "дней", languageCode: "ru")) тренировок."
                     ))
                     .foregroundStyle(GymTheme.textSecondary)
                     Button {

@@ -515,6 +515,26 @@ func gymPlural(
     }
 }
 
+/// Picks the noun form for `count` from per-language forms, e.g.
+/// `gymPlural(n, en: ("set", "sets"), uk: ("підхід", "підходи", "підходів"),
+/// ru: ("подход", "подхода", "подходов"))`.
+func gymPlural(
+    _ count: Int,
+    en: (one: String, many: String),
+    uk: (one: String, few: String, many: String),
+    ru: (one: String, few: String, many: String),
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    switch languageCode {
+    case AppLanguage.ukrainian.rawValue:
+        gymPlural(count, one: uk.one, few: uk.few, many: uk.many, languageCode: languageCode)
+    case AppLanguage.russian.rawValue:
+        gymPlural(count, one: ru.one, few: ru.few, many: ru.many, languageCode: languageCode)
+    default:
+        gymPlural(count, one: en.one, few: en.many, many: en.many, languageCode: languageCode)
+    }
+}
+
 func gymCount(
     _ count: Int,
     englishOne: String,

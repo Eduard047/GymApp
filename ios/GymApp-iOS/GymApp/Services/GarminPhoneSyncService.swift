@@ -2665,10 +2665,17 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             progress = nil
         }
         if let progress, progress.planned > progress.completed {
+            let plannedSets = gymPlural(
+                progress.planned,
+                en: ("set", "sets"),
+                uk: ("підходу", "підходів", "підходів"),
+                ru: ("подхода", "подходов", "подходов"),
+                languageCode: language
+            )
             details.append(
-                language == "uk" ? "Виконано \(progress.completed)/\(progress.planned) підходів" :
-                    language == "ru" ? "Выполнено \(progress.completed)/\(progress.planned) подходов" :
-                    "Completed \(progress.completed)/\(progress.planned) sets"
+                language == "uk" ? "Виконано \(progress.completed)/\(progress.planned) \(plannedSets)" :
+                    language == "ru" ? "Выполнено \(progress.completed)/\(progress.planned) \(plannedSets)" :
+                    "Completed \(progress.completed)/\(progress.planned) \(plannedSets)"
             )
         }
         if let seconds = command.durationSeconds, seconds > 0 {
