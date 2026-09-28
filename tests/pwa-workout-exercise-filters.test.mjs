@@ -13,7 +13,7 @@ function section(start, end) {
 }
 
 test("workout catalog picker and exercise library reuse the same filter controls", () => {
-  const addWorkout = section("function addWorkoutScreen()", "function trainingProfilePanel()");
+  const addWorkout = section("function addWorkoutScreen()", "function trainingSettingsWeeklyText(");
   const library = section("function exercisesScreen()", "function exerciseFilterControls(");
   const controls = section("function exerciseFilterControls(", "const exerciseBodyMuscles");
   const picker = section("function workoutExercisePickerMarkup(", "function toggleExerciseFavorite(");

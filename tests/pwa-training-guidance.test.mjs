@@ -189,7 +189,9 @@ test("first-workout activation derives the exact profile matrix and skip stays a
   assert.equal(skipped.firstAccount.persistedState, null);
   assert.deepEqual(skipped.firstAccount.blocks, [{ exerciseName: "", sets: [{ weight: "", reps: "" }] }]);
   assert.equal(skipped.secondDismissed, false);
-  assert.match(skipped.secondMarkup, /Goal/);
+  // Goal and weekly target are one summary line that opens the single Training settings editor.
+  assert.match(skipped.secondMarkup, /data-action="open-training-settings"/);
+  assert.match(skipped.secondMarkup, /4 workouts a week/);
 });
 
 test("activation guidance failure leaves the profile, local state, and remote queue untouched", () => {
@@ -566,7 +568,7 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
 
   const ordered = [
     "Today", "YOUR FIRST PLAN", "Use suggested plan", "Build manually",
-    "Adjust recommendation", "Goal", "Days / week", "Today’s effort", "Review exercises"
+    "Adjust recommendation", "workouts a week", "edit", "Today’s effort", "Review exercises"
   ];
   let cursor = -1;
   for (const label of ordered) {

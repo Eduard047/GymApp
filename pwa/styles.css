@@ -5580,3 +5580,77 @@ textarea:focus {
 
 .today-friend-picker { display: grid; gap: 12px; }
 .today-friend-picker h2 { margin: 0; }
+
+.training-settings-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  color: var(--muted);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.training-settings-summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-settings-summary strong { flex: none; color: var(--primary); font-weight: 600; }
+.training-settings-summary.on-hero { color: rgba(255, 255, 255, 0.86); }
+.training-settings-summary.on-hero strong { color: #ffffff; }
+
+.training-settings-sheet { display: grid; gap: 16px; }
+.training-settings-sheet .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.training-settings-sheet h2 { margin: 0; }
+.training-settings-group { display: grid; gap: 6px; }
+
+.training-settings-options {
+  display: grid;
+  padding: 2px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.training-settings-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 0;
+  color: var(--text);
+  border: 0;
+  border-top: 1px solid var(--outline-variant);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.training-settings-option:first-child { border-top: 0; }
+.training-settings-option svg { color: var(--primary); }
+
+.training-settings-days { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+
+.training-settings-days button {
+  min-height: 48px;
+  color: var(--text);
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.training-settings-days button.selected { color: var(--on-primary); background: var(--primary); }
+.training-settings-panel { display: grid; gap: 4px; }

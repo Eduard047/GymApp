@@ -382,7 +382,11 @@ test("Coach settings use one account-profile editor and are not duplicated in Pr
   assert.equal(contract.coachSettings.profileSurfaceEditable, false);
   assert.equal(contract.coachSettings.sameSingleSurfaceAcrossFullClients, true);
 
-  assert.match(androidEditor, /TrainingProfilePanel\(/);
+  // Android and PWA follow the same DESIGN.md rule: a summary row at the top
+  // of the Smart coach card opens the single Training settings editor.
+  assert.match(androidEditor, /TrainingSettingsSummaryRow\(/);
+  assert.match(androidEditor, /TrainingSettingsSheet\(/);
+  assert.doesNotMatch(androidEditor, /TrainingProfilePanel\(/);
   // DESIGN.md "Workout plan editor": "Coach settings summary row sits at
   // the top of the single 'Smart coach' card; no separate 'Coach setup'
   // card." — the former standalone profilePanel merged into
@@ -392,7 +396,8 @@ test("Coach settings use one account-profile editor and are not duplicated in Pr
   assert.match(iosEditor, /TrainingSettingsSummaryRow\(/);
   assert.match(iosEditor, /TrainingSettingsSheet\(profile: \$profile\)/);
   assert.match(iosEditor, /TrainingProfileStore\(\)/);
-  assert.match(pwaSource, /\$\{trainingProfilePanel\(\)\}/);
+  assert.match(pwaSource, /smart-coach-panel[^`]*\$\{trainingSettingsSummaryMarkup\(\)\}/);
+  assert.doesNotMatch(pwaSource, /\$\{trainingProfilePanel\(\)\}/);
 
   assert.doesNotMatch(androidProfile, /TrainingProfilePanel|TrainingProfileManager|training_profile/);
   // DESIGN.md "Profile": Profile → Training settings IS the one editor
@@ -449,7 +454,6 @@ test("Android exposes direct Start plan plus Edit plan and the canonical editor 
   }
 
   assertOrdered(androidEditor, [
-    "TrainingProfilePanel(",
     "SmartCoachPanel(",
     "itemsIndexed(",
     "onClick = when (primaryAction)",

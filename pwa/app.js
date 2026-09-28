@@ -168,6 +168,7 @@ const icons = {
   back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
   chart: "M4 19V5M8 17v-5M13 17V8M18 17v-9M3 19h18",
   check: "M20 6 9 17l-5-5",
+  group: "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
   checkCircle: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
   close: "M18 6 6 18M6 6l12 12",
   copy: "M8 8h11v11H8zM5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1",
@@ -203,7 +204,7 @@ const icons = {
 };
 
 const filledIcons = new Set([
-  "add", "back", "checkCircle", "emojiEvents", "fitness", "heartFilled", "lang", "listFilled", "person", "showChart"
+  "add", "back", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "person", "showChart"
 ]);
 
 function boundedLocationParameters(rawValue, maximumLength, maximumPairs = 32) {
@@ -11696,19 +11697,15 @@ function activationCard() {
   const draft = activationDraftForActiveAccount() || defaultActivationDraft();
   pendingActivationPlan = prepareFirstActivationPlan(draft);
   const plan = pendingActivationPlan?.plan || null;
-  const goals = ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"];
   const efforts = ["Recovery", "Standard", "Hard"];
   return `<section class="panel highlighted activation-card" data-coach-target="today-focus">
     <div class="activation-plan-heading"><span class="eyebrow">${tx3("YOUR FIRST PLAN", "ТВІЙ ПЕРШИЙ ПЛАН", "ТВОЙ ПЕРВЫЙ ПЛАН")}</span><h2>${plan ? escapeHtml(smartFocusLabel(plan.focus)) : tx3("Preparing your plan", "Готуємо твій план", "Готовим твой план")}</h2><p>${tx3("Start with the suggestion or build the workout yourself. You can adjust every setting.", "Почни з поради або створи тренування самостійно. Усі налаштування можна змінити.", "Начни с рекомендации или собери тренировку сам. Все настройки можно изменить.")}</p></div>
     ${plan ? smartPlanMetricsMarkup(plan) : `<p class="muted activation-plan-unavailable">${tx("Create a manual plan if the recommendation is unavailable.", "Створи план вручну, якщо рекомендація недоступна.")}</p>`}
     <div class="activation-actions"><button class="button full" data-action="activation-start" ${plan ? `data-coach-target="today-primary"` : "disabled"}>${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="button secondary full" data-action="activation-manual" ${plan ? "" : `data-coach-target="today-primary"`}>${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button></div>
     <details class="activation-options"><summary>${svg("auto", "small-icon")}<span>${tx3("Adjust recommendation", "Налаштувати пораду", "Настроить рекомендацию")}</span></summary><div class="activation-options-content">
-      <span class="field-caption">${tx("Goal", "Ціль")}</span>
-      <div class="chip-row activation-goals">${goals.map(goal => `<button class="chip buttonlike ${draft.goal === goal ? "selected" : ""}" data-action="activation-option" data-field="goal" data-value="${escapeAttr(goal)}" aria-pressed="${draft.goal === goal}">${profileValueLabel(goal)}</button>`).join("")}</div>
-      <span class="field-caption">${tx("Days / week", "Днів / тиждень")}</span>
-      <div class="chip-row">${[2, 3, 4, 5, 6].map(days => `<button class="chip buttonlike ${draft.days === days ? "selected" : ""}" data-action="activation-option" data-field="days" data-value="${days}" aria-pressed="${draft.days === days}">${days}</button>`).join("")}</div>
+      ${trainingSettingsSummaryMarkup({ onHero: true })}
       <span class="field-caption">${tx("Today’s effort", "Навантаження сьогодні")}</span>
-      <div class="chip-row">${efforts.map(effort => `<button class="chip buttonlike ${draft.effort === effort ? "selected" : ""}" data-action="activation-option" data-field="effort" data-value="${escapeAttr(effort)}" aria-pressed="${draft.effort === effort}">${smartWorkoutEffortLabel(effort)}</button>`).join("")}</div>
+      <div class="chip-row">${efforts.map(effort => `<button class="chip buttonlike ${draft.effort === effort ? "selected" : ""}" data-action="activation-option" data-field="effort" data-value="${escapeAttr(effort)}" aria-pressed="${draft.effort === effort}">${activationEffortLabel(effort)}</button>`).join("")}</div>
       <button class="button ghost full" data-action="activation-edit" ${plan ? "" : "disabled"}>${tx3("Review exercises", "Переглянути вправи", "Посмотреть упражнения")}</button>
     </div></details>
     ${todayFriendPillMarkup()}
@@ -12217,7 +12214,6 @@ function addWorkoutScreen() {
     : tx("Start workout", "Почати тренування");
   return `<section class="screen-copy add-workout-copy"><div><h2>${tx("Plan", "План")}</h2></div></section>
     ${liveRecipient ? `<section class="panel highlighted live-draft-recipient"><span class="eyebrow">LIVE</span><h3>${escapeHtml(liveFriend?.displayName || tx3("Selected friend", "Обраний друг", "Выбранный друг"))}</h3><p class="muted">${tx3("The primary action creates a room only for this selected friend.", "Основна дія створить кімнату лише для цього обраного друга.", "Основное действие создаст комнату только для этого выбранного друга.")}</p></section>` : ""}
-    ${trainingProfilePanel()}
     ${smartCoachPanel()}
     <section class="exercise-builder-heading"><div><h2>${tx("Exercises", "Вправи")}</h2><span class="pill">${selectedCount} · ${n(setCount, "set", "sets", "підхід", "підходи", "підходів")}</span></div><button class="button secondary exercise-builder-voice" type="button" data-action="open-voice-workout" aria-label="${escapeAttr(tx3("Create workout plan by voice", "Створити план тренування голосом", "Создать план тренировки голосом"))}">${svg("mic", "small-icon")}</button><button class="button exercise-builder-add" data-action="open-workout-exercise-picker" data-picker-target="draft-new" aria-label="${tAttr("addExercise")}">${svg("add", "small-icon")}</button></section>
     <section class="draft-list">${draft.blocks.map((block, index) => draftBlock(block, index)).join("")}</section>
@@ -13325,20 +13321,47 @@ function activeWorkoutSetMarkup(set, setIndex, options = {}) {
   return `<div class="active-set-row ${set.completed ? "completed" : current ? "current" : ""}" data-active-set-row="${setId}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong>${plateCalculatorMarkup(plateWeight)}${record ? personalRecordBadgeMarkup() : ""}<span>${set.completed ? svg("checkCircle", "small-icon") : ""}${current ? tx3("Do this now", "Виконай зараз", "Сделай сейчас") : status}</span></div><label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${setId}" data-active-field="weight" inputmode="decimal" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "weight"))}" ${disabled}></label><label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${setId}" data-active-field="reps" inputmode="numeric" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "reps"))}" ${disabled}></label>${current && !set.completed ? activeQuickEntryMarkup(set) : ""}${current && !set.completed ? activeSetVoiceContainerMarkup(setId) : ""}${restTimer}${action}</div>`;
 }
 
-function trainingProfilePanel() {
-  const p = state.profile;
-  return `<details class="panel training-profile-panel"><summary class="detail-summary"><div><h2>${t("trainingProfile")}</h2><span>${profileValueLabel(p.split)} · ${p.days} / ${tx("week", "тиждень")}</span></div></summary>
-    <div class="training-profile-content">
-    <span class="field-caption">${tx("Training split", "Спліт тренувань")}</span>
-    ${chipSelect("split", ["Upper / Lower", "Full Body", "Push Pull Legs", "Custom"], p.split)}
-    <span class="field-caption">${tx("Workouts per week", "Тренувань на тиждень")}</span>
-    ${chipSelect("days", [2, 3, 4, 5, 6].map(v => `${v} / week`), `${p.days} / week`)}
-    <span class="field-caption">${tx("Training goal", "Ціль тренувань")}</span>
-    ${chipSelect("goal", ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"], p.goal)}
-    <span class="field-caption">${tx("Calorie mode", "Режим калорій")}</span>
-    ${chipSelect("calories", ["Deficit", "Maintenance", "Surplus"], p.calories)}
-    </div>
-  </details>`;
+const TRAINING_SETTINGS_GOALS = ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"];
+const TRAINING_SETTINGS_CALORIES = ["Deficit", "Maintenance", "Surplus"];
+const TRAINING_SETTINGS_SPLITS = ["Upper / Lower", "Full Body", "Push Pull Legs", "Custom"];
+const TRAINING_SETTINGS_DAYS = [2, 3, 4, 5, 6];
+
+function trainingSettingsWeeklyText(days) {
+  return tx3(
+    `${days} ${days === 1 ? "workout" : "workouts"} a week`,
+    `${days} ${["тренування", "тренування", "тренувань"][slavicPluralIndex(days)]} на тиждень`,
+    `${days} ${["тренировка", "тренировки", "тренировок"][slavicPluralIndex(days)]} в неделю`
+  );
+}
+
+// Every training-profile field is edited in one sheet; other screens show this one-line summary.
+function trainingSettingsSummaryMarkup({ onHero = false } = {}) {
+  const profile = state.profile;
+  const summary = [
+    profileValueLabel(profile.goal),
+    profileValueLabel(profile.calories),
+    trainingSettingsWeeklyText(profile.days)
+  ].join(" · ");
+  const edit = tx3("edit", "змінити", "изменить");
+  return `<button type="button" class="training-settings-summary ${onHero ? "on-hero" : ""}" data-action="open-training-settings" aria-label="${escapeAttr(`${summary}. ${tx3("Edit training settings", "Змінити налаштування тренувань", "Изменить настройки тренировок")}`)}"><span>${escapeHtml(summary)}</span><strong>${edit}</strong></button>`;
+}
+
+function trainingSettingsOptionsMarkup(title, field, options, selected) {
+  return `<div class="training-settings-group"><span class="field-caption">${title}</span><div class="training-settings-options">${options.map(option => `<button type="button" class="training-settings-option ${option === selected ? "selected" : ""}" data-action="profile" data-field="${field}" data-value="${escapeAttr(option)}" aria-pressed="${option === selected}"><span>${profileValueLabel(option)}</span>${option === selected ? svg("check", "small-icon") : ""}</button>`).join("")}</div></div>`;
+}
+
+function trainingSettingsSheetMarkup() {
+  const profile = state.profile;
+  return `<div class="training-settings-sheet"><div class="section-title"><h2 id="training-settings-title">${tx3("Training settings", "Налаштування тренувань", "Настройки тренировок")}</h2><button class="button ghost mini" data-action="close-modal">${tx3("Done", "Готово", "Готово")}</button></div>
+    ${trainingSettingsOptionsMarkup(tx3("Goal", "Ціль", "Цель"), "goal", TRAINING_SETTINGS_GOALS, profile.goal)}
+    ${trainingSettingsOptionsMarkup(tx3("Calories", "Калорії", "Калории"), "calories", TRAINING_SETTINGS_CALORIES, profile.calories)}
+    ${trainingSettingsOptionsMarkup(tx3("Split", "Спліт", "Сплит"), "split", TRAINING_SETTINGS_SPLITS, profile.split)}
+    <div class="training-settings-group"><span class="field-caption">${tx3("Workouts per week", "Тренувань на тиждень", "Тренировок в неделю")}</span><div class="training-settings-days" role="group" aria-label="${escapeAttr(tx3("Workouts per week", "Тренувань на тиждень", "Тренировок в неделю"))}">${TRAINING_SETTINGS_DAYS.map(days => `<button type="button" class="${profile.days === days ? "selected" : ""}" data-action="profile" data-field="days" data-value="${days}" aria-pressed="${profile.days === days}">${days}</button>`).join("")}</div></div>
+  </div>`;
+}
+
+function trainingSettingsProfilePanel() {
+  return `<section class="panel training-settings-panel"><span class="eyebrow">${tx3("Training settings", "Налаштування тренувань", "Настройки тренировок")}</span>${trainingSettingsSummaryMarkup()}</section>`;
 }
 
 function smartCoachPanel() {
@@ -13349,13 +13372,13 @@ function smartCoachPanel() {
     : smartGeneratedPlan
     ? `<div class="smart-plan-status"><div class="metric-grid ${smartGeneratedPlan.requestedEffort === smartGeneratedPlan.appliedEffort ? "two" : "three"}"><div><span>${tx("Focus", "Фокус")}</span><strong>${escapeHtml(smartFocusLabel(smartGeneratedPlan.focus))}</strong></div><div><span>${tx("Effort", "Навантаження")}</span><strong>${escapeHtml(smartWorkoutEffortLabel(smartGeneratedPlan.appliedEffort))}</strong></div>${smartGeneratedPlan.requestedEffort === smartGeneratedPlan.appliedEffort ? "" : `<div><span>${tx("Requested", "Запитано")}</span><strong>${escapeHtml(smartWorkoutEffortLabel(smartGeneratedPlan.requestedEffort))}</strong></div>`}</div>${safetyLine ? `<p class="smart-rir-guidance">${escapeHtml(safetyLine)}</p>` : ""}</div>`
     : "";
-  return `<section class="panel highlighted smart-coach-panel"><div class="section-title"><div><h2>${t("smartCoach")}</h2></div>${svg("auto", "small-icon")}</div><span class="field-caption">${tx("Today’s effort", "Навантаження сьогодні")}</span><div class="chip-row smart-effort-chips">${effortOptions.map(effort => `<button class="chip buttonlike ${smartWorkoutEffort === effort ? "selected" : ""}" data-action="smart-effort" data-effort="${effort}" aria-pressed="${smartWorkoutEffort === effort}">${escapeHtml(smartWorkoutEffortLabel(effort))}</button>`).join("")}</div>${planStatus}<button class="button full" data-action="generate-smart">${svg("auto", "small-icon")}${t("generateSmart")}</button></section>`;
+  return `<section class="panel highlighted smart-coach-panel"><div class="section-title"><div><h2>${t("smartCoach")}</h2></div>${svg("auto", "small-icon")}</div>${trainingSettingsSummaryMarkup()}<span class="field-caption">${tx("Today’s effort", "Навантаження сьогодні")}</span><div class="chip-row smart-effort-chips">${effortOptions.map(effort => `<button class="chip buttonlike ${smartWorkoutEffort === effort ? "selected" : ""}" data-action="smart-effort" data-effort="${effort}" aria-pressed="${smartWorkoutEffort === effort}">${escapeHtml(smartWorkoutEffortLabel(effort))}</button>`).join("")}</div>${planStatus}<button class="button full" data-action="generate-smart">${svg("auto", "small-icon")}${t("generateSmart")}</button></section>`;
 }
 
 function smartWorkoutEffortLabel(effort) {
   return ({
     Auto: tx("Auto", "Авто"),
-    Recovery: tx("Recovery", "Відновлювальне"),
+    Recovery: tx3("Light", "Легка", "Лёгкая"),
     Standard: tx("Standard", "Звичайне"),
     Hard: tx("Hard", "Важке")
   })[effort] || tx("Auto", "Авто");
@@ -13537,7 +13560,19 @@ function activationDraftForActiveAccount() {
   if (!activationDraft || activationDraft.owner !== descriptor.owner) {
     activationDraft = { owner: descriptor.owner, ...defaultActivationDraft() };
   }
+  // Goal and weekly target come from the stored training settings, edited in one sheet.
+  if (TRAINING_SETTINGS_GOALS.includes(state.profile?.goal)) activationDraft.goal = state.profile.goal;
+  if (TRAINING_SETTINGS_DAYS.includes(state.profile?.days)) activationDraft.days = state.profile.days;
   return activationDraft;
+}
+
+// Short one-word labels keep the three efforts in one equal-width row on the first-plan card.
+function activationEffortLabel(effort) {
+  return ({
+    Recovery: tx3("Light", "Легка", "Лёгкая"),
+    Standard: tx3("Normal", "Звичайна", "Обычная"),
+    Hard: tx3("Hard", "Важка", "Тяжёлая")
+  })[effort] || smartWorkoutEffortLabel(effort);
 }
 
 function profileFromActivation(value = activationDraft) {
@@ -20049,7 +20084,7 @@ function friendsProfileScreen() {
   const cloudLabel = activeAccount?.remote ? tx("Cloud protected", "Захищено хмарою") : tx("This device", "Цей пристрій");
   const trainingSelected = profileHubSection === "training";
   const trainingPanel = friendsPanel();
-  const settingsPanel = `${accountPanel()}${cloudSyncPanel()}${webPushPanel()}${garminProfilePanel()}${themePreferencePanel()}${profileDataPanel()}`;
+  const settingsPanel = `${accountPanel()}${trainingSettingsProfilePanel()}${cloudSyncPanel()}${webPushPanel()}${garminProfilePanel()}${themePreferencePanel()}${profileDataPanel()}`;
   return `<section class="profile-hub-passport" data-coach-target="profile-hub"><div class="profile-hub-avatar" aria-hidden="true">${svg("person")}</div><div class="profile-hub-identity"><span class="eyebrow">${tx("Profile", "Профіль")}</span><h2>${escapeHtml(accountLabel)}</h2><p>${escapeHtml(cloudLabel)} · ${countNoun(friendCount, "friends")}</p></div><div class="profile-spotter-rail" aria-label="${txAttr(pendingCount ? "Social actions are waiting" : "Training circle is up to date", pendingCount ? "Є соціальні дії, що очікують" : "Тренувальне коло оновлено")}"><span class="spotter-node self">${svg("person", "small-icon")}</span><span class="spotter-track ${pendingCount ? "active" : ""}"><i></i></span><span class="spotter-node peer">${svg("fitness", "small-icon")}</span>${pendingCount ? `<strong>${Math.min(pendingCount, 99)}</strong>` : ""}</div></section>
     <div class="profile-hub-switch" role="tablist" aria-label="${txAttr("Profile sections", "Розділи профілю")}"><button id="profile-training-tab" type="button" role="tab" aria-selected="${trainingSelected}" aria-controls="profile-training-panel" tabindex="${trainingSelected ? "0" : "-1"}" class="${trainingSelected ? "selected" : ""}" data-action="profile-hub-section" data-section="training">${svg("fitness", "small-icon")}<span><strong>${tx3("Friends & live", "Друзі та live", "Друзья и live")}</strong><small>${tx3("Invites, progress, training", "Запрошення, прогрес, тренування", "Приглашения, прогресс, тренировки")}</small></span></button><button id="profile-settings-tab" type="button" role="tab" aria-selected="${!trainingSelected}" aria-controls="profile-settings-panel" tabindex="${trainingSelected ? "-1" : "0"}" class="${!trainingSelected ? "selected" : ""}" data-action="profile-hub-section" data-section="settings">${svg("watch", "small-icon")}<span><strong>${tx3("Account & devices", "Акаунт і пристрої", "Аккаунт и устройства")}</strong><small>${tx3("Sync, Garmin, data", "Синхронізація, Garmin, дані", "Синхронизация, Garmin, данные")}</small></span></button></div>
     <div id="profile-training-panel" class="profile-hub-panel" role="tabpanel" aria-labelledby="profile-training-tab" ${trainingSelected ? "" : "hidden"}>${trainingPanel}</div>
@@ -23884,6 +23919,7 @@ function modalMarkup() {
   if (modal.type === "workout-exercise-picker") return bottomSheet(workoutExercisePickerMarkup(modal));
   if (modal.type === "progress-exercise-picker") return bottomSheet(progressExercisePickerSheetMarkup());
   if (modal.type === "friend-workout-picker") return bottomSheet(friendWorkoutPickerMarkup());
+  if (modal.type === "training-settings") return bottomSheet(trainingSettingsSheetMarkup(), "training-settings-title");
   if (modal.type === "today-friend-picker") return bottomSheet(todayFriendPickerMarkup(), "today-friend-picker-title");
   if (modal.type === "workout-share") return bottomSheet(workoutShareSheetMarkup());
   if (modal.type === "live-invitation-sent") return bottomSheet(`<div class="live-invitation-sent"><span class="eyebrow">LIVE</span><h2>${tx3("Invitation sent", "Запрошення надіслано", "Приглашение отправлено")}</h2><p class="muted">${tx3("GymApp already notified", "GymApp уже сповістив", "GymApp уже уведомил")} ${escapeHtml(modal.friendName)}. ${tx3("This link only navigates to the account-bound room; it does not grant access.", "Це посилання лише відкриває прив’язану до акаунта кімнату й не надає доступу.", "Эта ссылка только открывает привязанную к аккаунту комнату и не предоставляет доступ.")}</p><input id="live-invitation-link" readonly value="${escapeAttr(modal.url)}"><div class="actions vertical"><button class="button full" data-action="share-live-invitation-link">${svg("share", "small-icon")}${tx3("Share invitation link", "Поділитися посиланням-запрошенням", "Поделиться ссылкой-приглашением")}</button><button class="button ghost full" data-action="close-modal">${tx3("Done", "Готово", "Готово")}</button></div></div>`);
@@ -25004,6 +25040,10 @@ async function handleAction(action, el) {
   if (action === "toggle-map") { el.classList.toggle("selected"); return; }
   if (action === "save-map") return saveMapping(el.dataset.name);
   if (action === "profile") return updateProfile(el);
+  if (action === "open-training-settings") {
+    modal = { type: "training-settings" };
+    return render();
+  }
   if (action === "note-template") return applyNoteTemplate(el.dataset.note);
   if (action === "workout-date-today") {
     if (!workoutDraft) return;

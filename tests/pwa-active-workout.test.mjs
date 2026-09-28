@@ -2818,3 +2818,37 @@ test("metric values refit when the window narrows without a new render", async (
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(value.style.fontSize, "14.6px");
 });
+
+test("training settings live in one sheet and other screens show a summary", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    render = () => {};
+    state.profile = { split: "Push Pull Legs", days: 5, goal: "Strength", calories: "Maintenance" };
+    state.language = "en";
+    const en = trainingSettingsSummaryMarkup();
+    state.language = "ru";
+    const ru = trainingSettingsSummaryMarkup();
+    state.language = "uk";
+    const uk = trainingSettingsSummaryMarkup();
+    state.language = "en";
+    updateProfile({ dataset: { field: "goal", value: "Muscle Gain" } });
+    updateProfile({ dataset: { field: "days", value: "3" } });
+    updateProfile({ dataset: { field: "days", value: "9" } });
+    const sheet = trainingSettingsSheetMarkup();
+    return JSON.stringify({
+      en, ru, uk, sheet,
+      profile: state.profile,
+      light: smartWorkoutEffortLabel("Recovery"),
+      short: ["Recovery", "Standard", "Hard"].map(activationEffortLabel)
+    });
+  })()`, context));
+
+  assert.match(result.en, /Strength · Maintenance · 5 workouts a week<\/span><strong>edit/);
+  assert.match(result.ru, /5 тренировок в неделю<\/span><strong>изменить/);
+  assert.match(result.uk, /5 тренувань на тиждень<\/span><strong>змінити/);
+  assert.deepEqual(result.profile, { split: "Push Pull Legs", days: 3, goal: "Muscle Gain", calories: "Maintenance" });
+  assert.match(result.sheet, /data-field="goal" data-value="Muscle Gain" aria-pressed="true"/);
+  assert.match(result.sheet, /data-field="days" data-value="3" aria-pressed="true"/);
+  assert.equal(result.light, "Light");
+  assert.deepEqual(result.short, ["Light", "Normal", "Hard"]);
+});
