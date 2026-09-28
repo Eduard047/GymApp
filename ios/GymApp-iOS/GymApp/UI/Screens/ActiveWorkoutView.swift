@@ -1245,8 +1245,14 @@ struct ActiveWorkoutView: View {
         } else if isCurrent {
             currentSetRow(set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
         } else {
-            upcomingSetRow(set, position: position, draft: draft)
+            upcomingSetRow(set, position: position, exercise: exercise, draft: draft)
         }
+    }
+
+    private func usesPlateCalculator(_ exercise: ActiveWorkoutExercise) -> Bool {
+        PlateCalculator.applies(
+            toCatalogKey: workoutStore.exercise(id: exercise.exerciseID)?.catalogKey ?? exercise.exerciseCatalogKey
+        )
     }
 
     /// The one editable set at a time: compact badge + weight + × + reps,
@@ -1330,6 +1336,11 @@ struct ActiveWorkoutView: View {
                 Text(gymLocalized("kg"))
                     .font(.system(size: 15))
                     .foregroundStyle(GymTheme.textSecondary)
+
+                if usesPlateCalculator(exercise) {
+                    PlateCalculatorButton(weight: set.weight)
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] }
+                }
 
                 Text(verbatim: "×")
                     .font(.system(size: 30, weight: .semibold))
@@ -1812,6 +1823,7 @@ struct ActiveWorkoutView: View {
     private func upcomingSetRow(
         _ set: ActiveWorkoutSet,
         position: Int,
+        exercise: ActiveWorkoutExercise,
         draft: ActiveWorkoutDraft
     ) -> some View {
         let isExpanded = expandedSetIDs.contains(set.id)
@@ -1869,6 +1881,9 @@ struct ActiveWorkoutView: View {
                         disabled: fieldsDisabled,
                         accessibilityLabel: Text(weightAccessibilityLabel(position: position))
                     )
+                    if usesPlateCalculator(exercise) {
+                        PlateCalculatorButton(weight: set.weight)
+                    }
                     Text(verbatim: "×")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(GymTheme.textSecondary)
