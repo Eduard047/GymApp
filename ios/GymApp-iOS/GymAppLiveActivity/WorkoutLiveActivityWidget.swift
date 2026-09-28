@@ -110,7 +110,7 @@ private struct LockScreenLiveActivityView: View {
                         .font(.headline)
                         .foregroundStyle(LiveActivityColor.onBrand)
                         .lineLimit(1)
-                    Text("\(attributes.setLabel) \(state.setIndex) \(NSLocalizedString("из", comment: "")) \(state.setCount)")
+                    Text(state.setProgressLabel ?? "\(attributes.setLabel) \(state.setIndex)/\(state.setCount)")
                         .font(.subheadline)
                         .foregroundStyle(LiveActivityColor.onBrand.opacity(0.8))
                 }

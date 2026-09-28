@@ -354,15 +354,26 @@ final class WorkoutLiveActivityController: ObservableObject {
             ?? gymText("Workout", "Тренування", "Тренировка", languageCode: gymCurrentLanguageCode())
     }
 
+    /// "Set 3 of 5" / "Підхід 3 з 5" / "Подход 3 из 5", built in the app so the
+    /// widget extension never has to pick a language on its own.
+    static func setProgressLabel(setIndex: Int, setCount: Int, languageCode: String) -> String {
+        gymText(
+            "Set \(setIndex) of \(setCount)",
+            "Підхід \(setIndex) з \(setCount)",
+            "Подход \(setIndex) из \(setCount)",
+            languageCode: languageCode
+        )
+    }
+
     static func contentState(
         for draft: ActiveWorkoutDraft,
         workoutStore: WorkoutStore?,
-        now: Date = Date()
+        now: Date = Date(),
+        languageCode: String = gymCurrentLanguageCode()
     ) -> WorkoutActivityAttributes.ContentState {
         let allSets = draft.exercises.flatMap(\.sets)
         let totalSets = allSets.count
         let completedSets = allSets.filter(\.isCompleted).count
-        let languageCode = gymCurrentLanguageCode()
 
         guard let (exercise, set) = currentSet(in: draft) else {
             // Every set is completed; show the finishing state.
@@ -370,6 +381,11 @@ final class WorkoutLiveActivityController: ObservableObject {
                 exerciseName: exerciseName(for: draft, workoutStore: workoutStore),
                 setIndex: max(totalSets, 1),
                 setCount: max(totalSets, 1),
+                setProgressLabel: setProgressLabel(
+                    setIndex: max(totalSets, 1),
+                    setCount: max(totalSets, 1),
+                    languageCode: languageCode
+                ),
                 completedSets: completedSets,
                 totalSets: max(totalSets, 1),
                 restEndsAt: nil,
@@ -386,16 +402,16 @@ final class WorkoutLiveActivityController: ObservableObject {
 
         let setIndex = (exercise.sets.firstIndex(where: { $0.id == set.id }) ?? 0) + 1
         let restEndsAt = draft.timing?.restingUntil.flatMap { $0 > now ? $0 : nil }
-        let weightText = set.weight.formatted(.number.precision(.fractionLength(0 ... 2)))
-        let unit = gymText("kg", "кг", "кг", languageCode: languageCode)
-        let nextSetSummary = "\(weightText) \(unit) × \(set.reps)"
+        let nextSetSummary = gymWeightRepsText(weight: set.weight, reps: set.reps, languageCode: languageCode)
+        let setCount = max(exercise.sets.count, 1)
 
         return WorkoutActivityAttributes.ContentState(
             exerciseName: workoutStore?.exercise(id: exercise.exerciseID).map { gymExerciseName($0) }
                 ?? exercise.exerciseName
                 ?? gymText("Exercise", "Вправа", "Упражнение", languageCode: languageCode),
             setIndex: setIndex,
-            setCount: max(exercise.sets.count, 1),
+            setCount: setCount,
+            setProgressLabel: setProgressLabel(setIndex: setIndex, setCount: setCount, languageCode: languageCode),
             completedSets: completedSets,
             totalSets: max(totalSets, 1),
             restEndsAt: restEndsAt,

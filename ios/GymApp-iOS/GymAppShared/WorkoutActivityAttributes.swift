@@ -22,6 +22,10 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
         public let setIndex: Int
         /// Total number of sets planned for the current exercise.
         public let setCount: Int
+        /// Already-localized "Подход 3 из 5" / "Set 3 of 5" line. Optional so
+        /// a state encoded by an older app build still decodes; the widget
+        /// then falls back to the language-neutral "3/5".
+        public let setProgressLabel: String?
         /// Total sets completed so far in the whole workout.
         public let completedSets: Int
         /// Total sets planned in the whole workout.
@@ -44,6 +48,7 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             exerciseName: String,
             setIndex: Int,
             setCount: Int,
+            setProgressLabel: String? = nil,
             completedSets: Int,
             totalSets: Int,
             restEndsAt: Date?,
@@ -54,6 +59,7 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             self.exerciseName = exerciseName
             self.setIndex = setIndex
             self.setCount = setCount
+            self.setProgressLabel = setProgressLabel
             self.completedSets = completedSets
             self.totalSets = totalSets
             self.restEndsAt = restEndsAt

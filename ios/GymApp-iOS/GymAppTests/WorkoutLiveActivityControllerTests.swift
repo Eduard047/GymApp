@@ -572,6 +572,62 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
     /// `BuiltInExerciseCatalog.displayName`, the same localized lookup the
     /// in-app UI uses (see `ActiveWorkoutView.exercisePanel`), not the raw
     /// English catalog `Exercise.name`.
+    func testSetProgressLabelIsLocalizedByTheAppInEveryLanguage() {
+        let bench = Fixture.exercise(
+            name: "Bench Press",
+            sets: [
+                Fixture.set(weight: 60, reps: 8, completed: true),
+                Fixture.set(weight: 60, reps: 8, completed: true),
+                Fixture.set(weight: 62.5, reps: 8, completed: false),
+                Fixture.set(weight: 62.5, reps: 8, completed: false),
+                Fixture.set(weight: 62.5, reps: 8, completed: false)
+            ]
+        )
+        let draft = Fixture.draft(exercises: [bench])
+
+        let english = WorkoutLiveActivityController.contentState(for: draft, workoutStore: nil, languageCode: "en")
+        let ukrainian = WorkoutLiveActivityController.contentState(for: draft, workoutStore: nil, languageCode: "uk")
+        let russian = WorkoutLiveActivityController.contentState(for: draft, workoutStore: nil, languageCode: "ru")
+
+        XCTAssertEqual(english.setProgressLabel, "Set 3 of 5")
+        XCTAssertEqual(ukrainian.setProgressLabel, "Підхід 3 з 5")
+        XCTAssertEqual(russian.setProgressLabel, "Подход 3 из 5")
+        XCTAssertEqual(english.nextSetSummary, "62.5 kg × 8")
+        XCTAssertEqual(russian.nextSetSummary, "62,5 кг × 8")
+    }
+
+    func testFinishedStateStillCarriesALocalizedSetProgressLabel() {
+        let row = Fixture.exercise(
+            name: "Row",
+            sets: [
+                Fixture.set(weight: 40, reps: 10, completed: true),
+                Fixture.set(weight: 40, reps: 10, completed: true)
+            ]
+        )
+        let state = WorkoutLiveActivityController.contentState(
+            for: Fixture.draft(exercises: [row]),
+            workoutStore: nil,
+            languageCode: "uk"
+        )
+
+        XCTAssertEqual(state.setProgressLabel, "Підхід 2 з 2")
+    }
+
+    func testContentStateEncodedWithoutSetProgressLabelStillDecodes() throws {
+        let legacyJSON = """
+        {"exerciseName":"Squat","setIndex":2,"setCount":4,"completedSets":1,"totalSets":4,\
+        "nextSetSummary":"100 kg × 5","isResting":false}
+        """
+        let state = try JSONDecoder().decode(
+            WorkoutActivityAttributes.ContentState.self,
+            from: Data(legacyJSON.utf8)
+        )
+
+        XCTAssertNil(state.setProgressLabel)
+        XCTAssertEqual(state.setIndex, 2)
+        XCTAssertEqual(state.setCount, 4)
+    }
+
     func testContentStateUsesLocalizedExerciseDisplayNameNotRawCatalogName() throws {
         let originalLanguage = UserDefaults.standard.string(forKey: "app-language")
         addTeardownBlock {
