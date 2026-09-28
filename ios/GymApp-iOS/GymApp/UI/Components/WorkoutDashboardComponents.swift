@@ -485,7 +485,7 @@ struct WorkoutProgressHero: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: "Next title",
-                        value: progression.nextTitle?.name ?? "Top rank",
+                        value: RankCatalog.next(afterLevel: progression.level)?.title(gymCurrentLanguageCode()) ?? "Top rank",
                         emphasized: true,
                         onHero: true,
                         compactValue: true
@@ -513,7 +513,7 @@ struct WorkoutProgressHero: View {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 8) {
                     levelPill
-                    Text(gymLocalized(progression.title.name))
+                    Text(RankCatalog.title(forLevel: progression.level, languageCode: gymCurrentLanguageCode()))
                         .font(.title2.bold())
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
@@ -527,7 +527,7 @@ struct WorkoutProgressHero: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         levelPill
-                        Text(gymLocalized(progression.title.name))
+                        Text(RankCatalog.title(forLevel: progression.level, languageCode: gymCurrentLanguageCode()))
                             .font(.title2.bold())
                             .fixedSize(horizontal: false, vertical: true)
                     }

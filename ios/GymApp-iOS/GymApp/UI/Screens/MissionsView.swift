@@ -113,7 +113,7 @@ struct MissionsView: View {
             "Уровень \(snapshot.progression.level)",
             languageCode: languageCode
         )
-        let titleText = gymLocalized(snapshot.progression.title.name, languageCode: languageCode)
+        let titleText = RankCatalog.title(forLevel: snapshot.progression.level, languageCode: languageCode)
         let xpText = "\(snapshot.progression.totalXP.formatted()) XP"
         return "\(levelText) · \(titleText) · \(xpText)"
     }

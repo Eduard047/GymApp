@@ -357,9 +357,9 @@ struct PostWorkoutSummaryView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(gymText(
-                        "Level \(progression.level) · \(progression.title.name)",
-                        "Рівень \(progression.level) · \(gymLocalized(progression.title.name))",
-                        "Уровень \(progression.level) · \(gymLocalized(progression.title.name))",
+                        "Level \(progression.level) · \(RankCatalog.title(forLevel: progression.level, languageCode: languageCode))",
+                        "Рівень \(progression.level) · \(RankCatalog.title(forLevel: progression.level, languageCode: languageCode))",
+                        "Уровень \(progression.level) · \(RankCatalog.title(forLevel: progression.level, languageCode: languageCode))",
                         languageCode: languageCode
                     ))
                     .font(.subheadline.weight(.semibold))

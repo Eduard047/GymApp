@@ -7,7 +7,7 @@ struct RanksView: View {
     private var totalXP: Int { store.syncProfileStats().xp }
     private var level: Int { RankCatalog.level(for: totalXP) }
     private var current: RankDefinition { RankCatalog.current(level: level) }
-    private var next: RankDefinition? { RankCatalog.ranks.first { $0.level > level } }
+    private var next: RankDefinition? { RankCatalog.next(afterLevel: level) }
 
     /// Progress toward `next` within the current rank's XP segment, shared by the hero bar
     /// and the ladder row for `next` so both stay in sync.
@@ -162,71 +162,5 @@ private struct RankProgressTrack: View {
                     .frame(width: geometry.size.width * min(1, max(0, progress)))
             }
         }
-    }
-}
-
-private struct RankDefinition: Identifiable, Equatable {
-    let id: String
-    let level: Int
-    let english: String
-    let ukrainian: String
-    let russian: String
-    var requiredXP: Int { RankCatalog.cumulativeXP(for: level) }
-    func title(_ language: String) -> String { gymText(english, ukrainian, russian, languageCode: language) }
-}
-
-private enum RankCatalog {
-    static let ranks: [RankDefinition] = [
-        .init(id: "rookie", level: 1, english: "Rookie", ukrainian: "Новачок", russian: "Новичок"),
-        .init(id: "starter", level: 3, english: "Starter", ukrainian: "Стартовий", russian: "Начинающий"),
-        .init(id: "steady", level: 5, english: "Steady", ukrainian: "Стабільний", russian: "Стабильный"),
-        .init(id: "driven", level: 7, english: "Driven", ukrainian: "Вмотивований", russian: "Мотивированный"),
-        .init(id: "striker", level: 9, english: "Striker", ukrainian: "Ударний", russian: "Ударник"),
-        .init(id: "ironclad", level: 11, english: "Ironclad", ukrainian: "Незламний", russian: "Несокрушимый"),
-        .init(id: "vanguard", level: 13, english: "Vanguard", ukrainian: "Авангард", russian: "Авангард"),
-        .init(id: "challenger", level: 15, english: "Challenger", ukrainian: "Претендент", russian: "Претендент"),
-        .init(id: "dominator", level: 17, english: "Dominator", ukrainian: "Домінатор", russian: "Доминатор"),
-        .init(id: "elite", level: 19, english: "Elite", ukrainian: "Еліта", russian: "Элита"),
-        .init(id: "titan", level: 21, english: "Titan", ukrainian: "Титан", russian: "Титан"),
-        .init(id: "colossus", level: 23, english: "Colossus", ukrainian: "Колос", russian: "Колосс"),
-        .init(id: "warborn", level: 25, english: "Warborn", ukrainian: "Воїн", russian: "Рождённый воином"),
-        .init(id: "apex", level: 27, english: "Apex", ukrainian: "Апекс", russian: "Апекс"),
-        .init(id: "mythic", level: 29, english: "Mythic", ukrainian: "Міфічний", russian: "Мифический"),
-        .init(id: "legend", level: 31, english: "Legend", ukrainian: "Легенда", russian: "Легенда"),
-        .init(id: "eternal", level: 33, english: "Eternal", ukrainian: "Вічний", russian: "Вечный"),
-        .init(id: "immortal", level: 35, english: "Immortal", ukrainian: "Безсмертний", russian: "Бессмертный"),
-        .init(id: "paragon", level: 37, english: "Paragon", ukrainian: "Парагон", russian: "Парагон"),
-        .init(id: "overlord", level: 39, english: "Overlord", ukrainian: "Володар", russian: "Властелин"),
-        .init(id: "ascendant", level: 41, english: "Ascendant", ukrainian: "Вознесений", russian: "Вознесенный"),
-        .init(id: "conqueror", level: 43, english: "Conqueror", ukrainian: "Завойовник", russian: "Завоеватель"),
-        .init(id: "sovereign", level: 45, english: "Sovereign", ukrainian: "Суверен", russian: "Суверен"),
-        .init(id: "prime", level: 47, english: "Prime", ukrainian: "Прайм", russian: "Прайм"),
-        .init(id: "omni", level: 49, english: "Omni", ukrainian: "Омні", russian: "Омни"),
-        .init(id: "galactic", level: 51, english: "Galactic", ukrainian: "Галактичний", russian: "Галактический"),
-        .init(id: "nova", level: 53, english: "Nova", ukrainian: "Нова", russian: "Нова"),
-        .init(id: "singularity", level: 55, english: "Singularity", ukrainian: "Сингулярність", russian: "Сингулярность"),
-        .init(id: "omega", level: 57, english: "Omega", ukrainian: "Омега", russian: "Омега"),
-        .init(id: "transcendent", level: 60, english: "Transcendent", ukrainian: "Трансцендентний", russian: "Трансцендентный"),
-        .init(id: "celestial", level: 64, english: "Celestial", ukrainian: "Небесний", russian: "Небесный"),
-        .init(id: "empyrean", level: 68, english: "Empyrean", ukrainian: "Емпірей", russian: "Эмпирей"),
-        .init(id: "infinite", level: 72, english: "Infinite", ukrainian: "Нескінченний", russian: "Бесконечный"),
-        .init(id: "beyond", level: 76, english: "Beyond", ukrainian: "Понадмежний", russian: "Сверхпредельный"),
-        .init(id: "cosmic-warlord", level: 80, english: "Cosmic Warlord", ukrainian: "Космічний воєвода", russian: "Космический воевода")
-    ]
-
-    static func requirement(for level: Int) -> Int {
-        GamificationEngine.xpForNextLevel(level)
-    }
-
-    static func cumulativeXP(for level: Int) -> Int {
-        GamificationEngine.xpForLevelStart(level)
-    }
-
-    static func level(for xp: Int) -> Int {
-        GamificationEngine.level(for: max(0, xp))
-    }
-
-    static func current(level: Int) -> RankDefinition {
-        ranks.last(where: { $0.level <= level }) ?? ranks[0]
     }
 }

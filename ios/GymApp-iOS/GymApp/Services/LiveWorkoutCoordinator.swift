@@ -7,12 +7,30 @@ enum LiveWorkoutInvitationResponseOutcome: Equatable, Sendable {
     case confirmedRestoring
 }
 
+/// `isRefreshing` flips on every background poll tick (every 2-5s — see
+/// `LiveWorkoutCoordinator.startMonitoring()`), which is far more often than
+/// its actual UI consumers (a refresh-button spinner) need to re-render.
+/// Publishing it directly on `LiveWorkoutCoordinator` would force every
+/// `@ObservedObject`/`@StateObject` holder of the coordinator to re-run its
+/// `body` on each poll, even views that never read `isRefreshing` at all
+/// (e.g. `ActiveWorkoutView`, whose toolbar menus would keep collapsing).
+/// Isolating it here lets only the views that actually display the spinner
+/// observe its churn.
+@MainActor
+final class LiveWorkoutRefreshState: ObservableObject {
+    @Published fileprivate(set) var isRefreshing = false
+}
+
 @MainActor
 final class LiveWorkoutCoordinator: ObservableObject {
     @Published private(set) var inbox: LiveWorkoutInbox?
     @Published private(set) var snapshot: LiveWorkoutSnapshot?
-    @Published private(set) var isRefreshing = false
-    @Published private(set) var isMutating = false
+    /// See `LiveWorkoutRefreshState` — deliberately not `@Published` here.
+    let refreshState = LiveWorkoutRefreshState()
+    var isRefreshing: Bool { refreshState.isRefreshing }
+    /// Internal in-flight guard for mutating calls; never rendered by any
+    /// view, so it does not need to be `@Published`.
+    private(set) var isMutating = false
     @Published private(set) var lastError: String?
     @Published private(set) var lastStatus: String?
     @Published private(set) var realtimeConnected = false
@@ -137,8 +155,8 @@ final class LiveWorkoutCoordinator: ObservableObject {
 
     func refreshAll(showErrors: Bool = true) async {
         guard !isRefreshing, !expectedUserID.isEmpty else { return }
-        isRefreshing = true
-        defer { isRefreshing = false }
+        refreshState.isRefreshing = true
+        defer { refreshState.isRefreshing = false }
         do {
             let context = try await gateway.currentContext(expectedUserID: expectedUserID)
             let sessionMismatchedAttachment: LiveWorkoutAttachment?

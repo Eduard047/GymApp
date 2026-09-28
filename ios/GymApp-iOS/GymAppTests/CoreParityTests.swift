@@ -7010,6 +7010,35 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(GamificationEngine.xpForLevelStart(1_512_305), Int.max)
     }
 
+    func testDisplayedRankTitlesComeFromTheSharedRankCatalogNotTheCoarseTiers() throws {
+        // Level 3 sits inside GamificationEngine.title(for:)'s coarse "Rookie" tier (levels 1-4),
+        // but the cross-client rank contract names level 3 "Starter" / «Начинающий» / «Стартовий».
+        // Every UI that shows a rank name must read RankCatalog, not GamificationEngine.title(for:).
+        XCTAssertEqual(GamificationEngine.title(for: 3).name, "Rookie")
+        XCTAssertEqual(RankCatalog.title(forLevel: 3, languageCode: "en"), "Starter")
+        XCTAssertEqual(RankCatalog.title(forLevel: 3, languageCode: "ru"), "Начинающий")
+        XCTAssertEqual(RankCatalog.title(forLevel: 3, languageCode: "uk"), "Стартовий")
+
+        // Level 1 (below the first named-rank threshold) still resolves to the lowest catalog rank.
+        XCTAssertEqual(RankCatalog.title(forLevel: 1, languageCode: "en"), "Rookie")
+        XCTAssertEqual(RankCatalog.next(afterLevel: 1)?.title("en"), "Starter")
+        XCTAssertNil(RankCatalog.next(afterLevel: 80))
+
+        let summarySource = try iosSource("GymApp/UI/Screens/PostWorkoutSummaryView.swift")
+        let missionsSource = try iosSource("GymApp/UI/Screens/MissionsView.swift")
+        let dashboardSource = try iosSource("GymApp/UI/Components/WorkoutDashboardComponents.swift")
+
+        for source in [summarySource, missionsSource, dashboardSource] {
+            XCTAssertFalse(source.contains("progression.title.name"))
+            XCTAssertFalse(source.contains("progression.nextTitle"))
+            XCTAssertFalse(source.contains("snapshot.progression.title.name"))
+        }
+        XCTAssertTrue(summarySource.contains("RankCatalog.title(forLevel:"))
+        XCTAssertTrue(missionsSource.contains("RankCatalog.title(forLevel:"))
+        XCTAssertTrue(dashboardSource.contains("RankCatalog.title(forLevel:"))
+        XCTAssertTrue(dashboardSource.contains("RankCatalog.next(afterLevel:"))
+    }
+
     func testWorkoutStorageAndFilesAreExcludedFromBackup() throws {
         let directory = try temporaryDirectory(named: "backup-exclusion")
         let store = try WorkoutStore(accountStorageKey: "private-account", directoryURL: directory)

@@ -8,10 +8,18 @@
 
 /* Begin PBXBuildFile section */
 		B00000000000000000000001 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = B00000000000000000000003 /* ConnectIQ */; };
+		BA204D6DB9A832A3D28E2283 /* GymAppLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F2666432DDF0B2994837C2C /* GymAppLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C00000000000000000000001 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = C00000000000000000000003 /* Realtime */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		57063C7ABAE11529D496BA5B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000012 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E7340846ADDE499CD45E4DE7;
+			remoteInfo = GymAppLiveActivity;
+		};
 		A00000000000000000000013 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A00000000000000000000012 /* Project object */;
@@ -21,12 +29,34 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		3D516208E8A5C31D40E932BC /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				BA204D6DB9A832A3D28E2283 /* GymAppLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		5F2666432DDF0B2994837C2C /* GymAppLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GymAppLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000001 /* GymApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GymApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000002 /* GymAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		456F101B877A8E4A0EE38389 /* Exceptions for "GymAppLiveActivity" folder in "GymAppLiveActivity" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E7340846ADDE499CD45E4DE7 /* GymAppLiveActivity */;
+		};
 		A0000000000000000000001E /* Exceptions for "GymApp" folder in "GymApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -77,12 +107,36 @@
 		};
 		A00000000000000000000004 /* GymAppTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = GymAppTests;
+			sourceTree = "<group>";
+		};
+		D366C3269955DD2E87BE1247 /* GymAppShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			path = GymAppShared;
+			sourceTree = "<group>";
+		};
+		E3221E9E0F5509E424221D1C /* GymAppLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				456F101B877A8E4A0EE38389 /* Exceptions for "GymAppLiveActivity" folder in "GymAppLiveActivity" target */,
+			);
+			path = GymAppLiveActivity;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0BEFA63524022FAA605FA664 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A00000000000000000000006 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -107,6 +161,7 @@
 			children = (
 				A00000000000000000000001 /* GymApp.app */,
 				A00000000000000000000002 /* GymAppTests.xctest */,
+				5F2666432DDF0B2994837C2C /* GymAppLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,6 +172,8 @@
 				A00000000000000000000003 /* GymApp */,
 				A00000000000000000000004 /* GymAppTests */,
 				A0000000000000000000000B /* Products */,
+				E3221E9E0F5509E424221D1C /* GymAppLiveActivity */,
+				D366C3269955DD2E87BE1247 /* GymAppShared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -130,13 +187,16 @@
 				A00000000000000000000005 /* Sources */,
 				A00000000000000000000006 /* Frameworks */,
 				A00000000000000000000007 /* Resources */,
+				3D516208E8A5C31D40E932BC /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BA27250D16A0EB2EE53F3020 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A00000000000000000000003 /* GymApp */,
+				D366C3269955DD2E87BE1247 /* GymAppShared */,
 			);
 			name = GymApp;
 			packageProductDependencies = (
@@ -164,11 +224,30 @@
 				A00000000000000000000004 /* GymAppTests */,
 			);
 			name = GymAppTests;
-			packageProductDependencies = (
-			);
 			productName = GymAppTests;
 			productReference = A00000000000000000000002 /* GymAppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		E7340846ADDE499CD45E4DE7 /* GymAppLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A92F84466C6C7D5971FCF26A /* Build configuration list for PBXNativeTarget "GymAppLiveActivity" */;
+			buildPhases = (
+				A03FE9059FAD2CDE5A34E1F3 /* Sources */,
+				0BEFA63524022FAA605FA664 /* Frameworks */,
+				C7ED2C2026C7C2FA97823133 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E3221E9E0F5509E424221D1C /* GymAppLiveActivity */,
+				D366C3269955DD2E87BE1247 /* GymAppShared */,
+			);
+			name = GymAppLiveActivity;
+			productName = GymAppLiveActivity;
+			productReference = 5F2666432DDF0B2994837C2C /* GymAppLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -198,6 +277,9 @@
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = A00000000000000000000010;
 					};
+					E7340846ADDE499CD45E4DE7 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 				};
 			};
 			buildConfigurationList = A0000000000000000000001B /* Build configuration list for PBXProject "GymApp" */;
@@ -222,6 +304,7 @@
 			targets = (
 				A00000000000000000000010 /* GymApp */,
 				A00000000000000000000011 /* GymAppTests */,
+				E7340846ADDE499CD45E4DE7 /* GymAppLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -235,6 +318,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A0000000000000000000000A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7ED2C2026C7C2FA97823133 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -258,6 +348,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A03FE9059FAD2CDE5A34E1F3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -266,9 +363,40 @@
 			target = A00000000000000000000010 /* GymApp */;
 			targetProxy = A00000000000000000000013 /* PBXContainerItemProxy */;
 		};
+		BA27250D16A0EB2EE53F3020 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E7340846ADDE499CD45E4DE7 /* GymAppLiveActivity */;
+			targetProxy = 57063C7ABAE11529D496BA5B /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		9B77E16E7EEA27880E4B26A8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 45;
+				DEVELOPMENT_TEAM = XZ84SZH2PV;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = GymAppLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.setforge.gymapp.ios.LiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		A00000000000000000000015 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -520,6 +648,34 @@
 			};
 			name = Release;
 		};
+		B2EE5F8F9919E5064C448E9C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 45;
+				DEVELOPMENT_TEAM = XZ84SZH2PV;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = GymAppLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.setforge.gymapp.ios.LiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -546,6 +702,15 @@
 			buildConfigurations = (
 				A00000000000000000000019 /* Debug */,
 				A0000000000000000000001A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A92F84466C6C7D5971FCF26A /* Build configuration list for PBXNativeTarget "GymAppLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9B77E16E7EEA27880E4B26A8 /* Debug */,
+				B2EE5F8F9919E5064C448E9C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -95,10 +95,13 @@ struct AppRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
                 appState.saveBeforeBackgrounding()
-            } else if phase == .active, appState.isAccountReady, auth.session?.cloud != nil {
-                Task {
-                    await nativePush.activateIfNeeded()
-                    await refreshSocialSurfaces()
+            } else if phase == .active {
+                appState.handleAppDidBecomeActive()
+                if appState.isAccountReady, auth.session?.cloud != nil {
+                    Task {
+                        await nativePush.activateIfNeeded()
+                        await refreshSocialSurfaces()
+                    }
                 }
             }
         }
@@ -470,8 +473,12 @@ private struct MainTabShell: View {
     @ObservedObject private var auth: AuthService
     @ObservedObject private var store: WorkoutStore
     @ObservedObject private var nativePush: NativePushManager
-    @StateObject private var activeWorkoutStore: ActiveWorkoutStore
+    @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @StateObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
+    /// Single observation point for mirroring `activeWorkoutStore.draft` into
+    /// the Lock Screen / Dynamic Island Live Activity — see
+    /// `WorkoutLiveActivityController`. Deliberately not sprinkled into
+    /// `ActiveWorkoutView`/`ActiveWorkoutStore` themselves.
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.openURL) private var openURL
 
@@ -505,11 +512,14 @@ private struct MainTabShell: View {
         self.nativePush = nativePush
         let currentStore = appState.workoutStore
         self.store = currentStore
-        let activeStore = ActiveWorkoutStore(
-            accountStorageKey: currentStore.accountStorageKey,
-            workoutStorageURL: currentStore.storageURL
-        )
-        try? activeStore.rebindExercises(to: currentStore)
+        // Owned once, process-wide, by `AppState` (created as soon as the
+        // process launches and rebound on account switch there) — see
+        // `AppState.activeWorkoutStore`. `MainTabShell` only observes it, so
+        // there is exactly one `ActiveWorkoutStore` instance in the app,
+        // matching whatever `WorkoutLiveActivityController` and the widget
+        // extension's App Intents act on through `LiveActivityActionBridge`.
+        let activeStore = appState.activeWorkoutStore
+        self.activeWorkoutStore = activeStore
         let planDraftStore = WorkoutPlanEditorDraftStore()
         let persistedPlanDraft: WorkoutPlanEditorDraftState?
         if activeStore.draft == nil {
@@ -521,9 +531,6 @@ private struct MainTabShell: View {
             persistedPlanDraft = nil
         }
         _workoutEditorDraft = State(initialValue: persistedPlanDraft)
-        _activeWorkoutStore = StateObject(
-            wrappedValue: activeStore
-        )
         _liveWorkoutCoordinator = StateObject(
             wrappedValue: LiveWorkoutCoordinator(
                 auth: appState.auth,
@@ -678,6 +685,7 @@ private struct MainTabShell: View {
                         restTimers: appState.restTimers,
                         draftID: activeDraft.id,
                         onFinished: { workoutID in
+                            appState.liveActivityController.endAfterDelay()
                             showsActiveWorkout = false
                             selectedTab = .workouts
                             Task { @MainActor in
@@ -687,7 +695,10 @@ private struct MainTabShell: View {
                             }
                         },
                         onClose: { showsActiveWorkout = false },
-                        onDiscarded: { showsActiveWorkout = false },
+                        onDiscarded: {
+                            appState.liveActivityController.endImmediately()
+                            showsActiveWorkout = false
+                        },
                         onStatus: { message, isError in
                             appState.show(message: message, isError: isError)
                         }
@@ -925,6 +936,11 @@ private struct MainTabShell: View {
             onSkip: { finishTutorial(.skipped) }
         )
         .task {
+            // Live Activity start/update/end is driven process-wide by
+            // `AppState.bindLiveActivityController()` (attached at launch
+            // and rebound on account switch) — not from here, so it keeps
+            // working even when this view never mounts (e.g. a background
+            // launch to run a Live Activity App Intent).
             liveWorkoutCoordinator.startMonitoring()
             openPendingPushRouteIfNeeded()
             if activeWorkoutStore.recoveryMessage != nil {

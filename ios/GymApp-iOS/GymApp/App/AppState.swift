@@ -100,6 +100,22 @@ final class AppState: ObservableObject {
     let garminPhoneSync: GarminPhoneSyncService
 
     @Published private(set) var workoutStore: WorkoutStore
+    /// The single, process-wide owner of the active workout draft, created as
+    /// soon as the process launches (including a background launch driven by
+    /// a Live Activity intent) and rebound whenever `workoutStore` changes to
+    /// a different account. `MainTabShell` observes this instance rather than
+    /// constructing its own, and `WorkoutLiveActivityController`/the widget
+    /// extension's App Intents (via `LiveActivityActionBridge`) act on this
+    /// same instance — never a second, divergent copy.
+    @Published private(set) var activeWorkoutStore: ActiveWorkoutStore
+    /// Owns the Lock Screen / Dynamic Island Live Activity for
+    /// `activeWorkoutStore`. Also registered as the target of
+    /// `LiveActivityActionBridge`'s "record set"/"skip rest" closures, so the
+    /// widget extension's App Intents act on this exact instance — never a
+    /// second, divergent one — whether the app is foreground or was launched
+    /// in the background to run an intent.
+    let liveActivityController = WorkoutLiveActivityController()
+    private var liveActivityDraftSubscription: AnyCancellable?
     @Published var statusMessage: String?
     @Published var statusIsError = false
     @Published private(set) var isPreparingAccount = false
@@ -236,12 +252,19 @@ final class AppState: ObservableObject {
             directoryURL: workoutDirectoryURL
         )
         self.workoutStore = openedStore.store
+        let initialActiveStore = ActiveWorkoutStore(
+            accountStorageKey: openedStore.store.accountStorageKey,
+            workoutStorageURL: openedStore.store.storageURL
+        )
+        try? initialActiveStore.rebindExercises(to: openedStore.store)
+        self.activeWorkoutStore = initialActiveStore
         self.garminPhoneSync.bind(workoutStore: openedStore.store)
         self.restTimers.bindToAccount(
             ownerFingerprint: initialRestTimerOwnerFingerprint,
             discardPersistedState: hadPendingDeletion
         )
         observeStore()
+        bindLiveActivityController()
 
         if openedStore.quarantinedFileURL != nil {
             statusMessage = gymText(
@@ -2459,6 +2482,16 @@ final class AppState: ObservableObject {
         if auth.session?.cloud != nil { scheduleCloudSave(delay: .zero) }
     }
 
+    /// Re-adopts (or ends) whichever Live Activities ActivityKit currently
+    /// knows about whenever the app returns to the foreground. Covers an
+    /// activity left running by a previous process that a background/cold
+    /// launch's `bindLiveActivityController()` already adopted once, plus
+    /// any activity ActivityKit surfaced only after that (e.g. the system
+    /// finishing a deferred start). Cheap no-op when nothing changed.
+    func handleAppDidBecomeActive() {
+        liveActivityController.adoptRunningActivities(draft: activeWorkoutStore.draft)
+    }
+
 #if DEBUG
     func bootstrapDemoIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("--demo-mode") else { return }
@@ -2487,6 +2520,23 @@ final class AppState: ObservableObject {
 
     func clearStatus() {
         statusMessage = nil
+    }
+
+    /// Re-attaches `liveActivityController` to the current `activeWorkoutStore`
+    /// and re-subscribes to its `draft` changes. Called once at launch and
+    /// again whenever `publish(store:activeStorageKey:)` runs, so the Live
+    /// Activity always mirrors whichever `ActiveWorkoutStore` instance is
+    /// currently live for the signed-in account.
+    private func bindLiveActivityController() {
+        liveActivityController.attach(
+            workoutStore: workoutStore,
+            activeWorkoutStore: activeWorkoutStore,
+            restTimers: restTimers
+        )
+        liveActivityDraftSubscription = activeWorkoutStore.$draft
+            .sink { [weak self] draft in
+                self?.liveActivityController.sync(draft: draft)
+            }
     }
 
     private func observeStore() {
@@ -3058,8 +3108,24 @@ final class AppState: ObservableObject {
 
     private func publish(store: WorkoutStore, activeStorageKey: String?) {
         workoutStore = store
+        // Rebind (not recreate) when the account is unchanged — a refresh of
+        // the same account must never discard an in-progress active draft or
+        // hand out a new `ActiveWorkoutStore` identity to already-attached
+        // observers (`MainTabShell`, `WorkoutLiveActivityController`,
+        // `LiveActivityActionBridge`).
+        if activeWorkoutStore.accountStorageKey == store.accountStorageKey {
+            try? activeWorkoutStore.rebindExercises(to: store)
+        } else {
+            let newActiveStore = ActiveWorkoutStore(
+                accountStorageKey: store.accountStorageKey,
+                workoutStorageURL: store.storageURL
+            )
+            try? newActiveStore.rebindExercises(to: store)
+            activeWorkoutStore = newActiveStore
+        }
         garminPhoneSync.bind(workoutStore: store)
         observeStore()
+        bindLiveActivityController()
         activeAccountStorageKey = activeStorageKey
     }
 

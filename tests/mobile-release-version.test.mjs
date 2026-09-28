@@ -18,6 +18,7 @@ const [
   gradleProperties,
   xcodeProject,
   archiveScript,
+  liveActivityInfoPlist,
   garminManifest,
   pwaApp,
   pwaBundle,
@@ -33,6 +34,7 @@ const [
   readFile("gradle.properties", "utf8"),
   readFile("ios/GymApp-iOS/GymApp.xcodeproj/project.pbxproj", "utf8"),
   readFile("ios/GymApp-iOS/Scripts/archive-app-store.sh", "utf8"),
+  readFile("ios/GymApp-iOS/GymAppLiveActivity/Info.plist", "utf8"),
   readFile("garmin/manifest.xml", "utf8"),
   readFile("pwa/app.js", "utf8"),
   readFile(`pwa/${expected.pwaBundle}`, "utf8"),
@@ -62,13 +64,30 @@ test("Android release metadata remains aligned with GymApp 3.3.0", () => {
 });
 
 test("iOS app target and archive defaults agree on release version and build", () => {
+  // Order of appearance in project.pbxproj: GymAppLiveActivity (Debug), GymApp
+  // (Debug), GymApp (Release), GymAppTests (Debug), GymAppTests (Release),
+  // GymAppLiveActivity (Release).
   assert.deepEqual(
     matches(xcodeProject, /^\s*MARKETING_VERSION = ([^;]+);$/gm),
-    [expected.marketingVersion, expected.marketingVersion, "1.0", "1.0"]
+    [
+      expected.marketingVersion,
+      expected.marketingVersion,
+      expected.marketingVersion,
+      "1.0",
+      "1.0",
+      expected.marketingVersion,
+    ]
   );
   assert.deepEqual(
     matches(xcodeProject, /^\s*CURRENT_PROJECT_VERSION = ([^;]+);$/gm),
-    [expected.iosBuildNumber, expected.iosBuildNumber, "1", "1"]
+    [
+      expected.iosBuildNumber,
+      expected.iosBuildNumber,
+      expected.iosBuildNumber,
+      "1",
+      "1",
+      expected.iosBuildNumber,
+    ]
   );
   assert.match(
     archiveScript,
@@ -77,6 +96,52 @@ test("iOS app target and archive defaults agree on release version and build", (
   assert.match(
     archiveScript,
     new RegExp(`BUILD_NUMBER="\\$\\{BUILD_NUMBER:-${expected.iosBuildNumber}\\}"`)
+  );
+});
+
+test("GymAppLiveActivity extension matches the GymApp app target's version and build (App Store parity)", () => {
+  assert.match(
+    xcodeProject,
+    /PRODUCT_BUNDLE_IDENTIFIER = com\.setforge\.gymapp\.ios\.LiveActivity;/,
+    "GymAppLiveActivity target must exist in the Xcode project"
+  );
+
+  // Isolate each GymAppLiveActivity XCBuildConfiguration block (Debug and
+  // Release) and assert its MARKETING_VERSION/CURRENT_PROJECT_VERSION match
+  // the host app's, since an embedded extension's CFBundleShortVersionString
+  // and CFBundleVersion must match the host app for App Store submission.
+  const extensionConfigBlocks = [
+    ...xcodeProject.matchAll(
+      /buildSettings = \{[^}]*PRODUCT_BUNDLE_IDENTIFIER = com\.setforge\.gymapp\.ios\.LiveActivity;[^}]*\}/g
+    ),
+  ].map((match) => match[0]);
+  assert.equal(
+    extensionConfigBlocks.length,
+    2,
+    "expected exactly one Debug and one Release build configuration for GymAppLiveActivity"
+  );
+  for (const block of extensionConfigBlocks) {
+    assert.match(
+      block,
+      new RegExp(`MARKETING_VERSION = ${expected.marketingVersion.replaceAll(".", "\\.")};`),
+      "GymAppLiveActivity MARKETING_VERSION must match the GymApp app target"
+    );
+    assert.match(
+      block,
+      new RegExp(`CURRENT_PROJECT_VERSION = ${expected.iosBuildNumber};`),
+      "GymAppLiveActivity CURRENT_PROJECT_VERSION must match the GymApp app target"
+    );
+  }
+
+  assert.match(
+    liveActivityInfoPlist,
+    /<key>CFBundleShortVersionString<\/key>\s*<string>\$\(MARKETING_VERSION\)<\/string>/,
+    "GymAppLiveActivity Info.plist must derive CFBundleShortVersionString from MARKETING_VERSION"
+  );
+  assert.match(
+    liveActivityInfoPlist,
+    /<key>CFBundleVersion<\/key>\s*<string>\$\(CURRENT_PROJECT_VERSION\)<\/string>/,
+    "GymAppLiveActivity Info.plist must derive CFBundleVersion from CURRENT_PROJECT_VERSION"
   );
 });
 

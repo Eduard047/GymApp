@@ -152,6 +152,10 @@ struct FriendsView: View {
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
+    /// Observed separately from `liveWorkoutCoordinator` so the refresh
+    /// spinner stays reactive without needing `isRefreshing` itself to be
+    /// `@Published` on the coordinator — see `LiveWorkoutRefreshState`.
+    @ObservedObject private var liveWorkoutRefreshState: LiveWorkoutRefreshState
     @AccessibilityFocusState private var focusedNativePushTarget: NativePushProfileFocus?
 
     private let canAcceptWorkoutInvites: Bool
@@ -188,6 +192,7 @@ struct FriendsView: View {
         self.auth = auth
         self.canAcceptWorkoutInvites = canAcceptWorkoutInvites
         self.liveWorkoutCoordinator = liveWorkoutCoordinator
+        self.liveWorkoutRefreshState = liveWorkoutCoordinator.refreshState
         self.nativePushAccessibilityTarget = nativePushAccessibilityTarget
         self.onOpenAccountSettings = onOpenAccountSettings
         self.onCreateLiveWorkout = onCreateLiveWorkout
@@ -713,7 +718,7 @@ struct FriendsView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(liveWorkoutCoordinator.isRefreshing)
+                    .disabled(liveWorkoutRefreshState.isRefreshing)
                     .accessibilityLabel(t("Refresh live workouts", "Оновити живі тренування", "Обновить живые тренировки"))
                 }
             }

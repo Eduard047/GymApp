@@ -97,7 +97,7 @@ struct ActiveWorkoutView: View {
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
-    @ObservedObject private var restTimers: RestTimerManager
+    private let restTimers: RestTimerManager
 
     private let draftID: UUID
     private let onFinished: (UUID) -> Void
@@ -167,7 +167,7 @@ struct ActiveWorkoutView: View {
         _workoutStore = ObservedObject(wrappedValue: workoutStore)
         _activeWorkoutStore = ObservedObject(wrappedValue: activeWorkoutStore)
         _liveWorkoutCoordinator = ObservedObject(wrappedValue: liveWorkoutCoordinator)
-        _restTimers = ObservedObject(wrappedValue: restTimers)
+        self.restTimers = restTimers
         self.draftID = draftID
         self.onFinished = onFinished
         self.onClose = onClose
