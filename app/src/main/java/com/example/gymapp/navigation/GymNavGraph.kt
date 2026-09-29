@@ -145,6 +145,7 @@ import com.example.gymapp.ui.screens.WorkoutShareSheet
 import com.example.gymapp.ui.screens.shareWorkoutUrl
 import com.example.gymapp.ui.viewmodel.AddWorkoutViewModel
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutViewModel
+import com.example.gymapp.ui.viewmodel.activeWorkoutFocus
 import com.example.gymapp.ui.viewmodel.ExerciseListViewModel
 import com.example.gymapp.ui.viewmodel.ExerciseProgressViewModel
 import com.example.gymapp.ui.viewmodel.FriendsViewModel
@@ -2621,12 +2622,8 @@ internal fun GymAppRoot(
                             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                             val addWorkoutDraftUiState by addWorkoutDraftViewModel.uiState
                                 .collectAsStateWithLifecycle()
-                            val activeWorkoutSets = activeWorkout?.exercises
-                                .orEmpty()
-                                .flatMap { it.sets }
-                            val activeWorkoutProgress = activeWorkout?.let {
-                                activeWorkoutSets.count { set -> set.completedAt != null } to
-                                    activeWorkoutSets.size
+                            val focusForToday = remember(activeWorkout) {
+                                activeWorkoutFocus(activeWorkout)
                             }
                             val discardActiveWorkoutFailed = stringResource(
                                 R.string.active_workout_discard_failed
@@ -2777,7 +2774,7 @@ internal fun GymAppRoot(
                                     )
                                 },
                                 hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
-                                activeWorkoutProgress = activeWorkoutProgress,
+                                activeWorkoutFocus = focusForToday,
                                 friendEntryState = TodayFriendEntryState.from(
                                     isCloudAccount = cloudSession != null,
                                     friendCount = friendsState?.dashboard?.friends?.size ?: 0,

@@ -22,3 +22,9 @@ val Frost = Color(0xFFF4F8FF)
 val FrostMuted = Color(0xFFAABBD1)
 val CobaltNight = Color(0xFF8BB9FF)
 val AmberNight = Color(0xFFFFC56B)
+
+// Brand fill pair shared with iOS: card base and its bright end, per appearance.
+val BrandFill = Color(0xFF216BD7)
+val BrandFillBright = Color(0xFF3A8DFF)
+val BrandFillNight = Color(0xFF2E72D2)
+val BrandFillBrightNight = Color(0xFF3F84E5)

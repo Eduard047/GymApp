@@ -476,7 +476,7 @@
     <string name="active_workout_progress_accessibility">Workout progress</string>
     <string name="active_workout_finish_eyebrow">WHEN YOU ARE DONE</string>
     <string name="active_workout_finish_supporting">Only recorded sets will be added to workout history. Planned rows stay out of your statistics.</string>
-    <string name="active_workout_discard_action">Discard active workout</string>
+    <string name="active_workout_discard_action">Discard workout</string>
     <string name="active_workout_more_options">More workout options</string>
     <string name="active_workout_exercise_current">Current</string>
     <string name="active_workout_exercise_completed">Completed</string>
@@ -530,8 +530,6 @@
     <string name="active_workout_all_sets_saved">Saved %1$d remaining sets together.</string>
     <string name="active_workout_all_sets_saved_rest_failed">All sets were saved, but the old rest timer could not be fully stopped.</string>
     <string name="active_workout_change_saved_rest_failed">The change was saved, but the old rest timer could not be fully stopped.</string>
-    <string name="active_workout_draft_title">Continue active workout</string>
-    <string name="active_workout_draft_progress">%1$d of %2$d sets recorded</string>
     <string name="note_template_push">Push day</string>
     <string name="note_template_pull">Pull day</string>
     <string name="note_template_legs">Leg day</string>
@@ -680,6 +678,7 @@
     <string name="solo_total_xp_earned">earned</string>
     <string name="solo_month_xp_label">Month XP</string>
     <string name="solo_month_xp_value">%1$d XP</string>
+    <string name="ranks_xp_value">%1$s XP</string>
     <string name="solo_next_title_label">Next title</string>
     <string name="solo_streak_label">Week streak</string>
     <string name="solo_streak_weekly_value">%1$d wk</string>
@@ -693,8 +692,9 @@
     <string name="rank_status_current">Current</string>
     <string name="rank_status_unlocked">Unlocked</string>
     <string name="rank_status_locked">Locked</string>
-    <string name="rank_progress_value">%1$d / %2$d XP</string>
-    <string name="rank_xp_left">%1$d XP left</string>
+    <string name="rank_level_from_xp">Level %1$d · from %2$s XP</string>
+    <string name="rank_xp_to_go">%1$s XP to go</string>
+    <string name="ranks_xp_to_next">%1$s XP to %2$s</string>
     <string name="ranks_empty_title">No ranks yet</string>
     <string name="ranks_empty_supporting">Rank tiers will appear here once the progress ladder is available.</string>
     <string name="activity_heatmap_title">Activity Heatmap</string>
@@ -822,7 +822,14 @@
     <string name="activation_start_plan">Use suggested plan</string>
     <string name="activation_skip">Skip</string>
     <string name="today_weekly_rhythm">Weekly rhythm</string>
-    <string name="today_weekly_value">%1$d / %2$d days</string>
+    <string name="today_weekly_goal">Goal: %1$d of %2$d</string>
+    <string name="today_weekly_goal_spoken">Weekly goal: %1$d of %2$d</string>
+    <string name="today_history_volume_kg">%1$s kg</string>
+    <string name="activation_adjust_open">Open</string>
+    <string name="activation_adjust_closed">Closed</string>
+    <string name="today_empty_state_hint">Your workouts and weekly progress will show up here.</string>
+    <string name="today_focus_next_exercise">Next exercise</string>
+    <string name="today_focus_set_progress">Set %1$d · %2$d / %3$d completed</string>
     <string name="today_start_recommended">Edit plan</string>
     <string name="today_edit_plan">Edit plan</string>
     <string name="today_start_plan">Start plan</string>
@@ -1194,6 +1201,9 @@
     <string name="exercise_filter_lower">Lower body</string>
     <string name="exercise_filter_core">Core</string>
     <string name="exercise_filter_all_muscles">All muscles</string>
+    <string name="exercise_filters_label">Filters</string>
+    <string name="exercise_filter_category">Category</string>
+    <string name="exercise_filter_sort">Sort</string>
     <string name="exercise_sort_name">By name</string>
     <string name="exercise_sort_most_frequent">Most frequent</string>
     <string name="exercise_sort_least_frequent">Least frequent</string>

@@ -478,7 +478,7 @@
     <string name="active_workout_progress_accessibility">Прогрес тренування</string>
     <string name="active_workout_finish_eyebrow">КОЛИ ЗАКІНЧИШ</string>
     <string name="active_workout_finish_supporting">До історії потраплять лише записані підходи. Заплановані рядки не вплинуть на статистику.</string>
-    <string name="active_workout_discard_action">Скасувати активне тренування</string>
+    <string name="active_workout_discard_action">Відкинути тренування</string>
     <string name="active_workout_more_options">Інші дії</string>
     <string name="active_workout_exercise_current">Зараз</string>
     <string name="active_workout_exercise_completed">Виконано</string>
@@ -532,8 +532,6 @@
     <string name="active_workout_all_sets_saved">Одночасно збережено підходів: %1$d.</string>
     <string name="active_workout_all_sets_saved_rest_failed">Усі підходи збережено, але старий таймер відпочинку не вдалося повністю зупинити.</string>
     <string name="active_workout_change_saved_rest_failed">Зміну збережено, але старий таймер відпочинку не вдалося повністю зупинити.</string>
-    <string name="active_workout_draft_title">Продовжити активне тренування</string>
-    <string name="active_workout_draft_progress">Записано підходів: %1$d із %2$d</string>
     <string name="note_template_push">День жиму</string>
     <string name="note_template_pull">День тяги</string>
     <string name="note_template_legs">День ніг</string>
@@ -688,6 +686,7 @@
     <string name="solo_total_xp_earned">зароблено</string>
     <string name="solo_month_xp_label">XP за місяць</string>
     <string name="solo_month_xp_value">%1$d XP</string>
+    <string name="ranks_xp_value">%1$s XP</string>
     <string name="solo_next_title_label">Наступний титул</string>
     <string name="solo_streak_label">Серія тижнів</string>
     <string name="solo_streak_weekly_value">%1$d тиж</string>
@@ -701,8 +700,9 @@
     <string name="rank_status_current">Поточний</string>
     <string name="rank_status_unlocked">Відкрито</string>
     <string name="rank_status_locked">Заблоковано</string>
-    <string name="rank_progress_value">%1$d / %2$d XP</string>
-    <string name="rank_xp_left">Залишилось %1$d XP</string>
+    <string name="rank_level_from_xp">Рівень %1$d · від %2$s XP</string>
+    <string name="rank_xp_to_go">ще %1$s XP</string>
+    <string name="ranks_xp_to_next">%1$s XP до «%2$s»</string>
     <string name="ranks_empty_title">Поки що немає титулів</string>
     <string name="ranks_empty_supporting">Тут з’являться титули, коли буде доступна шкала прогресу.</string>
     <string name="activity_heatmap_title">Теплова карта активності</string>
@@ -832,7 +832,14 @@
     <string name="activation_start_plan">Використати пораду</string>
     <string name="activation_skip">Пропустити</string>
     <string name="today_weekly_rhythm">Ритм тижня</string>
-    <string name="today_weekly_value">%1$d / %2$d днів</string>
+    <string name="today_weekly_goal">Ціль: %1$d з %2$d</string>
+    <string name="today_weekly_goal_spoken">Ціль тижня: %1$d з %2$d</string>
+    <string name="today_history_volume_kg">%1$s кг</string>
+    <string name="activation_adjust_open">Відкрито</string>
+    <string name="activation_adjust_closed">Закрито</string>
+    <string name="today_empty_state_hint">Тут з’являться твої тренування й тижневий прогрес.</string>
+    <string name="today_focus_next_exercise">Наступна вправа</string>
+    <string name="today_focus_set_progress">Підхід %1$d · виконано %2$d / %3$d</string>
     <string name="today_start_recommended">Редагувати план</string>
     <string name="today_edit_plan">Редагувати план</string>
     <string name="today_start_plan">Почати план</string>
@@ -1204,6 +1211,9 @@
     <string name="exercise_filter_lower">Низ тіла</string>
     <string name="exercise_filter_core">Кор</string>
     <string name="exercise_filter_all_muscles">Усі м’язи</string>
+    <string name="exercise_filters_label">Фільтри</string>
+    <string name="exercise_filter_category">Категорія</string>
+    <string name="exercise_filter_sort">Сортування</string>
     <string name="exercise_sort_name">За назвою</string>
     <string name="exercise_sort_most_frequent">Найчастіші</string>
     <string name="exercise_sort_least_frequent">Найрідші</string>

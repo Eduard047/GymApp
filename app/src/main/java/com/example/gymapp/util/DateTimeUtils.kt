@@ -84,4 +84,32 @@ object DateTimeUtils {
         }
         return date.format(formatter("EEEE, d MMMM yyyy", locale))
     }
+
+    /**
+     * "Sat, Sep 26" / "сб, 26 вер." / "Сб, 26 сент." — abbreviated weekday, day and
+     * month; the year (with the locale's year suffix) is added only when it differs
+     * from the year of [now]. Mirrors the iOS `gymShortDate` output.
+     */
+    fun formatShortDate(
+        timestamp: Long,
+        locale: Locale = Locale.getDefault(),
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        now: Long = System.currentTimeMillis()
+    ): String {
+        val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+        val sameYear = date.year == Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate().year
+        val pattern = when (locale.language.lowercase(Locale.ROOT)) {
+            "en" -> if (sameYear) "EEE, MMM d" else "EEE, MMM d, yyyy"
+            "uk" -> if (sameYear) "EEE, d MMM" else "EEE, d MMM yyyy 'р'."
+            "ru" -> if (sameYear) "EEE, d MMM" else "EEE, d MMM yyyy 'г'."
+            else -> if (sameYear) "EEE, d MMM" else "EEE, d MMM yyyy"
+        }
+        val text = date.format(formatter(pattern, locale))
+        // Russian capitalizes the standalone weekday; Ukrainian and English do not.
+        return if (locale.language.equals("ru", ignoreCase = true)) {
+            text.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+        } else {
+            text
+        }
+    }
 }

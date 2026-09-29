@@ -6,19 +6,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,9 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -38,11 +41,12 @@ import com.example.gymapp.R
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
-import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.viewmodel.RankProgressUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.asString
+import com.example.gymapp.util.formatXp
+import java.util.Locale
 
 @Composable
 fun RanksScreen(
@@ -73,6 +77,7 @@ fun RanksScreen(
         return
     }
 
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     val totalXp = uiState.soloProgress.totalXp
     val rankTiers = uiState.rankLadder
         .sortedWith(compareBy<RankProgressUiModel> { it.requiredXp }.thenBy { it.levelRequirement })
@@ -123,35 +128,34 @@ fun RanksScreen(
 
                     Text(
                         text = "${stringResource(R.string.post_workout_level, uiState.soloProgress.level)} · " +
-                            stringResource(R.string.solo_month_xp_value, totalXp),
+                            stringResource(R.string.ranks_xp_value, formatXp(totalXp, locale)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.82f)
                     )
 
-                    LinearProgressIndicator(
-                        progress = { heroProgress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(7.dp),
-                        color = Color.White,
-                        trackColor = Color.White.copy(alpha = 0.18f)
-                    )
+                    if (nextRank != null) {
+                        RankProgressTrack(
+                            progress = heroProgress,
+                            trackColor = Color.White.copy(alpha = 0.25f),
+                            fillColor = Color.White,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clearAndSetSemantics { }
+                        )
 
-                    Text(
-                        text = if (nextRank != null) {
-                            "${stringResource(R.string.solo_next_title_label)}: ${nextRank.title} · " +
-                                stringResource(
-                                    R.string.post_workout_level,
-                                    nextRank.levelRequirement
-                                )
-                        } else {
-                            stringResource(R.string.ranks_current_title_value, currentTitle)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.78f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                        Text(
+                            text = stringResource(
+                                R.string.ranks_xp_to_next,
+                                formatXp(nextRank.xpRemaining, locale),
+                                nextRank.title
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.78f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
@@ -164,132 +168,155 @@ fun RanksScreen(
                 )
             }
         } else {
-            items(
-                items = rankTiers,
-                key = { it.id }
-            ) { tier ->
-                RankTierCard(
-                    tier = tier,
-                    totalXp = totalXp
-                )
+            item {
+                AppPanel(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        rankTiers.forEachIndexed { index, tier ->
+                            RankLadderRow(
+                                tier = tier,
+                                isNext = tier.id == nextRank?.id,
+                                nextProgress = heroProgress
+                            )
+                            if (index < rankTiers.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 50.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RankTierCard(
+private fun RankLadderRow(
     tier: RankProgressUiModel,
-    totalXp: Int,
+    isNext: Boolean,
+    nextProgress: Float,
     modifier: Modifier = Modifier
 ) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     val iconColor = if (tier.isUnlocked) {
         MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val progressColor = if (tier.isUnlocked) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.secondary
     }
     val statusText = when {
         tier.isCurrent -> stringResource(R.string.rank_status_current)
         tier.isUnlocked -> stringResource(R.string.rank_status_unlocked)
         else -> stringResource(R.string.rank_status_locked)
     }
-    val progressValue = (if (tier.isUnlocked) 1f else tier.progressFraction)
-        .takeIf(Float::isFinite)
-        ?.coerceIn(0f, 1f)
-        ?: 0f
-    val progressText = stringResource(
-        R.string.rank_progress_value,
-        totalXp.coerceAtMost(tier.requiredXp),
-        tier.requiredXp
-    )
-    val remainingText = if (tier.isUnlocked) {
-        null
-    } else {
-        stringResource(R.string.rank_xp_left, tier.xpRemaining)
-    }
-    val accessibilityState = listOfNotNull(statusText, progressText, remainingText).joinToString(". ")
 
-    AppPanel(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) {
-                stateDescription = accessibilityState
-                progressBarRangeInfo = ProgressBarRangeInfo(progressValue, 0f..1f)
-            },
-        highlighted = tier.isCurrent
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(iconColor.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (tier.isUnlocked) {
-                        Icons.Default.EmojiEvents
-                    } else {
-                        Icons.Default.Lock
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(23.dp),
-                    tint = iconColor
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = tier.title,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            .heightIn(min = 56.dp)
+            .then(
+                if (tier.isCurrent) {
+                    Modifier.background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                        RoundedCornerShape(12.dp)
                     )
-                    if (tier.isCurrent) {
-                        InfoPill(
-                            text = stringResource(R.string.rank_status_current),
-                            accent = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                } else {
+                    Modifier
                 }
+            )
+            .padding(vertical = 10.dp)
+            .semantics(mergeDescendants = true) {
+                selected = tier.isCurrent
+                stateDescription = statusText
+            },
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(
+                    if (tier.isUnlocked) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (tier.isUnlocked) {
+                    Icons.Default.EmojiEvents
+                } else {
+                    Icons.Default.Lock
+                },
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = iconColor
+            )
+        }
 
-                Text(
-                    text = "${stringResource(R.string.post_workout_level, tier.levelRequirement)} · " +
-                        stringResource(R.string.solo_month_xp_value, tier.requiredXp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                LinearProgressIndicator(
-                    progress = { progressValue },
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = tier.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = stringResource(
+                    R.string.rank_level_from_xp,
+                    tier.levelRequirement,
+                    formatXp(tier.requiredXp, locale)
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (isNext) {
+                RankProgressTrack(
+                    progress = nextProgress,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant,
+                    fillColor = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp),
-                    color = progressColor,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        .height(6.dp)
+                )
+                Text(
+                    text = stringResource(R.string.rank_xp_to_go, formatXp(tier.xpRemaining, locale)),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
         }
+    }
+}
+
+/** Capsule progress bar with a deliberately visible track, matching the iOS ranks screen. */
+@Composable
+private fun RankProgressTrack(
+    progress: Float,
+    trackColor: Color,
+    fillColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val fraction = progress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(trackColor)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction)
+                .clip(CircleShape)
+                .background(fillColor)
+        )
     }
 }

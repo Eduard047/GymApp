@@ -67,7 +67,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +101,7 @@ import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.SettingsRow
+import com.example.gymapp.ui.components.brandFillColor
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
@@ -1037,28 +1049,23 @@ fun ExerciseListScreen(
     ) {
         item {
             ScreenHeader(
-                title = stringResource(R.string.title_exercises)
+                title = stringResource(R.string.title_exercises),
+                trailing = {
+                    IconButton(
+                        onClick = { isAddExerciseOpen = true },
+                        modifier = Modifier.size(44.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = brandFillColor(),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = stringResource(R.string.action_add_exercise)
+                        )
+                    }
+                }
             )
-        }
-
-        item {
-            Button(
-                onClick = { isAddExerciseOpen = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null
-                )
-                Text(
-                    text = stringResource(R.string.action_add_exercise),
-                    modifier = Modifier.padding(start = 8.dp),
-                    maxLines = 1
-                )
-            }
         }
 
         if (
@@ -1135,7 +1142,9 @@ fun ExerciseListScreen(
                         Text(
                             text = displayExerciseName,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         if (searchMatchReason != null) {
                             Text(
@@ -1154,8 +1163,8 @@ fun ExerciseListScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(13.dp)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         if (fullWidthTitle) {
                             titleContent(Modifier.fillMaxWidth())
@@ -1163,48 +1172,59 @@ fun ExerciseListScreen(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             ExerciseMediaPreview(
                                 exerciseId = exercise.id,
                                 exerciseName = exercise.name,
                                 ownerKey = exerciseMediaOwnerKey,
-                                width = 76.dp,
-                                height = 64.dp
+                                width = 60.dp,
+                                height = 60.dp,
+                                playBadgeSize = 20.dp
                             )
                             if (fullWidthTitle) {
                                 Spacer(Modifier.weight(1f))
                             } else {
                                 titleContent(Modifier.weight(1f))
                             }
-                            IconButton(onClick = { onToggleFavorite(exercise) }) {
-                                Icon(
-                                    imageVector = if (exercise.isFavorite) {
-                                        Icons.Default.Favorite
-                                    } else {
-                                        Icons.Default.FavoriteBorder
-                                    },
-                                    contentDescription = stringResource(
-                                        if (exercise.isFavorite) {
-                                            R.string.exercise_favorite_remove
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(0.dp)
+                            ) {
+                                IconButton(
+                                    onClick = { onToggleFavorite(exercise) },
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (exercise.isFavorite) {
+                                            Icons.Default.Favorite
                                         } else {
-                                            R.string.exercise_favorite_add
+                                            Icons.Default.FavoriteBorder
+                                        },
+                                        contentDescription = stringResource(
+                                            if (exercise.isFavorite) {
+                                                R.string.exercise_favorite_remove
+                                            } else {
+                                                R.string.exercise_favorite_add
+                                            }
+                                        ),
+                                        tint = if (exercise.isFavorite) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
                                         }
-                                    ),
-                                    tint = if (exercise.isFavorite) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Box {
+                                    IconButton(
+                                        onClick = { menuExpanded = true },
+                                        modifier = Modifier.size(44.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = stringResource(R.string.cd_more_actions)
+                                        )
                                     }
-                                )
-                            }
-                            androidx.compose.foundation.layout.Box {
-                            IconButton(onClick = { menuExpanded = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = stringResource(R.string.cd_more_actions)
-                                )
-                            }
                             DropdownMenu(
                                 expanded = menuExpanded,
                                 onDismissRequest = { menuExpanded = false }
@@ -1260,6 +1280,7 @@ fun ExerciseListScreen(
                                         )
                                     }
                                 )
+                            }
                             }
                             }
                         }
@@ -1556,15 +1577,24 @@ internal fun ExerciseSearchAndFilters(
     resultCount: Int
 ) {
     val languageTag = currentAppLanguageTag()
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+    var filterMenuOpen by remember { mutableStateOf(false) }
+    val isFilterCustomized = favoritesOnly ||
+        bodyFilter != ExerciseBodyFilter.All ||
+        sortMode != ExerciseSortMode.Name
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             OutlinedTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 singleLine = true,
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = null)
@@ -1585,87 +1615,186 @@ internal fun ExerciseSearchAndFilters(
                 placeholder = { Text(stringResource(R.string.exercise_search_placeholder)) }
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = favoritesOnly,
-                    onClick = { onFavoritesOnlyChange(!favoritesOnly) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (favoritesOnly) {
-                                Icons.Default.Favorite
-                            } else {
-                                Icons.Default.FavoriteBorder
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    label = { Text(stringResource(R.string.exercise_filter_favorites)) }
-                )
-                ExerciseBodyFilter.entries.forEach { filter ->
-                    val label = when (filter) {
-                        ExerciseBodyFilter.All -> R.string.exercise_filter_all
-                        ExerciseBodyFilter.Upper -> R.string.exercise_filter_upper
-                        ExerciseBodyFilter.Lower -> R.string.exercise_filter_lower
-                        ExerciseBodyFilter.Core -> R.string.exercise_filter_core
-                    }
-                    FilterChip(
-                        selected = bodyFilter == filter,
-                        onClick = { onBodyFilterChange(filter) },
-                        label = { Text(stringResource(label)) }
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ExerciseSortMode.entries.forEach { mode ->
-                    val label = when (mode) {
-                        ExerciseSortMode.Name -> R.string.exercise_sort_name
-                        ExerciseSortMode.MostFrequent -> R.string.exercise_sort_most_frequent
-                        ExerciseSortMode.LeastFrequent -> R.string.exercise_sort_least_frequent
-                    }
-                    FilterChip(
-                        selected = sortMode == mode,
-                        onClick = { onSortModeChange(mode) },
-                        label = { Text(stringResource(label)) }
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = muscleFilter == null,
-                    onClick = { onMuscleFilterChange(null) },
-                    label = { Text(stringResource(R.string.exercise_filter_all_muscles)) }
-                )
-                MUSCLE_DEFINITIONS.forEach { muscle ->
-                    FilterChip(
-                        selected = muscleFilter == muscle.id,
-                        onClick = {
-                            onMuscleFilterChange(if (muscleFilter == muscle.id) null else muscle.id)
+            Box {
+                IconButton(
+                    onClick = { filterMenuOpen = true },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .semantics { selected = isFilterCustomized },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (isFilterCustomized) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            Color.Transparent
                         },
-                        label = { Text(localizedMuscleName(muscle.id, languageTag)) }
+                        contentColor = if (isFilterCustomized) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FilterList,
+                        contentDescription = stringResource(R.string.exercise_filters_label)
                     )
                 }
+                if (isFilterCustomized) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 6.dp, end = 6.dp)
+                            .size(9.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clearAndSetSemantics { }
+                    )
+                }
+                DropdownMenu(
+                    expanded = filterMenuOpen,
+                    onDismissRequest = { filterMenuOpen = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.exercise_filter_favorites)) },
+                        onClick = {
+                            onFavoritesOnlyChange(!favoritesOnly)
+                            filterMenuOpen = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (favoritesOnly) {
+                                    Icons.Default.Favorite
+                                } else {
+                                    Icons.Default.FavoriteBorder
+                                },
+                                contentDescription = null
+                            )
+                        },
+                        trailingIcon = if (favoritesOnly) {
+                            { Icon(Icons.Default.Check, contentDescription = null) }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.semantics { selected = favoritesOnly }
+                    )
+                    HorizontalDivider()
+                    ExerciseFilterMenuHeader(stringResource(R.string.exercise_filter_category))
+                    ExerciseBodyFilter.entries.forEach { filter ->
+                        val label = when (filter) {
+                            ExerciseBodyFilter.All -> R.string.exercise_filter_all
+                            ExerciseBodyFilter.Upper -> R.string.exercise_filter_upper
+                            ExerciseBodyFilter.Lower -> R.string.exercise_filter_lower
+                            ExerciseBodyFilter.Core -> R.string.exercise_filter_core
+                        }
+                        ExerciseFilterMenuChoice(
+                            label = stringResource(label),
+                            selected = bodyFilter == filter,
+                            onClick = {
+                                onBodyFilterChange(filter)
+                                filterMenuOpen = false
+                            }
+                        )
+                    }
+                    HorizontalDivider()
+                    ExerciseFilterMenuHeader(stringResource(R.string.exercise_filter_sort))
+                    ExerciseSortMode.entries.forEach { mode ->
+                        val label = when (mode) {
+                            ExerciseSortMode.Name -> R.string.exercise_sort_name
+                            ExerciseSortMode.MostFrequent -> R.string.exercise_sort_most_frequent
+                            ExerciseSortMode.LeastFrequent -> R.string.exercise_sort_least_frequent
+                        }
+                        ExerciseFilterMenuChoice(
+                            label = stringResource(label),
+                            selected = sortMode == mode,
+                            onClick = {
+                                onSortModeChange(mode)
+                                filterMenuOpen = false
+                            }
+                        )
+                    }
+                }
             }
+        }
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ExerciseMuscleChip(
+                selected = muscleFilter == null,
+                onClick = { onMuscleFilterChange(null) },
+                label = stringResource(R.string.exercise_filter_all_muscles)
+            )
+            MUSCLE_DEFINITIONS.forEach { muscle ->
+                ExerciseMuscleChip(
+                    selected = muscleFilter == muscle.id,
+                    onClick = {
+                        onMuscleFilterChange(if (muscleFilter == muscle.id) null else muscle.id)
+                    },
+                    label = localizedMuscleName(muscle.id, languageTag)
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun ExerciseFilterMenuHeader(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .semantics { heading() },
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun ExerciseFilterMenuChoice(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = onClick,
+        trailingIcon = if (selected) {
+            { Icon(Icons.Default.Check, contentDescription = null) }
+        } else {
+            null
+        },
+        modifier = Modifier.semantics { this.selected = selected }
+    )
+}
+
+@Composable
+private fun ExerciseMuscleChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                text = label,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1
+            )
+        },
+        shape = CircleShape,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            labelColor = MaterialTheme.colorScheme.onSurface,
+            selectedContainerColor = brandFillColor(),
+            selectedLabelColor = Color.White
+        ),
+        border = null
+    )
 }
 
 @Composable

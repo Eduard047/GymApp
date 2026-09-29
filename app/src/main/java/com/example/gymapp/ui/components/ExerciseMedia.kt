@@ -71,7 +71,8 @@ fun ExerciseMediaPreview(
     modifier: Modifier = Modifier,
     width: Dp = 76.dp,
     height: Dp = 64.dp,
-    editable: Boolean = true
+    editable: Boolean = true,
+    playBadgeSize: Dp = 28.dp
 ) {
     require(ownerKey.isNotBlank()) { "Exercise media must be bound to an active account." }
     var showSheet by remember(exerciseId, ownerKey) { mutableStateOf(false) }
@@ -134,8 +135,8 @@ fun ExerciseMediaPreview(
                     Surface(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(5.dp)
-                            .size(28.dp),
+                            .padding(if (playBadgeSize < 28.dp) 3.dp else 5.dp)
+                            .size(playBadgeSize),
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primary
                     ) {
@@ -143,7 +144,7 @@ fun ExerciseMediaPreview(
                             Icons.Default.PlayArrow,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.padding(6.dp)
+                            modifier = Modifier.padding(playBadgeSize * 6 / 28)
                         )
                     }
                 }

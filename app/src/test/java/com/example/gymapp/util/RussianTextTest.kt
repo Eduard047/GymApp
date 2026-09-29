@@ -42,5 +42,6 @@ class RussianTextTest {
         assertEquals("Новичок", RussianText.translate("Rookie"))
         assertEquals("Стабильный", RussianText.translate("Steady"))
         assertEquals("Космический воевода", RussianText.translate("Cosmic Warlord"))
+        assertEquals("Рождённый воином", RussianText.translate("Warborn"))
     }
 }

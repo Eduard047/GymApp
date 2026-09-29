@@ -30,6 +30,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -57,6 +59,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gymapp.R
+import com.example.gymapp.ui.theme.BrandFill
+import com.example.gymapp.ui.theme.BrandFillNight
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymDataTypography
@@ -292,7 +296,8 @@ private fun metricTileValueStyle(emphasized: Boolean, utilityValue: Boolean): Te
 fun InfoPill(
     text: String,
     modifier: Modifier = Modifier,
-    accent: Color = MaterialTheme.colorScheme.primary
+    accent: Color = MaterialTheme.colorScheme.primary,
+    leadingIcon: ImageVector? = null
 ) {
     Surface(
         modifier = modifier,
@@ -301,14 +306,26 @@ fun InfoPill(
         shape = RoundedCornerShape(999.dp),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.22f))
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.SemiBold,
+        Row(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -357,27 +374,47 @@ fun EmptyStatePanel(
 fun ScreenHeader(
     title: String,
     supporting: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null
 ) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(GymSpacing.XSmall)
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.semantics { heading() },
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        if (!supporting.isNullOrBlank()) {
+    val titleColumn: @Composable (Modifier) -> Unit = { columnModifier ->
+        Column(
+            modifier = columnModifier,
+            verticalArrangement = Arrangement.spacedBy(GymSpacing.XSmall)
+        ) {
             Text(
-                text = supporting,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = title,
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
+            if (!supporting.isNullOrBlank()) {
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+    if (trailing == null) {
+        titleColumn(modifier.fillMaxWidth())
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
+        ) {
+            titleColumn(Modifier.weight(1f))
+            trailing()
         }
     }
 }
+
+/** Brand fill shared with iOS (`GymTheme.brandFill`): solid base color per appearance. */
+@Composable
+fun brandFillColor(): Color =
+    if (isSystemInDarkTheme()) BrandFillNight else BrandFill
 
 data class GymSegmentItem<T>(
     val value: T,

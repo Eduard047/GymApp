@@ -35,4 +35,18 @@ class VisibleDateFormatterTest {
             DateTimeUtils.formatLongDate(saturday, Locale("uk"), zoneId)
         )
     }
+
+    @Test
+    fun shortDateMatchesSharedIosOutputForSameAndOtherYear() {
+        val now = LocalDate.of(2026, 9, 29).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        fun at(year: Int, month: Int, day: Int) =
+            LocalDate.of(year, month, day).atStartOfDay(zoneId).toInstant().toEpochMilli()
+
+        assertEquals("Sat, Sep 26", DateTimeUtils.formatShortDate(at(2026, 9, 26), Locale.ENGLISH, zoneId, now))
+        assertEquals("Thu, Aug 14, 2025", DateTimeUtils.formatShortDate(at(2025, 8, 14), Locale.ENGLISH, zoneId, now))
+        assertEquals("сб, 26 вер.", DateTimeUtils.formatShortDate(at(2026, 9, 26), Locale("uk"), zoneId, now))
+        assertEquals("чт, 14 серп. 2025 р.", DateTimeUtils.formatShortDate(at(2025, 8, 14), Locale("uk"), zoneId, now))
+        assertEquals("Сб, 26 сент.", DateTimeUtils.formatShortDate(at(2026, 9, 26), Locale("ru"), zoneId, now))
+        assertEquals("Чт, 14 авг. 2025 г.", DateTimeUtils.formatShortDate(at(2025, 8, 14), Locale("ru"), zoneId, now))
+    }
 }
