@@ -21,16 +21,16 @@ test("root routes reserve real mobile navigation clearance and use a desktop sid
 });
 
 test("exercise density, active workout disclosure, and empty progress remain accessible", () => {
-  assert.match(app, /data-action="open-exercise-filters"[^>]*aria-haspopup="dialog"/);
+  assert.match(app, /data-action="open-exercise-filters"[^>]*aria-haspopup="menu"/);
   assert.match(app, /function activeExerciseFilterCount\(\)/);
-  assert.match(app, /bottomSheet\(exerciseFilterSheetMarkup\(\), "exercise-filter-title"\)/);
+  assert.doesNotMatch(app, /exerciseFilterSheetMarkup|type: "exercise-filters"/);
   assert.match(app, /data-action="open-exercise-more"[^>]*aria-haspopup="dialog"/);
   assert.match(app, /bottomSheet\(exerciseMoreSheetMarkup\(modal\.exerciseId\), "exercise-more-title"\)/);
   assert.match(app, /const modalElement = app\.querySelector\("\.modal"\);\s*if \(modalElement\)/);
   assert.match(app, /function muscleMapSelectionList\(data\)/);
   assert.match(app, /class="muscle-map-selector" role="group"/);
   assert.match(app, /data-action="select-muscle"[^>]*aria-pressed=/);
-  assert.match(app, /returnFocus: stableActionReturnFocus\("open-exercise-filters", el\)/);
+  assert.match(app, /restoreStableActionFocus\(\{ action: "open-exercise-filters" \}\)/);
   assert.match(app, /returnFocus: stableActionReturnFocus\("open-exercise-more", el\)/);
   assert.match(app, /class="hero-panel progress-empty-state"/);
   assert.match(styles, /\.active-workout-exercise\.current \.active-exercise-actions\s*\{[\s\S]*?position:\s*sticky;/);

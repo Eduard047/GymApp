@@ -206,6 +206,7 @@ test("first-workout activation keeps matching saved settings, derives the rest, 
     smartGeneratedPlan = null;
     smartPlanStale = false;
     nav = [{ name: "workouts" }];
+    activationOptionsOpen = true;
     return {
       firstAccount,
       secondDismissed: activationWasDismissed(),
@@ -570,9 +571,11 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
     removeTrainingGuidanceStorage();
     activationDraft = null;
     activeWorkout = null;
+    activationOptionsOpen = true;
     const empty = workoutsScreen();
     setActivationDismissed(true);
     const dismissed = workoutsScreen();
+    activationOptionsOpen = false;
     setActivationDismissed(false);
     const now = new Date(2026, 7, 12, 18).getTime();
     const make = (id, day) => ({
@@ -601,8 +604,8 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
   })()`, sandbox));
 
   const ordered = [
-    "Today", "YOUR FIRST PLAN", "Use suggested plan", "Build manually",
-    "Adjust recommendation", "workouts a week", "edit", "Today’s effort", "Review exercises"
+    "Today", "YOUR FIRST PLAN", "Adjust recommendation", "workouts a week", "edit", "Today’s effort",
+    "Review exercises", "Use suggested plan", "Build manually"
   ];
   let cursor = -1;
   for (const label of ordered) {
@@ -636,6 +639,7 @@ test("first-plan preview keeps one exact bounded plan and uses the canonical tim
     nav = [{ name: "workouts" }];
     removeTrainingGuidanceStorage();
     activationDraft = { owner: "local:alpha", goal: "Strength", days: 5, effort: "Hard" };
+    activationOptionsOpen = true;
     const markup = activationCard();
     const prepared = pendingActivationPlan;
     const counts = smartPlanCounts(prepared.plan);
@@ -665,6 +669,7 @@ test("first-plan actions use the exact shared EN, UK, and RU terminology", () =>
     state.sessions = [];
     activeWorkout = null;
     activationDraft = { owner: "local:alpha", goal: "Strength", days: 4, effort: "Auto" };
+    activationOptionsOpen = true;
     const renderLanguage = language => {
       state.language = language;
       return activationCard();
@@ -680,7 +685,7 @@ test("first-plan actions use the exact shared EN, UK, and RU terminology", () =>
   for (const [language, labels] of Object.entries(expected)) {
     const actions = ["activation-start", "activation-edit", "activation-manual"];
     actions.forEach((action, index) => {
-      assert.match(markup[language], new RegExp(`data-action="${action}"[^>]*>${labels[index]}</button>`));
+      assert.match(markup[language], new RegExp(`data-action="${action}"[^>]*>(?:<svg[^>]*>.*?</svg>)?${labels[index]}</button>`));
     });
     assert.doesNotMatch(markup[language], /Start exact plan|Edit exact plan|Почати цей план|Редагувати цей план|Начать этот план|Редактировать этот план/);
   }
@@ -926,4 +931,45 @@ test("future sessions cannot extend weekly-rhythm achievements", () => {
   })()`, sandbox));
 
   assert.deepEqual(result, { bounded: 1, futureOnly: 0 });
+});
+
+test("first-plan card keeps adjust options behind a 44pt toggle beside the title, above the actions", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    activeAccount = { id: "alpha", name: "Alpha" };
+    state = defaultAppState();
+    state.sessions = [];
+    activeWorkout = null;
+    workoutDraft = null;
+    nav = [{ name: "workouts" }];
+    removeTrainingGuidanceStorage();
+    activationDraft = { owner: "local:alpha", goal: "Strength", days: 4, effort: "Standard" };
+    const out = {};
+    for (const language of ["en", "uk", "ru"]) {
+      state.language = language;
+      activationOptionsOpen = false;
+      const closed = activationCard();
+      const closedScreen = workoutsScreen();
+      activationOptionsOpen = true;
+      out[language] = { closed, closedScreen, open: activationCard() };
+    }
+    return out;
+  })()`, sandbox));
+  for (const [language, label] of [["en", "Adjust recommendation"], ["uk", "Налаштувати пораду"], ["ru", "Настроить рекомендацию"]]) {
+    const { closed, open } = result[language];
+    assert.match(closed, new RegExp(`data-action="activation-options-toggle" aria-label="${label}" aria-expanded="false" aria-pressed="false"`));
+    assert.match(open, new RegExp(`data-action="activation-options-toggle" aria-label="${label}" aria-expanded="true" aria-pressed="true"`));
+    assert.doesNotMatch(closed, /activation-options-content|data-action="activation-option"|<details/);
+    assert.match(open, /activation-options-content/);
+    assert.ok(open.indexOf("activation-plan-heading") < open.indexOf("activation-options-content"));
+    assert.ok(open.indexOf("activation-options-content") < open.indexOf("activation-actions"));
+    assert.ok(open.indexOf("data-action=\"activation-start\"") < open.indexOf("data-action=\"activation-manual\""));
+    assert.match(open, /<div class="activation-title-row"><h2>[^<]+<\/h2><button class="activation-options-toggle open"/);
+  }
+  assert.match(result.en.closedScreen, /<p class="today-empty-hint">Your workouts and weekly progress will show up here\.<\/p>/);
+  assert.match(result.uk.closedScreen, /Тут з’являться твої тренування й тижневий прогрес\./);
+  assert.match(result.ru.closedScreen, /Здесь появятся твои тренировки и прогресс за неделю\./);
+  assert.match(appSource, /if \(action === "activation-options-toggle"\) \{[\s\S]*?activationOptionsOpen = !activationOptionsOpen;[\s\S]*?restoreStableActionFocus\(focusTarget\)/);
+  assert.match(appSource, /const STABLE_FOCUS_ACTIONS = new Set\(\[[^\]]*"activation-options-toggle"/);
+  assert.match(appSource, /activationDraft = null;\s+activationOptionsOpen = false;/);
 });

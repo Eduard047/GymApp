@@ -679,3 +679,110 @@ test("direct LIVE preflight gates repeat taps and preserves edits made after the
   assert.match(appSource, /current\.name === "add" && workoutDraftLiveSendInProgress[\s\S]{0,80}inert aria-busy="true"/);
   assert.match(appSource, /if \(workoutDraftLiveSendInProgress && route\(\)\.name === "add"\) return false/);
 });
+
+test("fmtShortDate matches the iOS short date in EN, UK, and RU", () => {
+  const sandbox = context();
+  const now = new Date(2026, 8, 29, 12).getTime();
+  const cases = [
+    ["en", new Date(2026, 8, 26, 12).getTime(), "Sat, Sep 26"],
+    ["en", new Date(2025, 7, 14, 12).getTime(), "Thu, Aug 14, 2025"],
+    ["uk", new Date(2026, 8, 26, 12).getTime(), "сб, 26 вер."],
+    ["uk", new Date(2025, 7, 14, 12).getTime(), "чт, 14 серп. 2025 р."],
+    ["ru", new Date(2026, 8, 26, 12).getTime(), "Сб, 26 сент."],
+    ["ru", new Date(2025, 7, 14, 12).getTime(), "Чт, 14 авг. 2025 г."]
+  ];
+  for (const [language, timestamp, expected] of cases) {
+    sandbox.language = language;
+    sandbox.timestamp = timestamp;
+    sandbox.now = now;
+    const actual = vm.runInContext(`(() => { state.language = language; return fmtShortDate(timestamp, now); })()`, sandbox);
+    assert.equal(actual, expected, `${language} ${expected}`);
+  }
+});
+
+test("training history states the weekly goal, shows volume with its unit, and uses short row dates", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    state.profile = { split: "Upper / Lower", days: 2, goal: "Strength", calories: "Maintenance" };
+    const startedAt = Date.now();
+    const make = (id, weight, extra = {}) => ({
+      id, startedAt: startedAt - id, note: "", exerciseNames: ["Leg Press"],
+      sets: [{ id: id * 100, exerciseName: "Leg Press", weight, reps: 10, orderIndex: 0 }], ...extra
+    });
+    state.sessions = [make(1, 50)];
+    workoutHistoryPeriod = "week";
+    const out = {};
+    for (const language of ["en", "uk", "ru"]) {
+      state.language = language;
+      out[language] = { partial: trainingHistoryMarkup(), shortDate: fmtShortDate(startedAt - 1) };
+    }
+    state.language = "en";
+    out.activityOnly = trainingHistoryWorkoutRow({
+      id: 9, startedAt, note: "", exerciseNames: [], sets: [], durationSeconds: 1800
+    });
+    const monday = localMondayStart(Date.now() - 7 * 86400000);
+    state.sessions = [make(1, 50, { startedAt: monday + 12 * 3600000 }), make(2, 60, { startedAt: monday + 36 * 3600000 })];
+    workoutWeekOffset = -1;
+    out.metWeek = trainingHistoryMarkup();
+    workoutWeekOffset = 0;
+    workoutHistoryPeriod = "month";
+    out.month = trainingHistoryMarkup();
+    workoutHistoryPeriod = "week";
+    return out;
+  })()`, sandbox));
+  const goals = {
+    en: ["Goal: 1 of 2", "Weekly goal: 1 of 2"],
+    uk: ["Ціль: 1 з 2", "Ціль тижня: 1 з 2"],
+    ru: ["Цель: 1 из 2", "Цель недели: 1 из 2"]
+  };
+  for (const [language, [visible, label]] of Object.entries(goals)) {
+    const markup = result[language].partial;
+    assert.match(markup, new RegExp(`<span role="group" aria-label="${label}"><svg[^>]*>.*?</svg>${visible}</span>`));
+    assert.doesNotMatch(markup, /1 \/ 2 (days|днів|дней)/);
+    assert.match(markup, new RegExp(`<strong>${result[language].shortDate}</strong>`));
+    assert.match(markup, language === "en" ? /<b>[^<]+ kg<\/b>/ : /<b>[^<]+ кг<\/b>/);
+  }
+  assert.match(result.en.partial, /M12 2C6\.48|M20\.57 14\.86/);
+  assert.doesNotMatch(result.en.partial, /M12 2C6\.48 2 2 6\.48/);
+  assert.match(result.metWeek, /Goal: 2 of 2/);
+  assert.match(result.metWeek, /<span role="group"[^>]*><svg[^>]*><path d="M12 2C6\.48/);
+  assert.match(result.activityOnly, /<b>[^<]*30[^<]*<\/b>/);
+  assert.doesNotMatch(result.activityOnly, / kg<\/b>/);
+  assert.doesNotMatch(result.month, /Goal:|Weekly goal/);
+  assert.match(stylesSource, /\.training-history-head > span \{[^}]*display: inline-flex[^}]*gap:/);
+  assert.doesNotMatch(stylesSource.match(/\.training-history-row > b \{[^}]*\}/)[0], /background|border-radius/);
+});
+
+test("active workout Today card leads with the current exercise and set progress", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    activeWorkout = { blocks: [
+      { exerciseName: "Bench Press", sets: [{ completed: true }, { completed: true }] },
+      { exerciseName: "Squat", sets: [{ completed: true }, { completed: false }, { completed: false }] }
+    ] };
+    const out = {};
+    for (const language of ["en", "uk", "ru"]) {
+      state.language = language;
+      out[language] = { markup: focusLensCard([]), name: exerciseDisplayName(activeWorkout.blocks[1], language) };
+    }
+    state.language = "ru";
+    activeWorkout = { blocks: [{ exerciseName: "Squat", sets: [{ completed: true }] }] };
+    out.done = focusLensCard([]);
+    return out;
+  })()`, sandbox));
+  const subtitle = {
+    en: "Set 2 · 3 / 5 completed", uk: "Підхід 2 · виконано 3 / 5", ru: "Подход 2 · выполнено 3 / 5"
+  };
+  const discard = { en: "Discard workout", uk: "Відкинути тренування", ru: "Удалить тренировку" };
+  for (const language of ["en", "uk", "ru"]) {
+    const { markup, name } = result[language];
+    assert.match(markup, new RegExp(`<h2 id="focus-lens-title">${name}</h2>`));
+    assert.match(markup, new RegExp(`<p>${subtitle[language]}</p>`));
+    assert.match(markup, new RegExp(`data-action="discard-active-workout">${discard[language]}</button>`));
+    assert.doesNotMatch(markup, /focus-lens-eyebrow|focus-lens-metrics|Continue where you stopped|WORKOUT IN PROGRESS/);
+    assert.match(markup, /data-action="continue-active-workout"/);
+    assert.match(markup, /focus-lens-details/);
+  }
+  assert.match(result.done, /<h2 id="focus-lens-title">Следующее упражнение<\/h2>/);
+  assert.match(result.done, /Подход 1 · выполнено 1 \/ 1/);
+});

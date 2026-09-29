@@ -675,7 +675,7 @@ test("hidden modal inputs never become focus-trap endpoints", () => {
   }
 });
 
-test("exercise filter and More sheets restore stable invokers, including a nested picker return", async () => {
+test("exercise filter menu closes without a modal, and More sheets restore stable invokers", async () => {
   const context = loadContext();
   let filterFocused = 0;
   let moreFocused = 0;
@@ -721,17 +721,16 @@ test("exercise filter and More sheets restore stable invokers, including a neste
   `, context);
 
   await vm.runInContext(`handleAction("open-exercise-filters", globalThis.filterInvoker)`, context);
-  assert.equal(vm.runInContext("modal.type", context), "exercise-filters");
-  assert.equal(vm.runInContext("modal.returnModal.type", context), "workout-exercise-picker");
-  assert.equal(vm.runInContext("modal.returnModal.autoFocus", context), false);
-  await vm.runInContext(`handleAction("apply-exercise-filters", { dataset: {} })`, context);
+  assert.equal(vm.runInContext("exerciseFilterMenuOpen", context), true);
   assert.equal(vm.runInContext("modal.type", context), "workout-exercise-picker");
-  assert.equal(filterFocused, 1);
+  await vm.runInContext(`handleAction("open-exercise-filters", globalThis.filterInvoker)`, context);
+  assert.equal(vm.runInContext("exerciseFilterMenuOpen", context), false);
 
-  vm.runInContext("modal = { type: 'exercise-filters', autoFocus: false }", context);
+  vm.runInContext("exerciseFilterMenuOpen = true; modal = null;", context);
   await vm.runInContext(`handleAction("exercise-sort", globalThis.sortInvoker)`, context);
   assert.equal(vm.runInContext("exerciseSortMode", context), "most");
-  assert.equal(sortFocused, 1);
+  assert.equal(vm.runInContext("exerciseFilterMenuOpen", context), false);
+  assert.equal(filterFocused, 1);
   await vm.runInContext(`handleAction("exercise-muscle-filter", globalThis.muscleInvoker)`, context);
   assert.equal(vm.runInContext("exerciseMuscleFilter", context), "chest");
   assert.equal(muscleFocused, 1);

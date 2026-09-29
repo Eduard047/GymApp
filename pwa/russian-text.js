@@ -986,7 +986,7 @@ const RUSSIAN_TEXT = new Map([
   ["Wait for Garmin sync to finish before switching accounts.", "Дождись завершения синхронизации с Garmin перед сменой аккаунта."],
   ["Wait for Garmin sync to finish before unpairing.", "Дождись завершения синхронизации с Garmin перед отсоединением."],
   ["Wait for the account operation to finish.", "Дождись завершения операции с аккаунтом."],
-  ["Warborn", "Воин"],
+  ["Warborn", "Рождённый воином"],
   ["Warm Up", "Разминка"],
   ["Website", "Сайт"],
   ["Week", "Неделя"],

@@ -183,6 +183,8 @@ const icons = {
   home: "M3 11l9-8 9 8v10H5V11",
   lang: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56A8.03 8.03 0 0 1 18.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82A15.7 15.7 0 0 1 12 4.04zM4.26 14A8.1 8.1 0 0 1 4 12c0-.69.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A8.03 8.03 0 0 1 5.08 16zm2.95-8H5.08a8.03 8.03 0 0 1 4.33-3.56A15.8 15.8 0 0 0 8.03 8zM12 19.96A15.7 15.7 0 0 1 10.09 16h3.82A15.7 15.7 0 0 1 12 19.96zM14.34 14H9.66a15.5 15.5 0 0 1-.16-2c0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2zm.25 5.56A15.8 15.8 0 0 0 15.97 16h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z",
   list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  filter: "M4 6h16M7 12h10M10 18h4",
+  more: "M5 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z",
   listFilled: "M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6C3.17 4.5 2.5 5.17 2.5 6S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z",
   medal: "M8 21l4-7 4 7M8 3h8l2 5-6 6-6-6z",
   image: "M4 4h16v16H4zM7 16l3-3 2 2 3-4 3 5M9 9h.01",
@@ -209,11 +211,12 @@ const icons = {
   help: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4.5M12 17.5h.01",
   phone: "M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2",
   chevronUpDown: "M8 9l4-4 4 4M8 15l4 4 4-4",
-  target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 12h.01"
+  target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 12h.01",
+  tune: "M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6"
 };
 
 const filledIcons = new Set([
-  "add", "back", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "person", "showChart"
+  "add", "back", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "more", "person", "showChart"
 ]);
 
 function boundedLocationParameters(rawValue, maximumLength, maximumPairs = 32) {
@@ -1216,25 +1219,25 @@ const exactMuscleMap = Object.fromEntries(Object.entries({
 }).map(([name, entries]) => [normalizeExerciseKey(name), weightedMuscles(entries)]));
 
 const rankDefinitions = [
-  ["rookie", 1, "Rookie", "Новачок"], ["starter", 3, "Starter", "Стартовий"],
-  ["steady", 5, "Steady", "Стабільний"], ["driven", 7, "Driven", "Вмотивований"],
-  ["striker", 9, "Striker", "Ударний"], ["ironclad", 11, "Ironclad", "Незламний"],
-  ["vanguard", 13, "Vanguard", "Авангард"], ["challenger", 15, "Challenger", "Претендент"],
-  ["dominator", 17, "Dominator", "Домінатор"], ["elite", 19, "Elite", "Еліта"],
-  ["titan", 21, "Titan", "Титан"], ["colossus", 23, "Colossus", "Колос"],
-  ["warborn", 25, "Warborn", "Воїн"], ["apex", 27, "Apex", "Апекс"],
-  ["mythic", 29, "Mythic", "Міфічний"], ["legend", 31, "Legend", "Легенда"],
-  ["eternal", 33, "Eternal", "Вічний"], ["immortal", 35, "Immortal", "Безсмертний"],
-  ["paragon", 37, "Paragon", "Парагон"], ["overlord", 39, "Overlord", "Володар"],
-  ["ascendant", 41, "Ascendant", "Вознесений"], ["conqueror", 43, "Conqueror", "Завойовник"],
-  ["sovereign", 45, "Sovereign", "Суверен"], ["prime", 47, "Prime", "Прайм"],
-  ["omni", 49, "Omni", "Омні"], ["galactic", 51, "Galactic", "Галактичний"],
-  ["nova", 53, "Nova", "Нова"], ["singularity", 55, "Singularity", "Сингулярність"],
-  ["omega", 57, "Omega", "Омега"], ["transcendent", 60, "Transcendent", "Трансцендентний"],
-  ["celestial", 64, "Celestial", "Небесний"], ["empyrean", 68, "Empyrean", "Емпірей"],
-  ["infinite", 72, "Infinite", "Нескінченний"], ["beyond", 76, "Beyond", "Понадмежний"],
-  ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода"]
-].map(([id, level, titleEn, titleUk]) => ({ id, level, titleEn, titleUk }));
+  ["rookie", 1, "Rookie", "Новачок", "Новичок"], ["starter", 3, "Starter", "Стартовий", "Начинающий"],
+  ["steady", 5, "Steady", "Стабільний", "Стабильный"], ["driven", 7, "Driven", "Вмотивований", "Мотивированный"],
+  ["striker", 9, "Striker", "Ударний", "Ударник"], ["ironclad", 11, "Ironclad", "Незламний", "Несокрушимый"],
+  ["vanguard", 13, "Vanguard", "Авангард", "Авангард"], ["challenger", 15, "Challenger", "Претендент", "Претендент"],
+  ["dominator", 17, "Dominator", "Домінатор", "Доминатор"], ["elite", 19, "Elite", "Еліта", "Элита"],
+  ["titan", 21, "Titan", "Титан", "Титан"], ["colossus", 23, "Colossus", "Колос", "Колосс"],
+  ["warborn", 25, "Warborn", "Воїн", "Рождённый воином"], ["apex", 27, "Apex", "Апекс", "Апекс"],
+  ["mythic", 29, "Mythic", "Міфічний", "Мифический"], ["legend", 31, "Legend", "Легенда", "Легенда"],
+  ["eternal", 33, "Eternal", "Вічний", "Вечный"], ["immortal", 35, "Immortal", "Безсмертний", "Бессмертный"],
+  ["paragon", 37, "Paragon", "Парагон", "Парагон"], ["overlord", 39, "Overlord", "Володар", "Властелин"],
+  ["ascendant", 41, "Ascendant", "Вознесений", "Вознесенный"], ["conqueror", 43, "Conqueror", "Завойовник", "Завоеватель"],
+  ["sovereign", 45, "Sovereign", "Суверен", "Суверен"], ["prime", 47, "Prime", "Прайм", "Прайм"],
+  ["omni", 49, "Omni", "Омні", "Омни"], ["galactic", 51, "Galactic", "Галактичний", "Галактический"],
+  ["nova", 53, "Nova", "Нова", "Нова"], ["singularity", 55, "Singularity", "Сингулярність", "Сингулярность"],
+  ["omega", 57, "Omega", "Омега", "Омега"], ["transcendent", 60, "Transcendent", "Трансцендентний", "Трансцендентный"],
+  ["celestial", 64, "Celestial", "Небесний", "Небесный"], ["empyrean", 68, "Empyrean", "Емпірей", "Эмпирей"],
+  ["infinite", 72, "Infinite", "Нескінченний", "Бесконечный"], ["beyond", 76, "Beyond", "Понадмежний", "Сверхпредельный"],
+  ["cosmic-warlord", 80, "Cosmic Warlord", "Космічний воєвода", "Космический воевода"]
+].map(([id, level, titleEn, titleUk, titleRu]) => ({ id, level, titleEn, titleUk, titleRu }));
 
 window.GymSharedWorkout?.configureBuiltInIdentityResolver?.(catalogKeyRecognizedFromName);
 
@@ -1272,6 +1275,7 @@ let smartWorkoutEffort = "Auto";
 let smartGeneratedPlan = null;
 let smartPlanStale = false;
 let activationDraft = null;
+let activationOptionsOpen = false;
 let pendingActivationPlan = null;
 let toastTimer = null;
 const monthOffsets = { workouts: 0, progress: 0 };
@@ -1354,6 +1358,7 @@ let garminProfileRequestController = null;
 let garminProfileRequestId = 0;
 let timerInterval = null;
 let languageMenuOpen = false;
+let exerciseFilterMenuOpen = false;
 let exerciseSearchQuery = "";
 let progressExerciseSearchQuery = "";
 let workoutDetailEditSessionId = null;
@@ -7594,6 +7599,7 @@ function resetRemoteSyncContext({ eraseLiveBinding = false } = {}) {
   smartGeneratedPlan = null;
   smartPlanStale = false;
   activationDraft = null;
+  activationOptionsOpen = false;
   pendingActivationPlan = null;
   pendingRecommendations = [];
   consumedSmartWorkoutLaunchIds.clear();
@@ -10399,6 +10405,7 @@ function push(name, params = {}) {
   pushNavigationHistory();
   modal = null;
   languageMenuOpen = false;
+  exerciseFilterMenuOpen = false;
   render();
 }
 
@@ -10410,6 +10417,7 @@ function goRoot(name) {
   replaceNavigationHistory();
   modal = null;
   languageMenuOpen = false;
+  exerciseFilterMenuOpen = false;
   render();
   if (leavingAdd) routeScrollPositions.delete("add:root");
 }
@@ -10418,6 +10426,7 @@ function back() {
   if (workoutDraftLiveSendInProgress && route().name === "add") return false;
   if (modal) {
     languageMenuOpen = false;
+    exerciseFilterMenuOpen = false;
     return closeModal();
   }
   // Starting a workout replaces the Add route in-place. The preceding browser
@@ -10433,6 +10442,7 @@ function back() {
   nav.pop();
   replaceNavigationHistory();
   languageMenuOpen = false;
+  exerciseFilterMenuOpen = false;
   render();
   if (leavingAdd) routeScrollPositions.delete("add:root");
 }
@@ -10475,6 +10485,17 @@ function fmtLongDate(value) {
     month: "long",
     year: "numeric"
   });
+}
+
+// "Sat, Sep 26" / "сб, 26 вер." / "Сб, 26 сент.": short weekday, day, and short
+// month; the year is appended only when it differs from the current year.
+// Intl already matches the iOS output except that Russian lowercases the weekday.
+function fmtShortDate(value, now = Date.now()) {
+  const sameYear = new Date(value).getFullYear() === new Date(now).getFullYear();
+  const text = fmtDate(value, sameYear
+    ? { weekday: "short", day: "numeric", month: "short" }
+    : { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  return state.language === "ru" ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
 function localDateInputValue(timestamp = Date.now()) {
@@ -10766,8 +10787,8 @@ function trainingHistoryWorkoutRow(session) {
     : `${tx3("Exercises", "Вправи", "Упражнения")}: ${summary.exercises} · ${tx3("Sets", "Підходи", "Подходы")}: ${summary.sets}`;
   const value = activityOnly
     ? formatActiveWorkoutElapsed(session.durationSeconds * 1000)
-    : formatTodayMetric(summary.volume);
-  return `<button class="training-history-row" type="button" data-action="open-detail" data-id="${session.id}"><span><strong>${escapeHtml(fmtLongDate(session.startedAt))}</strong><small>${escapeHtml(detail)}</small></span><b>${escapeHtml(value)}</b>${svg("back", "small-icon rotate-180")}</button>`;
+    : `${formatTodayMetric(summary.volume)} ${tx3("kg", "кг", "кг")}`;
+  return `<button class="training-history-row" type="button" data-action="open-detail" data-id="${session.id}"><span><strong>${escapeHtml(fmtShortDate(session.startedAt))}</strong><small>${escapeHtml(detail)}</small></span><b>${escapeHtml(value)}</b>${svg("back", "small-icon rotate-180")}</button>`;
 }
 
 function trainingHistoryMarkup() {
@@ -10783,9 +10804,22 @@ function trainingHistoryMarkup() {
   const periodState = offset === 0
     ? (weekMode ? tx3("This week", "Цього тижня", "На этой неделе") : tx3("Current month", "Поточний місяць", "Текущий месяц"))
     : (weekMode ? tx3("Return to this week", "Повернутися до цього тижня", "Вернуться к этой неделе") : tx3("Return to current month", "Повернутися до поточного місяця", "Вернуться к текущему месяцу"));
+  const goalMet = weekMode && summary.completedTrainingDays >= summary.targetTrainingDays;
   const target = weekMode
-    ? `${summary.completedTrainingDays} / ${summary.targetTrainingDays} ${tx3("days", "днів", "дней")}`
+    ? tx3(
+      `Goal: ${summary.completedTrainingDays} of ${summary.targetTrainingDays}`,
+      `Ціль: ${summary.completedTrainingDays} з ${summary.targetTrainingDays}`,
+      `Цель: ${summary.completedTrainingDays} из ${summary.targetTrainingDays}`
+    )
     : n(summary.completedTrainingDays, "day", "days", "день", "дні", "днів");
+  const targetLabel = weekMode
+    ? tx3(
+      `Weekly goal: ${summary.completedTrainingDays} of ${summary.targetTrainingDays}`,
+      `Ціль тижня: ${summary.completedTrainingDays} з ${summary.targetTrainingDays}`,
+      `Цель недели: ${summary.completedTrainingDays} из ${summary.targetTrainingDays}`
+    )
+    : target;
+  const targetIcon = weekMode ? svg(goalMet ? "checkCircle" : "fitness", "small-icon") : "";
   const metrics = [
     [tx3("Workouts", "Тренування", "Тренировки"), summary.completedWorkouts],
     [tx3("Minutes", "Хвилини", "Минуты"), summary.trainingMinutes],
@@ -10813,7 +10847,7 @@ function trainingHistoryMarkup() {
     ? tx3("No workouts in this week yet.", "Цього тижня тренувань поки немає.", "На этой неделе тренировок пока нет.")
     : tx3("No workouts in this month yet.", "Цього місяця тренувань поки немає.", "В этом месяце тренировок пока нет.");
   return `<section id="workout-list-section" class="training-history panel" tabindex="-1" aria-labelledby="training-history-title">
-    <div class="training-history-head"><h3 id="training-history-title">${tx3("Training history", "Історія тренувань", "История тренировок")}</h3><span>${escapeHtml(target)}</span></div>
+    <div class="training-history-head"><h3 id="training-history-title">${tx3("Training history", "Історія тренувань", "История тренировок")}</h3><span role="group" aria-label="${escapeAttr(targetLabel)}">${targetIcon}${escapeHtml(target)}</span></div>
     <div class="training-history-period" role="tablist" aria-label="${escapeAttr(tx3("History period", "Період історії", "Период истории"))}">
       <button type="button" role="tab" data-action="history-period" data-period="week" aria-selected="${weekMode}" class="${weekMode ? "selected" : ""}">${tx3("Week", "Тиждень", "Неделя")}</button>
       <button type="button" role="tab" data-action="history-period" data-period="month" aria-selected="${!weekMode}" class="${weekMode ? "" : "selected"}">${tx3("Month", "Місяць", "Месяц")}</button>
@@ -10951,7 +10985,7 @@ function levelFromXp(value = totalXp()) {
 function rankTitle(value = totalXp()) {
   const level = levelFromXp(value);
   const rank = rankDefinitions.filter(item => level >= item.level).at(-1) || rankDefinitions[0];
-  return tx(rank.titleEn, rank.titleUk);
+  return tx3(rank.titleEn, rank.titleUk, rank.titleRu);
 }
 
 function rankLadder() {
@@ -10963,7 +10997,7 @@ function rankLadder() {
     const segment = Math.max(1, requiredXp - previousXp);
     return {
       id: rank.id,
-      title: tx(rank.titleEn, rank.titleUk),
+      title: tx3(rank.titleEn, rank.titleUk, rank.titleRu),
       level: rank.level,
       xp: requiredXp,
       xpRemaining: Math.max(0, requiredXp - xp),
@@ -11161,6 +11195,16 @@ function dismissLanguageMenu(restoreFocus = false) {
   languageMenuOpen = false;
   app.querySelector?.(".language-menu")?.remove();
   const trigger = app.querySelector?.('[data-action="language-menu"]');
+  trigger?.setAttribute?.("aria-expanded", "false");
+  if (restoreFocus) trigger?.focus?.({ preventScroll: true });
+  return true;
+}
+
+function dismissExerciseFilterMenu(restoreFocus = false) {
+  if (!exerciseFilterMenuOpen) return false;
+  exerciseFilterMenuOpen = false;
+  app.querySelector?.(".exercise-filter-menu")?.remove();
+  const trigger = app.querySelector?.('[data-action="open-exercise-filters"]');
   trigger?.setAttribute?.("aria-expanded", "false");
   if (restoreFocus) trigger?.focus?.({ preventScroll: true });
   return true;
@@ -11622,6 +11666,7 @@ function workoutsScreen() {
       <section class="screen-copy workouts-screen-copy"><div><h2>${tx("Today", "Сьогодні")}</h2></div></section>
       <div class="workouts-scroll empty-workouts-scroll">
         ${activeWorkout || activationWasDismissed() ? focusLensCard([]) : activationCard()}
+        ${activeWorkout || activationWasDismissed() || workoutDraft ? "" : `<p class="today-empty-hint">${tx3("Your workouts and weekly progress will show up here.", "Тут з’являться твої тренування й тижневий прогрес.", "Здесь появятся твои тренировки и прогресс за неделю.")}</p>`}
       </div>
     `;
   }
@@ -11656,19 +11701,25 @@ function focusLensCard(sessions) {
   const continuePlanAction = `<div class="focus-lens-actions plan-actions"><button class="focus-lens-action" data-action="open-blank-add" data-coach-target="today-primary">${svg("edit", "small-icon")}<span>${tx3("Continue plan", "Продовжити план", "Продолжить план")}</span></button><button class="focus-lens-edit" data-action="cancel-retained-plan">${tx3("Cancel plan", "Скасувати план", "Отменить план")}</button></div>`;
   if (activeWorkout) {
     const counts = activeWorkoutSetCounts(activeWorkout);
+    const blocks = Array.isArray(activeWorkout.blocks) ? activeWorkout.blocks : [];
+    const currentBlock = blocks.find(block => Array.isArray(block.sets) && block.sets.some(set => set.completed !== true));
+    const currentSetIndex = currentBlock ? currentBlock.sets.findIndex(set => set.completed !== true) : -1;
+    const currentTitle = currentBlock?.exerciseName
+      ? exerciseDisplayName(currentBlock)
+      : tx3("Next exercise", "Наступна вправа", "Следующее упражнение");
+    const setNumber = Math.max(currentSetIndex, 0) + 1;
     return `<section class="focus-lens active" data-coach-target="today-focus" aria-labelledby="focus-lens-title">
       <div class="focus-lens-copy">
-        <span class="focus-lens-eyebrow">${tx("WORKOUT IN PROGRESS", "ТРЕНУВАННЯ ТРИВАЄ")}</span>
-        <h2 id="focus-lens-title">${tx("Continue where you stopped", "Продовжуй із місця зупинки")}</h2>
-      </div>
-      <div class="focus-lens-metrics three" aria-label="${txAttr("Active workout progress", "Прогрес активного тренування")}">
-        <div><strong>${activeWorkout.blocks.length}</strong><span>${tx("exercises", "вправ")}</span></div>
-        <div><strong>${counts.completed}</strong><span>${tx("completed", "виконано")}</span></div>
-        <div><strong>${counts.total}</strong><span>${tx("planned sets", "підходів у плані")}</span></div>
+        <h2 id="focus-lens-title">${escapeHtml(currentTitle)}</h2>
+        <p>${escapeHtml(tx3(
+          `Set ${setNumber} · ${counts.completed} / ${counts.total} completed`,
+          `Підхід ${setNumber} · виконано ${counts.completed} / ${counts.total}`,
+          `Подход ${setNumber} · выполнено ${counts.completed} / ${counts.total}`
+        ))}</p>
       </div>
       ${focusLensDetailsMarkup()}
       <div class="focus-lens-actions"><button class="focus-lens-action" data-action="continue-active-workout" data-coach-target="today-primary">${svg("fitness", "small-icon")}<span>${tx("Continue workout", "Продовжити тренування")}</span></button></div>
-      <details class="focus-lens-more"><summary>${tx3("More workout options", "Інші дії", "Другие действия")}</summary><button class="focus-lens-discard" data-action="discard-active-workout">${tx("Discard", "Відкинути")}</button></details>
+      <details class="focus-lens-more"><summary>${tx3("More workout options", "Інші дії", "Другие действия")}</summary><button class="focus-lens-discard" data-action="discard-active-workout">${tx3("Discard workout", "Відкинути тренування", "Удалить тренировку")}</button></details>
       ${todayFriendPillMarkup(true)}
     </section>`;
   }
@@ -11719,22 +11770,25 @@ async function startPreparedSmartWorkout(launch) {
 
 function activationCard() {
   if (workoutDraft) {
-    return `<section class="panel highlighted activation-card" data-coach-target="today-focus"><div class="activation-plan-heading"><span class="eyebrow">${tx3("SAVED PLAN", "ЗБЕРЕЖЕНИЙ ПЛАН", "СОХРАНЁННЫЙ ПЛАН")}</span><h2>${tx3("Continue your plan", "Продовж свій план", "Продолжи свой план")}</h2></div><div class="activation-actions"><button class="button full" data-action="activation-edit" data-coach-target="today-primary">${tx3("Continue plan", "Продовжити план", "Продолжить план")}</button><button class="button secondary full" data-action="cancel-retained-plan">${tx3("Cancel plan", "Скасувати план", "Отменить план")}</button></div>${todayFriendPillMarkup()}</section>`;
+    return `<section class="panel highlighted activation-card activation-card-retained" data-coach-target="today-focus"><div class="activation-plan-heading"><span class="eyebrow">${tx3("SAVED PLAN", "ЗБЕРЕЖЕНИЙ ПЛАН", "СОХРАНЁННЫЙ ПЛАН")}</span><h2>${tx3("Continue your plan", "Продовж свій план", "Продолжи свой план")}</h2></div><div class="activation-actions"><button class="button full" data-action="activation-edit" data-coach-target="today-primary">${tx3("Continue plan", "Продовжити план", "Продолжить план")}</button><button class="button secondary full" data-action="cancel-retained-plan">${tx3("Cancel plan", "Скасувати план", "Отменить план")}</button></div>${todayFriendPillMarkup()}</section>`;
   }
   const draft = activationDraftForActiveAccount() || defaultActivationDraft();
   pendingActivationPlan = prepareFirstActivationPlan(draft);
   const plan = pendingActivationPlan?.plan || null;
   const efforts = ["Recovery", "Standard", "Hard"];
-  return `<section class="panel highlighted activation-card" data-coach-target="today-focus">
-    <div class="activation-plan-heading"><span class="eyebrow">${tx3("YOUR FIRST PLAN", "ТВІЙ ПЕРШИЙ ПЛАН", "ТВОЙ ПЕРВЫЙ ПЛАН")}</span><h2>${plan ? escapeHtml(smartFocusLabel(plan.focus)) : tx3("Preparing your plan", "Готуємо твій план", "Готовим твой план")}</h2><p>${tx3("Start with the suggestion or build the workout yourself. You can adjust every setting.", "Почни з поради або створи тренування самостійно. Усі налаштування можна змінити.", "Начни с рекомендации или собери тренировку сам. Все настройки можно изменить.")}</p></div>
-    ${plan ? smartPlanMetricsMarkup(plan) : `<p class="muted activation-plan-unavailable">${tx("Create a manual plan if the recommendation is unavailable.", "Створи план вручну, якщо рекомендація недоступна.")}</p>`}
-    <div class="activation-actions"><button class="button full" data-action="activation-start" ${plan ? `data-coach-target="today-primary"` : "disabled"}>${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="button secondary full" data-action="activation-manual" ${plan ? "" : `data-coach-target="today-primary"`}>${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button></div>
-    <details class="activation-options"><summary>${svg("auto", "small-icon")}<span>${tx3("Adjust recommendation", "Налаштувати пораду", "Настроить рекомендацию")}</span></summary><div class="activation-options-content">
+  const optionsOpen = activationOptionsOpen === true;
+  const optionsLabel = escapeAttr(tx3("Adjust recommendation", "Налаштувати пораду", "Настроить рекомендацию"));
+  const optionsMarkup = optionsOpen ? `<div class="activation-options-content">
       ${trainingSettingsSummaryMarkup({ onHero: true })}
       <span class="field-caption">${tx("Today’s effort", "Навантаження сьогодні")}</span>
       <div class="chip-row">${efforts.map(effort => `<button class="chip buttonlike ${draft.effort === effort ? "selected" : ""}" data-action="activation-option" data-field="effort" data-value="${escapeAttr(effort)}" aria-pressed="${draft.effort === effort}">${activationEffortLabel(effort)}</button>`).join("")}</div>
-      <button class="button ghost full" data-action="activation-edit" ${plan ? "" : "disabled"}>${tx3("Review exercises", "Переглянути вправи", "Посмотреть упражнения")}</button>
-    </div></details>
+      <button class="button ghost full" data-action="activation-edit" ${plan ? "" : "disabled"}>${svg("edit", "small-icon")}${tx3("Review exercises", "Переглянути вправи", "Посмотреть упражнения")}</button>
+    </div>` : "";
+  return `<section class="panel highlighted activation-card" data-coach-target="today-focus">
+    <div class="activation-plan-heading"><span class="eyebrow">${tx3("YOUR FIRST PLAN", "ТВІЙ ПЕРШИЙ ПЛАН", "ТВОЙ ПЕРВЫЙ ПЛАН")}</span><div class="activation-title-row"><h2>${plan ? escapeHtml(smartFocusLabel(plan.focus)) : tx3("Preparing your plan", "Готуємо твій план", "Готовим твой план")}</h2><button class="activation-options-toggle${optionsOpen ? " open" : ""}" type="button" data-action="activation-options-toggle" aria-label="${optionsLabel}" aria-expanded="${optionsOpen}" aria-pressed="${optionsOpen}">${svg("tune")}</button></div><p>${tx3("Start with the suggestion or build the workout yourself. You can adjust every setting.", "Почни з поради або створи тренування самостійно. Усі налаштування можна змінити.", "Начни с рекомендации или собери тренировку сам. Все настройки можно изменить.")}</p></div>
+    ${optionsMarkup}
+    ${plan ? smartPlanMetricsMarkup(plan) : `<p class="muted activation-plan-unavailable">${tx("Create a manual plan if the recommendation is unavailable.", "Створи план вручну, якщо рекомендація недоступна.")}</p>`}
+    <div class="activation-actions"><button class="button full" data-action="activation-start" ${plan ? `data-coach-target="today-primary"` : "disabled"}>${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="activation-manual" type="button" data-action="activation-manual" ${plan ? "" : `data-coach-target="today-primary"`}>${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button></div>
     ${todayFriendPillMarkup()}
   </section>`;
 }
@@ -11800,7 +11854,7 @@ function soloProgressHero() {
   const progress = levelProgress(xp);
   const level = progress.level;
   const next = rankDefinitions.find(rank => level < rank.level);
-  const nextTitle = next ? tx(next.titleEn, next.titleUk) : rankTitle(xp);
+  const nextTitle = next ? tx3(next.titleEn, next.titleUk, next.titleRu) : rankTitle(xp);
   return `<section class="hero-panel solo-progress-hero">
     <div class="eyebrow">${t("soloProgress")}</div>
     <div class="hero-split"><div><span class="pill hero-pill">${tx("LEVEL", "РІВЕНЬ")} ${level}</span><h2>${rankTitle(xp)}</h2><p>${progress.currentLevelXp} / ${progress.xpForNextLevel} XP ${tx("to next level", "до наступного рівня")}</p></div><div class="hero-stat"><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong><small>${tx("earned", "зароблено")}</small></div></div>
@@ -22822,29 +22876,28 @@ function workoutShareSheetMarkup() {
 
 function exercisesScreen() {
   const mappingRows = filteredLibraryExercises();
-  return `<div class="coach-screen-anchor"><section class="screen-copy compact" data-coach-target="exercises-screen"><h2>${t("exercises")}</h2></section>
-    <button class="button full exercise-add-button" data-action="open-exercise-add">${svg("add", "small-icon")}${t("addExercise")}</button>
+  return `<div class="coach-screen-anchor"><section class="screen-copy compact exercises-header" data-coach-target="exercises-screen"><h2>${t("exercises")}</h2><button class="exercise-add-button" data-action="open-exercise-add" aria-label="${escapeAttr(t("addExercise"))}">${svg("add")}</button></section>
     ${exerciseFilterControls()}
     <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : `<section class="panel empty-state-panel"><h3>${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</h3><p>${tx("Clear filters to return to the full exercise library.", "Очисть фільтри, щоб повернутися до повного каталогу вправ.")}</p><button class="button secondary" data-action="reset-exercise-filters">${tx("Clear filters", "Очистити фільтри")}</button></section>`}</section></div>`;
 }
 
 function exerciseFilterControls() {
   const regionFilters = [["all", tx("All", "Усі")], ["upper", tx("Upper body", "Верх тіла")], ["lower", tx("Lower body", "Низ тіла")], ["core", tx("Core", "Кор")]];
-  return `<section class="panel highlighted exercise-search-panel"><label for="exercise-search">${tx("Search exercises", "Пошук вправ")}</label><div class="field-row"><input id="exercise-search" type="search" maxlength="${EXERCISE_SEARCH_QUERY_MAX_CHARS}" value="${escapeAttr(exerciseSearchQuery)}" placeholder="${txAttr("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською")}">${exerciseSearchQuery ? `<button class="icon-button" data-action="clear-exercise-search" aria-label="${txAttr("Clear search", "Очистити пошук")}">${svg("close")}</button>` : ""}</div>
-      <div class="exercise-primary-filters"><div class="filter-scroll" aria-label="${txAttr("Primary exercise filters", "Основні фільтри вправ")}"><button class="chip buttonlike favorite-filter ${exerciseFavoritesOnly ? "selected" : ""}" data-action="exercise-favorites-filter" aria-pressed="${exerciseFavoritesOnly}">${svg(exerciseFavoritesOnly ? "heartFilled" : "heart", "small-icon")}${tx("Favorites", "Улюблені")}</button>${regionFilters.map(([id, label]) => `<button class="chip buttonlike ${exerciseBodyFilter === id ? "selected" : ""}" data-action="exercise-body-filter" data-filter="${id}" aria-pressed="${exerciseBodyFilter === id}">${label}</button>`).join("")}</div><button class="button ghost exercise-filter-trigger" data-action="open-exercise-filters" aria-haspopup="dialog" aria-label="${escapeAttr(tx3(`Filters, ${activeExerciseFilterCount()} active`, `Фільтри, активних: ${activeExerciseFilterCount()}`, `Фильтры, активных: ${activeExerciseFilterCount()}`))}">${svg("list", "small-icon")}<span>${tx("Filters", "Фільтри")}</span>${activeExerciseFilterCount() ? `<strong aria-hidden="true">${activeExerciseFilterCount()}</strong>` : ""}</button></div></section>`;
+  const sortFilters = [["name", tx("By name", "За назвою")], ["most", tx("Most frequent", "Найчастіші")], ["least", tx("Least frequent", "Найрідші")]];
+  const activeCount = activeExerciseFilterCount();
+  const filterLabel = tx3(`Filters, ${activeCount} active`, `Фільтри, активних: ${activeCount}`, `Фильтры, активных: ${activeCount}`);
+  const check = `<span class="exercise-filter-check" aria-hidden="true">✓</span>`;
+  const menu = exerciseFilterMenuOpen
+    ? `<div class="exercise-filter-menu" role="menu" aria-label="${txAttr("Filters", "Фільтри")}"><button class="exercise-filter-option" role="menuitemcheckbox" aria-checked="${exerciseFavoritesOnly}" data-action="exercise-favorites-filter">${svg("heart", "small-icon")}${tx3("Favorites", "Улюблені", "Избранное")}${check}</button><div role="group" aria-labelledby="exercise-filter-category-heading"><span class="exercise-filter-heading" id="exercise-filter-category-heading">${tx3("Category", "Категорія", "Категория")}</span>${regionFilters.map(([id, label]) => `<button class="exercise-filter-option" role="menuitemradio" aria-checked="${exerciseBodyFilter === id}" data-action="exercise-body-filter" data-filter="${id}">${label}${check}</button>`).join("")}</div><div role="group" aria-labelledby="exercise-filter-sort-heading"><span class="exercise-filter-heading" id="exercise-filter-sort-heading">${tx3("Sort", "Сортування", "Сортировка")}</span>${sortFilters.map(([id, label]) => `<button class="exercise-filter-option" role="menuitemradio" aria-checked="${exerciseSortMode === id}" data-action="exercise-sort" data-sort="${id}">${label}${check}</button>`).join("")}</div></div>`
+    : "";
+  return `<section class="exercise-search-panel"><div class="exercise-search-row"><div class="exercise-search-field">${svg("search", "small-icon")}<label class="sr-only" for="exercise-search">${tx("Search exercises", "Пошук вправ")}</label><input id="exercise-search" type="search" maxlength="${EXERCISE_SEARCH_QUERY_MAX_CHARS}" value="${escapeAttr(exerciseSearchQuery)}" placeholder="${txAttr("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською")}" autocomplete="off">${exerciseSearchQuery ? `<button class="icon-button" data-action="clear-exercise-search" aria-label="${txAttr("Clear search", "Очистити пошук")}">${svg("close")}</button>` : ""}</div><div class="exercise-filter-menu-wrap"><button class="exercise-filter-trigger ${activeCount ? "active" : ""}" data-action="open-exercise-filters" aria-haspopup="menu" aria-expanded="${exerciseFilterMenuOpen}" aria-label="${escapeAttr(filterLabel)}">${svg("filter")}${activeCount ? `<span class="exercise-filter-dot" aria-hidden="true"></span>` : ""}</button>${menu}</div></div>
+      <div class="filter-scroll exercise-muscle-chips" role="group" aria-label="${txAttr("Primary exercise filters", "Основні фільтри вправ")}"><button class="chip buttonlike ${exerciseMuscleFilter === "all" ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="all" aria-pressed="${exerciseMuscleFilter === "all"}">${tx("All muscles", "Усі м’язи")}</button>${muscles.map(([id]) => `<button class="chip buttonlike ${exerciseMuscleFilter === id ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="${id}" aria-pressed="${exerciseMuscleFilter === id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div></section>`;
 }
 
 function activeExerciseFilterCount() {
   return Number(exerciseFavoritesOnly) +
     Number(exerciseBodyFilter !== "all") +
-    Number(exerciseMuscleFilter !== "all") +
     Number(exerciseSortMode !== "name");
-}
-
-function exerciseFilterSheetMarkup() {
-  const sortFilters = [["name", tx("By name", "За назвою")], ["most", tx("Most frequent", "Найчастіші")], ["least", tx("Least frequent", "Найрідші")]];
-  const initialFocus = modal?.autoFocus ? " data-modal-initial-focus" : "";
-  return `<div class="exercise-filter-sheet"><span class="eyebrow">${tx("Exercise catalog", "Каталог вправ")}</span><h2 id="exercise-filter-title">${tx("Filters", "Фільтри")}</h2><p class="muted">${tx("Keep the library focused without hiding any exercise controls.", "Зосередь каталог, не приховуючи жодних дій із вправами.")}</p><fieldset><legend>${tx("Sort", "Сортування")}</legend><div class="filter-sheet-options">${sortFilters.map(([id, label], index) => `<button class="chip buttonlike ${exerciseSortMode === id ? "selected" : ""}" data-action="exercise-sort" data-sort="${id}" aria-pressed="${exerciseSortMode === id}"${index === 0 ? initialFocus : ""}>${label}</button>`).join("")}</div></fieldset><fieldset><legend>${tx("Muscle group", "Група м’язів")}</legend><div class="filter-sheet-options muscle-options"><button class="chip buttonlike ${exerciseMuscleFilter === "all" ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="all" aria-pressed="${exerciseMuscleFilter === "all"}">${tx("All muscles", "Усі м’язи")}</button>${muscles.map(([id]) => `<button class="chip buttonlike ${exerciseMuscleFilter === id ? "selected" : ""}" data-action="exercise-muscle-filter" data-filter="${id}" aria-pressed="${exerciseMuscleFilter === id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div></fieldset><div class="filter-sheet-footer"><button class="button ghost" data-action="reset-exercise-filters">${tx("Clear filters", "Очистити фільтри")}</button><button class="button" data-action="apply-exercise-filters">${tx("Done", "Готово")}</button></div></div>`;
 }
 
 const exerciseBodyMuscles = {
@@ -22986,12 +23039,9 @@ function exerciseMappingsPanel(exercises) {
 }
 
 function exerciseRow(exercise) {
-  const builtIn = Boolean(builtInExerciseFor(exercise));
   const favorite = exercise.favorite === true;
-  const workoutCount = exerciseWorkoutCount(exercise);
-  const mappingCount = mappingFor(exercise).length;
-  const loadProfile = normalizeExerciseLoadProfile(exercise.loadProfile);
-  return `<article class="panel exercise-row"><div class="exercise-card-head"><div class="exercise-card-identity">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div class="exercise-card-title"><h3 class="exercise-name">${escapeHtml(exerciseDisplayName(exercise))}</h3>${exerciseSearchReasonMarkup(exercise)}</div></div><button class="icon-button favorite-toggle ${favorite ? "selected" : ""}" data-action="toggle-exercise-favorite" data-id="${escapeAttr(String(exercise.id))}" aria-pressed="${favorite}" aria-label="${favorite ? txAttr("Remove from favorites", "Прибрати з улюблених") : txAttr("Add to favorites", "Додати до улюблених")}">${svg(favorite ? "heartFilled" : "heart")}</button></div><div class="exercise-metrics"><span class="pill">${n(workoutCount, "workout", "workouts", "тренування", "тренування", "тренувань")}</span><span class="pill">${builtIn ? tx("Built-in", "Вбудована") : tx("Custom", "Власна")}</span><span class="pill">${mappingCount ? tx(`${mappingCount} mapped`, `Зіставлено: ${mappingCount}`) : tx("Auto mapping", "Автоматичне зіставлення")}</span>${loadProfile ? `<span class="pill">${tx("Machine weights", "Ваги тренажера")}: ${loadProfile.allowedWeightsKg.length}</span>` : ""}</div><div class="exercise-card-actions"><button class="button ghost" data-action="exercise-history" data-id="${exercise.id}">${tx("History", "Історія")}</button><button class="button ghost" data-action="open-exercise-more" data-id="${exercise.id}" aria-haspopup="dialog" aria-label="${escapeAttr(tx3(`More options for ${exerciseDisplayName(exercise)}`, `Інші дії для ${exerciseDisplayName(exercise)}`, `Другие действия для ${exerciseDisplayName(exercise)}`))}">${tx("More", "Більше")}</button></div></article>`;
+  const name = exerciseDisplayName(exercise);
+  return `<article class="panel exercise-row"><div class="exercise-card-head">${exerciseMediaThumbnail(exercise, { className: "compact exercise-list-thumb" })}<div class="exercise-card-title"><h3 class="exercise-name">${escapeHtml(name)}</h3>${exerciseSearchReasonMarkup(exercise)}</div><div class="exercise-row-actions"><button class="icon-button favorite-toggle ${favorite ? "selected" : ""}" data-action="toggle-exercise-favorite" data-id="${escapeAttr(String(exercise.id))}" aria-pressed="${favorite}" aria-label="${escapeAttr(favorite ? tx3(`Remove ${name} from favorites`, `Видалити «${name}» з улюблених`, `Удалить «${name}» из избранного`) : tx3(`Add ${name} to favorites`, `Додати «${name}» до улюблених`, `Добавить «${name}» в избранное`))}">${svg(favorite ? "heartFilled" : "heart")}</button><button class="icon-button exercise-more-button" data-action="open-exercise-more" data-id="${exercise.id}" aria-haspopup="dialog" aria-label="${escapeAttr(tx3(`More options for ${name}`, `Інші дії для ${name}`, `Другие действия для ${name}`))}">${svg("more")}</button></div></div></article>`;
 }
 
 function exerciseMoreSheetMarkup(exerciseId) {
@@ -22999,7 +23049,7 @@ function exerciseMoreSheetMarkup(exerciseId) {
   if (!exercise) return "";
   const builtIn = Boolean(builtInExerciseFor(exercise));
   const initialFocus = modal?.autoFocus ? " data-modal-initial-focus" : "";
-  return `<div class="exercise-more-sheet"><span class="eyebrow">${tx("Exercise options", "Дії з вправою")}</span><h2 id="exercise-more-title">${escapeHtml(exerciseDisplayName(exercise))}</h2><div class="exercise-more-actions"><button class="button secondary full" data-action="exercise-history" data-id="${exercise.id}"${initialFocus}>${tx("History", "Історія")}</button><button class="button ghost full" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button><button class="button ghost full" data-action="configure-load-profile" data-id="${exercise.id}">${tx("Machine weights", "Ваги тренажера")}</button>${builtIn ? "" : `<button class="button ghost full" data-action="rename-exercise" data-id="${exercise.id}">${tx("Rename exercise", "Перейменувати вправу")}</button>`}<button class="button danger full" data-action="delete-exercise" data-id="${exercise.id}">${tx("Delete exercise", "Видалити вправу")}</button></div></div>`;
+  return `<div class="exercise-more-sheet"><span class="eyebrow">${tx("Exercise options", "Дії з вправою")}</span><h2 id="exercise-more-title">${escapeHtml(exerciseDisplayName(exercise))}</h2><div class="exercise-more-actions"><button class="button secondary full" data-action="exercise-history" data-id="${exercise.id}"${initialFocus}>${tx("History", "Історія")}</button><button class="button ghost full" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button><button class="button ghost full" data-action="configure-load-profile" data-id="${exercise.id}">${tx("Machine weights", "Ваги тренажера")}</button>${builtIn ? "" : `<button class="button ghost full" data-action="rename-exercise" data-id="${exercise.id}">${tx3("Rename", "Перейменувати", "Переименовать")}</button>`}<button class="button danger full" data-action="delete-exercise" data-id="${exercise.id}">${tx3("Delete", "Видалити", "Удалить")}</button></div></div>`;
 }
 
 function progressExercisePickerMarkup(selected = null) {
@@ -24106,15 +24156,21 @@ function missionCard(m) {
 function ranksScreen() {
   const xp = totalXp();
   const ranks = rankLadder().sort((a, b) => a.xp - b.xp || a.level - b.level);
-  const cards = ranks.length ? ranks.map(rank => {
-    const unlocked = rank.isUnlocked;
-    const current = rank.isCurrent;
-    const status = current ? tx("Current", "Поточний") : unlocked ? tx("Unlocked", "Відкрито") : tx("Locked", "Закрито");
-    const progressValue = unlocked ? 100 : rank.progressFraction * 100;
-    return `<section class="panel ${current ? "highlighted" : ""}"><div class="row-head"><div><h2>${rank.title}</h2><p>${status}</p></div><span class="pill">${status}</span></div><div class="metric-grid"><div><span>${tx("Required level", "Потрібний рівень")}</span><strong>${rank.level}</strong></div><div><span>${tx("Required total XP", "Потрібно XP")}</span><strong>${rank.xp}</strong></div></div><div class="progress"><span class="${percentageClass(progressValue)}"></span></div><div class="row-line"><span>${Math.min(xp, rank.xp)} / ${rank.xp} XP</span>${!unlocked ? `<strong>${rank.xpRemaining} XP ${tx("left", "лишилось")}</strong>` : ""}</div></section>`;
-  }).join("") : `<section class="panel"><div class="empty"><h2>${tx("No ranks yet", "Рангів ще немає")}</h2><p>${tx("Earn XP to unlock rank titles.", "Заробляй XP, щоб відкривати ранги.")}</p></div></section>`;
-  return `<section class="hero-panel"><h2>${t("ranks")}</h2><p>${tx("See every title, its level gate, and the XP needed to unlock it.", "Переглянь усі ранги, потрібний рівень і XP для відкриття.")}</p><div class="metric-grid"><div><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong></div><div><span>${tx("Current level", "Поточний рівень")}</span><strong>${levelFromXp(xp)}</strong></div></div><p>${tx("Current title", "Поточний ранг")}: ${rankTitle(xp)}</p></section>
-    ${cards}`;
+  const level = levelFromXp(xp);
+  const number = value => Number(value).toLocaleString(displayLocale());
+  const nextRank = ranks.find(rank => !rank.isUnlocked) || null;
+  const nextProgress = nextRank ? Math.round(nextRank.progressFraction * 100) : 100;
+  const hero = `<section class="hero-panel rank-hero"><h2 class="rank-hero-title">${svg("trophy")}<span>${rankTitle(xp)}</span></h2><p class="rank-hero-subtitle">${tx3(`Level ${level} · ${number(xp)} XP`, `Рівень ${level} · ${number(xp)} XP`, `Уровень ${level} · ${number(xp)} XP`)}</p>${nextRank ? `<div class="progress rank-hero-track" aria-hidden="true"><span class="${percentageClass(nextProgress)}"></span></div><p class="rank-hero-caption">${tx3(`${number(nextRank.xpRemaining)} XP to ${nextRank.title}`, `${number(nextRank.xpRemaining)} XP до «${nextRank.title}»`, `${number(nextRank.xpRemaining)} XP до «${nextRank.title}»`)}</p>` : ""}</section>`;
+  if (!ranks.length) {
+    return `${hero}<section class="panel"><div class="empty"><h2>${tx("No ranks yet", "Рангів ще немає")}</h2><p>${tx("Earn XP to unlock rank titles.", "Заробляй XP, щоб відкривати ранги.")}</p></div></section>`;
+  }
+  const rows = ranks.map(rank => {
+    const isNext = nextRank?.id === rank.id;
+    const state = rank.isCurrent ? tx("Current", "Поточний") : rank.isUnlocked ? tx("Unlocked", "Відкрито") : tx("Locked", "Закрито");
+    const detail = tx3(`Level ${rank.level} · from ${number(rank.xp)} XP`, `Рівень ${rank.level} · від ${number(rank.xp)} XP`, `Уровень ${rank.level} · от ${number(rank.xp)} XP`);
+    return `<li class="rank-row ${rank.isCurrent ? "current" : ""} ${rank.isUnlocked ? "unlocked" : "locked"}" role="listitem"${rank.isCurrent ? ' aria-current="true"' : ""}><span class="rank-icon" aria-hidden="true">${svg(rank.isUnlocked ? "trophy" : "lock")}</span><div class="rank-copy"><strong class="rank-name">${rank.title}<span class="sr-only">, ${state}</span></strong><small class="rank-detail">${detail}</small>${isNext ? `<div class="progress rank-row-track" aria-hidden="true"><span class="${percentageClass(nextProgress)}"></span></div><span class="rank-remaining">${tx3(`${number(rank.xpRemaining)} XP to go`, `ще ${number(rank.xpRemaining)} XP`, `ещё ${number(rank.xpRemaining)} XP`)}</span>` : ""}</div></li>`;
+  }).join("");
+  return `${hero}<section class="panel rank-ladder-panel"><ul class="rank-ladder" role="list" aria-label="${txAttr("Rank ladder", "Драбина рангів")}">${rows}</ul></section>`;
 }
 
 function modalMarkup() {
@@ -24125,7 +24181,6 @@ function modalMarkup() {
   if (modal.type === "training-program-confirm") return trainingProgramConfirmationMarkup();
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт резервної копії")}</h2><textarea id="import-json" placeholder="${txAttr("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
   if (modal.type === "add-exercise") return bottomSheet(`<h2>${tx("Add exercise", "Додати вправу")}</h2><input id="new-exercise-name" maxlength="320" aria-label="${txAttr("Exercise name", "Назва вправи")}" placeholder="${txAttr("Exercise name", "Назва вправи")}"><button class="button full" data-action="save-exercise">${tx("Add exercise", "Додати вправу")}</button>`);
-  if (modal.type === "exercise-filters") return bottomSheet(exerciseFilterSheetMarkup(), "exercise-filter-title");
   if (modal.type === "exercise-more") return bottomSheet(exerciseMoreSheetMarkup(modal.exerciseId), "exercise-more-title");
   if (modal.type === "exercise-media") {
     const media = exerciseMedia(modal.exercise);
@@ -24708,7 +24763,7 @@ function destructiveReturnFocus(action, element = null) {
 }
 
 const STABLE_FOCUS_ACTIONS = new Set([
-  "accept-shared-workout", "backup", "change-password", "choose-friend-workout", "clear-plan",
+  "accept-shared-workout", "activation-options-toggle", "backup", "change-password", "choose-friend-workout", "clear-plan",
   "configure-load-profile", "create-live-workout-for-friend", "delete-exercise", "delete-set",
   "discard-active-workout", "discard-plan", "edit-set", "exercise-body-filter", "exercise-favorites-filter",
   "exercise-history", "exercise-muscle-filter", "exercise-sort", "export-diagnostics", "export-json",
@@ -24832,6 +24887,14 @@ function restoreStableActionFocus(target) {
     if (candidate) candidate.focus({ preventScroll: true });
     else focusStableScreenContext();
   });
+}
+
+function closeExerciseFilterMenuAfterChange() {
+  exerciseFilterMenuOpen = false;
+  if (modal) modal.autoFocus = false;
+  render();
+  restoreStableActionFocus({ action: "open-exercise-filters" });
+  return true;
 }
 
 function focusStableScreenContext() {
@@ -25045,9 +25108,20 @@ async function handleAction(action, el) {
   if (action === "activation-option") {
     return updateActivationDraft(el.dataset.field, el.dataset.value);
   }
-  if (action === "activation-start") return startFirstWorkoutActivation();
-  if (action === "activation-edit") return completeFirstWorkoutActivation(false);
-  if (action === "activation-manual" || action === "activation-skip") return completeFirstWorkoutActivation(true);
+  if (action === "activation-options-toggle") {
+    const focusTarget = stableActionReturnFocus(action, el);
+    activationOptionsOpen = !activationOptionsOpen;
+    render();
+    restoreStableActionFocus(focusTarget);
+    return true;
+  }
+  if (action === "activation-start" || action === "activation-edit" || action === "activation-manual" || action === "activation-skip") {
+    const completed = action === "activation-start"
+      ? await startFirstWorkoutActivation()
+      : completeFirstWorkoutActivation(action === "activation-manual" || action === "activation-skip");
+    if (completed) activationOptionsOpen = false;
+    return completed;
+  }
   if (action === "start-recommended") {
     const index = Number(el.dataset.index);
     const launch = Number.isInteger(index) && index >= 0 ? pendingRecommendations[index]?.launch : null;
@@ -25150,33 +25224,24 @@ async function handleAction(action, el) {
   }
   if (action === "clear-exercise-search") { exerciseSearchQuery = ""; return render(); }
   if (action === "open-exercise-filters") {
-    const returnModal = modal?.type === "workout-exercise-picker" ? { ...modal, autoFocus: false } : null;
-    modal = {
-      type: "exercise-filters",
-      returnModal,
-      returnFocus: stableActionReturnFocus("open-exercise-filters", el),
-      autoFocus: true
-    };
-    return render();
-  }
-  if (action === "apply-exercise-filters") {
-    if (modal?.type !== "exercise-filters") return false;
-    const focusTarget = modal.returnFocus;
-    modal = modal.returnModal || null;
+    exerciseFilterMenuOpen = !exerciseFilterMenuOpen;
     render();
-    restoreStableActionFocus(focusTarget);
+    requestAnimationFrame(() => {
+      const target = exerciseFilterMenuOpen
+        ? app.querySelector('.exercise-filter-menu [role^="menuitem"]')
+        : app.querySelector('[data-action="open-exercise-filters"]');
+      target?.focus?.({ preventScroll: true });
+    });
     return true;
   }
   if (action === "reset-exercise-filters") {
-    const focusTarget = modal?.type === "exercise-filters"
-      ? stableActionReturnFocus("reset-exercise-filters", el)
-      : null;
+    const focusTarget = stableActionReturnFocus("reset-exercise-filters", el);
     exerciseSearchQuery = "";
     exerciseFavoritesOnly = false;
     exerciseBodyFilter = "all";
     exerciseMuscleFilter = "all";
     exerciseSortMode = "name";
-    if (modal?.type === "exercise-filters") modal.autoFocus = false;
+    exerciseFilterMenuOpen = false;
     render();
     restoreStableActionFocus(focusTarget);
     return true;
@@ -25200,36 +25265,24 @@ async function handleAction(action, el) {
     return render();
   }
   if (action === "exercise-favorites-filter") {
-    const focusTarget = stableActionReturnFocus(action, el);
     exerciseFavoritesOnly = !exerciseFavoritesOnly;
-    render();
-    restoreStableActionFocus(focusTarget);
-    return true;
+    return closeExerciseFilterMenuAfterChange();
   }
   if (action === "exercise-body-filter") {
-    const focusTarget = stableActionReturnFocus(action, el);
     exerciseBodyFilter = ["all", "upper", "lower", "core"].includes(el.dataset.filter) ? el.dataset.filter : "all";
-    render();
-    restoreStableActionFocus(focusTarget);
-    return true;
+    return closeExerciseFilterMenuAfterChange();
   }
   if (action === "exercise-muscle-filter") {
-    if (modal?.type !== "exercise-filters") return false;
     const focusTarget = stableActionReturnFocus(action, el);
     exerciseMuscleFilter = el.dataset.filter === "all" || muscles.some(([id]) => id === el.dataset.filter) ? el.dataset.filter : "all";
-    modal.autoFocus = false;
+    if (modal) modal.autoFocus = false;
     render();
     restoreStableActionFocus(focusTarget);
     return true;
   }
   if (action === "exercise-sort") {
-    if (modal?.type !== "exercise-filters") return false;
-    const focusTarget = stableActionReturnFocus(action, el);
     exerciseSortMode = ["name", "most", "least"].includes(el.dataset.sort) ? el.dataset.sort : "name";
-    modal.autoFocus = false;
-    render();
-    restoreStableActionFocus(focusTarget);
-    return true;
+    return closeExerciseFilterMenuAfterChange();
   }
   if (action === "open-exercise-add") { modal = { type: "add-exercise" }; return render(); }
   if (action === "overview-mode") {
@@ -26010,6 +26063,7 @@ function handleVoiceWorkoutAction(action, el) {
 
 function closeModal() {
   modalActionGeneration += 1;
+  exerciseFilterMenuOpen = false;
   clearSensitiveAuthDrafts();
   const focusTarget = isDestructiveConfirmationModal()
     ? modal?.intent?.returnFocus
@@ -30256,12 +30310,16 @@ window.addEventListener("focus", () => {
 
 document.addEventListener?.("keydown", event => {
   if (event.key === "Escape") dismissLanguageMenu(true);
+  if (event.key === "Escape") dismissExerciseFilterMenu(true);
 });
 
 // Capture phase: data-action handlers stop propagation, so a bubbling listener would miss them.
 document.addEventListener?.("click", event => {
   if (languageMenuOpen && !event.target?.closest?.(".settings-language, .language-selector")) {
     dismissLanguageMenu();
+  }
+  if (exerciseFilterMenuOpen && !event.target?.closest?.(".exercise-filter-menu-wrap")) {
+    dismissExerciseFilterMenu();
   }
 }, true);
 
