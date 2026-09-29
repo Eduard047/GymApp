@@ -700,6 +700,86 @@ test("fmtShortDate matches the iOS short date in EN, UK, and RU", () => {
   }
 });
 
+test("fmtDateRange matches the iOS weekly-review range in EN, UK, and RU", () => {
+  const sandbox = context();
+  const now = new Date(2026, 8, 29, 12).getTime();
+  const range = (fromYear, fromMonth, fromDay, toYear, toMonth, toDay) => [
+    new Date(fromYear, fromMonth, fromDay, 12).getTime(),
+    new Date(toYear, toMonth, toDay, 12).getTime()
+  ];
+  const cases = [
+    ["en", range(2026, 8, 21, 2026, 8, 27), "Sep 21\u2009\u2013\u200927"],
+    ["en", range(2026, 8, 28, 2026, 9, 4), "Sep 28\u2009\u2013\u2009Oct 4"],
+    ["en", range(2025, 8, 22, 2025, 8, 28), "Sep 22\u2009\u2013\u200928, 2025"],
+    ["en", range(2025, 11, 29, 2026, 0, 4), "Dec 29, 2025\u2009\u2013\u2009Jan 4, 2026"],
+    ["uk", range(2026, 8, 21, 2026, 8, 27), "21\u201327 вер."],
+    ["uk", range(2026, 8, 28, 2026, 9, 4), "28 вер. \u2013 4 жовт."],
+    ["uk", range(2025, 8, 22, 2025, 8, 28), "22\u201328 вер. 2025\u202fр."],
+    ["uk", range(2025, 11, 29, 2026, 0, 4), "29 груд. 2025 \u2013 4 січ. 2026\u202fрр."],
+    ["ru", range(2026, 8, 21, 2026, 8, 27), "21\u201427 сент."],
+    ["ru", range(2026, 8, 28, 2026, 9, 4), "28 сент. \u2014 4 окт."],
+    ["ru", range(2025, 8, 22, 2025, 8, 28), "22\u201428 сент. 2025\u202fг."],
+    ["ru", range(2025, 11, 29, 2026, 0, 4), "29 дек. 2025 \u2014 4 янв. 2026\u202fг."]
+  ];
+  for (const [language, [start, end], expected] of cases) {
+    sandbox.language = language;
+    sandbox.start = start;
+    sandbox.end = end;
+    sandbox.now = now;
+    const actual = vm.runInContext(`(() => { state.language = language; return fmtDateRange(start, end, now); })()`, sandbox);
+    assert.equal(actual, expected, `${language} ${expected}`);
+  }
+  assert.equal(vm.runInContext("fmtDateRange(NaN, 0, now)", sandbox), "");
+});
+
+test("Progress overview uses the shared inline navigator, compact hero, and lifetime card", () => {
+  const sandbox = context();
+  const run = (language, code) => {
+    sandbox.language = language;
+    return vm.runInContext(`(() => { state.language = language; ${code} })()`, sandbox);
+  };
+  for (const [language, completed, target, expected] of [
+    ["en", 1, 1, "1 of 1 workout"], ["en", 2, 4, "2 of 4 workouts"], ["uk", 2, 1, "2 з 1 тренування"],
+    ["uk", 2, 4, "2 з 4 тренувань"], ["ru", 2, 1, "2 из 1 тренировки"], ["ru", 2, 5, "2 из 5 тренировок"]
+  ]) {
+    assert.equal(run(language, `return weeklyReviewTitle(${completed}, ${target});`), expected);
+  }
+  const review = run("en", "return trainingWeeklyReviewMarkup();");
+  assert.match(review, /Comparison with previous weeks appears after a couple of weeks of training\./);
+  assert.match(review, /class="training-settings-link" data-action="open-training-settings">Training settings · edit</);
+  assert.doesNotMatch(review, /training days|Not enough comparable/);
+  assert.match(run("ru", "return trainingWeeklyReviewMarkup();"), /Настройки тренировок · изменить/);
+
+  const nav = run("ru", "return monthNavigatorInline();");
+  assert.match(nav, /data-action="month-prev"[\s\S]*data-action="month-current"[\s\S]*data-action="month-next"/);
+  assert.match(nav, /aria-label="Текущий месяц, [^"]+"/);
+  assert.match(nav, /<span class="month-nav-badge">Текущий месяц<\/span>/);
+  assert.doesNotMatch(nav, /heat-cell|month-switcher/);
+  assert.match(stylesSource, /\.month-navigator-inline \.month-nav-chevron \{[^}]*width: 44px;[^}]*height: 44px;/);
+
+  const hero = run("en", "return soloProgressHero();");
+  assert.match(hero, /Solo progress/);
+  assert.match(hero, /class="pill hero-pill">Level 1</);
+  assert.match(hero, /class="solo-xp-compact"[^>]*>0 XP<\/span><span class="solo-xp-earned"[^>]*>0 XP earned</);
+  assert.match(hero, /<span>Month XP<\/span>[\s\S]*<span>Next title<\/span>/);
+  assert.match(hero, /data-action="open-ranks"/);
+  assert.doesNotMatch(hero, /TOTAL XP|hero-split|Week streak/);
+  assert.match(run("uk", "return soloProgressHero();"), /Наступний титул[\s\S]*Переглянути ранги/);
+  assert.match(stylesSource, /\.solo-progress-hero \{[^}]*linear-gradient\(145deg, var\(--brand-fill\)/);
+
+  const lifetime = run("ru", "return lifetimeProgressCard();");
+  assert.match(lifetime, /Прогресс за всё время[\s\S]*Тренировки[\s\S]*Серия недель[\s\S]*Объём/);
+
+  const heatmap = run("en", "return activityHeatmapCard();");
+  assert.match(heatmap, /<h2>Activity Heatmap<\/h2><div class="month-navigator-inline">/);
+  assert.doesNotMatch(heatmap, /Sessions|metric-grid/);
+  const muscle = run("en", "return muscleMapCard();");
+  assert.doesNotMatch(muscle.split('<div class="period-tabs">')[0], /class="pill"/);
+  assert.match(muscle, /metric-grid three tile-emphasized/);
+  const overview = appSource.slice(appSource.indexOf("function progressScreen()"), appSource.indexOf("function exerciseProgressPanel()"));
+  assert.doesNotMatch(overview.slice(overview.indexOf("} else {\n    content")), /monthSwitcher\(\)/);
+});
+
 test("training history states the weekly goal, shows volume with its unit, and uses short row dates", () => {
   const sandbox = context();
   const result = plain(vm.runInContext(`(() => {

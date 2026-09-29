@@ -163,6 +163,7 @@ const app = document.querySelector("#app");
 
 const icons = {
   calendar: "M5 4h14v17H5zM8 2v4M16 2v4M5 9h14M8 13h2M14 13h2M8 17h2M14 17h2",
+  calendarCheck: "M5 4h14v17H5zM8 2v4M16 2v4M5 9h14M9.5 15l2 2 3.5-4",
   add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
   auto: "M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
   back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
@@ -10498,6 +10499,31 @@ function fmtShortDate(value, now = Date.now()) {
   return state.language === "ru" ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
+// Compact range like "Sep 21 – 27" / "21–27 вер." / "21—27 сент." (same month) or
+// "Sep 28 – Oct 4" (across months). The year appears only when the end date's year
+// differs from the current year. Intl already matches the iOS interval formatter for
+// English and Ukrainian; Russian needs an em dash and no repeated "г." on the first date.
+function fmtDateRange(start, end, now = Date.now()) {
+  const from = new Date(start);
+  const to = new Date(end);
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) return "";
+  const options = to.getFullYear() === new Date(now).getFullYear()
+    ? { day: "numeric", month: "short" }
+    : { day: "numeric", month: "short", year: "numeric" };
+  const locale = displayLocale();
+  const key = renderDateFormatters ? JSON.stringify(["range", locale, options]) : null;
+  let formatter = renderDateFormatters?.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    if (renderDateFormatters && renderDateFormatters.size < 16) renderDateFormatters.set(key, formatter);
+  }
+  const text = formatter.formatRange(from, to);
+  if (state.language !== "ru") return text;
+  return text
+    .replace(/ г\.(?=\s*–)/u, "")
+    .replace(/–/gu, "—");
+}
+
 function localDateInputValue(timestamp = Date.now()) {
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return "";
@@ -11651,13 +11677,30 @@ function screenMarkup(current) {
   return workoutsScreen();
 }
 
-function monthSwitcher() {
+// Compact inline month navigator (no card): 44px chevrons around "month · Current month".
+// The centre returns to the current month when another month is selected.
+function monthNavigatorInline() {
   const isCurrentMonth = (monthOffsets[activeMonthScope()] || 0) === 0;
-  return `<section class="month-switcher panel compact">
-    <button class="icon-button" data-action="month-prev" aria-label="${txAttr("Previous month", "Попередній місяць")}">${svg("back")}</button>
-    <button class="month-current-button" data-action="month-current" ${isCurrentMonth ? "disabled" : ""}><strong>${fmtDate(monthDate().getTime(), { month: "long", year: "numeric" })}</strong><span>${isCurrentMonth ? tx("Current month", "Поточний місяць") : tx("Return to current month", "Повернутися до поточного місяця")}</span></button>
-    <button class="icon-button rotate-180" data-action="month-next" aria-label="${txAttr("Next month", "Наступний місяць")}" ${isCurrentMonth ? "disabled" : ""}>${svg("back")}</button>
-  </section>`;
+  const month = fmtDate(monthDate().getTime(), { month: "long", year: "numeric" });
+  const centreLabel = isCurrentMonth
+    ? tx3(`Current month, ${month}`, `Поточний місяць, ${month}`, `Текущий месяц, ${month}`)
+    : tx3(`${month}. Return to current month`, `${month}. Повернутися до поточного місяця`, `${month}. Вернуться к текущему месяцу`);
+  return `<div class="month-navigator-inline">
+    <button type="button" class="icon-button month-nav-chevron" data-action="month-prev" aria-label="${escapeAttr(tx3("Previous month", "Попередній місяць", "Предыдущий месяц"))}">${svg("chevronRight", "rotate-180")}</button>
+    <button type="button" class="month-nav-current" data-action="month-current" aria-label="${escapeAttr(centreLabel)}"><span class="month-nav-month">${escapeHtml(month)}</span>${isCurrentMonth ? `<span class="month-nav-badge">${tx3("Current month", "Поточний місяць", "Текущий месяц")}</span>` : ""}</button>
+    <button type="button" class="icon-button month-nav-chevron" data-action="month-next" aria-label="${escapeAttr(tx3("Next month", "Наступний місяць", "Следующий месяц"))}" ${isCurrentMonth ? `disabled aria-describedby="month-nav-current-hint"` : ""}>${svg("chevronRight")}</button>
+    ${isCurrentMonth ? `<span id="month-nav-current-hint" class="sr-only">${tx3("The current month is already selected", "Поточний місяць уже вибрано", "Текущий месяц уже выбран")}</span>` : ""}
+  </div>`;
+}
+
+// Noun form that agrees with `count`: English one/many, Ukrainian and Russian one/few/many.
+function pluralForm(count, en, uk, ruForms) {
+  if (state.language !== "uk" && state.language !== "ru") return count === 1 ? en[0] : en[1];
+  const forms = state.language === "ru" ? ruForms : uk;
+  const mod10 = Math.abs(count) % 10;
+  const mod100 = Math.abs(count) % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  return mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? forms[1] : forms[2];
 }
 
 function workoutsScreen() {
@@ -11683,6 +11726,7 @@ function workoutsScreen() {
 function overviewCards(sessions) {
   return `
     ${soloProgressHero()}
+    ${lifetimeProgressCard()}
     ${activityHeatmapCard()}
     ${muscleMapCard()}
   `;
@@ -11847,19 +11891,96 @@ function fitMetricTileValues() {
     const scale = Math.max(METRIC_TILE_MIN_VALUE_SCALE, available / needed);
     value.style.fontSize = `${Math.floor(baseSize * scale * 10) / 10}px`;
   });
+  fitSoloIdentityRows();
+}
+
+// The hero shows the compact "N XP" beside the rank title when the row fits on one line;
+// when the XP total wraps below, it switches to the longer "N XP earned" line instead.
+function fitSoloIdentityRows() {
+  const rows = app.querySelectorAll(".solo-identity-row");
+  if (!rows || typeof rows.forEach !== "function") return;
+  rows.forEach(row => {
+    row.classList.remove("xp-wrapped");
+    const xp = row.querySelector(".solo-xp");
+    const pill = row.querySelector(".hero-pill");
+    const title = row.querySelector("h2");
+    if (!xp || !pill || !title) return;
+    const leadBottom = Math.max(pill.offsetTop + pill.offsetHeight, title.offsetTop + title.offsetHeight);
+    if (xp.offsetTop >= leadBottom - 1) row.classList.add("xp-wrapped");
+  });
+}
+
+function soloProgressSummary(workoutCount, weeklyStreakWeeks, weeklyTarget) {
+  if (!workoutCount) {
+    return tx3("Log a workout to start your momentum.", "Запиши тренування, щоб набрати темп.", "Запиши тренировку, чтобы набрать темп.");
+  }
+  if (weeklyStreakWeeks > 0) {
+    const targetWorkouts = pluralForm(weeklyTarget, ["workout", "workouts"],
+      ["тренування", "тренування", "тренувань"], ["тренировку", "тренировки", "тренировок"]);
+    return tx3(
+      `${weeklyStreakWeeks} successful week${weeklyStreakWeeks === 1 ? "" : "s"} in a row.`,
+      `${weeklyStreakWeeks} тиж. поспіль із ціллю в ${weeklyTarget} ${targetWorkouts}.`,
+      `${weeklyStreakWeeks} нед. подряд с целью в ${weeklyTarget} ${targetWorkouts}.`
+    );
+  }
+  const trainingDays = pluralForm(weeklyTarget, ["training day", "training days"],
+    ["тренувальний день", "тренувальні дні", "тренувальних днів"],
+    ["тренировочный день", "тренировочных дня", "тренировочных дней"]);
+  return tx3(
+    `Reach ${weeklyTarget} ${trainingDays} to start your weekly rhythm.`,
+    `Набери ${weeklyTarget} ${trainingDays}, щоб почати тижневий ритм.`,
+    `Набери ${weeklyTarget} ${trainingDays}, чтобы начать недельный ритм.`
+  );
 }
 
 function soloProgressHero() {
+  const locale = displayLocale();
   const xp = totalXp();
   const progress = levelProgress(xp);
   const level = progress.level;
   const next = rankDefinitions.find(rank => level < rank.level);
-  const nextTitle = next ? tx3(next.titleEn, next.titleUk, next.titleRu) : rankTitle(xp);
+  const nextTitle = next
+    ? tx3(next.titleEn, next.titleUk, next.titleRu)
+    : tx3("Top rank", "Найвищий ранг", "Самый высокий ранг");
+  const totalXpText = xp.toLocaleString(locale);
+  const monthXpText = xpForSessions(selectedMonthSessions()).toLocaleString(locale);
+  const levelProgressLabel = tx3(
+    `${progress.currentLevelXp} of ${progress.xpForNextLevel} XP`,
+    `${progress.currentLevelXp} із ${progress.xpForNextLevel} XP`,
+    `${progress.currentLevelXp} из ${progress.xpForNextLevel} XP`
+  );
+  const summary = soloProgressSummary(
+    state.sessions.filter(session => Array.isArray(session?.sets) && session.sets.length > 0).length,
+    profileWeeklyStreak(),
+    profileWeeklyTarget()
+  );
   return `<section class="hero-panel solo-progress-hero">
-    <div class="eyebrow">${t("soloProgress")}</div>
-    <div class="hero-split"><div><span class="pill hero-pill">${tx("LEVEL", "РІВЕНЬ")} ${level}</span><h2>${rankTitle(xp)}</h2><p>${progress.currentLevelXp} / ${progress.xpForNextLevel} XP ${tx("to next level", "до наступного рівня")}</p></div><div class="hero-stat"><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong><small>${tx("earned", "зароблено")}</small></div></div>
-    <div class="progress"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div>
-    <div class="metric-grid three"><div><span>${tx("Month XP", "XP за місяць")}</span><strong>${xpForSessions(selectedMonthSessions())} XP</strong></div><div><span>${tx("Next title", "Наступний ранг")}</span><strong>${nextTitle}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${selectedMonthWeeklyStreak()} ${tx("wk", "тиж")}</strong></div></div>
+    <div class="eyebrow">${tx3("Solo progress", "Особистий прогрес", "Личный прогресс")}</div>
+    <div class="solo-identity">
+      <div class="solo-identity-row">
+        <span class="pill hero-pill">${tx3("Level", "Рівень", "Уровень")} ${level}</span>
+        <h2>${escapeHtml(rankTitle(xp))}</h2>
+        <span class="solo-xp" aria-label="${escapeAttr(`${tx3("Total XP", "Загалом XP", "Всего XP")}: ${totalXpText}`)}"><span class="solo-xp-compact" aria-hidden="true">${escapeHtml(totalXpText)} XP</span><span class="solo-xp-earned" aria-hidden="true">${escapeHtml(totalXpText)} ${tx3("XP earned", "XP зароблено", "XP заработано")}</span></span>
+      </div>
+      <p>${escapeHtml(summary)}</p>
+    </div>
+    <div class="progress" role="progressbar" aria-label="${escapeAttr(tx3("Level progress", "Прогрес рівня", "Прогресс уровня"))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress.progressFraction * 100)}" aria-valuetext="${escapeAttr(levelProgressLabel)}"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div>
+    <div class="metric-grid tile-emphasized tile-compact"><div><span>${tx3("Month XP", "XP за місяць", "XP за месяц")}</span><strong>${escapeHtml(monthXpText)} XP</strong></div><div><span>${tx3("Next title", "Наступний титул", "Следующий титул")}</span><strong>${escapeHtml(nextTitle)}</strong></div></div>
+    <button type="button" class="solo-ranks-button" data-action="open-ranks" aria-describedby="solo-ranks-hint">${svg("trophy", "small-icon")}<span>${tx3("View ranks", "Переглянути ранги", "Посмотреть ранги")}</span></button>
+    <span id="solo-ranks-hint" class="sr-only">${tx3("Opens the full rank ladder", "Відкриває повну шкалу рангів", "Открывает полную шкалу рангов")}</span>
+  </section>`;
+}
+
+// All-time totals shown under the hero: workouts, current weekly streak, and volume.
+function lifetimeProgressCard() {
+  const metrics = todayPlanDashboardMetrics();
+  const tiles = [
+    [tx3("Workouts", "Тренування", "Тренировки"), formatTodayMetric(metrics.totalWorkouts, false)],
+    [tx3("Week streak", "Серія тижнів", "Серия недель"), `${formatTodayMetric(metrics.weeklyStreak, false)} ${tx3("wk", "тиж", "нед")}`],
+    [tx3("Volume", "Обсяг", "Объём"), formatTodayMetric(metrics.totalVolume)]
+  ];
+  return `<section class="panel highlighted lifetime-progress-card"><div class="section-title"><h2>${tx3("Lifetime progress", "Прогрес за весь час", "Прогресс за всё время")}</h2></div>
+    <div class="metric-grid three tile-emphasized">${tiles.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
   </section>`;
 }
 
@@ -11938,8 +12059,7 @@ function activityHeatmapCard() {
     const label = `${fmtDate(date.getTime())}: ${load} ${tx("load", "навантаження")}`;
     return `<button type="button" class="heat-cell ${heatLevelClass(load / max)}" tabindex="-1" aria-disabled="true" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">${day}</button>`;
   }).join("");
-  return `<section class="panel"><div class="section-title"><div><h2>${t("heatmap")}</h2><p>${fmtDate(d.getTime(), { month: "long", year: "numeric" })}</p></div><span class="pill">${n(byDay.size, "active day", "active days", "активний день", "активні дні", "активних днів")}</span></div>
-    <div class="metric-grid"><div><span>${tx("Sessions", "Сесії")}</span><strong>${monthSessions.length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(monthSessions))}</strong></div></div>
+  return `<section class="panel highlighted activity-heatmap-card"><div class="section-title heatmap-header"><div class="heatmap-title"><h2>${t("heatmap")}</h2>${monthNavigatorInline()}</div><span class="pill">${svg("calendarCheck", "small-icon")}${n(byDay.size, "active day", "active days", "активний день", "активні дні", "активних днів")}</span></div>
     <div class="heatmap-grid">${cellMarkup}</div>
     <div class="legend"><span>${tx("Less", "Менше")}</span><i></i><i></i><i></i><i></i><span>${tx("More", "Більше")}</span></div>
   </section>`;
@@ -11960,10 +12080,10 @@ function muscleMapCard() {
   const top = data.filter(item => item.load > 0).sort((a, b) => b.load - a.load);
   const selected = selectedMuscle ? data.find(item => item.id === selectedMuscle) : null;
   const selectedExercises = selected ? selected.exercises.slice().sort((a, b) => b.load - a.load) : [];
-  return `<section class="panel">
-    <div class="section-title"><div><h2>${t("muscleMap")}</h2><p>${tx("Colors show which muscle groups carried the most load.", "Кольори показують, які групи м'язів отримали найбільше навантаження.")}</p></div><span class="pill">${musclePeriodLabel(musclePeriod)}</span></div>
+  return `<section class="panel highlighted muscle-map-card">
+    <div class="section-title"><div><h2>${t("muscleMap")}</h2><p>${tx("Colors show which muscle groups carried the most load.", "Кольори показують, які групи м'язів отримали найбільше навантаження.")}</p></div></div>
     <div class="period-tabs">${["all", "month", "week"].map(period => `<button class="${musclePeriod === period ? "selected" : ""}" data-action="muscle-period" data-period="${period}">${musclePeriodLabel(period)}</button>`).join("")}</div>
-    <div class="metric-grid three"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
+    <div class="metric-grid three tile-emphasized"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
     ${sourceBodyMapSvg(data, max)}
     ${muscleMapSelectionList(data)}
     ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${escapeHtml(selected.label)}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(exerciseDisplayName(ex))}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} - ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} - ${Math.round(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "Для цієї групи м'язів у вибраному періоді немає записаних вправ.")}</div>`}</div>` : ""}
@@ -12131,7 +12251,7 @@ function exerciseMuscleBreakdownCard(exercise, framed = false) {
     ? "panel highlighted exercise-muscle-breakdown"
     : "exercise-muscle-breakdown";
   return `<section class="${className}">
-    <div class="exercise-muscle-breakdown-heading"><h3>${tx("Top muscle groups", "Топ груп м'язів")}</h3><p>${escapeHtml(exerciseDisplayName(exercise))}</p></div>
+    <div class="exercise-muscle-breakdown-heading"><h3>${tx3("Muscle Breakdown", "Розподіл по м’язах", "Распределение по мышцам")}</h3><span class="pill exercise-muscle-groups-pill">${svg("fitness", "small-icon")}${escapeHtml(countNoun(active.length, "groups"))}</span></div>
     <div class="exercise-muscle-breakdown-bars">${active.map(item => {
       const percent = Math.round(item.weight * 100);
       return `<div class="exercise-muscle-breakdown-row"><div><span>${escapeHtml(item.label)}</span><strong>${percent}%</strong></div><div class="bar-track"><div class="bar-fill ${percentageClass(percent)}"></div></div></div>`;
@@ -12251,15 +12371,44 @@ function maximumWorkoutGapDays() {
   return maximum;
 }
 
+function achievementProgressFraction(item) {
+  const target = Math.max(1, Number(item.target) || 1);
+  return Math.max(0, Math.min(1, (Number(item.progress) || 0) / target));
+}
+
+function achievementProgressText(item) {
+  const format = value => Number(value).toLocaleString(displayLocale(), { maximumFractionDigits: 0 });
+  const target = Math.max(1, Number(item.target) || 1);
+  return `${format(Math.min(Math.round(Number(item.progress) || 0), target))} / ${format(target)}`;
+}
+
+function achievementStatusLabel(isUnlocked) {
+  return isUnlocked ? tx3("Unlocked", "Відкрито", "Открыто") : tx3("Locked", "Заблоковано", "Закрыто");
+}
+
+function achievementTileMarkup(item) {
+  const fraction = achievementProgressFraction(item);
+  const isUnlocked = item.progress >= item.target;
+  const dash = Math.round(fraction * 10000) / 100;
+  const label = `${item.title}, ${achievementStatusLabel(isUnlocked)}, ${achievementProgressText(item)}`;
+  const arc = dash > 0
+    ? `<circle class="achievement-ring-arc" cx="30" cy="30" r="28" pathLength="100" stroke-dasharray="${dash} 100" transform="rotate(-90 30 30)"/>`
+    : "";
+  return `<button type="button" class="achievement-tile rarity-${escapeAttr(item.rarity)} ${isUnlocked ? "unlocked" : "locked"}" data-action="open-achievement" data-achievement-id="${escapeAttr(item.id)}" aria-haspopup="dialog" aria-label="${escapeAttr(label)}"><span class="achievement-ring"><svg class="achievement-ring-svg" viewBox="0 0 60 60" aria-hidden="true"><circle class="achievement-ring-track" cx="30" cy="30" r="28" pathLength="100"/>${arc}</svg><span class="achievement-icon">${svg(item.icon)}</span>${isUnlocked ? "" : `<span class="achievement-lock">${svg("lock")}</span>`}</span><span class="achievement-name">${escapeHtml(item.title)}</span></button>`;
+}
+
 function achievementsGallery() {
   const achievements = achievementDefinitions();
   const unlocked = achievements.filter(item => item.progress >= item.target).length;
-  return `<section class="achievements-section"><div class="section-title achievements-heading"><div><span class="eyebrow">${tx("Collection", "Колекція")}</span><h2>${t("achievements")}</h2><p>${tx("Every badge has a stable milestone and stays visible before and after unlock.", "Кожен значок має сталу ціль і залишається видимим до та після відкриття.")}</p></div><span class="pill">${unlocked}/${achievements.length}</span></div><div class="achievement-gallery">${achievements.map(item => {
-    const percent = Math.max(0, Math.min(100, Math.round(item.progress / item.target * 100)));
-    const isUnlocked = item.progress >= item.target;
-    const rarity = achievementRarityLabel(item.rarity);
-    return `<article class="panel achievement-card rarity-${escapeAttr(item.rarity)} ${isUnlocked ? "unlocked" : "locked"}" data-achievement-id="${escapeAttr(item.id)}"><div class="achievement-medallion">${svg(item.icon)}</div><div class="achievement-copy"><div class="row-head"><div><span class="eyebrow">${escapeHtml(rarity)}</span><h3>${escapeHtml(item.title)}</h3></div><strong>${percent}%</strong></div><p>${escapeHtml(item.description)}</p><div class="progress"><span class="${percentageClass(percent)}"></span></div><small>${Math.min(Math.round(item.progress), item.target)} / ${item.target} · ${isUnlocked ? tx("Unlocked", "Відкрито") : tx("In progress", "У процесі")}</small></div></article>`;
-  }).join("")}</div></section>`;
+  return `<section class="achievements-section" aria-labelledby="achievements-title"><div class="achievements-heading"><span class="achievements-eyebrow">${tx3("Achievements", "Досягнення", "Достижения")}</span><h2 id="achievements-title">${tx3("Your badge collection", "Твоя колекція відзнак", "Твоя коллекция значков")}</h2><p>${tx3("Every milestone, its progress and rarity.", "Кожна ціль, її прогрес і рідкість.", "Каждая цель, её прогресс и редкость.")}</p></div><div class="achievements-summary"><span class="pill">${svg("check", "small-icon")}${unlocked} / ${achievements.length}</span><span class="achievements-summary-caption">${tx3("Unlocked collection", "Відкрита колекція", "Открытая коллекция")}</span></div><div class="achievement-gallery">${achievements.map(achievementTileMarkup).join("")}</div></section>`;
+}
+
+function achievementSheetMarkup(id) {
+  const item = achievementDefinitions().find(entry => entry.id === id);
+  if (!item) return "";
+  const isUnlocked = item.progress >= item.target;
+  const percent = achievementProgressFraction(item) * 100;
+  return `<div class="achievement-sheet rarity-${escapeAttr(item.rarity)} ${isUnlocked ? "unlocked" : "locked"}"><div class="achievement-sheet-hero"><span class="achievement-disc" aria-hidden="true">${svg(item.icon)}</span><h2 id="achievement-sheet-title">${escapeHtml(item.title)}</h2><span class="pill achievement-rarity-pill">${escapeHtml(achievementRarityLabel(item.rarity))}</span></div><p class="achievement-sheet-description">${escapeHtml(item.description)}</p><div class="achievement-sheet-progress"><div class="progress"><span class="${percentageClass(percent)}"></span></div><strong class="achievement-sheet-count">${escapeHtml(achievementProgressText(item))}</strong></div><p class="achievement-sheet-status">${svg(isUnlocked ? "checkCircle" : "lock", "small-icon")}${achievementStatusLabel(isUnlocked)}</p></div>`;
 }
 
 function achievementRarityLabel(rarity) {
@@ -12506,6 +12655,8 @@ function plateCalculatorMarkup(weight) {
 // Count phrases with the right plural form in every language ("1 set", "2 підходи", "5 подходов").
 const COUNT_NOUN_FORMS = Object.freeze({
   "exercises": Object.freeze({ en: ["exercise", "exercises"], uk: ["вправа", "вправи", "вправ"], ru: ["упражнение", "упражнения", "упражнений"] }),
+  "groups": Object.freeze({ en: ["group", "groups"], uk: ["група", "групи", "груп"], ru: ["группа", "группы", "групп"] }),
+  "sessions": Object.freeze({ en: ["session", "sessions"], uk: ["сесія", "сесії", "сесій"], ru: ["сессия", "сессии", "сессий"] }),
   "sets": Object.freeze({ en: ["set", "sets"], uk: ["підхід", "підходи", "підходів"], ru: ["подход", "подхода", "подходов"] }),
   "friends": Object.freeze({ en: ["friend", "friends"], uk: ["друг", "друзі", "друзів"], ru: ["друг", "друга", "друзей"] }),
   "workouts": Object.freeze({ en: ["workout", "workouts"], uk: ["тренування", "тренування", "тренувань"], ru: ["тренировка", "тренировки", "тренировок"] }),
@@ -23052,11 +23203,16 @@ function exerciseMoreSheetMarkup(exerciseId) {
   return `<div class="exercise-more-sheet"><span class="eyebrow">${tx("Exercise options", "Дії з вправою")}</span><h2 id="exercise-more-title">${escapeHtml(exerciseDisplayName(exercise))}</h2><div class="exercise-more-actions"><button class="button secondary full" data-action="exercise-history" data-id="${exercise.id}"${initialFocus}>${tx("History", "Історія")}</button><button class="button ghost full" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button><button class="button ghost full" data-action="configure-load-profile" data-id="${exercise.id}">${tx("Machine weights", "Ваги тренажера")}</button>${builtIn ? "" : `<button class="button ghost full" data-action="rename-exercise" data-id="${exercise.id}">${tx3("Rename", "Перейменувати", "Переименовать")}</button>`}<button class="button danger full" data-action="delete-exercise" data-id="${exercise.id}">${tx3("Delete", "Видалити", "Удалить")}</button></div></div>`;
 }
 
-function progressExercisePickerMarkup(selected = null) {
-  const selectedCopy = selected
-    ? `<div class="progress-picker-selected">${exerciseMediaThumbnail(selected, { className: "progress" })}<div><span class="eyebrow">${tx("SELECTED EXERCISE", "ОБРАНА ВПРАВА")}</span><h2>${escapeHtml(exerciseDisplayName(selected))}</h2><p class="muted">${tx("Trends and saved history for the selected exercise.", "Тренди та збережена історія обраної вправи.")}</p></div></div>`
-    : `<div class="progress-picker-selected"><div><span class="eyebrow">${tx("EXERCISE PROGRESS", "ПРОГРЕС ВПРАВИ")}</span><h2>${tx("Choose an exercise", "Обери вправу")}</h2><p class="muted">${tx("Search your exercise library to open its trends and history.", "Знайди вправу в каталозі, щоб відкрити її тренди та історію.")}</p></div></div>`;
-  return `<section class="panel highlighted progress-exercise-picker">${selectedCopy}<button class="button full" data-action="open-progress-exercise-picker">${svg("search", "small-icon")}${selected ? tx("Choose or search exercise", "Обрати або знайти вправу") : tx("Choose exercise", "Обрати вправу")}</button></section>`;
+// One card: title, then thumbnail + name + logged-session count + search affordance (opens the picker sheet).
+function progressExercisePickerMarkup(selected = null, sessionCount = 0) {
+  const title = `<h2 class="progress-picker-title">${tx3("Choose an exercise", "Обери вправу", "Выберите упражнение")}</h2>`;
+  if (!selected) {
+    return `<section class="panel progress-exercise-picker">${title}<p class="muted">${tx3("Add an exercise and log a workout to see progress.", "Додай вправу й запиши тренування, щоб побачити прогрес.", "Добавь упражнение и запиши тренировку, чтобы увидеть прогресс.")}</p></section>`;
+  }
+  const name = exerciseDisplayName(selected);
+  const sessions = tx3(`${sessionCount} logged sessions`, `Записано сесій: ${sessionCount}`, `Записано сессий: ${sessionCount}`);
+  const label = tx3("Change exercise", "Змінити вправу", "Сменить упражнение");
+  return `<section class="panel progress-exercise-picker">${title}<div class="progress-picker-selected">${exerciseMediaThumbnail(selected, { className: "progress" })}<button type="button" class="progress-picker-change" data-action="open-progress-exercise-picker" aria-haspopup="dialog" aria-label="${escapeAttr(`${label}: ${name}. ${sessions}`)}"><span class="progress-picker-copy"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(sessions)}</small></span><span class="progress-picker-search" aria-hidden="true">${svg("search", "small-icon")}</span></button></div></section>`;
 }
 
 function progressExercisePickerRows() {
@@ -23277,10 +23433,18 @@ function trainingWeeklyReview(sessions = state.sessions, offset = 0, now = Date.
   return { start: +start, end: +end, partial: offset === 0, trainingDays: new Set(current.map(row => dayKey(row.session.startedAt))).size, sessions: weekSessions, comparableCount: comparisons.length, insights };
 }
 
+// "2 of 4 workouts": the noun agrees with the weekly target (the number it follows).
+function weeklyReviewTitle(completed, target) {
+  const noun = pluralForm(target, ["workout", "workouts"],
+    ["тренування", "тренувань", "тренувань"],
+    ["тренировки", "тренировок", "тренировок"]);
+  return tx3(`${completed} of ${target} ${noun}`, `${completed} з ${target} ${noun}`, `${completed} из ${target} ${noun}`);
+}
+
 function trainingWeeklyReviewMarkup() {
   const review = trainingWeeklyReview(state.sessions, trainingReviewOffset);
   const insights = review.insights.map(item => `<details class="training-week-insight"><summary>${escapeHtml(exerciseDisplayName(item.current))}<br><strong>${escapeHtml(formatSetWeight(item.current.weight))} ${tx3("kg", "кг", "кг")} · ${item.previous.reps} → ${item.current.reps} ${tx3("reps", "повторів", "повторений")}</strong></summary><div class="actions">${[item.previous, item.current].map(row => `<button class="button secondary" data-action="open-detail" data-id="${row.session.id}">${escapeHtml(fmtLongDate(row.session.startedAt))} · ${row.reps}</button>`).join("")}</div></details>`).join("");
-  return `<section class="panel training-week-review"><h2>${tx3("Weekly review", "Підсумок тижня", "Итог недели")}</h2><div class="training-week-navigation"><button class="icon-button" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset - 1}" aria-label="${escapeAttr(tx3("Previous week", "Попередній тиждень", "Предыдущая неделя"))}" ${trainingReviewOffset <= -520 ? "disabled" : ""}>${svg("back")}</button><p>${escapeHtml(fmtLongDate(review.start))} – ${escapeHtml(fmtLongDate(review.end))}</p><button class="icon-button rotate-180" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset + 1}" aria-label="${escapeAttr(tx3("Next week", "Наступний тиждень", "Следующая неделя"))}" ${trainingReviewOffset === 0 ? "disabled" : ""}>${svg("back")}</button></div>${review.partial ? `<small>${tx3("Week in progress", "Тиждень триває", "Неделя ещё идёт")}</small>` : ""}<h3>${review.trainingDays} / ${state.profile.days} ${tx3("training days", "тренувальних днів", "тренировочных дней")}</h3>${insights || `<p>${review.comparableCount ? tx3("Best reps at matching weights are unchanged.", "Найкращі повтори з тією самою вагою не змінилися.", "Лучшие повторы с тем же весом не изменились.") : tx3("Not enough comparable history yet.", "Поки недостатньо зіставної історії.", "Пока недостаточно сопоставимой истории.")}</p>`}<details><summary>${tx3("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")}</summary>${review.sessions.map(row => `<button class="button ghost full" data-action="open-detail" data-id="${row.id}">${escapeHtml(fmtLongDate(row.startedAt))}</button>`).join("")}</details></section>`;
+  return `<section class="panel training-week-review"><h2>${tx3("Weekly review", "Підсумок тижня", "Итог недели")}</h2><div class="training-week-navigation"><button class="icon-button" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset - 1}" aria-label="${escapeAttr(tx3("Previous week", "Попередній тиждень", "Предыдущая неделя"))}" ${trainingReviewOffset <= -520 ? "disabled" : ""}>${svg("back")}</button><p>${escapeHtml(fmtDateRange(review.start, review.end))}</p><button class="icon-button rotate-180" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset + 1}" aria-label="${escapeAttr(tx3("Next week", "Наступний тиждень", "Следующая неделя"))}" ${trainingReviewOffset === 0 ? "disabled" : ""}>${svg("back")}</button></div>${review.partial ? `<small>${tx3("Week in progress", "Тиждень триває", "Неделя ещё идёт")}</small>` : ""}<h3>${escapeHtml(weeklyReviewTitle(review.trainingDays, profileWeeklyTarget()))}</h3><button type="button" class="training-settings-link" data-action="open-training-settings">${tx3("Training settings", "Налаштування тренувань", "Настройки тренировок")} · ${tx3("edit", "змінити", "изменить")}</button>${insights || `<p>${review.comparableCount ? tx3("Best reps at matching weights are unchanged.", "Найкращі повтори з тією самою вагою не змінилися.", "Лучшие повторы с тем же весом не изменились.") : tx3("Comparison with previous weeks appears after a couple of weeks of training.", "Порівняння з минулими тижнями з'явиться після кількох тижнів тренувань.", "Сравнение с прошлыми неделями появится после пары недель тренировок.")}</p>`}<details><summary>${tx3("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")}</summary>${review.sessions.map(row => `<button class="button ghost full" data-action="open-detail" data-id="${row.id}">${escapeHtml(fmtLongDate(row.startedAt))}</button>`).join("")}</details></section>`;
 }
 
 function progressScreen() {
@@ -23318,7 +23482,7 @@ function progressScreen() {
   } else if (!state.sessions.some(session => Array.isArray(session?.sets) && session.sets.length > 0)) {
     content = `${trainingWeeklyReviewMarkup()}<section class="hero-panel progress-empty-state"><span class="eyebrow">${tx3("FIRST WORKOUT", "ПЕРШЕ ТРЕНУВАННЯ", "ПЕРВАЯ ТРЕНИРОВКА")}</span><h2>${tx3("Progress starts with your first saved set", "Прогрес починається з першого збереженого підходу", "Прогресс начинается с первого сохранённого подхода")}</h2><p>${tx3("Finish a workout to unlock your calendar, muscle map, and exercise trends.", "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.", "Завершите тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.")}</p><button class="button" data-action="open-add">${svg("fitness", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
   } else {
-    content = `${trainingWeeklyReviewMarkup()}${monthSwitcher()}${overviewCards(selectedMonthSessions())}`;
+    content = `${trainingWeeklyReviewMarkup()}${overviewCards(selectedMonthSessions())}`;
   }
   return `<section class="progress-hub">${tabs}<div id="progress-${selectedSection}-panel" class="progress-hub-panel" role="tabpanel" aria-labelledby="progress-${selectedSection}-tab">${content}</div></section>`;
 }
@@ -23326,7 +23490,7 @@ function progressScreen() {
 function exerciseProgressPanel() {
   const selectedId = Number(state.progressExerciseId || state.exercises[0]?.id || 0);
   const selected = state.exercises.find(ex => Number(ex.id) === selectedId);
-  if (!selected) return `${monthSwitcher()}${progressExercisePickerMarkup()}
+  if (!selected) return `${monthNavigatorInline()}${progressExercisePickerMarkup()}
     <section class="panel progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>0</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>0</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>0</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>0</strong></div></div></section>
     <section class="hero-panel progress-spotlight"><h2>${tx("No exercise data yet", "За цією вправою поки немає даних")}</h2><p>${tx("Pick an exercise to see solo progress.", "Обери вправу, щоб побачити свій прогрес.")}</p></section>
     <section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${tx("Maximum weight and session volume over time.", "Максимальна вага та обсяг тренування в динаміці.")}</p><div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div></section>
@@ -23339,12 +23503,15 @@ function exerciseProgressPanel() {
   const vol = history.reduce((sum, s) => sum + safeChartValue(s.weight) * safeChartValue(s.reps), 0);
   const reps = history.reduce((sum, x) => sum + safeChartValue(x.reps), 0);
   const hasMuscleMapping = contributionFor(selected).some(item => muscles.some(([id]) => id === item.muscleId));
-  return `${monthSwitcher()}${progressExercisePickerMarkup(selected)}
+  const loggedSessionCount = progressHistoryGroups(allSets().filter(set => exercisesMatch(set, selected))).length;
+  const hasMonthData = grouped.length > 0;
+  const monthEmpty = `<section class="panel empty-state-panel progress-month-empty"><span class="progress-month-empty-icon" aria-hidden="true">${svg("chart")}</span><h2>${tx3("No progress this month", "Немає прогресу за цей місяць", "В этом месяце прогресса пока нет")}</h2><p>${tx3("Log sets for the selected exercise to unlock trends.", "Додай підходи для вибраної вправи, щоб відкрити тренди.", "Запиши подходы выбранного упражнения, чтобы открыть тренды.")}</p></section>`;
+  return `${monthNavigatorInline()}${progressExercisePickerMarkup(selected, loggedSessionCount)}
     ${hasMuscleMapping ? exerciseMuscleBreakdownCard(selected, true) : ""}
     <section class="panel progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight x reps across all completed sets.", "Обсяг = вага x повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(best))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(avg))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${Math.round(vol)}</strong></div></div></section>
-    <section class="hero-panel progress-spotlight">${spotlight(selected, grouped, allTimeBest)}</section>
-    ${exerciseTrendCharts(grouped, best)}
-    <section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.length ? grouped.map(g => progressHistoryCard(g)).join("") : `<div class="empty">${tx("No history in this month.", "Немає історії за цей місяць.")}</div>`}</section>`;
+    ${hasMonthData ? `<section class="hero-panel progress-spotlight">${spotlight(selected, grouped, allTimeBest)}</section>
+    ${exerciseTrendCharts(grouped, best)}` : ""}
+    ${hasMonthData ? `<section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.map(g => progressHistoryCard(g)).join("")}</section>` : monthEmpty}`;
 }
 
 function progressHistoryGroups(history) {
@@ -23381,7 +23548,8 @@ function spotlight(exercise, grouped, allTimeBest) {
   const previous = points.at(-2);
   const weightDelta = progressDeltaLabel(latest.maxWeight, previous?.maxWeight, tx("kg", "кг"));
   const volumeDelta = progressDeltaLabel(latest.volume, previous?.volume, tx("volume", "обсягу"));
-  return `<h2>${escapeHtml(displayName)}</h2><p>${tx("Your latest result and the direction of recent sessions.", "Останній результат і динаміка недавніх тренувань.")}</p>
+  const sessionsPhrase = countNoun(grouped.length, "sessions");
+  return `<h2>${escapeHtml(displayName)}</h2><p>${escapeHtml(tx3(`${sessionsPhrase} in the selected month.`, `${sessionsPhrase} у вибраному місяці.`, `${sessionsPhrase} в выбранном месяце.`))}</p>
     <div class="metric-grid"><div><span>${tx("Latest max", "Останній максимум")}</span><strong>${escapeHtml(formatLocalizedSetWeight(latest.maxWeight))}</strong></div><div><span>${tx("Latest volume", "Останній обсяг")}</span><strong>${Math.round(latest.volume)}</strong></div></div>
     <div class="spotlight-deltas"><span class="hero-info-pill">${escapeHtml(weightDelta)}</span>${volumeDelta !== weightDelta ? `<span class="hero-info-pill">${escapeHtml(volumeDelta)}</span>` : ""}</div>
     <div class="metric-grid"><div><span>${tx("All-time best", "Найкраще за весь час")}</span><strong>PR ${escapeHtml(formatLocalizedSetWeight(allTimeBest))}</strong></div><div><span>${tx("Consistency", "Стабільність")}</span><strong>${grouped.length} ${tx("this month", "цього місяця")}</strong></div></div>`;
@@ -23430,7 +23598,7 @@ function exerciseTrendCharts(grouped, monthPeak) {
   const latest = points.at(-1);
   const averageVolume = points.reduce((sum, point) => sum + point.volume, 0) / points.length;
 
-  return `<section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${`${countedText(points.length, ["recent session", "recent sessions"], ["останнє тренування", "останні тренування", "останніх тренувань"], ["недавняя тренировка", "недавние тренировки", "недавних тренировок"])}`}</p>
+  return `<section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${escapeHtml((sessionsPhrase => tx3(`Last ${sessionsPhrase} in the selected month.`, `Останні ${sessionsPhrase} у вибраному місяці.`, `Последние ${sessionsPhrase} в выбранном месяце.`))(countNoun(points.length, "sessions")))}</p>
     <div class="chart-section"><h3>${tx("Maximum weight", "Максимальна вага")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.maxWeight, first.maxWeight, tx("kg vs first session", "кг відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/><path class="chart-line-fill" d="${fillPath}"/><path class="chart-line" d="${linePath}"/>${dotMarkup}</svg></div>${labels}</div>
     <div class="chart-section"><h3>${tx("Session volume", "Обсяг тренування")}</h3><p class="muted">${escapeHtml(progressDeltaLabel(latest.volume, first.volume, tx("volume vs first session", "обсягу відносно першої сесії")))}</p><div class="trend-chart-plot"><svg viewBox="0 0 100 180" preserveAspectRatio="none" aria-hidden="true"><path class="chart-guide" d="M0 0 H100 M0 76 H100 M0 152 H100"/>${barMarkup}</svg></div>${labels}</div>
     <div class="metric-grid"><div><span>${tx("Peak weight", "Пікова вага")}</span><strong>${escapeHtml(formatLocalizedSetWeight(monthPeak))}</strong></div><div><span>${tx("Average volume", "Середній обсяг")}</span><strong>${Math.round(averageVolume)}</strong></div></div></section>`;
@@ -23461,27 +23629,40 @@ function missionsScreen() {
   const levelState = levelProgress(xp);
   const periods = {
     daily: {
-      tabLabel: tx("Daily", "Щоденні"),
+      tabLabel: tx3("Day", "День", "День"),
       missions: missions.daily
     },
     weekly: {
-      tabLabel: tx("Weekly", "Тижневі"),
+      tabLabel: tx3("Week", "Тиждень", "Неделя"),
       missions: missions.weekly
     },
     monthly: {
-      tabLabel: tx("Monthly", "Місячні"),
+      tabLabel: tx3("Month", "Місяць", "Месяц"),
       missions: missions.monthly
     }
   };
   const selected = periods[missionPeriod] || periods.daily;
-  const periodTabs = `<section class="segmented mission-period-tabs panel compact" role="tablist" aria-label="${txAttr("Missions", "Місії")}">${Object.entries(periods).map(([period, item]) => {
+  const periodTabs = `<section class="segmented mission-period-tabs panel compact" role="tablist" aria-label="${escapeAttr(tx3("Mission period", "Період місій", "Период миссий"))}">${Object.entries(periods).map(([period, item]) => {
     const isSelected = period === missionPeriod;
     return `<button type="button" role="tab" id="mission-tab-${period}" aria-controls="mission-panel-${period}" aria-selected="${isSelected}" tabindex="${isSelected ? "0" : "-1"}" class="${isSelected ? "selected" : ""}" data-action="mission-period" data-period="${period}"><strong>${escapeHtml(item.tabLabel)}</strong></button>`;
   }).join("")}</section>`;
   const sections = selected.missions.length
     ? `<section class="mission-list" id="mission-panel-${missionPeriod}" role="tabpanel" aria-labelledby="mission-tab-${missionPeriod}">${selected.missions.map(missionCard).join("")}</section>`
     : `<section class="panel empty-state-panel"><h2>${tx("No missions yet", "Місій ще немає")}</h2><p>${tx("Add workouts to unlock daily, weekly, and monthly goals.", "Додай тренування, щоб відкрити щоденні, тижневі й місячні цілі.")}</p><button class="button" data-action="open-add">${svg("add", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
-  return `<section class="hero-panel missions-rank-hero"><div class="missions-rank-head"><div><h2>${rankTitle(xp)}</h2><p>${tx("Level", "Рівень")} ${levelState.level}</p></div><button class="missions-rank-action" data-action="open-ranks" aria-label="${tAttr("viewRanks")}">${svg("trophy")}</button></div><div class="progress" aria-label="${txAttr("Level progress", "Прогрес рівня")}"><span class="${percentageClass(levelState.progressFraction * 100)}"></span></div><div class="metric-grid"><div><span>${tx("TOTAL XP", "УСЬОГО XP")}</span><strong>${xp}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${profileWeeklyStreak()} ${tx("wk", "тиж")}</strong></div></div></section>
+  const formatXpNumber = value => Number(value).toLocaleString(displayLocale());
+  const levelSummary = tx3(
+    `Level ${levelState.level} · ${rankTitle(xp)} · ${formatXpNumber(xp)} XP`,
+    `Рівень ${levelState.level} · ${rankTitle(xp)} · ${formatXpNumber(xp)} XP`,
+    `Уровень ${levelState.level} · ${rankTitle(xp)} · ${formatXpNumber(xp)} XP`
+  );
+  const ranksHint = tx3("Opens ranks", "Відкриває ранги", "Открывает ранги");
+  const rankRow = settingsPanelMarkup([settingsRowMarkup({
+    icon: "trophy",
+    title: levelSummary,
+    action: "open-ranks",
+    attrs: `aria-label="${escapeAttr(`${levelSummary}. ${ranksHint}`)}"`
+  })], "missions-rank-panel");
+  return `${rankRow}
     ${periodTabs}
     ${sections}
     ${achievementsGallery()}`;
@@ -24150,7 +24331,10 @@ function dayNumber(date) {
 
 function missionCard(m) {
   const status = m.done ? tx("Completed", "Виконано") : tx("In progress", "У процесі");
-  return `<article class="mission-row ${m.done ? "highlighted" : ""}" aria-label="${escapeAttr(`${m.cadenceLabel}. ${status}`)}"><div class="mission-card-head"><span class="mission-card-icon ${m.done ? "complete" : ""}" aria-hidden="true">${svg(m.done ? "checkCircle" : "timer")}</span><div class="mission-card-copy"><h3>${escapeHtml(m.title)}</h3><p>${escapeHtml(m.summary)}</p></div></div><div class="progress"><span class="${percentageClass(m.progress / Math.max(1, m.target) * 100)}"></span></div><small class="mission-progress-label">${escapeHtml(m.progressLabel)}</small></article>`;
+  const missionNumber = value => (Number.isFinite(Number(value)) ? Number(value) : 0).toLocaleString(displayLocale(), { maximumFractionDigits: 0 });
+  const counter = `${missionNumber(m.progress)} / ${missionNumber(m.target)}`;
+  const completedPill = m.done ? `<span class="pill mission-completed-pill">${svg("check", "small-icon")}${tx3("Completed", "Виконано", "Выполнено")}</span>` : "";
+  return `<article class="mission-row ${m.done ? "highlighted" : ""}" aria-label="${escapeAttr(`${m.cadenceLabel}. ${status}`)}"><div class="mission-card-head"><span class="mission-card-icon" aria-hidden="true">${svg(m.done ? "checkCircle" : "timer")}</span><div class="mission-card-copy"><h3>${escapeHtml(m.title)}</h3><p>${escapeHtml(m.summary)}</p></div><div class="mission-card-counter"><span class="mission-counter">${escapeHtml(counter)}</span>${completedPill}</div></div><div class="progress"><span class="${percentageClass(m.progress / Math.max(1, m.target) * 100)}"></span></div></article>`;
 }
 
 function ranksScreen() {
@@ -24192,6 +24376,10 @@ function modalMarkup() {
   }
   if (modal.type === "workout-exercise-picker") return bottomSheet(workoutExercisePickerMarkup(modal));
   if (modal.type === "progress-exercise-picker") return bottomSheet(progressExercisePickerSheetMarkup());
+  if (modal.type === "achievement-detail") {
+    const sheet = achievementSheetMarkup(modal.achievementId);
+    return sheet ? bottomSheet(sheet, "achievement-sheet-title") : "";
+  }
   if (modal.type === "friend-workout-picker") return bottomSheet(friendWorkoutPickerMarkup());
   if (modal.type === "training-settings") return bottomSheet(trainingSettingsSheetMarkup(), "training-settings-title");
   if (modal.type === "account-settings") return bottomSheet(accountSettingsSheetMarkup(), "account-settings-title");
@@ -24769,14 +24957,14 @@ const STABLE_FOCUS_ACTIONS = new Set([
   "exercise-history", "exercise-muscle-filter", "exercise-sort", "export-diagnostics", "export-json",
   "import-json", "map-exercise", "open-exercise-add", "open-exercise-filters", "open-exercise-media",
   "open-exercise-more", "open-friend", "open-friend-workout-detail", "open-friend-workout-picker",
-  "open-account-settings", "open-live-room", "open-offline-account", "open-progress-exercise-picker", "open-workout-exercise-picker",
+  "open-account-settings", "open-achievement", "open-live-room", "open-offline-account", "open-progress-exercise-picker", "open-workout-exercise-picker",
   "rename-exercise", "reset-exercise-filters", "respond-live-invite", "respond-workout-invite",
   "send-live-workout-invite", "send-workout-invite", "share-draft", "share-session", "smart-alternatives",
   "start-live-room", "template-picker", "open-voice-workout"
 ]);
 const STABLE_FOCUS_DATASET_FIELDS = [
   "id", "session", "exerciseId", "block", "filter", "sort", "profileId", "workoutId", "roomId",
-  "shareMode", "pickerTarget", "name"
+  "shareMode", "pickerTarget", "name", "achievementId"
 ];
 
 function normalizedStableActionReturnFocus(value) {
@@ -25204,6 +25392,17 @@ async function handleAction(action, el) {
     return true;
   }
   if (action === "open-ranks") return push("ranks");
+  if (action === "open-achievement") {
+    const achievementId = el.dataset.achievementId;
+    if (!["progress", "missions"].includes(route().name) || typeof achievementId !== "string" ||
+        !achievementDefinitions().some(item => item.id === achievementId)) return false;
+    modal = {
+      type: "achievement-detail",
+      achievementId,
+      returnFocus: stableActionReturnFocus("open-achievement", el)
+    };
+    return render();
+  }
   if (action === "mission-period") {
     const period = el.dataset.period;
     if (!["daily", "weekly", "monthly"].includes(period)) return;

@@ -236,7 +236,6 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["This legacy local account name is ambiguous. Its stored data was left untouched; rename/recover it before signing in.", "Ця назва старого локального акаунта неоднозначна. Збережені дані не змінено; віднови або перейменуй акаунт перед входом."],
     ["View workout", "Відкрити тренування"],
     ["Your authenticated cloud row uses a legacy or invalid format. It was not loaded into the app and cannot sync until you choose a recovery action.", "Твій автентифікований хмарний запис має застарілий або некоректний формат. Його не завантажено в застосунок, і синхронізація заблокована, доки не вибереш спосіб відновлення."],
-    ["Your latest result and the direction of recent sessions.", "Останній результат і динаміка недавніх тренувань."],
     ["into this level", "на цьому рівні"],
     ["A one-time Garmin token will be shown. It works like a password: paste it only into this watch's Connect IQ settings. GymApp temporarily keeps account-bound retry material in this browser until pairing is recovered, then removes it. Continue?", "Буде показано одноразовий токен Garmin. Він працює як пароль: встав його лише в налаштування Connect IQ цього годинника. GymApp тимчасово зберігає в цьому браузері прив’язані до акаунта дані повтору до відновлення сполучення, а потім видаляє їх. Продовжити?"],
     ["Last session was stable across the sets.", "Результати останнього тренування були стабільними в усіх підходах."],

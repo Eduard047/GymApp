@@ -455,7 +455,8 @@ test("PWA screen composition follows the current Android information hierarchy",
   const source = appSources[0].source;
   assert.doesNotMatch(source, /focus-recent/);
   assert.match(source, /exerciseMuscleBreakdownCard\(selected, true\)/);
-  assert.match(source, /class="hero-panel missions-rank-hero"/);
+  assert.match(source, /settingsPanelMarkup\(\[settingsRowMarkup\(\{\s*icon: "trophy",[\s\S]*?action: "open-ranks"[\s\S]*?\}\)\], "missions-rank-panel"\)/);
+  assert.doesNotMatch(source, /missions-rank-hero/);
   assert.match(source, /summary: missionSummary\(template, cadence\)/);
   assert.match(source, /class="panel highlighted smart-coach-panel"/);
   assert.equal(source.match(/\$\{workoutComparisonCard\(session\)\}/g)?.length, 2);

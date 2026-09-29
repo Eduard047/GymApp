@@ -592,6 +592,20 @@ a:focus-visible,
   height: 72px;
 }
 
+/* The "progress" size class also matches the generic `.progress span` bar rule; keep the play badge a small circle. */
+.exercise-media-thumb.progress .exercise-media-play {
+  width: 28px;
+  height: 28px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+/* The Progress picker card uses the same 76x64 thumbnail as the shared media button on iOS. */
+.progress-picker-selected .exercise-media-thumb.progress {
+  flex-basis: 76px;
+  width: 76px;
+  height: 64px;
+}
+
 .exercise-card-identity,
 .progress-exercise-heading,
 .exercise-history-heading {
@@ -993,20 +1007,52 @@ svg.filled-icon.small-icon {
 
 .progress-exercise-picker {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
+
+.progress-exercise-picker > h2,
+.progress-exercise-picker > p { margin: 0; }
+.progress-picker-title { font-size: 17px; font-weight: 600; line-height: 22px; }
 
 .progress-picker-selected {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
-.progress-picker-selected > div { min-width: 0; }
-.progress-picker-selected h2,
-.progress-picker-selected p { margin: 0; }
-.progress-picker-selected .eyebrow { color: var(--sage); }
+.progress-picker-change {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.progress-picker-copy { display: grid; flex: 1; gap: 4px; min-width: 0; }
+.progress-picker-copy strong { font-size: 17px; font-weight: 600; line-height: 22px; overflow-wrap: anywhere; }
+.progress-picker-copy small { color: var(--muted); font-size: 12px; line-height: 16px; }
+
+.progress-picker-search {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.progress-picker-search svg { width: 18px; height: 18px; }
 
 .progress-exercise-picker-sheet {
   display: grid;
@@ -1086,17 +1132,18 @@ svg.filled-icon.small-icon {
 
 .exercise-muscle-breakdown:not(.panel) { padding: 0; }
 
+/* The count pill sits beside the title and wraps under it when both do not fit on one line. */
 .exercise-muscle-breakdown-heading {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
 }
 
-.exercise-muscle-breakdown-heading h3,
-.exercise-muscle-breakdown-heading p {
-  margin: 0;
-}
-
-.exercise-muscle-breakdown-heading p { color: var(--muted); }
+.exercise-muscle-breakdown-heading h3 { margin: 0; min-width: 0; }
+.exercise-muscle-breakdown-heading .pill { flex: 0 0 auto; }
+.exercise-muscle-breakdown-heading .pill .small-icon { width: 15px; height: 15px; }
 
 .exercise-muscle-breakdown-bars {
   display: grid;
@@ -1130,6 +1177,12 @@ svg.filled-icon.small-icon {
   display: grid;
   gap: 10px;
 }
+
+.progress-month-empty { justify-items: center; text-align: center; }
+.progress-month-empty-icon { display: grid; place-items: center; width: 40px; height: 40px; color: var(--muted); }
+.progress-month-empty-icon svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.progress-month-empty h2 { font-size: 17px; font-weight: 600; line-height: 22px; }
+.progress-month-empty p { color: var(--muted); }
 
 .progress-spotlight { gap: 12px; }
 .progress-spotlight .metric-grid { margin-top: 0; }
@@ -1519,30 +1572,173 @@ svg.filled-icon.small-icon {
 
 .solo-progress-hero {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  padding: 16px;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(145deg, var(--brand-fill) 0%, var(--brand-fill-bright) 100%);
 }
 
 .solo-progress-hero .metric-grid,
 .solo-progress-hero .progress { margin-top: 0; }
 
+.solo-progress-hero .eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: none;
+}
+
+.solo-identity { display: grid; gap: 6px; min-width: 0; }
+.solo-identity p { margin: 0; font-size: 14px; line-height: 20px; color: rgba(255, 255, 255, 0.86); }
+
+.solo-identity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+
 .solo-progress-hero .hero-pill {
-  padding: 7px 12px;
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 7px 11px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  text-transform: none;
+}
+
+.solo-identity-row h2 { min-width: 0; hyphens: none; overflow-wrap: anywhere; }
+
+.solo-xp {
+  margin-left: auto;
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 24px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.solo-xp-earned { display: none; }
+
+.solo-identity-row.xp-wrapped .solo-xp {
+  flex: 1 0 100%;
+  margin-left: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.solo-identity-row.xp-wrapped .solo-xp-compact { display: none; }
+.solo-identity-row.xp-wrapped .solo-xp-earned { display: inline; }
+
+.solo-progress-hero .metric-grid > div {
+  background: rgba(255, 255, 255, 0.085);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .solo-progress-hero .metric-grid span {
-  display: block;
-  color: color-mix(in srgb, var(--on-primary) 78%, transparent);
-  font-size: 11px;
-  font-weight: 500;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
-  overflow-wrap: anywhere;
 }
 
-.solo-progress-hero .metric-grid strong {
-  font-size: 16px;
+.solo-ranks-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.13);
+  font-size: 15px;
   font-weight: 600;
-  line-height: 22px;
-  overflow-wrap: anywhere;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.solo-ranks-button .small-icon { width: 18px; height: 18px; }
+
+/* Opt-in tile style for the Progress overview: equal height per row, sentence-case labels
+   that never hyphenate, and bold values. Other screens keep the default metric tile. */
+.metric-grid.tile-emphasized { align-items: stretch; }
+
+.metric-grid.tile-emphasized > div {
+  min-width: 0;
+  min-height: 74px;
+  padding: 12px;
+}
+
+.metric-grid.tile-emphasized span {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  hyphens: none;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.metric-grid.tile-emphasized strong {
+  margin-top: 5px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 28px;
+  hyphens: none;
+}
+
+.metric-grid.tile-emphasized.tile-compact strong {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.heatmap-header { align-items: flex-start; flex-wrap: wrap; row-gap: 10px; }
+.heatmap-title { display: grid; gap: 3px; min-width: 0; }
+.heatmap-header .pill { flex: 0 0 auto; }
+.heatmap-header .pill .small-icon { width: 15px; height: 15px; }
+
+.month-navigator-inline { display: flex; align-items: center; gap: 2px; min-width: 0; }
+
+.month-navigator-inline .month-nav-chevron { flex: 0 0 auto; width: 44px; height: 44px; }
+.month-navigator-inline .month-nav-chevron svg { width: 15px; height: 15px; stroke-width: 2.4; }
+.month-navigator-inline .month-nav-chevron:disabled { opacity: 0.35; cursor: default; }
+
+.month-nav-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 2px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.month-nav-month { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.month-nav-badge { flex: 0 0 auto; color: var(--sage); font-size: 11px; font-weight: 600; line-height: 14px; white-space: nowrap; }
+
+.training-settings-link {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0;
+  color: var(--sage);
+  background: transparent;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  cursor: pointer;
 }
 
 .progress-spotlight h2,
@@ -2687,52 +2883,6 @@ button.leaderboard-row {
   font-weight: 700;
 }
 
-.missions-rank-hero {
-  display: grid;
-  gap: 12px;
-}
-
-.missions-rank-head,
-.mission-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.missions-rank-head h2,
-.missions-rank-head p {
-  margin: 0;
-}
-
-.missions-rank-action {
-  display: grid;
-  place-items: center;
-  flex: 0 0 48px;
-  width: 48px;
-  height: 48px;
-  border: 1px solid color-mix(in srgb, var(--on-primary) 18%, transparent);
-  border-radius: 999px;
-  color: var(--on-primary);
-  background: color-mix(in srgb, var(--on-primary) 12%, transparent);
-  cursor: pointer;
-}
-
-.missions-rank-action svg {
-  width: 23px;
-  height: 23px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.missions-rank-hero > .progress {
-  height: 7px;
-  margin: 0;
-}
-
 .fab {
   position: fixed;
   right: calc(16px + env(safe-area-inset-right));
@@ -2757,51 +2907,6 @@ button.leaderboard-row {
   background: var(--clay);
 }
 
-.month-switcher {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 48px;
-  align-items: center;
-  gap: 2px;
-  margin: 8px 12px;
-  padding: 6px 8px !important;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  box-shadow: 0 3px 8px rgba(20, 33, 45, 0.12);
-}
-
-.month-current-button {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  min-height: 48px;
-  place-content: center;
-  padding: 4px;
-  color: var(--text);
-  background: transparent;
-  cursor: pointer;
-}
-
-.month-current-button strong {
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.month-current-button span {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-}
-
-.month-current-button:disabled {
-  opacity: 1;
-  cursor: default;
-}
-
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2816,9 +2921,16 @@ button.leaderboard-row {
   padding: 3px;
 }
 
-.mission-period-tabs button {
+.mission-period-tabs button,
+.segmented.mission-period-tabs button.selected {
   min-height: 48px;
   padding: 7px 6px;
+  text-align: center;
+}
+
+.segmented.mission-period-tabs button {
+  display: grid;
+  place-items: center;
   text-align: center;
 }
 
@@ -2878,7 +2990,6 @@ button.leaderboard-row {
 }
 
 .workouts-controls { flex: 0 0 auto; }
-.workouts-scroll .workouts-controls .month-switcher { margin: 0; }
 .workouts-scroll .workouts-controls .segmented { margin: 10px 0 0; }
 
 .workouts-controls .segmented button {
@@ -3650,14 +3761,14 @@ button.leaderboard-row {
 }
 
 .workout-item,
-.exercise-row,
-.mission-row {
+.exercise-row {
   padding: 16px;
 }
 
 .mission-row {
   display: grid;
-  gap: 11px;
+  gap: 9px;
+  padding: 13px 16px;
 }
 
 .mission-card-head {
@@ -3672,10 +3783,8 @@ button.leaderboard-row {
   width: 28px;
   height: 28px;
   place-items: center;
-  color: var(--clay);
+  color: var(--primary);
 }
-
-.mission-card-icon.complete { color: var(--sage); }
 
 .mission-card-icon svg {
   width: 24px;
@@ -3721,14 +3830,26 @@ button.leaderboard-row {
 
 .mission-row .progress { margin: 0; }
 
-.mission-progress-label {
-  overflow: hidden;
+.mission-row .progress span { background: var(--mint); }
+.mission-row.highlighted .progress span { background: var(--primary); }
+
+.mission-card-counter {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 4px;
+}
+
+.mission-counter {
   color: var(--muted);
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
-  font-weight: 650;
-  text-overflow: ellipsis;
+  line-height: 22px;
   white-space: nowrap;
 }
+
+.mission-completed-pill { min-height: 26px; padding: 0 8px; font-size: 12px; }
+.mission-completed-pill .small-icon { width: 13px; height: 13px; }
 
 .workout-item {
   background: var(--surface-highlight);
@@ -4593,61 +4714,164 @@ textarea:focus {
 
 .achievements-section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin-top: 6px;
 }
 
-.achievements-heading {
-  align-items: end;
-  padding: 8px 2px 2px;
-}
+.achievements-heading { display: grid; gap: 5px; padding: 8px 2px 0; }
+.achievements-heading h2,
+.achievements-heading p { margin: 0; }
+.achievements-heading p { color: var(--muted); line-height: 20px; }
+.achievements-eyebrow { color: var(--primary); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; line-height: 16px; }
+
+.achievements-summary { display: flex; align-items: center; gap: 8px; }
+.achievements-summary .pill .small-icon { width: 15px; height: 15px; }
+.achievements-summary-caption { color: var(--muted); font-size: 12px; line-height: 16px; }
 
 .achievement-gallery {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 12px;
 }
 
-.achievement-card {
-  --badge-color: var(--sage);
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  gap: 12px;
-  border-left: 3px solid var(--badge-color);
+.achievement-tile.rarity-common,
+.achievement-sheet.rarity-common { --badge-color: var(--mint); }
+.achievement-tile.rarity-uncommon,
+.achievement-sheet.rarity-uncommon { --badge-color: var(--primary); }
+.achievement-tile.rarity-rare,
+.achievement-sheet.rarity-rare { --badge-color: var(--violet); }
+.achievement-tile.rarity-epic,
+.achievement-sheet.rarity-epic { --badge-color: color-mix(in srgb, var(--violet) 60%, #e11d9a); }
+.achievement-tile.rarity-legendary,
+.achievement-sheet.rarity-legendary { --badge-color: var(--gold); }
+
+.achievement-tile {
+  --badge-color: var(--mint);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 108px;
+  padding: 10px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 
-.achievement-card.rarity-common { --badge-color: var(--muted); }
-.achievement-card.rarity-uncommon { --badge-color: var(--sage); }
-.achievement-card.rarity-rare { --badge-color: var(--blue); }
-.achievement-card.rarity-epic { --badge-color: var(--violet); }
-.achievement-card.rarity-legendary { --badge-color: var(--gold); }
-
-.achievement-medallion {
+.achievement-ring {
+  position: relative;
   display: grid;
+  flex: 0 0 auto;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border: 1px solid color-mix(in srgb, var(--badge-color) 42%, var(--outline-variant));
-  border-radius: var(--radius-md);
-  color: var(--badge-color);
-  background: color-mix(in srgb, var(--badge-color) 12%, var(--surface));
+  width: 60px;
+  height: 60px;
 }
 
-.achievement-medallion svg {
-  width: 25px;
-  height: 25px;
+.achievement-ring-svg { position: absolute; inset: 0; width: 60px; height: 60px; }
+.achievement-ring-track,
+.achievement-ring-arc { fill: none; stroke-width: 4; }
+.achievement-ring-track { stroke: var(--outline-variant); }
+.achievement-ring-arc { stroke: var(--primary); stroke-linecap: round; }
+.achievement-tile.unlocked .achievement-ring-arc { stroke: var(--badge-color); }
+
+.achievement-icon { display: grid; place-items: center; color: var(--badge-color); }
+.achievement-tile.locked .achievement-icon { color: var(--muted); opacity: 0.4; }
+.achievement-icon svg,
+.achievement-disc svg {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.achievement-icon svg { width: 22px; height: 22px; }
+.achievement-icon svg.filled-icon,
+.achievement-disc svg.filled-icon { fill: currentColor; stroke: none; }
 
-.achievement-copy { min-width: 0; }
-.achievement-copy p { margin: 4px 0 8px; }
-.achievement-copy small { color: var(--muted); }
-.achievement-card .progress { height: 6px; margin-bottom: 7px; }
-.achievement-card.locked .achievement-medallion { filter: saturate(0.55); }
-.achievement-card.unlocked { background: var(--surface-highlight); }
+.achievement-lock {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.achievement-lock svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+.achievement-name {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.achievement-tile.locked .achievement-name { opacity: 0.55; }
+
+.achievement-sheet { display: grid; gap: 16px; }
+.achievement-sheet-hero { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.achievement-sheet-hero h2 { margin: 0; }
+
+.achievement-disc {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  color: var(--badge-color);
+  background: color-mix(in srgb, var(--badge-color) 12%, transparent);
+}
+
+.achievement-sheet.locked .achievement-disc {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+
+.achievement-disc svg { width: 38px; height: 38px; }
+
+.achievement-rarity-pill {
+  color: var(--badge-color);
+  border-color: color-mix(in srgb, var(--badge-color) 22%, transparent);
+  background: color-mix(in srgb, var(--badge-color) 12%, transparent);
+}
+
+.achievement-sheet-description { margin: 0; color: var(--muted); }
+.achievement-sheet-progress { display: grid; gap: 8px; }
+.achievement-sheet-progress .progress { height: 8px; margin: 0; }
+.achievement-sheet.unlocked .achievement-sheet-progress .progress span { background: var(--badge-color); }
+.achievement-sheet-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.achievement-sheet-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.achievement-sheet.unlocked .achievement-sheet-status { color: var(--badge-color); }
+.achievement-sheet-status .small-icon { width: 16px; height: 16px; }
+
+@media (max-width: 340px) {
+  .achievement-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .favorite-toggle.selected {
   color: var(--rose);
@@ -5454,33 +5678,14 @@ textarea:focus {
   }
   .progress-hub-switch button span { width: 100%; overflow-wrap: normal; white-space: nowrap; }
   .progress-hub-switch button { padding-inline: 2px; }
-  .solo-progress-hero .hero-split {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
-  .solo-progress-hero .hero-stat {
-    min-width: 0;
-    text-align: left;
-  }
   .solo-progress-hero .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .solo-progress-hero .metric-grid > div:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
   }
 
   .friend-training-actions { grid-template-columns: 1fr; }
   .friend-workout-choice { grid-template-columns: minmax(0, 1fr); }
   .friend-workout-choice b { justify-self: start; }
 
-  .achievement-card {
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-
-  .achievement-medallion {
-    width: 44px;
-    height: 44px;
-  }
 }
 
 @media (max-width: 460px) and (max-height: 640px) {
@@ -5917,6 +6122,8 @@ textarea:focus {
 .settings-panel > * + .settings-row { border-top: 0; }
 
 .settings-row-trailing { align-items: center; gap: 6px; }
+.missions-rank-panel .settings-row { min-height: 48px; padding-block: 10px; }
+.missions-rank-panel .settings-row-text strong { font-size: 15px; line-height: 20px; white-space: normal; }
 .settings-row-value { color: var(--muted); font-size: 16px; line-height: 22px; }
 
 .settings-language { position: relative; }
