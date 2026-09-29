@@ -780,7 +780,7 @@ test("recording persists the completed set before starting the durable 180-secon
   const initialMarkup = vm.runInContext("activeWorkoutScreen()", context);
   assert.match(initialMarkup, new RegExp(`data-action="record-active-set" data-id="${setId}"`));
   assert.doesNotMatch(initialMarkup, new RegExp(`data-action="record-active-set" data-id="${nextSetId}"`));
-  assert.doesNotMatch(initialMarkup, /data-action="undo-active-set"|data-timer-display=/);
+  assert.doesNotMatch(initialMarkup, /data-action="undo-active-set"|data-timer-display=|data-active-set-confirmation/);
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "81,5" });
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "7" });
   localStorage.writes.length = 0;
@@ -821,6 +821,7 @@ test("recording persists the completed set before starting the durable 180-secon
   assert.match(lifecycleMarkup, /data-action="timer-adjust"[^>]*data-seconds="-15"/);
   assert.match(lifecycleMarkup, /data-action="timer-adjust"[^>]*data-seconds="15"/);
   assert.match(lifecycleMarkup, /data-action="timer-stop"/);
+  assert.doesNotMatch(lifecycleMarkup, /Undo last set|Set saved · rest timer|active-workout-timer/);
 });
 
 test("recording a bodyweight set accepts blank weight as zero and still starts rest", async () => {
@@ -871,7 +872,9 @@ test("completed active sets are read-only and bulk save cannot rewrite them", as
     "bulk save must preserve the already-recorded set exactly"
   );
   assert.deepEqual([saved[1].weight, saved[1].reps, saved[1].completed], [83, 5, true]);
-  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /data-action="save-active-exercise"/);
+  const fullyRecorded = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(fullyRecorded, /data-action="save-active-exercise"/,
+    "like iOS, Finish stays visible when every set is recorded");
 });
 
 test("Save exercise and Add set retire stale undo, timing, and rest projections", async () => {
@@ -1004,11 +1007,11 @@ test("the latest completed exercise stays expanded while the next exercise becom
   const currentStart = markup.indexOf('active-workout-exercise current"');
   assert.ok(completedStart >= 0 && currentStart > completedStart);
   const completedMarkup = markup.slice(completedStart, currentStart);
-  assert.match(completedMarkup, /<details open>/);
+  assert.match(completedMarkup, /<details data-active-block-details="\d+" open>/);
   assert.match(completedMarkup, /data-timer-display=/);
   assert.match(completedMarkup, new RegExp(`data-action="undo-active-set" data-id="${firstSetId}"`));
   assert.match(markup, new RegExp(
-    `active-workout-exercise current"><details open>[\\s\\S]*?data-action="record-active-set" data-id="${nextSetId}"`
+    `active-workout-exercise current"><details data-active-block-details="\\d+" open>[\\s\\S]*?data-action="record-active-set" data-id="${nextSetId}"`
   ));
 });
 
@@ -1034,28 +1037,100 @@ test("workout stopwatch includes adjusted rest while its account-bound sidecar t
   assert.equal(timing.workoutId, vm.runInContext("activeWorkout.id", context));
   vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
   assert.equal(vm.runInContext(`activeWorkoutElapsedMillis(activeWorkout, ${createdAt + 120_000})`, context), 120_000);
-  assert.match(vm.runInContext("activeWorkoutScreen()", context), />Elapsed</);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), /data-active-workout-elapsed/);
   assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /includes rest/);
 });
 
-test("active-workout hero labels elapsed, completed and started-at time in every locale", async () => {
+test("active-workout hero is one brand panel with a combined label, ring and current exercise in every locale", async () => {
   const { context } = loadContext();
   await startTwoSetWorkout(context);
   const expectations = {
-    en: ["Elapsed", "Completed", "Started at"],
-    uk: ["Минуло", "Виконано", "Початок о"],
-    ru: ["Прошло", "Выполнено", "Начало в"]
+    en: { progress: "In progress", now: "Now: Bench Press", sets: "sets", label: "Elapsed 00:00, 0 of 2 sets done, now: Bench Press" },
+    uk: { progress: "Триває", now: "Зараз: Bench Press", sets: "підх.", label: "Минуло 00:00, 0 з 2 підходи виконано, зараз: Bench Press" },
+    ru: { progress: "Идёт", now: "Сейчас: Bench Press", sets: "подх.", label: "Прошло 00:00, выполнено 0 из 2 подхода, сейчас: Bench Press" }
   };
-  for (const [language, labels] of Object.entries(expectations)) {
+  for (const [language, copy] of Object.entries(expectations)) {
     const markup = vm.runInContext(
       `state.language = ${JSON.stringify(language)}; activeWorkoutScreen()`,
       context
     );
-    assert.match(markup, new RegExp(`<span>${labels[0]}</span><strong data-active-workout-elapsed`));
-    assert.match(markup, new RegExp(`<span>${labels[1]}</span><strong>0 / 2</strong>`));
-    assert.match(markup, new RegExp(`active-workout-started[^>]*>${labels[2]}\\s`));
-    assert.match(markup, /role="progressbar"[^>]*aria-valuenow="0"/);
+    assert.match(markup, new RegExp(`class="active-hero-main" role="img" data-active-workout-hero aria-label="[^"]*"`));
+    assert.match(markup, /<strong class="active-hero-elapsed" data-active-workout-elapsed>\d{2}:\d{2}<\/strong>/);
+    assert.ok(markup.includes(`</span>${copy.progress}</span>`));
+    assert.ok(markup.includes(`<strong>0/2</strong><span>${copy.sets}</span>`));
+    assert.match(markup, /class="active-hero-copy" aria-hidden="true"/);
+    assert.match(markup, /class="active-hero-ring" aria-hidden="true"/);
+    assert.doesNotMatch(markup, /role="progressbar"|active-workout-started|active-workout-metrics|<div class="metric-grid/);
+    assert.doesNotMatch(markup, /\sstyle=/);
+    assert.match(markup, /active-workout-screen-note/);
   }
+  const label = language => vm.runInContext(
+    `state.language = ${JSON.stringify(language)}; activeWorkoutHeroLabel("14:40", { completed: 3, total: 15 }, "Squat")`,
+    context
+  );
+  assert.equal(label("en"), "Elapsed 14:40, 3 of 15 sets done, now: Squat");
+  assert.equal(label("uk"), "Минуло 14:40, 3 з 15 підходів виконано, зараз: Squat");
+  assert.equal(label("ru"), "Прошло 14:40, выполнено 3 из 15 подходов, сейчас: Squat");
+  assert.equal(vm.runInContext(
+    'state.language = "en"; activeWorkoutHeroLabel("00:05", { completed: 2, total: 2 }, "")',
+    context
+  ), "Elapsed 00:05, 2 of 2 sets done");
+  assert.equal(vm.runInContext('state.language = "en"; titleForRoute({ name: "active" })', context), "Workout");
+  assert.equal(vm.runInContext('state.language = "uk"; titleForRoute({ name: "active" })', context), "Тренування");
+  assert.equal(vm.runInContext('state.language = "ru"; titleForRoute({ name: "active" })', context), "Тренировка");
+});
+
+test("active-workout topbar minimizes and the overflow sheet holds Adapt and Discard", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const minimize = vm.runInContext(
+    'state.language = "ru"; activeWorkoutMinimizeMarkup()',
+    context
+  );
+  assert.match(minimize, /data-action="back"[^>]*aria-describedby="active-minimize-hint">Свернуть<\/button>/);
+  assert.match(minimize, /Сворачивает экран; тренировка продолжает идти, все изменения уже сохранены/);
+  assert.match(vm.runInContext('state.language = "uk"; activeWorkoutMinimizeMarkup()', context), />Згорнути<\/button>/);
+  assert.match(vm.runInContext('state.language = "en"; activeWorkoutMinimizeMarkup()', context), />Minimize<\/button>/);
+  const more = vm.runInContext('state.language = "en"; activeWorkoutMoreButtonMarkup()', context);
+  assert.match(more, /data-action="open-active-more"[^>]*aria-label="More workout options"/);
+
+  const sheet = vm.runInContext('state.language = "en"; activeWorkoutMoreSheetMarkup()', context);
+  assert.match(sheet, /Adapt workout/);
+  for (const reason of ["equipmentUnavailable", "timeCut", "tooHard"]) {
+    assert.match(sheet, new RegExp(`data-action="training-adapt" data-reason="${reason}"`));
+  }
+  assert.match(sheet, /class="button danger full" data-action="discard-active-workout">Discard<\/button>/);
+  const screen = vm.runInContext("activeWorkoutScreen()", context);
+  assert.doesNotMatch(screen, /training-adapt|discard-active-workout|active-workout-more/);
+  const russianSheet = vm.runInContext('state.language = "ru"; activeWorkoutMoreSheetMarkup()', context);
+  assert.match(russianSheet, />Удалить<\/button>/);
+
+  vm.runInContext(`modal = { type: "active-more" }; state.language = "en";`, context);
+  assert.match(vm.runInContext("modalMarkup()", context), /aria-labelledby="active-more-title"/);
+  vm.runInContext("modal = null", context);
+});
+
+test("active-workout exercise cards show a set subtitle, a collapsed progress line and no eyebrow or Done pill", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const markup = vm.runInContext('state.language = "en"; activeWorkoutScreen()', context);
+  assert.match(markup, /class="active-exercise-open-line">Set 1 of 2<\/p>/);
+  assert.match(markup, /class="active-exercise-collapsed-line"><span class="active-exercise-progress">[\s\S]*?0 \/ 2<\/span><\/p>/);
+  assert.doesNotMatch(markup, /active-exercise-status/, "the current card has no Up next / Completed status");
+  assert.doesNotMatch(markup, /class="eyebrow">Exercise|completed-exercise-badge/);
+  const upcoming = language => vm.runInContext(
+    `state.language = ${JSON.stringify(language)}; activeWorkoutBlockMarkup(activeWorkout.blocks[0], 1, 0)`,
+    context
+  );
+  assert.match(upcoming("en"), /class="active-exercise-status">Up next · 2 sets<\/span>/);
+  assert.match(upcoming("uk"), /Далі · 2 підходи/);
+  assert.match(upcoming("ru"), /Далее · 2 подхода/);
+  assert.match(upcoming("ru"), /Подход 1 из 2/);
+  const completedBlock = vm.runInContext(
+    `state.language = "ru"; activeWorkoutBlockMarkup({ ...activeWorkout.blocks[0], sets: activeWorkout.blocks[0].sets.map(set => ({ ...set, completed: true })) }, 0, -1)`,
+    context
+  );
+  assert.match(completedBlock, /class="active-exercise-progress done">[\s\S]*?2 \/ 2<\/span><span class="active-exercise-status">Завершено<\/span>/);
 });
 
 test("write-ahead rest marker reconciles crashes between start, adjust, and stop state writes", async () => {
@@ -1839,7 +1914,9 @@ test("a separate durable marker preserves exactly one latest undo across reload 
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), secondSetId);
   const reloadMarkup = vm.runInContext("activeWorkoutScreen()", context);
   assert.match(reloadMarkup, /data-action="undo-active-set"/);
-  assert.match(reloadMarkup, /Undo last set/);
+  assert.doesNotMatch(reloadMarkup, /Undo last set/);
+  assert.match(reloadMarkup, /class="active-set-undo-key"/);
+  assert.match(reloadMarkup, new RegExp(`data-active-set-undoable="${secondSetId}"`));
   assert.match(reloadMarkup, /data-timer-display=/);
   assert.match(reloadMarkup, /data-action="timer-adjust"[^>]*data-seconds="-15"/);
   assert.match(reloadMarkup, /data-action="timer-adjust"[^>]*data-seconds="15"/);
@@ -1865,10 +1942,10 @@ test("a separate durable marker preserves exactly one latest undo across reload 
   stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
   assert.equal(stored.blocks[0].sets[0].completed, true);
   const markup = vm.runInContext("activeWorkoutScreen()", context);
-  assert.doesNotMatch(markup, /Undo last set/);
+  assert.doesNotMatch(markup, /data-action="undo-active-set"|data-active-set-undoable/);
   assert.match(markup, /data-active-field="weight"[^>]*value="83"/);
-  assert.match(markup, /aria-valuenow="1"/);
-  assert.match(markup, /aria-valuemax="2"/);
+  assert.match(markup, /data-active-workout-hero aria-label="Elapsed [0-9:]+, 1 of 2 sets done/);
+  assert.match(markup, /<strong>1\/2<\/strong><span>sets<\/span>/);
 });
 
 test("storage events refresh the separate undo marker across tabs", async () => {
@@ -1886,12 +1963,261 @@ test("storage events refresh the separate undo marker across tabs", async () => 
 
   observer.windowListeners.get("storage")({ key: activeUndoStorageKey(observer.context) });
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", observer.context), setId);
-  assert.match(vm.runInContext("activeWorkoutScreen()", observer.context), /Undo last set/);
+  assert.match(
+    vm.runInContext("activeWorkoutScreen()", observer.context),
+    new RegExp(`data-action="undo-active-set" data-id="${setId}"`)
+  );
 
   assert.equal(await vm.runInContext(`undoLatestActiveSet(${setId})`, recorder.context), true);
   observer.windowListeners.get("storage")({ key: activeUndoStorageKey(observer.context) });
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", observer.context), null);
-  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", observer.context), /Undo last set/);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", observer.context), /data-action="undo-active-set"/);
+});
+
+async function recordTwoSetWorkoutSet(context, runtimeNodes, setId, weight, reps) {
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: String(weight) });
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: String(reps) });
+  return vm.runInContext(`recordActiveSet(${setId})`, context);
+}
+
+function twoSetIds(context) {
+  return JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))",
+    context
+  ));
+}
+
+function completedRowMarkup(markup, setId) {
+  const start = markup.indexOf(`<div class="active-set-row completed" data-active-set-row="${setId}"`);
+  assert.ok(start >= 0, `completed row ${setId} must render`);
+  const nextRow = markup.indexOf('<div class="active-set-row', start + 10);
+  return markup.slice(start, nextRow < 0 ? undefined : nextRow);
+}
+
+test("one confirmation banner per recorded set reads Recorded without the rest suffix and announces it with the suffix", async () => {
+  const expectations = {
+    en: ["Recorded: 40 kg × 10", "Undo", " · rest 3:00"],
+    uk: ["Записано: 40 кг × 10", "Скасувати", " · відпочинок 3:00"],
+    ru: ["Записано: 40 кг × 10", "Отменить", " · отдых 3:00"]
+  };
+  for (const [language, [message, undo, suffix]] of Object.entries(expectations)) {
+    const { context, runtimeNodes } = loadContext();
+    await startTwoSetWorkout(context);
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    const [setId] = twoSetIds(context);
+    assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, setId, 40, 10), true);
+
+    const confirmation = JSON.parse(vm.runInContext("JSON.stringify(activeSetConfirmation)", context));
+    assert.deepEqual(Object.keys(confirmation).sort(), ["announced", "announcement", "message", "setId", "workoutId"]);
+    assert.equal(confirmation.setId, setId);
+    assert.equal(confirmation.message, message);
+    assert.equal(confirmation.announcement, message + suffix);
+    assert.equal(vm.runInContext("activeWorkoutUi.messageKey", context), null,
+      "the generic success status must not duplicate the banner");
+
+    const markup = vm.runInContext("activeWorkoutScreen()", context);
+    const banner = markup.match(/<div class="active-set-confirmation"[\s\S]*?<\/button><\/div>/)?.[0] ?? "";
+    assert.ok(banner, `banner markup (${language})`);
+    assert.match(banner, new RegExp(`data-active-set-confirmation="${setId}"`));
+    assert.ok(banner.includes(`class="active-set-confirmation-text" aria-hidden="true">${message}</span>`));
+    assert.doesNotMatch(banner.split('<span class="sr-only"')[0], /rest 3:00|відпочинок 3:00|отдых 3:00/);
+    assert.ok(banner.includes(`role="status" aria-live="polite">${message + suffix}</span>`));
+    assert.ok(banner.includes(`data-action="undo-active-set" data-id="${setId}">${undo}</button>`));
+    assert.match(banner, /data-action="dismiss-active-set-confirmation"/);
+    assert.ok(markup.indexOf("active-workout-hero") < markup.indexOf('class="active-set-confirmation"'));
+    assert.ok(markup.indexOf('class="active-set-confirmation"') < markup.indexOf('class="active-workout-list"'));
+    assert.doesNotMatch(markup, /Smart rest started|Розумний відпочинок/);
+  }
+});
+
+test("the confirmation is memory only, replaced by the next record, and cleared by undo, dismiss, voice start and route exit", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [firstId, secondId] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 40, 10), true);
+  assert.equal(vm.runInContext("activeSetConfirmation.setId", context), firstId);
+  assert.equal(
+    [...localStorage.values.values()].some(value => value.includes("Recorded: 40")),
+    false,
+    "the confirmation text is never persisted"
+  );
+
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, secondId, 42.5, 8), true);
+  assert.equal(vm.runInContext("activeSetConfirmation.setId", context), secondId);
+  assert.equal(vm.runInContext("activeSetConfirmation.message", context), "Recorded: 42.5 kg × 8");
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.equal((markup.match(/data-active-set-confirmation=/g) || []).length, 1);
+
+  await vm.runInContext(`handleAction("dismiss-active-set-confirmation", { dataset: {} })`, context);
+  assert.equal(vm.runInContext("activeSetConfirmation", context), null);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /data-active-set-confirmation/);
+
+  vm.runInContext(`setActiveSetConfirmation(activeWorkout.id, ${secondId}, 42.5, 8, 0)`, context);
+  assert.equal(vm.runInContext("activeSetConfirmation.announcement", context), "Recorded: 42.5 kg × 8",
+    "no rest suffix when no rest applies");
+  await vm.runInContext(`handleAction("undo-active-set", { dataset: { id: "${secondId}" } })`, context);
+  assert.equal(vm.runInContext("activeSetConfirmation", context), null);
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].sets[1].completed", context), false);
+
+  // A banner for a set that is no longer the undoable latest disappears on render.
+  vm.runInContext(`setActiveSetConfirmation(activeWorkout.id, ${secondId}, 42.5, 8, 0)`, context);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /data-active-set-confirmation/);
+  assert.equal(vm.runInContext("activeSetConfirmation", context), null);
+
+  // Starting a voice command drops the banner before anything else.
+  vm.runInContext(`setActiveSetConfirmation(activeWorkout.id, ${firstId}, 40, 10, 0)`, context);
+  vm.runInContext(`voiceWorkoutAvailability = async () => ({ status: "unavailable" }); startActiveSetVoiceCommand(${secondId});`, context);
+  assert.equal(vm.runInContext("activeSetConfirmation", context), null);
+
+  assert.match(appSource, /if \(current\.name !== "active"\) activeSetConfirmation = null;/);
+});
+
+test("a voice-recorded set raises the same single banner and no toast", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [setId] = twoSetIds(context);
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "" });
+  runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "" });
+  const ok = await vm.runInContext(`
+    globalThis.toastCalls = [];
+    showToast = message => { toastCalls.push(message); };
+    window.GymVoiceWorkout = { formatWeight: value => String(value) };
+    syncActiveSetSteppers = () => {};
+    applyActiveSetVoiceLogSet(${setId}, { intent: "logSet", weightKg: 60, reps: 12 })
+  `, context);
+  assert.equal(ok, true);
+  assert.equal(vm.runInContext("toastCalls.length", context), 0);
+  assert.equal(vm.runInContext("activeSetConfirmation.message", context), "Recorded: 60 kg × 12");
+});
+
+test("the latest completed row is one compact line whose rest controls keep the timer actions", async () => {
+  for (const [language, labels] of Object.entries({
+    en: ["Rest timer", "Decrease rest by 15 seconds", "Increase rest by 15 seconds", "Stop rest"],
+    uk: ["Таймер відпочинку", "Зменшити відпочинок на 15 секунд", "Збільшити відпочинок на 15 секунд", "Зупинити відпочинок"],
+    ru: ["Таймер отдыха", "Уменьшить отдых на 15 секунд", "Увеличить отдых на 15 секунд", "Остановить отдых"]
+  })) {
+    const { context, runtimeNodes } = loadContext();
+    await startTwoSetWorkout(context);
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    const [firstId, secondId] = twoSetIds(context);
+    assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 80, 8), true);
+    const key = vm.runInContext("`${activeWorkout.id}:${activeWorkout.blocks[0].exerciseName}`", context);
+
+    const markup = vm.runInContext("activeWorkoutScreen()", context);
+    const row = completedRowMarkup(markup, firstId);
+    assert.match(row, /class="active-set-check"/);
+    assert.match(row, /class="active-set-summary-text">80 (kg|кг) × 8</);
+    assert.ok(row.includes(`role="group" aria-label="${labels[0]}"`));
+    assert.match(row, new RegExp(
+      `<span class="active-set-rest-time" data-timer-display="${key}" aria-hidden="true">03:00</span>`
+    ));
+    assert.match(row, /data-action="timer-adjust" data-timer-control="[^"]+" data-seconds="-15" data-key="[^"]+" aria-label="[^"]+"><span>−15<\/span>/);
+    assert.match(row, /data-action="timer-adjust" data-timer-control="[^"]+" data-seconds="15" data-key="[^"]+" aria-label="[^"]+"><span>\+15<\/span>/);
+    assert.match(row, /data-action="timer-stop" data-timer-control="[^"]+" data-timer-stop="[^"]+" data-key="[^"]+"/);
+    for (const label of labels.slice(1)) assert.ok(row.includes(`aria-label="${label}"`), label);
+    assert.doesNotMatch(row, /Ready|Готово|Set saved|Undo last set|Підхід збережено|Подход сохранён/);
+    assert.doesNotMatch(markup, /active-workout-timer|class="timer-row/);
+  }
+});
+
+test("rest controls hide at zero instead of showing Ready and are absent once the rest is stopped", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [firstId] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 80, 8), true);
+  const key = vm.runInContext("`${activeWorkout.id}:${activeWorkout.blocks[0].exerciseName}`", context);
+  vm.runInContext(`
+    globalThis.restContainer = { hidden: false };
+    globalThis.restDisplay = {
+      dataset: { timerDisplay: ${JSON.stringify(key)} },
+      textContent: "",
+      closest: selector => selector === "[data-active-rest-controls]" ? restContainer : null
+    };
+    document.querySelectorAll = selector => selector === "[data-timer-display]" ? [restDisplay] : [];
+    updateTimerDisplays();
+  `, context);
+  assert.equal(vm.runInContext("restContainer.hidden", context), false);
+  assert.match(vm.runInContext("restDisplay.textContent", context), /^0[23]:\d\d$/);
+
+  assert.equal(await vm.runInContext(`stopExerciseRestTimer(${JSON.stringify(key)})`, context), true);
+  vm.runInContext("restDisplay.textContent = '00:01'; updateTimerDisplays();", context);
+  assert.equal(vm.runInContext("restContainer.hidden", context), true);
+  assert.equal(vm.runInContext("restDisplay.textContent", context), "00:01", "the display never switches to Ready");
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /data-active-rest-controls|data-timer-display/);
+  const styles = await readFile("pwa/styles.css", "utf8");
+  assert.match(styles, /\.active-set-rest\[hidden\]\s*\{\s*display:\s*none;/);
+});
+
+test("undo without a standing button: latest-only long-press menu, context menu and keyboard action", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [firstId, secondId] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 80, 8), true);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, secondId, 82.5, 6), true);
+
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.doesNotMatch(markup, /Undo last set|Скасувати останній підхід|Отменить последний подход/);
+  const olderRow = completedRowMarkup(markup, firstId);
+  const latestRow = completedRowMarkup(markup, secondId);
+  assert.doesNotMatch(olderRow, /data-active-set-undoable|undo-active-set|active-set-undo-key/);
+  assert.match(latestRow, new RegExp(`data-active-set-undoable="${secondId}"`));
+  assert.match(latestRow, new RegExp(
+    `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${secondId}">Undo set</button>`
+  ));
+
+  // Menu only for the undoable latest set and never while a set mutation is in flight.
+  assert.equal(vm.runInContext(`openActiveSetUndoMenu(${firstId})`, context), false);
+  vm.runInContext("activeSetMutationsInFlight = 1", context);
+  assert.equal(vm.runInContext(`openActiveSetUndoMenu(${secondId})`, context), false);
+  vm.runInContext("activeSetMutationsInFlight = 0", context);
+
+  // contextmenu opens the one-action sheet and suppresses the browser menu.
+  let prevented = 0;
+  globalThis.__undoRow = { dataset: { activeSetUndoable: String(secondId) } };
+  const contextEvent = {
+    target: { closest: selector => selector === "[data-active-set-undoable]" ? globalThis.__undoRow : null },
+    preventDefault() { prevented += 1; }
+  };
+  context.__contextEvent = contextEvent;
+  vm.runInContext("handleActiveSetContextMenu(__contextEvent)", context);
+  assert.equal(prevented, 1);
+  assert.equal(vm.runInContext("modal.type", context), "active-set-undo");
+  const sheet = vm.runInContext("modalMarkup()", context);
+  assert.match(sheet, /aria-labelledby="active-set-undo-title"/);
+  assert.match(sheet, new RegExp(
+    `data-action="undo-active-set" data-id="${secondId}">Undo set</button>`
+  ));
+  assert.equal((sheet.match(/data-action="undo-active-set"/g) || []).length, 1);
+
+  await vm.runInContext(`handleAction("undo-active-set", { dataset: { id: "${secondId}" } })`, context);
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].sets[1].completed", context), false);
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].sets[0].completed", context), true);
+});
+
+test("long-press opens the undo menu after about half a second and cancels on movement", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [firstId] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 80, 8), true);
+  const row = { dataset: { activeSetUndoable: String(firstId) } };
+  context.__pressEvent = clientX => ({
+    isPrimary: true,
+    button: 0,
+    clientX,
+    clientY: 10,
+    target: { closest: selector => selector === "[data-active-set-undoable]" ? row : null }
+  });
+
+  vm.runInContext("beginActiveSetLongPress(__pressEvent(10)); moveActiveSetLongPress(__pressEvent(40));", context);
+  assert.equal(vm.runInContext("activeSetLongPress", context), null, "movement cancels the press");
+  await new Promise(resolve => setTimeout(resolve, 650));
+  assert.equal(vm.runInContext("modal", context), null);
+
+  vm.runInContext("beginActiveSetLongPress(__pressEvent(10)); moveActiveSetLongPress(__pressEvent(12));", context);
+  assert.notEqual(vm.runInContext("activeSetLongPress", context), null);
+  await new Promise(resolve => setTimeout(resolve, 650));
+  assert.equal(vm.runInContext("modal?.type", context), "active-set-undo");
 });
 
 test("overlapping Web Lock records serialize without a lost set or false success", async () => {
@@ -2633,10 +2959,13 @@ test("the current barbell set shows the plate capsule and records show a badge",
   assert.match(markup, /<strong>80 kg<\/strong><span>Per side: 25 \+ 5<\/span>/);
   assert.doesNotMatch(markup, /personal-record-badge/);
 
+  // Only a completed row carries the badge (and its accessible label says so).
+  vm.runInContext("activeWorkout.blocks[0].sets[0].completed = true", context);
   const recordMarkup = vm.runInContext(`activeWorkoutBlockMarkup(
     activeWorkout.blocks[0], 0, 0, null, null, new Set([activeWorkout.blocks[0].sets[0].id])
   )`, context);
   assert.match(recordMarkup, /personal-record-badge/);
+  assert.match(recordMarkup, /aria-label="Set 1 recorded, 80 kg × 8, personal record"/);
 });
 
 test("counts and weights read naturally in every language", () => {
@@ -2851,4 +3180,481 @@ test("training settings live in one sheet and other screens show a summary", () 
   assert.match(result.sheet, /data-field="days" data-value="3" aria-pressed="true"/);
   assert.equal(result.light, "Light");
   assert.deepEqual(result.short, ["Light", "Normal", "Hard"]);
+});
+
+test("weight capsule steps follow allowed machine weights and fall back to the nominal 2.5 step", () => {
+  const { context } = loadContext();
+  const info = (weight, allowed) => JSON.parse(vm.runInContext(
+    `JSON.stringify(activeWeightStepInfo(${weight}, ${JSON.stringify(allowed)}))`,
+    context
+  ));
+  const free = info(0, []);
+  assert.equal(free.nominal, 2.5);
+  assert.deepEqual([free.minus.canMove, free.minus.delta], [false, 2.5]);
+  assert.deepEqual([free.plus.canMove, free.plus.delta, free.plus.weight], [true, 2.5, 2.5]);
+  const stack = info(10, [5, 7.5, 10, 20]);
+  assert.equal(stack.nominal, 2.5);
+  assert.deepEqual([stack.minus.weight, stack.minus.delta], [7.5, 2.5]);
+  assert.deepEqual([stack.plus.weight, stack.plus.delta], [20, 10]);
+  const top = info(20, [5, 7.5, 10, 20]);
+  assert.deepEqual([top.plus.canMove, top.plus.delta], [false, 2.5]);
+  const uneven = info(30, [10, 30, 40]);
+  assert.equal(uneven.nominal, 10);
+  assert.deepEqual([uneven.minus.delta, uneven.plus.delta], [20, 10]);
+  assert.equal(vm.runInContext("activeStepReps('1', -1)", context), 1);
+  assert.equal(vm.runInContext("activeStepReps('8', 1)", context), 9);
+  assert.equal(vm.runInContext("activeStepReps('', 1)", context), 1);
+});
+
+test("capsule buttons write the draft inputs and keep the row without a re-render", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const node = (field, value) => {
+    const input = { value, dataset: { activeSetId: String(setId), activeField: field } };
+    runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="${field}"]`, input);
+    return input;
+  };
+  const weight = node("weight", "80");
+  const reps = node("reps", "8");
+  assert.equal(vm.runInContext(`applyActiveStep(${setId}, "weight", 1)`, context), true);
+  assert.equal(weight.value, "82.5");
+  assert.equal(vm.runInContext(`applyActiveStep(${setId}, "reps", -1)`, context), true);
+  assert.equal(reps.value, "7");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(activeWorkout.blocks[0].sets[0], "weight")`, context), "82.5");
+  assert.equal(vm.runInContext(`activeLiveDraftInputValue(activeWorkout.blocks[0].sets[0], "reps")`, context), "7");
+  reps.value = "1";
+  assert.equal(vm.runInContext(`applyActiveStep(${setId}, "reps", -1)`, context), true);
+  assert.equal(reps.value, "1");
+  weight.value = "0";
+  assert.equal(vm.runInContext(`applyActiveStep(${setId}, "weight", -1)`, context), false);
+  assert.equal(weight.value, "0");
+});
+
+test("current set card renders the value line, capsules, Log label and previous rules", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(markup, /data-active-field="weight"[^>]*aria-label="Weight for set 1"/);
+  assert.match(markup, /class="active-set-reps-input"[^>]*data-active-field="reps"|data-active-field="reps"[^>]*tabindex="-1"/);
+  assert.match(markup, /role="group" data-step-field="weight" aria-label="Weight, 80 kg"/);
+  assert.match(markup, /role="group" data-step-field="reps" aria-label="Reps, 8"/);
+  assert.match(markup, /data-action="active-step-weight"[^>]*data-dir="-1"[^>]*aria-label="Decrease weight by 2.5"/);
+  assert.match(markup, /data-action="active-step-reps"[^>]*data-dir="1"[^>]*aria-label="Increase reps"/);
+  assert.match(markup, /<span class="active-set-log-label">Log<\/span><span class="active-set-log-rest"> · 3:00<\/span>/);
+  assert.match(markup, /data-action="record-active-set" data-id="\d+" aria-label="Log · rest 3:00"/);
+  assert.match(markup, /data-voice-phase="idle"/);
+  assert.match(markup, /data-action="active-set-voice-start"/);
+  assert.doesNotMatch(markup, /active-quick-entry/);
+  assert.doesNotMatch(markup, /active-set-voice-listening/);
+
+  const labels = JSON.parse(vm.runInContext(`JSON.stringify([activeSetLogLabels(0), activeSetLogLabels(75)])`, context));
+  assert.deepEqual(labels[0], { log: "Log", rest: "", aria: "Log" });
+  assert.deepEqual(labels[1], { log: "Log", rest: "1:15", aria: "Log · rest 1:15" });
+  vm.runInContext(`state.language = "ru"`, context);
+  assert.equal(vm.runInContext("activeSetLogLabels(180).aria", context), "Записать · отдых 3:00");
+  vm.runInContext(`state.language = "uk"`, context);
+  assert.equal(vm.runInContext("activeSetLogLabels(180).aria", context), "Записати · відпочинок 3:00");
+});
+
+test("previous caption hides a zero weight unless bodyweight and repeats without recording", () => {
+  const { context } = loadContext();
+  const caption = (previous, bodyweight) => JSON.parse(vm.runInContext(
+    `JSON.stringify(activePreviousCaption({ previous: ${JSON.stringify(previous)}, repeat: ${JSON.stringify(previous)} }, ${bodyweight}))`,
+    context
+  ));
+  assert.equal(caption({ weight: 60, reps: 8 }, false).text, "previous 60 × 8");
+  assert.equal(caption({ weight: 60, reps: 8 }, false).aria, "Repeat previous, 60 kilograms by 8");
+  assert.equal(caption({ weight: 0, reps: 8 }, false), null);
+  assert.equal(caption({ weight: 0, reps: 8 }, true).text, "previous × 8");
+  assert.equal(caption({ weight: 0, reps: 8 }, true).aria, "Repeat previous, 8 bodyweight reps");
+  assert.equal(vm.runInContext("activePreviousCaption(null, false)", context), null);
+  vm.runInContext(`state.language = "ru"`, context);
+  assert.equal(caption({ weight: 60, reps: 8 }, false).text, "прошлый раз 60 × 8");
+  vm.runInContext(`state.language = "uk"`, context);
+  assert.equal(caption({ weight: 62.5, reps: 8 }, false).text, "минулого разу 62,5 × 8");
+});
+
+test("upcoming and completed rows are bare rows that keep their inputs in the DOM", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [firstSetId, secondSetId] = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks[0].sets.map(set => set.id))", context
+  ));
+  let markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(markup, new RegExp(`class="active-set-row upcoming"[^>]*><details class="active-set-details"[^>]*><summary[^>]*aria-label="Set 2, 82.5 kg × 6"`));
+  assert.match(markup, new RegExp(`data-active-set-id="${secondSetId}" data-active-field="weight"[^>]*maxlength="64"[^>]*value="82.5"`));
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="weight"]`, { value: "80" });
+  runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="reps"]`, { value: "8" });
+  assert.equal(await vm.runInContext(`recordActiveSet(${firstSetId})`, context), true);
+  markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(markup, /class="active-set-row completed"[^>]*aria-label="Set 1 recorded, 80 kg × 8"/);
+  assert.match(markup, /<span class="active-set-summary-text">80 kg × 8<\/span>/);
+  assert.match(markup, new RegExp(`data-active-set-id="${firstSetId}" data-active-field="weight"[^>]*disabled`));
+});
+
+test("voice phases: idle looks like requesting, listening swaps in transcript and stop, typed shows the field", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[0].id", context);
+  const control = () => vm.runInContext(`activeSetVoiceControlMarkup(${setId})`, context);
+  const phase = () => vm.runInContext(`activeSetVoicePhase(${setId})`, context);
+
+  const idle = control();
+  assert.equal(phase(), "idle");
+  vm.runInContext(`activeSetVoice = { generation: 1, setId: ${setId}, listening: false, transcript: "", recognition: null, stopTimer: null }`, context);
+  assert.equal(phase(), "idle", "requesting does not change the UI");
+  assert.equal(control(), idle);
+
+  vm.runInContext(`activeSetVoice.listening = true; activeSetVoice.transcript = "80 <b>on</b> 8"`, context);
+  assert.equal(phase(), "listening");
+  const listening = control();
+  assert.match(listening, /class="active-set-voice-interim">«80 &lt;b&gt;on&lt;\/b&gt; 8»</);
+  assert.match(listening, /Say: &quot;80 by 8&quot;|Say: "80 by 8"/);
+  assert.match(listening, /data-action="active-set-voice-stop"[^>]*aria-label="Stop voice command"/);
+  assert.match(listening, /Listening…/);
+  assert.match(listening, /data-action="active-set-voice-type"[^>]*>Type instead</);
+  assert.doesNotMatch(listening, /record-active-set/);
+
+  vm.runInContext(`activeSetVoice = null; activeSetVoiceManual = { setId: ${setId}, text: "" }`, context);
+  assert.equal(phase(), "typed");
+  let typed = control();
+  assert.match(typed, /data-action="active-set-voice-cancel-manual"[^>]*aria-label="Cancel"/);
+  assert.match(typed, /placeholder="80 by 8"[^>]*aria-label="Type a command"/);
+  assert.match(typed, /data-action="active-set-voice-send"[^>]*aria-label="Send" disabled/);
+  vm.runInContext(`activeSetVoiceManual.text = 'x" onfocus="1'`, context);
+  typed = control();
+  assert.match(typed, /value="x&quot; onfocus=&quot;1"/);
+  assert.doesNotMatch(typed, /aria-label="Send" disabled/);
+  vm.runInContext(`activeSetVoiceManual = null`, context);
+});
+
+// ---- R6 step C2: exercise footer, finish confirmation, "Skip them" ----
+
+async function startFinishWorkout(context, blocks = null) {
+  const plan = blocks || [
+    { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }, { weight: 82.5, reps: 6 }, { weight: 85, reps: 5 }] },
+    { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 100, reps: 5 }] }
+  ];
+  return vm.runInContext(`
+    workoutDraft = { startedAt: Date.now(), note: "Finish flow", blocks: ${JSON.stringify(plan)} };
+    startWorkout();
+  `, context);
+}
+
+function blockSetIds(context, blockIndex = 0) {
+  return JSON.parse(vm.runInContext(
+    `JSON.stringify(activeWorkout.blocks[${blockIndex}].sets.map(set => set.id))`,
+    context
+  ));
+}
+
+function footerMarkup(markup, blockId) {
+  const match = markup.match(new RegExp(`<div class="active-exercise-actions">(?:(?!</div>)[\\s\\S])*?data-block-id="${blockId}"[\\s\\S]*?</div>`));
+  return match?.[0] ?? "";
+}
+
+test("the exercise footer is two equal columns: dashed + Set leads, solid Finish trails, in every language", async () => {
+  const labels = {
+    en: ["+ Set", "Add set", "Finish", "Save exercise"],
+    uk: ["+ Підхід", "Додати підхід", "Завершити", "Зберегти вправу"],
+    ru: ["+ Подход", "Добавить подход", "Завершить", "Сохранить упражнение"]
+  };
+  for (const [language, [add, addAria, finish, finishAria]] of Object.entries(labels)) {
+    const { context } = loadContext();
+    await startFinishWorkout(context);
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+    const footer = footerMarkup(vm.runInContext("activeWorkoutScreen()", context), blockId);
+    assert.ok(footer, `footer markup (${language})`);
+    assert.ok(footer.includes(`class="button active-exercise-add" type="button" data-action="add-active-set" data-block-id="${blockId}" aria-label="${addAria}">${add}</button>`));
+    assert.ok(footer.includes(`class="button active-exercise-finish" type="button" data-action="save-active-exercise" data-block-id="${blockId}" aria-label="${finishAria}">${finish}</button>`));
+    assert.ok(footer.indexOf("add-active-set") < footer.indexOf("save-active-exercise"));
+    assert.doesNotMatch(footer, /<svg/);
+  }
+  const styles = await readFile("pwa/styles.css", "utf8");
+  assert.match(styles, /\.active-exercise-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.active-exercise-add\s*\{\s*border:\s*1px dashed color-mix\(in srgb, var\(--brand-fill\) 50%/);
+  assert.match(styles, /\.active-exercise-finish\s*\{\s*border:\s*1px solid color-mix\(in srgb, var\(--brand-fill\) 70%/);
+  assert.match(styles, /\.active-exercise-actions \.button\s*\{[^}]*min-height:\s*44px;[^}]*border-radius:\s*12px/);
+  assert.doesNotMatch(styles, /\.timer-row\b|\.active-set-action\s*\{/, "dead rules are gone");
+});
+
+test("the footer is hidden in a live room and Finish plus Add set refuse there", async () => {
+  const { context, localStorage } = loadContext();
+  await startFinishWorkout(context);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  const before = localStorage.getItem(activeStorageKey(context));
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", context);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /active-exercise-actions|save-active-exercise/);
+  assert.equal(vm.runInContext(`beginFinishActiveExercise(${blockId}, null)`, context), false);
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(await vm.runInContext(`skipRemainingActiveSets(${blockId})`, context), false);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+});
+
+test("the finish dialog title uses the right plural in English, Ukrainian and Russian", async () => {
+  const titles = {
+    en: { 1: "1 set left", 2: "2 sets left", 5: "5 sets left", 21: "21 sets left" },
+    uk: { 1: "Залишилось 1 підхід", 2: "Залишилось 2 підходи", 5: "Залишилось 5 підходів", 21: "Залишилось 21 підхід" },
+    ru: { 1: "Осталось 1 подход", 2: "Осталось 2 подхода", 5: "Осталось 5 подходов", 21: "Осталось 21 подход" }
+  };
+  const { context } = loadContext();
+  for (const [language, byCount] of Object.entries(titles)) {
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    for (const [count, title] of Object.entries(byCount)) {
+      assert.equal(vm.runInContext(`finishExerciseDialogTitle(${count})`, context), title);
+    }
+  }
+});
+
+test("Finish with unrecorded sets opens the confirmation with Log as planned, Skip them and Cancel and returns focus to Finish", async () => {
+  const actions = {
+    en: ["Log as planned", "Skip them", "Cancel", "3 sets left"],
+    uk: ["Записати як у плані", "Пропустити їх", "Скасувати", "Залишилось 3 підходи"],
+    ru: ["Записать как в плане", "Пропустить их", "Отмена", "Осталось 3 подхода"]
+  };
+  for (const [language, [log, skip, cancel, title]] of Object.entries(actions)) {
+    const { context, localStorage } = loadContext();
+    await startFinishWorkout(context);
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+    const before = localStorage.getItem(activeStorageKey(context));
+    await vm.runInContext(`handleAction("save-active-exercise", { dataset: { action: "save-active-exercise", blockId: "${blockId}" } })`, context);
+    assert.equal(vm.runInContext("modal.type", context), "finish-exercise");
+    assert.equal(vm.runInContext("modal.blockId", context), blockId);
+    assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(modal.returnFocus)", context)), {
+      action: "save-active-exercise",
+      blockId: String(blockId)
+    });
+    assert.equal(localStorage.getItem(activeStorageKey(context)), before, "opening the dialog never mutates");
+    const sheet = vm.runInContext("modalMarkup()", context);
+    assert.match(sheet, /role="dialog"[^>]*aria-labelledby="finish-exercise-title"/);
+    assert.ok(sheet.includes(`<h2 id="finish-exercise-title">${title}</h2>`));
+    const buttons = [...sheet.matchAll(/data-action="(finish-exercise-log|finish-exercise-skip|close-modal)"[^>]*>([^<]*)</g)]
+      .filter(match => match[1] !== "close-modal" || match[2] === cancel)
+      .map(match => [match[1], match[2]]);
+    assert.deepEqual(buttons, [
+      ["finish-exercise-log", log],
+      ["finish-exercise-skip", skip],
+      ["close-modal", cancel]
+    ]);
+    vm.runInContext("closeModal()", context);
+    assert.equal(vm.runInContext("modal", context), null);
+    assert.equal(localStorage.getItem(activeStorageKey(context)), before, "Cancel leaves the workout untouched");
+  }
+});
+
+test("the finish dialog hides Skip them in a live room and when the skip candidate is nil", async () => {
+  const { context } = loadContext();
+  await startFinishWorkout(context, [
+    { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }, { weight: 82.5, reps: 6 }] }
+  ]);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  vm.runInContext(`modal = { type: "finish-exercise", blockId: ${blockId} }`, context);
+  let sheet = vm.runInContext("modalMarkup()", context);
+  assert.match(sheet, /finish-exercise-log/);
+  assert.doesNotMatch(sheet, /finish-exercise-skip/, "the only exercise with nothing recorded cannot be skipped");
+  assert.equal(vm.runInContext(`activeWorkoutSkipCandidate(activeWorkout, ${blockId})`, context), null);
+
+  const multi = loadContext();
+  await startFinishWorkout(multi.context);
+  const multiBlockId = vm.runInContext("activeWorkout.blocks[0].id", multi.context);
+  vm.runInContext(`modal = { type: "finish-exercise", blockId: ${multiBlockId} }`, multi.context);
+  assert.match(vm.runInContext("modalMarkup()", multi.context), /finish-exercise-skip/);
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", multi.context);
+  sheet = vm.runInContext("modalMarkup()", multi.context);
+  assert.match(sheet, /finish-exercise-log/);
+  assert.doesNotMatch(sheet, /finish-exercise-skip/, "live rooms cannot edit the shared plan");
+});
+
+test("skip candidate mirrors the shared rule for every block shape", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startFinishWorkout(context);
+  const [firstId, secondId, thirdId] = blockSetIds(context, 0);
+  const firstBlockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  const secondBlockId = vm.runInContext("activeWorkout.blocks[1].id", context);
+  const candidate = id => JSON.parse(vm.runInContext(
+    `JSON.stringify(activeWorkoutSkipCandidate(activeWorkout, ${id}))`,
+    context
+  ));
+  const unchanged = JSON.parse(vm.runInContext("JSON.stringify(activeWorkout)", context));
+  assert.deepEqual(candidate(secondBlockId).blocks.map(block => block.id), [firstBlockId],
+    "nothing recorded and not the only exercise: the block is removed");
+  assert.equal(candidate(99999999), null, "unknown block");
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 80, 8), true);
+  const kept = candidate(firstBlockId).blocks[0];
+  assert.deepEqual(kept.sets.map(set => set.id), [firstId], "some recorded: only recorded sets stay");
+  assert.equal(kept.sets[0].completed, true);
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(activeWorkout.blocks[1])", context)), unchanged.blocks[1]);
+  for (const id of [secondId, thirdId]) {
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="reps"]`, { value: "5" });
+  }
+  assert.equal(await vm.runInContext(`saveActiveWorkoutExercise(${firstBlockId})`, context), true);
+  assert.equal(candidate(firstBlockId), null, "nothing unrecorded: no candidate");
+});
+
+test("Skip them drops unrecorded sets, keeps recorded ones, bumps revision and retires stale sidecars", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context);
+  const [firstId, secondId] = blockSetIds(context, 0);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 80, 8), true);
+  const timerKey = vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context);
+  assert.notEqual(localStorage.getItem(timerKey), null);
+  assert.equal(vm.runInContext(`rememberActiveLiveDraftInput({
+    dataset: { activeSetId: ${JSON.stringify(String(secondId))}, activeField: "reps" },
+    value: "06"
+  })`, context), true);
+  assert.notEqual(localStorage.getItem(activeInputDraftStorageKey(context)), null);
+  const beforeRevision = vm.runInContext("activeWorkout.revision", context);
+  const beforeUpdatedAt = vm.runInContext("activeWorkout.updatedAt", context);
+  const recordedBefore = JSON.parse(vm.runInContext("JSON.stringify(activeWorkout.blocks[0].sets[0])", context));
+  localStorage.writes.length = 0;
+
+  vm.runInContext(`modal = { type: "finish-exercise", blockId: ${blockId}, returnFocus: null }`, context);
+  assert.equal(await vm.runInContext(`handleAction("finish-exercise-skip", { dataset: {} })`, context), true);
+  assert.equal(vm.runInContext("modal", context), null);
+
+  const stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.equal(stored.revision, beforeRevision + 1);
+  assert.ok(stored.updatedAt > beforeUpdatedAt);
+  assert.deepEqual(stored.blocks[0].sets, [recordedBefore], "the recorded set is preserved exactly");
+  assert.equal(stored.blocks.length, 2);
+  assert.ok(
+    localStorage.writes.indexOf(activeBulkCleanupStorageKey(context)) < localStorage.writes.indexOf(activeStorageKey(context)),
+    "cleanup intent is durable before the structural revision"
+  );
+  assert.equal(localStorage.getItem(activeBulkCleanupStorageKey(context)), null);
+  assert.equal(localStorage.getItem(activeUndoStorageKey(context)), null);
+  assert.equal(localStorage.getItem(timerKey), null);
+  const timing = JSON.parse(localStorage.getItem(activeTimingStorageKey(context)));
+  assert.equal(timing.restingUntil, null);
+  assert.equal(localStorage.getItem(activeInputDraftStorageKey(context)), null,
+    "the draft of the removed set is reconciled away");
+  assert.equal(vm.runInContext("activeWorkout.revision", context), beforeRevision + 1);
+  assert.equal(vm.runInContext("activeWorkoutUi.messageKey", context), "exerciseSavedSkipped");
+  assert.equal(vm.runInContext("activeWorkoutUi.status", context), "success");
+  assert.equal(vm.runInContext(`activeCollapsedBlockIds(activeWorkout).has(${blockId})`, context), true);
+});
+
+test("Skip them removes the whole block when nothing in it is recorded", async () => {
+  const { context, localStorage } = loadContext();
+  await startFinishWorkout(context);
+  const secondBlockId = vm.runInContext("activeWorkout.blocks[1].id", context);
+  const firstBlockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  const beforeRevision = vm.runInContext("activeWorkout.revision", context);
+  assert.equal(await vm.runInContext(`skipRemainingActiveSets(${secondBlockId})`, context), true);
+  const stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.deepEqual(stored.blocks.map(block => block.id), [firstBlockId]);
+  assert.equal(stored.revision, beforeRevision + 1);
+});
+
+test("Skip them refuses the nil cases and live rooms without writing", async () => {
+  const { context, localStorage } = loadContext();
+  await startFinishWorkout(context, [
+    { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }] }
+  ]);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  const before = localStorage.getItem(activeStorageKey(context));
+  assert.equal(await vm.runInContext(`skipRemainingActiveSets(${blockId})`, context), false);
+  assert.equal(vm.runInContext("activeWorkoutUi.messageKey", context), "skipUnavailable");
+  assert.equal(vm.runInContext("activeWorkoutUi.status", context), "error");
+  assert.equal(await vm.runInContext("skipRemainingActiveSets(424242)", context), false);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+
+  const messages = {
+    en: "Can't skip: nothing here can be safely left unrecorded.",
+    uk: "Неможливо пропустити: тут нічого не можна безпечно залишити незаписаним.",
+    ru: "Нельзя пропустить: здесь нечего безопасно оставить незаписанным."
+  };
+  for (const [language, message] of Object.entries(messages)) {
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    assert.equal(vm.runInContext("activeWorkoutStatusText()", context), message);
+  }
+  const skipped = {
+    en: "Exercise saved. Remaining sets skipped.",
+    uk: "Вправу збережено. Інші підходи пропущено.",
+    ru: "Упражнение сохранено. Остальные подходы пропущены."
+  };
+  for (const [language, message] of Object.entries(skipped)) {
+    vm.runInContext(`state.language = ${JSON.stringify(language)}; activeWorkoutUi = activeWorkoutStatus("success", "exerciseSavedSkipped")`, context);
+    assert.equal(vm.runInContext("activeWorkoutStatusText()", context), message);
+  }
+});
+
+test("Log as planned saves the remaining sets through the existing path and collapses the card", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context);
+  const ids = blockSetIds(context, 0);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  for (const id of ids) {
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="weight"]`, { value: "70" });
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="reps"]`, { value: "9" });
+  }
+  vm.runInContext(`modal = { type: "finish-exercise", blockId: ${blockId}, returnFocus: null }`, context);
+  assert.equal(await vm.runInContext(`handleAction("finish-exercise-log", { dataset: {} })`, context), true);
+  assert.equal(vm.runInContext("modal", context), null);
+  const stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.deepEqual(stored.blocks[0].sets.map(set => [set.weight, set.reps, set.completed]), [[70, 9, true], [70, 9, true], [70, 9, true]]);
+  assert.equal(vm.runInContext("activeWorkoutUi.messageKey", context), "exerciseSaved");
+  assert.match(vm.runInContext("activeWorkoutScreen()", context),
+    new RegExp(`<details data-active-block-details="${blockId}" >`), "the saved card renders collapsed");
+});
+
+test("Finish with every set recorded collapses the card immediately without dialog, toast or mutation", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context, [
+    { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }] },
+    { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 100, reps: 5 }] }
+  ]);
+  const [setId] = blockSetIds(context, 0);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, setId, 80, 8), true);
+  vm.runInContext("globalThis.toasts = []; showToast = message => globalThis.toasts.push(message);", context);
+  const before = localStorage.getItem(activeStorageKey(context));
+  const expandedMarkup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(expandedMarkup, new RegExp(`<details data-active-block-details="${blockId}" open>`),
+    "the latest completed exercise starts expanded");
+
+  assert.equal(await vm.runInContext(`handleAction("save-active-exercise", { dataset: { action: "save-active-exercise", blockId: "${blockId}" } })`, context), true);
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(vm.runInContext("globalThis.toasts.length", context), 0);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before, "no data mutation");
+  assert.equal(vm.runInContext("activeWorkoutUi.messageKey", context), "exerciseSaved");
+  const collapsedMarkup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(collapsedMarkup, new RegExp(`<details data-active-block-details="${blockId}" >`));
+  assert.match(collapsedMarkup, new RegExp(`data-action="save-active-exercise" data-block-id="${blockId}"`));
+
+  vm.runInContext(`activeCollapsedBlockIds(activeWorkout).delete(${blockId})`, context);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), new RegExp(`<details data-active-block-details="${blockId}" open>`),
+    "opening the card again removes it from the collapsed set");
+});
+
+test("the collapsed-card memory is per workout and cleared when the workout leaves", async () => {
+  const { context } = loadContext();
+  await startFinishWorkout(context);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  vm.runInContext(`collapseActiveExerciseBlock(${blockId})`, context);
+  assert.equal(vm.runInContext(`activeCollapsedBlockIds(activeWorkout).has(${blockId})`, context), true);
+  vm.runInContext("activeCollapsedBlocks.workoutId = 'another-workout'", context);
+  assert.equal(vm.runInContext(`activeCollapsedBlockIds(activeWorkout).size`, context), 0);
+  vm.runInContext(`collapseActiveExerciseBlock(${blockId}); clearActiveWorkoutMemory();`, context);
+  assert.equal(vm.runInContext("activeCollapsedBlocks.workoutId", context), null);
+  assert.equal(vm.runInContext("activeCollapsedBlocks.ids.size", context), 0);
+});
+
+test("the recorded-set banner announces once per confirmation", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startTwoSetWorkout(context);
+  const [setId] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, setId, 40, 10), true);
+  const live = markup => markup.match(/<span class="sr-only" role="status" aria-live="polite">([^<]*)<\/span>/)?.[1];
+  assert.equal(live(vm.runInContext("activeWorkoutScreen()", context)), "Recorded: 40 kg × 10 · rest 3:00");
+  assert.equal(live(vm.runInContext("activeWorkoutScreen()", context)), "", "an unrelated re-render stays silent");
+  assert.equal(live(vm.runInContext("activeWorkoutScreen()", context)), "");
+  const next = twoSetIds(context)[1];
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, next, 42.5, 8), true);
+  assert.match(live(vm.runInContext("activeWorkoutScreen()", context)), /^Recorded: 42\.5 kg × 8/,
+    "a new confirmation announces again");
 });

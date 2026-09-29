@@ -42,8 +42,11 @@ test("voice logSet/repeatPrevious call the exact same recordActiveSet code path 
   assert.match(source, /data-action="record-active-set"/);
   assert.match(
     source,
-    /if \(action === "record-active-set"\) \{[\s\S]{0,200}?return recordActiveSet\(setId\);/
+    /if \(action === "record-active-set"\) \{[\s\S]{0,200}?return trackActiveSetMutation\(recordActiveSet\(setId\)\);/
   );
+  // One confirmation banner announces a recorded set: voice success raises no toast of its own.
+  assert.doesNotMatch(logSetBody, /showToast\(/);
+  assert.doesNotMatch(repeatBody.replace(/showToast\(tx3\("No previous set to repeat[^;]*;/, ""), /showToast\(/);
 });
 
 test("voice skipRest calls the same stopExerciseRestTimer path as the timer's Stop button", () => {
@@ -119,9 +122,33 @@ test("logSet/repeatPrevious command results are parsed with parseVoiceWorkoutCom
   assert.match(commandBody, /window\.GymVoiceWorkout\.parseVoiceWorkoutCommand\(/);
 });
 
-test("the mic control is only rendered for the current, not-yet-completed set (same visibility as the Record set button)", () => {
-  assert.match(
-    source,
-    /\$\{current && !set\.completed \? activeSetVoiceContainerMarkup\(setId\) : ""\}/
-  );
+test("the voice action row is only rendered inside the current, not-yet-completed set card (same visibility as the Log button)", () => {
+  const dispatcher = extractFunction("activeWorkoutSetMarkup");
+  assert.match(dispatcher, /if \(set\.completed\) return activeCompletedSetMarkup\(/);
+  assert.match(dispatcher, /if \(!current\) return activeUpcomingSetMarkup\(/);
+  assert.match(dispatcher, /return activeCurrentSetMarkup\(/);
+  assert.match(extractFunction("activeCurrentSetMarkup"), /\$\{activeSetVoiceContainerMarkup\(setId\)\}/);
+  assert.doesNotMatch(extractFunction("activeCompletedSetMarkup"), /activeSetVoiceContainerMarkup/);
+  assert.doesNotMatch(extractFunction("activeUpcomingSetMarkup"), /activeSetVoiceContainerMarkup/);
+});
+
+test("listening is only entered once recognition reports it started", () => {
+  const startBody = extractFunction("startActiveSetVoiceCommand");
+  assert.match(startBody, /listening: false/);
+  assert.match(startBody, /recognition\.onstart = markListening/);
+  assert.match(startBody, /recognition\.onaudiostart = markListening/);
+  assert.doesNotMatch(startBody, /listening: true/);
+});
+
+test("the voice row markup follows the idle / listening / typed contract", () => {
+  const control = extractFunction("activeSetVoiceControlMarkup");
+  // idle: mic + Log; listening: filled stop, waveform pill, Type instead; typed: cancel + field + send.
+  assert.match(control, /data-action="active-set-voice-start"[\s\S]*activeSetLogButtonMarkup\(id\)/);
+  assert.match(control, /data-action="active-set-voice-stop"[\s\S]*svg\("waveform"[\s\S]*data-action="active-set-voice-type"/);
+  assert.match(control, /data-action="active-set-voice-cancel-manual"[\s\S]*data-active-set-voice-input[\s\S]*data-action="active-set-voice-send"/);
+  assert.match(control, /Stop voice command/);
+  assert.match(control, /Type a command/);
+  const dispatch = source.slice(source.indexOf('if (action === "active-set-voice-type")'));
+  assert.match(dispatch, /switchActiveSetVoiceToTyped\(setId\)/);
+  assert.match(dispatch, /action === "active-set-voice-send"[\s\S]{0,300}submitActiveSetVoiceManualText\(/);
 });

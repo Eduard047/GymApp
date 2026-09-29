@@ -284,25 +284,23 @@ test("PWA visible terminology implements the shared product experience", () => {
 test("active-workout hero disambiguates elapsed, completed, and start time on every client", () => {
   const hero = contract.todayFocusLens.activeWorkout.hero;
 
-  assert.ok(pwaSource.includes(
-    `tx3("${hero.elapsed.en}", "${hero.elapsed.uk}", "${hero.elapsed.ru}")`
-  ));
-  assert.ok(pwaSource.includes(
-    `tx3("${hero.completed.en}", "${hero.completed.uk}", "${hero.completed.ru}")`
-  ));
-  assert.ok(pwaSource.includes(
-    `tx3("${hero.startedAt.en}", "${hero.startedAt.uk}", "${hero.startedAt.ru}")`
-  ));
-  assert.match(pwaSource, /active-workout-metrics compact/);
-  assert.match(pwaSource, /active-workout-started/);
+  // PWA follows the iOS hero: one combined accessible label, no metric tiles or
+  // "Started at" readout. The label spells out elapsed, sets done and current exercise.
+  assert.match(pwaSource, /function activeWorkoutHeroLabel\(/);
+  assert.ok(pwaSource.includes("`Elapsed ${elapsedText}, ${sets} done`"));
+  assert.ok(pwaSource.includes("`Минуло ${elapsedText}, ${sets} виконано`"));
+  assert.ok(pwaSource.includes("`Прошло ${elapsedText}, выполнено ${sets}`"));
+  assert.match(pwaSource, /role="img" data-active-workout-hero/);
+  assert.match(pwaSource, /class="active-hero-ring"/);
+  assert.doesNotMatch(pwaSource, /active-workout-metrics compact|active-workout-started/);
 
   // DESIGN.md "Active workout": the iOS hero collapses elapsed/completed/
   // started-at into one combined accessibility element (elapsed clock +
   // sets-done sentence + current exercise) instead of three separately
   // labeled metric tiles. "Started at" is dropped from the hero entirely.
   // TODO(DESIGN.md "Active workout"): mirror this consolidated hero copy on
-  // Android/PWA when they get the same redesign; until then their labels
-  // stay separate and are still asserted above/below unchanged.
+  // Android when it gets the same redesign; until then its labels stay
+  // separate and are still asserted below unchanged.
   for (const copy of Object.values(hero.elapsed)) {
     assert.ok(iosActiveWorkoutSource.includes(`"${copy}`));
   }
@@ -374,8 +372,10 @@ test("first-plan actions use one cross-client terminology contract", () => {
 test("active-workout destructive actions stay behind an explicit more-options control", () => {
   assert.match(
     pwaSource,
-    /<details class="active-workout-more">[\s\S]*?data-action="discard-active-workout"/
+    /function activeWorkoutMoreSheetMarkup\(\)[\s\S]*?data-action="training-adapt"[\s\S]*?data-action="discard-active-workout"/
   );
+  assert.match(pwaSource, /data-action="open-active-more"/);
+  assert.doesNotMatch(pwaSource, /<details class="active-workout-more">/);
   assert.match(iosActiveWorkoutSource, /Menu \{[\s\S]*?Button\(role: \.destructive\)/);
   assert.match(iosActiveWorkoutSource, /"More workout options"/);
   assert.match(androidActiveWorkoutSource, /showMoreWorkoutOptions/);

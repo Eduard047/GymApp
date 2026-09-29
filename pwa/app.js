@@ -213,11 +213,15 @@ const icons = {
   phone: "M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2",
   chevronUpDown: "M8 9l4-4 4 4M8 15l4 4 4-4",
   target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 12h.01",
-  tune: "M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6"
+  tune: "M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6",
+  remove: "M5 11h14v2H5z",
+  waveform: "M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4",
+  arrowUp: "M12 19V5M5 12l7-7 7 7",
+  chevronDown: "M6 9l6 6 6-6"
 };
 
 const filledIcons = new Set([
-  "add", "back", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "more", "person", "showChart"
+  "add", "back", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "more", "person", "remove", "showChart"
 ]);
 
 function boundedLocationParameters(rawValue, maximumLength, maximumPairs = 32) {
@@ -1261,6 +1265,15 @@ const initialActiveWorkoutUndoRecord = loadActiveWorkoutUndoRecord(activeWorkout
 let activeWorkoutUndoMarker = initialActiveWorkoutUndoRecord.marker;
 let activeWorkoutUndoStorageRaw = initialActiveWorkoutUndoRecord.raw;
 let activeWorkoutUi = { status: "idle", messageKey: null, params: {} };
+// Memory-only confirmation for the latest recorded set: { workoutId, setId, message, announcement }.
+// Never persisted; it is dropped when the set is undone, replaced, or no longer the undoable latest.
+let activeSetConfirmation = null;
+let activeSetMutationsInFlight = 0;
+// Memory-only: exercise cards the user finished (iOS collapsedExerciseIDs). { workoutId, ids: Set<blockId> }.
+// It forces a card's <details> closed on render and is never persisted; opening the card again removes it.
+let activeCollapsedBlocks = { workoutId: null, ids: new Set() };
+let activeSetUndoGesturesBound = false;
+let activeSetLongPress = null;
 let exerciseRestTimerLedger = null;
 let activeWorkoutControlReconciliationPromise = null;
 let nav = [{ name: "workouts" }];
@@ -1449,7 +1462,22 @@ const ACTIVE_WORKOUT_STATUS_MESSAGES = Object.freeze({
     "Активне тренування зайняте в іншій вкладці. Перевір останній підхід і повтори."
   ],
   setAdded: ["Set added.", "Підхід додано."],
-  exerciseSaved: ["Exercise saved.", "Вправу збережено."],
+  exerciseSaved: ["Exercise saved.", "Вправу збережено.", "Упражнение сохранено."],
+  exerciseSavedSkipped: [
+    "Exercise saved. Remaining sets skipped.",
+    "Вправу збережено. Інші підходи пропущено.",
+    "Упражнение сохранено. Остальные подходы пропущены."
+  ],
+  exerciseSavedSkipCleanupFailed: [
+    "Exercise saved, but old local rest controls could not be fully cleared.",
+    "Вправу збережено, але старі локальні елементи відпочинку не вдалося повністю очистити.",
+    "Упражнение сохранено, но старые локальные элементы отдыха не удалось полностью очистить."
+  ],
+  skipUnavailable: [
+    "Can't skip: nothing here can be safely left unrecorded.",
+    "Неможливо пропустити: тут нічого не можна безпечно залишити незаписаним.",
+    "Нельзя пропустить: здесь нечего безопасно оставить незаписанным."
+  ],
   workoutChangedBeforeSaveAll: [
     "The workout changed in another tab. Review every set before saving all again.",
     "Тренування змінилося в іншій вкладці. Перевір кожен підхід перед повторним збереженням усіх."
@@ -1470,10 +1498,6 @@ const ACTIVE_WORKOUT_STATUS_MESSAGES = Object.freeze({
   liveSetPrepareFailed: [
     "Live synchronization could not be prepared, so this set was not changed.",
     "Не вдалося підготувати live-синхронізацію, тому цей підхід не змінено."
-  ],
-  setSavedRestStarted: [
-    "Set saved. Smart rest started.",
-    "Підхід збережено. Розумний відпочинок запущено."
   ],
   setSavedUndoUnavailable: [
     "Set saved, but one-step Undo could not be enabled. Check the set before continuing.",
@@ -1537,7 +1561,8 @@ function activeWorkoutStatus(status = "idle", messageKey = null, params = {}) {
 function activeWorkoutStatusText(value = activeWorkoutUi) {
   const messages = ACTIVE_WORKOUT_STATUS_MESSAGES[value?.messageKey];
   if (!messages) return "";
-  return tx(messages[0], messages[1]).replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, key) =>
+  const localized = messages[2] ? tx3(messages[0], messages[1], messages[2]) : tx(messages[0], messages[1]);
+  return localized.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, key) =>
     Object.hasOwn(value.params || {}, key) ? value.params[key] : match
   );
 }
@@ -4516,6 +4541,7 @@ function reloadActiveWorkoutContext(account = activeAccount) {
 }
 
 function clearActiveWorkoutMemory() {
+  activeCollapsedBlocks = { workoutId: null, ids: new Set() };
   activeWorkout = null;
   activeWorkoutStorageRaw = null;
   activeWorkoutUndoMarker = null;
@@ -11570,12 +11596,13 @@ function render() {
       replaceNavigationHistory();
       current = route();
     }
+    if (current.name !== "active") activeSetConfirmation = null;
     app.classList?.toggle("root-route-shell", isRootRoute(current.name));
     app.innerHTML = `
       <header class="topbar">
-        ${nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="${txAttr("Go back", "Назад")}">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
+        ${current.name === "active" ? activeWorkoutMinimizeMarkup() : nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="${txAttr("Go back", "Назад")}">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
         <h1>${titleForRoute(current)}</h1>
-        <span class="topbar-slot" aria-hidden="true"></span>
+        ${current.name === "active" ? activeWorkoutMoreButtonMarkup() : `<span class="topbar-slot" aria-hidden="true"></span>`}
       </header>
       <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}"${current.name === "add" && workoutDraftLiveSendInProgress ? ` inert aria-busy="true"` : ""}>${liveWorkoutBanner()}${socialWorkoutInviteBanner()}${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
       ${isRootRoute(current.name) ? bottomNav() : ""}
@@ -11653,7 +11680,7 @@ function isRootRoute(name) {
 function titleForRoute(current) {
   const title = {
     workouts: tx3("Today", "Сьогодні", "Сегодня"), missions: t("missions"), exercises: t("exercises"), progress: t("progress"), leaderboard: tx("Profile", "Профіль"),
-    add: t("addWorkout"), active: tx("Active Workout", "Активне тренування"), detail: tx("Workout Details", "Деталі тренування"), summary: tx("Workout Summary", "Підсумок тренування"), ranks: t("ranks")
+    add: t("addWorkout"), active: tx3("Workout", "Тренування", "Тренировка"), detail: tx("Workout Details", "Деталі тренування"), summary: tx("Workout Summary", "Підсумок тренування"), ranks: t("ranks")
   }[current.name];
   return title ?? "GymApp";
 }
@@ -12807,22 +12834,128 @@ function ensureFriendGhostsLoaded(workout) {
   })().catch(() => {});
 }
 
+// The latest completed set is undoable only while the separate revision-bound marker points at it.
+function activeUndoableSetId(workout = activeWorkout) {
+  const latestCompletedSetId = latestActiveCompletedEntry(workout)?.set.id ?? null;
+  return latestCompletedSetId !== null &&
+      activeWorkoutUndoMarker?.workoutId === workout.id &&
+      activeWorkoutUndoMarker?.workoutRevision === workout.revision &&
+      activeWorkoutUndoMarker?.setId === latestCompletedSetId
+    ? latestCompletedSetId
+    : null;
+}
+
+function clearActiveSetConfirmation() {
+  activeSetConfirmation = null;
+  try {
+    app?.querySelector?.("[data-active-set-confirmation]")?.remove?.();
+  } catch { /* The next render drops the banner anyway. */ }
+}
+
+function setActiveSetConfirmation(workoutId, setId, weight, reps, restSeconds = 0) {
+  const summary = formatLocalizedWeightReps(weight, reps);
+  const message = tx3(`Recorded: ${summary}`, `Записано: ${summary}`, `Записано: ${summary}`);
+  const rest = Number.isSafeInteger(restSeconds) && restSeconds > 0
+    ? `${Math.floor(restSeconds / 60)}:${String(restSeconds % 60).padStart(2, "0")}`
+    : "";
+  const announcement = rest
+    ? `${message} · ${tx3(`rest ${rest}`, `відпочинок ${rest}`, `отдых ${rest}`)}`
+    : message;
+  activeSetConfirmation = { workoutId, setId, message, announcement, announced: false };
+}
+
+// One banner per recorded set (button or voice). It only shows while its set is still the undoable latest.
+function activeSetConfirmationMarkup(workout, undoableSetId) {
+  const confirmation = activeSetConfirmation;
+  if (!confirmation) return "";
+  if (confirmation.workoutId !== workout.id || undoableSetId === null || confirmation.setId !== undoableSetId) {
+    activeSetConfirmation = null;
+    return "";
+  }
+  const setId = escapeAttr(String(confirmation.setId));
+  // The polite live region speaks once per confirmation: later renders keep the region but leave it empty.
+  const announcement = confirmation.announced ? "" : confirmation.announcement;
+  confirmation.announced = true;
+  return `<div class="active-set-confirmation" data-active-set-confirmation="${setId}"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" aria-hidden="true">${escapeHtml(confirmation.message)}</span><span class="sr-only" role="status" aria-live="polite">${escapeHtml(announcement)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-set" data-id="${setId}">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-set-confirmation" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
+}
+
+function trackActiveSetMutation(pending) {
+  activeSetMutationsInFlight += 1;
+  return Promise.resolve(pending).finally(() => {
+    activeSetMutationsInFlight = Math.max(0, activeSetMutationsInFlight - 1);
+  });
+}
+
+function openActiveSetUndoMenu(setId) {
+  if (route().name !== "active" || !activeWorkout || modal) return false;
+  if (activeSetMutationsInFlight > 0 || !Number.isSafeInteger(setId) || setId <= 0) return false;
+  if (activeUndoableSetId(activeWorkout) !== setId) return false;
+  modal = { type: "active-set-undo", setId, autoFocus: true, returnFocus: null };
+  render();
+  return true;
+}
+
+function activeSetUndoSheetMarkup(setId) {
+  const location = activeSetLocation(setId);
+  const title = location
+    ? `${tx3("Set", "Підхід", "Подход")} ${location.setIndex + 1} · ${formatLocalizedWeightReps(location.set.weight, location.set.reps)}`
+    : tx3("Set", "Підхід", "Подход");
+  return `<div class="exercise-more-sheet active-set-undo-sheet"><h2 id="active-set-undo-title">${escapeHtml(title)}</h2><div class="exercise-more-actions"><button class="button danger full" type="button" data-action="undo-active-set" data-id="${escapeAttr(String(setId))}">${tx3("Undo set", "Скасувати підхід", "Отменить подход")}</button></div></div>`;
+}
+
+function cancelActiveSetLongPress() {
+  if (!activeSetLongPress) return;
+  clearTimeout(activeSetLongPress.timer);
+  activeSetLongPress = null;
+}
+
+function eventTargetElement(event) {
+  return typeof event.target?.closest === "function" ? event.target : event.target?.parentElement;
+}
+
+function beginActiveSetLongPress(event) {
+  if (event.isPrimary === false || event.button > 0) return;
+  const target = eventTargetElement(event);
+  const row = target?.closest?.("[data-active-set-undoable]");
+  if (!row || target.closest("button, a, input, select, textarea, [role='button']")) return;
+  const setId = Number(row.dataset.activeSetUndoable);
+  cancelActiveSetLongPress();
+  activeSetLongPress = {
+    x: event.clientX,
+    y: event.clientY,
+    timer: setTimeout(() => {
+      activeSetLongPress = null;
+      openActiveSetUndoMenu(setId);
+    }, 500)
+  };
+}
+
+function moveActiveSetLongPress(event) {
+  if (!activeSetLongPress) return;
+  if (Math.hypot(event.clientX - activeSetLongPress.x, event.clientY - activeSetLongPress.y) > 10) {
+    cancelActiveSetLongPress();
+  }
+}
+
+function handleActiveSetContextMenu(event) {
+  const target = eventTargetElement(event);
+  const row = target?.closest?.("[data-active-set-undoable]");
+  if (!row || target.closest("input, textarea")) return;
+  event.preventDefault();
+  cancelActiveSetLongPress();
+  openActiveSetUndoMenu(Number(row.dataset.activeSetUndoable));
+}
+
 function activeWorkoutScreen() {
   const workout = activeWorkout;
   if (!workout) {
     return `<section class="panel highlighted empty-state-panel"><h2>${tx("No active workout", "Немає активного тренування")}</h2><p>${tx("Build a plan to start a workout.", "Створи план, щоб почати тренування.")}</p><button class="button full" data-action="open-add">${tx("Build workout", "Створити тренування")}</button></section>`;
   }
   const counts = activeWorkoutSetCounts(workout);
-  const progress = counts.total ? counts.completed / counts.total * 100 : 0;
   const currentBlockIndex = workout.blocks.findIndex(block => block.sets.some(set => !set.completed));
   const latestCompleted = latestActiveCompletedEntry(workout);
   const latestCompletedSetId = latestCompleted?.set.id ?? null;
-  const undoableSetId = latestCompletedSetId !== null &&
-      activeWorkoutUndoMarker?.workoutId === workout.id &&
-      activeWorkoutUndoMarker?.workoutRevision === workout.revision &&
-      activeWorkoutUndoMarker?.setId === latestCompletedSetId
-    ? latestCompletedSetId
-    : null;
+  const undoableSetId = activeUndoableSetId(workout);
   const recordSetIds = personalRecordSetIds(workout);
   notifyNewPersonalRecords(workout, recordSetIds);
   ensureFriendGhostsLoaded(workout);
@@ -12834,15 +12967,12 @@ function activeWorkoutScreen() {
     : "";
   const statusMessage = activeWorkoutStatusText();
   return `${liveTabs}<div class="active-live-participant-panel" ${selfPanelAttributes}><section class="hero-panel active-workout-hero">
-      <div><h2>${tx("Active workout", "Активне тренування")}</h2></div>
-      <div class="metric-grid active-workout-metrics compact"><div><span>${tx3("Elapsed", "Минуло", "Прошло")}</span><strong data-active-workout-elapsed aria-live="off">${formatActiveWorkoutElapsed(activeWorkoutElapsedMillis(workout))}</strong></div><div><span>${tx3("Completed", "Виконано", "Выполнено")}</span><strong>${counts.completed} / ${counts.total}</strong></div></div>
-      <p class="muted active-workout-started">${tx3("Started at", "Початок о", "Начало в")} ${escapeHtml(fmtDate(workout.createdAt, { hour: "2-digit", minute: "2-digit" }))}</p>
-      <p class="muted active-workout-screen-note">${escapeHtml(activeWorkoutScreenOnNote())}</p>
-      <div class="progress" role="progressbar" aria-label="${escapeAttr(activeWorkoutProgressLabel(counts.completed, counts.total))}" aria-valuemin="0" aria-valuemax="${counts.total}" aria-valuenow="${counts.completed}"><span class="${percentageClass(progress)}"></span></div>
+      ${activeWorkoutHeroMarkup(workout, counts)}
+      <p class="active-workout-screen-note">${escapeHtml(activeWorkoutScreenOnNote())}</p>
       ${workout.note ? `<p class="active-workout-note"><strong>${t("note")}:</strong> ${escapeHtml(workout.note)}</p>` : ""}
     </section>
     ${statusMessage ? `<div class="inline-status ${escapeAttr(activeWorkoutUi.status)}" role="${activeWorkoutUi.status === "error" ? "alert" : "status"}" aria-live="polite">${escapeHtml(statusMessage)}</div>` : ""}
-    ${trainingAdaptationControls()}
+    ${activeSetConfirmationMarkup(workout, undoableSetId)}
     <section class="active-workout-list">${workout.blocks.map((block, index) => activeWorkoutBlockMarkup(
       block,
       index,
@@ -12851,7 +12981,64 @@ function activeWorkoutScreen() {
       undoableSetId,
       recordSetIds
     )).join("")}</section>
-    <section class="panel active-workout-finish"><div class="actions vertical"><button class="button secondary full" data-action="record-all-active-sets" ${counts.completed < counts.total ? "" : "disabled"}>${svg("checkCircle", "small-icon")}${tx3("Save all", "Зберегти все", "Сохранить всё")}</button><button class="button full" data-action="finish-active-workout" ${counts.completed ? "" : "disabled"}>${svg("checkCircle", "small-icon")}${tx("Finish workout", "Завершити тренування")}</button></div><details class="active-workout-more"><summary>${tx3("More workout options", "Інші дії", "Другие действия")}</summary><button class="button danger full" data-action="discard-active-workout">${tx("Discard active workout", "Відкинути активне тренування")}</button></details></section></div>${hasLiveParticipants ? activeLivePeerWorkoutMarkup(workout) : ""}`;
+    <section class="panel active-workout-finish"><div class="actions vertical"><button class="button secondary full" data-action="record-all-active-sets" ${counts.completed < counts.total ? "" : "disabled"}>${svg("checkCircle", "small-icon")}${tx3("Save all", "Зберегти все", "Сохранить всё")}</button><button class="button full" data-action="finish-active-workout" ${counts.completed ? "" : "disabled"}>${svg("checkCircle", "small-icon")}${tx("Finish workout", "Завершити тренування")}</button></div></section></div>${hasLiveParticipants ? activeLivePeerWorkoutMarkup(workout) : ""}`;
+}
+
+function activeWorkoutCurrentExerciseName(workout = activeWorkout) {
+  const block = workout?.blocks?.find(item => item.sets?.some(set => !set.completed));
+  return block ? exerciseDisplayName(block) : "";
+}
+
+// One combined label for the whole hero (elapsed, sets done, current exercise).
+function activeWorkoutHeroLabel(elapsedText, counts, exerciseName) {
+  const sets = tx3(
+    `${counts.completed} of ${n(counts.total, "set", "sets", "підхід", "підходи", "підходів")}`,
+    `${counts.completed} з ${n(counts.total, "set", "sets", "підхід", "підходи", "підходів")}`,
+    `${counts.completed} из ${n(counts.total, "set", "sets", "підхід", "підходи", "підходів")}`
+  );
+  const base = tx3(
+    `Elapsed ${elapsedText}, ${sets} done`,
+    `Минуло ${elapsedText}, ${sets} виконано`,
+    `Прошло ${elapsedText}, выполнено ${sets}`
+  );
+  if (!exerciseName) return base;
+  return base + tx3(`, now: ${exerciseName}`, `, зараз: ${exerciseName}`, `, сейчас: ${exerciseName}`);
+}
+
+function activeWorkoutHeroMarkup(workout, counts) {
+  const elapsedText = formatActiveWorkoutElapsed(activeWorkoutElapsedMillis(workout));
+  const exerciseName = activeWorkoutCurrentExerciseName(workout);
+  const radius = 30.5;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = Math.min(1, counts.completed / Math.max(1, counts.total));
+  const arc = ratio > 0
+    ? `<circle class="active-hero-ring-arc" cx="34" cy="34" r="${radius}" fill="none" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(circumference * ratio).toFixed(2)} ${circumference.toFixed(2)}" transform="rotate(-90 34 34)"/>`
+    : "";
+  return `<div class="active-hero-main" role="img" data-active-workout-hero aria-label="${escapeAttr(activeWorkoutHeroLabel(elapsedText, counts, exerciseName))}">
+        <div class="active-hero-copy" aria-hidden="true">
+          <span class="active-hero-status"><span class="active-hero-dot"></span>${tx3("In progress", "Триває", "Идёт")}</span>
+          <strong class="active-hero-elapsed" data-active-workout-elapsed>${elapsedText}</strong>
+          ${exerciseName ? `<span class="active-hero-now">${escapeHtml(tx3(`Now: ${exerciseName}`, `Зараз: ${exerciseName}`, `Сейчас: ${exerciseName}`))}</span>` : ""}
+        </div>
+        <div class="active-hero-ring" aria-hidden="true">
+          <svg viewBox="0 0 68 68" width="68" height="68" focusable="false"><circle class="active-hero-ring-track" cx="34" cy="34" r="${radius}" fill="none" stroke-width="7"/>${arc}</svg>
+          <span class="active-hero-ring-text"><strong>${counts.completed}/${counts.total}</strong><span>${tx3("sets", "підх.", "подх.")}</span></span>
+        </div>
+      </div>`;
+}
+
+function activeWorkoutMinimizeMarkup() {
+  const hint = tx3(
+    "Minimizes the screen; the workout keeps running and all changes are already saved",
+    "Згортає екран; тренування продовжує йти, усі зміни вже збережено",
+    "Сворачивает экран; тренировка продолжает идти, все изменения уже сохранены"
+  );
+  return `<span class="topbar-leading"><button class="topbar-text-action" type="button" data-action="back" title="${escapeAttr(hint)}" aria-describedby="active-minimize-hint">${tx3("Minimize", "Згорнути", "Свернуть")}</button><span id="active-minimize-hint" class="sr-only">${escapeHtml(hint)}</span></span>`;
+}
+
+function activeWorkoutMoreButtonMarkup() {
+  const label = tx3("More workout options", "Інші дії", "Другие действия");
+  return `<button class="icon-button topbar-action" type="button" data-action="open-active-more" aria-haspopup="dialog" aria-label="${escapeAttr(label)}">${svg("more")}</button>`;
 }
 
 function activeLiveParticipants(workout = activeWorkout) {
@@ -12925,22 +13112,35 @@ function activeWorkoutBlockMarkup(
   const current = !fullyCompleted && blockIndex === currentBlockIndex;
   const firstIncompleteSetIndex = block.sets.findIndex(set => !set.completed);
   const liveLocked = liveWorkoutBinding?.localWorkoutId === activeWorkout.id;
-  const stateLabel = activeWorkoutBlockStateLabel(block, completed, current);
   const hasLatestCompletedSet = block.sets.some(set => set.id === latestCompletedSetId);
-  const expanded = current || hasLatestCompletedSet;
+  const expanded = !activeCollapsedBlockIds(activeWorkout).has(block.id) && (current || hasLatestCompletedSet);
   const timerKey = hasLatestCompletedSet ? `${activeWorkout.id}:${block.exerciseName}` : null;
   const remaining = timerKey ? timerRemaining(timerKey) : 0;
-  return `<section class="panel highlighted active-workout-exercise ${fullyCompleted ? "completed" : current ? "current" : "upcoming"}"><details ${expanded ? "open" : ""}><summary class="detail-summary active-workout-exercise-summary"><div><span class="eyebrow">${tx("Exercise", "Вправа")} ${blockIndex + 1}</span><h2>${escapeHtml(exerciseDisplayName(block))}</h2><p>${escapeHtml(stateLabel)}</p>${friendGhostMarkup(block)}</div>${exerciseMediaThumbnail(block, { className: "compact" })}${fullyCompleted ? `<span class="pill completed-exercise-badge">${svg("checkCircle", "small-icon")}${tx("Done", "Готово")}</span>` : ""}</summary>
+  const totalSets = block.sets.length;
+  const subtitleIndex = firstIncompleteSetIndex >= 0 ? firstIncompleteSetIndex : Math.max(0, totalSets - 1);
+  const openSubtitle = tx3(
+    `Set ${subtitleIndex + 1} of ${totalSets}`,
+    `Підхід ${subtitleIndex + 1} з ${totalSets}`,
+    `Подход ${subtitleIndex + 1} из ${totalSets}`
+  );
+  const collapsedStatus = fullyCompleted
+    ? tx3("Completed", "Завершено", "Завершено")
+    : current ? "" : `${tx3("Up next", "Далі", "Далее")} · ${countNoun(totalSets, "sets")}`;
+  const progressIcon = fullyCompleted
+    ? svg("checkCircle", "small-icon")
+    : `<span class="active-exercise-dotted" aria-hidden="true"></span>`;
+  return `<section class="panel highlighted active-workout-exercise ${fullyCompleted ? "completed" : current ? "current" : "upcoming"}"><details data-active-block-details="${escapeAttr(String(block.id))}" ${expanded ? "open" : ""}><summary class="detail-summary active-workout-exercise-summary">${exerciseMediaThumbnail(block, { className: "compact" })}<div class="active-workout-exercise-copy"><h2>${escapeHtml(exerciseDisplayName(block))}</h2><p class="active-exercise-open-line">${escapeHtml(openSubtitle)}</p><p class="active-exercise-collapsed-line"><span class="active-exercise-progress${fullyCompleted ? " done" : ""}">${progressIcon}${completed} / ${totalSets}</span>${collapsedStatus ? `<span class="active-exercise-status">${escapeHtml(collapsedStatus)}</span>` : ""}</p>${friendGhostMarkup(block)}</div></summary>
     <div class="active-set-list">${block.sets.map((set, setIndex) => activeWorkoutSetMarkup(set, setIndex, {
       liveLocked,
       current: current && setIndex === firstIncompleteSetIndex,
       undoable: set.id === undoableSetId,
       record: recordSetIds.has(set.id),
       plates: usesPlates,
+      block,
       timerKey: set.id === latestCompletedSetId ? timerKey : null,
       remaining: set.id === latestCompletedSetId ? remaining : 0
     })).join("")}</div>
-    ${liveLocked ? "" : `<div class="actions active-exercise-actions"><button class="button ghost" data-action="add-active-set" data-block-id="${block.id}">${svg("add", "small-icon")}${tx("Add set", "Додати підхід")}</button>${fullyCompleted ? "" : `<button class="button" data-action="save-active-exercise" data-block-id="${block.id}">${svg("checkCircle", "small-icon")}${tx("Save exercise", "Зберегти вправу")}</button>`}</div>`}
+    ${liveLocked ? "" : `<div class="active-exercise-actions"><button class="button active-exercise-add" type="button" data-action="add-active-set" data-block-id="${block.id}" aria-label="${escapeAttr(tx3("Add set", "Додати підхід", "Добавить подход"))}">${tx3("+ Set", "+ Підхід", "+ Подход")}</button><button class="button active-exercise-finish" type="button" data-action="save-active-exercise" data-block-id="${block.id}" aria-label="${escapeAttr(tx3("Save exercise", "Зберегти вправу", "Сохранить упражнение"))}">${tx3("Finish", "Завершити", "Завершить")}</button></div>`}
   </details></section>`;
 }
 
@@ -12986,7 +13186,7 @@ function rememberActiveLiveDraftInput(input) {
 // voiceWorkoutLocale. No audio or transcript is ever persisted: state lives
 // only in these module variables and is dropped as soon as a command is
 // resolved or the screen is left.
-let activeSetVoice = null; // { generation, setId, listening, transcript, recognition, stopTimer }
+let activeSetVoice = null; // { generation, setId, listening (true only once recognition started), transcript, recognition, stopTimer }
 let activeSetVoiceGeneration = 0;
 let activeSetVoiceManual = null; // { setId, text } shown when recognition is unavailable
 
@@ -13006,6 +13206,8 @@ function stopActiveSetVoiceRecognition() {
   activeSetVoice.recognition = null;
   activeSetVoice.listening = false;
   if (recognition) {
+    recognition.onstart = null;
+    recognition.onaudiostart = null;
     recognition.onresult = null;
     recognition.onerror = null;
     recognition.onend = null;
@@ -13087,42 +13289,74 @@ function syncActiveSetVoiceLifecycle() {
 
 function bindActiveSetVoiceInputs() {
   app.querySelectorAll("[data-active-set-voice-input]").forEach(input => {
+    const setId = Number(input.dataset.activeSetVoiceInput);
     input.addEventListener("keydown", ev => {
       if (ev.key !== "Enter") return;
       ev.preventDefault();
-      submitActiveSetVoiceManualText(Number(input.dataset.activeSetVoiceInput), input.value);
+      submitActiveSetVoiceManualText(setId, input.value);
+    });
+    input.addEventListener("input", () => {
+      if (activeSetVoiceManual && activeSetVoiceManual.setId === setId) activeSetVoiceManual.text = input.value;
+      const send = app.querySelector(`[data-action="active-set-voice-send"][data-id="${setId}"]`);
+      if (send) send.disabled = input.value.trim() === "";
     });
   });
 }
 
-// Re-renders only this set's mic/manual control, keeping the rest of the
-// screen (and any focus elsewhere) untouched.
+// idle (also while the permission/model request is pending), listening (recognition
+// actually started) or typed (recognition unavailable, denied, or chosen).
+function activeSetVoicePhase(setId) {
+  const id = Number(setId);
+  if (activeSetVoiceManual && activeSetVoiceManual.setId === id) return "typed";
+  if (activeSetVoice && activeSetVoice.setId === id && activeSetVoice.listening) return "listening";
+  return "idle";
+}
+
+// Re-renders only this set's action row / transcript, keeping the rest of the
+// screen (the weight field and any focus elsewhere) untouched.
 function refreshActiveSetVoice(setId) {
   const container = app.querySelector(`#active-set-voice-${setId}`);
   if (!container) return render();
+  const hadFocus = typeof document !== "undefined" && container.contains?.(document.activeElement);
   container.innerHTML = activeSetVoiceControlMarkup(setId);
+  const row = container.closest?.("[data-active-set-row]");
+  if (row?.dataset) row.dataset.voicePhase = activeSetVoicePhase(setId);
   bindActiveSetVoiceInputs();
+  if (hadFocus && !container.contains(document.activeElement)) {
+    container.querySelector("input, button:not(:disabled)")?.focus?.({ preventScroll: true });
+  }
 }
 
 async function startActiveSetVoiceCommand(setId) {
   if (route().name !== "active") return false;
   const location = activeSetLocation(setId);
   if (!location || location.set.completed) return false;
-  if (activeSetVoice && activeSetVoice.setId === setId && activeSetVoice.listening) return true;
+  if (activeSetVoice && activeSetVoice.setId === setId) {
+    // Already listening: nothing to do. Still waiting on the permission/model prompt: cancel the attempt.
+    if (activeSetVoice.listening) return true;
+    clearActiveSetVoice();
+    return true;
+  }
   clearActiveSetVoice();
+  clearActiveSetConfirmation();
   activeSetVoiceManual = null;
+  const generation = ++activeSetVoiceGeneration;
+  activeSetVoice = { generation, setId, listening: false, transcript: "", recognition: null, stopTimer: null };
   const availability = await voiceWorkoutAvailability();
+  if (!activeSetVoice || activeSetVoice.generation !== generation) return false;
   const stillCurrent = activeSetLocation(setId);
-  if (!stillCurrent || stillCurrent.set.completed || route().name !== "active") return false;
+  if (!stillCurrent || stillCurrent.set.completed || route().name !== "active") {
+    clearActiveSetVoice();
+    return false;
+  }
   const Recognition = voiceWorkoutRecognitionClass();
   if (availability.status !== "available" || !Recognition) {
+    activeSetVoice = null;
     activeSetVoiceManual = { setId, text: "" };
     refreshActiveSetVoice(setId);
     requestAnimationFrame(() => app.querySelector(`[data-active-set-voice-input="${setId}"]`)?.focus());
     return true;
   }
-  const generation = ++activeSetVoiceGeneration;
-  activeSetVoice = { generation, setId, listening: true, transcript: "", recognition: null, stopTimer: null };
   try {
     if (availability.install && typeof Recognition.install === "function") {
       const installed = await Recognition.install({ langs: [voiceWorkoutLocale()], processLocally: true });
@@ -13140,8 +13374,17 @@ async function startActiveSetVoiceCommand(setId) {
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
+    // Listening only starts once the browser reports the recognizer is running.
+    const markListening = () => {
+      if (!activeSetVoice || activeSetVoice.generation !== generation || activeSetVoice.listening) return;
+      activeSetVoice.listening = true;
+      refreshActiveSetVoice(setId);
+    };
+    recognition.onstart = markListening;
+    recognition.onaudiostart = markListening;
     recognition.onresult = event => {
       if (!activeSetVoice || activeSetVoice.generation !== generation) return;
+      activeSetVoice.listening = true;
       const results = Array.from(event.results || []);
       const text = results.map(result => result?.[0]?.transcript || "").join(" ").replace(/\s+/g, " ").trim();
       activeSetVoice.transcript = text;
@@ -13182,10 +13425,21 @@ async function startActiveSetVoiceCommand(setId) {
   return true;
 }
 
+// Stop ends the recording and processes what was heard, like the visible Log button would.
 function stopActiveSetVoiceCommand(setId) {
   if (!activeSetVoice || activeSetVoice.setId !== setId) return false;
+  const transcript = activeSetVoice.transcript;
   clearActiveSetVoice();
+  if (transcript) applyActiveSetVoiceCommand(transcript, setId);
+  else refreshActiveSetVoice(setId);
+  return true;
+}
+
+function switchActiveSetVoiceToTyped(setId) {
+  if (activeSetVoice && activeSetVoice.setId === setId) clearActiveSetVoice();
+  activeSetVoiceManual = { setId, text: "" };
   refreshActiveSetVoice(setId);
+  requestAnimationFrame(() => app.querySelector(`[data-active-set-voice-input="${setId}"]`)?.focus());
   return true;
 }
 
@@ -13246,18 +13500,9 @@ function applyActiveSetVoiceLogSet(setId, result) {
     repsInput.value = String(result.reps);
     rememberActiveLiveDraftInput(repsInput);
   }
-  const weightUsed = weightInput.value;
-  const repsUsed = repsInput.value;
-  return Promise.resolve(recordActiveSet(setId)).then(ok => {
-    if (ok) {
-      showToast(tx3(
-        `Recorded: ${weightUsed} kg × ${repsUsed}`,
-        `Записано: ${weightUsed} кг × ${repsUsed}`,
-        `Записано: ${weightUsed} кг × ${repsUsed}`
-      ));
-    }
-    return ok;
-  });
+  syncActiveSetSteppers(setId);
+  // The single confirmation banner is raised by recordActiveSet itself; no toast here.
+  return trackActiveSetMutation(recordActiveSet(setId));
 }
 
 function applyActiveSetVoiceRepeatPrevious(setId) {
@@ -13275,18 +13520,9 @@ function applyActiveSetVoiceRepeatPrevious(setId) {
   repsInput.value = String(values.reps);
   rememberActiveLiveDraftInput(weightInput);
   rememberActiveLiveDraftInput(repsInput);
-  const weightUsed = weightInput.value;
-  const repsUsed = repsInput.value;
-  return Promise.resolve(recordActiveSet(setId)).then(ok => {
-    if (ok) {
-      showToast(tx3(
-        `Recorded: ${weightUsed} kg × ${repsUsed}`,
-        `Записано: ${weightUsed} кг × ${repsUsed}`,
-        `Записано: ${weightUsed} кг × ${repsUsed}`
-      ));
-    }
-    return ok;
-  });
+  syncActiveSetSteppers(setId);
+  // The single confirmation banner is raised by recordActiveSet itself; no toast here.
+  return trackActiveSetMutation(recordActiveSet(setId));
 }
 
 // Advances past the active rest period the same way the visible timer's
@@ -13314,15 +13550,17 @@ function applyActiveSetVoiceSkipRest() {
 }
 
 function activeSetVoiceControlMarkup(setId) {
-  const listening = activeSetVoice && activeSetVoice.setId === setId ? activeSetVoice : null;
-  const manual = activeSetVoiceManual && activeSetVoiceManual.setId === setId ? activeSetVoiceManual : null;
+  const id = Number(setId);
+  const listening = activeSetVoice && activeSetVoice.setId === id && activeSetVoice.listening ? activeSetVoice : null;
+  const manual = activeSetVoiceManual && activeSetVoiceManual.setId === id ? activeSetVoiceManual : null;
+  const listeningLabel = tx3("Listening…", "Слухаю…", "Слушаю…");
   if (listening) {
-    return `<div class="active-set-voice-listening" role="status"><span class="spinner" aria-hidden="true"></span><span class="active-set-voice-interim">${escapeHtml(listening.transcript) || tx3("Listening…", "Слухаю…", "Слушаю…")}</span><p class="muted active-set-voice-hint">${escapeHtml(activeSetVoiceHintText())}</p><button class="button ghost mini" type="button" data-action="active-set-voice-stop" data-id="${setId}">${tx3("Stop", "Стоп", "Стоп")}</button></div>`;
+    return `<div class="active-set-voice-transcript" role="status" aria-live="polite"><strong class="active-set-voice-interim">${listening.transcript ? `«${escapeHtml(listening.transcript)}»` : escapeHtml(listeningLabel)}</strong><span class="active-set-voice-hint">${escapeHtml(activeSetVoiceHintText())}</span></div><div class="active-set-action-row"><button class="active-set-mic stop" type="button" data-action="active-set-voice-stop" data-id="${id}" aria-label="${escapeAttr(tx3("Stop voice command", "Зупинити голосову команду", "Остановить голосовую команду"))}">${svg("stop", "small-icon")}</button><div class="active-set-listening-pill">${svg("waveform", "small-icon")}<span class="active-set-listening-label">${escapeHtml(listeningLabel)}</span><button class="active-set-type-instead" type="button" data-action="active-set-voice-type" data-id="${id}">${tx3("Type instead", "Ввести текстом", "ввести текстом")}</button></div></div>`;
   }
   if (manual) {
-    return `<div class="active-set-voice-manual"><label class="sr-only" for="active-set-voice-input-${setId}">${escapeHtml(tx3('Type the same command, e.g. "80 by 8"', 'Введи ту саму команду, напр. «80 на 8»', 'Введи ту же команду, напр. «80 на 8»'))}</label><input id="active-set-voice-input-${setId}" type="text" inputmode="text" autocomplete="off" maxlength="120" data-active-set-voice-input="${setId}" placeholder="${escapeAttr(tx3('e.g. "80 by 8"', 'напр. «80 на 8»', 'напр. «80 на 8»'))}" value="${escapeAttr(manual.text)}"><button class="icon-button" type="button" data-action="active-set-voice-cancel-manual" data-id="${setId}" aria-label="${escapeAttr(tx3("Cancel", "Скасувати", "Отмена"))}">${svg("close")}</button></div>`;
+    return `<div class="active-set-action-row"><button class="active-set-mic cancel" type="button" data-action="active-set-voice-cancel-manual" data-id="${id}" aria-label="${escapeAttr(tx3("Cancel", "Скасувати", "Отмена"))}">${svg("close", "small-icon")}</button><div class="active-set-typed"><input id="active-set-voice-input-${id}" type="text" inputmode="text" enterkeyhint="send" autocomplete="off" maxlength="120" data-active-set-voice-input="${id}" placeholder="${escapeAttr(tx3("80 by 8", "80 на 8", "80 на 8"))}" aria-label="${escapeAttr(tx3("Type a command", "Введи команду", "Введи команду"))}" value="${escapeAttr(manual.text)}"><button class="active-set-send" type="button" data-action="active-set-voice-send" data-id="${id}" aria-label="${escapeAttr(tx3("Send", "Надіслати", "Отправить"))}"${String(manual.text).trim() ? "" : " disabled"}>${svg("arrowUp", "small-icon")}</button></div></div>`;
   }
-  return `<button class="icon-button active-set-voice-mic" type="button" data-action="active-set-voice-start" data-id="${setId}" aria-label="${escapeAttr(tx3("Log set by voice", "Записати підхід голосом", "Голосом записать подход"))}">${svg("mic", "small-icon")}</button>`;
+  return `<div class="active-set-action-row"><button class="active-set-mic" type="button" data-action="active-set-voice-start" data-id="${id}" aria-label="${escapeAttr(tx3("Voice command", "Голосова команда", "Голосовая команда"))}">${svg("mic", "small-icon")}</button>${activeSetLogButtonMarkup(id)}</div>`;
 }
 
 function activeSetVoiceContainerMarkup(setId) {
@@ -13337,23 +13575,28 @@ function trainingAdaptationLabels() {
   };
 }
 
-function trainingAdaptationControls() {
-  if (!activeWorkout || liveWorkoutBinding?.localWorkoutId === activeWorkout.id || !activeWorkout.blocks.some(b => b.sets.some(s => !s.completed))) return "";
-  return `<section class="panel"><details><summary>${tx3("Adapt workout", "Адаптувати тренування", "Адаптировать тренировку")}</summary><div class="actions vertical">${Object.entries(trainingAdaptationLabels()).map(([reason, label]) => `<button class="button secondary full" data-action="training-adapt" data-reason="${reason}">${escapeHtml(label)}</button>`).join("")}</div></details></section>`;
+function activeWorkoutMoreSheetMarkup() {
+  const canAdapt = Boolean(activeWorkout) && liveWorkoutBinding?.localWorkoutId !== activeWorkout.id &&
+    activeWorkout.blocks.some(block => block.sets.some(set => !set.completed));
+  const adapt = canAdapt
+    ? `<section class="active-more-group" aria-labelledby="active-more-adapt"><h3 class="eyebrow" id="active-more-adapt">${tx3("Adapt workout", "Адаптувати тренування", "Адаптировать тренировку")}</h3><div class="exercise-more-actions">${Object.entries(trainingAdaptationLabels()).map(([reason, label]) => `<button class="button secondary full" data-action="training-adapt" data-reason="${reason}">${escapeHtml(label)}</button>`).join("")}</div></section>`
+    : "";
+  return `<div class="exercise-more-sheet active-more-sheet"><h2 id="active-more-title">${tx3("More workout options", "Інші дії", "Другие действия")}</h2>${adapt}<div class="exercise-more-actions"><button class="button danger full" data-action="discard-active-workout">${tx3("Discard", "Відкинути", "Удалить")}</button></div></div>`;
 }
 
 function trainingAdaptationSnapshot() {
   return JSON.stringify([state.exercises, state.sessions, state.mappings, state.profile]);
 }
 
-function openTrainingAdaptation(reason) {
+function openTrainingAdaptation(reason, returnFocus = null) {
   if (!Object.hasOwn(trainingAdaptationLabels(), reason) || !activeWorkout || liveWorkoutBinding?.localWorkoutId === activeWorkout.id) return false;
   const values = collectAllActiveSetInputs();
   if (!values) return showToast(tx3("Check the remaining set values first.", "Спочатку перевір значення решти підходів.", "Сначала проверьте значения оставшихся подходов."));
   const workout = JSON.parse(JSON.stringify(activeWorkout));
   for (const block of workout.blocks) for (const set of block.sets) if (!set.completed) Object.assign(set, values.get(set.id));
   modal = { type: "training-adapt", reason, context: activeWorkoutMutationContext(), sourceRaw: activeWorkoutStorageRaw,
-    snapshot: trainingAdaptationSnapshot(), workout, candidate: null, minutes: 20 };
+    snapshot: trainingAdaptationSnapshot(), workout, candidate: null, minutes: 20,
+    ...(returnFocus ? { returnFocus } : {}) };
   if (reason === "tooHard") previewTrainingAdaptation();
   else render();
 }
@@ -13496,35 +13739,416 @@ function activePreviousValues(setId) {
   return { previous, repeat: preceding || previous };
 }
 
-function activeQuickEntryMarkup(set) {
-  const values = activePreviousValues(set.id);
-  const button = (mode, label) => `<button class="button secondary" data-action="active-quick-entry" data-id="${set.id}" data-mode="${mode}">${escapeHtml(label)}</button>`;
-  return `<div class="training-quick-entry">${values.previous ? `<small>${tx3("Previous", "Минулого разу", "В прошлый раз")}: ${escapeHtml(formatLocalizedWeightReps(values.previous.weight, values.previous.reps))}</small>` : ""}<div class="actions">${button("less", tx3("− Weight", "− Вага", "− Вес"))}${button("more", tx3("+ Weight", "+ Вага", "+ Вес"))}</div>${values.repeat ? button("repeat", tx3("Repeat previous values", "Повторити попередні значення", "Повторить предыдущие значения")) : ""}</div>`;
+// Set rows on the active workout screen: upcoming and completed sets are bare rows,
+// the current set is the one card (value line, step capsules, log/voice action row).
+let activeExpandedSetIds = new Set();
+
+function activeCollapsedBlockIds(workout = activeWorkout) {
+  if (!workout || activeCollapsedBlocks.workoutId !== workout.id) {
+    activeCollapsedBlocks = { workoutId: workout?.id ?? null, ids: new Set() };
+  }
+  return activeCollapsedBlocks.ids;
 }
 
-function applyActiveQuickEntry(setId, mode) {
-  if (route().name !== "active" || !["less", "more", "repeat"].includes(mode)) return false;
+function collapseActiveExerciseBlock(blockId) {
+  if (!activeWorkout || !Number.isSafeInteger(blockId)) return;
+  activeCollapsedBlockIds(activeWorkout).add(blockId);
+}
+
+// Mirrors the pure skip rule of iOS WorkoutAdaptation.buildSkipCandidate. Returns the workout without the
+// block's unrecorded sets (or without the block when nothing in it is recorded), or null when skipping is
+// not possible: unknown block, nothing unrecorded, or the only exercise has nothing recorded.
+function activeWorkoutSkipCandidate(workout, blockId) {
+  const block = workout?.blocks?.find(candidate => candidate.id === blockId);
+  if (!block || !block.sets.some(set => !set.completed)) return null;
+  const completedSets = block.sets.filter(set => set.completed);
+  if (completedSets.length === 0) {
+    if (workout.blocks.length <= 1) return null;
+    return { ...workout, blocks: workout.blocks.filter(candidate => candidate.id !== blockId) };
+  }
+  return {
+    ...workout,
+    blocks: workout.blocks.map(candidate => candidate.id === blockId ? { ...candidate, sets: completedSets } : candidate)
+  };
+}
+
+function finishExerciseDialogTitle(count) {
+  const phrase = countNoun(count, "sets");
+  return tx3(`${phrase} left`, `Залишилось ${phrase}`, `Осталось ${phrase}`);
+}
+
+function finishExerciseSheetMarkup(blockId) {
+  const block = activeWorkout?.blocks.find(candidate => candidate.id === blockId);
+  const unrecorded = block ? block.sets.filter(set => !set.completed).length : 0;
+  if (!block || unrecorded === 0) return "";
+  const live = liveWorkoutBinding?.localWorkoutId === activeWorkout.id;
+  const canSkip = !live && activeWorkoutSkipCandidate(activeWorkout, blockId) !== null;
+  const skip = canSkip
+    ? `<button class="button secondary full" type="button" data-action="finish-exercise-skip">${tx3("Skip them", "Пропустити їх", "Пропустить их")}</button>`
+    : "";
+  return `<div class="exercise-more-sheet finish-exercise-sheet"><h2 id="finish-exercise-title">${escapeHtml(finishExerciseDialogTitle(unrecorded))}</h2><div class="exercise-more-actions"><button class="button full" type="button" data-action="finish-exercise-log">${tx3("Log as planned", "Записати як у плані", "Записать как в плане")}</button>${skip}<button class="button ghost full" type="button" data-action="close-modal">${tx3("Cancel", "Скасувати", "Отмена")}</button></div></div>`;
+}
+
+function beginFinishActiveExercise(blockId, element = null) {
+  if (route().name !== "active" || !activeWorkout || !Number.isSafeInteger(blockId) ||
+      liveWorkoutBinding?.localWorkoutId === activeWorkout.id) return false;
+  const block = activeWorkout.blocks.find(candidate => candidate.id === blockId);
+  if (!block) return false;
+  if (!block.sets.some(set => !set.completed)) {
+    // Nothing unrecorded: like iOS, just collapse the card. No data mutation.
+    collapseActiveExerciseBlock(blockId);
+    activeWorkoutUi = activeWorkoutStatus("success", "exerciseSaved");
+    render();
+    return true;
+  }
+  modal = {
+    type: "finish-exercise",
+    blockId,
+    returnFocus: stableActionReturnFocus("save-active-exercise", element),
+    autoFocus: true
+  };
+  render();
+  return true;
+}
+
+async function confirmFinishActiveExercise(mode) {
+  if (modal?.type !== "finish-exercise") return false;
+  const { blockId, returnFocus } = modal;
+  modal = null;
+  const ok = mode === "skip"
+    ? await skipRemainingActiveSets(blockId)
+    : await saveActiveWorkoutExercise(blockId);
+  if (!ok) render();
+  if (returnFocus) restoreStableActionFocus(returnFocus);
+  return ok;
+}
+
+function bindActiveSetControls() {
+  app.querySelectorAll("details[data-active-block-details]").forEach(details => {
+    details.addEventListener("toggle", () => {
+      if (details.open) activeCollapsedBlockIds().delete(Number(details.dataset.activeBlockDetails));
+    });
+  });
+  app.querySelectorAll("[data-active-steppers] [data-step-field]").forEach(group => {
+    group.addEventListener("keydown", ev => {
+      if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+      ev.preventDefault();
+      const setId = Number(group.closest("[data-active-steppers]")?.dataset.activeSteppers);
+      applyActiveStep(setId, group.dataset.stepField, ev.key === "ArrowUp" ? 1 : -1);
+    });
+  });
+  app.querySelectorAll("details[data-active-set-details]").forEach(details => {
+    details.addEventListener("toggle", () => {
+      const setId = Number(details.dataset.activeSetDetails);
+      if (details.open) activeExpandedSetIds.add(setId);
+      else activeExpandedSetIds.delete(setId);
+    });
+  });
+}
+
+function activeStepNumber(value) {
+  return plateNumber(value);
+}
+
+function activeStepWeightValue(text) {
+  const trimmed = String(text ?? "").replace(",", ".").trim();
+  if (trimmed === "") return 0;
+  const weight = Number(trimmed);
+  return Number.isFinite(weight) && weight >= 0 && weight <= 1000000 ? weight : null;
+}
+
+// Nominal step is the smallest gap between a machine's allowed weights (else 2.5 kg);
+// the shown delta is the real move when the weight can move, the nominal one otherwise.
+function activeWeightStepInfo(weight, allowed = []) {
+  const stops = Array.isArray(allowed) ? allowed : [];
+  let nominal = 2.5;
+  if (stops.length >= 2) {
+    let gap = Infinity;
+    for (let index = 1; index < stops.length; index += 1) gap = Math.min(gap, stops[index] - stops[index - 1]);
+    if (Number.isFinite(gap) && gap > 0) nominal = gap;
+  }
+  const rounded = value => Math.round(value * 100) / 100;
+  const step = direction => {
+    if (weight == null) return { weight: 0, canMove: false, delta: nominal };
+    const target = rounded(trainingStepWeight(weight, direction, stops));
+    const canMove = Math.abs(target - weight) > 1e-9;
+    return { weight: target, canMove, delta: canMove ? rounded(Math.abs(target - weight)) : nominal };
+  };
+  return { nominal, minus: step(-1), plus: step(1) };
+}
+
+function activeRepsMax() {
+  return window.GymStateContract?.LIMITS?.repsMax || 1000;
+}
+
+function activeStepReps(text, direction) {
+  if (![-1, 1].includes(direction)) return null;
+  const parsed = Number(String(text ?? "").trim());
+  const base = Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+  return Math.min(activeRepsMax(), Math.max(1, base + direction));
+}
+
+function activeStepperState(block, weightText, repsText) {
+  const weight = activeStepWeightValue(weightText);
+  const allowed = block ? smartExerciseLoadProfile(block)?.allowedWeightsKg || [] : [];
+  const info = activeWeightStepInfo(weight, allowed);
+  const parsedReps = Number(String(repsText ?? "").trim());
+  const reps = Number.isInteger(parsedReps) && parsedReps >= 0 ? parsedReps : null;
+  const kg = tx3("kg", "кг", "кг");
+  return {
+    weight: {
+      valueText: weight == null ? "" : `${activeStepNumber(weight)} ${kg}`,
+      minus: {
+        ...info.minus,
+        disabled: !info.minus.canMove,
+        label: `−${activeStepNumber(info.minus.delta)}`,
+        aria: tx3(
+          `Decrease weight by ${activeStepNumber(info.minus.delta)}`,
+          `Зменшити вагу на ${activeStepNumber(info.minus.delta)}`,
+          `Уменьшить вес на ${activeStepNumber(info.minus.delta)}`
+        )
+      },
+      plus: {
+        ...info.plus,
+        disabled: !info.plus.canMove,
+        label: `+${activeStepNumber(info.plus.delta)}`,
+        aria: tx3(
+          `Increase weight by ${activeStepNumber(info.plus.delta)}`,
+          `Збільшити вагу на ${activeStepNumber(info.plus.delta)}`,
+          `Увеличить вес на ${activeStepNumber(info.plus.delta)}`
+        )
+      }
+    },
+    reps: {
+      value: reps,
+      valueText: reps == null ? "" : String(reps),
+      minusDisabled: (reps ?? 0) <= 1,
+      plusDisabled: reps != null && reps >= activeRepsMax()
+    }
+  };
+}
+
+function activeStepperMarkup(setId, stepper) {
+  const id = escapeAttr(String(setId));
+  const weightLabel = tx3("Weight", "Вага", "Вес");
+  const repsLabel = tx3("Reps", "Повторення", "Повторы");
+  const weightButton = (dir, part) => `<button type="button" class="active-set-step" data-action="active-step-weight" data-id="${id}" data-dir="${dir}" aria-label="${escapeAttr(part.aria)}"${part.disabled ? " disabled" : ""}>${escapeHtml(part.label)}</button>`;
+  const repsButton = (dir, icon, aria, disabled) => `<button type="button" class="active-set-step" data-action="active-step-reps" data-id="${id}" data-dir="${dir}" aria-label="${escapeAttr(aria)}"${disabled ? " disabled" : ""}>${svg(icon, "small-icon")}</button>`;
+  return `<div class="active-set-steppers" data-active-steppers="${id}"><div class="active-set-capsule" role="group" data-step-field="weight" aria-label="${escapeAttr(`${weightLabel}, ${stepper.weight.valueText}`)}">${weightButton(-1, stepper.weight.minus)}<span class="active-set-capsule-label" aria-hidden="true">${tx3("weight", "вага", "вес")}</span>${weightButton(1, stepper.weight.plus)}</div><div class="active-set-capsule" role="group" data-step-field="reps" aria-label="${escapeAttr(`${repsLabel}, ${stepper.reps.valueText}`)}">${repsButton(-1, "remove", tx3("Decrease reps", "Зменшити повторення", "Уменьшить повторения"), stepper.reps.minusDisabled)}<span class="active-set-capsule-label" aria-hidden="true">${tx3("reps", "повт.", "повт.")}</span>${repsButton(1, "add", tx3("Increase reps", "Збільшити повторення", "Увеличить повторения"), stepper.reps.plusDisabled)}</div></div>`;
+}
+
+// Updates the capsules in place (no re-render) so focus and the typed weight survive a step.
+function applyActiveStepperState(root, stepper) {
+  const weightGroup = root.querySelector('[data-step-field="weight"]');
+  const repsGroup = root.querySelector('[data-step-field="reps"]');
+  const setButton = (button, { label, aria, disabled }) => {
+    if (!button) return;
+    if (label != null) button.textContent = label;
+    button.setAttribute("aria-label", aria);
+    if (disabled && typeof document !== "undefined" && document.activeElement === button) {
+      const sibling = [...(button.parentElement?.querySelectorAll("button") || [])].find(other => other !== button && !other.disabled);
+      sibling?.focus?.({ preventScroll: true });
+    }
+    button.disabled = Boolean(disabled);
+  };
+  if (weightGroup) {
+    weightGroup.setAttribute("aria-label", `${tx3("Weight", "Вага", "Вес")}, ${stepper.weight.valueText}`);
+    setButton(weightGroup.querySelector('[data-dir="-1"]'), stepper.weight.minus);
+    setButton(weightGroup.querySelector('[data-dir="1"]'), stepper.weight.plus);
+  }
+  if (repsGroup) {
+    repsGroup.setAttribute("aria-label", `${tx3("Reps", "Повторення", "Повторы")}, ${stepper.reps.valueText}`);
+    setButton(repsGroup.querySelector('[data-dir="-1"]'), {
+      label: null,
+      aria: tx3("Decrease reps", "Зменшити повторення", "Уменьшить повторения"),
+      disabled: stepper.reps.minusDisabled
+    });
+    setButton(repsGroup.querySelector('[data-dir="1"]'), {
+      label: null,
+      aria: tx3("Increase reps", "Збільшити повторення", "Увеличить повторения"),
+      disabled: stepper.reps.plusDisabled
+    });
+  }
+}
+
+function syncActiveSetSteppers(setId) {
   const location = activeSetLocation(setId);
   if (!location || location.set.completed) return false;
   const weightInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="weight"]`);
   const repsInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="reps"]`);
   if (!weightInput || !repsInput) return false;
-  if (mode === "repeat") {
-    const values = activePreviousValues(setId).repeat;
-    if (!values) return false;
-    weightInput.value = String(values.weight);
-    repsInput.value = String(values.reps);
-  } else {
-    const text = weightInput.value.trim().replace(",", ".");
-    const weight = Number(text);
-    if (!text || !Number.isFinite(weight) || weight < 0 || weight > 1000000) return false;
-    weightInput.value = String(trainingStepWeight(weight, mode === "more" ? 1 : -1,
-      smartExerciseLoadProfile(location.block)?.allowedWeightsKg || []));
-  }
-  return rememberActiveLiveDraftInput(weightInput) && rememberActiveLiveDraftInput(repsInput);
+  const display = app.querySelector(`[data-active-reps-display="${setId}"]`);
+  if (display) display.textContent = repsInput.value;
+  const root = app.querySelector(`[data-active-steppers="${setId}"]`);
+  if (root) applyActiveStepperState(root, activeStepperState(location.block, weightInput.value, repsInput.value));
+  syncActiveSetSummary(setId);
+  return true;
 }
 
-function activeWorkoutSetMarkup(set, setIndex, options = {}) {
+function applyActiveStep(setId, field, direction) {
+  if (route().name !== "active" || !["weight", "reps"].includes(field) || ![-1, 1].includes(direction)) return false;
+  const location = activeSetLocation(setId);
+  if (!location || location.set.completed) return false;
+  const input = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="${field}"]`);
+  if (!input) return false;
+  if (field === "weight") {
+    const weight = activeStepWeightValue(input.value);
+    if (weight == null) return false;
+    const allowed = smartExerciseLoadProfile(location.block)?.allowedWeightsKg || [];
+    const target = activeWeightStepInfo(weight, allowed)[direction > 0 ? "plus" : "minus"];
+    if (!target.canMove) return false;
+    input.value = String(target.weight);
+  } else {
+    const reps = activeStepReps(input.value, direction);
+    if (reps == null) return false;
+    input.value = String(reps);
+  }
+  const remembered = rememberActiveLiveDraftInput(input);
+  syncActiveSetSteppers(setId);
+  return remembered;
+}
+
+function activeSetSummaryText(weightText, repsText) {
+  const weight = activeStepWeightValue(weightText) ?? 0;
+  const reps = Number(String(repsText ?? "").trim());
+  return formatLocalizedWeightReps(weight, Number.isFinite(reps) && reps >= 0 ? reps : 0);
+}
+
+function syncActiveSetSummary(setId) {
+  const label = app.querySelector(`[data-active-set-summary="${setId}"]`);
+  if (!label) return false;
+  const weightInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="weight"]`);
+  const repsInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="reps"]`);
+  if (!weightInput || !repsInput) return false;
+  label.textContent = activeSetSummaryText(weightInput.value, repsInput.value);
+  return true;
+}
+
+function activeRestClock(seconds) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+// "Log · 3:00" on screen (one line); the fuller "Log · rest 3:00" is the accessible name.
+function activeSetLogLabels(restSeconds) {
+  const log = tx3("Log", "Записати", "Записать");
+  if (!(restSeconds > 0)) return { log, rest: "", aria: log };
+  const clock = activeRestClock(restSeconds);
+  return { log, rest: clock, aria: `${log} · ${tx3("rest", "відпочинок", "отдых")} ${clock}` };
+}
+
+function activeSetLogButtonMarkup(setId) {
+  const location = activeSetLocation(Number(setId));
+  const labels = activeSetLogLabels(location ? smartRestSecondsForBlock(location.block) : 0);
+  return `<button class="button active-set-log" data-action="record-active-set" data-id="${escapeAttr(String(setId))}" aria-label="${escapeAttr(labels.aria)}"><span class="active-set-log-label">${escapeHtml(labels.log)}</span>${labels.rest ? `<span class="active-set-log-rest"> · ${escapeHtml(labels.rest)}</span>` : ""}</button>`;
+}
+
+// "previous 60 × 8". Hidden when the recorded weight was 0 unless the exercise is
+// bodyweight, which drops the weight number ("previous × 8").
+function activePreviousCaption(values, bodyweight) {
+  const last = values?.previous;
+  if (!last || !values.repeat) return null;
+  if (!(last.weight > 0 || bodyweight)) return null;
+  const showsWeight = !(bodyweight && last.weight === 0);
+  const weight = activeStepNumber(last.weight);
+  const reps = last.reps;
+  const text = showsWeight
+    ? tx3(`previous ${weight} × ${reps}`, `минулого разу ${weight} × ${reps}`, `прошлый раз ${weight} × ${reps}`)
+    : tx3(`previous × ${reps}`, `минулого разу × ${reps}`, `прошлый раз × ${reps}`);
+  const ukReps = ["повторення", "повторення", "повторень"][slavicPluralIndex(reps)];
+  const ruReps = ["повторение", "повторения", "повторений"][slavicPluralIndex(reps)];
+  const aria = showsWeight
+    ? tx3(
+      `Repeat previous, ${weight} kilograms by ${reps}`,
+      `Повторити попередні, ${weight} кілограмів на ${reps}`,
+      `Повторить предыдущие, ${weight} килограммов на ${reps}`
+    )
+    : tx3(
+      `Repeat previous, ${reps} bodyweight ${reps === 1 ? "rep" : "reps"}`,
+      `Повторити попередні, ${reps} ${ukReps} з власною вагою`,
+      `Повторить предыдущие, ${reps} ${ruReps} с собственным весом`
+    );
+  return { text, aria, showsWeight };
+}
+
+// Fills weight and reps only; recording still needs Log or a voice command.
+function applyActiveRepeatPrevious(setId) {
+  if (route().name !== "active") return false;
+  const location = activeSetLocation(setId);
+  if (!location || location.set.completed) return false;
+  const weightInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="weight"]`);
+  const repsInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="reps"]`);
+  const values = activePreviousValues(setId).repeat;
+  if (!weightInput || !repsInput || !values) return false;
+  weightInput.value = String(values.weight);
+  repsInput.value = String(values.reps);
+  const remembered = rememberActiveLiveDraftInput(weightInput) && rememberActiveLiveDraftInput(repsInput);
+  syncActiveSetSteppers(setId);
+  return remembered;
+}
+
+function activeSetInputMarkup(set, field, className, label, extra = "") {
+  const setId = escapeAttr(String(set.id));
+  const numeric = field === "reps";
+  return `<input class="${className}" data-active-set-id="${setId}" data-active-field="${field}" inputmode="${numeric ? "numeric" : "decimal"}" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, field))}" aria-label="${escapeAttr(label)}" autocomplete="off"${extra}${set.completed ? " disabled" : ""}>`;
+}
+
+function activeSetWeightLabel(number) {
+  return tx3(`Weight for set ${number}`, `Вага для підходу ${number}`, `Вес для подхода ${number}`);
+}
+
+function activeSetRepsLabel(number) {
+  return tx3(`Repetitions for set ${number}`, `Повторення для підходу ${number}`, `Повторения для подхода ${number}`);
+}
+
+function activeRestControlsMarkup(timerKey, remaining) {
+  const key = escapeAttr(timerKey);
+  const pill = (seconds, label, aria) => `<button class="active-set-rest-pill" type="button" data-action="timer-adjust" data-timer-control="${key}" data-seconds="${seconds}" data-key="${key}" aria-label="${escapeAttr(aria)}"><span>${label}</span></button>`;
+  return `<div class="active-set-rest" data-active-rest-controls="${key}" role="group" aria-label="${escapeAttr(tx3("Rest timer", "Таймер відпочинку", "Таймер отдыха"))}"><span class="active-set-rest-time" data-timer-display="${key}" aria-hidden="true">${formatTimer(remaining)}</span>${pill(-15, "−15", tx3("Decrease rest by 15 seconds", "Зменшити відпочинок на 15 секунд", "Уменьшить отдых на 15 секунд"))}${pill(15, "+15", tx3("Increase rest by 15 seconds", "Збільшити відпочинок на 15 секунд", "Увеличить отдых на 15 секунд"))}<button class="active-set-rest-pill active-set-rest-stop" type="button" data-action="timer-stop" data-timer-control="${key}" data-timer-stop="${key}" data-key="${key}" aria-label="${escapeAttr(tx3("Stop rest", "Зупинити відпочинок", "Остановить отдых"))}"><span>${svg("stop", "small-icon")}</span></button></div>`;
+}
+
+// The latest completed row is one line: check, weight × reps, record badge and, only while its rest
+// runs, the compact countdown with −15 / +15 / stop. Undo is reachable by long-press, context menu, or
+// a focus-revealed keyboard button; there is no standing Undo button.
+function activeCompletedSetMarkup(set, setIndex, options) {
+  const { undoable, record, timerKey, remaining } = options;
+  const setId = escapeAttr(String(set.id));
+  const number = setIndex + 1;
+  const summary = formatLocalizedWeightReps(set.weight, set.reps);
+  const label = tx3(
+    `Set ${number} recorded, ${summary}`,
+    `Підхід ${number} записано, ${summary}`,
+    `Подход ${number} записан, ${summary}`
+  ) + (record ? `, ${tx3("personal record", "особистий рекорд", "личный рекорд")}` : "");
+  const restControls = timerKey && remaining > 0 ? activeRestControlsMarkup(timerKey, remaining) : "";
+  const undo = undoable
+    ? `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${setId}">${tx3("Undo set", "Скасувати підхід", "Отменить подход")}</button>`
+    : "";
+  return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${restControls}</div>${undo}</div>`;
+}
+
+function activeUpcomingSetMarkup(set, setIndex) {
+  const setId = escapeAttr(String(set.id));
+  const number = setIndex + 1;
+  const summary = activeSetSummaryText(activeLiveDraftInputValue(set, "weight"), activeLiveDraftInputValue(set, "reps"));
+  return `<div class="active-set-row upcoming" data-active-set-row="${setId}"><details class="active-set-details" data-active-set-details="${setId}"${activeExpandedSetIds.has(set.id) ? " open" : ""}><summary class="active-set-summary" aria-label="${escapeAttr(tx3(`Set ${number}, ${summary}`, `Підхід ${number}, ${summary}`, `Подход ${number}, ${summary}`))}"><span class="active-set-index" aria-hidden="true">${number}</span><span class="active-set-summary-text" data-active-set-summary="${setId}">${escapeHtml(summary)}</span><span class="active-set-chevron" aria-hidden="true">${svg("chevronDown", "small-icon")}</span></summary><div class="active-set-editor">${activeSetInputMarkup(set, "weight", "active-set-editor-input", activeSetWeightLabel(number))}<span class="active-set-times" aria-hidden="true">×</span>${activeSetInputMarkup(set, "reps", "active-set-editor-input", activeSetRepsLabel(number))}</div></details></div>`;
+}
+
+function activeCurrentSetMarkup(set, setIndex, options) {
+  const { block, plateWeight } = options;
+  const setId = escapeAttr(String(set.id));
+  const number = setIndex + 1;
+  const weightText = activeLiveDraftInputValue(set, "weight");
+  const repsText = activeLiveDraftInputValue(set, "reps");
+  const bodyweight = block ? analyzeSmartExercise(block).loadMode === "Bodyweight" : false;
+  const caption = activePreviousCaption(activePreviousValues(set.id), bodyweight);
+  const previous = caption
+    ? `<button type="button" class="active-set-previous" data-action="active-repeat-previous" data-id="${setId}" aria-label="${escapeAttr(caption.aria)}">${escapeHtml(caption.text)}</button>`
+    : "";
+  const label = tx3(`Set ${number}, current set`, `Підхід ${number}, поточний`, `Подход ${number}, текущий`);
+  return `<div class="active-set-row current" data-active-set-row="${setId}" data-voice-phase="${activeSetVoicePhase(set.id)}" role="group" aria-label="${escapeAttr(label)}"><div class="active-set-current-head"><strong class="active-set-title">${tx3("Set", "Підхід", "Подход")} ${number}</strong>${plateCalculatorMarkup(plateWeight)}${previous}</div><div class="active-set-value-line">${activeSetInputMarkup(set, "weight", "active-set-weight-input", activeSetWeightLabel(number), ` size="5" placeholder="0"`)}<span class="active-set-unit">${tx3("kg", "кг", "кг")}</span><span class="active-set-times" aria-hidden="true">×</span><span class="active-set-reps-value" data-active-reps-display="${setId}" aria-hidden="true">${escapeHtml(repsText)}</span>${activeSetInputMarkup(set, "reps", "active-set-reps-input", activeSetRepsLabel(number), ` tabindex="-1"`)}</div>${activeStepperMarkup(set.id, activeStepperState(block, weightText, repsText))}${activeSetVoiceContainerMarkup(setId)}</div>`;
+}
+
+function activeWorkoutSetMarkup(set, setIndex, options) {
   const {
     liveLocked = false,
     current = false,
@@ -13533,24 +14157,14 @@ function activeWorkoutSetMarkup(set, setIndex, options = {}) {
     plates = false,
     timerKey = null,
     remaining = 0
-  } = options;
-  const plateWeight = plates && current && !set.completed
+  } = options ?? {};
+  const block = options?.block || activeSetLocation(set.id)?.block || null;
+  if (set.completed) return activeCompletedSetMarkup(set, setIndex, { undoable, record, timerKey, remaining });
+  if (!current) return activeUpcomingSetMarkup(set, setIndex);
+  const plateWeight = plates
     ? Number(String(activeLiveDraftInputValue(set, "weight")).replace(",", ".").trim() || NaN)
     : NaN;
-  const status = set.completed ? tx("Saved", "Збережено") : tx("Ready", "Готово");
-  const disabled = set.completed ? "disabled" : "";
-  const setId = escapeAttr(String(set.id));
-  const restTimer = set.completed && timerKey && remaining > 0
-    ? `<div class="timer-row active-workout-timer" role="group" aria-label="${txAttr("Rest timer", "Таймер відпочинку")}"><div><strong>${tx3("Set saved · rest timer", "Підхід збережено · таймер відпочинку", "Подход сохранён · таймер отдыха")}</strong><span data-timer-display="${escapeAttr(timerKey)}" aria-live="polite">${formatTimer(remaining)}</span></div><div class="timer-actions"><button class="button ghost mini" data-action="timer-adjust" data-timer-control="${escapeAttr(timerKey)}" data-seconds="-15" data-key="${escapeAttr(timerKey)}" aria-label="${txAttr("Subtract 15 seconds", "Відняти 15 секунд")}">−15</button><button class="button ghost mini" data-action="timer-adjust" data-timer-control="${escapeAttr(timerKey)}" data-seconds="15" data-key="${escapeAttr(timerKey)}" aria-label="${txAttr("Add 15 seconds", "Додати 15 секунд")}">+15</button><button class="button ghost mini" data-action="timer-stop" data-timer-control="${escapeAttr(timerKey)}" data-timer-stop="${escapeAttr(timerKey)}" data-key="${escapeAttr(timerKey)}">${tx("Stop", "Стоп")}</button></div></div>`
-    : "";
-  const action = set.completed
-    ? (undoable
-      ? `<button class="button ghost full active-set-action" data-action="undo-active-set" data-id="${setId}">${tx("Undo last set", "Скасувати останній підхід")}</button>`
-      : "")
-    : (current
-      ? `<button class="button full active-set-action" data-action="record-active-set" data-id="${setId}">${svg("checkCircle", "small-icon")}${tx("Record set", "Записати підхід")}</button>`
-      : "");
-  return `<div class="active-set-row ${set.completed ? "completed" : current ? "current" : ""}" data-active-set-row="${setId}"><div class="active-set-label"><strong>${tx("Set", "Підхід")} ${setIndex + 1}</strong>${plateCalculatorMarkup(plateWeight)}${record ? personalRecordBadgeMarkup() : ""}<span>${set.completed ? svg("checkCircle", "small-icon") : ""}${current ? tx3("Do this now", "Виконай зараз", "Сделай сейчас") : status}</span></div><label><span>${tx("Weight (kg)", "Вага (кг)")}</span><input data-active-set-id="${setId}" data-active-field="weight" inputmode="decimal" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "weight"))}" ${disabled}></label><label><span>${tx("Reps", "Повтори")}</span><input data-active-set-id="${setId}" data-active-field="reps" inputmode="numeric" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, "reps"))}" ${disabled}></label>${current && !set.completed ? activeQuickEntryMarkup(set) : ""}${current && !set.completed ? activeSetVoiceContainerMarkup(setId) : ""}${restTimer}${action}</div>`;
+  return activeCurrentSetMarkup(set, setIndex, { block, plateWeight });
 }
 
 const TRAINING_SETTINGS_GOALS = ["Aesthetic Cut", "Muscle Gain", "Strength", "Balanced"];
@@ -24366,6 +24980,12 @@ function modalMarkup() {
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт резервної копії")}</h2><textarea id="import-json" placeholder="${txAttr("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
   if (modal.type === "add-exercise") return bottomSheet(`<h2>${tx("Add exercise", "Додати вправу")}</h2><input id="new-exercise-name" maxlength="320" aria-label="${txAttr("Exercise name", "Назва вправи")}" placeholder="${txAttr("Exercise name", "Назва вправи")}"><button class="button full" data-action="save-exercise">${tx("Add exercise", "Додати вправу")}</button>`);
   if (modal.type === "exercise-more") return bottomSheet(exerciseMoreSheetMarkup(modal.exerciseId), "exercise-more-title");
+  if (modal.type === "active-more") return bottomSheet(activeWorkoutMoreSheetMarkup(), "active-more-title");
+  if (modal.type === "active-set-undo") return bottomSheet(activeSetUndoSheetMarkup(modal.setId), "active-set-undo-title");
+  if (modal.type === "finish-exercise") {
+    const sheet = finishExerciseSheetMarkup(modal.blockId);
+    return sheet ? bottomSheet(sheet, "finish-exercise-title") : "";
+  }
   if (modal.type === "exercise-media") {
     const media = exerciseMedia(modal.exercise);
     const frames = media?.frames || [];
@@ -24665,6 +25285,14 @@ function bindEvents(preservedModalFocus = null) {
     app.addEventListener("pointercancel", () => { weeklySwipeStart = null; }, { passive: true });
     appWeeklySwipeDelegationBound = true;
   }
+  if (!activeSetUndoGesturesBound && typeof app.addEventListener === "function") {
+    app.addEventListener("pointerdown", beginActiveSetLongPress, { passive: true });
+    app.addEventListener("pointermove", moveActiveSetLongPress, { passive: true });
+    app.addEventListener("pointerup", cancelActiveSetLongPress, { passive: true });
+    app.addEventListener("pointercancel", cancelActiveSetLongPress, { passive: true });
+    app.addEventListener("contextmenu", handleActiveSetContextMenu);
+    activeSetUndoGesturesBound = true;
+  }
   // DOM-light test hosts and older embedded shells without a stable event target
   // retain the direct binding path. Real browsers bind one click listener to
   // #app and reuse it across every root render.
@@ -24791,8 +25419,12 @@ function bindEvents(preservedModalFocus = null) {
     }
   }));
   app.querySelectorAll("[data-active-set-id][data-active-field]").forEach(input => {
-    input.addEventListener("input", () => rememberActiveLiveDraftInput(input));
+    input.addEventListener("input", () => {
+      rememberActiveLiveDraftInput(input);
+      syncActiveSetSteppers(Number(input.dataset.activeSetId));
+    });
   });
+  bindActiveSetControls();
   const exerciseSearch = app.querySelector("#exercise-search");
   if (exerciseSearch) exerciseSearch.addEventListener("input", () => {
     exerciseSearchQuery = exerciseSearch.value.slice(0, EXERCISE_SEARCH_QUERY_MAX_CHARS);
@@ -24956,15 +25588,15 @@ const STABLE_FOCUS_ACTIONS = new Set([
   "discard-active-workout", "discard-plan", "edit-set", "exercise-body-filter", "exercise-favorites-filter",
   "exercise-history", "exercise-muscle-filter", "exercise-sort", "export-diagnostics", "export-json",
   "import-json", "map-exercise", "open-exercise-add", "open-exercise-filters", "open-exercise-media",
-  "open-exercise-more", "open-friend", "open-friend-workout-detail", "open-friend-workout-picker",
+  "open-active-more", "open-exercise-more", "open-friend", "open-friend-workout-detail", "open-friend-workout-picker",
   "open-account-settings", "open-achievement", "open-live-room", "open-offline-account", "open-progress-exercise-picker", "open-workout-exercise-picker",
   "rename-exercise", "reset-exercise-filters", "respond-live-invite", "respond-workout-invite",
   "send-live-workout-invite", "send-workout-invite", "share-draft", "share-session", "smart-alternatives",
-  "start-live-room", "template-picker", "open-voice-workout"
+  "start-live-room", "template-picker", "open-voice-workout", "save-active-exercise"
 ]);
 const STABLE_FOCUS_DATASET_FIELDS = [
   "id", "session", "exerciseId", "block", "filter", "sort", "profileId", "workoutId", "roomId",
-  "shareMode", "pickerTarget", "name", "achievementId"
+  "shareMode", "pickerTarget", "name", "achievementId", "blockId"
 ];
 
 function normalizedStableActionReturnFocus(value) {
@@ -25685,21 +26317,32 @@ async function handleAction(action, el) {
     if (Number.isInteger(offset) && offset >= -520 && offset <= 0) { trainingReviewOffset = offset; render(); }
     return;
   }
-  if (action === "training-adapt") return openTrainingAdaptation(el.dataset.reason);
+  if (action === "training-adapt") return openTrainingAdaptation(el.dataset.reason, modal?.type === "active-more" ? modal.returnFocus : null);
   if (action === "training-adapt-preview") return previewTrainingAdaptation(Number(el.dataset.id), Number(el.dataset.minutes || 20));
   if (action === "training-adapt-apply") return applyTrainingAdaptation();
-  if (action === "active-quick-entry") return applyActiveQuickEntry(Number(el.dataset.id), el.dataset.mode);
+  if (action === "active-repeat-previous") return applyActiveRepeatPrevious(Number(el.dataset.id));
+  if (action === "active-step-weight" || action === "active-step-reps") {
+    return applyActiveStep(Number(el.dataset.id), action === "active-step-weight" ? "weight" : "reps", Number(el.dataset.dir));
+  }
   if (action === "add-active-set") return addActiveWorkoutSet(Number(el.dataset.blockId));
-  if (action === "save-active-exercise") return saveActiveWorkoutExercise(Number(el.dataset.blockId));
+  if (action === "save-active-exercise") return beginFinishActiveExercise(Number(el.dataset.blockId), el);
+  if (action === "finish-exercise-log") return confirmFinishActiveExercise("log");
+  if (action === "finish-exercise-skip") return confirmFinishActiveExercise("skip");
   if (action === "record-active-set") {
     const setId = Number(el.dataset.id);
     if (route().name !== "active" || !Number.isSafeInteger(setId) || setId <= 0) return false;
-    return recordActiveSet(setId);
+    return trackActiveSetMutation(recordActiveSet(setId));
   }
   if (action === "undo-active-set") {
     const setId = Number(el.dataset.id);
     if (route().name !== "active" || !Number.isSafeInteger(setId) || setId <= 0) return false;
-    return undoLatestActiveSet(setId);
+    if (modal?.type === "active-set-undo") modal = null;
+    clearActiveSetConfirmation();
+    return trackActiveSetMutation(undoLatestActiveSet(setId));
+  }
+  if (action === "dismiss-active-set-confirmation") {
+    clearActiveSetConfirmation();
+    return true;
   }
   if (action === "active-set-voice-start") {
     const setId = Number(el.dataset.id);
@@ -25711,6 +26354,16 @@ async function handleAction(action, el) {
     if (!Number.isSafeInteger(setId) || setId <= 0) return false;
     return stopActiveSetVoiceCommand(setId);
   }
+  if (action === "active-set-voice-type") {
+    const setId = Number(el.dataset.id);
+    if (!Number.isSafeInteger(setId) || setId <= 0) return false;
+    return switchActiveSetVoiceToTyped(setId);
+  }
+  if (action === "active-set-voice-send") {
+    const setId = Number(el.dataset.id);
+    if (!Number.isSafeInteger(setId) || setId <= 0) return false;
+    return submitActiveSetVoiceManualText(setId, app.querySelector(`[data-active-set-voice-input="${setId}"]`)?.value);
+  }
   if (action === "active-set-voice-cancel-manual") {
     const setId = Number(el.dataset.id);
     if (!Number.isSafeInteger(setId) || setId <= 0) return false;
@@ -25719,7 +26372,9 @@ async function handleAction(action, el) {
   if (action === "record-all-active-sets") return recordAllActiveSets();
   if (action === "finish-active-workout") return finishActiveWorkout();
   if (action === "discard-active-workout") {
-    return requestDiscardActiveWorkout(destructiveReturnFocus("discard-active-workout", el));
+    return requestDiscardActiveWorkout(modal?.type === "active-more"
+      ? modal.returnFocus
+      : destructiveReturnFocus("discard-active-workout", el));
   }
   if (action === "confirm-discard-active") return confirmDiscardActiveWorkout();
   if (action === "save-workout") return saveWorkout();
@@ -25757,6 +26412,15 @@ async function handleAction(action, el) {
   }
   if (action === "save-exercise") return saveExercise();
   if (action === "toggle-exercise-favorite") return toggleExerciseFavorite(Number(el.dataset.id));
+  if (action === "open-active-more") {
+    if (route().name !== "active" || !activeWorkout) return false;
+    modal = {
+      type: "active-more",
+      returnFocus: stableActionReturnFocus("open-active-more", el),
+      autoFocus: true
+    };
+    return render();
+  }
   if (action === "open-exercise-more") {
     const exerciseId = Number(el.dataset.id);
     if (route().name !== "exercises" || !Number.isSafeInteger(exerciseId) || exerciseId <= 0 ||
@@ -28152,6 +28816,7 @@ async function addActiveWorkoutSet(blockId) {
       activeWorkoutUndoMarker = latestUndo.marker;
       activeWorkoutUndoStorageRaw = latestUndo.raw;
     }
+    activeCollapsedBlockIds(stored.workout).delete(blockId);
     activeWorkoutUi = activeWorkoutStatus(
       cleanupSucceeded ? "success" : "error",
       cleanupSucceeded ? "setAdded" : "setAddedCleanupFailed"
@@ -28248,9 +28913,79 @@ async function saveActiveWorkoutExercise(blockId) {
       activeWorkoutUndoMarker = latestUndo.marker;
       activeWorkoutUndoStorageRaw = latestUndo.raw;
     }
+    collapseActiveExerciseBlock(blockId);
     activeWorkoutUi = activeWorkoutStatus(
       cleanupSucceeded ? "success" : "error",
       cleanupSucceeded ? "exerciseSaved" : "oldControlsCleanupFailed"
+    );
+    render();
+    return true;
+  });
+  if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
+  return result.value === true;
+}
+
+async function skipRemainingActiveSets(blockId) {
+  if (!activeWorkout || liveWorkoutBinding?.localWorkoutId === activeWorkout.id) return false;
+  const mutationContext = activeWorkoutMutationContext();
+  if (!mutationContext) return activeWorkoutMutationUnavailable(null);
+  const expectedRaw = activeWorkoutStorageRaw;
+  const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
+    if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
+    const loaded = loadActiveWorkoutRecord(mutationContext.account);
+    const reconciliationNow = Math.max(Date.now(), loaded.workout?.updatedAt || 0);
+    if (!loaded.workout ||
+        !reconcileActiveWorkoutRestTransition(loaded.workout, mutationContext.account, reconciliationNow) ||
+        !reconcileActiveWorkoutBulkCleanupIntent(loaded.workout, mutationContext.account, reconciliationNow)) {
+      reloadActiveWorkoutContext(mutationContext.account);
+      render();
+      return false;
+    }
+    if (loaded.raw !== expectedRaw || loaded.workout.revision >= Number.MAX_SAFE_INTEGER) {
+      reloadActiveWorkoutContext(mutationContext.account);
+      render();
+      return false;
+    }
+    const candidate = activeWorkoutSkipCandidate(loaded.workout, blockId);
+    if (!candidate) {
+      activeWorkoutUi = activeWorkoutStatus("error", "skipUnavailable");
+      render();
+      return false;
+    }
+    const now = Math.max(Date.now(), loaded.workout.updatedAt + 1);
+    const next = { ...candidate, updatedAt: now, revision: loaded.workout.revision + 1 };
+    const cleanupIntent = persistActiveWorkoutBulkCleanupIntent(
+      loaded.workout,
+      next,
+      now,
+      mutationContext.account,
+      null
+    );
+    if (!cleanupIntent) return false;
+    const stored = persistActiveWorkoutRecord(next, mutationContext.account, loaded.raw);
+    if (!stored || !activeWorkoutMutationContextIsCurrent(mutationContext)) {
+      if (!stored) removeActiveWorkoutBulkCleanupStorage(mutationContext.account, cleanupIntent.raw);
+      reloadActiveWorkoutContext(mutationContext.account);
+      render();
+      return false;
+    }
+    activeWorkout = stored.workout;
+    activeWorkoutStorageRaw = stored.raw;
+    reconcileActiveWorkoutInputDraft(stored.workout, mutationContext.account);
+    const cleanupSucceeded = reconcileActiveWorkoutBulkCleanupIntent(
+      stored.workout,
+      mutationContext.account,
+      now
+    );
+    if (!cleanupSucceeded) {
+      const latestUndo = loadActiveWorkoutUndoRecord(stored.workout, mutationContext.account);
+      activeWorkoutUndoMarker = latestUndo.marker;
+      activeWorkoutUndoStorageRaw = latestUndo.raw;
+    }
+    collapseActiveExerciseBlock(blockId);
+    activeWorkoutUi = activeWorkoutStatus(
+      cleanupSucceeded ? "success" : "error",
+      cleanupSucceeded ? "exerciseSavedSkipped" : "exerciseSavedSkipCleanupFailed"
     );
     render();
     return true;
@@ -28492,14 +29227,20 @@ async function recordActiveSet(setId) {
     const timerKey = `${stored.workout.id}:${location.block.exerciseName}`;
     const restSeconds = smartRestSecondsForBlock(location.block);
     const timerStarted = startExerciseRestTimerLocked(timerKey, restSeconds);
-    activeWorkoutUi = activeWorkoutStatus(
-      timerStarted && storedUndo ? "success" : "error",
-      timerStarted && storedUndo
-        ? "setSavedRestStarted"
-        : !storedUndo
-          ? "setSavedUndoUnavailable"
-          : "setSavedRestUnavailable"
-    );
+    activeWorkoutUi = timerStarted && storedUndo
+      ? activeWorkoutStatus()
+      : activeWorkoutStatus("error", !storedUndo ? "setSavedUndoUnavailable" : "setSavedRestUnavailable");
+    if (storedUndo) {
+      setActiveSetConfirmation(
+        stored.workout.id,
+        setId,
+        Object.is(weight, -0) ? 0 : weight,
+        reps,
+        timerStarted ? restSeconds : 0
+      );
+    } else {
+      activeSetConfirmation = null;
+    }
     render();
     if (!storedUndo || !timerStarted) {
       showToast(!storedUndo
@@ -29964,14 +30705,26 @@ function startTimerTicker() {
 function updateTimerDisplays() {
   const activeElapsed = document.querySelector("[data-active-workout-elapsed]");
   if (activeElapsed && activeWorkout) {
-    activeElapsed.textContent = formatActiveWorkoutElapsed(activeWorkoutElapsedMillis(activeWorkout));
+    const elapsedText = formatActiveWorkoutElapsed(activeWorkoutElapsedMillis(activeWorkout));
+    activeElapsed.textContent = elapsedText;
+    document.querySelector("[data-active-workout-hero]")?.setAttribute?.(
+      "aria-label",
+      activeWorkoutHeroLabel(elapsedText, activeWorkoutSetCounts(activeWorkout), activeWorkoutCurrentExerciseName(activeWorkout))
+    );
   }
   let hasActiveTimer = Boolean(activeElapsed && activeWorkout);
   document.querySelectorAll("[data-timer-display]").forEach(display => {
     const key = display.dataset.timerDisplay;
     const remaining = timerRemaining(key);
     hasActiveTimer ||= remaining > 0;
-    display.textContent = remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово");
+    const restControls = display.closest?.("[data-active-rest-controls]");
+    if (restControls) {
+      // The compact rest controls disappear at zero instead of showing "Ready".
+      restControls.hidden = remaining <= 0;
+      if (remaining > 0) display.textContent = formatTimer(remaining);
+    } else {
+      display.textContent = remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово");
+    }
     document.querySelectorAll(`[data-timer-control="${CSS.escape(key)}"]`).forEach(control => {
       control.disabled = remaining <= 0;
     });
