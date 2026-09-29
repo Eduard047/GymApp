@@ -459,7 +459,7 @@
     <string name="calorie_mode_surplus">Surplus</string>
     <string name="template_picker_title">Copy a previous workout</string>
     <string name="template_picker_empty">No previous workouts yet.</string>
-    <string name="template_picker_summary">%1$d exercises • %2$d sets • %3$s volume</string>
+    <string name="template_picker_summary">%1$s • %2$s • %3$s volume</string>
     <string name="add_workout_save_hint">Check your sets, then save to move straight into workout details.</string>
     <string name="add_workout_plan_mode_hint">Plan mode: these rows are targets sent to Garmin and are not logged as completed by syncing.</string>
     <string name="add_workout_completed_mode_hint">Completed mode: saving writes every planned row immediately to workout history and summary.</string>
@@ -647,13 +647,13 @@
     <string name="workout_section_header_count_one">1 session</string>
     <string name="workout_section_header_count_many">%1$d sessions</string>
     <string name="missions_daily_title">Daily Missions</string>
-    <string name="missions_daily_short">Daily</string>
+    <string name="missions_daily_short">Day</string>
     <string name="missions_daily_supporting">Small wins for today.</string>
     <string name="missions_weekly_title">Weekly Missions</string>
-    <string name="missions_weekly_short">Weekly</string>
+    <string name="missions_weekly_short">Week</string>
     <string name="missions_weekly_supporting">Consistency goals for the current week.</string>
     <string name="missions_monthly_title">Monthly Missions</string>
-    <string name="missions_monthly_short">Monthly</string>
+    <string name="missions_monthly_short">Month</string>
     <string name="missions_monthly_supporting">Long-form goals for this month.</string>
     <string name="missions_board_supporting">Active daily, weekly, and monthly missions rotate from a huge challenge pool.</string>
     <string name="missions_ranks_card_title">Rank ladder</string>
@@ -672,17 +672,19 @@
     <string name="missions_status_in_progress">In progress</string>
     <string name="missions_empty_title">No missions yet</string>
     <string name="missions_empty_supporting">Log workouts to unlock daily and weekly missions.</string>
-    <string name="solo_progress_eyebrow">Solo Progress</string>
-    <string name="solo_level_badge">LEVEL %1$d</string>
+    <string name="solo_progress_eyebrow">Solo progress</string>
+    <string name="solo_level_badge">Level %1$d</string>
     <string name="solo_total_xp">TOTAL XP</string>
-    <string name="solo_total_xp_earned">earned</string>
+    <string name="solo_total_xp_earned_line">%1$s XP earned</string>
+    <string name="solo_xp_amount">%1$s XP</string>
+    <string name="solo_top_rank">Top rank</string>
     <string name="solo_month_xp_label">Month XP</string>
-    <string name="solo_month_xp_value">%1$d XP</string>
     <string name="ranks_xp_value">%1$s XP</string>
     <string name="solo_next_title_label">Next title</string>
     <string name="solo_streak_label">Week streak</string>
     <string name="solo_streak_weekly_value">%1$d wk</string>
-    <string name="solo_weekly_rhythm_value">%1$d wk · %2$d/wk</string>
+    <string name="progress_lifetime_title">Lifetime progress</string>
+    <string name="progress_lifetime_workouts">Workouts</string>
     <string name="solo_xp_to_next_level">%1$d / %2$d XP to next level</string>
     <string name="ranks_supporting">See every title, its level gate, and the XP needed to unlock it.</string>
     <string name="ranks_current_level_label">Current level</string>
@@ -698,9 +700,10 @@
     <string name="ranks_empty_title">No ranks yet</string>
     <string name="ranks_empty_supporting">Rank tiers will appear here once the progress ladder is available.</string>
     <string name="activity_heatmap_title">Activity Heatmap</string>
-    <string name="activity_heatmap_active_days">%1$d active days</string>
-    <string name="activity_heatmap_sessions">Sessions</string>
-    <string name="activity_heatmap_volume">Volume</string>
+    <plurals name="activity_heatmap_active_days">
+        <item quantity="one">%1$d active day</item>
+        <item quantity="other">%1$d active days</item>
+    </plurals>
     <string name="activity_heatmap_legend">Color shows daily training volume in this month: weight x reps, darker is less, orange is more.</string>
     <string name="activity_heatmap_less">Less</string>
     <string name="activity_heatmap_more">More</string>
@@ -715,12 +718,43 @@
         <item>S</item>
     </string-array>
     <string name="achievements_title">Achievements</string>
-    <string name="achievements_supporting">Your complete badge gallery, progress, and unlock rewards.</string>
     <string name="achievement_rarity_common">Common</string>
     <string name="achievement_rarity_uncommon">Uncommon</string>
     <string name="achievement_rarity_rare">Rare</string>
     <string name="achievement_rarity_epic">Epic</string>
     <string name="achievement_rarity_legendary">Legendary</string>
+    <string name="progress_choose_exercise">Choose an exercise</string>
+    <string name="cd_change_exercise">Change exercise</string>
+    <string name="progress_muscle_breakdown_title">Muscle Breakdown</string>
+    <plurals name="progress_muscle_groups_count">
+        <item quantity="one">%1$d group</item>
+        <item quantity="other">%1$d groups</item>
+    </plurals>
+    <plurals name="progress_sessions_count">
+        <item quantity="one">%1$d session</item>
+        <item quantity="other">%1$d sessions</item>
+    </plurals>
+    <string name="progress_logged_sessions">%1$d logged sessions</string>
+    <plurals name="progress_sets_count">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
+    <plurals name="progress_exercises_count">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
+    <string name="progress_empty_month_title">No progress this month</string>
+    <string name="progress_empty_month_text">Log sets for the selected exercise to unlock trends.</string>
+    <string name="progress_spotlight_subtitle">%1$s in the selected month.</string>
+    <string name="missions_period_group">Mission period</string>
+    <string name="missions_level_summary">Level %1$d · %2$s · %3$s XP</string>
+    <string name="achievements_gallery_title">Your badge collection</string>
+    <string name="achievements_gallery_subtitle">Every canonical milestone, its progress, rarity, and unlock date.</string>
+    <string name="achievements_unlocked_caption">Unlocked collection</string>
+    <string name="achievement_status_locked">Locked</string>
+    <string name="achievement_status_unlocked">Unlocked</string>
+    <string name="achievement_status_unlocked_on">Unlocked %1$s</string>
+    <string name="achievement_tile_a11y">%1$s, %2$s, %3$s</string>
     <string name="muscle_heatmap_title">Muscle Map</string>
     <string name="muscle_heatmap_supporting">Colors show which muscle groups carried the most load across your logged training history.</string>
     <string name="muscle_heatmap_sets">Sets</string>
@@ -731,19 +765,19 @@
     <string name="muscle_heatmap_back">Back</string>
     <string name="muscle_heatmap_less">Less</string>
     <string name="muscle_heatmap_more">More</string>
-    <string name="muscle_heatmap_highlight_detail">Highlighted: %1$s • %2$d load • %3$d sets • %4$d sessions</string>
+    <string name="muscle_heatmap_highlight_detail">Highlighted: %1$s • %2$d load • %3$s • %4$s</string>
     <string name="muscle_heatmap_empty">Log sets to light up the body map.</string>
     <string name="muscle_heatmap_top_title">Top muscle groups</string>
     <string name="muscle_heatmap_load_value">%1$d load</string>
-    <string name="muscle_heatmap_muscle_detail">%1$d sets • %2$d sessions • %3$d exercises</string>
+    <string name="muscle_heatmap_muscle_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_selected_title">%1$s loaded by</string>
     <string name="muscle_heatmap_selected_empty">No mapped sets for this muscle in the selected period.</string>
-    <string name="muscle_heatmap_exercise_detail">%1$d load • %2$d sets • %3$d sessions</string>
+    <string name="muscle_heatmap_exercise_detail">%1$d load • %2$s • %3$s</string>
     <string name="muscle_heatmap_unmapped_title">Unmapped / new exercises</string>
-    <string name="muscle_heatmap_unmapped_detail">%1$d sets • %2$d sessions</string>
+    <string name="muscle_heatmap_unmapped_detail">%1$s • %2$s</string>
     <string name="muscle_heatmap_mappings_title">Exercise muscle mappings</string>
-    <string name="muscle_heatmap_mapping_detail">%1$s • %2$d sets • %3$d sessions</string>
-    <string name="muscle_heatmap_mapping_unmapped_detail">Unmapped • %1$d sets • %2$d sessions</string>
+    <string name="muscle_heatmap_mapping_detail">%1$s • %2$s • %3$s</string>
+    <string name="muscle_heatmap_mapping_unmapped_detail">Unmapped • %1$s • %2$s</string>
     <string name="muscle_heatmap_map_action">Map</string>
     <string name="muscle_heatmap_manual_title">Map “%1$s”</string>
     <string name="exercise_mappings_title">Exercise muscle mappings</string>
@@ -899,11 +933,10 @@
     <string name="progress_history_title">Workout History</string>
     <string name="progress_recent_sessions_title">Recent Sessions</string>
     <string name="progress_recent_sessions_subtitle">This list changes with the selected month and exercise.</string>
-    <string name="progress_log_sets_hint">Log sets for %1$s to unlock trends.</string>
     <string name="progress_chart_max_weight">Max Weight Trend</string>
     <string name="progress_chart_volume">Volume by Session</string>
     <string name="progress_visual_trends_title">Visual Trends</string>
-    <string name="progress_visual_trends_subtitle">Last %1$d sessions in the selected month.</string>
+    <string name="progress_visual_trends_subtitle">Last %1$s in the selected month.</string>
     <string name="progress_stat_sessions">Sessions</string>
     <string name="progress_stat_total_sets">Total Sets</string>
     <string name="progress_stat_best_weight">Best Weight</string>
@@ -1124,7 +1157,7 @@
     <string name="post_workout_impact_title">Workout impact</string>
     <string name="post_workout_top_muscle">Most loaded today: %1$s</string>
     <string name="post_workout_no_muscle_impact">Mapped muscle load will appear after sets are saved.</string>
-    <string name="post_workout_muscle_load">%1$d load • %2$d sets</string>
+    <string name="post_workout_muscle_load">%1$d load • %2$s</string>
     <string name="post_workout_pr_title">Personal records</string>
     <string name="post_workout_pr_previous">Previous best %1$.1f kg</string>
     <string name="post_workout_pr_first">First logged best</string>
@@ -1163,6 +1196,8 @@
     <string name="cd_remove_exercise">Remove exercise</string>
     <string name="cd_prev_month">Previous month</string>
     <string name="cd_next_month">Next month</string>
+    <string name="cd_month_current">Current month, %1$s</string>
+    <string name="cd_month_return">%1$s. Return to current month</string>
     <string name="cd_back">Back</string>
     <string name="exercise_search_label">Search exercises</string>
     <string name="exercise_search_placeholder">Name in English, Ukrainian, or Russian</string>
@@ -1378,9 +1413,12 @@
     <string name="training_previous_week">Previous week</string>
     <string name="training_next_week">Next week</string>
     <string name="training_partial_week">Week in progress</string>
-    <string name="training_days_goal">%1$d / %2$d training days</string>
+    <plurals name="training_weekly_progress">
+        <item quantity="one">%1$d of %2$d workout</item>
+        <item quantity="other">%1$d of %2$d workouts</item>
+    </plurals>
     <string name="training_rep_comparison">%1$.2f kg · %2$d → %3$d reps</string>
-    <string name="training_insufficient_history">Not enough comparable history yet.</string>
+    <string name="training_insufficient_history">Comparison with previous weeks appears after a couple of weeks of training.</string>
     <string name="training_unchanged_reps">Best reps at matching weights are unchanged.</string>
     <string name="training_week_workouts">Workouts this week</string>
     <string name="training_comparison">Comparison</string>

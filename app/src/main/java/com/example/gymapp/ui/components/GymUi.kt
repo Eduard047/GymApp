@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
@@ -41,8 +42,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -57,9 +60,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import com.example.gymapp.R
 import com.example.gymapp.ui.theme.BrandFill
+import com.example.gymapp.ui.theme.BrandFillBright
+import com.example.gymapp.ui.theme.BrandFillBrightNight
 import com.example.gymapp.ui.theme.BrandFillNight
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.theme.GymControlShape
@@ -162,6 +169,33 @@ fun HeroPanel(
     }
 }
 
+/**
+ * Brand-blue gradient container shared with iOS (`GymHeroPanel` with the brand gradient): the
+ * compact hero surface used where the generic hero blue would dominate the screen.
+ */
+@Composable
+fun BrandHeroPanel(
+    modifier: Modifier = Modifier,
+    contentPadding: Dp = 16.dp,
+    content: @Composable () -> Unit
+) {
+    val brush = if (isSystemInDarkTheme()) {
+        Brush.linearGradient(listOf(BrandFillNight, BrandFillBrightNight))
+    } else {
+        Brush.linearGradient(listOf(BrandFill, BrandFillBright))
+    }
+    CompositionLocalProvider(LocalContentColor provides Color.White) {
+        Box(
+            modifier = modifier
+                .clip(GymPanelShape)
+                .background(brush)
+                .padding(contentPadding)
+        ) {
+            content()
+        }
+    }
+}
+
 @Composable
 fun SectionTitle(
     eyebrow: String,
@@ -198,6 +232,101 @@ fun SectionTitle(
 
 internal fun sectionTitleShowsEyebrow(eyebrow: String): Boolean = eyebrow.isNotBlank()
 
+/**
+ * Linear progress bar shared by the Progress screens. Matches iOS: a plain filled track with no
+ * Material3 stop-indicator dot and no gap between the indicator and the track.
+ */
+@Composable
+fun GymProgressBar(
+    progress: () -> Float,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant
+) {
+    LinearProgressIndicator(
+        progress = { progress().coerceIn(0f, 1f) },
+        modifier = modifier,
+        color = color,
+        trackColor = trackColor,
+        gapSize = 0.dp,
+        drawStopIndicator = {}
+    )
+}
+
+/** Smallest fraction of the style size a single-word label may shrink to. */
+internal const val WORD_SHRINK_MIN_SCALE = 0.75f
+private const val WORD_SHRINK_STEP = 0.05f
+
+/** True when [text] is a single word that must never be broken across lines. */
+internal fun isSingleWordLabel(text: String): Boolean {
+    val trimmed = text.trim()
+    return trimmed.isNotEmpty() && trimmed.none { it.isWhitespace() }
+}
+
+/**
+ * Next shrink factor for a single-word label that still overflows, or the same factor once the
+ * [WORD_SHRINK_MIN_SCALE] floor is reached.
+ */
+internal fun nextWordShrinkScale(current: Float): Float =
+    (current - WORD_SHRINK_STEP).coerceAtLeast(WORD_SHRINK_MIN_SCALE)
+
+private fun TextUnit.scaledBy(scale: Float): TextUnit =
+    if (isSpecified) this * scale else this
+
+/**
+ * Label text that never breaks inside a word (like iOS `minimumScaleFactor`): a single word stays
+ * on one line and shrinks down to [WORD_SHRINK_MIN_SCALE] of the style size until it fits, while
+ * multi-word labels wrap at word boundaries up to [maxLines].
+ */
+@Composable
+fun WordShrinkText(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    fontWeight: FontWeight? = null,
+    color: Color = Color.Unspecified,
+    textAlign: TextAlign? = null,
+    maxLines: Int = 2
+) {
+    val baseStyle = style.copy(hyphens = Hyphens.None, lineBreak = LineBreak.Heading)
+    if (!isSingleWordLabel(text)) {
+        Text(
+            text = text,
+            modifier = modifier,
+            style = baseStyle,
+            fontWeight = fontWeight,
+            color = color,
+            textAlign = textAlign,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis
+        )
+        return
+    }
+    var scale by remember(text, style) { mutableFloatStateOf(1f) }
+    var fits by remember(text, style) { mutableStateOf(false) }
+    Text(
+        text = text,
+        modifier = modifier.drawWithContent { if (fits) drawContent() },
+        style = baseStyle.copy(
+            fontSize = baseStyle.fontSize.scaledBy(scale),
+            lineHeight = baseStyle.lineHeight.scaledBy(scale)
+        ),
+        fontWeight = fontWeight,
+        color = color,
+        textAlign = textAlign,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout ->
+            if (layout.hasVisualOverflow && scale > WORD_SHRINK_MIN_SCALE) {
+                scale = nextWordShrinkScale(scale)
+            } else {
+                fits = true
+            }
+        }
+    )
+}
+
 @Composable
 fun MetricTile(
     label: String,
@@ -205,7 +334,8 @@ fun MetricTile(
     modifier: Modifier = Modifier,
     emphasized: Boolean = false,
     onHero: Boolean = false,
-    utilityValue: Boolean = false
+    utilityValue: Boolean = false,
+    compactValue: Boolean = false
 ) {
     val shape = GymCompactShape
     val tileContainerColor = if (onHero) {
@@ -229,7 +359,11 @@ fun MetricTile(
         MaterialTheme.colorScheme.outlineVariant
     }
 
-    val valueStyle = metricTileValueStyle(emphasized = emphasized, utilityValue = utilityValue)
+    val valueStyle = metricTileValueStyle(
+        emphasized = emphasized,
+        utilityValue = utilityValue,
+        compactValue = compactValue
+    )
     // Values stay on one line and shrink to fit instead of wrapping or hyphenating.
     var valueScale by remember(value, valueStyle) { mutableFloatStateOf(1f) }
     var valueFits by remember(value, valueStyle) { mutableStateOf(false) }
@@ -244,17 +378,13 @@ fun MetricTile(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        // Sentence-case labels wrap to two lines at one size rather than truncating or shrinking.
-        Text(
+        // Multi-word labels wrap at word boundaries; a single word shrinks to fit instead of breaking.
+        WordShrinkText(
             text = label,
-            style = MaterialTheme.typography.bodySmall.copy(
-                hyphens = Hyphens.None,
-                lineBreak = LineBreak.Heading
-            ),
+            style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
             color = labelColor,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            maxLines = 2
         )
         Text(
             text = value,
@@ -285,7 +415,12 @@ private const val METRIC_TILE_MIN_VALUE_SCALE = 0.6f
 private const val METRIC_TILE_VALUE_SCALE_STEP = 0.08f
 
 @Composable
-private fun metricTileValueStyle(emphasized: Boolean, utilityValue: Boolean): TextStyle = when {
+private fun metricTileValueStyle(
+    emphasized: Boolean,
+    utilityValue: Boolean,
+    compactValue: Boolean
+): TextStyle = when {
+    compactValue -> MaterialTheme.typography.titleMedium
     utilityValue && emphasized -> GymDataTypography.copy(fontSize = 20.sp, lineHeight = 26.sp)
     utilityValue -> GymDataTypography.copy(fontSize = 16.sp, lineHeight = 22.sp)
     emphasized -> MaterialTheme.typography.titleLarge
@@ -335,25 +470,39 @@ fun EmptyStatePanel(
     supporting: String? = null,
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    icon: ImageVector? = null
 ) {
+    val centered = icon != null
     AppPanel(
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(GymSpacing.XLarge),
+            modifier = (if (centered) Modifier.fillMaxWidth() else Modifier)
+                .padding(GymSpacing.XLarge),
+            horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
             verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
         ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
             Text(
                 text = title,
                 modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = if (centered) TextAlign.Center else TextAlign.Unspecified
             )
             if (!supporting.isNullOrBlank()) {
                 Text(
                     text = supporting,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = if (centered) TextAlign.Center else TextAlign.Unspecified
                 )
             }
             if (!actionLabel.isNullOrBlank() && onAction != null) {
@@ -469,7 +618,7 @@ fun <T> GymSegmentedControl(
                         .padding(horizontal = GymSpacing.Medium, vertical = GymSpacing.Small),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
+                    WordShrinkText(
                         text = item.label,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,

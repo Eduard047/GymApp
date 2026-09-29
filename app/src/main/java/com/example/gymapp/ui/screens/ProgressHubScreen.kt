@@ -29,6 +29,7 @@ import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
+import com.example.gymapp.ui.components.LifetimeProgressCard
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.MuscleHeatmapCard
 import com.example.gymapp.ui.components.SoloProgressHero
@@ -76,6 +77,8 @@ internal fun ProgressHubScreen(
     weeklyHistory: List<com.example.gymapp.data.entity.ExerciseHistoryEntry> = emptyList(),
     weeklyTarget: Int = 4,
     onOpenWorkout: (Long) -> Unit = {},
+    trainingProfile: com.example.gymapp.util.TrainingProfile = com.example.gymapp.util.TrainingProfile(),
+    onTrainingProfileChange: (com.example.gymapp.util.TrainingProfile) -> Unit = {},
     programOwnerKey: String = "preview",
     programSessions: List<com.example.gymapp.data.entity.WorkoutSessionSummary> = emptyList(),
     programProfile: com.example.gymapp.util.TrainingProfile = com.example.gymapp.util.TrainingProfile(),
@@ -153,17 +156,30 @@ internal fun ProgressHubScreen(
                     verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
                 ) {
                     item {
-                        MonthSwitcher(
-                            monthLabel = overviewState.monthLabel,
+                        com.example.gymapp.ui.components.WeeklyReviewCard(
+                            history = weeklyHistory,
+                            target = weeklyTarget,
+                            onOpenWorkout = onOpenWorkout,
+                            trainingProfile = trainingProfile,
+                            onTrainingProfileChange = onTrainingProfileChange
+                        )
+                    }
+                    item {
+                        SoloProgressHero(
+                            progress = overviewState.soloProgress,
+                            onOpenRanks = onOpenRanks
+                        )
+                    }
+                    item { LifetimeProgressCard(metrics = overviewState.todayHeroMetrics) }
+                    item {
+                        ActivityHeatmapCard(
+                            heatmap = overviewState.activityHeatmap,
                             isCurrentMonth = overviewState.monthOffset == 0,
                             onPreviousMonth = onPreviousOverviewMonth,
                             onCurrentMonth = onCurrentOverviewMonth,
                             onNextMonth = onNextOverviewMonth
                         )
                     }
-                    item { com.example.gymapp.ui.components.WeeklyReviewCard(weeklyHistory, weeklyTarget, onOpenWorkout) }
-                    item { SoloProgressHero(progress = overviewState.soloProgress) }
-                    item { ActivityHeatmapCard(heatmap = overviewState.activityHeatmap) }
                     item {
                         MuscleHeatmapCard(
                             heatmap = overviewState.muscleHeatmap,

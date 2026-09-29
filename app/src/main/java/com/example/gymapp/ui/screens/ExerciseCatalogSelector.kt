@@ -53,7 +53,8 @@ internal fun ExerciseCatalogSelector(
     exerciseMuscleIds: Map<String, Set<String>>,
     exerciseMediaOwnerKey: String,
     onExerciseSelected: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trigger: (@Composable (openPicker: () -> Unit) -> Unit)? = null
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -93,17 +94,21 @@ internal fun ExerciseCatalogSelector(
         ).filter { exercise -> !frequentOnly || exercise.id in frequentExerciseIds }
     }
 
-    OutlinedButton(
-        onClick = { expanded = true },
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Icon(imageVector = Icons.Default.Search, contentDescription = null)
-        Text(
-            text = selectedLabel,
-            modifier = Modifier.padding(start = 8.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+    if (trigger != null) {
+        trigger { expanded = true }
+    } else {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = modifier.fillMaxWidth()
+        ) {
+            Icon(imageVector = Icons.Default.Search, contentDescription = null)
+            Text(
+                text = selectedLabel,
+                modifier = Modifier.padding(start = 8.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 
     if (expanded) {

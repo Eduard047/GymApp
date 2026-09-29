@@ -1,6 +1,7 @@
 ﻿package com.example.gymapp.util
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -18,6 +19,21 @@ object DateTimeUtils {
             formatters[key] = it
         }
     }
+
+    private val russianGenitiveMonths = listOf(
+        "января",
+        "февраля",
+        "марта",
+        "апреля",
+        "мая",
+        "июня",
+        "июля",
+        "августа",
+        "сентября",
+        "октября",
+        "ноября",
+        "декабря"
+    )
 
     private val ukrainianGenitiveMonths = listOf(
         "січня",
@@ -76,11 +92,24 @@ object DateTimeUtils {
         locale: Locale = Locale.getDefault(),
         zoneId: ZoneId = ZoneId.systemDefault()
     ): String {
-        val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+        return formatLongDate(Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate(), locale)
+    }
+
+    /** Full date with the wide weekday and a genitive month, without a trailing period. */
+    fun formatLongDate(
+        date: LocalDate,
+        locale: Locale = Locale.getDefault()
+    ): String {
         if (locale.language.equals("uk", ignoreCase = true)) {
             val weekday = date.format(formatter("EEEE", locale))
             return "$weekday, ${date.dayOfMonth} " +
                 "${ukrainianGenitiveMonths[date.monthValue - 1]} ${date.year}"
+        }
+        if (locale.language.equals("ru", ignoreCase = true)) {
+            // Android's MMMM yields the nominative month for Russian; dates need the genitive.
+            val weekday = date.format(formatter("EEEE", locale))
+            return "$weekday, ${date.dayOfMonth} " +
+                "${russianGenitiveMonths[date.monthValue - 1]} ${date.year}"
         }
         return date.format(formatter("EEEE, d MMMM yyyy", locale))
     }
@@ -110,6 +139,63 @@ object DateTimeUtils {
             text.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
         } else {
             text
+        }
+    }
+
+    /** Short date (see [formatShortDate]) for a calendar day given as days since the epoch. */
+    fun formatEpochDayShort(
+        epochDay: Long,
+        locale: Locale = Locale.getDefault(),
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        now: Long = System.currentTimeMillis()
+    ): String {
+        val timestamp = LocalDate.ofEpochDay(epochDay).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        return formatShortDate(timestamp, locale, zoneId, now)
+    }
+
+    /**
+     * Compact date span such as "Sep 21 – 27", "21–27 вер." or "21—27 сент."; the year (with the
+     * locale's suffix) is added only when the end year differs from the year of [now]. Reproduces
+     * the iOS `DateIntervalFormatter` output, including its thin and narrow spaces.
+     */
+    fun formatDateRange(
+        start: LocalDate,
+        end: LocalDate,
+        locale: Locale = Locale.getDefault(),
+        now: LocalDate = LocalDate.now()
+    ): String {
+        val sameMonth = start.year == end.year && start.month == end.month
+        val crossYear = start.year != end.year
+        val includeYear = crossYear || end.year != now.year
+        fun month(date: LocalDate) = date.format(formatter("MMM", locale))
+        val startDay = start.dayOfMonth
+        val endDay = end.dayOfMonth
+        return when (locale.language.lowercase(Locale.ROOT)) {
+            "uk" -> {
+                val suffix = if (crossYear) "\u202Fрр." else "\u202Fр."
+                val endYear = if (includeYear) " ${end.year}$suffix" else ""
+                when {
+                    sameMonth -> "$startDay\u2013$endDay ${month(end)}$endYear"
+                    crossYear -> "$startDay ${month(start)} ${start.year} \u2013 $endDay ${month(end)}$endYear"
+                    else -> "$startDay ${month(start)} \u2013 $endDay ${month(end)}$endYear"
+                }
+            }
+            "ru" -> {
+                val endYear = if (includeYear) " ${end.year}\u202Fг." else ""
+                when {
+                    sameMonth -> "$startDay\u2014$endDay ${month(end)}$endYear"
+                    crossYear -> "$startDay ${month(start)} ${start.year}\u2009\u2014\u2009$endDay ${month(end)}$endYear"
+                    else -> "$startDay ${month(start)}\u2009\u2014\u2009$endDay ${month(end)}$endYear"
+                }
+            }
+            else -> {
+                val endYear = if (includeYear) ", ${end.year}" else ""
+                when {
+                    sameMonth -> "${month(start)} $startDay\u2009\u2013\u2009$endDay$endYear"
+                    crossYear -> "${month(start)} $startDay, ${start.year}\u2009\u2013\u2009${month(end)} $endDay$endYear"
+                    else -> "${month(start)} $startDay\u2009\u2013\u2009${month(end)} $endDay$endYear"
+                }
+            }
         }
     }
 }

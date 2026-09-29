@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -27,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,6 +38,7 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.GymSegmentItem
+import com.example.gymapp.ui.components.GymProgressBar
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
@@ -395,12 +396,16 @@ private fun MuscleImpactRow(muscle: PostWorkoutMuscleUiState) {
                 maxLines = 1
             )
             Text(
-                text = stringResource(R.string.post_workout_muscle_load, muscle.load, muscle.sets),
+                text = stringResource(
+                    R.string.post_workout_muscle_load,
+                    muscle.load,
+                    pluralStringResource(R.plurals.progress_sets_count, muscle.sets, muscle.sets)
+                ),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
             )
         }
-        LinearProgressIndicator(
+        GymProgressBar(
             progress = { muscle.intensity.coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth()
         )
@@ -491,7 +496,7 @@ private fun LevelProgressCard(uiState: PostWorkoutSummaryUiState) {
                 ),
                 style = MaterialTheme.typography.bodyLarge
             )
-            LinearProgressIndicator(
+            GymProgressBar(
                 progress = { uiState.levelProgress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth()
             )

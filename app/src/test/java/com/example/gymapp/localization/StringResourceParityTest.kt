@@ -169,8 +169,9 @@ class StringResourceParityTest {
             "exercise_sort_least_frequent" to "Реже всего",
             "action_copy_last_plus" to "Копировать предыдущий + 2,5 кг",
             "post_workout_view_workout" to "Посмотреть тренировку",
-            "achievements_supporting" to
-                "Полная галерея значков, прогресс и награды за открытие.",
+            "achievements_gallery_subtitle" to
+                "Все основные цели, их прогресс, редкость и дата открытия.",
+            "achievement_status_locked" to "Закрыто",
             "rank_status_unlocked" to "Открыт",
             "post_workout_logged_today" to "Записано сегодня",
             "post_workout_logged_recently" to "Записано недавно",

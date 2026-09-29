@@ -1,6 +1,20 @@
 ﻿package com.example.gymapp.ui.screens
 
+import com.example.gymapp.ui.components.GymProgressBar
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,13 +26,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,6 +51,7 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.ExerciseSpotlightCard
 import com.example.gymapp.ui.components.ExerciseTrendChartsCard
+import com.example.gymapp.ui.components.GymMonthNavigator
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
@@ -71,13 +93,17 @@ fun ExerciseProgressScreen(
     } else {
         null
     }
+    val spotlightSubtitle = stringResource(
+        R.string.progress_spotlight_subtitle,
+        pluralStringResource(
+            R.plurals.progress_sessions_count,
+            uiState.progressPoints.size,
+            uiState.progressPoints.size
+        )
+    )
     val localizedSpotlight = uiState.spotlight.copy(
         title = selectedDisplayExerciseName ?: uiState.spotlight.title,
-        subtitle = if (selectedDisplayExerciseName != null && uiState.progressPoints.isEmpty()) {
-            stringResource(R.string.progress_log_sets_hint, selectedDisplayExerciseName)
-        } else {
-            uiState.spotlight.subtitle
-        }
+        subtitle = spotlightSubtitle
     )
     val selectedMuscleIntensities = remember(uiState.selectedExerciseName) {
         uiState.selectedExerciseName
@@ -111,55 +137,22 @@ fun ExerciseProgressScreen(
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
             item {
-                MonthSwitcher(
+                GymMonthNavigator(
                     monthLabel = uiState.monthLabel,
                     isCurrentMonth = uiState.monthOffset == 0,
-                    onPreviousMonth = onPreviousMonth,
-                    onCurrentMonth = onCurrentMonth,
-                    onNextMonth = onNextMonth,
-                    modifier = Modifier.padding(horizontal = 0.dp)
+                    onPrevious = onPreviousMonth,
+                    onCurrent = onCurrentMonth,
+                    onNext = onNextMonth,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 
             item {
-                ExerciseCatalogSelector(
-                    selectedExerciseId = uiState.selectedExerciseId,
-                    exercises = uiState.exercises,
-                    frequentExerciseIds = uiState.frequentExerciseIds,
-                    exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
-                    exerciseMuscleIds = uiState.exerciseMuscleIds,
+                ExerciseSelectorCard(
+                    uiState = uiState,
                     exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                    onExerciseSelected = onSelectExercise
+                    onSelectExercise = onSelectExercise
                 )
-            }
-
-            uiState.exercises.firstOrNull { it.id == uiState.selectedExerciseId }?.let { exercise ->
-                item(key = "selected_exercise_media_${exercise.id}") {
-                    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            ExerciseMediaPreview(
-                                exerciseId = exercise.id,
-                                exerciseName = exercise.name,
-                                ownerKey = exerciseMediaOwnerKey,
-                                width = 96.dp,
-                                height = 80.dp
-                            )
-                            Text(
-                                text = localizedExerciseName(exercise.name),
-                                style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
             }
 
             if (selectedDisplayExerciseName == null) {
@@ -174,7 +167,6 @@ fun ExerciseProgressScreen(
                 if (selectedMuscleIntensities.isNotEmpty()) {
                     item {
                         ProgressMuscleBreakdownCard(
-                            exerciseName = uiState.selectedExerciseName.orEmpty(),
                             muscleIntensities = selectedMuscleIntensities
                         )
                     }
@@ -189,26 +181,24 @@ fun ExerciseProgressScreen(
                     )
                 }
 
-                item {
-                    ExerciseSpotlightCard(spotlight = localizedSpotlight)
-                }
-
-                item {
-                    ExerciseTrendChartsCard(chart = uiState.trendChart)
-                }
-
                 if (sessionGroups.isEmpty()) {
                     item {
                         EmptyStatePanel(
-                            title = stringResource(R.string.empty_progress),
-                            supporting = stringResource(
-                                R.string.progress_log_sets_hint,
-                                selectedDisplayExerciseName
-                            ),
+                            title = stringResource(R.string.progress_empty_month_title),
+                            supporting = stringResource(R.string.progress_empty_month_text),
+                            icon = Icons.AutoMirrored.Filled.ShowChart,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                 } else {
+                    item {
+                        ExerciseSpotlightCard(spotlight = localizedSpotlight)
+                    }
+
+                    item {
+                        ExerciseTrendChartsCard(chart = uiState.trendChart)
+                    }
+
                     item {
                         SectionTitle(
                             eyebrow = stringResource(R.string.progress_recent_sessions_title),
@@ -230,9 +220,9 @@ fun ExerciseProgressScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProgressMuscleBreakdownCard(
-    exerciseName: String,
     muscleIntensities: Map<String, Float>,
     modifier: Modifier = Modifier
 ) {
@@ -243,6 +233,26 @@ private fun ProgressMuscleBreakdownCard(
             .toList()
             .sortedByDescending { it.second }
     }
+    val largeText = LocalDensity.current.fontScale >= 1.4f
+    val title: @Composable (Modifier) -> Unit = { titleModifier ->
+        Text(
+            text = stringResource(R.string.progress_muscle_breakdown_title),
+            modifier = titleModifier.semantics { heading() },
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+    val groupsPill: @Composable () -> Unit = {
+        InfoPill(
+            text = pluralStringResource(
+                R.plurals.progress_muscle_groups_count,
+                sortedMuscles.size,
+                sortedMuscles.size
+            ),
+            leadingIcon = Icons.Default.FitnessCenter
+        )
+    }
 
     AppPanel(
         modifier = modifier.fillMaxWidth(),
@@ -252,18 +262,20 @@ private fun ProgressMuscleBreakdownCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = stringResource(R.string.muscle_heatmap_top_title),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = localizedExerciseName(exerciseName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+            if (largeText) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    title(Modifier)
+                    groupsPill()
+                }
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    title(Modifier.padding(end = 10.dp))
+                    groupsPill()
+                }
             }
 
             sortedMuscles.forEach { (muscleId, intensity) ->
@@ -286,7 +298,7 @@ private fun ProgressMuscleBreakdownCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    LinearProgressIndicator(
+                    GymProgressBar(
                         progress = { normalizedIntensity },
                         modifier = Modifier.fillMaxWidth(),
                         color = if (normalizedIntensity >= 0.75f) {
@@ -297,6 +309,104 @@ private fun ProgressMuscleBreakdownCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseSelectorCard(
+    uiState: ExerciseProgressUiState,
+    exerciseMediaOwnerKey: String,
+    onSelectExercise: (Long) -> Unit
+) {
+    val selectedExercise = uiState.exercises.firstOrNull { it.id == uiState.selectedExerciseId }
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.progress_choose_exercise),
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.titleMedium
+            )
+            ExerciseCatalogSelector(
+                selectedExerciseId = uiState.selectedExerciseId,
+                exercises = uiState.exercises,
+                frequentExerciseIds = uiState.frequentExerciseIds,
+                exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
+                exerciseMuscleIds = uiState.exerciseMuscleIds,
+                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                onExerciseSelected = onSelectExercise,
+                trigger = selectedExercise?.let { exercise ->
+                    { openPicker ->
+                        val sessionCount = uiState.exerciseWorkoutCounts[exercise.id] ?: 0
+                        val exerciseName = localizedExerciseName(exercise.name)
+                        val changeLabel = stringResource(R.string.cd_change_exercise)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            ExerciseMediaPreview(
+                                exerciseId = exercise.id,
+                                exerciseName = exercise.name,
+                                ownerKey = exerciseMediaOwnerKey,
+                                width = 84.dp,
+                                height = 68.dp
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .clickable(role = Role.Button, onClick = openPicker)
+                                    .semantics(mergeDescendants = true) {
+                                        contentDescription = changeLabel
+                                        stateDescription = exerciseName
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = exerciseName,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.progress_logged_sessions,
+                                            sessionCount
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            )
         }
     }
 }

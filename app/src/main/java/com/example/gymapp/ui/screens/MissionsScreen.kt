@@ -1,7 +1,7 @@
 package com.example.gymapp.ui.screens
 
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.BorderStroke
+import com.example.gymapp.ui.components.GymProgressBar
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -19,9 +19,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -30,7 +31,6 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,10 +44,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
@@ -58,13 +61,15 @@ import com.example.gymapp.R
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.EmptyStatePanel
-import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.LoadingStatePanel
-import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.theme.GymCompactShape
+import com.example.gymapp.ui.theme.GymPanelShape
 import com.example.gymapp.ui.viewmodel.MissionProgressUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
 import com.example.gymapp.util.asString
+import com.example.gymapp.util.formatXp
+import java.util.Locale
 
 @Composable
 fun MissionsScreen(
@@ -105,10 +110,13 @@ fun MissionsScreen(
         MissionPeriod.Weekly -> uiState.weeklyMissions
         MissionPeriod.Monthly -> uiState.monthlyMissions
     }
-    val levelProgress = uiState.soloProgress.progressFraction
-        .takeIf(Float::isFinite)
-        ?.coerceIn(0f, 1f)
-        ?: 0f
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val levelSummary = stringResource(
+        R.string.missions_level_summary,
+        uiState.soloProgress.level,
+        uiState.soloProgress.title,
+        formatXp(uiState.soloProgress.totalXp, locale)
+    )
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -119,85 +127,7 @@ fun MissionsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            HeroPanel(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = uiState.soloProgress.title,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.post_workout_level,
-                                    uiState.soloProgress.level
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.78f)
-                            )
-                        }
-
-                        Surface(
-                            onClick = onOpenRanks,
-                            modifier = Modifier.size(48.dp),
-                            shape = CircleShape,
-                            color = Color.White.copy(alpha = 0.12f),
-                            contentColor = Color.White,
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.EmojiEvents,
-                                    contentDescription = stringResource(R.string.action_view_ranks),
-                                    modifier = Modifier.size(23.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    LinearProgressIndicator(
-                        progress = { levelProgress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(7.dp),
-                        color = Color.White,
-                        trackColor = Color.White.copy(alpha = 0.18f)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        MetricTile(
-                            label = "XP",
-                            value = uiState.soloProgress.totalXp.toString(),
-                            modifier = Modifier.weight(1f),
-                            emphasized = true,
-                            onHero = true
-                        )
-                        MetricTile(
-                            label = stringResource(R.string.solo_streak_label),
-                            value = stringResource(
-                                R.string.solo_streak_weekly_value,
-                                uiState.soloProgress.weeklyStreakWeeks
-                            ),
-                            modifier = Modifier.weight(1f),
-                            onHero = true
-                        )
-                    }
-                }
-            }
+            MissionLevelRow(summary = levelSummary, onClick = onOpenRanks)
         }
 
         item {
@@ -234,9 +164,11 @@ private fun MissionPeriodSelector(
     onPeriodSelected: (MissionPeriod) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val groupLabel = stringResource(R.string.missions_period_group)
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .semantics { contentDescription = groupLabel }
             .clip(GymCompactShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
             .border(
@@ -292,11 +224,58 @@ private fun MissionPeriodSelector(
 }
 
 @Composable
+private fun MissionLevelRow(
+    summary: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val openRanks = stringResource(R.string.action_view_ranks)
+    AppPanel(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(GymPanelShape)
+            .clickable(onClickLabel = openRanks, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.EmojiEvents,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = summary,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun MissionCard(
     mission: MissionProgressUiModel,
     modifier: Modifier = Modifier
 ) {
-    val accentColor = if (mission.isComplete) {
+    val barColor = if (mission.isComplete) {
         MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.secondary
@@ -322,8 +301,8 @@ private fun MissionCard(
         highlighted = mission.isComplete
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(11.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -336,13 +315,13 @@ private fun MissionCard(
                 ) {
                     Icon(
                         imageVector = if (mission.isComplete) {
-                            Icons.Default.CheckCircle
+                            Icons.Default.Verified
                         } else {
                             missionIcon(mission.id)
                         },
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
-                        tint = accentColor
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
 
@@ -352,6 +331,7 @@ private fun MissionCard(
                 ) {
                     Text(
                         text = mission.title,
+                        modifier = Modifier.semantics { heading() },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
@@ -365,25 +345,38 @@ private fun MissionCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.missions_progress_value,
+                            mission.progress,
+                            mission.goal
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                    if (mission.isComplete) {
+                        InfoPill(
+                            text = stringResource(R.string.missions_status_completed),
+                            leadingIcon = Icons.Default.Check
+                        )
+                    }
+                }
             }
 
-            LinearProgressIndicator(
+            GymProgressBar(
                 progress = { progressValue },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(7.dp),
-                color = accentColor,
+                color = barColor,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-
-            Text(
-                text = mission.progressLabel,
-                style = MaterialTheme.typography.labelMedium,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
         }
     }

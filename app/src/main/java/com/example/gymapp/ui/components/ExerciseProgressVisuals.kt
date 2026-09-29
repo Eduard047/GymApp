@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -121,7 +122,11 @@ fun ExerciseTrendChartsCard(
             Text(
                 text = stringResource(
                     R.string.progress_visual_trends_subtitle,
-                    chart.points.size
+                    pluralStringResource(
+                        R.plurals.progress_sessions_count,
+                        chart.points.size,
+                        chart.points.size
+                    )
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

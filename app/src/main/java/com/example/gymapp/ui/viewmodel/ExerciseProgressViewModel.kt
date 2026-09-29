@@ -271,18 +271,7 @@ class ExerciseProgressViewModel(
                 title = exerciseName ?: t(
                     en = "No exercise data yet",
                     uk = "Ще немає даних вправи"
-                ),
-                subtitle = if (exerciseName == null) {
-                    t(
-                        en = "Pick an exercise to see solo progress.",
-                        uk = "Обери вправу, щоб побачити свій прогрес."
-                    )
-                } else {
-                    t(
-                        en = "Log sets for $exerciseName to unlock trends.",
-                        uk = "Додай підходи для $exerciseName, щоб відкрити тренди."
-                    )
-                }
+                )
             )
         }
 
@@ -292,11 +281,6 @@ class ExerciseProgressViewModel(
 
         return ExerciseProgressSpotlightUiModel(
             title = exerciseName ?: t(en = "Exercise spotlight", uk = "Фокус вправи"),
-            subtitle = when {
-                isUkrainian -> "${monthPoints.size} сес. у вибраному місяці."
-                isRussian -> "${monthPoints.size} сес. в выбранном месяце."
-                else -> "${monthPoints.size} session${if (monthPoints.size == 1) "" else "s"} in the selected month."
-            },
             latestWeightLabel = formatWeight(latest.maxWeight),
             latestWeightCaption = t(en = "Latest max", uk = "Останній макс"),
             weightDeltaLabel = deltaLabel(

@@ -13,6 +13,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.Role
+import com.example.gymapp.util.TrainingProfile
+import java.time.LocalDate
+import java.util.Locale
 import com.example.gymapp.util.DateTimeUtils
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.WeeklyReview
@@ -20,7 +27,22 @@ import com.example.gymapp.data.repository.WeeklyReviewInsight
 import com.example.gymapp.ui.util.localizedExerciseName
 
 @Composable
-fun WeeklyReviewCard(history: List<ExerciseHistoryEntry>, target: Int, onOpenWorkout: (Long) -> Unit) {
+fun WeeklyReviewCard(
+    history: List<ExerciseHistoryEntry>,
+    target: Int,
+    onOpenWorkout: (Long) -> Unit,
+    trainingProfile: TrainingProfile = TrainingProfile(workoutsPerWeek = target.coerceIn(2, 6)),
+    onTrainingProfileChange: (TrainingProfile) -> Unit = {}
+) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    var showTrainingSettings by rememberSaveable { mutableStateOf(false) }
+    if (showTrainingSettings) {
+        TrainingSettingsSheet(
+            profile = trainingProfile,
+            onProfileChange = onTrainingProfileChange,
+            onDismiss = { showTrainingSettings = false }
+        )
+    }
     var offset by rememberSaveable { mutableIntStateOf(0) }
     var evidence by remember { mutableStateOf<WeeklyReviewInsight?>(null) }
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -33,7 +55,7 @@ fun WeeklyReviewCard(history: List<ExerciseHistoryEntry>, target: Int, onOpenWor
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.training_previous_week))
                 }
                 Text(
-                    "${review.start.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM"))} – ${review.end.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM"))}",
+                    DateTimeUtils.formatDateRange(review.start, review.end, locale, LocalDate.now()),
                     modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center
                 )
                 IconButton(onClick = { offset = (offset + 1).coerceAtMost(0) }, enabled = offset < 0) {
@@ -41,7 +63,23 @@ fun WeeklyReviewCard(history: List<ExerciseHistoryEntry>, target: Int, onOpenWor
                 }
             }
             if (review.partial) Text(stringResource(R.string.training_partial_week), style = MaterialTheme.typography.labelMedium)
-            Text(stringResource(R.string.training_days_goal, review.trainingDays, target), style = MaterialTheme.typography.titleMedium)
+            Text(
+                pluralStringResource(R.plurals.training_weekly_progress, target, review.trainingDays, target),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = stringResource(R.string.training_settings_title) + " · " + stringResource(R.string.training_settings_edit),
+                style = MaterialTheme.typography.bodySmall,
+                color = brandFillColor(),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .clickable(
+                        onClickLabel = stringResource(R.string.training_settings_edit_description),
+                        role = Role.Button,
+                        onClick = { showTrainingSettings = true }
+                    )
+                    .wrapContentHeight(Alignment.CenterVertically)
+            )
             review.insights.forEach { insight ->
                 OutlinedButton(onClick = { evidence = insight }, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {

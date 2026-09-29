@@ -111,7 +111,8 @@ data class SoloProgressUiModel(
     val weeklyStreakWeeks: Int = 0,
     val weeklyTarget: Int = 4,
     val summary: String = "",
-    val nextTitle: String = "--"
+    val nextTitle: String = "--",
+    val isTopRank: Boolean = false
 )
 
 data class ActivityHeatmapDayUiModel(
@@ -243,7 +244,8 @@ data class AchievementPreviewUiModel(
     val progress: Int,
     val goal: Int,
     val progressFraction: Float = 0f,
-    val isUnlocked: Boolean = false
+    val isUnlocked: Boolean = false,
+    val unlockedAtEpochDay: Long? = null
 )
 
 data class TodayPlanUiModel(
@@ -562,7 +564,7 @@ class WorkoutListViewModel(
         } else {
             null
         }
-        val todayHeroMetrics = if (surface.needsTodayPlan) {
+        val todayHeroMetrics = if (surface.needsTodayPlan || surface.needsProgressInsights) {
             buildTodayHeroMetrics(
                 sessions = allSessions,
                 weeklyStreakWeeks = WeeklyStreakCalculator.current(
@@ -1345,7 +1347,8 @@ class WorkoutListViewModel(
             weeklyStreakWeeks = weeklyStreakWeeks,
             weeklyTarget = weeklyTarget,
             summary = summary,
-            nextTitle = nextTitle
+            nextTitle = nextTitle,
+            isTopRank = RANK_DEFINITIONS.none { levelInfo.level < it.levelRequirement }
         )
     }
 
@@ -1387,9 +1390,7 @@ class WorkoutListViewModel(
             cells += ActivityHeatmapDayUiModel(
                 id = cursor.toString(),
                 dayNumber = cursor.dayOfMonth,
-                dayLabel = cursor.format(
-                    DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale)
-                ),
+                dayLabel = DateTimeUtils.formatLongDate(cursor, locale),
                 sessionCount = sessionCount,
                 totalVolume = totalVolume,
                 intensity = intensity,
@@ -1839,7 +1840,8 @@ class WorkoutListViewModel(
                     ?.coerceIn(0.0, 1.0)
                     ?.toFloat()
                     ?: 0f,
-                isUnlocked = achievement.unlocked
+                isUnlocked = achievement.unlocked,
+                unlockedAtEpochDay = achievement.unlockedAtEpochDay
             )
         }
     }

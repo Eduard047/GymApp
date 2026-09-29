@@ -92,11 +92,34 @@ test("native mission boards retain the same concise hierarchy and copy", () => {
   }
 });
 
-test("Android mission hero matches the iOS XP and week-streak metrics", () => {
+test("Android mission hero is the compact iOS level row that opens ranks", async () => {
   const hero = androidScreen.slice(0, androidScreen.indexOf("private fun MissionCard"));
-  assert.match(hero, /label = "XP"/);
-  assert.match(hero, /R\.string\.solo_streak_weekly_value/);
-  assert.doesNotMatch(hero, /R\.string\.solo_weekly_rhythm_value/);
+  assert.match(hero, /R\.string\.missions_level_summary/);
+  assert.match(hero, /formatXp\(uiState\.soloProgress\.totalXp/);
+  assert.match(hero, /onClickLabel = openRanks/);
+  assert.match(hero, /heightIn\(min = 48\.dp\)/);
+  assert.match(hero, /maxLines = 1/);
+  assert.match(hero, /Icons\.Default\.EmojiEvents/);
+  assert.match(hero, /KeyboardArrowRight/);
+  assert.doesNotMatch(hero, /HeroPanel|MetricTile|solo_weekly_rhythm_value|solo_streak_weekly_value/);
+  for (const [file, level] of [
+    ["values", "Level %1$d \u00b7 %2$s \u00b7 %3$s XP"],
+    ["values-uk", "\u0420\u0456\u0432\u0435\u043d\u044c %1$d \u00b7 %2$s \u00b7 %3$s XP"],
+    ["values-ru", "\u0423\u0440\u043e\u0432\u0435\u043d\u044c %1$d \u00b7 %2$s \u00b7 %3$s XP"]
+  ]) {
+    const xml = await readFile(`app/src/main/res/${file}/strings.xml`, "utf8");
+    assert.ok(xml.includes(`<string name="missions_level_summary">${level}</string>`), file);
+  }
+});
+
+test("Android mission card matches the iOS counter, pill, and tint hierarchy", () => {
+  const card = androidScreen.slice(androidScreen.indexOf("private fun MissionCard"));
+  assert.match(card, /R\.string\.missions_progress_value,\s*mission\.progress,\s*mission\.goal/);
+  assert.match(card, /InfoPill\(\s*text = stringResource\(R\.string\.missions_status_completed\)/);
+  assert.match(card, /tint = MaterialTheme\.colorScheme\.primary/);
+  assert.match(card, /vertical = 13\.dp/);
+  assert.match(card, /spacedBy\(9\.dp\)/);
+  assert.doesNotMatch(card, /mission\.progressLabel/);
 });
 
 test("Android mission cards retain the same semantic icon roles as iOS", () => {

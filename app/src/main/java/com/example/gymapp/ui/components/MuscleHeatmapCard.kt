@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -39,8 +38,11 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,26 +75,17 @@ fun MuscleHeatmapCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.muscle_heatmap_title),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.muscle_heatmap_supporting),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                InfoPill(text = heatmap.periodLabel)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.muscle_heatmap_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() }
+                )
+                Text(
+                    text = stringResource(R.string.muscle_heatmap_supporting),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             MusclePeriodSelector(
@@ -107,11 +100,22 @@ fun MuscleHeatmapCard(
                 MetricTile(
                     label = stringResource(R.string.muscle_heatmap_sets),
                     value = heatmap.totalSets.toString(),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    emphasized = true
                 )
                 MetricTile(
                     label = stringResource(R.string.muscle_heatmap_load),
                     value = heatmap.totalLoad.toString(),
+                    modifier = Modifier.weight(1f),
+                    emphasized = true
+                )
+                MetricTile(
+                    label = stringResource(R.string.muscle_heatmap_mapped),
+                    value = stringResource(
+                        R.string.muscle_heatmap_mapped_value,
+                        heatmap.mappedExerciseCount,
+                        heatmap.totalExerciseCount
+                    ),
                     modifier = Modifier.weight(1f),
                     emphasized = true
                 )
@@ -351,7 +355,7 @@ fun ExerciseMuscleBreakdownCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    LinearProgressIndicator(
+                    GymProgressBar(
                         progress = { intensity.coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -529,8 +533,8 @@ private fun SelectedMuscleHighlight(
                 R.string.muscle_heatmap_highlight_detail,
                 muscle.label,
                 muscle.load,
-                muscle.sets,
-                muscle.sessions
+                setsCountText(muscle.sets),
+                sessionsCountText(muscle.sessions)
             ),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             style = MaterialTheme.typography.bodySmall,
@@ -590,8 +594,8 @@ private fun SelectedMuscleExercises(
                                 text = stringResource(
                                     R.string.muscle_heatmap_exercise_detail,
                                     exercise.load,
-                                    exercise.sets,
-                                    exercise.sessions
+                                    setsCountText(exercise.sets),
+                                    sessionsCountText(exercise.sessions)
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -636,8 +640,8 @@ private fun UnmappedExercises(
                     Text(
                         text = stringResource(
                             R.string.muscle_heatmap_unmapped_detail,
-                            exercise.sets,
-                            exercise.sessions
+                            setsCountText(exercise.sets),
+                            sessionsCountText(exercise.sessions)
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -711,14 +715,14 @@ private fun ExerciseMappingRow(
                         stringResource(
                             R.string.muscle_heatmap_mapping_detail,
                             exercise.muscleLabels,
-                            exercise.sets,
-                            exercise.sessions
+                            setsCountText(exercise.sets),
+                            sessionsCountText(exercise.sessions)
                         )
                     } else {
                         stringResource(
                             R.string.muscle_heatmap_mapping_unmapped_detail,
-                            exercise.sets,
-                            exercise.sessions
+                            setsCountText(exercise.sets),
+                            sessionsCountText(exercise.sessions)
                         )
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -894,7 +898,7 @@ private fun TopMuscleRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        LinearProgressIndicator(
+        GymProgressBar(
             progress = { muscle.intensity },
             modifier = Modifier
                 .fillMaxWidth()
@@ -906,9 +910,9 @@ private fun TopMuscleRow(
         Text(
             text = stringResource(
                 R.string.muscle_heatmap_muscle_detail,
-                muscle.sets,
-                muscle.sessions,
-                muscle.exercises
+                setsCountText(muscle.sets),
+                sessionsCountText(muscle.sessions),
+                exercisesCountText(muscle.exercises)
             ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1102,3 +1106,15 @@ private data class RenderedSourceRegion(
     val path: Path,
     val bounds: Rect
 )
+
+@Composable
+private fun setsCountText(count: Int): String =
+    pluralStringResource(R.plurals.progress_sets_count, count, count)
+
+@Composable
+private fun sessionsCountText(count: Int): String =
+    pluralStringResource(R.plurals.progress_sessions_count, count, count)
+
+@Composable
+private fun exercisesCountText(count: Int): String =
+    pluralStringResource(R.plurals.progress_exercises_count, count, count)

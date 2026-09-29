@@ -3779,6 +3779,8 @@ internal fun GymAppRoot(
                             ProgressHubScreen(
                                 weeklyHistory = weeklyHistory,
                                 weeklyTarget = weeklyProfile.workoutsPerWeek,
+                                trainingProfile = weeklyProfile,
+                                onTrainingProfileChange = updateTrainingProfile,
                                 onOpenWorkout = { navController.navigate(AppDestination.workoutDetailRoute(it)) },
                                 programOwnerKey = checkNotNull(authState.session).databaseName(),
                                 programSessions = programSessions,

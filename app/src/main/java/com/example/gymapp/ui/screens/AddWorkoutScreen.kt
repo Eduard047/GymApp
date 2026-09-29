@@ -990,8 +990,16 @@ private fun WorkoutTemplatePickerContent(
                         Text(
                             text = stringResource(
                                 R.string.template_picker_summary,
-                                template.exerciseCount,
-                                template.setCount,
+                                pluralStringResource(
+                                    R.plurals.saved_workout_exercise_count,
+                                    template.exerciseCount,
+                                    template.exerciseCount
+                                ),
+                                pluralStringResource(
+                                    R.plurals.saved_workout_set_count,
+                                    template.setCount,
+                                    template.setCount
+                                ),
                                 String.format(Locale.getDefault(), "%.0f", template.totalVolume)
                             ),
                             style = MaterialTheme.typography.bodySmall,
