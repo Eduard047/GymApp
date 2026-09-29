@@ -42,6 +42,7 @@ const nativeDateSurfaces = Object.fromEntries(await Promise.all([
   "app/src/main/java/com/example/gymapp/ui/screens/ExerciseProgressScreen.kt",
   "app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt",
   "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
+  "app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt",
   "app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt",
   "ios/GymApp-iOS/GymApp/UI/Screens/AddWorkoutView.swift",
   "ios/GymApp-iOS/GymApp/UI/Screens/WorkoutDetailView.swift",
@@ -104,7 +105,7 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   );
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt"), /DateTimeUtils\.formatDate\(sessionTimestamp, locale\)/);
   assert.match(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /ofPattern\("EEEEE d", locale\)/);
-  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt"), /DateFormat\.getDateTimeInstance/);
+  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt"), /DateFormat\.getDateTimeInstance/);
 
   for (const path of [
     "ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift",

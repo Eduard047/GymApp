@@ -68,11 +68,16 @@ class WorkoutListLoadRecoveryTest {
 
         assertEquals("Athlete", presentation.label)
         assertEquals("athlete@example.test", presentation.supporting)
+        assertEquals("user-1", presentation.id)
         assertTrue(presentation.isCloudAccount)
         assertTrue(presentation.canLogout)
 
         val unavailable = exerciseAccountUiModel(session = null, canLogout = true)
         assertFalse(unavailable.isCloudAccount)
         assertFalse(unavailable.canLogout)
+        assertEquals("", unavailable.id)
+
+        val local = exerciseAccountUiModel(AccountSession.Local("Athlete"), canLogout = true)
+        assertTrue(local.id.startsWith("local_v2_"))
     }
 }

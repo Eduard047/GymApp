@@ -56,32 +56,38 @@ test("Android persisted-delete controls name the exact visible target", async ()
 });
 
 test("Android account actions stay on their exact account type", async () => {
-  const source = await readFile(
-    "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
-    "utf8"
-  );
-  const start = source.indexOf("private fun LazyListScope.profileSettingsContent(");
-  const end = source.indexOf("private fun LocalProfileActionsCard(", start);
-  assert.ok(start >= 0 && end > start, "profile settings source section is missing");
+  const [profile, sheet] = await Promise.all([
+    readFile("app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt", "utf8"),
+    readFile("app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt", "utf8")
+  ]);
 
-  const settings = source.slice(start, end);
-  const cloudBranch = settings.lastIndexOf("if (accountState.isCloudAccount) {");
-  const localBranch = settings.indexOf("    } else {", cloudBranch);
-  const cloudActions = settings.indexOf("CloudAccountActionsCard(", cloudBranch);
-  const localActions = settings.indexOf("LocalProfileActionsCard(", localBranch);
-
+  // Deletion rows: one branch per account type, at the very bottom of the sheet.
+  const start = sheet.indexOf("private fun AccountDeleteRow(");
+  const end = sheet.indexOf("\n}\n", start);
+  assert.ok(start >= 0 && end > start, "account delete row source section is missing");
+  const deleteRow = sheet.slice(start, end);
+  const cloudBranch = deleteRow.indexOf("if (isCloudAccount) {");
+  const localBranch = deleteRow.indexOf("} else {", cloudBranch);
   assert.ok(cloudBranch >= 0 && localBranch > cloudBranch, "account type split is missing");
-  assert.ok(
-    cloudActions > cloudBranch && cloudActions < localBranch,
-    "password and cloud-account deletion must be cloud-only"
+  const cloudActions = deleteRow.slice(cloudBranch, localBranch);
+  const localActions = deleteRow.slice(localBranch);
+  assert.match(cloudActions, /onDeleteAccount/, "cloud-account deletion must be cloud-only");
+  assert.doesNotMatch(cloudActions, /onDeleteLocalProfile/);
+  assert.match(localActions, /onDeleteLocalProfile/, "local-profile deletion must be local-only");
+  assert.doesNotMatch(localActions, /onDeleteAccount/, "local profiles must never render cloud-account actions");
+
+  // Change password is cloud-only inside the sheet body.
+  const body = sheet.slice(0, start);
+  assert.match(
+    body,
+    /if \(state\.isCloudAccount\) \{\s*SettingsRow\(\s*icon = Icons\.Default\.Lock,[^}]*onClick = onChangePassword/,
+    "change password must sit in a cloud-only branch"
   );
-  assert.ok(
-    localActions > localBranch,
-    "local-profile deletion must be local-only"
-  );
-  assert.equal(
-    settings.indexOf("CloudAccountActionsCard(", localBranch),
-    -1,
-    "local profiles must never render cloud-account actions"
-  );
+  assert.equal(body.indexOf("onDeleteAccount()"), -1, "sheet must not delete without confirmation");
+
+  // Confirmation flows stay in Profile: the sheet only opens them.
+  assert.match(profile, /onDeleteAccount = \{ showAccountDeletion = true \}/);
+  assert.match(profile, /onDeleteLocalProfile = \{ showLocalProfileDeletion = true \}/);
+  assert.match(profile, /DeleteCloudAccountDialog\(/);
+  assert.match(profile, /local_profile_delete_confirm_title/);
 });

@@ -555,4 +555,16 @@ class SocialNavigationTest {
         progressUpdatedAt = null,
         friendshipRevision = friendshipRevision
     )
+
+    @Test
+    fun languageChangeReopensOnlyNonStartBottomTabs() {
+        assertEquals("leaderboard", languageChangeReturnRoute("leaderboard", isBottomTabRoute = true))
+        assertEquals("progress", languageChangeReturnRoute("progress", isBottomTabRoute = true))
+        assertEquals(
+            null,
+            languageChangeReturnRoute(AppDestination.Workouts.route, isBottomTabRoute = true)
+        )
+        assertEquals(null, languageChangeReturnRoute("workout_detail/1", isBottomTabRoute = false))
+        assertEquals(null, languageChangeReturnRoute(null, isBottomTabRoute = false))
+    }
 }

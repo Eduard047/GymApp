@@ -203,6 +203,18 @@ private fun TrainingSettingsSectionTitle(title: String) {
     )
 }
 
+/** "Goal · Calories · N workouts a week", the one-line read-out of a [TrainingProfile]. */
+@Composable
+fun TrainingProfile.trainingSettingsSummary(): String = listOf(
+    goal.trainingSettingsLabel(),
+    calorieMode.trainingSettingsLabel(),
+    pluralStringResource(
+        R.plurals.training_settings_workouts_a_week,
+        workoutsPerWeek,
+        workoutsPerWeek
+    )
+).joinToString(" · ")
+
 /** Read-only "Goal · Calories · N workouts a week · edit" line; the link opens the editor. */
 @Composable
 fun TrainingSettingsSummaryRow(
@@ -212,15 +224,7 @@ fun TrainingSettingsSummaryRow(
     textColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     linkColor: Color = MaterialTheme.colorScheme.primary
 ) {
-    val summary = listOf(
-        profile.goal.trainingSettingsLabel(),
-        profile.calorieMode.trainingSettingsLabel(),
-        pluralStringResource(
-            R.plurals.training_settings_workouts_a_week,
-            profile.workoutsPerWeek,
-            profile.workoutsPerWeek
-        )
-    ).joinToString(" · ")
+    val summary = profile.trainingSettingsSummary()
     val editLabel = stringResource(R.string.training_settings_edit)
     val editDescription = stringResource(R.string.training_settings_edit_description)
     Row(

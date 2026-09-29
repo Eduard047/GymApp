@@ -58,6 +58,26 @@ test("Android profile relies on the app bar and the two-section switcher", async
   assert.equal(androidScreen.includes("R.string.profile_section_settings"), true);
 });
 
+test("Android profile groups Account, Language, Training settings, Backup and Help in one panel and owns the language menu", async () => {
+  const androidScreen = await readFile(
+    "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
+    "utf8"
+  );
+  const navGraph = await readFile(
+    "app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt",
+    "utf8"
+  );
+
+  assert.equal(androidScreen.includes("TutorialHelpCard"), false);
+  assert.equal(androidScreen.includes("profile_up_to_date"), false);
+  assert.equal(androidScreen.includes("BackupToolsSettingsRow("), true);
+  assert.equal(androidScreen.includes("ProfileLanguageRow("), true);
+  assert.equal(androidScreen.includes("R.string.profile_friends_live_requires_cloud"), true);
+  assert.equal(androidScreen.includes("if (accountState.isCloudAccount) {\n            ProfileSectionSwitcher("), true);
+  assert.equal(navGraph.includes("LanguageSelector("), false);
+  assert.equal(navGraph.includes("onLanguageSelected = languageManager::setLanguage"), true);
+});
+
 test("PWA uses our Garmin listing and an Android intent with a Google Play fallback", async () => {
   const app = await readFile("pwa/app.js", "utf8");
 

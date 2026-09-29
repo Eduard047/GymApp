@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
 import com.example.gymapp.auth.CloudAuthManager
+import com.example.gymapp.auth.localDatabaseLogicalName
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.repository.BackupOwner
 import com.example.gymapp.data.repository.ExerciseDeletionSnapshot
@@ -67,6 +68,7 @@ data class ExerciseListUiState(
     val isImportOpen: Boolean = false,
     val accountLabel: String = "",
     val accountSupporting: String = "",
+    val accountId: String = "",
     val isCloudAccount: Boolean = false,
     val canLogout: Boolean = false
 )
@@ -75,7 +77,9 @@ internal data class ExerciseAccountUiModel(
     val label: String,
     val supporting: String,
     val isCloudAccount: Boolean,
-    val canLogout: Boolean
+    val canLogout: Boolean,
+    /** Cloud user id, or the stable local profile identity; blank when there is no session. */
+    val id: String = ""
 )
 
 internal fun exerciseAccountUiModel(
@@ -86,13 +90,15 @@ internal fun exerciseAccountUiModel(
         label = session.displayName,
         supporting = session.email,
         isCloudAccount = true,
-        canLogout = canLogout
+        canLogout = canLogout,
+        id = session.userId
     )
     is AccountSession.Local -> ExerciseAccountUiModel(
         label = session.displayName,
         supporting = "",
         isCloudAccount = false,
-        canLogout = canLogout
+        canLogout = canLogout,
+        id = localDatabaseLogicalName(session.displayName).orEmpty()
     )
     null -> ExerciseAccountUiModel(
         label = "",
@@ -428,6 +434,7 @@ class ExerciseListViewModel(
                 isImportOpen = backup.isImportOpen,
                 accountLabel = account.label,
                 accountSupporting = account.supporting,
+                accountId = account.id,
                 isCloudAccount = account.isCloudAccount,
                 canLogout = account.canLogout
             )
@@ -839,6 +846,7 @@ class ExerciseListViewModel(
             loadError = loadError,
             accountLabel = account.label,
             accountSupporting = account.supporting,
+            accountId = account.id,
             isCloudAccount = account.isCloudAccount,
             canLogout = account.canLogout
         )

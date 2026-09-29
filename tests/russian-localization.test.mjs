@@ -35,7 +35,10 @@ test("Android Russian resources cover every English string with compatible place
   }
   assert.doesNotMatch([...russian.values()].join("\n"), /[іїєґІЇЄҐ]/);
   assert.match(manager, /RU\("ru"\)/);
-  assert.match(navigation, /onLanguageSelected\(AppLanguage\.RU\)/);
+  // Language is chosen in Profile (and on the auth screen), not in the top bar; every language,
+  // Russian included, is listed by the shared option list and applied through the manager.
+  assert.match(navigation, /onLanguageSelected = languageManager::setLanguage/);
+  assert.match(await readFile("app/src/main/java/com/example/gymapp/ui/components/AppLanguageOptions.kt", "utf8"), /AppLanguage\.RU -> R\.string\.language_name_russian/);
   assert.match(dynamic, /"Barbell Row" to "Тяга штанги в наклоне"/);
   assert.match(
     workoutDetail,

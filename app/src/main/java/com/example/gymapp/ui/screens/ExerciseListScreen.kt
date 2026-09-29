@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.text.format.DateFormat as AndroidDateFormat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +28,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
@@ -82,10 +86,10 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMediaPreview
-import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.SettingsRow
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
@@ -1784,84 +1788,6 @@ private fun ExerciseMappingBottomSheetContent(
 }
 
 @Composable
-internal fun AccountStatusCard(
-    label: String,
-    supporting: String,
-    isCloudAccount: Boolean,
-    canLogout: Boolean,
-    logoutEnabled: Boolean,
-    onLogout: () -> Unit,
-    onOpenGarminApp: () -> Unit,
-    onResetGarminPairing: () -> Unit
-) {
-    AppPanel(
-        modifier = Modifier.fillMaxWidth(),
-        highlighted = true
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = supporting,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                InfoPill(
-                    text = stringResource(
-                        if (isCloudAccount) {
-                            R.string.account_mode_cloud
-                        } else {
-                            R.string.account_mode_local
-                        }
-                    )
-                )
-            }
-            if (canLogout) {
-                OutlinedButton(
-                    onClick = onLogout,
-                    enabled = logoutEnabled,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Text(stringResource(R.string.auth_switch_account))
-                }
-            }
-            OutlinedButton(
-                onClick = onOpenGarminApp,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(stringResource(R.string.garmin_open_app))
-            }
-            OutlinedButton(
-                onClick = onResetGarminPairing,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(stringResource(R.string.garmin_reset_pairing_action))
-            }
-        }
-    }
-}
-
-@Composable
 private fun RenameExerciseBottomSheetContent(
     exerciseName: String,
     rawExerciseName: String,
@@ -1920,52 +1846,53 @@ private fun RenameExerciseBottomSheetContent(
     }
 }
 
+/**
+ * "Backup & diagnostics" row of the Profile settings panel. It expands in place to reveal the
+ * export, import and diagnostics actions; the rotating chevron is its disclosure indicator.
+ */
 @Composable
-internal fun BackupToolsCard(
+internal fun BackupToolsSettingsRow(
     message: LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onOpenImport: () -> Unit
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.backup_tools_title),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.profile_backup_compact_supporting),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(
-                        stringResource(
-                            if (expanded) R.string.action_hide_details
-                            else R.string.action_show_details
-                        )
-                    )
-                }
-            }
-            if (message != null) {
-                Text(
-                    text = message.asString(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "backupToolsChevron"
+    )
+    Column {
+        SettingsRow(
+            icon = Icons.Default.Backup,
+            title = stringResource(R.string.backup_tools_title),
+            subtitle = stringResource(R.string.profile_backup_compact_supporting),
+            onClick = { expanded = !expanded },
+            onClickLabel = stringResource(
+                if (expanded) R.string.action_hide_details else R.string.action_show_details
+            ),
+            trailingContent = {
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp).rotate(chevronRotation),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (expanded) {
+        )
+        if (message != null) {
+            Text(
+                text = message.asString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 40.dp, bottom = 12.dp)
+            )
+        }
+        if (expanded) {
+            Column(
+                modifier = Modifier.padding(start = 40.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

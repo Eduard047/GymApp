@@ -96,6 +96,7 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.AppBrandMark
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.appLanguageOptions
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.asString
 
@@ -694,11 +695,7 @@ private fun AuthLanguageSelector(
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            listOf(
-                AppLanguage.EN to stringResource(R.string.language_name_english),
-                AppLanguage.UK to stringResource(R.string.language_name_ukrainian),
-                AppLanguage.RU to stringResource(R.string.language_name_russian)
-            ).forEach { (language, label) ->
+            appLanguageOptions().forEach { (language, label) ->
                 DropdownMenuItem(
                     text = {
                         Text(

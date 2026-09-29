@@ -1,12 +1,10 @@
 package com.example.gymapp.ui.screens
 
 import com.example.gymapp.util.TrainingProfile
-import com.example.gymapp.ui.components.TrainingSettingsSummaryRow
+import com.example.gymapp.ui.components.trainingSettingsSummary
 import com.example.gymapp.ui.components.TrainingSettingsSheet
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,7 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,14 +26,22 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.GroupOff
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,16 +79,20 @@ import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.SettingsPanel
+import com.example.gymapp.ui.components.SettingsRow
+import com.example.gymapp.ui.components.SettingsRowDivider
+import com.example.gymapp.ui.components.SettingsRowTrailing
+import com.example.gymapp.ui.components.appLanguageOptions
+import com.example.gymapp.ui.components.nativeName
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.viewmodel.ExerciseListUiState
 import com.example.gymapp.ui.viewmodel.FriendsUiState
 import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
-import com.example.gymapp.sync.CloudSyncPhase
 import com.example.gymapp.sync.CloudSyncUiStatus
+import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.getString
-import java.text.DateFormat
-import java.util.Date
 
 private enum class ProfileSection {
     Training,
@@ -160,6 +170,8 @@ internal fun ProfileScreen(
     garminDeviceState: GarminDeviceUiState,
     onRefreshGarminDevices: () -> Unit,
     onResetGarminPairing: () -> Unit,
+    selectedLanguage: AppLanguage,
+    onLanguageSelected: (AppLanguage) -> Unit,
     onRetryLoad: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -171,6 +183,7 @@ internal fun ProfileScreen(
     var showLocalProfileDeletion by rememberSaveable { mutableStateOf(false) }
     var selectedSection by rememberSaveable { mutableStateOf(ProfileSection.Training) }
     var showTrainingSettings by rememberSaveable { mutableStateOf(false) }
+    var showAccountSettings by rememberSaveable { mutableStateOf(false) }
     if (showTrainingSettings && trainingProfile != null) {
         TrainingSettingsSheet(
             profile = trainingProfile,
@@ -182,6 +195,39 @@ internal fun ProfileScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) onEnablePush()
+    }
+    val enablePushWithPermission: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            onEnablePush()
+        }
+    }
+    if (showAccountSettings) {
+        AccountSettingsSheet(
+            state = accountState,
+            actionsEnabled = !isAccountActionLoading,
+            pushUiState = pushUiState,
+            cloudSyncStatus = cloudSyncStatus,
+            cloudSyncChoiceRequired = cloudSyncChoiceRequired,
+            cloudSyncChoiceReady = cloudSyncChoiceReady,
+            onReviewCloudSync = onReviewCloudSync,
+            onSyncNow = onSyncNow,
+            onEnablePush = enablePushWithPermission,
+            onDisablePush = onDisablePush,
+            onOpenPushSettings = onOpenPushSettings,
+            onExportBackup = onExportBackup,
+            onChangePassword = { showPasswordChange = true },
+            onLogout = onLogout,
+            onDeleteAccount = { showAccountDeletion = true },
+            onDeleteLocalProfile = { showLocalProfileDeletion = true },
+            onDismiss = { showAccountSettings = false }
+        )
     }
 
     LaunchedEffect(passwordReauthenticationRequired) {
@@ -209,6 +255,9 @@ internal fun ProfileScreen(
         }
     }
 
+    // A local profile has no cloud account to sync friends through, so it never leaves Settings.
+    val visibleSection = if (accountState.isCloudAccount) selectedSection else ProfileSection.Settings
+
     Column(modifier = modifier.fillMaxSize()) {
         val pendingAttentionCount = (friendsState.dashboard?.incoming?.size ?: 0) +
             (friendsState.workoutInbox?.pendingIncomingCount ?: 0) +
@@ -221,11 +270,13 @@ internal fun ProfileScreen(
             friendCount = friendsState.dashboard?.friends?.size ?: 0,
             pendingCount = pendingAttentionCount
         )
-        ProfileSectionSwitcher(
-            selected = selectedSection,
-            onSelected = { selectedSection = it }
-        )
-        if (selectedSection == ProfileSection.Training) {
+        if (accountState.isCloudAccount) {
+            ProfileSectionSwitcher(
+                selected = selectedSection,
+                onSelected = { selectedSection = it }
+            )
+        }
+        if (visibleSection == ProfileSection.Training) {
             FriendsScreen(
                 uiState = friendsState,
                 liveUiState = liveWorkoutState,
@@ -249,12 +300,12 @@ internal fun ProfileScreen(
                 onCloseLiveRoom = onCloseLiveRoom,
                 onOpenLiveRoom = onOpenLiveRoom,
                 onClearLiveMessages = onClearLiveMessages,
-                onOpenAccountSettings = { selectedSection = ProfileSection.Settings },
+                onOpenAccountSettings = { showAccountSettings = true },
                 focusedSocialPush = focusedSocialPush,
                 focusedLiveRoomId = focusedLiveRoomId,
                 modifier = Modifier.weight(1f)
             )
-        } else if (selectedSection == ProfileSection.Settings) {
+        } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
@@ -268,36 +319,10 @@ internal fun ProfileScreen(
                 profileSettingsContent(
                     accountState = accountState,
                     context = context,
-                    isAccountActionLoading = isAccountActionLoading,
-                    onLogout = onLogout,
+                    onOpenAccountSettings = { showAccountSettings = true },
                     onOpenGarminApp = { openGymWorkoutTrackerInGarminStore(context) },
                     onResetGarminPairing = { showGarminResetConfirmation = true },
                     garminDeviceState = garminDeviceState,
-                    cloudSyncChoiceRequired = cloudSyncChoiceRequired,
-                    cloudSyncChoiceReady = cloudSyncChoiceReady,
-                    onReviewCloudSync = onReviewCloudSync,
-                    cloudSyncStatus = cloudSyncStatus,
-                    onSyncNow = onSyncNow,
-                    pushUiState = pushUiState,
-                    onEnablePush = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                            ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            notificationPermissionLauncher.launch(
-                                Manifest.permission.POST_NOTIFICATIONS
-                            )
-                        } else {
-                            onEnablePush()
-                        }
-                    },
-                    onDisablePush = onDisablePush,
-                    onOpenPushSettings = onOpenPushSettings,
-                    onChangePassword = { showPasswordChange = true },
-                    onDeleteAccount = { showAccountDeletion = true },
-                    onDeleteLocalProfile = { showLocalProfileDeletion = true },
                     backupMessage = accountState.backupMessage,
                     onExportBackup = onExportBackup,
                     onExportDiagnostics = onExportDiagnostics,
@@ -305,7 +330,9 @@ internal fun ProfileScreen(
                     onShowTutorial = onShowTutorial,
                     onRetryLoad = onRetryLoad,
                     trainingProfile = trainingProfile,
-                    onEditTrainingSettings = { showTrainingSettings = true }
+                    onEditTrainingSettings = { showTrainingSettings = true },
+                    selectedLanguage = selectedLanguage,
+                    onLanguageSelected = onLanguageSelected
                 )
             }
         }
@@ -450,13 +477,6 @@ private fun ProfileIdentityHeader(
                 Badge(modifier = Modifier.clearAndSetSemantics { contentDescription = attentionLabel }) {
                     Text(pendingCount.coerceAtMost(99).toString())
                 }
-            } else {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = stringResource(R.string.profile_up_to_date),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
             }
         }
     }
@@ -499,23 +519,10 @@ private fun ProfileSectionSwitcher(
 private fun LazyListScope.profileSettingsContent(
     accountState: ExerciseListUiState,
     context: android.content.Context,
-    isAccountActionLoading: Boolean,
-    onLogout: () -> Unit,
+    onOpenAccountSettings: () -> Unit,
     onOpenGarminApp: () -> Unit,
     onResetGarminPairing: () -> Unit,
     garminDeviceState: GarminDeviceUiState,
-    cloudSyncChoiceRequired: Boolean,
-    cloudSyncChoiceReady: Boolean,
-    onReviewCloudSync: () -> Unit,
-    cloudSyncStatus: CloudSyncUiStatus?,
-    onSyncNow: () -> Unit,
-    pushUiState: PushUiState,
-    onEnablePush: () -> Unit,
-    onDisablePush: () -> Unit,
-    onOpenPushSettings: () -> Unit,
-    onChangePassword: () -> Unit,
-    onDeleteAccount: () -> Unit,
-    onDeleteLocalProfile: () -> Unit,
     backupMessage: com.example.gymapp.util.LocalizedText?,
     onExportBackup: () -> Unit,
     onExportDiagnostics: () -> Unit,
@@ -523,7 +530,9 @@ private fun LazyListScope.profileSettingsContent(
     onShowTutorial: () -> Unit,
     onRetryLoad: () -> Unit,
     trainingProfile: TrainingProfile?,
-    onEditTrainingSettings: () -> Unit
+    onEditTrainingSettings: () -> Unit,
+    selectedLanguage: AppLanguage,
+    onLanguageSelected: (AppLanguage) -> Unit
 ) {
     if (accountState.isLoading) {
         item {
@@ -539,329 +548,143 @@ private fun LazyListScope.profileSettingsContent(
             )
         }
     }
-    item { SettingsSectionHeader(stringResource(R.string.profile_settings_account)) }
     item {
-        AccountStatusCard(
-            label = accountState.accountLabel.ifBlank {
-                if (accountState.isLoading || accountState.loadError != null) {
-                    context.getString(R.string.profile_settings_account)
-                } else {
-                    context.getString(R.string.account_mode_local)
-                }
-            },
-            supporting = accountState.accountSupporting.ifBlank {
-                when {
-                    accountState.isLoading -> context.getString(R.string.exercises_loading)
-                    accountState.loadError != null -> context.getString(accountState.loadError)
-                    else -> context.getString(R.string.account_offline_supporting)
-                }
-            },
-            isCloudAccount = accountState.isCloudAccount,
-            canLogout = accountState.canLogout,
-            logoutEnabled = !isAccountActionLoading,
-            onLogout = onLogout,
+        // One family of rows. Identity, sync, notifications, sign-out and deletion live in the
+        // account sheet; Training settings is the one editor of the training profile.
+        SettingsPanel {
+            if (!accountState.isCloudAccount) {
+                SettingsRow(
+                    icon = Icons.Default.GroupOff,
+                    title = stringResource(R.string.profile_friends_live_title),
+                    subtitle = stringResource(R.string.profile_friends_live_requires_cloud),
+                    onClick = onOpenAccountSettings
+                )
+                SettingsRowDivider()
+            }
+            SettingsRow(
+                icon = Icons.Default.AccountCircle,
+                title = stringResource(R.string.account_sheet_title),
+                subtitle = accountSubtitle(accountState, compact = true),
+                onClick = onOpenAccountSettings
+            )
+            SettingsRowDivider()
+            ProfileLanguageRow(
+                selectedLanguage = selectedLanguage,
+                onLanguageSelected = onLanguageSelected
+            )
+            if (trainingProfile != null) {
+                SettingsRowDivider()
+                SettingsRow(
+                    icon = Icons.Default.Tune,
+                    title = stringResource(R.string.training_settings_title),
+                    subtitle = trainingProfile.trainingSettingsSummary(),
+                    onClick = onEditTrainingSettings,
+                    onClickLabel = stringResource(R.string.training_settings_edit_description)
+                )
+            }
+            SettingsRowDivider()
+            BackupToolsSettingsRow(
+                message = backupMessage,
+                onExportBackup = onExportBackup,
+                onExportDiagnostics = onExportDiagnostics,
+                onOpenImport = onOpenImport
+            )
+            SettingsRowDivider()
+            SettingsRow(
+                icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                title = stringResource(R.string.profile_help_title),
+                subtitle = stringResource(R.string.profile_help_replay_tour),
+                onClick = onShowTutorial,
+                trailing = SettingsRowTrailing.None
+            )
+        }
+    }
+    item {
+        GarminDeviceCard(
+            state = garminDeviceState,
             onOpenGarminApp = onOpenGarminApp,
             onResetGarminPairing = onResetGarminPairing
         )
     }
-    item { SettingsSectionHeader(stringResource(R.string.profile_settings_devices_sync)) }
-    item { GarminDeviceCard(garminDeviceState) }
-    if (accountState.isCloudAccount && cloudSyncChoiceRequired) {
-        item {
-            CloudSyncChoiceCard(
-                choiceReady = cloudSyncChoiceReady,
-                onReview = onReviewCloudSync
-            )
-        }
-    }
-    if (accountState.isCloudAccount && cloudSyncStatus != null) {
-        item { CloudSyncStatusCard(status = cloudSyncStatus, onSyncNow = onSyncNow) }
-    }
-    if (accountState.isCloudAccount) {
-        item {
-            PushNotificationCard(
-                state = pushUiState,
-                onEnable = onEnablePush,
-                onDisable = onDisablePush,
-                onOpenSettings = onOpenPushSettings
-            )
-        }
-        item {
-            CloudAccountActionsCard(
-                enabled = !isAccountActionLoading,
-                onChangePassword = onChangePassword,
-                onDeleteAccount = onDeleteAccount
-            )
-        }
-    } else {
-        item {
-            LocalProfileActionsCard(
-                enabled = !isAccountActionLoading,
-                onDeleteProfile = onDeleteLocalProfile
-            )
-        }
-    }
-    if (trainingProfile != null) {
-        // The one place every training-profile field is edited; other screens link here.
-        item { SettingsSectionHeader(stringResource(R.string.training_settings_title)) }
-        item {
-            AppPanel(modifier = Modifier.fillMaxWidth()) {
-                TrainingSettingsSummaryRow(
-                    profile = trainingProfile,
-                    onEdit = onEditTrainingSettings,
-                    modifier = Modifier.padding(horizontal = GymSpacing.Large, vertical = GymSpacing.XSmall)
-                )
-            }
-        }
-    }
-    item { SettingsSectionHeader(stringResource(R.string.profile_settings_data)) }
-    item {
-        BackupToolsCard(
-            message = backupMessage,
-            onExportBackup = onExportBackup,
-            onExportDiagnostics = onExportDiagnostics,
-            onOpenImport = onOpenImport
-        )
-    }
-    item { SettingsSectionHeader(stringResource(R.string.profile_settings_help_support)) }
-    item { TutorialHelpCard(onShowTutorial = onShowTutorial) }
 }
 
+/**
+ * Language row: the trailing value is the current language's own name, and the whole row opens
+ * the same three-language menu the sign-in screen offers, anchored under the value.
+ */
 @Composable
-private fun SettingsSectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(top = GymSpacing.Small, start = GymSpacing.XSmall)
-    )
-}
-
-@Composable
-private fun TutorialHelpCard(onShowTutorial: () -> Unit) {
-    val context = LocalContext.current
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SectionTitle(
-                eyebrow = "",
-                title = stringResource(R.string.profile_help_title),
-                supporting = stringResource(R.string.profile_help_supporting)
-            )
-            OutlinedButton(
-                onClick = onShowTutorial,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            ) {
-                Text(stringResource(R.string.tutorial_show_action))
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small)
-            ) {
-                TextButton(
-                    onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROFILE_SUPPORT_URL)))
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(stringResource(R.string.profile_support_action))
-                }
-                TextButton(
-                    onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROFILE_PRIVACY_URL)))
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(stringResource(R.string.auth_privacy_policy))
-                }
-            }
-        }
-    }
-}
-
-private const val PROFILE_SUPPORT_URL = "https://gymapptracker.com/support.html"
-private const val PROFILE_PRIVACY_URL = "https://gymapptracker.com/privacy-policy.html"
-
-@Composable
-private fun LocalProfileActionsCard(
-    enabled: Boolean,
-    onDeleteProfile: () -> Unit
+private fun ProfileLanguageRow(
+    selectedLanguage: AppLanguage,
+    onLanguageSelected: (AppLanguage) -> Unit
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
+    var expanded by remember { mutableStateOf(false) }
+    SettingsRow(
+        icon = Icons.Default.Language,
+        title = stringResource(R.string.language_button),
+        onClick = { expanded = true },
+        onClickLabel = stringResource(R.string.cd_language),
+        trailingContent = {
+            Box {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Text(
-                        text = stringResource(R.string.account_management_title),
-                        style = MaterialTheme.typography.titleMedium
+                        text = selectedLanguage.nativeName(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
-                    Text(
-                        text = stringResource(R.string.profile_local_manage_supporting),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Icon(
+                        imageVector = Icons.Default.UnfoldMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(
-                        stringResource(
-                            if (expanded) R.string.action_hide_details
-                            else R.string.action_show_details
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    appLanguageOptions().forEach { (language, label) ->
+                        val isSelected = language == selectedLanguage
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            },
+                            trailingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            onClick = {
+                                expanded = false
+                                onLanguageSelected(language)
+                            }
                         )
-                    )
+                    }
                 }
             }
-            if (expanded) {
-                Button(
-                    onClick = onDeleteProfile,
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text(stringResource(R.string.local_profile_delete_action))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PushNotificationCard(
-    state: PushUiState,
-    onEnable: () -> Unit,
-    onDisable: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    val systemBlocked = !state.permissionGranted || !state.channelEnabled
-    val blockedBySystem = state.enabled && systemBlocked
-    val supporting = stringResource(
-        when {
-            !state.configured -> R.string.push_status_unavailable
-            state.hasError -> R.string.push_status_error
-            !state.enabled -> R.string.push_status_disabled
-            !state.permissionGranted -> R.string.push_status_permission_required
-            !state.channelEnabled -> R.string.push_status_channel_blocked
-            state.isSyncing -> R.string.push_status_syncing
-            state.registered -> R.string.push_status_ready
-            else -> R.string.push_status_waiting
         }
     )
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = state.registered) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.push_settings_eyebrow),
-                title = stringResource(R.string.push_settings_title),
-                supporting = supporting
-            )
-            Button(
-                onClick = when {
-                    blockedBySystem -> onOpenSettings
-                    state.enabled -> onDisable
-                    else -> onEnable
-                },
-                enabled = state.configured && !state.isSyncing,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    stringResource(
-                        when {
-                            blockedBySystem -> R.string.push_open_settings
-                            state.enabled -> R.string.push_disable_action
-                            else -> R.string.push_enable_action
-                        }
-                    )
-                )
-            }
-            if (blockedBySystem) {
-                OutlinedButton(
-                    onClick = onDisable,
-                    enabled = !state.isSyncing,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.push_disable_action))
-                }
-            } else if (state.configured && systemBlocked) {
-                OutlinedButton(
-                    onClick = onOpenSettings,
-                    enabled = !state.isSyncing,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.push_open_settings))
-                }
-            }
-        }
-    }
 }
 
 @Composable
-private fun CloudSyncStatusCard(
-    status: CloudSyncUiStatus,
-    onSyncNow: () -> Unit
+private fun GarminDeviceCard(
+    state: GarminDeviceUiState,
+    onOpenGarminApp: () -> Unit,
+    onResetGarminPairing: () -> Unit
 ) {
-    val statusText = stringResource(
-        when (status.phase) {
-            CloudSyncPhase.Checking -> R.string.cloud_sync_status_checking
-            CloudSyncPhase.Pending -> R.string.cloud_sync_status_pending
-            CloudSyncPhase.Synced -> R.string.cloud_sync_status_synced
-            CloudSyncPhase.Conflict -> R.string.cloud_sync_status_conflict
-            CloudSyncPhase.Error -> R.string.cloud_sync_status_error
-        }
-    )
-    AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.cloud_sync_status_eyebrow),
-                title = statusText,
-                supporting = status.lastSuccessAt?.let { timestamp ->
-                    stringResource(
-                        R.string.cloud_sync_status_last_success,
-                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                            .format(Date(timestamp))
-                    )
-                } ?: stringResource(R.string.cloud_sync_status_never)
-            )
-            Button(
-                onClick = onSyncNow,
-                enabled = status.phase != CloudSyncPhase.Checking &&
-                    status.phase != CloudSyncPhase.Conflict,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-            ) {
-                Text(
-                    stringResource(
-                        if (status.phase == CloudSyncPhase.Error) {
-                            R.string.cloud_sync_retry_action
-                        } else {
-                            R.string.cloud_sync_now_action
-                        }
-                    )
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun GarminDeviceCard(state: GarminDeviceUiState) {
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -922,105 +745,19 @@ private fun GarminDeviceCard(state: GarminDeviceUiState) {
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun CloudSyncChoiceCard(
-    choiceReady: Boolean,
-    onReview: () -> Unit
-) {
-    AppPanel(
-        modifier = Modifier.fillMaxWidth(),
-        highlighted = true
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.cloud_sync_choice_card_title),
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(
-                text = stringResource(R.string.cloud_sync_choice_card_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Button(
-                onClick = onReview,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp)
-            ) {
-                Text(
-                    stringResource(
-                        if (choiceReady) R.string.cloud_sync_choice_card_review
-                        else R.string.cloud_sync_choice_card_check
-                    )
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CloudAccountActionsCard(
-    enabled: Boolean,
-    onChangePassword: () -> Unit,
-    onDeleteAccount: () -> Unit
-) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
+            OutlinedButton(
+                onClick = onOpenGarminApp,
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                shape = MaterialTheme.shapes.small
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.account_management_title),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.profile_account_manage_supporting),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(
-                        stringResource(
-                            if (expanded) R.string.action_hide_details
-                            else R.string.action_show_details
-                        )
-                    )
-                }
+                Text(stringResource(R.string.garmin_open_app))
             }
-            if (expanded) {
-                OutlinedButton(
-                    onClick = onChangePassword,
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.account_change_password))
-                }
-                Button(
-                    onClick = onDeleteAccount,
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text(stringResource(R.string.account_delete_action))
-                }
+            OutlinedButton(
+                onClick = onResetGarminPairing,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small
+            ) {
+                Text(stringResource(R.string.garmin_reset_pairing_action))
             }
         }
     }

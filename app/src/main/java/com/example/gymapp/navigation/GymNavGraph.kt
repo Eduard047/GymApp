@@ -16,6 +16,10 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,13 +30,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -283,6 +284,14 @@ internal fun shouldConsumeAcceptedSocialWorkout(appliedToDraft: Boolean): Boolea
 
 internal fun shouldPreserveBottomTabState(destination: AppDestination): Boolean =
     destination != AppDestination.Workouts
+
+/**
+ * A language change rebuilds the navigation graph (see [GymAppRoot]), which would drop the user
+ * back on the start destination. Returns the bottom-tab route to reopen afterwards, or null when
+ * the start destination (or a non-tab screen) is already the right place to land.
+ */
+internal fun languageChangeReturnRoute(currentRoute: String?, isBottomTabRoute: Boolean): String? =
+    currentRoute?.takeIf { isBottomTabRoute && it != AppDestination.Workouts.route }
 
 internal data class FriendWorkoutPickerBinding(
     val userId: String,
@@ -721,6 +730,28 @@ internal fun GymAppRoot(
     val navController = key(uiIsolationKey, selectedLanguage) { rememberNavController() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    // One-shot marker: the tab to reopen once the graph is rebuilt for a new language. Saved so it
+    // also survives the activity recreation that the locale change triggers.
+    var languageReturnRoute by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(navController) {
+        val route = languageReturnRoute ?: return@LaunchedEffect
+        languageReturnRoute = null
+        runCatching {
+            navController.navigate(route) {
+                popUpTo(navController.graph.startDestinationId) { saveState = false }
+                launchSingleTop = true
+            }
+        }
+    }
+    val onLanguageSelected: (AppLanguage) -> Unit = { language ->
+        if (language != languageManager.currentLanguage()) {
+            languageReturnRoute = languageChangeReturnRoute(
+                currentRoute = currentRoute,
+                isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
+            )
+        }
+        languageManager.setLanguage(language)
+    }
     val repository = remember(uiIsolationKey) { repositoryProvider(authState.session) }
     val activeWorkoutFlow = remember(repository) { repository.observeActiveWorkout() }
     val activeWorkout by activeWorkoutFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -928,6 +959,7 @@ internal fun GymAppRoot(
     val isBottomTabRoute = AppDestination.bottomTabs.any { it.route == currentRoute }
     val hasInContentRootHeader = currentRoute == AppDestination.Workouts.route ||
         currentRoute == AppDestination.Exercises.route
+    val hasTopAppBar = !(isBottomTabRoute && hasInContentRootHeader)
     val cloudSession = (authState.session as? AccountSession.Cloud)
         ?.takeUnless { authState.needsPasswordUpdate }
     val rootGraphRoute = remember(uiIsolationKey) { "gym-root-$uiIsolationKey" }
@@ -2350,7 +2382,15 @@ internal fun GymAppRoot(
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                    .then(
+                        // With no bar on screen its scroll offset limit is never measured, so
+                        // the connection would swallow list scrolling.
+                        if (hasTopAppBar) {
+                            Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                        } else {
+                            Modifier
+                        }
+                    )
                     .semantics {
                         if (tutorialMode != null) hideFromAccessibility()
                     },
@@ -2362,7 +2402,6 @@ internal fun GymAppRoot(
                         titleRes = titleRes,
                         isRootDestination = isBottomTabRoute,
                         showRootTitle = !hasInContentRootHeader,
-                        selectedLanguage = selectedLanguage,
                         interactionsEnabled = currentRoute?.startsWith(
                             AppDestination.AddWorkout.route
                         ) != true || !addWorkoutEditorInteractionLocked,
@@ -2373,7 +2412,6 @@ internal fun GymAppRoot(
                                 navController.navigateUp()
                             }
                         },
-                        onLanguageSelected = { languageManager.setLanguage(it) },
                         scrollBehavior = topAppBarScrollBehavior
                     )
                 },
@@ -4231,6 +4269,8 @@ internal fun GymAppRoot(
                                             .resetSecureGarminPairing()
                                     }
                                 },
+                                selectedLanguage = selectedLanguage,
+                                onLanguageSelected = onLanguageSelected,
                                 onRetryLoad = profileViewModel::retryLoad,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -4810,13 +4850,15 @@ private fun AppTopBar(
     titleRes: Int,
     isRootDestination: Boolean,
     showRootTitle: Boolean,
-    selectedLanguage: AppLanguage,
     interactionsEnabled: Boolean,
     onBack: () -> Unit,
-    onLanguageSelected: (AppLanguage) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior
 ) {
-    if (isRootDestination) {
+    if (isRootDestination && !showRootTitle) {
+        // The screen draws its own large title and the bar has no actions, so render only the
+        // status-bar inset instead of an empty bar strip.
+        Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+    } else if (isRootDestination) {
         TopAppBar(
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
@@ -4824,18 +4866,9 @@ private fun AppTopBar(
                 titleContentColor = MaterialTheme.colorScheme.onBackground
             ),
             title = {
-                if (showRootTitle) {
-                    Text(
-                        text = stringResource(titleRes),
-                        style = MaterialTheme.typography.headlineLarge
-                    )
-                }
-            },
-            actions = {
-                LanguageSelector(
-                    selectedLanguage = selectedLanguage,
-                    onLanguageSelected = onLanguageSelected,
-                    enabled = interactionsEnabled
+                Text(
+                    text = stringResource(titleRes),
+                    style = MaterialTheme.typography.headlineLarge
                 )
             },
             scrollBehavior = scrollBehavior
@@ -4871,102 +4904,7 @@ private fun AppTopBar(
                     }
                 }
             },
-            actions = {
-                LanguageSelector(
-                    selectedLanguage = selectedLanguage,
-                    onLanguageSelected = onLanguageSelected,
-                    enabled = interactionsEnabled
-                )
-            },
             scrollBehavior = scrollBehavior
         )
-    }
-}
-
-@Composable
-private fun LanguageSelector(
-    selectedLanguage: AppLanguage,
-    onLanguageSelected: (AppLanguage) -> Unit,
-    enabled: Boolean = true
-) {
-    var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(enabled) {
-        if (!enabled) expanded = false
-    }
-
-    Box(modifier = Modifier.padding(end = 12.dp)) {
-        Surface(
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
-            shape = MaterialTheme.shapes.small,
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
-            )
-        ) {
-            TextButton(onClick = { expanded = true }, enabled = enabled) {
-                Icon(
-                    imageVector = Icons.Default.Language,
-                    contentDescription = stringResource(R.string.cd_language)
-                )
-                Text(
-                    text = selectedLanguage.name,
-                    modifier = Modifier.padding(start = 6.dp)
-                )
-            }
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = stringResource(R.string.language_english),
-                        color = if (selectedLanguage == AppLanguage.EN) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                },
-                onClick = {
-                    onLanguageSelected(AppLanguage.EN)
-                    expanded = false
-                }
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = stringResource(R.string.language_ukrainian),
-                        color = if (selectedLanguage == AppLanguage.UK) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                },
-                onClick = {
-                    onLanguageSelected(AppLanguage.UK)
-                    expanded = false
-                }
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = stringResource(R.string.language_russian),
-                        color = if (selectedLanguage == AppLanguage.RU) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                },
-                onClick = {
-                    onLanguageSelected(AppLanguage.RU)
-                    expanded = false
-                }
-            )
-        }
     }
 }
