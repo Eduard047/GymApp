@@ -200,7 +200,16 @@ const icons = {
   weight: "M6 7h12l2 14H4zM9 7a3 3 0 0 1 6 0",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3M8 21h8",
   micOff: "M3 3l18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V6a3 3 0 0 0-5.9-.8M5 11a7 7 0 0 0 11.9 5M19 11a7 7 0 0 1-.6 2.8M12 18v3M8 21h8",
-  stop: "M6 6h12v12H6z"
+  stop: "M6 6h12v12H6z",
+  chevronRight: "M9 6l6 6-6 6",
+  external: "M7 17 17 7M8 7h9v9",
+  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4",
+  privacy: "M12 3 4 6v5c0 4.5 3.1 8.3 8 10 4.9-1.7 8-5.5 8-10V6l-8-3z",
+  help: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4.5M12 17.5h.01",
+  phone: "M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2",
+  chevronUpDown: "M8 9l4-4 4 4M8 15l4 4 4-4",
+  target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 12h.01"
 };
 
 const filledIcons = new Set([
@@ -11126,17 +11135,35 @@ function emailConfirmationPanel() {
   </section>`;
 }
 
-function languageSelectorMarkup() {
-  const currentLanguage = state.language === "uk" ? "Українська" : state.language === "ru" ? "Русский" : "English";
-  return `<div class="language-selector">
-    <button class="icon-button topbar-action" data-action="language-menu" aria-label="${txAttr("Language", "Мова")}" aria-expanded="${languageMenuOpen}">${svg("lang")}</button>
-    ${languageMenuOpen ? `<div class="language-menu" role="menu" aria-label="${txAttr("Language", "Мова")}">
+function languageDisplayName() {
+  return state.language === "uk" ? "Українська" : state.language === "ru" ? "Русский" : "English";
+}
+
+function languageMenuMarkup() {
+  return `<div class="language-menu" role="menu" aria-label="${txAttr("Language", "Мова")}">
       <button class="language-option ${state.language === "en" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="en">English</button>
       <button class="language-option ${state.language === "uk" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="uk">Українська</button>
       <button class="language-option ${state.language === "ru" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="ru">Русский</button>
-      <span class="sr-only">${currentLanguage}</span>
-    </div>` : ""}
+      <span class="sr-only">${languageDisplayName()}</span>
+    </div>`;
+}
+
+// Auth screen only: signed-in screens change language from Profile > Language.
+function languageSelectorMarkup() {
+  return `<div class="language-selector">
+    <button class="icon-button topbar-action" data-action="language-menu" aria-label="${txAttr("Language", "Мова")}" aria-expanded="${languageMenuOpen}">${svg("lang")}</button>
+    ${languageMenuOpen ? languageMenuMarkup() : ""}
   </div>`;
+}
+
+function dismissLanguageMenu(restoreFocus = false) {
+  if (!languageMenuOpen) return false;
+  languageMenuOpen = false;
+  app.querySelector?.(".language-menu")?.remove();
+  const trigger = app.querySelector?.('[data-action="language-menu"]');
+  trigger?.setAttribute?.("aria-expanded", "false");
+  if (restoreFocus) trigger?.focus?.({ preventScroll: true });
+  return true;
 }
 
 function onboardingTourSteps() {
@@ -11478,7 +11505,7 @@ function render() {
       <header class="topbar">
         ${nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="${txAttr("Go back", "Назад")}">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
         <h1>${titleForRoute(current)}</h1>
-        ${languageSelectorMarkup()}
+        <span class="topbar-slot" aria-hidden="true"></span>
       </header>
       <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}"${current.name === "add" && workoutDraftLiveSendInProgress ? ` inert aria-busy="true"` : ""}>${liveWorkoutBanner()}${socialWorkoutInviteBanner()}${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
       ${isRootRoute(current.name) ? bottomNav() : ""}
@@ -13334,14 +13361,18 @@ function trainingSettingsWeeklyText(days) {
   );
 }
 
-// Every training-profile field is edited in one sheet; other screens show this one-line summary.
-function trainingSettingsSummaryMarkup({ onHero = false } = {}) {
+function trainingSettingsSummaryText() {
   const profile = state.profile;
-  const summary = [
+  return [
     profileValueLabel(profile.goal),
     profileValueLabel(profile.calories),
     trainingSettingsWeeklyText(profile.days)
   ].join(" · ");
+}
+
+// Every training-profile field is edited in one sheet; other screens show this one-line summary.
+function trainingSettingsSummaryMarkup({ onHero = false } = {}) {
+  const summary = trainingSettingsSummaryText();
   const edit = tx3("edit", "змінити", "изменить");
   return `<button type="button" class="training-settings-summary ${onHero ? "on-hero" : ""}" data-action="open-training-settings" aria-label="${escapeAttr(`${summary}. ${tx3("Edit training settings", "Змінити налаштування тренувань", "Изменить настройки тренировок")}`)}"><span>${escapeHtml(summary)}</span><strong>${edit}</strong></button>`;
 }
@@ -13361,7 +13392,14 @@ function trainingSettingsSheetMarkup() {
 }
 
 function trainingSettingsProfilePanel() {
-  return `<section class="panel training-settings-panel"><span class="eyebrow">${tx3("Training settings", "Налаштування тренувань", "Настройки тренировок")}</span>${trainingSettingsSummaryMarkup()}</section>`;
+  return settingsRowMarkup({
+    icon: "target",
+    title: tx3("Training settings", "Налаштування тренувань", "Настройки тренировок"),
+    subtitle: trainingSettingsSummaryText(),
+    action: "open-training-settings",
+    attrs: `aria-haspopup="dialog"`,
+    wrapSubtitle: true
+  });
 }
 
 function smartCoachPanel() {
@@ -16239,7 +16277,7 @@ async function updateRemotePassword({ required = false } = {}) {
           maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES
         });
         requireCurrentAuthOperation(authOperation);
-        modal = { type: "change-password", reauthRequired: true };
+        modal = { type: "change-password", reauthRequired: true, ...(modal?.returnModal ? { returnModal: modal.returnModal } : {}) };
         render();
         showToast(tx("Verification code sent. Re-enter the new password with the code.", "Код підтвердження надіслано. Повторно введи новий пароль разом із кодом."));
       } catch (reauthError) {
@@ -17237,10 +17275,168 @@ function garminStoreAppLink() {
   return userAgent.toLowerCase().includes("android") ? GARMIN_STORE_ANDROID_INTENT_URL : GARMIN_STORE_APP_URL;
 }
 
+function settingsRowMarkup({ icon = "", title = "", subtitle = "", trailing, action = "", href = "", attrs = "", tone = "", wrapSubtitle = false } = {}) {
+  const trailingMarkup = trailing === undefined ? svg("chevronRight") : trailing;
+  const classes = ["settings-row", tone === "danger" ? "danger" : "", subtitle ? "has-subtitle" : "", wrapSubtitle ? "wrap" : ""]
+    .filter(Boolean).join(" ");
+  const body = `${icon ? `<span class="settings-row-icon">${svg(icon)}</span>` : ""}<span class="settings-row-text"><strong>${escapeHtml(title)}</strong>${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ""}</span>${trailingMarkup ? `<span class="settings-row-trailing" aria-hidden="true">${trailingMarkup}</span>` : ""}`;
+  const extra = attrs ? ` ${attrs}` : "";
+  if (href) {
+    return `<a class="${classes}" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer"${extra}>${body}</a>`;
+  }
+  return `<button type="button" class="${classes}"${action ? ` data-action="${escapeAttr(action)}"` : ""}${extra}>${body}</button>`;
+}
+
+function settingsPanelMarkup(rows, className = "") {
+  const list = rows.filter(Boolean);
+  return list.length ? `<div class="settings-panel${className ? ` ${className}` : ""}">${list.join("")}</div>` : "";
+}
+
+// Local profiles have no cloud account to sync friends through, so Profile opens on settings
+// with this row first; it leads to the same Account sheet where cloud sign-in lives.
+function profileFriendsNeedCloudRow() {
+  return settingsRowMarkup({
+    icon: "group",
+    title: tx3("Friends & live", "Друзі та live", "Друзья и live"),
+    subtitle: tx3("Requires a cloud account", "Потрібен хмарний акаунт", "Нужен облачный аккаунт"),
+    action: "open-account-settings",
+    attrs: `aria-haspopup="dialog"`
+  });
+}
+
+function profileLanguageRow() {
+  const label = tx3("Language", "Мова", "Язык");
+  const name = languageDisplayName();
+  const row = settingsRowMarkup({
+    icon: "lang",
+    title: label,
+    trailing: `<span class="settings-row-value">${escapeHtml(name)}</span>${svg("chevronUpDown")}`,
+    action: "language-menu",
+    attrs: `aria-haspopup="menu" aria-expanded="${languageMenuOpen}" aria-label="${escapeAttr(`${label}: ${name}`)}"`
+  });
+  return `<div class="settings-language">${row}${languageMenuOpen ? languageMenuMarkup() : ""}</div>`;
+}
+
+function accountIdMiddleTruncate(value, head = 8, tail = 6) {
+  const text = String(value ?? "");
+  return text.length > head + tail + 1 ? `${text.slice(0, head)}…${text.slice(-tail)}` : text;
+}
+
+function accountDisplayEmail() {
+  if (!activeAccount?.remote) return "";
+  const stored = typeof activeAccount.email === "string" ? activeAccount.email.trim() : "";
+  if (stored) return stored;
+  const sessionEmail = loadRemoteSession()?.user?.email;
+  return typeof sessionEmail === "string" ? sessionEmail.trim() : "";
+}
+
+function accountIdentityValue() {
+  return activeAccount?.remote ? String(activeAccount.userId || "") : String(activeAccount?.id || "");
+}
+
+function accountIdCaptionMarkup() {
+  const id = accountIdentityValue();
+  if (!id) return "";
+  const label = activeAccount?.remote
+    ? tx3("User ID", "ID користувача", "ID пользователя")
+    : tx3("Profile ID", "ID профілю", "ID профиля");
+  const copy = tx3("Copy", "Копіювати", "Скопировать");
+  const copied = tx3("Copied", "Скопійовано", "Скопировано");
+  return `<div class="account-id-row"><div class="account-id-text"><span class="account-id-label">${escapeHtml(label)}</span><span class="account-id-value" title="${escapeAttr(id)}"><span aria-hidden="true">${escapeHtml(accountIdMiddleTruncate(id))}</span><span class="sr-only">${escapeHtml(id)}</span></span></div><button type="button" class="account-id-copy" data-action="copy-account-id" data-label-copy="${escapeAttr(copy)}" data-label-copied="${escapeAttr(copied)}" aria-live="polite">${escapeHtml(copy)}</button></div>`;
+}
+
+function accountSheetReturnModal() {
+  return modal?.type === "account-settings" ? { returnModal: { type: "account-settings" } } : {};
+}
+
+async function copyAccountId(button) {
+  const id = accountIdentityValue();
+  if (!id || !navigator.clipboard?.writeText) {
+    showToast(tx3("Clipboard access is unavailable.", "Доступ до буфера обміну недоступний.", "Доступ к буферу обмена недоступен."));
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(id);
+  } catch {
+    showToast(tx3("Clipboard write failed.", "Не вдалося записати в буфер обміну.", "Не удалось записать в буфер обмена."));
+    return false;
+  }
+  if (button?.isConnected && button.dataset) {
+    window.clearTimeout(Number(button.dataset.resetTimer));
+    button.textContent = button.dataset.labelCopied || "";
+    button.classList.add("copied");
+    button.dataset.resetTimer = String(window.setTimeout(() => {
+      if (!button.isConnected) return;
+      button.textContent = button.dataset.labelCopy || "";
+      button.classList.remove("copied");
+    }, 2000));
+  }
+  return true;
+}
+
+function accountSettingsSheetMarkup() {
+  const remote = Boolean(activeAccount?.remote);
+  const name = activeAccount?.name || tx3("GymApp athlete", "Атлет GymApp", "Атлет GymApp");
+  const email = accountDisplayEmail();
+  const subtitle = remote
+    ? (email || tx3("Cloud account", "Хмарний акаунт", "Облачный аккаунт"))
+    : tx3("Local profile · this device only", "Локальний профіль · лише на цьому пристрої", "Локальный профиль · только на этом устройстве");
+  const identity = `<section class="account-identity"><span class="account-identity-icon">${svg("person")}</span><div class="account-identity-text"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(subtitle)}</span></div></section>${accountIdCaptionMarkup()}`;
+  const backup = remote ? "" : settingsPanelMarkup([settingsRowMarkup({
+    icon: "save",
+    title: tx3("Backup", "Резервна копія", "Резервная копия"),
+    subtitle: tx3("Make one before switching phones", "Зроби перед зміною телефона", "Сделай перед сменой телефона"),
+    action: "export-json"
+  })]);
+  const cloud = remote
+    ? `${cloudSyncPanel()}${webPushPanel()}${settingsPanelMarkup([settingsRowMarkup({
+      icon: "lock",
+      title: tx3("Change password", "Змінити пароль", "Изменить пароль"),
+      action: "change-password"
+    })])}`
+    : "";
+  const external = svg("external");
+  const links = settingsPanelMarkup([
+    settingsRowMarkup({ icon: "privacy", title: tx3("Privacy policy", "Політика конфіденційності", "Политика конфиденциальности"), href: PRIVACY_URL, trailing: external }),
+    settingsRowMarkup({ icon: "help", title: tx3("Support", "Підтримка", "Поддержка"), href: SUPPORT_URL, trailing: external }),
+    settingsRowMarkup({ icon: "phone", title: tx3("Google Play", "Google Play", "Google Play"), href: GOOGLE_PLAY_APP_URL, trailing: external }),
+    settingsRowMarkup({ icon: "watch", title: tx3("Garmin Connect IQ", "Garmin Connect IQ", "Garmin Connect IQ"), href: garminStoreAppLink(), trailing: external })
+  ], "account-links-panel");
+  const promise = `<p class="account-privacy-caption">${svg("privacy", "small-icon")}<span>${tx3("GymApp has no advertising, cross-app tracking, or sale of personal data.", "У GymApp немає реклами, міжзастосункового відстеження чи продажу персональних даних.", "У GymApp нет рекламы, межприменительного отслеживания или продажи персональных данных.")}</span></p>`;
+  const signOut = settingsPanelMarkup([settingsRowMarkup({
+    icon: "logout",
+    title: remote ? tx3("Sign out", "Вийти", "Выйти") : tx3("Sign out of profile", "Вийти з профілю", "Выйти из профиля"),
+    subtitle: remote
+      ? tx3("Ends this session without deleting your account or cloud data.", "Завершує цей сеанс без видалення акаунта чи хмарних даних.", "Завершает этот сеанс без удаления аккаунта или облачных данных.")
+      : tx3("Workouts stay on this device", "Тренування залишаться на цьому пристрої", "Тренировки останутся на этом устройстве"),
+    trailing: "",
+    action: "logout-account",
+    wrapSubtitle: true
+  })], "account-session-panel");
+  const remove = settingsRowMarkup({
+    icon: "delete",
+    title: remote
+      ? tx3("Delete cloud account", "Видалити хмарний акаунт", "Удалить облачный аккаунт")
+      : tx3("Delete local account", "Видалити локальний акаунт", "Удалить локальный аккаунт"),
+    trailing: "",
+    action: "delete-account",
+    tone: "danger"
+  });
+  return `<div class="account-settings-sheet"><div class="section-title"><h2 id="account-settings-title">${tx3("Account", "Акаунт", "Аккаунт")}</h2><button class="button ghost mini" data-action="close-modal">${tx3("Done", "Готово", "Готово")}</button></div>${identity}${backup}${cloud}<div class="account-links-group">${links}${promise}</div>${signOut}<div class="account-danger-zone">${remove}</div></div>`;
+}
+
 function accountPanel() {
-  const label = activeAccount?.name || tx("Local", "Локальний");
-  const hasGarminBinding = Boolean(activeAccount?.remote && garminBindingForUser(activeAccount.userId));
-  return `<section class="panel highlighted account-card"><div class="row-head"><div><span class="eyebrow">${tx("Account", "Акаунт")}</span><h2>${escapeHtml(label)}</h2><p>${activeAccount?.remote ? tx("Cloud account with protected synchronization.", "Хмарний акаунт із захищеною синхронізацією.") : tx("Local account on this device.", "Локальний акаунт на цьому пристрої.")}</p></div><span class="pill">${activeAccount?.remote ? tx("Cloud", "Хмара") : tx("Local", "Локально")}</span></div><details class="account-management-details"><summary><span><strong>${tx("Manage account", "Керувати акаунтом")}</strong><small>${tx("Password, app links, switching, and deletion", "Пароль, посилання, зміна й видалення")}</small></span></summary><div class="actions account-actions"><a class="button ghost" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer">${tx("Open Google Play", "Відкрити Google Play")}</a><a class="button ghost" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${tx("Open Garmin Connect IQ", "Відкрити Garmin Connect IQ")}</a>${activeAccount?.remote ? `<button class="button ghost" data-action="change-password">${tx("Change password", "Змінити пароль")}</button>` : ""}${hasGarminBinding ? `<button class="button danger" data-action="unpair-garmin">${tx("Unpair Garmin", "Від’єднати Garmin")}</button>` : ""}<button class="button ghost" data-action="logout-account">${tx("Switch", "Змінити акаунт")}</button><button class="button danger" data-action="delete-account">${activeAccount?.remote ? tx("Delete cloud account", "Видалити хмарний акаунт") : tx("Delete local account", "Видалити локальний акаунт")}</button></div></details></section>`;
+  const remote = Boolean(activeAccount?.remote);
+  const subtitle = remote
+    ? (accountDisplayEmail() || tx3("Cloud account", "Хмарний акаунт", "Облачный аккаунт"))
+    : tx3("Local profile", "Локальний профіль", "Локальный профиль");
+  return settingsRowMarkup({
+    icon: "person",
+    title: tx3("Account", "Акаунт", "Аккаунт"),
+    subtitle,
+    action: "open-account-settings",
+    attrs: `aria-haspopup="dialog"`
+  });
 }
 
 function cloudSyncStatusSnapshot() {
@@ -17344,8 +17540,14 @@ async function syncCloudNow() {
 }
 
 function profileDataPanel() {
-  return `<section class="panel profile-data-card"><details class="profile-data-details"><summary><span><span class="eyebrow">${tx("Your data", "Твої дані")}</span><strong>${t("backup")}</strong><small>${tx("Export, import, or prepare a private support report.", "Експортуй, імпортуй або підготуй приватний звіт для підтримки.")}</small></span></summary><div class="profile-data-controls"><p class="muted">${tx("A full import replaces this profile. Manual backups include favorite exercises; cloud schema-v2 intentionally keeps favorites local to this account and device.", "Повний імпорт замінює цей профіль. Ручна резервна копія містить улюблені вправи; хмарна schema-v2 навмисно зберігає їх локально для цього акаунта й пристрою.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></div></details></section>
-    <section class="panel profile-links-card"><div><span class="eyebrow">${tx("Help and trust", "Допомога й довіра")}</span><h2>${tx("Support and privacy", "Підтримка та приватність")}</h2><p class="muted">${tx("Find setup help or review how GymApp handles your data.", "Знайди допомогу з налаштуванням або переглянь, як GymApp обробляє твої дані.")}</p></div><div class="profile-links"><button class="button ghost" data-action="replay-onboarding">${tx("Show tutorial", "Показати навчання")}</button><a class="button ghost" href="${escapeAttr(SUPPORT_URL)}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a><a class="button ghost" href="${escapeAttr(PRIVACY_URL)}" target="_blank" rel="noopener noreferrer">${tx("Privacy policy", "Політика конфіденційності")}</a></div></section>`;
+  const backup = `<details class="settings-disclosure profile-data-details"><summary class="settings-row has-subtitle"><span class="settings-row-icon">${svg("save")}</span><span class="settings-row-text"><strong>${escapeHtml(tx3("Backup & diagnostics", "Бекап і діагностика", "Бэкап и диагностика"))}</strong><small>${tx3("Export, import, diagnostics", "Експорт, імпорт, діагностика", "Экспорт, импорт, диагностика")}</small></span><span class="settings-row-trailing" aria-hidden="true">${svg("chevronRight")}</span></summary><div class="settings-disclosure-body"><p class="muted">${tx("A full import replaces this profile. Manual backups include favorite exercises; cloud schema-v2 intentionally keeps favorites local to this account and device.", "Повний імпорт замінює цей профіль. Ручна резервна копія містить улюблені вправи; хмарна schema-v2 навмисно зберігає їх локально для цього акаунта й пристрою.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></div></details>`;
+  const help = settingsRowMarkup({
+    icon: "help",
+    title: tx3("Help", "Допомога", "Помощь"),
+    subtitle: tx3("Replay the quick GymApp tour.", "Повтори короткий огляд GymApp.", "Повтори короткий обзор GymApp."),
+    action: "replay-onboarding"
+  });
+  return `${backup}${help}`;
 }
 
 function garminProfilePanel() {
@@ -17369,6 +17571,9 @@ function garminProfilePanel() {
     body = `<p class="muted">${tx("No Garmin watch is paired with this account.", "До цього акаунта не прив’язано годинник Garmin.")}</p>`;
   } else {
     body = `<div class="garmin-device-list">${selected.map(garminProfileDeviceRow).join("")}</div>`;
+  }
+  if (activeAccount?.remote && binding) {
+    body += `<button class="button danger full garmin-unpair" data-action="unpair-garmin">${tx3("Unpair Garmin", "Від’єднати Garmin", "Отвязать Garmin")}</button>`;
   }
   return `<section class="panel garmin-profile-card"><div class="section-title"><div><span class="eyebrow">Garmin</span><h2>${tx("Your watch", "Твій годинник")}</h2><p>${tx("The browser cannot see live Bluetooth status. This shows the latest protected cloud contact from the watch.", "Браузер не бачить поточний стан Bluetooth. Тут показано останній захищений зв’язок годинника з хмарою.")}</p></div></div>${body}</section>`;
 }
@@ -20087,12 +20292,20 @@ function friendsProfileScreen() {
     (socialState.inbox?.pendingIncomingCount || 0) +
     (liveWorkoutState.inbox?.invitations?.length || 0);
   const accountLabel = activeAccount?.name || tx("Local account", "Локальний акаунт");
-  const cloudLabel = activeAccount?.remote ? tx("Cloud protected", "Захищено хмарою") : tx("This device", "Цей пристрій");
+  const remote = Boolean(activeAccount?.remote);
+  const cloudLabel = remote ? tx("Cloud protected", "Захищено хмарою") : tx("This device", "Цей пристрій");
   const trainingSelected = profileHubSection === "training";
-  const trainingPanel = friendsPanel();
-  const settingsPanel = `${accountPanel()}${trainingSettingsProfilePanel()}${cloudSyncPanel()}${webPushPanel()}${garminProfilePanel()}${themePreferencePanel()}${profileDataPanel()}`;
-  return `<section class="profile-hub-passport" data-coach-target="profile-hub"><div class="profile-hub-avatar" aria-hidden="true">${svg("person")}</div><div class="profile-hub-identity"><span class="eyebrow">${tx("Profile", "Профіль")}</span><h2>${escapeHtml(accountLabel)}</h2><p>${escapeHtml(cloudLabel)} · ${countNoun(friendCount, "friends")}</p></div><div class="profile-spotter-rail" aria-label="${txAttr(pendingCount ? "Social actions are waiting" : "Training circle is up to date", pendingCount ? "Є соціальні дії, що очікують" : "Тренувальне коло оновлено")}"><span class="spotter-node self">${svg("person", "small-icon")}</span><span class="spotter-track ${pendingCount ? "active" : ""}"><i></i></span><span class="spotter-node peer">${svg("fitness", "small-icon")}</span>${pendingCount ? `<strong>${Math.min(pendingCount, 99)}</strong>` : ""}</div></section>
-    <div class="profile-hub-switch" role="tablist" aria-label="${txAttr("Profile sections", "Розділи профілю")}"><button id="profile-training-tab" type="button" role="tab" aria-selected="${trainingSelected}" aria-controls="profile-training-panel" tabindex="${trainingSelected ? "0" : "-1"}" class="${trainingSelected ? "selected" : ""}" data-action="profile-hub-section" data-section="training">${svg("fitness", "small-icon")}<span><strong>${tx3("Friends & live", "Друзі та live", "Друзья и live")}</strong><small>${tx3("Invites, progress, training", "Запрошення, прогрес, тренування", "Приглашения, прогресс, тренировки")}</small></span></button><button id="profile-settings-tab" type="button" role="tab" aria-selected="${!trainingSelected}" aria-controls="profile-settings-panel" tabindex="${trainingSelected ? "-1" : "0"}" class="${!trainingSelected ? "selected" : ""}" data-action="profile-hub-section" data-section="settings">${svg("watch", "small-icon")}<span><strong>${tx3("Account & devices", "Акаунт і пристрої", "Аккаунт и устройства")}</strong><small>${tx3("Sync, Garmin, data", "Синхронізація, Garmin, дані", "Синхронизация, Garmin, данные")}</small></span></button></div>
+  const trainingPanel = remote ? friendsPanel() : "";
+  const settingsPanel = `${settingsPanelMarkup([remote ? "" : profileFriendsNeedCloudRow(), accountPanel(), profileLanguageRow(), trainingSettingsProfilePanel(), profileDataPanel()], "profile-settings-list")}${garminProfilePanel()}${themePreferencePanel()}`;
+  const pendingLabel = `${tx3("Waiting for you", "Очікує на тебе", "Ждёт тебя")}: ${pendingCount}`;
+  const unreadPill = pendingCount ? `<strong class="profile-unread-pill" role="img" aria-label="${escapeAttr(pendingLabel)}">${Math.min(pendingCount, 99)}</strong>` : "";
+  const passport = `<section class="profile-hub-passport" data-coach-target="profile-hub"><div class="profile-hub-avatar" aria-hidden="true">${svg("person")}</div><div class="profile-hub-identity"><h2>${escapeHtml(accountLabel)}</h2><p>${escapeHtml(remote ? `${cloudLabel} · ${countNoun(friendCount, "friends")}` : cloudLabel)}</p></div>${unreadPill}</section>`;
+  if (!remote) {
+    return `${passport}
+    <div class="profile-hub-panel profile-local-panel">${settingsPanel}</div>`;
+  }
+  return `${passport}
+    <div class="segmented profile-hub-switch panel compact" role="tablist" aria-label="${txAttr("Profile sections", "Розділи профілю")}"><button id="profile-training-tab" type="button" role="tab" aria-selected="${trainingSelected}" aria-controls="profile-training-panel" tabindex="${trainingSelected ? "0" : "-1"}" class="${trainingSelected ? "selected" : ""}" data-action="profile-hub-section" data-section="training"><strong>${tx3("Friends", "Друзі", "Друзья")}</strong></button><button id="profile-settings-tab" type="button" role="tab" aria-selected="${!trainingSelected}" aria-controls="profile-settings-panel" tabindex="${trainingSelected ? "-1" : "0"}" class="${!trainingSelected ? "selected" : ""}" data-action="profile-hub-section" data-section="settings"><strong>${tx3("Account", "Акаунт", "Аккаунт")}</strong></button></div>
     <div id="profile-training-panel" class="profile-hub-panel" role="tabpanel" aria-labelledby="profile-training-tab" ${trainingSelected ? "" : "hidden"}>${trainingPanel}</div>
     <div id="profile-settings-panel" class="profile-hub-panel" role="tabpanel" aria-labelledby="profile-settings-tab" ${trainingSelected ? "hidden" : ""}>${settingsPanel}</div>`;
 }
@@ -23926,6 +24139,7 @@ function modalMarkup() {
   if (modal.type === "progress-exercise-picker") return bottomSheet(progressExercisePickerSheetMarkup());
   if (modal.type === "friend-workout-picker") return bottomSheet(friendWorkoutPickerMarkup());
   if (modal.type === "training-settings") return bottomSheet(trainingSettingsSheetMarkup(), "training-settings-title");
+  if (modal.type === "account-settings") return bottomSheet(accountSettingsSheetMarkup(), "account-settings-title");
   if (modal.type === "today-friend-picker") return bottomSheet(todayFriendPickerMarkup(), "today-friend-picker-title");
   if (modal.type === "workout-share") return bottomSheet(workoutShareSheetMarkup());
   if (modal.type === "live-invitation-sent") return bottomSheet(`<div class="live-invitation-sent"><span class="eyebrow">LIVE</span><h2>${tx3("Invitation sent", "Запрошення надіслано", "Приглашение отправлено")}</h2><p class="muted">${tx3("GymApp already notified", "GymApp уже сповістив", "GymApp уже уведомил")} ${escapeHtml(modal.friendName)}. ${tx3("This link only navigates to the account-bound room; it does not grant access.", "Це посилання лише відкриває прив’язану до акаунта кімнату й не надає доступу.", "Эта ссылка только открывает привязанную к аккаунту комнату и не предоставляет доступ.")}</p><input id="live-invitation-link" readonly value="${escapeAttr(modal.url)}"><div class="actions vertical"><button class="button full" data-action="share-live-invitation-link">${svg("share", "small-icon")}${tx3("Share invitation link", "Поділитися посиланням-запрошенням", "Поделиться ссылкой-приглашением")}</button><button class="button ghost full" data-action="close-modal">${tx3("Done", "Готово", "Готово")}</button></div></div>`);
@@ -24500,7 +24714,7 @@ const STABLE_FOCUS_ACTIONS = new Set([
   "exercise-history", "exercise-muscle-filter", "exercise-sort", "export-diagnostics", "export-json",
   "import-json", "map-exercise", "open-exercise-add", "open-exercise-filters", "open-exercise-media",
   "open-exercise-more", "open-friend", "open-friend-workout-detail", "open-friend-workout-picker",
-  "open-live-room", "open-offline-account", "open-progress-exercise-picker", "open-workout-exercise-picker",
+  "open-account-settings", "open-live-room", "open-offline-account", "open-progress-exercise-picker", "open-workout-exercise-picker",
   "rename-exercise", "reset-exercise-filters", "respond-live-invite", "respond-workout-invite",
   "send-live-workout-invite", "send-workout-invite", "share-draft", "share-session", "smart-alternatives",
   "start-live-room", "template-picker", "open-voice-workout"
@@ -24656,7 +24870,7 @@ async function handleAction(action, el) {
   if (action === "remote-signup") return remoteLogin(true);
   if (action === "request-password-reset") return requestPasswordReset();
   if (action === "complete-password-recovery") return updateRemotePassword({ required: true });
-  if (action === "change-password") { modal = { type: "change-password" }; return render(); }
+  if (action === "change-password") { modal = { type: "change-password", ...accountSheetReturnModal() }; return render(); }
   if (action === "submit-password-change") return updateRemotePassword();
   if (action === "remote-resend-confirmation") return resendRemoteConfirmation();
   if (action === "confirmation-change-address") return changePendingConfirmationAddress();
@@ -25050,6 +25264,11 @@ async function handleAction(action, el) {
     modal = { type: "training-settings" };
     return render();
   }
+  if (action === "open-account-settings") {
+    modal = { type: "account-settings" };
+    return render();
+  }
+  if (action === "copy-account-id") return copyAccountId(el);
   if (action === "note-template") return applyNoteTemplate(el.dataset.note);
   if (action === "workout-date-today") {
     if (!workoutDraft) return;
@@ -25334,7 +25553,7 @@ async function handleAction(action, el) {
     };
     return render();
   }
-  if (action === "export-json") { modal = { type: "backup-json", diagnostics: false, json: exportPayload(false) }; return render(); }
+  if (action === "export-json") { modal = { type: "backup-json", diagnostics: false, json: exportPayload(false), ...accountSheetReturnModal() }; return render(); }
   if (action === "export-diagnostics") { modal = { type: "backup-json", diagnostics: true, json: exportPayload(true) }; return render(); }
   if (action === "import-json") { modal = { type: "import" }; return render(); }
   if (action === "apply-import") return applyImport(destructiveReturnFocus("import-json"));
@@ -30034,6 +30253,17 @@ window.addEventListener("focus", () => {
     void refreshLiveWorkoutData(true);
   }
 });
+
+document.addEventListener?.("keydown", event => {
+  if (event.key === "Escape") dismissLanguageMenu(true);
+});
+
+// Capture phase: data-action handlers stop propagation, so a bubbling listener would miss them.
+document.addEventListener?.("click", event => {
+  if (languageMenuOpen && !event.target?.closest?.(".settings-language, .language-selector")) {
+    dismissLanguageMenu();
+  }
+}, true);
 
 document.addEventListener?.("visibilitychange", () => {
   if (document.visibilityState === "hidden") {

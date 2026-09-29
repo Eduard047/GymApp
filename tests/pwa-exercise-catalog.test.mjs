@@ -531,9 +531,103 @@ test("saved workout cards activate from Enter and Space", () => {
   });
 });
 
+function accountSheetContext(account, { clipboard = null } = {}) {
+  const context = loadPwaContext();
+  if (clipboard) context.navigator = { userAgent: "", clipboard };
+  vm.runInContext(`
+    activeAccount = ${JSON.stringify(account)};
+    state = defaultAppState();
+  `, context);
+  return context;
+}
+
+test("Account sheet for a local profile shows identity, ID copy, backup, links, and a last delete row", () => {
+  const localId = "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const context = accountSheetContext({ id: localId, name: "Profile Owner", localIdVersion: 2 });
+  const html = vm.runInContext("accountSettingsSheetMarkup()", context);
+
+  assert.match(html, /<h2 id="account-settings-title">Account<\/h2>/);
+  assert.match(html, /Profile Owner/);
+  assert.match(html, /Local profile · this device only/);
+  assert.match(html, /Profile ID/);
+  assert.match(html, /local-v2…bbbbbb/);
+  assert.ok(html.includes(`title="${localId}"`));
+  assert.match(html, /data-action="copy-account-id"[^>]*>Copy<\/button>/);
+  assert.match(html, /data-action="export-json"/);
+  assert.match(html, /Make one before switching phones/);
+  assert.match(html, /<a class="settings-row"[^>]*privacy-policy\.html" target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /<a class="settings-row"[^>]*support\.html" target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /GymApp has no advertising, cross-app tracking, or sale of personal data\./);
+  assert.match(html, /Sign out of profile/);
+  assert.match(html, /Workouts stay on this device/);
+  assert.doesNotMatch(html, /change-password|cloud-sync-card|sync-cloud-now|enable-web-push/);
+  const lastAction = [...html.matchAll(/data-action="([a-z-]+)"/g)].at(-1)[1];
+  assert.equal(lastAction, "delete-account");
+  assert.match(html, /class="settings-row danger"[^>]*data-action="delete-account"/);
+  assert.ok(html.indexOf("logout-account") < html.indexOf("delete-account"));
+});
+
+test("Account sheet for a cloud account keeps cloud-only sync, notifications, and password rows", () => {
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const context = accountSheetContext({
+    id: `remote-${userId}`,
+    name: "Cloud Owner",
+    email: "owner@example.test",
+    userId,
+    remote: "supabase"
+  });
+  const html = vm.runInContext("accountSettingsSheetMarkup()", context);
+  const row = vm.runInContext("accountPanel()", context);
+
+  assert.match(html, /owner@example\.test/);
+  assert.match(html, /User ID/);
+  assert.match(html, /11111111…111111/);
+  assert.match(html, /data-action="change-password"/);
+  assert.doesNotMatch(html, /Local profile|export-json/);
+  assert.match(html, /Delete cloud account/);
+  assert.match(row, /data-action="open-account-settings"/);
+  assert.match(row, /owner@example\.test/);
+  assert.doesNotMatch(row, /support\.html|logout-account|delete-account/);
+});
+
+test("Account ID copy confirms in place, then reverts, and reports clipboard failure", async () => {
+  const written = [];
+  const context = accountSheetContext(
+    { id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 },
+    { clipboard: { writeText: async value => { written.push(value); } } }
+  );
+  const timers = [];
+  context.window.setTimeout = callback => { timers.push(callback); return timers.length; };
+  context.window.clearTimeout = () => {};
+  const button = {
+    isConnected: true,
+    textContent: "Copy",
+    dataset: { labelCopy: "Copy", labelCopied: "Copied" },
+    classList: { add() {}, remove() {} }
+  };
+  context.copyButton = button;
+  assert.equal(await vm.runInContext("copyAccountId(copyButton)", context), true);
+  assert.deepEqual(written, ["local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]);
+  assert.equal(button.textContent, "Copied");
+  timers[0]();
+  assert.equal(button.textContent, "Copy");
+
+  const failing = accountSheetContext(
+    { id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 },
+    { clipboard: { writeText: async () => { throw new Error("denied"); } } }
+  );
+  const toast = { textContent: "", classList: { add() {}, remove() {} } };
+  const baseQuery = failing.document.querySelector;
+  failing.document.querySelector = selector => selector === "#toast" ? toast : baseQuery(selector);
+  failing.copyButton = { isConnected: true, textContent: "Copy", dataset: {}, classList: { add() {}, remove() {} } };
+  assert.equal(await vm.runInContext("copyAccountId(copyButton)", failing), false);
+  assert.equal(failing.copyButton.textContent, "Copy");
+  assert.match(toast.textContent, /Clipboard write failed/);
+});
+
 test("Garmin store link opens our public listing and isolates the new tab", () => {
   const context = loadPwaContext();
-  const html = vm.runInContext("accountPanel()", context);
+  const html = vm.runInContext("accountSettingsSheetMarkup()", context);
 
   assert.equal(
     html.includes(
@@ -547,7 +641,7 @@ test("Garmin store link opens our public listing and isolates the new tab", () =
 
 test("Android web link opens Connect IQ and falls back to its Google Play listing", () => {
   const context = loadPwaContext({ userAgent: "Mozilla/5.0 (Linux; Android 16) Chrome/140" });
-  const html = vm.runInContext("accountPanel()", context);
+  const html = vm.runInContext("accountSettingsSheetMarkup()", context);
 
   assert.equal(
     html.includes(
@@ -1318,26 +1412,125 @@ test("older manual backups preserve existing favorites while explicit false can 
   assert.equal(cloudProtected.favorite, true);
 });
 
-test("Profile defaults to protected friends and keeps account tools in their own segment", () => {
-  const context = loadPwaContext();
-  vm.runInContext(`
-    activeAccount = { id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Profile Owner", localIdVersion: 2 };
-    state = defaultAppState();
-  `, context);
-  const trainingProfile = vm.runInContext("friendsProfileScreen()", context);
-  const settingsProfile = vm.runInContext('profileHubSection = "settings"; friendsProfileScreen()', context);
+function profileScreenContext(account, language = "en") {
+  const context = accountSheetContext(account);
+  vm.runInContext(`state.language = ${JSON.stringify(language)};`, context);
+  return context;
+}
+
+const PROFILE_CLOUD_ACCOUNT = {
+  id: "remote-11111111-1111-4111-8111-111111111111",
+  name: "Cloud Owner",
+  email: "owner@example.test",
+  userId: "11111111-1111-4111-8111-111111111111",
+  remote: "supabase"
+};
+
+test("Local profile has no tabs or friends panel and opens on the settings row family", () => {
+  const context = profileScreenContext({ id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Profile Owner", localIdVersion: 2 });
+  const html = vm.runInContext("friendsProfileScreen()", context);
   const exercises = vm.runInContext("exercisesScreen()", context);
 
-  assert.match(trainingProfile, /Profile Owner/);
-  assert.match(trainingProfile, /Friends &amp; live|Friends & live/);
-  assert.match(trainingProfile, /Cloud sign-in required/);
-  assert.match(trainingProfile, /id="profile-settings-panel"[^>]*hidden/);
-  assert.match(settingsProfile, /Profile Owner/);
-  assert.match(settingsProfile, /support\.html/);
-  assert.match(settingsProfile, /privacy-policy\.html/);
-  assert.match(settingsProfile, /id="profile-training-panel"[^>]*hidden/);
+  assert.match(html, /Profile Owner/);
+  assert.match(html, /<div class="profile-hub-identity"><h2>Profile Owner<\/h2><p>This device<\/p>/);
+  assert.doesNotMatch(html, /friends<\/p>|0 friends/);
+  assert.doesNotMatch(html, /role="tablist"|role="tab"|profile-training-panel|profile-settings-panel|friends-circle-card|Cloud sign-in required/);
+  assert.doesNotMatch(html, /support\.html|privacy-policy\.html|profile-links-card|Show tutorial/);
+  assert.equal(vm.runInContext("profileHubSection", context), "training");
+
+  const positions = [
+    /<strong>Friends &amp; live<\/strong><small>Requires a cloud account<\/small>/,
+    /<strong>Account<\/strong><small>Local profile<\/small>/,
+    /data-action="language-menu"/,
+    /data-action="open-training-settings"/,
+    /<details class="settings-disclosure profile-data-details">/,
+    /data-action="replay-onboarding"/,
+    /class="panel garmin-profile-card"/,
+    /class="panel theme-preference-card/
+  ].map(pattern => {
+    const found = html.match(pattern);
+    assert.ok(found, `${pattern} must render`);
+    return found.index;
+  });
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal((html.match(/class="settings-panel profile-settings-list"/g) || []).length, 1);
+  assert.match(html, /data-action="open-account-settings"[^>]*>(?:(?!<button)[\s\S])*?Friends &amp; live/);
   assert.doesNotMatch(exercises, /Profile Owner|support\.html|privacy-policy\.html|export-json/);
   assert.equal(vm.runInContext('titleForRoute({ name: "leaderboard" })', context), "Profile");
+
+  const ru = profileScreenContext({ id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 }, "ru");
+  assert.match(vm.runInContext("friendsProfileScreen()", ru), /Друзья и live<\/strong><small>Нужен облачный аккаунт/);
+  const uk = profileScreenContext({ id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 }, "uk");
+  assert.match(vm.runInContext("friendsProfileScreen()", uk), /Бекап і діагностика<\/strong>/);
+  assert.match(vm.runInContext("friendsProfileScreen()", ru), /Бэкап и диагностика<\/strong>/);
+  assert.match(vm.runInContext("friendsProfileScreen()", context), /Backup &amp; diagnostics<\/strong>/);
+  assert.match(vm.runInContext("friendsProfileScreen()", uk), /Друзі та live<\/strong><small>Потрібен хмарний акаунт/);
+});
+
+test("Cloud profile uses a single-line Friends / Account segmented control over the same settings rows", () => {
+  const context = profileScreenContext(PROFILE_CLOUD_ACCOUNT);
+  const training = vm.runInContext("friendsProfileScreen()", context);
+  const settings = vm.runInContext('profileHubSection = "settings"; friendsProfileScreen()', context);
+  const tabs = training.match(/<div class="segmented profile-hub-switch panel compact" role="tablist"[\s\S]*?<\/div>/)?.[0] || "";
+
+  assert.match(tabs, /<strong>Friends<\/strong>/);
+  assert.match(tabs, /<strong>Account<\/strong>/);
+  assert.doesNotMatch(tabs, /<small>|<svg/);
+  assert.match(tabs, /id="profile-training-tab"[^>]*aria-controls="profile-training-panel"[^>]*tabindex="0"/);
+  assert.match(tabs, /id="profile-settings-tab"[^>]*aria-controls="profile-settings-panel"[^>]*tabindex="-1"/);
+  assert.match(training, /id="profile-settings-panel"[^>]*hidden/);
+  assert.match(settings, /id="profile-training-panel"[^>]*hidden/);
+  assert.doesNotMatch(training, /Requires a cloud account/);
+  assert.match(training, /owner@example\.test/);
+  assert.doesNotMatch(settings, /support\.html|privacy-policy\.html/);
+
+  const ru = profileScreenContext(PROFILE_CLOUD_ACCOUNT, "ru");
+  const ruTabs = vm.runInContext("friendsProfileScreen()", ru);
+  assert.match(ruTabs, /<strong>Друзья<\/strong>[\s\S]*<strong>Аккаунт<\/strong>/);
+  const uk = profileScreenContext(PROFILE_CLOUD_ACCOUNT, "uk");
+  assert.match(vm.runInContext("friendsProfileScreen()", uk), /<strong>Друзі<\/strong>[\s\S]*<strong>Акаунт<\/strong>/);
+});
+
+test("Profile header has no eyebrow and shows the unread pill only when something is pending", () => {
+  const context = profileScreenContext(PROFILE_CLOUD_ACCOUNT);
+  const quiet = vm.runInContext("friendsProfileScreen()", context);
+  const header = quiet.match(/<section class="profile-hub-passport"[\s\S]*?<\/section>/)?.[0] || "";
+
+  assert.match(header, /<h2>Cloud Owner<\/h2>/);
+  assert.match(header, /<p>Cloud protected · 0 friends<\/p>/);
+  assert.doesNotMatch(header, /eyebrow|profile-spotter-rail|spotter-node|profile-unread-pill/);
+
+  vm.runInContext(`socialState = { ...socialState, inbox: { pendingIncomingCount: 3 } };`, context);
+  const busy = vm.runInContext("friendsProfileScreen()", context);
+  assert.match(busy, /<strong class="profile-unread-pill" role="img" aria-label="Waiting for you: 3">3<\/strong>/);
+  vm.runInContext(`socialState = { ...socialState, inbox: { pendingIncomingCount: 250 } };`, context);
+  assert.match(vm.runInContext("friendsProfileScreen()", context), /aria-label="Waiting for you: 250">99<\/strong>/);
+});
+
+test("Language lives in a Profile row with the full language name and no signed-in topbar selector", () => {
+  const context = profileScreenContext({ id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 });
+  const closed = vm.runInContext("friendsProfileScreen()", context);
+  assert.match(closed, /<span class="settings-row-value">English<\/span><svg[^>]*><path d="M8 9l4-4 4 4M8 15l4 4 4-4">/);
+  assert.match(closed, /aria-haspopup="menu" aria-expanded="false" aria-label="Language: English"/);
+  assert.doesNotMatch(closed, /class="language-menu"/);
+
+  const open = vm.runInContext("languageMenuOpen = true; friendsProfileScreen()", context);
+  assert.equal((open.match(/role="menu"/g) || []).length, 1);
+  assert.match(open, /aria-expanded="true"/);
+  for (const language of ["en", "uk", "ru"]) assert.match(open, new RegExp(`data-action="set-language" data-language="${language}"`));
+  vm.runInContext("languageMenuOpen = false;", context);
+
+  const uk = profileScreenContext({ id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 }, "uk");
+  assert.match(vm.runInContext("friendsProfileScreen()", uk), /<strong>Мова<\/strong>[\s\S]*<span class="settings-row-value">Українська<\/span>/);
+  const ru = profileScreenContext({ id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 }, "ru");
+  assert.match(vm.runInContext("friendsProfileScreen()", ru), /<strong>Язык<\/strong>[\s\S]*<span class="settings-row-value">Русский<\/span>/);
+
+  const renderSource = appSource.slice(appSource.indexOf("function render()"));
+  const topbar = renderSource.slice(renderSource.indexOf('<header class="topbar">'), renderSource.indexOf("</header>"));
+  assert.doesNotMatch(topbar, /languageSelectorMarkup/);
+  assert.match(appSource, /<header class="hero-panel auth-brand-panel">[\s\S]*\$\{languageSelectorMarkup\(\)\}/);
+  assert.match(appSource, /document\.addEventListener\?\.\("keydown", event => \{\s*if \(event\.key === "Escape"\) dismissLanguageMenu\(true\);/);
+  assert.match(appSource, /\.settings-language, \.language-selector[\s\S]*?\}, true\);/);
 });
 
 test("Missions renders the full stable achievement gallery and Workouts has no duplicate", () => {

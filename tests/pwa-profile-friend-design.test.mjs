@@ -39,8 +39,11 @@ test("profile hub defaults to social training and keeps account controls in a co
   assert.match(screen, /data-action="profile-hub-section" data-section="training"/);
   assert.match(screen, /data-action="profile-hub-section" data-section="settings"/);
   assert.ok(screen.indexOf("friendsPanel()") < screen.indexOf("themePreferencePanel()"));
+  assert.match(screen, /class="segmented profile-hub-switch panel compact" role="tablist"/);
+  assert.doesNotMatch(screen, /<small>|profile-spotter-rail|spotter-node|class="eyebrow"/);
   assert.match(stylesSource, /\.profile-hub-passport\s*\{/);
-  assert.match(stylesSource, /\.profile-spotter-rail\s*\{/);
+  assert.match(stylesSource, /\.profile-unread-pill\s*\{/);
+  assert.doesNotMatch(stylesSource, /spotter/);
   assert.match(stylesSource, /\.profile-hub-panel\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
   assert.match(stylesSource, /@media \(max-width: 460px\)[\s\S]*\.profile-hub-passport/);
 });
@@ -141,19 +144,32 @@ test("urgent live, workout, and friend requests render before the friend list an
   assert.ok(urgentStart < circleStart && circleStart < listStart && listStart < codeStart && codeStart < privacyStart);
 });
 
-test("profile keeps routine and dangerous controls behind compact disclosures", () => {
+test("profile keeps account controls in a compact row that opens the Account sheet", () => {
   const account = sourceBetween("function accountPanel()", "function cloudSyncStatusSnapshot");
+  const sheet = sourceBetween("function accountSettingsSheetMarkup()", "function accountPanel()");
   const data = sourceBetween("function profileDataPanel()", "function garminProfilePanel");
   const friends = sourceBetween("function friendsPanel()", "function friendsProfileScreen()");
+  const screen = sourceBetween("function friendsProfileScreen()", "function parseSocialGenericSubmission");
 
-  assert.match(account, /<details class="account-management-details">/);
-  assert.match(account, /<summary>[\s\S]*Manage account/);
-  assert.match(data, /<details class="profile-data-details">/);
+  assert.match(account, /action: "open-account-settings"/);
+  assert.doesNotMatch(account, /logout-account|delete-account|account-management-details/);
+  assert.match(appSource, /modal\.type === "account-settings"\) return bottomSheet\(accountSettingsSheetMarkup\(\), "account-settings-title"\)/);
+  assert.match(appSource, /action === "open-account-settings"\) \{\s+modal = \{ type: "account-settings" \};/);
+  assert.match(sheet, /action: "logout-account"/);
+  assert.match(sheet, /action: "delete-account"/);
+  assert.match(sheet, /remote\s*\?\s*`\$\{cloudSyncPanel\(\)\}\$\{webPushPanel\(\)\}/);
+  assert.doesNotMatch(screen, /cloudSyncPanel\(\)|webPushPanel\(\)/);
+  assert.match(appSource, /data-action="unpair-garmin"/);
+  assert.match(appSource, /action === "change-password"\) \{ modal = \{ type: "change-password", \.\.\.accountSheetReturnModal\(\) \}/);
+  assert.match(data, /<details class="settings-disclosure profile-data-details"><summary class="settings-row has-subtitle">/);
   assert.match(friends, /<details class="friend-connect-details">/);
   assert.match(friends, /friends-circle-card[\s\S]*friend-circle-list[\s\S]*<\/section>/);
-  assert.match(stylesSource, /\.account-management-details > summary/);
+  assert.match(stylesSource, /\.settings-panel\s*\{/);
+  assert.match(stylesSource, /\.settings-row\s*\{[\s\S]*?min-height:\s*48px;/);
+  assert.match(stylesSource, /\.settings-row\.has-subtitle\s*\{\s*min-height:\s*56px;/);
   assert.match(stylesSource, /\.friend-connect-details > summary/);
-  assert.match(stylesSource, /\.profile-data-details > summary/);
+  assert.match(stylesSource, /\.settings-disclosure > summary\s*\{\s*list-style:\s*none;/);
+  assert.match(stylesSource, /\.settings-disclosure\[open\] > summary \.settings-row-trailing svg\s*\{\s*transform:\s*rotate\(90deg\)/);
 });
 
 test("Friends refresh stays independent from workout-state synchronization", () => {
@@ -208,7 +224,7 @@ test("Fluid Focus interaction contract keeps choices, navigation, and touch targ
   assert.match(stylesSource, /\.buttonlike\s*\{[\s\S]*?min-height:\s*44px;/);
   assert.match(stylesSource, /\.period-tabs button\s*\{[\s\S]*?min-height:\s*44px;/);
   assert.match(stylesSource, /html\[lang="ru"\] \.tab-button > span:last-child\s*\{[\s\S]*?text-overflow:\s*clip;/);
-  assert.match(stylesSource, /@media \(max-width: 460px\)[\s\S]*?\.profile-hub-switch button strong\s*\{[\s\S]*?text-overflow:\s*clip;[\s\S]*?white-space:\s*normal;/);
+  assert.match(stylesSource, /\.segmented\.profile-hub-switch button\s*\{[\s\S]*?min-height:\s*48px;/);
   assert.match(stylesSource, /\.active-live-participant-panel:not\(\[hidden\]\)\s*\{[\s\S]*animation:\s*active-live-panel-enter 180ms/);
   assert.match(stylesSource, /\.onboarding-coach\s*\{[\s\S]*max-height:\s*calc\(100dvh[\s\S]*overflow-y:\s*auto;/);
   assert.match(stylesSource, /\.onboarding-actions\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*-18px;/);
@@ -281,9 +297,9 @@ test("first-entry app tour is account-bound, accessible, deferrable, and replaya
   assert.match(tour, /const aboveTop = top - gap - coachRect\.height/);
   assert.match(tour, /belowTop \+ coachRect\.height <= viewportHeight - margin/);
   assert.doesNotMatch(finish, /nav\s*=/);
-  assert.match(profileData, /data-action="replay-onboarding"/);
-  assert.match(profileData, /Show tutorial/);
-  assert.match(profileData, /Показати навчання/);
+  assert.match(profileData, /icon: "help"[\s\S]*action: "replay-onboarding"/);
+  assert.match(profileData, /Replay the quick GymApp tour\./);
+  assert.match(profileData, /Повтори короткий огляд GymApp\./);
   assert.match(deletion, /onboardingDescriptor\.storageKey/);
   assert.match(stylesSource, /\.onboarding-spotlight[\s\S]*box-shadow:\s*0 0 0 9999px/);
   assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.onboarding-spotlight\s*\{\s*transition:\s*none;/);

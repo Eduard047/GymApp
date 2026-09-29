@@ -231,7 +231,6 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["One softer session is held steady; a deload needs two comparable regressions.", "Одне слабше тренування утримує навантаження; для розвантаження потрібні два порівнювані спади."],
     ["Recent volume dropped compared with the previous session.", "Обсяг останнього тренування нижчий за обсяг попереднього."],
     ["Suggested from your recent exercise pattern and training profile.", "Підібрано з урахуванням недавніх вправ і профілю тренувань."],
-    ["Switch", "Змінити акаунт"],
     ["The increase is intentionally conservative.", "Збільшення навмисно невелике."],
     ["The pending Garmin device is no longer active. Run Sync Watch again to choose or create a pairing.", "Пристрій Garmin, що очікував на сполучення, більше не активний. Знову натисни «Синхронізувати з годинником», щоб вибрати або створити сполучення."],
     ["This legacy local account name is ambiguous. Its stored data was left untouched; rename/recover it before signing in.", "Ця назва старого локального акаунта неоднозначна. Збережені дані не змінено; віднови або перейменуй акаунт перед входом."],

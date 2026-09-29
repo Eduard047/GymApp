@@ -553,8 +553,6 @@ a:focus-visible,
   margin-top: 12px;
 }
 
-.profile-data-card,
-.profile-links-card,
 .theme-preference-card {
   display: grid;
   gap: 10px;
@@ -606,12 +604,6 @@ a:focus-visible,
 
 .auth-theme-card {
   gap: 12px;
-}
-
-.profile-links {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .filter-scroll {
@@ -2155,98 +2147,41 @@ button.leaderboard-row {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.profile-hub-identity p,
-.profile-hub-identity .eyebrow { color: color-mix(in srgb, var(--on-primary) 78%, transparent); }
+.profile-hub-identity p { color: color-mix(in srgb, var(--on-primary) 78%, transparent); }
 
-/* Spotter Lens: one compact rail shows that this profile is built for two-person training. */
-.profile-spotter-rail {
-  position: relative;
-  display: grid;
-  grid-template-columns: 30px 30px 30px;
-  align-items: center;
-}
-
-.spotter-node {
-  position: relative;
-  z-index: 1;
-  width: 30px;
-  height: 30px;
+/* Unread pill: only rendered when something needs attention; nothing fills the slot otherwise. */
+.profile-unread-pill {
+  min-width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--on-primary) 24%, transparent);
-  border-radius: 999px;
-  color: var(--on-primary);
-  background: color-mix(in srgb, var(--hero-fill) 76%, white);
-}
-
-.spotter-node svg { width: 15px; height: 15px; }
-.spotter-node.peer { background: color-mix(in srgb, var(--tertiary-container) 72%, var(--hero-fill)); }
-.spotter-track {
-  height: 3px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--on-primary) 22%, transparent);
-}
-.spotter-track i { display: block; width: 0; height: 100%; background: #72e1bd; }
-.spotter-track.active i { width: 100%; }
-.profile-spotter-rail > strong {
-  position: absolute;
-  top: -7px;
-  right: -6px;
-  z-index: 2;
-  min-width: 20px;
-  height: 20px;
-  display: grid;
-  place-items: center;
-  padding: 0 5px;
-  border: 2px solid var(--hero-fill);
+  padding: 0 7px;
   border-radius: 999px;
   color: #501b16;
   background: #ffb4aa;
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1;
 }
 
-.profile-hub-switch {
-  display: grid;
+/* Friends / Account uses the shared .segmented control with single-line labels. */
+.segmented.profile-hub-switch {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
+  gap: 3px;
+  padding: 3px;
 }
 
-.profile-hub-switch button {
-  min-width: 0;
-  min-height: 62px;
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
+.segmented.profile-hub-switch button {
+  min-height: 48px;
+  padding: 7px 6px;
+  text-align: center;
 }
 
-.profile-hub-switch button > svg { width: 20px; height: 20px; }
-.profile-hub-switch button span { min-width: 0; display: grid; gap: 1px; }
-.profile-hub-switch button strong,
-.profile-hub-switch button small {
+.profile-hub-switch button strong {
   overflow: hidden;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.profile-hub-switch button strong { color: var(--text); font-size: 13px; }
-.profile-hub-switch button small { font-size: 10px; line-height: 14px; }
-.profile-hub-switch button.selected {
-  border-color: color-mix(in srgb, var(--sage) 22%, var(--outline-variant));
-  color: var(--sage);
-  background: var(--surface);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .profile-hub-panel { display: grid; gap: 10px; }
@@ -2372,8 +2307,7 @@ button.leaderboard-row {
 .social-privacy-card > summary,
 .friend-safety-actions > summary,
 .friend-connect-details > summary,
-.account-management-details > summary,
-.profile-data-details > summary {
+.account-management-details > summary {
   min-height: 44px;
   display: flex;
   align-items: center;
@@ -2382,16 +2316,12 @@ button.leaderboard-row {
 }
 .social-privacy-card > summary > span,
 .friend-connect-details > summary > span,
-.account-management-details > summary > span,
-.profile-data-details > summary > span { display: grid; gap: 2px; }
+.account-management-details > summary > span { display: grid; gap: 2px; }
 .friend-connect-details > summary small,
-.account-management-details > summary small,
-.profile-data-details > summary small { color: var(--muted); }
+.account-management-details > summary small { color: var(--muted); }
 .social-privacy-controls { display: grid; gap: 10px; padding-top: 10px; }
 .friend-connect-details .field-row,
-.account-management-details .account-actions,
-.profile-data-controls { margin-top: 10px; }
-.profile-data-controls { display: grid; gap: 10px; }
+.account-management-details .account-actions { margin-top: 10px; }
 
 .social-request-list,
 .social-invite-list,
@@ -5262,28 +5192,15 @@ textarea:focus {
     width: 100%;
   }
 
-  .profile-links {
-    grid-template-columns: 1fr;
-  }
-
   .profile-hub-passport {
-    grid-template-columns: 42px minmax(0, 1fr) 72px;
+    grid-template-columns: 42px minmax(0, 1fr) auto;
     gap: 8px;
     padding: 12px;
   }
 
   .profile-hub-avatar { width: 42px; height: 42px; border-radius: 15px; }
-  .profile-spotter-rail { grid-template-columns: 26px 20px 26px; }
-  .spotter-node { width: 26px; height: 26px; }
-  .profile-hub-switch button { min-height: 64px; padding: 7px 8px; }
-  .profile-hub-switch button strong {
-    overflow: visible;
-    font-size: 12px;
-    line-height: 15px;
-    text-overflow: clip;
-    white-space: normal;
-  }
-  .profile-hub-switch button small { display: none; }
+  .segmented.profile-hub-switch button { padding: 7px 4px; }
+  .profile-hub-switch button strong { font-size: 13px; }
   .progress-hub-switch button {
     min-height: 50px;
     flex-direction: column;
@@ -5653,4 +5570,155 @@ textarea:focus {
 }
 
 .training-settings-days button.selected { color: var(--on-primary); background: var(--primary); }
-.training-settings-panel { display: grid; gap: 4px; }
+
+/* Account sheet and shared settings rows */
+.settings-panel {
+  display: grid;
+  padding: 0 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 0;
+  color: var(--text);
+  border: 0;
+  border-top: 1px solid var(--outline-variant);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.settings-row:first-child { border-top: 0; }
+.settings-row.has-subtitle { min-height: 56px; }
+.settings-row + .settings-row { position: relative; border-top: 0; }
+.settings-row + .settings-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 40px;
+  height: 1px;
+  background: var(--outline-variant);
+}
+
+.settings-row-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  color: var(--primary);
+}
+
+.settings-row-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings-row-icon svg.filled-icon,
+.account-identity-icon svg.filled-icon { fill: currentColor; stroke: none; }
+
+.settings-row-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.settings-row-text strong { overflow: hidden; color: var(--text); font-size: 16px; font-weight: 600; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.settings-row-text small { overflow: hidden; color: var(--muted); font-size: 14px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.settings-row.wrap .settings-row-text small { white-space: normal; }
+
+.settings-row-trailing { flex: none; display: inline-flex; color: var(--muted); }
+.settings-row-trailing svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings-row.danger .settings-row-icon,
+.settings-row.danger .settings-row-text strong { color: var(--danger); }
+
+/* Rows wrapped for a menu or disclosure still share the inset hairline divider. */
+.settings-panel > * + * { position: relative; }
+.settings-panel > * + *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 40px;
+  height: 1px;
+  background: var(--outline-variant);
+}
+.settings-panel > * + .settings-row { border-top: 0; }
+
+.settings-row-trailing { align-items: center; gap: 6px; }
+.settings-row-value { color: var(--muted); font-size: 16px; line-height: 22px; }
+
+.settings-language { position: relative; }
+.settings-language .language-menu { top: calc(100% - 6px); }
+
+.settings-disclosure > summary { list-style: none; }
+.settings-disclosure > summary::-webkit-details-marker { display: none; }
+.settings-disclosure > summary .settings-row-trailing svg { transition: transform 160ms ease; }
+.settings-disclosure[open] > summary .settings-row-trailing svg { transform: rotate(90deg); }
+.settings-disclosure-body { display: grid; gap: 10px; padding: 0 0 14px 40px; }
+.settings-disclosure-body p { margin: 0; }
+.profile-settings-list { margin: 0; }
+
+.account-settings-sheet { display: grid; gap: 16px; }
+.account-settings-sheet .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.account-settings-sheet h2 { margin: 0; }
+
+.account-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--sage) 46%, var(--outline-variant));
+  border-radius: var(--radius-panel);
+  background: var(--surface-highlight);
+}
+
+.account-identity-icon { flex: none; display: grid; place-items: center; width: 28px; color: var(--primary); }
+.account-identity-icon svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; }
+.account-identity-text { display: grid; gap: 2px; min-width: 0; }
+.account-identity-text strong { color: var(--text); font-size: 18px; font-weight: 700; line-height: 24px; overflow-wrap: anywhere; }
+.account-identity-text span { overflow: hidden; color: var(--muted); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+
+.account-id-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: -8px; padding: 0 4px; }
+.account-id-text { display: grid; gap: 2px; min-width: 0; }
+.account-id-label { color: var(--muted); font-size: 12px; font-weight: 600; line-height: 16px; }
+.account-id-value { overflow: hidden; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+
+.account-id-copy {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--primary);
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.account-links-group { display: grid; gap: 10px; }
+.account-privacy-caption { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; }
+.account-privacy-caption svg { flex: none; width: 16px; height: 16px; }
+.account-danger-zone .settings-row { justify-content: center; border-top: 0; }
+.account-danger-zone .settings-row .settings-row-text { flex: 0 1 auto; }
+.garmin-profile-card .garmin-unpair { margin-top: 12px; }

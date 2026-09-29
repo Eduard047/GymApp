@@ -80,7 +80,9 @@ test("PWA exposes official Android and Garmin store links on the login and accou
   assert.match(app, /\$\{storeDownloadPanel\(\)\}/);
   assert.match(app, /class="store-download-link" href="\$\{escapeAttr\(GOOGLE_PLAY_APP_URL\)\}" target="_blank" rel="noopener noreferrer"/);
   assert.match(app, /class="store-download-link" href="\$\{escapeAttr\(garminStoreAppLink\(\)\)\}" target="_blank" rel="noopener noreferrer"/);
-  assert.match(app, /class="button ghost" href="\$\{escapeAttr\(GOOGLE_PLAY_APP_URL\)\}" target="_blank" rel="noopener noreferrer"/);
+  assert.match(app, /settingsRowMarkup\(\{[^\n]*href: GOOGLE_PLAY_APP_URL, trailing: external \}\)/);
+  assert.match(app, /settingsRowMarkup\(\{[^\n]*href: garminStoreAppLink\(\), trailing: external \}\)/);
+  assert.match(app, /<a class="\$\{classes\}" href="\$\{escapeAttr\(href\)\}" target="_blank" rel="noopener noreferrer"/);
   assert.match(styles, /\.auth-actions\s*\{[^}]*gap: 12px;[^}]*margin-top: 16px;/s);
   assert.match(styles, /:root\[data-theme="dark"\][\s\S]*?--on-accent: #071321;/);
   assert.match(styles, /\.button\s*\{[^}]*color: var\(--on-accent\);[^}]*background: var\(--sage\);/s);
