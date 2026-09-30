@@ -641,32 +641,71 @@ private fun AchievementBadgeTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accent = achievementAccent(achievement.badgeRarity)
-    val unlocked = achievement.isUnlocked
-    val ringColor = if (unlocked) accent else MaterialTheme.colorScheme.primary
-    val fraction = achievement.progressFraction
-        .takeIf(Float::isFinite)
-        ?.coerceIn(0f, 1f)
-        ?: 0f
     val description = stringResource(
         R.string.achievement_tile_a11y,
         achievement.title,
         stringResource(
-            if (unlocked) R.string.achievement_status_unlocked else R.string.achievement_status_locked
+            if (achievement.isUnlocked) {
+                R.string.achievement_status_unlocked
+            } else {
+                R.string.achievement_status_locked
+            }
         ),
         achievementProgressText(achievement.progress, achievement.goal, locale)
     )
+    AchievementRingTile(
+        achievementId = achievement.id,
+        title = achievement.title,
+        rarity = achievement.badgeRarity,
+        unlocked = achievement.isUnlocked,
+        progressFraction = achievement.progressFraction,
+        description = description,
+        modifier = modifier,
+        onClick = onClick
+    )
+}
+
+/**
+ * Icon inside a progress ring, with the achievement title below. Shared by the Achievements grid
+ * (clickable, may be locked) and the post-workout "New badges" grid (no click, unlocked, full ring).
+ */
+@Composable
+internal fun AchievementRingTile(
+    achievementId: String,
+    title: String,
+    rarity: BadgeRarity,
+    unlocked: Boolean,
+    progressFraction: Float,
+    description: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val accent = achievementAccent(rarity)
+    val ringColor = if (unlocked) accent else MaterialTheme.colorScheme.primary
+    val fraction = progressFraction
+        .takeIf(Float::isFinite)
+        ?.coerceIn(0f, 1f)
+        ?: 0f
+    val click = onClick
     Column(
         modifier = modifier
             .heightIn(min = 108.dp)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(role = Role.Button, onClick = onClick)
+            .then(
+                if (click != null) {
+                    Modifier.clickable(role = Role.Button, onClick = click)
+                } else {
+                    Modifier
+                }
+            )
             .clearAndSetSemantics {
                 contentDescription = description
-                role = Role.Button
-                onClick {
-                    onClick()
-                    true
+                if (click != null) {
+                    role = Role.Button
+                    onClick {
+                        click()
+                        true
+                    }
                 }
             }
             .padding(horizontal = 6.dp, vertical = 10.dp),
@@ -683,7 +722,7 @@ private fun AchievementBadgeTile(
                 strokeCap = StrokeCap.Round
             )
             Icon(
-                imageVector = achievementBadgeIcon(achievement.id),
+                imageVector = achievementBadgeIcon(achievementId),
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
                 tint = if (unlocked) {
@@ -713,7 +752,7 @@ private fun AchievementBadgeTile(
             }
         }
         Text(
-            text = achievement.title,
+            text = title,
             modifier = Modifier.alpha(if (unlocked) 1f else 0.55f),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
@@ -859,7 +898,7 @@ private fun AchievementDetailsContent(
     }
 }
 
-private fun achievementBadgeIcon(id: String): ImageVector = when {
+internal fun achievementBadgeIcon(id: String): ImageVector = when {
     id.startsWith("streak_") -> Icons.Default.LocalFireDepartment
     id.startsWith("volume_") -> Icons.AutoMirrored.Filled.TrendingUp
     id == "comeback" -> Icons.Default.Replay
@@ -868,7 +907,7 @@ private fun achievementBadgeIcon(id: String): ImageVector = when {
 }
 
 @Composable
-private fun achievementRarityLabel(rarity: BadgeRarity): String = stringResource(
+internal fun achievementRarityLabel(rarity: BadgeRarity): String = stringResource(
     when (rarity) {
         BadgeRarity.COMMON -> R.string.achievement_rarity_common
         BadgeRarity.UNCOMMON -> R.string.achievement_rarity_uncommon

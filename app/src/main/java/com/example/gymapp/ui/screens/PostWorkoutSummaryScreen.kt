@@ -1,56 +1,69 @@
 package com.example.gymapp.ui.screens
 
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.IntrinsicSize
-import android.content.Context
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.gymapp.R
-import com.example.gymapp.data.repository.BadgeRarity
 import com.example.gymapp.data.repository.WorkoutFeedback
+import com.example.gymapp.ui.components.AchievementRingTile
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
-import com.example.gymapp.ui.components.HeroPanel
-import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymProgressBar
-import com.example.gymapp.ui.components.GymSegmentedControl
+import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.InfoPill
-import com.example.gymapp.ui.components.MetricTile
-import com.example.gymapp.ui.components.SectionTitle
-import com.example.gymapp.ui.components.WorkoutComparisonCard
+import com.example.gymapp.ui.components.achievementGridColumns
+import com.example.gymapp.ui.components.achievementRarityLabel
+import com.example.gymapp.ui.components.tabularDigits
+import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
 import com.example.gymapp.ui.viewmodel.NewBadgeUiState
-import com.example.gymapp.ui.viewmodel.PostWorkoutMuscleUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutPrUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutSummaryUiState
 import com.example.gymapp.util.DateTimeUtils
+import java.text.NumberFormat
 import java.util.Locale
 
 @Composable
@@ -98,24 +111,10 @@ fun PostWorkoutSummaryScreen(
                 }
 
                 item {
-                    SummaryMetrics(uiState = uiState)
-                }
-
-                item {
                     WorkoutFeedbackCard(
                         selected = uiState.feedback,
                         onSelected = onFeedbackSelected
                     )
-                }
-
-                uiState.workoutComparison?.let { comparison ->
-                    item {
-                        WorkoutComparisonCard(comparison = comparison)
-                    }
-                }
-
-                item {
-                    WorkoutImpactCard(uiState = uiState)
                 }
 
                 if (uiState.personalRecords.isNotEmpty()) {
@@ -127,44 +126,15 @@ fun PostWorkoutSummaryScreen(
                     }
                 }
 
-                item {
-                    LevelProgressCard(uiState = uiState)
-                }
-
-                item {
-                    MomentumCard(uiState = uiState)
-                }
-
-                item {
-                    SectionTitle(
-                        eyebrow = stringResource(R.string.post_workout_rewards_eyebrow),
-                        title = stringResource(R.string.post_workout_rewards_title)
-                    )
-                }
-
-                if (uiState.completedMissions.isEmpty() && uiState.newBadges.isEmpty()) {
-                    item {
-                        EmptyStatePanel(
-                            title = stringResource(R.string.post_workout_no_unlocks_title)
-                        )
-                    }
-                }
-
                 if (uiState.completedMissions.isNotEmpty()) {
-                    items(
-                        items = uiState.completedMissions,
-                        key = { mission -> mission.cadence + mission.title }
-                    ) { mission ->
-                        MissionCard(mission = mission)
+                    item {
+                        CompletedMissionsCard(missions = uiState.completedMissions)
                     }
                 }
 
                 if (uiState.newBadges.isNotEmpty()) {
-                    items(
-                        items = uiState.newBadges,
-                        key = { badge -> badge.name + badge.title }
-                    ) { badge ->
-                        BadgeCard(badge = badge)
+                    item {
+                        NewBadgesCard(badges = uiState.newBadges)
                     }
                 }
 
@@ -172,17 +142,25 @@ fun PostWorkoutSummaryScreen(
                     Column(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = onViewWorkout,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(text = stringResource(R.string.post_workout_view_workout))
-                        }
                         Button(
                             onClick = onDone,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
                         ) {
-                            Text(text = stringResource(R.string.post_workout_back_to_workouts))
+                            Text(text = stringResource(R.string.post_workout_done), maxLines = 1)
+                        }
+                        TextButton(
+                            onClick = onViewWorkout,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .heightIn(min = 48.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.post_workout_details),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -191,109 +169,233 @@ fun PostWorkoutSummaryScreen(
     }
 }
 
+/** "Sat, Sep 26 · 4h 31m": short date, then the duration when it is known. */
+internal fun postWorkoutSubtitle(
+    sessionDate: Long,
+    durationSeconds: Long?,
+    locale: Locale
+): String {
+    val datePart = DateTimeUtils.formatShortDate(sessionDate, locale)
+    val durationText = durationSeconds
+        ?.takeIf { it > 0L }
+        ?.let { DateTimeUtils.formatCompactDuration(it, locale) }
+        .orEmpty()
+    return if (durationText.isEmpty()) datePart else "$datePart · $durationText"
+}
+
+/** Record weights and estimates: at most one decimal, none for whole numbers ("60", "72,5"). */
+internal fun formatPostWorkoutRecordValue(value: Double, locale: Locale): String =
+    NumberFormat.getNumberInstance(locale).apply {
+        minimumFractionDigits = 0
+        maximumFractionDigits = 1
+    }.format(value)
+
+@Composable
+private fun SectionHeading(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.semantics { heading() },
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
 @Composable
 private fun WorkoutFeedbackCard(
     selected: WorkoutFeedback?,
     onSelected: (WorkoutFeedback) -> Unit
 ) {
+    val options = listOf(
+        WorkoutFeedback.Easy to stringResource(R.string.workout_feedback_easy),
+        WorkoutFeedback.Normal to stringResource(R.string.workout_feedback_normal),
+        WorkoutFeedback.Hard to stringResource(R.string.workout_feedback_hard)
+    )
+    val stacked = LocalDensity.current.fontScale >= 1.5f
+
     AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = selected != null) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = stringResource(R.string.workout_feedback_title),
-                style = MaterialTheme.typography.titleMedium
-            )
-            GymSegmentedControl(
-                items = listOf(
-                    GymSegmentItem<WorkoutFeedback?>(
-                        WorkoutFeedback.Easy,
-                        stringResource(R.string.workout_feedback_easy)
-                    ),
-                    GymSegmentItem<WorkoutFeedback?>(
-                        WorkoutFeedback.Normal,
-                        stringResource(R.string.workout_feedback_normal)
-                    ),
-                    GymSegmentItem<WorkoutFeedback?>(
-                        WorkoutFeedback.Hard,
-                        stringResource(R.string.workout_feedback_hard)
-                    )
-                ),
-                selected = selected,
-                onSelected = { value -> value?.let(onSelected) }
-            )
+            SectionHeading(text = stringResource(R.string.workout_feedback_title))
+            if (stacked) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    options.forEach { (feedback, label) ->
+                        FeedbackChip(
+                            label = label,
+                            selected = selected == feedback,
+                            onClick = { onSelected(feedback) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    options.forEach { (feedback, label) ->
+                        FeedbackChip(
+                            label = label,
+                            selected = selected == feedback,
+                            onClick = { onSelected(feedback) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
+private fun FeedbackChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        shape = GymControlShape,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            }
+        )
+    ) {
+        ShrinkToFitLabel(
+            text = label,
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 10.dp)
+                .fillMaxWidth()
+        )
+    }
+}
+
+/** One-line label that scales down (to 80%) before it would be cut off, like iOS `minimumScaleFactor(0.8)`. */
+@Composable
+private fun ShrinkToFitLabel(text: String, modifier: Modifier = Modifier) {
+    val base = MaterialTheme.typography.titleSmall
+    var scale by remember(text) { mutableFloatStateOf(1f) }
+    Text(
+        text = text,
+        modifier = modifier,
+        style = base.copy(
+            fontSize = base.fontSize * scale,
+            lineHeight = base.lineHeight * scale
+        ),
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        onTextLayout = { layout ->
+            if (layout.hasVisualOverflow && scale > 0.8f) {
+                scale = (scale - 0.05f).coerceAtLeast(0.8f)
+            }
+        }
+    )
+}
+
+@Composable
 private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val subtitle = postWorkoutSubtitle(uiState.sessionDate, uiState.durationSeconds, locale)
+
     HeroPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // Read inside the panel: only here LocalContentColor is the hero's own content color.
+        val onHero = LocalContentColor.current
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Icon(
-                    imageVector = Icons.Default.CheckCircle,
+                    imageVector = Icons.Default.Verified,
                     contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(38.dp)
+                    tint = onHero,
+                    modifier = Modifier.size(32.dp)
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         text = stringResource(R.string.post_workout_complete_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White,
+                        modifier = Modifier.semantics { heading() },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = onHero,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = DateTimeUtils.formatLongDate(uiState.sessionDate),
+                        text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.82f)
+                        color = onHero.copy(alpha = 0.82f)
                     )
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_xp_gained),
-                    value = stringResource(R.string.post_workout_xp_gain, uiState.xpGained),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true,
-                    onHero = true
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(R.string.post_workout_xp_gain, uiState.xpGained),
+                    style = MaterialTheme.typography.headlineLarge.tabularDigits(),
+                    fontSize = 34.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.SemiBold,
+                    color = onHero
                 )
-                MetricTile(
-                    label = stringResource(R.string.post_workout_level_progress_title),
-                    value = stringResource(R.string.post_workout_level, uiState.currentLevel),
-                    modifier = Modifier.weight(1f),
-                    onHero = true
+                Text(
+                    text = stringResource(R.string.post_workout_session_xp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = onHero.copy(alpha = 0.72f)
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_current_title),
-                    value = uiState.levelTitle,
-                    modifier = Modifier.weight(1f),
-                    onHero = true
-                )
-                MetricTile(
-                    label = stringResource(R.string.solo_streak_label),
-                    value = stringResource(
-                        R.string.solo_streak_weekly_value,
-                        uiState.weeklyStreakWeeks
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(
+                        R.string.post_workout_level_rank,
+                        uiState.currentLevel,
+                        uiState.levelTitle
                     ),
-                    modifier = Modifier.weight(1f),
-                    onHero = true
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = onHero
+                )
+                GymProgressBar(
+                    progress = { uiState.levelProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clearAndSetSemantics { },
+                    color = onHero,
+                    trackColor = onHero.copy(alpha = 0.24f)
+                )
+                Text(
+                    text = stringResource(
+                        R.string.post_workout_xp_to_level,
+                        uiState.xpToNextLevel,
+                        uiState.currentLevel + 1
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onHero.copy(alpha = 0.72f)
                 )
             }
+
             if (uiState.leveledUp) {
                 InfoPill(
                     text = stringResource(
@@ -301,114 +403,10 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                         uiState.previousLevel,
                         uiState.currentLevel
                     ),
-                    accent = Color.White
+                    accent = onHero
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun SummaryMetrics(uiState: PostWorkoutSummaryUiState) {
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.title_post_workout_summary),
-                title = stringResource(R.string.progress_summary_title),
-                supporting = uiState.topMuscleLabel?.let {
-                    stringResource(R.string.post_workout_top_muscle, it)
-                } ?: stringResource(R.string.post_workout_no_muscle_impact)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_exercises),
-                    value = uiState.exerciseCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_sets),
-                    value = uiState.setCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                MetricTile(
-                    label = stringResource(R.string.post_workout_metric_volume),
-                    value = String.format(Locale.getDefault(), "%.0f", uiState.volume),
-                    modifier = Modifier.weight(1f),
-                    emphasized = true
-                )
-                MetricTile(
-                    label = stringResource(R.string.muscle_heatmap_title),
-                    value = uiState.topMuscleLabel ?: "—",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WorkoutImpactCard(uiState: PostWorkoutSummaryUiState) {
-    AppPanel(
-        modifier = Modifier.fillMaxWidth(),
-        highlighted = uiState.muscles.isNotEmpty()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.muscle_heatmap_title),
-                title = stringResource(R.string.post_workout_impact_title),
-                supporting = uiState.topMuscleLabel?.let {
-                    stringResource(R.string.post_workout_top_muscle, it)
-                } ?: stringResource(R.string.post_workout_no_muscle_impact)
-            )
-            uiState.muscles.take(5).forEach { muscle ->
-                MuscleImpactRow(muscle = muscle)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MuscleImpactRow(muscle: PostWorkoutMuscleUiState) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = muscle.label,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-                maxLines = 1
-            )
-            Text(
-                text = stringResource(
-                    R.string.post_workout_muscle_load,
-                    muscle.load,
-                    pluralStringResource(R.plurals.progress_sets_count, muscle.sets, muscle.sets)
-                ),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        GymProgressBar(
-            progress = { muscle.intensity.coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
 
@@ -417,30 +415,47 @@ private fun PersonalRecordsCard(
     records: List<PostWorkoutPrUiState>,
     exerciseMediaOwnerKey: String
 ) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+
     AppPanel(
         modifier = Modifier.fillMaxWidth(),
         highlighted = true
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.post_workout_rewards_eyebrow),
-                title = stringResource(R.string.post_workout_pr_title)
-            )
-            records.take(5).forEach { record ->
+            SectionHeading(text = stringResource(R.string.post_workout_records_title))
+            records.forEach { record ->
+                val detail = listOfNotNull(
+                    record.weight?.let {
+                        stringResource(
+                            R.string.post_workout_record_weight,
+                            formatPostWorkoutRecordValue(it, locale)
+                        )
+                    },
+                    record.estimatedOneRepMax?.let {
+                        stringResource(
+                            R.string.post_workout_record_one_rep_max,
+                            formatPostWorkoutRecordValue(it, locale)
+                        )
+                    }
+                ).joinToString(" · ")
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics(mergeDescendants = true) { },
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ExerciseMediaPreview(
                         exerciseId = record.exerciseId,
                         exerciseName = record.exerciseName,
                         ownerKey = exerciseMediaOwnerKey,
-                        width = 64.dp,
-                        height = 54.dp
+                        width = 40.dp,
+                        height = 40.dp,
+                        editable = false,
+                        playBadgeSize = 18.dp
                     )
                     Column(
                         modifier = Modifier.weight(1f),
@@ -448,264 +463,101 @@ private fun PersonalRecordsCard(
                     ) {
                         Text(
                             text = localizedExerciseName(record.exerciseName),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = record.previousBest?.let {
-                                stringResource(R.string.post_workout_pr_previous, it)
-                            } ?: stringResource(R.string.post_workout_pr_first),
+                            text = detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewBadgesCard(badges: List<NewBadgeUiState>) {
+    val columns = achievementGridColumns(LocalDensity.current.fontScale)
+
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SectionHeading(text = stringResource(R.string.post_workout_badges_title))
+            badges.chunked(columns).forEach { rowItems ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    rowItems.forEach { badge ->
+                        AchievementRingTile(
+                            achievementId = badge.id,
+                            title = badge.name,
+                            rarity = badge.rarity,
+                            unlocked = true,
+                            progressFraction = 1f,
+                            description = stringResource(
+                                R.string.post_workout_badge_a11y,
+                                badge.name,
+                                achievementRarityLabel(badge.rarity)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    repeat(columns - rowItems.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompletedMissionsCard(missions: List<CompletedMissionUiState>) {
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SectionHeading(text = stringResource(R.string.post_workout_missions_title))
+            missions.forEach { mission ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics(mergeDescendants = true) { },
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = mission.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = mission.description,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    InfoPill(
-                        text = stringResource(R.string.progress_weight_value, record.weight),
-                        accent = MaterialTheme.colorScheme.primary
-                    )
+                    InfoPill(text = mission.cadence)
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun LevelProgressCard(uiState: PostWorkoutSummaryUiState) {
-    AppPanel(
-        modifier = Modifier.fillMaxWidth(),
-        highlighted = uiState.leveledUp
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.progress_summary_title),
-                title = stringResource(R.string.post_workout_level_progress_title),
-                supporting = stringResource(
-                    R.string.post_workout_xp_to_next,
-                    uiState.xpToNextLevel
-                )
-            )
-            Text(
-                text = stringResource(
-                    R.string.post_workout_level_progress_value,
-                    uiState.currentLevel,
-                    uiState.levelTitle
-                ),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            GymProgressBar(
-                progress = { uiState.levelProgress.coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(
-                        R.string.post_workout_xp_into_level,
-                        uiState.xpIntoLevel
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = stringResource(
-                        R.string.post_workout_xp_to_next,
-                        uiState.xpToNextLevel
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            if (uiState.nextTitle != null) {
-                Text(
-                    text = stringResource(R.string.post_workout_next_title, uiState.nextTitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MomentumCard(uiState: PostWorkoutSummaryUiState) {
-    val context = LocalContext.current
-
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SectionTitle(
-                eyebrow = stringResource(R.string.post_workout_metric_streak),
-                title = stringResource(R.string.post_workout_momentum_title),
-                supporting = streakMessage(uiState, context)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                InfoPill(
-                    text = stringResource(
-                        if (uiState.activeToday) {
-                            R.string.post_workout_logged_today
-                        } else {
-                            R.string.post_workout_logged_recently
-                        }
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-                InfoPill(
-                    text = stringResource(
-                        R.string.post_workout_best_streak,
-                        uiState.longestStreakDays
-                    ),
-                    modifier = Modifier.weight(1f),
-                    accent = MaterialTheme.colorScheme.secondary
-                )
-            }
-            if (uiState.isComeback) {
-                Text(
-                    text = stringResource(
-                        R.string.post_workout_comeback,
-                        uiState.comebackGapDays ?: 0
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MissionCard(mission: CompletedMissionUiState) {
-    AppPanel(
-        modifier = Modifier.fillMaxWidth(),
-        highlighted = true
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = mission.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = mission.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                InfoPill(text = mission.cadence)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BadgeCard(badge: NewBadgeUiState) {
-    val context = LocalContext.current
-
-    AppPanel(
-        modifier = Modifier.fillMaxWidth(),
-        highlighted = true,
-        containerColor = badge.rarity.color().copy(alpha = 0.12f)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = badge.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = badge.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    InfoPill(
-                        text = badge.rarity.label(context),
-                        accent = badge.rarity.color()
-                    )
-                    Text(
-                        text = stringResource(R.string.post_workout_reward_points, badge.rewardXp),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = badge.rarity.color(),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun streakMessage(uiState: PostWorkoutSummaryUiState, context: Context): String {
-    return when {
-        uiState.streakExtended && uiState.streakDays > 1 -> context.getString(
-            R.string.post_workout_streak_extended,
-            uiState.streakDays
-        )
-        uiState.streakDays == 1 -> context.getString(R.string.post_workout_streak_fresh)
-        uiState.streakDays > 1 -> context.getString(
-            R.string.post_workout_streak_current,
-            uiState.streakDays
-        )
-        else -> context.getString(R.string.post_workout_streak_return)
-    }
-}
-
-private fun BadgeRarity.label(context: Context): String {
-    return when (this) {
-        BadgeRarity.COMMON -> context.getString(R.string.badge_rarity_common)
-        BadgeRarity.UNCOMMON -> context.getString(R.string.badge_rarity_uncommon)
-        BadgeRarity.RARE -> context.getString(R.string.badge_rarity_rare)
-        BadgeRarity.EPIC -> context.getString(R.string.badge_rarity_epic)
-        BadgeRarity.LEGENDARY -> context.getString(R.string.badge_rarity_legendary)
-    }
-}
-
-@Composable
-private fun BadgeRarity.color(): Color {
-    return when (this) {
-        BadgeRarity.COMMON -> MaterialTheme.colorScheme.secondary
-        BadgeRarity.UNCOMMON -> MaterialTheme.colorScheme.primary
-        BadgeRarity.RARE -> MaterialTheme.colorScheme.tertiary
-        BadgeRarity.EPIC -> MaterialTheme.colorScheme.primary
-        BadgeRarity.LEGENDARY -> MaterialTheme.colorScheme.error
     }
 }

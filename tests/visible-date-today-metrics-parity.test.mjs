@@ -82,7 +82,10 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   const source = path => nativeDateSurfaces[path];
 
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/WorkoutDetailScreen.kt"), /DateTimeUtils\.formatLongDate/);
-  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/PostWorkoutSummaryScreen.kt"), /DateTimeUtils\.formatLongDate/);
+  // DESIGN.md "Post-workout summary": the hero subtitle uses the shared short weekday/date
+  // formatter followed by the compact duration, mirroring iOS gymShortDate + gymCompactDuration.
+  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/PostWorkoutSummaryScreen.kt"), /DateTimeUtils\.formatShortDate/);
+  assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/PostWorkoutSummaryScreen.kt"), /DateTimeUtils\.formatCompactDuration/);
   for (const path of [
     "app/src/main/java/com/example/gymapp/ui/screens/AddWorkoutScreen.kt",
     "app/src/main/java/com/example/gymapp/ui/screens/FriendWorkoutPickerSheet.kt",

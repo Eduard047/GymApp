@@ -142,6 +142,31 @@ object DateTimeUtils {
         }
     }
 
+    /**
+     * Abbreviated hour/minute duration such as "4h 31m", "4 г 31 хв" or "4 ч 31 мин" (at most two
+     * units, seconds dropped). Reproduces the iOS `DateComponentsFormatter` output with the
+     * abbreviated style, including Ukrainian's narrow no-break space between number and unit.
+     * Returns an empty string when [seconds] is not positive.
+     */
+    fun formatCompactDuration(
+        seconds: Long,
+        locale: Locale = Locale.getDefault()
+    ): String {
+        if (seconds <= 0L) return ""
+        val hours = seconds / 3600
+        val minutes = seconds % 3600 / 60
+        val (hourUnit, minuteUnit) = when (locale.language.lowercase(Locale.ROOT)) {
+            "uk" -> "\u202F\u0433" to "\u202F\u0445\u0432"
+            "ru" -> " \u0447" to " \u043c\u0438\u043d"
+            else -> "h" to "m"
+        }
+        return when {
+            hours == 0L -> "$minutes$minuteUnit"
+            minutes == 0L -> "$hours$hourUnit"
+            else -> "$hours$hourUnit $minutes$minuteUnit"
+        }
+    }
+
     /** Short date (see [formatShortDate]) for a calendar day given as days since the epoch. */
     fun formatEpochDayShort(
         epochDay: Long,

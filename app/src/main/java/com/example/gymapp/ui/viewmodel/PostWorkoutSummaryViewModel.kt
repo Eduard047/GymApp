@@ -6,22 +6,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
-import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.repository.BadgeRarity
 import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.data.repository.GamificationSnapshot
+import com.example.gymapp.data.repository.GymOneRepMax
 import com.example.gymapp.data.repository.GymRepository
-import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.RANK_DEFINITIONS
-import com.example.gymapp.data.repository.estimatedLoad
-import com.example.gymapp.data.repository.muscleContributionsForExercise
-import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.data.repository.WorkoutFeedback
 import com.example.gymapp.data.repository.WeeklyStreakCalculator
-import com.example.gymapp.garmin.WorkoutComparison
-import com.example.gymapp.garmin.buildWorkoutComparisonForSession
 import com.example.gymapp.garmin.isWorkoutEarlier
 import com.example.gymapp.garmin.toExerciseHistoryEntries
 import com.example.gymapp.util.RussianText
@@ -37,8 +30,6 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
-import kotlin.math.pow
-import kotlin.math.roundToInt
 
 data class CompletedMissionUiState(
     val id: String,
@@ -49,25 +40,22 @@ data class CompletedMissionUiState(
 )
 
 data class NewBadgeUiState(
+    val id: String,
     val name: String,
     val title: String,
     val rarity: BadgeRarity,
     val rewardXp: Int
 )
 
-data class PostWorkoutMuscleUiState(
-    val id: String,
-    val label: String,
-    val load: Int,
-    val sets: Int,
-    val intensity: Float
-)
-
+/**
+ * One personal-record row per exercise. [weight] and [estimatedOneRepMax] are set only for the
+ * parts that really are records in this session.
+ */
 data class PostWorkoutPrUiState(
     val exerciseId: Long,
     val exerciseName: String,
-    val weight: Double,
-    val previousBest: Double?
+    val weight: Double?,
+    val estimatedOneRepMax: Double?
 )
 
 data class PostWorkoutSummaryUiState(
@@ -75,6 +63,7 @@ data class PostWorkoutSummaryUiState(
     val isSessionFound: Boolean = true,
     val sessionId: Long? = null,
     val sessionDate: Long = 0L,
+    val durationSeconds: Long? = null,
     val workoutCount: Int = 0,
     val exerciseCount: Int = 0,
     val setCount: Int = 0,
@@ -98,18 +87,10 @@ data class PostWorkoutSummaryUiState(
     val comebackGapDays: Int? = null,
     val comebackMultiplier: Double = 1.0,
     val comebackBonusXp: Int = 0,
-    val topMuscleLabel: String? = null,
-    val muscles: List<PostWorkoutMuscleUiState> = emptyList(),
     val personalRecords: List<PostWorkoutPrUiState> = emptyList(),
-    val workoutComparison: WorkoutComparison? = null,
     val feedback: WorkoutFeedback? = null,
     val completedMissions: List<CompletedMissionUiState> = emptyList(),
     val newBadges: List<NewBadgeUiState> = emptyList()
-)
-
-private data class MutableSessionMuscleStats(
-    var load: Double = 0.0,
-    val setIds: MutableSet<Long> = linkedSetOf()
 )
 
 private data class PostWorkoutExperienceState(
@@ -162,6 +143,58 @@ internal val POST_WORKOUT_ACHIEVEMENT_UK = mapOf(
     )
 )
 
+/**
+ * Records set by one session, one row per exercise, under the same rules as the live record badge
+ * ([com.example.gymapp.data.repository.LivePersonalRecords]): an exercise's first session is never a
+ * record, a 0 kg value is never a record, and matching the previous best is not a record. A row
+ * carries a weight only when the heaviest set beat the previous best weight, and an estimated
+ * one-rep max only when the best estimate beat the previous best estimate. [PostWorkoutPrUiState.exerciseName]
+ * is the stored name; the screen localizes it.
+ */
+internal fun buildPostWorkoutPersonalRecords(
+    sessionEntries: List<ExerciseHistoryEntry>,
+    allHistory: List<ExerciseHistoryEntry>,
+    currentSessionId: Long,
+    currentSessionDate: Long
+): List<PostWorkoutPrUiState> {
+    val previousByExercise = allHistory
+        .filter { entry ->
+            isWorkoutEarlier(
+                candidateDate = entry.sessionDate,
+                candidateId = entry.sessionId,
+                currentDate = currentSessionDate,
+                currentId = currentSessionId
+            )
+        }
+        .groupBy { it.exerciseId }
+
+    return sessionEntries
+        .groupBy { it.exerciseId }
+        .mapNotNull { (exerciseId, entries) ->
+            val previous = previousByExercise[exerciseId]?.takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
+            val previousBestWeight = previous.maxOf { it.weight }
+            val previousBestEstimate = previous.maxOf { GymOneRepMax.estimate(it.weight, it.reps) }
+
+            val bestWeightSet = entries.maxByOrNull { it.weight } ?: return@mapNotNull null
+            val weightRecord = bestWeightSet.weight
+                .takeIf { it > 0.0 && it > previousBestWeight }
+            val bestEstimate = entries.maxOf { GymOneRepMax.estimate(it.weight, it.reps) }
+            val estimateRecord = bestEstimate
+                .takeIf { it > 0.0 && it > previousBestEstimate + ESTIMATE_TOLERANCE }
+
+            if (weightRecord == null && estimateRecord == null) return@mapNotNull null
+            PostWorkoutPrUiState(
+                exerciseId = exerciseId,
+                exerciseName = bestWeightSet.exerciseName,
+                weight = weightRecord,
+                estimatedOneRepMax = estimateRecord
+            )
+        }
+}
+
+private const val ESTIMATE_TOLERANCE = 1e-9
+
 class PostWorkoutSummaryViewModel(
     private val repository: GymRepository,
     private val sessionId: Long,
@@ -189,9 +222,8 @@ class PostWorkoutSummaryViewModel(
         repository.observeSessionDetails(sessionId),
         sessions,
         repository.observeAllExerciseHistory(),
-        repository.observeExerciseMuscleMappings(),
         experience
-    ) { sessionDetails, sessions, exerciseHistory, muscleMappings, experience ->
+    ) { sessionDetails, sessions, exerciseHistory, experience ->
         if (sessionDetails == null) {
             PostWorkoutSummaryUiState(
                 isLoading = false,
@@ -262,25 +294,11 @@ class PostWorkoutSummaryViewModel(
                 workoutExercise.sets.sumOf { set -> set.weight * set.reps }
             }
             val sessionHistoryEntries = sessionDetails.toExerciseHistoryEntries()
-            val muscles = buildSessionMuscles(
-                sessionHistoryEntries = sessionHistoryEntries,
-                muscleMappings = muscleMappings
-            )
-            val personalRecords = buildPersonalRecords(
+            val personalRecords = buildPostWorkoutPersonalRecords(
                 sessionEntries = sessionHistoryEntries,
                 allHistory = exerciseHistory,
+                currentSessionId = sessionId,
                 currentSessionDate = sessionDetails.session.date
-            )
-            val workoutComparison = buildWorkoutComparisonForSession(
-                currentSessionId = sessionDetails.session.id,
-                currentSessionDate = sessionDetails.session.date,
-                currentNote = sessionDetails.session.note,
-                currentHasGarminReceipt = sessions
-                    .firstOrNull { summary -> summary.session.id == sessionId }
-                    ?.hasGarminReceipt == true,
-                currentEntries = sessionHistoryEntries,
-                allSessions = sessions,
-                allHistory = exerciseHistory
             )
 
             PostWorkoutSummaryUiState(
@@ -288,6 +306,7 @@ class PostWorkoutSummaryViewModel(
                 isSessionFound = true,
                 sessionId = sessionDetails.session.id,
                 sessionDate = sessionDetails.session.date,
+                durationSeconds = sessionDetails.session.durationSeconds,
                 workoutCount = afterSnapshot.summary.workoutCount,
                 exerciseCount = workoutExerciseCount,
                 setCount = setCount,
@@ -311,10 +330,7 @@ class PostWorkoutSummaryViewModel(
                 comebackGapDays = afterSnapshot.comeback.gapDays,
                 comebackMultiplier = afterSnapshot.comeback.multiplier,
                 comebackBonusXp = afterSnapshot.comeback.bonusXp,
-                topMuscleLabel = muscles.firstOrNull()?.label,
-                muscles = muscles,
                 personalRecords = personalRecords,
-                workoutComparison = workoutComparison,
                 feedback = experience.feedbackBySession[sessionId]
                     ?.takeIf { it.sessionStartedAtMillis == sessionDetails.session.date }
                     ?.feedback,
@@ -367,6 +383,7 @@ class PostWorkoutSummaryViewModel(
             .map { achievement ->
                 val translation = POST_WORKOUT_ACHIEVEMENT_UK[achievement.id]
                 NewBadgeUiState(
+                    id = achievement.id,
                     name = localizedText(
                         en = achievement.badge.name,
                         uk = translation?.badgeName ?: achievement.badge.name
@@ -379,78 +396,6 @@ class PostWorkoutSummaryViewModel(
                     rewardXp = achievement.rewardXp
                 )
             }
-    }
-
-    private fun buildSessionMuscles(
-        sessionHistoryEntries: List<ExerciseHistoryEntry>,
-        muscleMappings: List<ExerciseMuscleMappingEntity>
-    ): List<PostWorkoutMuscleUiState> {
-        val manualMap = muscleMappings.toManualContributionMap()
-        val statsByMuscle = MUSCLE_DEFINITIONS.associate { it.id to MutableSessionMuscleStats() }.toMutableMap()
-
-        sessionHistoryEntries.forEach { entry ->
-            val load = entry.estimatedLoad()
-            muscleContributionsForExercise(entry.exerciseName, manualMap).forEach { contribution ->
-                val stats = statsByMuscle.getOrPut(contribution.muscleId) { MutableSessionMuscleStats() }
-                stats.load += load * contribution.weight
-                stats.setIds += entry.setId
-            }
-        }
-
-        val maxLoad = statsByMuscle.values.maxOfOrNull { it.load } ?: 0.0
-        return MUSCLE_DEFINITIONS.mapNotNull { definition ->
-            val stats = statsByMuscle[definition.id] ?: return@mapNotNull null
-            if (stats.load <= 0.0) return@mapNotNull null
-            val ratio = if (maxLoad <= 0.0) 0.0 else (stats.load / maxLoad).coerceIn(0.0, 1.0)
-            PostWorkoutMuscleUiState(
-                id = definition.id,
-                label = localizedText(definition.titleEn, definition.titleUk),
-                load = stats.load.roundToInt(),
-                sets = stats.setIds.size,
-                intensity = ratio.pow(0.72).toFloat().coerceIn(0f, 1f)
-            )
-        }.sortedByDescending { it.load }
-    }
-
-    private fun buildPersonalRecords(
-        sessionEntries: List<ExerciseHistoryEntry>,
-        allHistory: List<ExerciseHistoryEntry>,
-        currentSessionDate: Long
-    ): List<PostWorkoutPrUiState> {
-        val previousBestByExercise = allHistory
-            .filter { entry ->
-                isWorkoutEarlier(
-                    candidateDate = entry.sessionDate,
-                    candidateId = entry.sessionId,
-                    currentDate = currentSessionDate,
-                    currentId = sessionId
-                )
-            }
-            .groupBy { it.exerciseId }
-            .mapValues { (_, entries) -> entries.maxOfOrNull { it.weight } ?: 0.0 }
-
-        return sessionEntries
-            .groupBy { it.exerciseId }
-            .mapNotNull { (exerciseId, entries) ->
-                val bestCurrentSet = entries.maxByOrNull { it.weight } ?: return@mapNotNull null
-                val previousBest = previousBestByExercise[exerciseId]
-                if (bestCurrentSet.weight <= 0.0) {
-                    return@mapNotNull null
-                }
-                if (previousBest != null && bestCurrentSet.weight <= previousBest) {
-                    return@mapNotNull null
-                }
-                PostWorkoutPrUiState(
-                    exerciseId = exerciseId,
-                    exerciseName = BuiltInExerciseCatalog.displayName(
-                        bestCurrentSet.exerciseName,
-                        currentLocale().language
-                    ),
-                    weight = bestCurrentSet.weight,
-                    previousBest = previousBest
-                )
-            }
-            .sortedByDescending { it.weight }
     }
 
     private fun AdaptiveMission.toCompletedMissionUiState(): CompletedMissionUiState {

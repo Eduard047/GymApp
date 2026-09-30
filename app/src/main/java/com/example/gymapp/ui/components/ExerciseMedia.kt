@@ -151,13 +151,16 @@ fun ExerciseMediaPreview(
             } else if (!preview.hasMedia) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Image, contentDescription = null)
-                    Text(
-                        stringResource(
-                            if (editable) R.string.exercise_media_add
-                            else R.string.exercise_media_no_preview
-                        ),
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    // Compact thumbnails (for example list rows) have no room for the caption.
+                    if (height >= 48.dp) {
+                        Text(
+                            stringResource(
+                                if (editable) R.string.exercise_media_add
+                                else R.string.exercise_media_no_preview
+                            ),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 }
             } else {
                 Icon(Icons.Default.Image, contentDescription = null)

@@ -158,16 +158,20 @@ class StringResourceParityTest {
                 "При дефиците калорий прогрессия осторожнее, чтобы сохранить восстановление.",
             "smart_reason_upper_lower" to
                 "Четырёхдневный сплит «верх/низ»: нагрузка оставляет запас для следующей тренировки.",
-            "post_workout_top_muscle" to "Наибольшая нагрузка сегодня: %1\$s",
+            "post_workout_records_title" to "Новые рекорды",
+            "post_workout_record_one_rep_max" to "1ПМ %1\$s кг",
+            "post_workout_xp_to_level" to "%1\$d XP до уровня %2\$d",
             "exercise_sort_least_frequent" to "Реже всего",
             "action_copy_last_plus" to "Копировать предыдущий + 2,5 кг",
-            "post_workout_view_workout" to "Посмотреть тренировку",
+            "post_workout_details" to "Детали тренировки",
+            "post_workout_done" to "Готово",
+            "workout_feedback_normal" to "В самый раз",
             "achievements_gallery_subtitle" to
                 "Все основные цели, их прогресс, редкость и дата открытия.",
             "achievement_status_locked" to "Закрыто",
             "rank_status_unlocked" to "Открыт",
-            "post_workout_logged_today" to "Записано сегодня",
-            "post_workout_logged_recently" to "Записано недавно",
+            "post_workout_missions_title" to "Выполненные миссии",
+            "post_workout_badges_title" to "Новые значки",
             "progress_summary_title" to "Сводка прогресса"
         )
         expectedRussian.forEach { (key, expected) ->
