@@ -1,6 +1,7 @@
 package com.example.gymapp.ui.viewmodel
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -58,6 +59,35 @@ class WorkoutSetChipActionsTest {
         assertEquals(sets[0], result?.get(1))
         assertEquals(sets[1], result?.get(2))
         assertEquals(sets[2], result?.get(3))
+    }
+
+    @Test
+    fun duplicateProducesAnIndependentCopy() {
+        val original = listOf(SetInputState("60", "8"), SetInputState("70", "6"))
+        val duplicated = checkNotNull(original.withSetDuplicatedAfter(0))
+
+        assertEquals(2, original.size)
+        assertEquals(3, duplicated.size)
+        assertEquals(duplicated[0], duplicated[1])
+        assertNotSame(duplicated, original)
+        assertNotSame(duplicated[0], duplicated[1])
+
+        // Editing the copy through the pure chip actions must leave the source set untouched.
+        val edited = checkNotNull(duplicated.withWeightAddedAt(1))
+        assertEquals("60", edited[0].weight)
+        assertEquals("62.5", edited[1].weight)
+        assertEquals("70", edited[2].weight)
+        assertEquals("60", original[0].weight)
+        assertEquals("60", duplicated[0].weight)
+    }
+
+    @Test
+    fun duplicateInTheMiddleKeepsPositionsAndDoesNotTouchNeighbours() {
+        val original = listOf(SetInputState("1", "1"), SetInputState("2", "2"), SetInputState("3", "3"))
+        val duplicated = checkNotNull(original.withSetDuplicatedAfter(1))
+
+        assertEquals(listOf("1", "2", "2", "3"), duplicated.map { it.weight })
+        assertEquals(listOf("1", "2", "3"), original.map { it.weight })
     }
 
     @Test
