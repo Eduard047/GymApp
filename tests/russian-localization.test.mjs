@@ -62,6 +62,16 @@ test("Android Russian resources cover every English string with compatible place
   assert.match(activeWorkout, /R\.string\.active_workout_add_set/);
   assert.match(activeWorkout, /R\.string\.action_save_all_pending_sets/);
   assert.match(activeWorkout, /R\.string\.action_log_set_and_rest/);
+  assert.match(activeWorkout, /R\.string\.action_log_set\b/);
+  assert.match(activeWorkout, /R\.string\.active_workout_previous_caption/);
+  assert.match(activeWorkout, /R\.string\.voice_command_type_instead/);
+  assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_set_current/);
+  assert.doesNotMatch(activeWorkout, /R\.string\.training_(previous_result|less_weight|more_weight|repeat_values)/);
+  assert.equal(english.get("action_log_set_and_rest"), "Log · rest %1$s");
+  assert.equal(russian.get("action_log_set_and_rest"), "Записать · отдых %1$s");
+  assert.equal(ukrainian.get("action_log_set_and_rest"), "Записати · відпочинок %1$s");
+  assert.equal(russian.get("active_workout_previous_caption"), "прошлый раз %1$s × %2$d");
+  assert.equal(ukrainian.get("active_workout_previous_caption"), "минулого разу %1$s × %2$d");
   assert.match(activeWorkout, /R\.string\.active_workout_undo_action/);
   assert.match(activeWorkout, /R\.string\.active_workout_rest_stop/);
   assert.doesNotMatch(activeWorkout, /R\.string\.active_workout_supporting/);

@@ -77,7 +77,9 @@ data class ActiveWorkoutExerciseUiState(
     /** Built-in catalog key, used for the plate calculator. */
     val catalogKey: String? = null,
     /** Matches a friend's result on the same exercise (see FriendGhosts). */
-    val friendGhostKey: String = ""
+    val friendGhostKey: String = "",
+    /** True when "Skip them" can drop this exercise's unrecorded sets (see WorkoutAdaptation.buildSkipCandidate). */
+    val canSkipRemaining: Boolean = false
 )
 
 data class ActiveWorkoutAdaptationValue(val weight: Double, val reps: Int, val previousWeight: Double?, val previousReps: Int?)
@@ -135,6 +137,13 @@ data class ActiveWorkoutUiState(
     val livePendingOperationCount: Int = 0,
     val adaptation: ActiveWorkoutAdaptationUiState? = null
 )
+
+/** String shown after "Skip them": the frozen live plan, a stale/missing workout, or success. */
+internal fun activeWorkoutSkipOutcomeMessage(result: ApplyActiveWorkoutAdaptationResult): Int = when (result) {
+    is ApplyActiveWorkoutAdaptationResult.Applied -> R.string.active_workout_remaining_sets_skipped
+    ApplyActiveWorkoutAdaptationResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    else -> R.string.active_workout_changed
+}
 
 internal fun activeWorkoutOperationInProgress(
     setRecordingsInFlight: Set<String>,
@@ -561,7 +570,11 @@ class ActiveWorkoutViewModel(
                 friendGhostKey = FriendGhosts.exerciseKey(
                     catalogKey = exercise.activeWorkoutExercise.catalogKey,
                     name = exercise.activeWorkoutExercise.exerciseName
-                )
+                ),
+                canSkipRemaining = activeWorkout != null && WorkoutAdaptation.buildSkipCandidate(
+                    activeWorkout,
+                    exercise.activeWorkoutExercise.id
+                ) != null
             )
         }
         val allSets = exercises.flatMap(ActiveWorkoutExerciseUiState::sets)
@@ -907,7 +920,7 @@ class ActiveWorkoutViewModel(
     }
 
     fun saveExercise(exerciseId: String) {
-        if (liveSync != null) return
+        if (isInLiveRoom()) return
         val snapshot = details.value ?: return
         val target = snapshot.exercises.firstOrNull {
             it.activeWorkoutExercise.id == exerciseId
@@ -979,8 +992,53 @@ class ActiveWorkoutViewModel(
         }
     }
 
+    /**
+     * "Skip them": finishes the exercise by dropping its unrecorded sets instead of recording them.
+     * Reuses the adaptation path (completed sets are preserved and re-validated by the repository).
+     * The latest recorded set, its undo and its rest timer are untouched: skipped sets were never
+     * recorded, so there is no timer or undo state that belongs to them.
+     */
+    fun skipRemainingSets(exerciseId: String) {
+        if (activeWorkoutOperationInProgress()) return
+        if (isInLiveRoom()) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
+            }
+            return
+        }
+        val snapshot = details.value ?: return
+        val currentInputs = inputs.value
+        val hydrated = snapshot.copy(exercises = snapshot.exercises.map { block ->
+            block.copy(sets = block.sets.map { set ->
+                val parsed = currentInputs[set.id]?.let { parseActiveWorkoutSetInput(it.weight, it.reps) }
+                if (set.completedAt != null || parsed == null) set else set.copy(weight = parsed.weight, reps = parsed.reps)
+            })
+        })
+        val candidate = WorkoutAdaptation.buildSkipCandidate(hydrated, exerciseId)
+        if (candidate == null) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.active_workout_changed), messageSetId = null)
+            }
+            return
+        }
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching { repository.applyActiveWorkoutAdaptation(snapshot, candidate) }
+                .getOrDefault(ApplyActiveWorkoutAdaptationResult.Stale)
+            operationState.update {
+                it.copy(
+                    isRecordingAll = false,
+                    message = LocalizedText(activeWorkoutSkipOutcomeMessage(result)),
+                    messageSetId = null
+                )
+            }
+        }
+    }
+
+    private fun isInLiveRoom(): Boolean = liveSync?.activeLiveUiState?.value?.activeRoomId != null
+
     fun addSet(exerciseId: String) {
-        if (liveSync != null) return
+        if (isInLiveRoom()) return
         val snapshot = details.value ?: return
         val operation = operationState.value
         if (recordGate.inFlight.value.isNotEmpty() || operation.isRecordingAll ||

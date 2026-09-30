@@ -897,3 +897,6 @@ fun LoadingStatePanel(
         }
     }
 }
+
+/** Tabular figures on the default font, matching iOS `.monospacedDigit()` for numeric readouts. */
+fun TextStyle.tabularDigits(): TextStyle = copy(fontFeatureSettings = "tnum")

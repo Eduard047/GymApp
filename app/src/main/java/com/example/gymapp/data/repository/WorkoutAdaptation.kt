@@ -51,9 +51,35 @@ object WorkoutAdaptation {
             }
             else -> return null
         }
-        return source.copy(exercises = blocks.mapIndexed { i, block ->
+        return reindexed(source, blocks)
+    }
+
+    /**
+     * Skip-remaining candidate for one exercise block: drops its unrecorded sets, or the whole block
+     * when it has no recorded set. Null when there is nothing to skip (no unrecorded sets), or when
+     * skipping would leave the workout without any exercise (this block has no recorded set and is
+     * the only one). Same rules as the iPhone client's buildSkipCandidate; a null result hides the
+     * "Skip them" option instead of falling back to another action.
+     */
+    fun buildSkipCandidate(source: ActiveWorkoutDetails, exerciseBlockId: String): ActiveWorkoutDetails? {
+        val index = source.exercises.indexOfFirst { it.activeWorkoutExercise.id == exerciseBlockId }
+        if (index < 0) return null
+        val block = source.exercises[index]
+        if (block.sets.none { it.completedAt == null }) return null
+        val completed = block.sets.filter { it.completedAt != null }
+        val blocks = source.exercises.toMutableList()
+        if (completed.isEmpty()) {
+            if (blocks.size <= 1) return null
+            blocks.removeAt(index)
+        } else {
+            blocks[index] = block.copy(sets = completed)
+        }
+        return reindexed(source, blocks)
+    }
+
+    private fun reindexed(source: ActiveWorkoutDetails, blocks: List<ActiveWorkoutExerciseWithDetails>): ActiveWorkoutDetails =
+        source.copy(exercises = blocks.mapIndexed { i, block ->
             val owner = block.activeWorkoutExercise.copy(orderIndex = i)
             block.copy(activeWorkoutExercise = owner, sets = block.sets.mapIndexed { j, set -> set.copy(activeWorkoutExerciseId = owner.id, orderIndex = j) })
         })
-    }
 }

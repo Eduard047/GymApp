@@ -93,10 +93,6 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   }
   assert.match(
     source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
-    /AndroidDateFormat\.is24HourFormat\(context\)/
-  );
-  assert.match(
-    source("app/src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt"),
     /if \(is24Hour\) "HH:mm" else "h:mm a"/
   );
   assert.doesNotMatch(

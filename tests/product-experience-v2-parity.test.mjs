@@ -309,25 +309,25 @@ test("active-workout hero disambiguates elapsed, completed, and start time on ev
   assert.match(iosActiveWorkoutSource, /"Now: \\\(exerciseName\)"/);
   assert.match(iosActiveWorkoutSource, /"\\\(draft\.completedSetCount\)\/\\\(draft\.plannedSetCount\)"/);
 
+  // Android mirrors the iOS hero: a brand panel with the clock, "Now: ..." caption and a set
+  // ring, exposed as one combined accessibility element (no metric tiles, no "Started at").
   for (const [source, locale] of [
     [androidEnglish, "en"],
     [androidUkrainian, "uk"],
     [androidRussian, "ru"]
   ]) {
-    assert.ok(source.includes(
-      `name="active_workout_elapsed_label">${hero.elapsed[locale]}</string>`
-    ));
-    assert.ok(source.includes(
-      `name="active_workout_completed_label">${hero.completed[locale]}</string>`
-    ));
-    assert.ok(source.includes(
-      `name="active_workout_started_at">${hero.startedAt[locale]} %1$s</string>`
-    ));
+    assert.match(source, /name="active_workout_status_in_progress">[^<]+<\/string>/);
+    assert.match(source, /name="active_workout_hero_summary_now">[^<]*%3\$s<\/string>/);
+    assert.match(source, /<plurals name="active_workout_hero_sets_done">/);
+    assert.doesNotMatch(source, /name="active_workout_started_at"/);
+    assert.doesNotMatch(source, /name="active_workout_elapsed_label"/);
   }
-  assert.match(androidActiveWorkoutSource, /R\.string\.active_workout_elapsed_label/);
-  assert.match(androidActiveWorkoutSource, /R\.string\.active_workout_completed_label/);
-  assert.match(androidActiveWorkoutSource, /R\.string\.active_workout_started_at/);
-  assert.match(androidActiveWorkoutSource, /MetricTile\(/);
+  assert.match(androidActiveWorkoutSource, /BrandHeroPanel\(/);
+  assert.match(androidActiveWorkoutSource, /R\.string\.active_workout_status_in_progress/);
+  assert.match(androidActiveWorkoutSource, /R\.string\.active_workout_now/);
+  assert.match(androidActiveWorkoutSource, /R\.plurals\.active_workout_hero_sets_done/);
+  assert.match(androidActiveWorkoutSource, /clearAndSetSemantics \{ contentDescription = summary \}/);
+  assert.doesNotMatch(androidActiveWorkoutSource, /MetricTile\(/);
 });
 
 test("first-plan actions use one cross-client terminology contract", () => {
@@ -378,12 +378,14 @@ test("active-workout destructive actions stay behind an explicit more-options co
   assert.doesNotMatch(pwaSource, /<details class="active-workout-more">/);
   assert.match(iosActiveWorkoutSource, /Menu \{[\s\S]*?Button\(role: \.destructive\)/);
   assert.match(iosActiveWorkoutSource, /"More workout options"/);
-  assert.match(androidActiveWorkoutSource, /showMoreWorkoutOptions/);
+  // Android keeps the same destructive action in the toolbar overflow menu, not in the body.
+  assert.match(androidActiveWorkoutSource, /fun ActiveWorkoutOverflowMenu/);
   assert.match(androidActiveWorkoutSource, /R\.string\.active_workout_more_options/);
   assert.match(
     androidActiveWorkoutSource,
-    /if \(showMoreWorkoutOptions\) \{[\s\S]*?R\.string\.active_workout_discard_action/
+    /fun ActiveWorkoutOverflowMenu[\s\S]*?R\.string\.active_workout_discard_short[\s\S]*?state\.discardRequested = true/
   );
+  assert.doesNotMatch(androidActiveWorkoutSource, /showMoreWorkoutOptions/);
 });
 
 test("Profile tutorial copy matches the shared concise destination on every client", () => {

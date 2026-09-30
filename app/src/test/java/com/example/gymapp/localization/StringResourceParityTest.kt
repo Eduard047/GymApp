@@ -73,37 +73,30 @@ class StringResourceParityTest {
     }
 
     @Test
-    fun activeWorkoutHeroMetricsAreExplicitInEverySupportedLanguage() {
+    fun activeWorkoutFrameCopyIsLocalizedInEverySupportedLanguage() {
         val english = loadStrings("values")
         val ukrainian = loadStrings("values-uk")
         val russian = loadStrings("values-ru")
+        val keys = listOf(
+            "active_workout_title",
+            "active_workout_minimize",
+            "active_workout_status_in_progress",
+            "active_workout_now",
+            "active_workout_sets_caption",
+            "active_workout_discard_short"
+        )
 
         assertEquals(
-            listOf("Elapsed", "Completed", "%1\$d of %2\$d", "Started at %1\$s"),
-            listOf(
-                english["active_workout_elapsed_label"],
-                english["active_workout_completed_label"],
-                english["active_workout_completed_value"],
-                english["active_workout_started_at"]
-            )
+            listOf("Workout", "Minimize", "In progress", "Now: %1\$s", "sets", "Discard"),
+            keys.map { english[it] }
         )
         assertEquals(
-            listOf("Минуло", "Виконано", "%1\$d з %2\$d", "Початок о %1\$s"),
-            listOf(
-                ukrainian["active_workout_elapsed_label"],
-                ukrainian["active_workout_completed_label"],
-                ukrainian["active_workout_completed_value"],
-                ukrainian["active_workout_started_at"]
-            )
+            listOf("Тренування", "Згорнути", "Триває", "Зараз: %1\$s", "підх.", "Відкинути"),
+            keys.map { ukrainian[it] }
         )
         assertEquals(
-            listOf("Прошло", "Выполнено", "%1\$d из %2\$d", "Начало в %1\$s"),
-            listOf(
-                russian["active_workout_elapsed_label"],
-                russian["active_workout_completed_label"],
-                russian["active_workout_completed_value"],
-                russian["active_workout_started_at"]
-            )
+            listOf("Тренировка", "Свернуть", "Идёт", "Сейчас: %1\$s", "подх.", "Удалить"),
+            keys.map { russian[it] }
         )
     }
 

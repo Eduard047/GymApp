@@ -29,7 +29,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -809,8 +808,7 @@ private fun AchievementDetailsContent(
             ) {
                 Text(
                     text = achievementProgressText(achievement.progress, achievement.goal, locale),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.labelMedium.tabularDigits(),
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -925,8 +923,7 @@ private fun HeatmapDayCell(
     ) {
         Text(
             text = day.dayNumber?.toString().orEmpty(),
-            style = MaterialTheme.typography.labelMedium,
-            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.labelMedium.tabularDigits(),
             fontWeight = FontWeight.SemiBold,
             color = if (day.isCurrentMonth && day.intensity > 0.55f) {
                 MaterialTheme.colorScheme.onPrimary

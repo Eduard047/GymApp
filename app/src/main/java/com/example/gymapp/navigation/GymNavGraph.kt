@@ -71,6 +71,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,7 +123,9 @@ import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.screens.AddWorkoutScreen
+import com.example.gymapp.ui.screens.ActiveWorkoutOverflowMenu
 import com.example.gymapp.ui.screens.ActiveWorkoutScreen
+import com.example.gymapp.ui.screens.ActiveWorkoutToolbarState
 import com.example.gymapp.ui.screens.AppIntroSplash
 import com.example.gymapp.ui.screens.AuthScreen
 import com.example.gymapp.ui.screens.CloudSyncConflictDialog
@@ -2181,6 +2184,8 @@ internal fun GymAppRoot(
         else -> R.string.app_name
     }
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    val activeWorkoutToolbarState = remember { ActiveWorkoutToolbarState() }
+    val isActiveWorkoutRoute = currentRoute == AppDestination.ActiveWorkout.route
 
     key(uiIsolationKey, selectedLanguage) {
         GymBackground {
@@ -2412,6 +2417,21 @@ internal fun GymAppRoot(
                             ) {
                                 navController.navigateUp()
                             }
+                        },
+                        backContentDescriptionRes = if (isActiveWorkoutRoute) {
+                            R.string.active_workout_minimize
+                        } else {
+                            null
+                        },
+                        backHintRes = if (isActiveWorkoutRoute) {
+                            R.string.active_workout_minimize_hint
+                        } else {
+                            null
+                        },
+                        actions = if (isActiveWorkoutRoute && activeWorkoutToolbarState.showsOverflow) {
+                            { ActiveWorkoutOverflowMenu(activeWorkoutToolbarState) }
+                        } else {
+                            null
                         },
                         scrollBehavior = topAppBarScrollBehavior
                     )
@@ -3478,6 +3498,7 @@ internal fun GymAppRoot(
                                 onSetRepsChanged = viewModel::updateSetReps,
                                 onSaveExercise = viewModel::saveExercise,
                                 onAddSet = viewModel::addSet,
+                                onSkipRemainingSets = viewModel::skipRemainingSets,
                                 onRecordSet = viewModel::recordSet,
                                 onRecordAllPendingSets = viewModel::recordAllPendingSets,
                                 onUndoLatestSet = viewModel::undoLatestSet,
@@ -3491,6 +3512,7 @@ internal fun GymAppRoot(
                                 onDismissMessage = viewModel::dismissMessage,
                                 voiceCommandSnackbarHostState = snackbarHostState,
                                 friendGhosts = friendGhosts,
+                                toolbarState = activeWorkoutToolbarState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -4851,7 +4873,10 @@ private fun AppTopBar(
     showRootTitle: Boolean,
     interactionsEnabled: Boolean,
     onBack: () -> Unit,
-    scrollBehavior: TopAppBarScrollBehavior
+    scrollBehavior: TopAppBarScrollBehavior,
+    backContentDescriptionRes: Int? = null,
+    backHintRes: Int? = null,
+    actions: (@Composable () -> Unit)? = null
 ) {
     if (isRootDestination && !showRootTitle) {
         // The screen draws its own large title and the bar has no actions, so render only the
@@ -4895,11 +4920,38 @@ private fun AppTopBar(
                         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
                     )
                 ) {
-                    IconButton(onClick = onBack, enabled = interactionsEnabled) {
+                    val backHint = backHintRes?.let { stringResource(it) }
+                    IconButton(
+                        onClick = onBack,
+                        enabled = interactionsEnabled,
+                        modifier = if (backHint != null) {
+                            // Announced as the action hint: the screen minimizes, the workout keeps running.
+                            Modifier.semantics { onClick(label = backHint, action = null) }
+                        } else {
+                            Modifier
+                        }
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
+                            contentDescription = stringResource(
+                                backContentDescriptionRes ?: R.string.cd_back
+                            )
                         )
+                    }
+                }
+            },
+            actions = {
+                if (actions != null) {
+                    Surface(
+                        modifier = Modifier.padding(end = 12.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
+                        shape = MaterialTheme.shapes.small,
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
+                        )
+                    ) {
+                        actions()
                     }
                 }
             },

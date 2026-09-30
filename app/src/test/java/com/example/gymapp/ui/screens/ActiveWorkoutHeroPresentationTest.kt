@@ -38,24 +38,61 @@ class ActiveWorkoutHeroPresentationTest {
     }
 
     @Test
-    fun heroUsesBalancedExplicitMetricsAndDedicatedProgressSemantics() {
+    fun heroIsOneBrandPanelWithRingAndSingleAccessibilityElement() {
         val source = Files.readString(
             appFile("src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt")
         )
         val hero = source.substringAfter("private fun ActiveWorkoutHero")
             .substringBefore("private fun LivePeerWorkoutHero")
 
-        assertTrue(hero.contains("R.string.active_workout_elapsed_label"))
-        assertTrue(hero.contains("R.string.active_workout_completed_label"))
-        assertTrue(hero.contains("R.string.active_workout_completed_value"))
-        assertTrue(hero.contains("R.string.active_workout_started_at"))
-        assertTrue(hero.contains("AndroidDateFormat.is24HourFormat(context)"))
-        assertTrue(hero.contains("LinearProgressIndicator"))
-        assertTrue(hero.contains("progressBarRangeInfo = ProgressBarRangeInfo"))
-        assertTrue(hero.contains("contentDescription = progressAccessibilityLabel"))
-        assertFalse(hero.contains("InfoPill"))
-        assertFalse(hero.contains("active_workout_total_time"))
+        assertTrue(hero.contains("BrandHeroPanel("))
+        assertTrue(hero.contains("R.string.active_workout_status_in_progress"))
+        assertTrue(hero.contains("ACTIVE_WORKOUT_ELAPSED_METRIC_TAG"))
+        assertTrue(hero.contains("R.string.active_workout_now"))
+        assertTrue(hero.contains("R.string.active_workout_sets_caption"))
+        assertTrue(hero.contains("Canvas("))
+        assertTrue(hero.contains("StrokeCap.Round"))
+        assertTrue(hero.contains("startAngle = -90f"))
+        assertTrue(hero.contains(".clearAndSetSemantics { contentDescription = summary }"))
+        assertTrue(hero.contains("R.plurals.active_workout_hero_sets_done"))
+        assertTrue(hero.contains("R.string.active_workout_hero_summary_now"))
+        assertFalse(hero.contains("MetricTile"))
+        assertFalse(hero.contains("LinearProgressIndicator"))
+        assertFalse(hero.contains("active_workout_started_at"))
         assertFalse(hero.contains("DateTimeUtils.formatDate"))
+    }
+
+    @Test
+    fun toolbarOwnsAdaptAndDiscardAndTheBodyKeepsNeitherPanel() {
+        val source = Files.readString(
+            appFile("src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt")
+        )
+        val overflow = source.substringAfter("fun ActiveWorkoutOverflowMenu")
+            .substringBefore("private enum class LiveParticipantTab")
+
+        assertTrue(overflow.contains("R.string.active_workout_more_options"))
+        assertTrue(overflow.contains("R.string.training_adapt_workout"))
+        assertTrue(overflow.contains("R.string.active_workout_discard_short"))
+        assertTrue(overflow.contains("state.discardRequested = true"))
+        assertFalse(source.contains("showMoreWorkoutOptions"))
+        assertFalse(source.contains("showAdaptationOptions"))
+    }
+
+    @Test
+    fun exerciseHeaderShowsSetSubtitleAndCollapsedProgressWithoutEyebrowOrEditButton() {
+        val source = Files.readString(
+            appFile("src/main/java/com/example/gymapp/ui/screens/ActiveWorkoutScreen.kt")
+        )
+        val card = source.substringAfter("private fun ActiveWorkoutExerciseCard")
+            .substringBefore("private fun ActiveWorkoutSetRow")
+
+        assertTrue(card.contains("R.string.active_workout_exercise_set_subtitle"))
+        assertTrue(card.contains("R.plurals.active_workout_exercise_up_next_sets"))
+        assertTrue(card.contains("R.string.active_workout_exercise_done"))
+        assertTrue(card.contains("\"\$completedCount / \$totalCount\""))
+        assertTrue(card.contains("rememberSaveable(exercise.id, screenEntryToken)"))
+        assertFalse(card.contains("active_workout_exercise_number"))
+        assertFalse(card.contains("active_workout_edit_exercise"))
     }
 
     private fun appFile(relativePath: String): Path {

@@ -1,6 +1,8 @@
 package com.example.gymapp.ui.viewmodel
 
+import com.example.gymapp.R
 import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
+import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.SaveActiveWorkoutExerciseResult
 import kotlinx.coroutines.runBlocking
@@ -133,6 +135,26 @@ class ActiveWorkoutViewModelTest {
         assertTrue(result.repositoryResult is AddActiveWorkoutSetResult.Added)
         assertEquals(ActiveWorkoutRestReconciliationStatus.Reconciled, result.restStatus)
         assertFalse(restRunning)
+    }
+
+    @Test
+    fun skipRemainingSetsReportsFrozenLivePlanStaleAndSuccessSeparately() {
+        assertEquals(
+            R.string.active_workout_remaining_sets_skipped,
+            activeWorkoutSkipOutcomeMessage(ApplyActiveWorkoutAdaptationResult.Applied(revision = 5L))
+        )
+        assertEquals(
+            R.string.training_adaptation_live_blocked,
+            activeWorkoutSkipOutcomeMessage(ApplyActiveWorkoutAdaptationResult.LivePlanFrozen)
+        )
+        assertEquals(
+            R.string.active_workout_changed,
+            activeWorkoutSkipOutcomeMessage(ApplyActiveWorkoutAdaptationResult.Stale)
+        )
+        assertEquals(
+            R.string.active_workout_changed,
+            activeWorkoutSkipOutcomeMessage(ApplyActiveWorkoutAdaptationResult.Missing)
+        )
     }
 
     @Test

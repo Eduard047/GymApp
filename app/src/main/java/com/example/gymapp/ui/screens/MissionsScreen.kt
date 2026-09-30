@@ -53,12 +53,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.components.AchievementPreviewCard
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.InfoPill
@@ -356,8 +356,7 @@ private fun MissionCard(
                             mission.progress,
                             mission.goal
                         ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodyMedium.tabularDigits(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
