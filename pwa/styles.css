@@ -4021,7 +4021,6 @@ button.leaderboard-row {
 .focus-lens-edit:hover,
 .focus-lens-edit:focus-visible { background: rgba(8, 32, 65, 0.34); }
 
-.clear-plan-button { margin-top: 2px; }
 
 .focus-lens-discard {
   min-width: 92px;
@@ -4271,7 +4270,7 @@ textarea:focus {
 
 .set-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 48px;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1.25fr) 44px;
   gap: 8px;
   align-items: center;
 }
@@ -4281,19 +4280,161 @@ textarea:focus {
   gap: 6px;
 }
 
-.set-entry > span {
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 18px;
-}
-
-.set-shortcuts {
+.set-badge {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.set-shortcuts .full { grid-column: 1 / -1; }
+.reps-stepper {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.reps-stepper input {
+  min-width: 0;
+  width: 100%;
+  padding-inline: 0;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.reps-step {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  color: var(--primary);
+  background: transparent;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.set-chips {
+  display: flex;
+  gap: 8px;
+  padding-left: 40px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.set-chips::-webkit-scrollbar { display: none; }
+
+.set-chip {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.set-chip::before {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
+}
+
+.set-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.set-add-button {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.draft-last-logged { font-size: 12px; line-height: 16px; }
+
+.smart-plan-focus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.smart-plan-focus svg { flex: 0 0 auto; }
+.smart-plan-note { font-size: 13px; line-height: 18px; color: var(--muted); }
+
+.plan-menu-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.button.exercise-builder-more {
+  flex: 0 0 54px;
+  width: 54px;
+  padding: 0;
+}
+
+.plan-menu-trigger { cursor: pointer; }
+
+.plan-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 18;
+  display: grid;
+  gap: 2px;
+  width: min(240px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.plan-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-menu-option.danger { color: var(--danger, #c0392b); }
+.plan-menu-option:hover,
+.plan-menu-option:focus-visible { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.plan-menu-option svg { flex: 0 0 auto; width: 20px; height: 20px; }
 
 .active-workout-hero,
 .active-workout-finish {
@@ -5012,20 +5153,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   background: color-mix(in srgb, var(--surface-2) 56%, transparent);
 }
 
-.smart-plan-status .metric-grid { margin-top: 0; grid-template-columns: 1fr; }
-.smart-plan-status .metric-grid > div {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 8px;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.smart-plan-status .metric-grid :is(span, strong) { overflow: visible; white-space: normal; }
-.smart-plan-status .metric-grid strong { margin-top: 0; font-size: 16px; line-height: 22px; }
 .smart-plan-status p { margin: 0; }
 
 .smart-rir-guidance {
@@ -5987,10 +6114,14 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .garmin-metrics-content > h3 { margin: 0; }
 
-.draft-exercise details {
-  display: grid;
+.draft-exercise-head {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
+
+.draft-exercise-head h2,
+.draft-exercise-head p { margin: 0; }
 
 .detail-summary {
   display: flex;
@@ -6036,8 +6167,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 .detail-collapsed-map .body-map-svg { height: 72px; }
-.workout-exercise-card details[open] .detail-summary .detail-collapsed-map,
-.draft-exercise details[open] .detail-summary .detail-collapsed-map {
+.workout-exercise-card details[open] .detail-summary .detail-collapsed-map {
   display: none;
 }
 
@@ -6142,7 +6272,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   }
 
   .set-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 48px;
     gap: 6px;
   }
 

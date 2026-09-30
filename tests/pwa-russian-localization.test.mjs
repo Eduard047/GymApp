@@ -221,7 +221,6 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["First download the untouched private JSON for offline recovery. Replacing it with an empty valid state is permanent and uses the exact server revision so another device's newer update cannot be overwritten.", "Спочатку завантаж незмінений приватний JSON для офлайн-відновлення. Заміна на порожній коректний стан незворотна й використовує точну ревізію сервера, тому новіші зміни з іншого пристрою не будуть перезаписані."],
     ["Front", "Спереду"],
     ["Garmin unpair failed.", "Не вдалося від’єднати Garmin."],
-    ["Last", "Остання вага"],
     ["Maintenance", "Підтримання"],
     ["Maximum weight and session volume over time.", "Максимальна вага та обсяг тренування в динаміці."],
     ["No exercise data yet", "За цією вправою поки немає даних"],

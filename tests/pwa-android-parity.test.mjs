@@ -125,7 +125,10 @@ test("retained browser workout source remains available for parity checks", () =
 });
 
 test("PWA distinguishes planned rows from durable active and history sets", () => {
-  assert.match(appSources[0].source, /data-action="add-set"[^>]*>\$\{t\("addPlannedSet"\)\}<\/button>/);
+  assert.match(
+    appSources[0].source,
+    /class="set-add-button" data-action="add-set"[^>]*aria-label="\$\{escapeAttr\(t\("addPlannedSet"\)\)\}">\$\{tx3\("\+ Set", "\+ Підхід", "\+ Подход"\)\}<\/button>/
+  );
   assert.doesNotMatch(appSources[0].source, /data-action="detail-add-set"|function detailAddSet\(/);
   assert.match(appSources[0].source, /data-action="add-saved-workout-set"/);
   assert.match(

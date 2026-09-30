@@ -1373,6 +1373,7 @@ let garminProfileRequestId = 0;
 let timerInterval = null;
 let languageMenuOpen = false;
 let exerciseFilterMenuOpen = false;
+let planEditorMenu = null;
 let exerciseSearchQuery = "";
 let progressExerciseSearchQuery = "";
 let workoutDetailEditSessionId = null;
@@ -10433,6 +10434,7 @@ function push(name, params = {}) {
   modal = null;
   languageMenuOpen = false;
   exerciseFilterMenuOpen = false;
+  planEditorMenu = null;
   render();
 }
 
@@ -10445,6 +10447,7 @@ function goRoot(name) {
   modal = null;
   languageMenuOpen = false;
   exerciseFilterMenuOpen = false;
+  planEditorMenu = null;
   render();
   if (leavingAdd) routeScrollPositions.delete("add:root");
 }
@@ -10470,6 +10473,7 @@ function back() {
   replaceNavigationHistory();
   languageMenuOpen = false;
   exerciseFilterMenuOpen = false;
+  planEditorMenu = null;
   render();
   if (leavingAdd) routeScrollPositions.delete("add:root");
 }
@@ -11270,6 +11274,26 @@ function dismissLanguageMenu(restoreFocus = false) {
   return true;
 }
 
+function dismissPlanEditorMenu(restoreFocus = false) {
+  if (!planEditorMenu) return false;
+  const key = planEditorMenu;
+  planEditorMenu = null;
+  app.querySelectorAll?.(".plan-menu")?.forEach?.(menu => menu.remove());
+  const triggers = [...(app.querySelectorAll?.('[data-action="toggle-plan-menu"]') || [])];
+  triggers.forEach(trigger => trigger.setAttribute?.("aria-expanded", "false"));
+  if (restoreFocus) triggers.find(trigger => trigger.dataset?.menu === key)?.focus?.({ preventScroll: true });
+  return true;
+}
+
+function planMenuMarkup(key, label, items) {
+  if (planEditorMenu !== key || !items.length) return "";
+  return `<div class="plan-menu" role="menu" aria-label="${escapeAttr(label)}">${items.map(item => `<button type="button" class="plan-menu-option${item.danger ? " danger" : ""}" role="menuitem" data-action="${item.action}"${item.attrs || ""}>${svg(item.icon, "small-icon")}<span>${escapeHtml(item.label)}</span></button>`).join("")}</div>`;
+}
+
+function planMenuTriggerMarkup(key, label, cls = "") {
+  return `<button type="button" class="plan-menu-trigger ${cls}" data-action="toggle-plan-menu" data-menu="${escapeAttr(key)}" aria-haspopup="menu" aria-expanded="${planEditorMenu === key}" aria-label="${escapeAttr(label)}">${svg("more", "small-icon")}</button>`;
+}
+
 function dismissExerciseFilterMenu(restoreFocus = false) {
   if (!exerciseFilterMenuOpen) return false;
   exerciseFilterMenuOpen = false;
@@ -11618,7 +11642,7 @@ function render() {
     app.classList?.toggle("root-route-shell", isRootRoute(current.name));
     app.innerHTML = `
       <header class="topbar">
-        ${current.name === "active" ? activeWorkoutMinimizeMarkup() : nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="${txAttr("Go back", "Назад")}">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
+        ${current.name === "active" ? activeWorkoutMinimizeMarkup() : nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="${current.name === "add" ? tx3("Close", "Закрити", "Закрыть") : txAttr("Go back", "Назад")}">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
         <h1>${titleForRoute(current)}</h1>
         ${current.name === "active" ? activeWorkoutMoreButtonMarkup() : `<span class="topbar-slot" aria-hidden="true"></span>`}
       </header>
@@ -12498,12 +12522,20 @@ function addWorkoutScreen() {
   return `<section class="screen-copy add-workout-copy"><div><h2>${tx("Plan", "План")}</h2></div></section>
     ${liveRecipient ? `<section class="panel highlighted live-draft-recipient"><span class="eyebrow">LIVE</span><h3>${escapeHtml(liveFriend?.displayName || tx3("Selected friend", "Обраний друг", "Выбранный друг"))}</h3><p class="muted">${tx3("The primary action creates a room only for this selected friend.", "Основна дія створить кімнату лише для цього обраного друга.", "Основное действие создаст комнату только для этого выбранного друга.")}</p></section>` : ""}
     ${smartCoachPanel()}
-    <section class="exercise-builder-heading"><div><h2>${tx("Exercises", "Вправи")}</h2><span class="pill">${selectedCount} · ${n(setCount, "set", "sets", "підхід", "підходи", "підходів")}</span></div><button class="button secondary exercise-builder-voice" type="button" data-action="open-voice-workout" aria-label="${escapeAttr(tx3("Create workout plan by voice", "Створити план тренування голосом", "Создать план тренировки голосом"))}">${svg("mic", "small-icon")}</button><button class="button exercise-builder-add" data-action="open-workout-exercise-picker" data-picker-target="draft-new" aria-label="${tAttr("addExercise")}">${svg("add", "small-icon")}</button></section>
+    ${exerciseBuilderHeadingMarkup(draft, selectedCount, setCount)}
     <section class="draft-list">${draft.blocks.map((block, index) => draftBlock(block, index)).join("")}</section>
-    ${workoutDraftHasContent(draft) ? `<button class="button danger full clear-plan-button" data-action="clear-plan">${tx("Clear plan", "Очистити план")}</button>` : ""}
-    <button class="button ghost full discard-plan-button" data-action="discard-plan">${tx3("Discard plan", "Відкинути план", "Удалить план")}</button>
     <button class="button full save-workout-button" data-action="${primaryAction}">${svg("fitness", "small-icon")}${escapeHtml(primaryLabel)}</button>
     ${addWorkoutSecondaryControls(draft, liveRecipient)}`;
+}
+
+function exerciseBuilderHeadingMarkup(draft, selectedCount, setCount) {
+  const items = [];
+  if (workoutDraftHasContent(draft)) {
+    items.push({ action: "clear-plan", icon: "delete", danger: true, label: tx3("Clear plan", "Очистити план", "Очистить план") });
+  }
+  items.push({ action: "discard-plan", icon: "close", danger: true, label: tx3("Discard plan", "Відкинути план", "Удалить план") });
+  const menuLabel = tx3("Plan actions", "Дії з планом", "Действия с планом");
+  return `<section class="exercise-builder-heading"><div><h2>${tx("Exercises", "Вправи")}</h2><span class="pill">${selectedCount} · ${n(setCount, "set", "sets", "підхід", "підходи", "підходів")}</span></div><button class="button secondary exercise-builder-voice" type="button" data-action="open-voice-workout" aria-label="${escapeAttr(tx3("Create workout plan by voice", "Створити план тренування голосом", "Создать план тренировки голосом"))}">${svg("mic", "small-icon")}</button><button class="button exercise-builder-add" data-action="open-workout-exercise-picker" data-picker-target="draft-new" aria-label="${tAttr("addExercise")}">${svg("add", "small-icon")}</button><div class="plan-menu-wrap">${planMenuTriggerMarkup("header", menuLabel, "button secondary exercise-builder-more")}${planMenuMarkup("header", menuLabel, items)}</div></section>`;
 }
 
 function addWorkoutSecondaryControls(draft, liveRecipient = null) {
@@ -14279,9 +14311,21 @@ function smartCoachPanel() {
   const planStatus = smartPlanStale
     ? `<div class="inline-status warning" role="status"><strong>${tx("Plan needs refresh", "План потрібно оновити")}</strong><span>${tx("Your profile or effort changed. Generate again to recalculate the Smart Coach rows; manual edits were not overwritten.", "Профіль або навантаження змінилися. Згенеруй план ще раз, щоб перерахувати рядки Smart Coach; ручні зміни не перезаписано.")}</span></div>`
     : smartGeneratedPlan
-    ? `<div class="smart-plan-status"><div class="metric-grid ${smartGeneratedPlan.requestedEffort === smartGeneratedPlan.appliedEffort ? "two" : "three"}"><div><span>${tx("Focus", "Фокус")}</span><strong>${escapeHtml(smartFocusLabel(smartGeneratedPlan.focus))}</strong></div><div><span>${tx("Effort", "Навантаження")}</span><strong>${escapeHtml(smartWorkoutEffortLabel(smartGeneratedPlan.appliedEffort))}</strong></div>${smartGeneratedPlan.requestedEffort === smartGeneratedPlan.appliedEffort ? "" : `<div><span>${tx("Requested", "Запитано")}</span><strong>${escapeHtml(smartWorkoutEffortLabel(smartGeneratedPlan.requestedEffort))}</strong></div>`}</div>${safetyLine ? `<p class="smart-rir-guidance">${escapeHtml(safetyLine)}</p>` : ""}</div>`
+    ? `<div class="smart-plan-status"><p class="smart-plan-focus">${svg("target", "small-icon")}<span>${escapeHtml(smartFocusLabel(smartGeneratedPlan.focus))} · RIR ${escapeHtml(smartPlanRirSummary(smartGeneratedPlan))}</span></p>${smartGeneratedPlan.requestedEffort === smartGeneratedPlan.appliedEffort ? "" : `<p class="smart-plan-note">${escapeHtml(tx3(`You chose “${smartWorkoutEffortLabel(smartGeneratedPlan.requestedEffort)}” → coach set “${smartWorkoutEffortLabel(smartGeneratedPlan.appliedEffort)}”`, `Обрано «${smartWorkoutEffortLabel(smartGeneratedPlan.requestedEffort)}» → тренер поставив «${smartWorkoutEffortLabel(smartGeneratedPlan.appliedEffort)}»`, `Выбрано «${smartWorkoutEffortLabel(smartGeneratedPlan.requestedEffort)}» → тренер поставил «${smartWorkoutEffortLabel(smartGeneratedPlan.appliedEffort)}»`))}</p>`}${safetyLine ? `<p class="smart-rir-guidance">${escapeHtml(safetyLine)}</p>` : ""}</div>`
     : "";
   return `<section class="panel highlighted smart-coach-panel"><div class="section-title"><div><h2>${t("smartCoach")}</h2></div>${svg("auto", "small-icon")}</div>${trainingSettingsSummaryMarkup()}<span class="field-caption">${tx("Today’s effort", "Навантаження сьогодні")}</span><div class="chip-row smart-effort-chips">${effortOptions.map(effort => `<button class="chip buttonlike ${smartWorkoutEffort === effort ? "selected" : ""}" data-action="smart-effort" data-effort="${effort}" aria-pressed="${smartWorkoutEffort === effort}">${escapeHtml(smartWorkoutEffortLabel(effort))}</button>`).join("")}</div>${planStatus}<button class="button full" data-action="generate-smart">${svg("auto", "small-icon")}${t("generateSmart")}</button></section>`;
+}
+
+function smartPlanRirSummary(plan) {
+  const ranges = new Set();
+  for (const exercise of Array.isArray(plan?.exercises) ? plan.exercises : []) {
+    const rir = exercise?.recommendation?.targetRir;
+    if (Array.isArray(rir) && rir.length === 2) ranges.add(`${rir[0]}–${rir[1]}`);
+  }
+  if (ranges.size === 1) return [...ranges][0];
+  const ordered = ["1–2", "2–3", "3–4"].filter(range => ranges.has(range));
+  if (ordered.length) return ordered.join(" · ");
+  return ({ Recovery: "3–4", Hard: "1–2" })[plan?.appliedEffort] || "2–3";
 }
 
 function smartWorkoutEffortLabel(effort) {
@@ -14349,22 +14393,38 @@ function chipSelect(field, options, selected) {
   return `<div class="chip-row">${options.map(option => `<button class="chip buttonlike ${option === selected ? "selected" : ""}" data-action="profile" data-field="${field}" data-value="${option}">${profileValueLabel(option)}</button>`).join("")}</div>`;
 }
 
+function draftSetRowMarkup(block, blockIndex, set, setIndex, lastWeight) {
+  const b = blockIndex;
+  const i = setIndex;
+  const kg = tx3("kg", "кг", "кг");
+  const chip = (action, label, aria, disabled = false) => `<button type="button" class="set-chip" data-action="${action}" data-block="${b}" data-set="${i}" aria-label="${escapeAttr(aria)}"${disabled ? " disabled" : ""}>${escapeHtml(label)}</button>`;
+  return `<div class="set-entry"><div class="set-row"><span class="set-badge" aria-hidden="true">${i + 1}</span><input inputmode="decimal" aria-label="${txAttr("Weight", "Вага")}" data-block="${b}" data-set="${i}" data-field="weight" value="${escapeAttr(set.weight)}" placeholder="${kg}"><div class="reps-stepper" role="group" aria-label="${txAttr("Reps", "Повтори")}"><button type="button" class="reps-step" data-action="reps-step" data-dir="-1" aria-label="${tx3("Decrease reps", "Зменшити повтори", "Уменьшить повторы")}">−</button><input inputmode="numeric" aria-label="${txAttr("Reps", "Повтори")}" data-block="${b}" data-set="${i}" data-field="reps" value="${escapeAttr(set.reps)}" placeholder="${txAttr("Reps", "Повтори")}"><button type="button" class="reps-step" data-action="reps-step" data-dir="1" aria-label="${tx3("Increase reps", "Збільшити повтори", "Увеличить повторы")}">+</button></div><button class="icon-button" data-action="remove-set" data-block="${b}" data-set="${i}" aria-label="${txAttr("Remove set", "Видалити підхід")} ${i + 1}">${svg("delete")}</button></div>
+    <div class="set-chips" role="group" aria-label="${escapeAttr(`${tx3("Set", "Підхід", "Подход")} ${i + 1}`)}">${chip("apply-last", tx3("Last", "Ост. вага", "Посл. вес"), tx3("Last weight", "Остання вага", "Последний вес"), lastWeight == null)}${chip("prev-set", tx3("Prev.", "Попер.", "Пред."), tx3("Previous set", "Попередній підхід", "Предыдущий подход"), i === 0)}${chip("plus-set", "+2.5", "+2.5")}${chip("copy-set", tx3("Copy", "Копія", "Копия"), tx3("Copy set", "Копіювати підхід", "Копировать подход"))}</div></div>`;
+}
+
 function draftBlock(block, blockIndex) {
   const lastWeight = lastWeightFor(block.exerciseName);
   const rec = block.exerciseName ? smartRecommendationForBlock(block) : null;
   const storedExercise = block.exerciseName ? state.exercises.find(exercise => exercisesMatch(exercise, block)) : null;
   const loadProfile = storedExercise ? normalizeExerciseLoadProfile(storedExercise.loadProfile) : null;
   const title = block.exerciseName ? exerciseDisplayName(block) : `${tx("Exercise", "Вправа")} ${blockIndex + 1}`;
-  return `<section class="draft-exercise panel highlighted"><details ${blockIndex === 0 ? "open" : ""}><summary class="detail-summary"><div class="draft-exercise-title"><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(draftSetSummary(block))}</p></div>${block.exerciseName ? exerciseMediaThumbnail(block, { blockIndex }) : ""}${block.exerciseName ? exerciseDetailBodyMap(block, "collapsed") : ""}<button class="icon-button" data-action="remove-block" data-block="${blockIndex}" aria-label="${txAttr("Remove exercise", "Прибрати вправу")}">${svg("delete")}</button></summary>
-    <div class="workout-exercise-choice"><button class="button ghost full" data-action="open-workout-exercise-picker" data-picker-target="draft-replace" data-block="${blockIndex}">${svg("list", "small-icon")}${block.exerciseName ? tx("Change exercise", "Змінити вправу") : tx("Choose exercise", "Обрати вправу")}</button></div>
-    ${block.exerciseName ? exerciseMuscleBreakdownCard(block) : ""}
+  const menuKey = `block-${blockIndex}`;
+  const menuLabel = `${tx3("Exercise actions for", "Дії для", "Действия для")} ${title}`;
+  const menuItems = [];
+  if (block.smartGenerated === true && storedExercise) {
+    menuItems.push({ action: "smart-alternatives", icon: "copy", label: tx3("Replace with similar", "Замінити схожою", "Заменить похожим"), attrs: ` data-block="${blockIndex}" data-exercise-id="${escapeAttr(String(storedExercise.id))}"` });
+  }
+  menuItems.push({ action: "remove-block", icon: "delete", danger: true, label: tx3("Delete", "Видалити", "Удалить"), attrs: ` data-block="${blockIndex}"` });
+  const lastLogged = lastWeight != null
+    ? `<p class="muted draft-last-logged">${tx3("Last logged", "Остання вага", "Последний вес")}: ${escapeHtml(formatLocalizedSetWeight(lastWeight))}</p>`
+    : "";
+  return `<section class="draft-exercise panel highlighted"><div class="draft-exercise-head">${block.exerciseName ? exerciseMediaThumbnail(block, { blockIndex }) : ""}<div class="draft-exercise-title"><h2>${escapeHtml(title)}</h2>${lastLogged}</div><div class="plan-menu-wrap">${planMenuTriggerMarkup(menuKey, menuLabel, "icon-button")}${planMenuMarkup(menuKey, menuLabel, menuItems)}</div></div>
+    ${block.exerciseName ? "" : `<div class="workout-exercise-choice"><button class="button ghost full" data-action="open-workout-exercise-picker" data-picker-target="draft-replace" data-block="${blockIndex}">${svg("list", "small-icon")}${tx("Choose exercise", "Обрати вправу")}</button></div>`}
     ${storedExercise ? `<div class="row-line">${loadProfile ? `<span class="muted">${tx("Configured machine weights", "Налаштовані ваги тренажера")}: ${loadProfile.allowedWeightsKg.length}</span>` : ""}<button class="button ghost mini" data-action="configure-load-profile" data-id="${escapeAttr(String(storedExercise.id))}">${tx("Machine weights", "Ваги тренажера")}</button></div>` : ""}
-    ${lastWeight != null ? `<div class="row-line"><strong>${tx("Last", "Остання вага")}: ${escapeHtml(formatLocalizedSetWeight(lastWeight))}</strong><button class="button ghost mini" data-action="apply-last" data-block="${blockIndex}">${t("useLast")}</button></div>` : ""}
     ${rec ? smartPanel(rec, blockIndex) : ""}
-    ${block.smartGenerated === true && storedExercise ? `<button class="button ghost full smart-alternatives-button" data-action="smart-alternatives" data-block="${blockIndex}" data-exercise-id="${escapeAttr(String(storedExercise.id))}">${svg("copy", "small-icon")}${tx("Replace with a similar exercise", "Замінити схожою вправою")}</button>` : ""}
-    <div class="set-shortcuts"><button class="button ghost" data-action="add-set" data-block="${blockIndex}">${t("addPlannedSet")}</button><button class="button ghost" data-action="copy-set" data-block="${blockIndex}">${t("copyLast")}</button><button class="button ghost full" data-action="plus-set" data-block="${blockIndex}">${t("copyPlus")}</button></div>
-    ${block.sets.map((set, setIndex) => `<div class="set-entry"><span>${tx("Set", "Підхід")} ${setIndex + 1}</span><div class="set-row"><input inputmode="decimal" aria-label="${txAttr("Weight", "Вага")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="weight" value="${escapeAttr(set.weight)}" placeholder="${tx3("kg", "кг", "кг")}"><input inputmode="numeric" aria-label="${txAttr("Reps", "Повтори")}" data-block="${blockIndex}" data-set="${setIndex}" data-field="reps" value="${escapeAttr(set.reps)}" placeholder="${txAttr("Reps", "Повтори")}"><button class="icon-button" data-action="remove-set" data-block="${blockIndex}" data-set="${setIndex}" aria-label="${txAttr("Remove set", "Видалити підхід")}">${svg("delete")}</button></div></div>`).join("")}
-  </details></section>`;
+    ${block.sets.map((set, setIndex) => draftSetRowMarkup(block, blockIndex, set, setIndex, lastWeight)).join("")}
+    <button type="button" class="set-add-button" data-action="add-set" data-block="${blockIndex}" aria-label="${escapeAttr(t("addPlannedSet"))}">${tx3("+ Set", "+ Підхід", "+ Подход")}</button>
+  </section>`;
 }
 
 function draftExerciseOptions(block) {
@@ -14401,12 +14461,6 @@ function smartRecommendationForBlock(block) {
       cap > window.GymStateContract.LIMITS.setsPerExercise ||
       recommendation.sets.length <= cap) return recommendation;
   return { ...recommendation, sets: recommendation.sets.slice(0, cap) };
-}
-
-function draftSetSummary(block) {
-  const setLabel = n(block.sets.length, "set", "sets", "підхід", "підходи", "підходів");
-  const details = block.sets.map(set => `${set.weight === "" ? "—" : formatSetWeight(set.weight)} ${tx3("kg", "кг", "кг")} × ${set.reps || "—"}`).join(" · ");
-  return details ? `${setLabel} · ${details}` : setLabel;
 }
 
 function muscleContributionPanel(exercise, compact = false) {
@@ -25825,6 +25879,20 @@ function focusStableScreenContext() {
 
 async function handleAction(action, el) {
   if (workoutDraftLiveSendInProgress && route().name === "add") return false;
+  if (planEditorMenu && action !== "toggle-plan-menu") planEditorMenu = null;
+  if (action === "toggle-plan-menu") {
+    const key = String(el?.dataset?.menu || "");
+    if (!/^(header|block-\d{1,3})$/.test(key)) return false;
+    planEditorMenu = planEditorMenu === key ? null : key;
+    render();
+    requestAnimationFrame(() => {
+      const target = planEditorMenu
+        ? app.querySelector(".plan-menu [role=\"menuitem\"]")
+        : [...app.querySelectorAll('[data-action="toggle-plan-menu"]')].find(item => item.dataset.menu === key);
+      target?.focus?.({ preventScroll: true });
+    });
+    return true;
+  }
   if (action === "open-offline-account") {
     clearSensitiveAuthDrafts();
     modal = { type: "offline-account" };
@@ -26388,7 +26456,26 @@ async function handleAction(action, el) {
     persistWorkoutDraft();
     return render();
   }
-  if (action === "copy-set" || action === "plus-set") { copyDraftSet(Number(el.dataset.block), action === "plus-set"); persistWorkoutDraft(); return render(); }
+  if (action === "copy-set") {
+    const blockIndex = Number(el.dataset.block);
+    const setIndex = el.dataset.set === undefined
+      ? (workoutDraft?.blocks[blockIndex]?.sets?.length ?? 0) - 1
+      : Number(el.dataset.set);
+    duplicateDraftSet(blockIndex, setIndex);
+    persistWorkoutDraft();
+    return render();
+  }
+  if (action === "plus-set") { addToDraftSetWeight(Number(el.dataset.block), Number(el.dataset.set), 2.5); persistWorkoutDraft(); return render(); }
+  if (action === "prev-set") { copyPreviousDraftSet(Number(el.dataset.block), Number(el.dataset.set)); persistWorkoutDraft(); return render(); }
+  if (action === "reps-step") {
+    const input = el.parentElement?.querySelector?.('input[data-field="reps"]');
+    if (!input) return false;
+    const next = activeStepReps(input.value, Number(el.dataset.dir));
+    if (next == null) return false;
+    input.value = String(next);
+    updateDraftInput(input);
+    return true;
+  }
   if (action === "remove-set") {
     const sets = workoutDraft?.blocks[Number(el.dataset.block)]?.sets;
     if (!sets) return;
@@ -26397,7 +26484,7 @@ async function handleAction(action, el) {
     persistWorkoutDraft();
     return render();
   }
-  if (action === "apply-last") return applyLast(Number(el.dataset.block));
+  if (action === "apply-last") return applyLast(Number(el.dataset.block), el.dataset.set === undefined ? null : Number(el.dataset.set));
   if (action === "apply-smart") return applySmart(Number(el.dataset.block));
   if (action === "sync-watch") {
     return queueGarminPlanFromDraft().catch(error => showToast(friendlyOperationError(
@@ -28433,31 +28520,47 @@ function shouldPrioritizeHeavyLower(history) {
   return !patterns.has("Squat") && !patterns.has("LegPress") && !patterns.has("Hinge");
 }
 
-function copyDraftSet(blockIndex, plus) {
+function duplicateDraftSet(blockIndex, setIndex) {
   const block = workoutDraft?.blocks[blockIndex];
-  if (!block) return;
+  const source = block?.sets?.[setIndex];
+  if (!source) return false;
   if (block.sets.length >= window.GymStateContract.LIMITS.setsPerExercise) {
     showToast(tx("This exercise has reached the set limit.", "Досягнуто ліміт підходів для вправи."));
-    return;
+    return false;
   }
-  const last = block.sets.at(-1) || { weight: "", reps: "" };
-  const weight = Number(String(last.weight).replace(",", "."));
-  const nextWeight = Number.isFinite(weight) ? weight + (plus ? 2.5 : 0) : last.weight;
-  block.sets.push({
-    weight: typeof nextWeight === "number" && nextWeight <= window.GymStateContract.LIMITS.weightMax
-      ? nextWeight
-      : last.weight,
-    reps: last.reps,
+  block.sets.splice(setIndex + 1, 0, {
+    weight: source.weight,
+    reps: source.reps,
     ...(block.smartGenerated === true ? { smartManualSet: true } : {})
   });
+  return true;
 }
 
-function applyLast(blockIndex) {
+function addToDraftSetWeight(blockIndex, setIndex, delta) {
+  const set = workoutDraft?.blocks[blockIndex]?.sets?.[setIndex];
+  if (!set) return false;
+  const current = String(set.weight ?? "").trim() === "" ? 0 : Number(String(set.weight).replace(",", "."));
+  if (!Number.isFinite(current)) return false;
+  const next = Math.round((current + delta) * 100) / 100;
+  if (next < 0 || next > window.GymStateContract.LIMITS.weightMax) return false;
+  set.weight = next;
+  return true;
+}
+
+function copyPreviousDraftSet(blockIndex, setIndex) {
+  const sets = workoutDraft?.blocks[blockIndex]?.sets;
+  if (!sets || !Number.isInteger(setIndex) || setIndex < 1 || !sets[setIndex] || !sets[setIndex - 1]) return false;
+  sets[setIndex].weight = sets[setIndex - 1].weight;
+  sets[setIndex].reps = sets[setIndex - 1].reps;
+  return true;
+}
+
+function applyLast(blockIndex, setIndex = null) {
   const block = workoutDraft?.blocks[blockIndex];
   if (!block) return;
   const weight = lastWeightFor(block.exerciseName);
   if (weight == null) return;
-  block.sets = block.sets.map(set => ({ ...set, weight }));
+  block.sets = block.sets.map((set, index) => setIndex == null || index === setIndex ? { ...set, weight } : set);
   persistWorkoutDraft();
   render();
 }
@@ -31359,6 +31462,7 @@ window.addEventListener("focus", () => {
 document.addEventListener?.("keydown", event => {
   if (event.key === "Escape") dismissLanguageMenu(true);
   if (event.key === "Escape") dismissExerciseFilterMenu(true);
+  if (event.key === "Escape") dismissPlanEditorMenu(true);
 });
 
 // Capture phase: data-action handlers stop propagation, so a bubbling listener would miss them.
@@ -31368,6 +31472,9 @@ document.addEventListener?.("click", event => {
   }
   if (exerciseFilterMenuOpen && !event.target?.closest?.(".exercise-filter-menu-wrap")) {
     dismissExerciseFilterMenu();
+  }
+  if (planEditorMenu && !event.target?.closest?.(".plan-menu-wrap")) {
+    dismissPlanEditorMenu();
   }
 }, true);
 

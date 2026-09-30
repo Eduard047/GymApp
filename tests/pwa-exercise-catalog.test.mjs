@@ -5105,7 +5105,12 @@ test("Discard plan is localized, exact, and distinct from clearing editor conten
   assert.equal(vm.runInContext("workoutDraftLiveRecipient.profileId", context), profileId);
   assert.equal(vm.runInContext("route().name", context), "add");
   assert.equal(JSON.parse(context.localStorage.getItem(draftKey)).draft.blocks.length, 0);
-  assert.match(vm.runInContext("addWorkoutScreen()", context), /data-action="discard-plan"/);
+  assert.doesNotMatch(vm.runInContext("addWorkoutScreen()", context), /data-action="clear-plan"/);
+  assert.match(
+    vm.runInContext(`planEditorMenu = "header"; addWorkoutScreen()`, context),
+    /<div class="plan-menu"[^>]*role="menu"[\s\S]*data-action="discard-plan"/
+  );
+  vm.runInContext(`planEditorMenu = null`, context);
 
   assert.equal(vm.runInContext("requestDiscardWorkoutDraft()", context), true);
   assert.equal(vm.runInContext("modal.type", context), "confirm-discard-plan");
@@ -6527,4 +6532,154 @@ test("remove and block preserve the social mutation mutex", async () => {
   assert.equal(vm.runInContext("socialMutationInProgress", context), true);
   assert.equal(vm.runInContext("socialState.dashboard", context), null);
   assert.equal(vm.runInContext("socialState.inbox", context), null);
+});
+
+function planEditorContext(blocks) {
+  const context = loadPwaContext();
+  vm.runInContext(`
+    state = defaultAppState();
+    nav = [{ name: "workouts" }, { name: "add" }];
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: ${JSON.stringify(blocks)} };
+    smartGeneratedPlan = null;
+    smartPlanStale = false;
+    planEditorMenu = null;
+    render = () => {};
+    showToast = () => {};
+    persistWorkoutDraft = () => {};
+  `, context);
+  return context;
+}
+
+const planEditorSets = [
+  { weight: "60", reps: "8" },
+  { weight: "62.5", reps: "6" },
+  { weight: "", reps: "" }
+];
+
+test("plan editor set chips copy the previous set, add 2.5 to one set, and duplicate after it", async () => {
+  const context = planEditorContext([{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: planEditorSets }]);
+  const sets = () => JSON.parse(vm.runInContext("JSON.stringify(workoutDraft.blocks[0].sets)", context));
+  const run = (action, set) => vm.runInContext(
+    `handleAction(${JSON.stringify(action)}, { dataset: { block: "0", set: "${set}" } })`,
+    context
+  );
+
+  await run("prev-set", 2);
+  assert.deepEqual(sets()[2], { weight: "62.5", reps: "6" });
+  await run("prev-set", 0);
+  assert.deepEqual(sets()[0], { weight: "60", reps: "8" });
+
+  await run("plus-set", 1);
+  assert.equal(sets()[1].weight, 65);
+  assert.equal(sets()[0].weight, "60");
+  assert.equal(sets().length, 3);
+  await run("plus-set", 0);
+  assert.equal(sets()[0].weight, 62.5);
+
+  await run("copy-set", 0);
+  const after = sets();
+  assert.equal(after.length, 4);
+  assert.deepEqual(after[1], { weight: 62.5, reps: "8" });
+  assert.equal(after[2].weight, 65);
+});
+
+test("plan editor Last chip applies only to its own set and is disabled without history", async () => {
+  const context = planEditorContext([{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: planEditorSets }]);
+  const markup = () => vm.runInContext("draftBlock(workoutDraft.blocks[0], 0)", context);
+  const chip = (html, action, set) => html.match(new RegExp(`<button[^>]*data-action="${action}" data-block="0" data-set="${set}"[^>]*>`))[0];
+
+  assert.match(chip(markup(), "apply-last", 0), /disabled/);
+  assert.match(chip(markup(), "prev-set", 0), /disabled/);
+  assert.doesNotMatch(chip(markup(), "prev-set", 1), /disabled/);
+  assert.doesNotMatch(markup(), /set-shortcuts|Copy Last|Use Last Weight/);
+
+  vm.runInContext(`lastWeightFor = () => 100`, context);
+  assert.doesNotMatch(chip(markup(), "apply-last", 0), /disabled/);
+  await vm.runInContext(`handleAction("apply-last", { dataset: { block: "0", set: "1" } })`, context);
+  const weights = JSON.parse(vm.runInContext("JSON.stringify(workoutDraft.blocks[0].sets.map(set => set.weight))", context));
+  assert.deepEqual(weights, ["60", 100, ""]);
+});
+
+test("plan editor set row keeps real inputs, a reps stepper with a floor of one, and a borderless Add set", async () => {
+  const context = planEditorContext([{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: planEditorSets }]);
+  const markup = vm.runInContext("draftBlock(workoutDraft.blocks[0], 0)", context);
+  assert.match(markup, /class="set-badge"[^>]*>1</);
+  assert.doesNotMatch(markup, /<details|<summary|exercise-muscle-breakdown|detail-collapsed-map/);
+  assert.match(markup, /^<section class="draft-exercise panel highlighted"><div class="draft-exercise-head">/);
+  assert.match(markup, /class="subpanel smart"/);
+  assert.match(markup, /data-set="0" data-field="weight"/);
+  assert.match(markup, /data-set="0" data-field="reps"/);
+  assert.equal((markup.match(/data-action="reps-step"/g) || []).length, 6);
+  assert.match(markup, /class="set-add-button" data-action="add-set" data-block="0" aria-label="Add planned set">\+ Set</);
+  assert.match(markup, /aria-label="Exercise actions for [^"]+"/);
+  assert.match(vm.runInContext(`state.language = "ru"; draftBlock(workoutDraft.blocks[0], 0)`, context), /Посл\. вес[\s\S]*Пред\.[\s\S]*Копия[\s\S]*\+ Подход/);
+
+  const input = { value: "1", dataset: { block: "0", set: "0", field: "reps" } };
+  const button = dir => ({ dataset: { dir }, parentElement: { querySelector: () => input } });
+  context.__button = button("-1");
+  await vm.runInContext(`handleAction("reps-step", __button)`, context);
+  assert.equal(input.value, "1");
+  context.__button = button("1");
+  await vm.runInContext(`handleAction("reps-step", __button)`, context);
+  assert.equal(input.value, "2");
+  assert.equal(vm.runInContext("workoutDraft.blocks[0].sets[0].reps", context), "2");
+});
+
+test("plan editor header menu holds Clear plan and Discard plan and each exercise menu holds Delete", async () => {
+  const context = planEditorContext([{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: planEditorSets }]);
+  const screen = () => vm.runInContext("addWorkoutScreen()", context);
+
+  assert.doesNotMatch(screen(), /class="plan-menu"|clear-plan-button|discard-plan-button/);
+  assert.match(screen(), /data-action="toggle-plan-menu" data-menu="header" aria-haspopup="menu" aria-expanded="false"/);
+  assert.match(screen(), /data-action="open-voice-workout"/);
+
+  await vm.runInContext(`handleAction("toggle-plan-menu", { dataset: { menu: "header" } })`, context);
+  const open = screen();
+  assert.match(open, /aria-expanded="true"[\s\S]*<div class="plan-menu" role="menu"/);
+  assert.match(open, /role="menuitem" data-action="clear-plan"[\s\S]*Clear plan/);
+  assert.match(open, /role="menuitem" data-action="discard-plan"/);
+  assert.equal(vm.runInContext("dismissPlanEditorMenu(false)", context), true);
+  assert.equal(vm.runInContext("planEditorMenu", context), null);
+
+  await vm.runInContext(`handleAction("toggle-plan-menu", { dataset: { menu: "block-0" } })`, context);
+  const blockMenu = vm.runInContext("draftBlock(workoutDraft.blocks[0], 0)", context);
+  assert.match(blockMenu, /role="menuitem" data-action="remove-block" data-block="0"[\s\S]*Delete/);
+  assert.doesNotMatch(blockMenu, /smart-alternatives/);
+  assert.equal(await vm.runInContext(`handleAction("toggle-plan-menu", { dataset: { menu: "evil" } })`, context), false);
+
+  await vm.runInContext(`handleAction("clear-plan", { dataset: {} })`, context);
+  assert.equal(vm.runInContext("planEditorMenu", context), null);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-clear-plan");
+
+  vm.runInContext(`workoutDraft.blocks = []; planEditorMenu = "header"`, context);
+  const empty = screen();
+  assert.doesNotMatch(empty, /data-action="clear-plan"/);
+  assert.match(empty, /data-action="discard-plan"/);
+});
+
+test("Smart Coach focus line shows focus and RIR, and the effort note only when requested differs from applied", () => {
+  const context = planEditorContext([{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: planEditorSets }]);
+  const panel = plan => vm.runInContext(`smartGeneratedPlan = ${JSON.stringify(plan)}; smartCoachPanel()`, context);
+  const same = panel({
+    focus: "FullBody", requestedEffort: "Standard", appliedEffort: "Standard",
+    exercises: [{ recommendation: { targetRir: [2, 3] } }, { recommendation: { targetRir: [2, 3] } }]
+  });
+  assert.match(same, /smart-plan-focus[\s\S]*Full body · RIR 2–3/);
+  assert.doesNotMatch(same, /metric-grid|smart-plan-note|You chose/);
+
+  const mixed = panel({
+    focus: "Upper", requestedEffort: "Hard", appliedEffort: "Standard",
+    exercises: [{ recommendation: { targetRir: [1, 2] } }, { recommendation: { targetRir: [2, 3] } }]
+  });
+  assert.match(mixed, /Upper body · RIR 1–2 · 2–3/);
+  assert.match(mixed, /smart-plan-note[^>]*>You chose “Hard” → coach set “Standard”/);
+  assert.match(vm.runInContext(`state.language = "ru"; smartCoachPanel()`, context), /Выбрано «Важке» → тренер поставил «Звичайне»|Выбрано «Тяжёлая»|Выбрано «/);
+  assert.match(vm.runInContext(`smartPlanRirSummary({ appliedEffort: "Recovery" })`, context), /3–4/);
+});
+
+test("plan editor close button reads Close on the add route", () => {
+  assert.match(
+    appSource,
+    /data-action="back" aria-label="\$\{current\.name === "add" \? tx3\("Close", "Закрити", "Закрыть"\)/
+  );
 });
