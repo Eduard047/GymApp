@@ -1271,7 +1271,7 @@ let activeSetConfirmation = null;
 let activeSetMutationsInFlight = 0;
 // Memory-only: exercise cards the user finished (iOS collapsedExerciseIDs). { workoutId, ids: Set<blockId> }.
 // It forces a card's <details> closed on render and is never persisted; opening the card again removes it.
-let activeCollapsedBlocks = { workoutId: null, ids: new Set() };
+let activeCollapsedBlocks = { workoutId: null, ids: new Set(), seeded: false };
 let activeSetUndoGesturesBound = false;
 let activeSetLongPress = null;
 let exerciseRestTimerLedger = null;
@@ -4541,7 +4541,7 @@ function reloadActiveWorkoutContext(account = activeAccount) {
 }
 
 function clearActiveWorkoutMemory() {
-  activeCollapsedBlocks = { workoutId: null, ids: new Set() };
+  activeCollapsedBlocks = { workoutId: null, ids: new Set(), seeded: false };
   activeWorkout = null;
   activeWorkoutStorageRaw = null;
   activeWorkoutUndoMarker = null;
@@ -11691,7 +11691,11 @@ function bottomNav() {
     <button class="tab-button ${route().name === id ? "active" : ""}" data-route="${id}" data-coach-target="${id === "leaderboard" ? "profile" : id}-tab" ${route().name === id ? `aria-current="page"` : ""}><span class="tab-icon">${svg(icon)}</span><span>${label}</span></button>`).join("")}</nav>`;
 }
 
+let lastScreenRouteName = null;
+
 function screenMarkup(current) {
+  if (current.name === "active" && lastScreenRouteName !== "active") activeCollapsedBlocks.seeded = false;
+  lastScreenRouteName = current.name;
   if (current.name === "missions") return missionsScreen();
   if (current.name === "exercises") return exercisesScreen();
   if (current.name === "progress") return progressScreen();
@@ -12951,6 +12955,7 @@ function activeWorkoutScreen() {
   if (!workout) {
     return `<section class="panel highlighted empty-state-panel"><h2>${tx("No active workout", "Немає активного тренування")}</h2><p>${tx("Build a plan to start a workout.", "Створи план, щоб почати тренування.")}</p><button class="button full" data-action="open-add">${tx("Build workout", "Створити тренування")}</button></section>`;
   }
+  seedActiveCollapsedBlocks(workout);
   const counts = activeWorkoutSetCounts(workout);
   const currentBlockIndex = workout.blocks.findIndex(block => block.sets.some(set => !set.completed));
   const latestCompleted = latestActiveCompletedEntry(workout);
@@ -13745,9 +13750,34 @@ let activeExpandedSetIds = new Set();
 
 function activeCollapsedBlockIds(workout = activeWorkout) {
   if (!workout || activeCollapsedBlocks.workoutId !== workout.id) {
-    activeCollapsedBlocks = { workoutId: workout?.id ?? null, ids: new Set() };
+    activeCollapsedBlocks = { workoutId: workout?.id ?? null, ids: new Set(), seeded: false };
   }
   return activeCollapsedBlocks.ids;
+}
+
+// Mirrors iOS collapseCompletedExercises on appear: every exercise except the current one and the one holding
+// the undoable (latest) set starts collapsed. Only fully recorded exercises need an entry here: an exercise
+// with unrecorded sets that is not current is already drawn collapsed, and keeping it out of the set lets it
+// open by itself once it becomes current.
+function activeEntryCollapsedBlockIds(workout, undoableSetId = null) {
+  const ids = new Set();
+  const currentBlock = workout.blocks.find(block => block.sets.some(set => !set.completed));
+  for (const block of workout.blocks) {
+    if (block === currentBlock) continue;
+    if (undoableSetId !== null && block.sets.some(set => set.id === undoableSetId)) continue;
+    if (block.sets.length > 0 && block.sets.every(set => set.completed)) ids.add(block.id);
+  }
+  return ids;
+}
+
+// Runs on every entry to the active route (and for a workout seen for the first time). Toggles made during the
+// visit are kept because the seed is not replayed until the route is entered again.
+function seedActiveCollapsedBlocks(workout) {
+  const ids = activeCollapsedBlockIds(workout);
+  if (!workout || activeCollapsedBlocks.seeded) return;
+  activeCollapsedBlocks.seeded = true;
+  ids.clear();
+  for (const id of activeEntryCollapsedBlockIds(workout, activeUndoableSetId(workout))) ids.add(id);
 }
 
 function collapseActiveExerciseBlock(blockId) {

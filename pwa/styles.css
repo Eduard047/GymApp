@@ -4169,20 +4169,6 @@ textarea:focus {
   background: color-mix(in srgb, var(--brand-fill) 7%, var(--surface));
 }
 
-.active-workout-exercise.current .active-exercise-actions {
-  position: sticky;
-  bottom: 10px;
-  z-index: 5;
-  margin: 12px -6px -6px;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--brand-fill) 24%, var(--outline-variant));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--text) 14%, transparent);
-  -webkit-backdrop-filter: saturate(150%) blur(18px);
-  backdrop-filter: saturate(150%) blur(18px);
-}
-
 .active-workout-exercise.upcoming {
   border-color: color-mix(in srgb, var(--outline-variant) 68%, transparent);
   background: color-mix(in srgb, var(--surface-2) 52%, var(--surface));
@@ -4261,7 +4247,6 @@ textarea:focus {
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: nowrap;
 }
 
@@ -6055,8 +6040,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 @media (prefers-reduced-transparency: reduce) {
   .topbar,
   .bottom-nav,
-  .focus-lens-action,
-  .active-workout-exercise.current .active-exercise-actions {
+  .focus-lens-action {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -6064,7 +6048,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   .topbar { background: var(--background); }
   .bottom-nav { background: var(--surface); }
   .focus-lens-action { background: #ffffff; }
-  .active-workout-exercise.current .active-exercise-actions { background: var(--surface-strong); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -6603,7 +6586,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 .active-hero-elapsed {
   color: #ffffff;
-  font: 600 36px/40px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  font-size: 36px;
+  line-height: 40px;
   font-variant-numeric: tabular-nums;
 }
 .active-hero-now {

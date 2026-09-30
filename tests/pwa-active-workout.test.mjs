@@ -998,6 +998,7 @@ test("the latest completed exercise stays expanded while the next exercise becom
     "JSON.stringify(activeWorkout.blocks.map(block => block.sets[0].id))",
     context
   ));
+  vm.runInContext("activeWorkoutScreen()", context); // screen entry happened before the set was recorded
   runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="weight"]`, { value: "80" });
   runtimeNodes.set(`[data-active-set-id="${firstSetId}"][data-active-field="reps"]`, { value: "8" });
   assert.equal(await vm.runInContext(`recordActiveSet(${firstSetId})`, context), true);
@@ -3610,6 +3611,7 @@ test("Finish with every set recorded collapses the card immediately without dial
   ]);
   const [setId] = blockSetIds(context, 0);
   const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  vm.runInContext("activeWorkoutScreen()", context); // screen entry happened before the set was recorded
   assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, setId, 80, 8), true);
   vm.runInContext("globalThis.toasts = []; showToast = message => globalThis.toasts.push(message);", context);
   const before = localStorage.getItem(activeStorageKey(context));
@@ -3642,6 +3644,58 @@ test("the collapsed-card memory is per workout and cleared when the workout leav
   vm.runInContext(`collapseActiveExerciseBlock(${blockId}); clearActiveWorkoutMemory();`, context);
   assert.equal(vm.runInContext("activeCollapsedBlocks.workoutId", context), null);
   assert.equal(vm.runInContext("activeCollapsedBlocks.ids.size", context), 0);
+});
+
+test("entering the active workout collapses every exercise except the current and undoable ones, like iOS", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startFinishWorkout(context, [
+    { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }] },
+    { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 100, reps: 5 }] }
+  ]);
+  const [setId] = blockSetIds(context, 0);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, setId, 80, 8), true);
+  assert.equal(vm.runInContext("activeUndoableSetId()", context), setId);
+  const collapsedTag = new RegExp(`<details data-active-block-details="${blockId}" >`);
+  const openTag = new RegExp(`<details data-active-block-details="${blockId}" open>`);
+
+  // Re-entering with the recorded set still undoable keeps its exercise open, the current one stays open too.
+  vm.runInContext("lastScreenRouteName = 'workouts'; activeCollapsedBlocks.seeded = false;", context);
+  const undoable = vm.runInContext("screenMarkup({ name: 'active' })", context);
+  assert.match(undoable, openTag, "the exercise holding the undoable set stays open");
+  assert.match(undoable, /active-workout-exercise current"><details data-active-block-details="\d+" open>/);
+
+  // Once the set is no longer undoable, every screen entry collapses its fully recorded exercise.
+  vm.runInContext("activeWorkoutUndoMarker = null; lastScreenRouteName = 'workouts';", context);
+  assert.match(vm.runInContext("screenMarkup({ name: 'active' })", context), collapsedTag,
+    "entering the route again re-collapses the fully recorded exercise");
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), collapsedTag);
+
+  // A card the user opens stays open for the rest of the visit, but the next entry collapses it again.
+  vm.runInContext(`activeCollapsedBlockIds(activeWorkout).delete(${blockId})`, context);
+  assert.match(vm.runInContext("screenMarkup({ name: 'active' })", context), openTag,
+    "user toggles are kept while the route stays active");
+  vm.runInContext("lastScreenRouteName = 'workouts';", context);
+  assert.match(vm.runInContext("screenMarkup({ name: 'active' })", context), collapsedTag);
+});
+
+test("the entry collapse set skips the current and undoable exercises and only lists fully recorded ones", () => {
+  const { context } = loadContext();
+  const ids = (workout, undoable) => JSON.parse(vm.runInContext(
+    `JSON.stringify([...activeEntryCollapsedBlockIds(${JSON.stringify(workout)}, ${JSON.stringify(undoable)})])`,
+    context
+  ));
+  const workout = {
+    blocks: [
+      { id: 1, sets: [{ id: 10, completed: true }] },
+      { id: 2, sets: [{ id: 20, completed: true }] },
+      { id: 3, sets: [{ id: 30, completed: true }, { id: 31, completed: false }] },
+      { id: 4, sets: [{ id: 40, completed: false }] }
+    ]
+  };
+  assert.deepEqual(ids(workout, null), [1, 2]);
+  assert.deepEqual(ids(workout, 20), [1], "the exercise holding the undoable set stays open");
+  assert.deepEqual(ids({ blocks: workout.blocks.slice(0, 2) }, null), [1, 2], "nothing left to do: all collapse");
 });
 
 test("the recorded-set banner announces once per confirmation", async () => {

@@ -33,7 +33,10 @@ test("exercise density, active workout disclosure, and empty progress remain acc
   assert.match(app, /restoreStableActionFocus\(\{ action: "open-exercise-filters" \}\)/);
   assert.match(app, /returnFocus: stableActionReturnFocus\("open-exercise-more", el\)/);
   assert.match(app, /class="hero-panel progress-empty-state"/);
-  assert.match(styles, /\.active-workout-exercise\.current \.active-exercise-actions\s*\{[\s\S]*?position:\s*sticky;/);
+  assert.doesNotMatch(styles, /\.active-exercise-actions[^{}]*\{[^}]*position:\s*(sticky|fixed)/,
+    "the exercise footer sits inline at the end of the card like iOS, never floating over the set card");
+  assert.doesNotMatch(styles, /\.active-workout-exercise\.current \.active-exercise-actions/);
+  assert.match(styles, /\.active-exercise-actions\s*\{[^}]*display:\s*grid;/);
   assert.match(styles, /@media \(max-width: 460px\) and \(max-height: 640px\)/);
 });
 
