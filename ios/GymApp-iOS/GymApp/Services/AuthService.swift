@@ -392,20 +392,13 @@ enum GymLoginPasswordPolicy {
 }
 
 enum GymPasswordPolicy {
-    static let errorMessage = "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
-
-    private static let supportedSymbols = CharacterSet(
-        charactersIn: "!@#$%^&*()_+-=[]{};'\\:\"|<>?,./`~"
-    )
+    static let minimumCharacters = 6
+    static let maximumUTF8Bytes = 72
+    static let errorMessage = "Password must contain at least 6 characters and fit within 72 UTF-8 bytes."
 
     static func accepts(_ password: String) -> Bool {
-        let scalars = password.unicodeScalars
-        return scalars.count >= 12
-            && password.utf8.count <= 72
-            && scalars.contains(where: { (97...122).contains($0.value) })
-            && scalars.contains(where: { (65...90).contains($0.value) })
-            && scalars.contains(where: { (48...57).contains($0.value) })
-            && scalars.contains(where: { supportedSymbols.contains($0) })
+        password.unicodeScalars.count >= minimumCharacters
+            && password.utf8.count <= maximumUTF8Bytes
     }
 }
 
@@ -1668,6 +1661,8 @@ final class AuthService: ObservableObject {
             return .passwordReauthenticationRequired
         case "reauthentication_not_valid":
             return .invalidPasswordReauthenticationNonce
+        case "weak_password":
+            return .server(GymAuthServerMessages.weakPassword)
         default:
             return nil
         }

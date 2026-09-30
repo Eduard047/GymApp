@@ -1806,6 +1806,37 @@ final class CoreParityTests: XCTestCase {
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/auth/v1/user"])
     }
 
+    func testRecoveryPasswordUpdateMapsServerWeakPasswordToLocalizedMessage() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthURLProtocolStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        let auth = AuthService(
+            keychain: InMemoryKeychainStore(),
+            urlSession: urlSession,
+            defaults: temporaryDefaults(named: "recovery-weak-password")
+        )
+        try auth.installSessionForTesting(
+            .cloud(cloudSession(userID: "recovery-weak-password-user"))
+        )
+        AuthURLProtocolStub.handler = { request in
+            try AuthURLProtocolStub.response(
+                for: request,
+                statusCode: 422,
+                json: #"{"code":422,"error_code":"weak_password","msg":"Password is known to be weak and easy to guess, please choose a different one."}"#
+            )
+        }
+        defer {
+            AuthURLProtocolStub.handler = nil
+            urlSession.invalidateAndCancel()
+        }
+
+        let updated = await auth.updatePassword("abcdef")
+
+        XCTAssertFalse(updated)
+        XCTAssertTrue(auth.messageIsError)
+        XCTAssertEqual(auth.message, GymAuthServerMessages.weakPassword)
+    }
+
     func testLatePasswordReauthenticationCannotFollowReplacementAccount() async throws {
         let recorder = AuthRequestRecorder()
         let reauthenticationStarted = expectation(description: "password reauthentication started")
@@ -2481,21 +2512,68 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(auth.message?.contains(marker) == true)
     }
 
-    func testNewPasswordPolicyMatchesSupabaseCharacterGroupsAndBounds() {
-        XCTAssertTrue(GymPasswordPolicy.accepts("SecurePass9!"))
-        XCTAssertTrue(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 68)))
-        XCTAssertTrue(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 8) + String(repeating: "🙂", count: 15)))
-        XCTAssertFalse(GymPasswordPolicy.accepts("Short1!Aa"))
-        XCTAssertFalse(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 69)))
-        XCTAssertFalse(GymPasswordPolicy.accepts("Aa1!" + String(repeating: "x", count: 8) + String(repeating: "🙂", count: 16)))
-        XCTAssertFalse(GymPasswordPolicy.accepts("SECUREPASS9!"))
-        XCTAssertFalse(GymPasswordPolicy.accepts("securepass9!"))
-        XCTAssertFalse(GymPasswordPolicy.accepts("SecurePass!!"))
-        XCTAssertFalse(GymPasswordPolicy.accepts("SecurePass9🙂"))
+    func testNewPasswordPolicyRequiresSixScalarsAndAtMost72UTF8Bytes() {
+        XCTAssertTrue(GymPasswordPolicy.accepts("abcdef"))
+        XCTAssertTrue(GymPasswordPolicy.accepts("lowercaseonly"))
+        XCTAssertTrue(GymPasswordPolicy.accepts("123456"))
+        XCTAssertFalse(GymPasswordPolicy.accepts("abcde"))
+        XCTAssertFalse(GymPasswordPolicy.accepts(""))
+        XCTAssertTrue(GymPasswordPolicy.accepts(String(repeating: "x", count: 72)))
+        XCTAssertFalse(GymPasswordPolicy.accepts(String(repeating: "x", count: 73)))
 
-        for symbol in "!@#$%^&*()_+-=[]{};'\\:\"|<>?,./`~" {
-            XCTAssertTrue(GymPasswordPolicy.accepts("SecurePass9\(symbol)"), "Expected \(symbol) to be supported")
-        }
+        // Multibyte input: the minimum counts unicode scalars, the maximum counts UTF-8 bytes.
+        XCTAssertTrue(GymPasswordPolicy.accepts(String(repeating: "🙂", count: 6)))
+        XCTAssertFalse(GymPasswordPolicy.accepts(String(repeating: "🙂", count: 5)))
+        XCTAssertTrue(GymPasswordPolicy.accepts(String(repeating: "🙂", count: 18)))
+        XCTAssertFalse(GymPasswordPolicy.accepts(String(repeating: "🙂", count: 19)))
+        XCTAssertTrue(GymPasswordPolicy.accepts(String(repeating: "x", count: 8) + String(repeating: "🙂", count: 16)))
+        XCTAssertFalse(GymPasswordPolicy.accepts(String(repeating: "x", count: 9) + String(repeating: "🙂", count: 16)))
+    }
+
+    func testNewPasswordPolicyCopyAndServerWeakPasswordMappingAreLocalized() {
+        XCTAssertEqual(
+            GymPasswordPolicy.errorMessage,
+            "Password must contain at least 6 characters and fit within 72 UTF-8 bytes."
+        )
+        XCTAssertEqual(
+            gymLocalized(GymPasswordPolicy.errorMessage, languageCode: "uk"),
+            "Пароль має містити щонайменше 6 символів і займати не більше 72 байтів у UTF-8."
+        )
+        XCTAssertEqual(
+            gymLocalized(GymPasswordPolicy.errorMessage, languageCode: "ru"),
+            "Пароль должен содержать не менее 6 символов и занимать не более 72 байт в UTF-8."
+        )
+        let hint = "Use at least 6 characters (up to 72 UTF-8 bytes)."
+        XCTAssertEqual(
+            gymLocalized(hint, languageCode: "uk"),
+            "Використай щонайменше 6 символів (до 72 байтів UTF-8)."
+        )
+        XCTAssertEqual(
+            gymLocalized(hint, languageCode: "ru"),
+            "Используй не менее 6 символов (до 72 байт UTF-8)."
+        )
+
+        let weak = GymAuthServerMessages.weakPassword
+        XCTAssertEqual(weak, "The new password does not meet the server password policy.")
+        XCTAssertEqual(
+            gymLocalized(weak, languageCode: "uk"),
+            "Новий пароль не відповідає серверним вимогам."
+        )
+        XCTAssertEqual(
+            gymLocalized(weak, languageCode: "ru"),
+            "Новый пароль не соответствует требованиям сервера."
+        )
+        XCTAssertEqual(
+            gymSafeEnglishErrorMessage(AuthServiceError.requestFailed(
+                status: 422,
+                message: "Password is known to be weak and easy to guess. Weak password."
+            )),
+            weak
+        )
+        XCTAssertEqual(
+            gymSafeEnglishErrorMessage(AuthServiceError.server(weak)),
+            weak
+        )
     }
 
     func testLoginPasswordPolicyUsesExactUTF8ByteBoundaryAndLocalizedError() {
@@ -18236,8 +18314,8 @@ final class CoreParityTests: XCTestCase {
             ),
             (
                 GymPasswordPolicy.errorMessage,
-                "Пароль має містити щонайменше 12 символів, займати не більше 72 байтів у UTF-8 та включати малу й велику латинські літери, цифру й підтримуваний спецсимвол.",
-                "Пароль должен содержать не менее 12 символов, занимать не более 72 байт в UTF-8 и включать строчную и заглавную латинские буквы, цифру и поддерживаемый спецсимвол."
+                "Пароль має містити щонайменше 6 символів і займати не більше 72 байтів у UTF-8.",
+                "Пароль должен содержать не менее 6 символов и занимать не более 72 байт в UTF-8."
             ),
             (
                 PasswordReauthenticationNoncePolicy.errorMessage,

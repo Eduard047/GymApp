@@ -166,7 +166,7 @@ public struct AuthView: View {
 
                     if mode == .signUp,
                        focusedField == .password || focusedField == .repeatedPassword {
-                        Text("Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.")
+                        Text("Use at least 6 characters (up to 72 UTF-8 bytes).")
                             .font(.caption)
                             .foregroundStyle(GymTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

@@ -437,6 +437,10 @@ func gymSafeEnglishErrorMessage(_ error: Error) -> String {
 
 private let gymGenericErrorMessage = "Something went wrong. Try again."
 
+enum GymAuthServerMessages {
+    static let weakPassword = "The new password does not meet the server password policy."
+}
+
 private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
     let message = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     let lower = message.lowercased()
@@ -452,12 +456,16 @@ private func gymSafeAuthServerErrorMessage(_ raw: String) -> String {
     if lower.contains("already registered") || lower.contains("user_already_exists") {
         return "An account with this email already exists."
     }
+    if lower.contains("weak password") || lower.contains("weak_password") {
+        return GymAuthServerMessages.weakPassword
+    }
 
     let safeMessages: Set<String> = [
         "Email or password is incorrect.",
         "Confirm your email first, then sign in.",
         "Too many emails were requested. Try again later.",
         "An account with this email already exists.",
+        GymAuthServerMessages.weakPassword,
         "Cloud service is temporarily unavailable. Try again later.",
         "Cloud request failed. Check your connection and try again."
     ]
