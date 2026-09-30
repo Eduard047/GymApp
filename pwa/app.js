@@ -208,6 +208,8 @@ const icons = {
   external: "M7 17 17 7M8 7h9v9",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4",
+  eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  eyeOff: "M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.9 8.3 2 12 2 12s3.6 7 10 7c1.7 0 3.2-.4 4.5-1M9.9 9.9a3 3 0 0 0 4.2 4.2",
   privacy: "M12 3 4 6v5c0 4.5 3.1 8.3 8 10 4.9-1.7 8-5.5 8-10V6l-8-3z",
   help: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4.5M12 17.5h.01",
   phone: "M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2",
@@ -11170,27 +11172,42 @@ function loginScreen() {
   const authNoticeMarkup = authNotice?.text
     ? `<div class="email-confirmation-status ${authNotice.isError ? "error" : ""}" role="status">${escapeHtml(authNotice.text)}</div>`
     : "";
+  const authDisabled = authRequestInProgress ? "disabled" : "";
+  // Quiet text link below the primary action; inside the panel it sits under a divider (iOS parity).
+  function offlineLinkMarkup(embedded) {
+    return `<div class="auth-offline-row${embedded ? " embedded" : ""}">${embedded ? '<hr class="auth-divider">' : ""}<button type="button" class="auth-quiet-link auth-offline-button" data-action="open-offline-account" ${authDisabled}>${svg("phone", "small-icon")}${tx("Continue offline", "Продовжити офлайн")}</button></div>`;
+  }
   let remotePanel = "";
   if (remoteEnabled && pendingEmailConfirmation) {
-    remotePanel = emailConfirmationPanel();
+    remotePanel = emailConfirmationPanel(offlineLinkMarkup(true));
   } else if (remoteEnabled && isForgot) {
-    remotePanel = `<section class="panel highlighted auth-panel"><h2>${tx("Reset password", "Скинути пароль")}</h2><p class="muted">${tx("Enter the email for your cloud account. The reset link must be opened in this browser.", "Введи адресу хмарного акаунта. Посилання для скидання потрібно відкрити в цьому браузері.")}</p>${authNoticeMarkup}<div class="field-stack"><label>${tx("Email", "Email")}<input id="forgot-email" data-auth-mode="forgot" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.forgot.email)}"></label></div><div class="auth-actions"><button class="button" data-action="request-password-reset" ${authRequestInProgress ? "disabled" : ""}>${tx("Send reset link", "Надіслати посилання")}</button><button class="button ghost" data-action="auth-mode" data-mode="login" ${authRequestInProgress ? "disabled" : ""}>${tx("Back to sign in", "Повернутися до входу")}</button></div></section>`;
+    remotePanel = `<section class="panel highlighted auth-panel"><h2>${tx("Reset password", "Скинути пароль")}</h2><p class="muted">${tx("Enter the email for your cloud account. The reset link must be opened in this browser.", "Введи адресу хмарного акаунта. Посилання для скидання потрібно відкрити в цьому браузері.")}</p>${authNoticeMarkup}<div class="field-stack"><label>${tx("Email", "Email")}<input id="forgot-email" data-auth-mode="forgot" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.forgot.email)}"></label></div><div class="auth-actions"><button class="button" data-action="request-password-reset" ${authDisabled}>${tx("Send reset link", "Надіслати посилання")}</button><button class="button ghost" data-action="auth-mode" data-mode="login" ${authDisabled}>${tx("Back to sign in", "Повернутися до входу")}</button></div>${offlineLinkMarkup(true)}</section>`;
   } else if (remoteEnabled) {
-    remotePanel = `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Cloud account", "Хмарний акаунт")}</h2>${authNoticeMarkup}<div class="field-stack">
-      ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label><label>${tx("Password", "Пароль")}<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" minlength="12" maxlength="72" aria-describedby="signup-password-requirements" value="${escapeAttr(authDrafts.signup.password)}"></label><label>${tx("Repeat password", "Повтори пароль")}<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" minlength="12" maxlength="72" aria-describedby="signup-password-requirements" value="${escapeAttr(authDrafts.signup.passwordConfirm)}"></label><p id="signup-password-requirements" class="muted contextual-field-help">${tx("12–72 UTF-8 bytes with upper and lowercase Latin letters, a number and a symbol.", "12–72 байти UTF-8, великі й малі латинські літери, цифра та спецсимвол.")}</p><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label><label>${tx("Password", "Пароль")}<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" maxlength="1024" value="${escapeAttr(authDrafts.login.password)}"></label>`}
-      </div><div class="auth-actions"><button class="button" data-action="${isSignUp ? "remote-signup" : "remote-login"}" ${authRequestInProgress ? "disabled" : ""}>${isSignUp ? tx("Create account", "Створити акаунт") : tx("Log in", "Увійти")}</button><button class="button ghost" data-action="auth-mode" data-mode="${isSignUp ? "login" : "signup"}" ${authRequestInProgress ? "disabled" : ""}>${isSignUp ? tx("Log in instead", "Увійти натомість") : tx("Create account", "Створити акаунт")}</button>${isSignUp ? "" : `<button class="button ghost" data-action="auth-mode" data-mode="forgot" ${authRequestInProgress ? "disabled" : ""}>${tx("Forgot password?", "Забули пароль?")}</button>`}</div></section>`;
+    function modeTab(mode, label) {
+      return mode === (isSignUp ? "signup" : "login")
+        ? `<button type="button" role="radio" aria-checked="true" class="selected" data-mode="${mode}"><strong>${label}</strong></button>`
+        : `<button type="button" role="radio" aria-checked="false" data-action="auth-mode" data-mode="${mode}" ${authDisabled}><strong>${label}</strong></button>`;
+    }
+    const showPassword = tx3("Show password", "Показати поле «пароль»", "Показать поле «пароль»");
+    const hidePassword = tx3("Hide password", "Сховати поле «пароль»", "Скрыть поле «пароль»");
+    const showRepeat = tx3("Show repeat password", "Показати поле «повтори пароль»", "Показать поле «повторите пароль»");
+    const hideRepeat = tx3("Hide repeat password", "Сховати поле «повтори пароль»", "Скрыть поле «повторите пароль»");
+    remotePanel = `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Welcome back", "З поверненням", "С возвращением")}</h2>
+      <div class="segmented auth-mode-switch" role="radiogroup" aria-label="${escapeAttr(tx3("Account action", "Дія з акаунтом", "Действие с аккаунтом"))}">${modeTab("login", tx3("Sign in", "Увійти", "Войти"))}${modeTab("signup", tx3("Sign up", "Зареєструватися", "Регистрация"))}</div><div class="field-stack">
+      ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label>${passwordFieldMarkup({ id: "signup-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" minlength="12" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.password)}">` })}${passwordFieldMarkup({ id: "signup-password-confirm", label: tx("Repeat password", "Повтори пароль"), showLabel: showRepeat, hideLabel: hideRepeat, input: `<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" minlength="12" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.passwordConfirm)}">` })}<p id="signup-password-requirements" class="muted contextual-field-help">${tx("12–72 UTF-8 bytes with upper and lowercase Latin letters, a number and a symbol.", "12–72 байти UTF-8, великі й малі латинські літери, цифра та спецсимвол.")}</p><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="email@example.com" value="${escapeAttr(authDrafts.login.email)}"></label>${passwordFieldMarkup({ id: "login-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" maxlength="1024" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.login.password)}">` })}`}
+      </div>${authNoticeMarkup}<div class="auth-actions stacked"><button class="button full" data-action="${isSignUp ? "remote-signup" : "remote-login"}" ${authDisabled}>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Sign in", "Увійти", "Войти")}</button>${isSignUp ? "" : `<button type="button" class="auth-quiet-link auth-forgot-link" data-action="auth-mode" data-mode="forgot" ${authDisabled}>${tx("Forgot password?", "Забули пароль?")}</button>`}</div>${offlineLinkMarkup(true)}</section>`;
   }
   return `<div class="app-shell auth-shell">
     <main class="screen auth-screen" data-scroll-key="auth">
       <header class="hero-panel auth-brand-panel">
-        <img class="auth-brand-mark" src="./icon-192.png" width="64" height="64" alt="">
+        <img class="auth-brand-mark" src="./icon-192.png" width="48" height="48" alt="">
         <h1 class="auth-wordmark">GymApp</h1>
         ${languageSelectorMarkup()}
       </header>
       ${pendingSharedWorkout ? `<section class="panel highlighted shared-workout-pending"><h2>${tx("Shared workout ready", "Спільне тренування готове")}</h2><p>${tx("Sign in or enter offline mode to review the plan. It will not replace or save anything automatically.", "Увійди або відкрий офлайн-режим, щоб переглянути план. Він нічого не замінить і не збереже автоматично.")}</p>${sharedWorkoutPreviewMarkup(pendingSharedWorkout)}</section>` : ""}
       ${remotePanel}
-      <button class="button secondary full auth-offline-button" data-action="open-offline-account">${svg("person", "small-icon")}${tx("Continue offline", "Продовжити офлайн")}</button>
-      <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${tx("Privacy", "Конфіденційність")}</a><a href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${tx("Support", "Підтримка")}</a></nav></section>
+      ${remotePanel ? "" : offlineLinkMarkup(false)}
+      <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a class="auth-link" href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${svg("privacy", "small-icon")}<span>${tx3("Privacy Policy", "Політика конфіденційності", "Политика конфиденциальности")}</span></a><a class="auth-link" href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${svg("help", "small-icon")}<span>${tx3("Support", "Підтримка", "Поддержка")}</span></a></nav></section>
       <details class="auth-secondary-details"><summary>${tx("Apps & appearance", "Застосунки й вигляд")}</summary><div class="auth-secondary-content">${storeDownloadPanel()}${themePreferencePanel("auth")}</div></details>
       ${modal ? modalMarkup() : ""}
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -11200,7 +11217,23 @@ function loginScreen() {
 
 function offlineAccountSheetMarkup() {
   const accounts = accountList().filter(account => !account.remote);
-  return `<div class="offline-account-sheet"><h2>${tx("Offline profile", "Офлайн-профіль")}</h2><p class="muted">${tx("Workouts stay only on this device until you export them; cloud sync and recovery are unavailable.", "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні.")}</p><label>${tx("Profile name", "Ім’я профілю")}<input id="offline-profile-name" autocomplete="nickname" maxlength="32" placeholder="Local"></label><div class="actions vertical"><button class="button full" data-action="continue-offline" data-modal-initial-focus>${tx("Continue offline", "Продовжити офлайн")}</button><button class="button ghost full" data-action="close-modal">${tx("Cancel", "Скасувати")}</button></div>${accounts.length ? `<div class="saved-offline-profiles"><h3>${tx("Saved profiles", "Збережені профілі")}</h3>${accounts.map(account => `<button class="button secondary full saved-offline-profile" data-action="resume-offline-account" data-account-id="${escapeAttr(account.id)}"><span>${escapeHtml(account.name)}</span><span aria-hidden="true">›</span></button>`).join("")}</div>` : ""}</div>`;
+  return `<div class="offline-account-sheet"><h2>${tx("Offline profile", "Офлайн-профіль")}</h2><p class="muted">${tx("Workouts stay only on this device until you export them; cloud sync and recovery are unavailable.", "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні.")}</p><label>${tx("Profile name", "Ім’я профілю")}<input id="offline-profile-name" autocomplete="nickname" maxlength="32" placeholder="Local"></label><div class="actions vertical"><button class="button full" data-action="continue-offline" data-modal-initial-focus>${tx("Continue offline", "Продовжити офлайн")}</button><button type="button" class="auth-quiet-link" data-action="close-modal">${tx("Cancel", "Скасувати")}</button></div>${accounts.length ? `<div class="saved-offline-profiles"><h3>${tx("Saved profiles", "Збережені профілі")}</h3>${accounts.map(account => `<button class="button secondary full saved-offline-profile" data-action="resume-offline-account" data-account-id="${escapeAttr(account.id)}"><span>${escapeHtml(account.name)}</span><span aria-hidden="true">›</span></button>`).join("")}</div>` : ""}</div>`;
+}
+
+// Password input with an overlaid 44x44 visibility toggle; the field keeps its 56px height.
+// The toggle flips type and labels in the DOM only (togglePasswordVisibility) and is never persisted.
+function passwordFieldMarkup({ id, label, showLabel, hideLabel, input }) {
+  return `<div class="password-field"><label for="${escapeAttr(id)}">${label}</label><div class="password-field-control">${input}<button type="button" class="password-toggle" data-action="toggle-password-visibility" aria-controls="${escapeAttr(id)}" aria-pressed="false" aria-label="${escapeAttr(showLabel)}" data-show-label="${escapeAttr(showLabel)}" data-hide-label="${escapeAttr(hideLabel)}">${svg("eye", "small-icon password-icon-show")}${svg("eyeOff", "small-icon password-icon-hide")}</button></div></div>`;
+}
+
+function togglePasswordVisibility(button) {
+  const input = button?.closest?.(".password-field-control")?.querySelector?.("input");
+  if (!input || !button?.dataset) return false;
+  const reveal = input.type === "password";
+  input.type = reveal ? "text" : "password";
+  button.setAttribute("aria-pressed", String(reveal));
+  button.setAttribute("aria-label", (reveal ? button.dataset.hideLabel : button.dataset.showLabel) || "");
+  return true;
 }
 
 function storeDownloadPanel() {
@@ -11232,14 +11265,14 @@ function themePreferencePanel(context = "profile") {
   </section>`;
 }
 
-function emailConfirmationPanel() {
+function emailConfirmationPanel(footerMarkup = "") {
   const notice = pendingEmailConfirmation;
   if (!notice) return "";
   return `<section class="panel highlighted auth-panel email-confirmation-panel" aria-labelledby="email-confirmation-title">
     <div class="email-confirmation-heading"><span class="email-confirmation-icon" aria-hidden="true">✉</span><div><span>${tx("Confirmation link sent to", "Посилання надіслано на адресу")}</span><strong id="pending-confirmation-email"></strong></div></div>
     <div class="email-confirmation-copy"><h2 id="email-confirmation-title">${tx("Check your email", "Перевірте електронну пошту")}</h2><p>${tx("We sent a confirmation link to the address below. Open the newest email from GymApp and tap “Confirm email”. Then return to GymApp and sign in.", "Ми надіслали посилання для підтвердження на адресу нижче. Відкрийте найновіший лист від GymApp і натисніть «Підтвердити email». Потім поверніться до GymApp та увійдіть.")}</p><p class="muted">${tx("If you cannot find it, check your Spam folder.", "Якщо листа немає, перевірте папку «Спам».")}</p></div>
     ${notice.status ? `<div class="email-confirmation-status ${notice.statusIsError ? "error" : ""}" role="status">${escapeHtml(notice.status)}</div>` : ""}
-    <div class="email-confirmation-actions"><button class="button full" data-action="remote-resend-confirmation" ${authRequestInProgress ? "disabled" : ""}>${tx("Send email again", "Надіслати лист ще раз")}</button><button class="button ghost full" data-action="confirmation-change-address" ${authRequestInProgress ? "disabled" : ""}>${tx("Use a different address", "Використати іншу адресу")}</button><button class="button ghost full" data-action="confirmation-back-to-login" ${authRequestInProgress ? "disabled" : ""}>${tx("Back to sign in", "Повернутися до входу")}</button></div>
+    <div class="email-confirmation-actions"><button class="button full" data-action="remote-resend-confirmation" ${authRequestInProgress ? "disabled" : ""}>${tx("Send email again", "Надіслати лист ще раз")}</button><button class="button ghost full" data-action="confirmation-change-address" ${authRequestInProgress ? "disabled" : ""}>${tx("Use a different address", "Використати іншу адресу")}</button><button class="button ghost full" data-action="confirmation-back-to-login" ${authRequestInProgress ? "disabled" : ""}>${tx("Back to sign in", "Повернутися до входу")}</button></div>${footerMarkup}
   </section>`;
 }
 
@@ -25893,6 +25926,7 @@ async function handleAction(action, el) {
     });
     return true;
   }
+  if (action === "toggle-password-visibility") return togglePasswordVisibility(el);
   if (action === "open-offline-account") {
     clearSensitiveAuthDrafts();
     modal = { type: "offline-account" };
@@ -31262,6 +31296,86 @@ function showToast(message) {
   });
 }
 
+const BOOT_SPLASH_VISIBLE_MS = 1400;
+const BOOT_SPLASH_SPINNER_DELAY_MS = 1000;
+const BOOT_SPLASH_FADE_MS = 280;
+let bootSplashStarted = false;
+let bootSplashSpinnerTimer = null;
+let bootSplashDismissTimer = null;
+
+function bootSplashPrefersReducedMotion() {
+  try {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  } catch {
+    return false;
+  }
+}
+
+function dismissBootSplash(splash) {
+  clearTimeout(bootSplashSpinnerTimer);
+  clearTimeout(bootSplashDismissTimer);
+  bootSplashSpinnerTimer = null;
+  bootSplashDismissTimer = null;
+  if (!splash?.isConnected) return;
+  if (bootSplashPrefersReducedMotion()) {
+    splash.remove();
+    return;
+  }
+  splash.classList.add("leaving");
+  bootSplashDismissTimer = setTimeout(() => {
+    bootSplashDismissTimer = null;
+    splash.remove();
+  }, BOOT_SPLASH_FADE_MS + 40);
+}
+
+function startBootSplash() {
+  // Once per page load: in-app navigation and re-renders never call this again.
+  if (bootSplashStarted) return false;
+  bootSplashStarted = true;
+  const splash = document.getElementById?.("boot-splash");
+  if (!splash) return false;
+  const stack = document.createElement("div");
+  stack.className = "boot-splash-stack";
+  const copy = document.createElement("div");
+  copy.className = "boot-splash-copy";
+  copy.setAttribute("aria-hidden", "true");
+  const title = document.createElement("p");
+  title.className = "boot-splash-title";
+  title.textContent = "GymApp";
+  const tagline = document.createElement("p");
+  tagline.className = "boot-splash-tagline";
+  tagline.textContent = tx3(
+    "Build strength with focus and consistency.",
+    "Розвивай силу з фокусом і системністю.",
+    "Развивай силу с фокусом и системностью."
+  );
+  copy.append(title, tagline);
+  stack.append(copy);
+  splash.append(stack);
+  // The splash now carries a status region, so it must not stay hidden from assistive tech.
+  splash.removeAttribute("aria-hidden");
+  // The spinner is only a slow-start fallback: it never exists on a fast start.
+  bootSplashSpinnerTimer = setTimeout(() => {
+    bootSplashSpinnerTimer = null;
+    if (!splash.isConnected) return;
+    const status = document.createElement("div");
+    status.className = "boot-splash-spinner";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-label", tx3(
+      "Preparing your session",
+      "Готуємо твою сесію",
+      "Готовим твою сессию"
+    ));
+    const ring = document.createElement("span");
+    ring.className = "boot-splash-spinner-ring";
+    ring.setAttribute("aria-hidden", "true");
+    status.append(ring);
+    stack.append(status);
+  }, BOOT_SPLASH_SPINNER_DELAY_MS);
+  bootSplashDismissTimer = setTimeout(() => dismissBootSplash(splash), BOOT_SPLASH_VISIBLE_MS);
+  return true;
+}
+
 async function registerCurrentServiceWorker() {
   const registration = await navigator.serviceWorker.register("./sw.js", {
     updateViaCache: "none"
@@ -31492,6 +31606,8 @@ document.addEventListener?.("visibilitychange", () => {
 });
 
 void resumeCloudAccountDeletionRecovery(startupCloudAccountDeletionRecovery).catch(() => {});
+
+startBootSplash();
 
 if (!handleEmailConfirmationRedirect()) {
   scrubServiceWorkerRefreshParameter();

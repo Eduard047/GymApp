@@ -1924,15 +1924,34 @@ svg.filled-icon.small-icon {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px 24px;
+  gap: 0 28px;
   padding: 0;
 }
 
-.auth-links a {
+.auth-links a,
+.auth-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
   color: var(--sage);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 18px;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.auth-link .small-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+@media (max-width: 360px) {
+  .auth-links {
+    flex-direction: column;
+    align-items: center;
+  }
 }
 
 .auth-hero {
@@ -1952,32 +1971,130 @@ svg.filled-icon.small-icon {
 .auth-wordmark {
   min-width: 0;
   margin: 0;
-  font-size: 32px;
-  line-height: 38px;
-  letter-spacing: -0.7px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 28px;
+  letter-spacing: -0.2px;
 }
 
 .auth-brand-panel {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 48px;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
   align-items: center;
-  gap: 14px;
-  padding: 16px;
+  gap: 12px;
+  padding: 10px 16px;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(135deg, var(--brand-fill) 0%, var(--brand-fill-bright) 100%);
 }
 
 .auth-brand-mark {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   display: block;
-  border-radius: 18px;
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--hero-fill) 22%, transparent);
+  border-radius: 22%;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--brand-fill) 24%, transparent);
 }
 
-.auth-offline-button { min-height: 52px; }
+/* Quiet text-level affordance: forgot password, continue offline, sheet Cancel. */
+.auth-quiet-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.auth-quiet-link.auth-forgot-link {
+  color: var(--sage);
+  font-weight: 500;
+}
+
+.auth-quiet-link .small-icon { width: 16px; height: 16px; flex: 0 0 16px; }
+
+.auth-offline-row.embedded { margin-top: 16px; }
+
+.auth-divider {
+  height: 1px;
+  margin: 0 0 4px;
+  border: 0;
+  background: color-mix(in srgb, var(--outline) 50%, transparent);
+}
+
+.auth-mode-switch {
+  margin-top: 16px;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.auth-mode-switch button {
+  min-height: 44px;
+  padding: 6px;
+  text-align: center;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.auth-mode-switch button strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.auth-mode-switch button.selected {
+  color: var(--text);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--outline-variant) 72%, transparent);
+  box-shadow: 0 2px 7px rgba(34, 78, 138, 0.08);
+}
+
+.password-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.password-field-control { position: relative; }
+
+.password-field-control input { padding-inline-end: 48px; }
+
+.password-toggle {
+  position: absolute;
+  inset-inline-end: 2px;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.password-toggle .small-icon { width: 20px; height: 20px; }
+.password-toggle .password-icon-hide,
+.password-toggle[aria-pressed="true"] .password-icon-show { display: none; }
+.password-toggle[aria-pressed="true"] .password-icon-hide { display: block; }
 
 .auth-legal-card {
   display: grid;
-  gap: 12px;
+  gap: 4px;
   padding: 14px 16px;
   text-align: center;
 }
@@ -2023,6 +2140,21 @@ svg.filled-icon.small-icon {
 .offline-account-sheet h3,
 .offline-account-sheet p { margin: 0; }
 
+.offline-account-sheet h2 {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+/* Primary actions on the auth screen share the brand fill with white text in both themes. */
+.auth-panel .button:not(.ghost):not(.secondary),
+.offline-account-sheet .button:not(.ghost):not(.secondary) {
+  color: #ffffff;
+  background: var(--brand-fill);
+}
+
+.offline-account-sheet .actions.vertical { gap: 4px; }
+
 .saved-offline-profiles {
   display: grid;
   gap: 8px;
@@ -2037,7 +2169,8 @@ svg.filled-icon.small-icon {
 
 .contextual-field-help { display: none; }
 .auth-panel:has(#signup-password:focus) .contextual-field-help,
-.auth-panel:has(#signup-password-confirm:focus) .contextual-field-help {
+.auth-panel:has(#signup-password-confirm:focus) .contextual-field-help,
+.auth-panel:has(.password-field-control:focus-within) .contextual-field-help {
   display: block;
   margin: -2px 0 0;
 }
@@ -2053,8 +2186,12 @@ svg.filled-icon.small-icon {
 
 .auth-panel .field-stack,
 .auth-panel .login-row {
-  margin-top: 12px;
+  margin-top: 16px;
 }
+
+.auth-panel .auth-mode-switch + .field-stack { margin-top: 16px; }
+
+.auth-panel .email-confirmation-status { margin-top: 12px; }
 
 .auth-actions {
   display: grid;
@@ -2065,6 +2202,11 @@ svg.filled-icon.small-icon {
 
 .auth-actions > :last-child:nth-child(odd) {
   grid-column: 1 / -1;
+}
+
+.auth-actions.stacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
 }
 
 .store-download-card {
@@ -7106,3 +7248,88 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   border-radius: 50%;
 }
 .active-exercise-status { font-size: 12px; font-weight: 600; }
+
+/* Launch splash: one continuous frame with the system launch screen (same mark, size, centre, canvas colour). */
+.boot-splash {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: var(--background);
+  color: var(--text);
+  /* Safety net: if the app script never dismisses the splash, it clears itself instead of covering the app. */
+  animation: boot-splash-failsafe 1ms linear 8s forwards;
+}
+.boot-splash-mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 120px;
+  height: 120px;
+  border-radius: 22%;
+  transform: translate(-50%, -50%);
+}
+.boot-splash-stack {
+  position: absolute;
+  top: calc(50% + 60px + 24px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(440px, 100%);
+  padding: 0 32px;
+  text-align: center;
+  transform: translateX(-50%);
+}
+.boot-splash-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: boot-splash-fade-in 250ms ease-out both;
+}
+.boot-splash-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+}
+.boot-splash-tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.boot-splash-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  animation: boot-splash-fade-in 250ms ease-out both;
+}
+.boot-splash-spinner-ring {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid var(--outline-variant);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: boot-splash-spin 0.9s linear infinite;
+}
+.boot-splash.leaving {
+  opacity: 0;
+  transform: scale(1.015);
+  pointer-events: none;
+  transition: opacity 280ms ease-out, transform 280ms ease-out;
+}
+@keyframes boot-splash-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes boot-splash-spin { to { transform: rotate(360deg); } }
+@keyframes boot-splash-failsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .boot-splash-copy,
+  .boot-splash-spinner { animation: none; }
+  .boot-splash.leaving { transform: none; transition: none; }
+}
