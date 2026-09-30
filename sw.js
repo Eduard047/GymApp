@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v150";
-// v150 moves production native PKCE callbacks to exclusive HTTPS app links.
+const CACHE_VERSION = "v156";
+// v156 ships the Fluid Focus redesign, in-workout voice logging, and unique workout ids; v155 added on-device voice workout dictation.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,20 +48,21 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v83.css",
+  "./styles.v87.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
-  "./state-contract.v72.js",
-  "./garmin-cloud-sync.v57.js",
+  "./state-contract.v73.js",
+  "./garmin-cloud-sync.v58.js",
   "./progression-rules.v57.js",
   "./shared-workout.v66.js",
   "./shared-workout-flow.v71.js",
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v87.js",
+  "./russian-text.v88.js",
   "./exercise-search-vocabulary.v1.js",
-  "./app.v107.js",
+  "./voice-workout.v2.js",
+  "./app.v113.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
@@ -234,7 +235,7 @@ function withDocumentSecurityHeaders(response, url, { noStore = false } = {}) {
   headers.set("Content-Security-Policy", policy);
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
   headers.set("Origin-Agent-Cluster", "?1");
-  headers.set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()");
+  headers.set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(self), payment=(), usb=()");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
