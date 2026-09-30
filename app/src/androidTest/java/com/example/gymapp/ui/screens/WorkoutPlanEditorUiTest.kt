@@ -102,8 +102,7 @@ class WorkoutPlanEditorUiTest {
             onClear = { clearCount += 1 }
         )
 
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(1)
-        composeRule.onNodeWithText(clearAction()).performClick()
+        openClearPlanMenu()
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.workout_plan_clear_title)
         ).assertIsDisplayed()
@@ -112,8 +111,7 @@ class WorkoutPlanEditorUiTest {
         ).performClick()
         composeRule.runOnIdle { assertEquals(0, clearCount) }
 
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(1)
-        composeRule.onNodeWithText(clearAction()).performClick()
+        openClearPlanMenu()
         composeRule.onAllNodesWithText(clearAction()).onLast().performClick()
         composeRule.runOnIdle { assertEquals(1, clearCount) }
     }
@@ -189,6 +187,12 @@ class WorkoutPlanEditorUiTest {
     private fun clearAction(): String =
         composeRule.activity.getString(R.string.workout_plan_clear_action)
 
+    private fun openClearPlanMenu() {
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(1)
+        composeRule.onNodeWithTag("workout_plan_exercises_menu").performClick()
+        composeRule.onNodeWithText(clearAction()).performClick()
+    }
+
     private fun openDiscardAction() {
         composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(4)
         composeRule.onNodeWithText(
@@ -235,11 +239,13 @@ class WorkoutPlanEditorUiTest {
                     onRemoveExerciseDraft = {},
                     onExerciseSelected = { _, _ -> },
                     onAddSet = {},
-                    onAddSetFromPrevious = { _, _ -> },
                     onRemoveSet = { _, _ -> },
                     onSetWeightChanged = { _, _, _ -> },
                     onSetRepsChanged = { _, _, _ -> },
-                    onApplyLastWeight = {},
+                    onApplyLastWeightToSet = { _, _ -> },
+                    onCopyPreviousSet = { _, _ -> },
+                    onAddWeightToSet = { _, _ -> },
+                    onDuplicateSet = { _, _ -> },
                     onApplyWorkoutRecommendation = {},
                     onRepeatLastWorkout = {},
                     onOpenTemplatePicker = {},

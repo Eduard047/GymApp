@@ -843,8 +843,8 @@
     <string name="smart_effort_recovery_description">Reduces load and session size while keeping useful technique work.</string>
     <string name="smart_effort_standard_description">Balanced volume and progression for a normal training day.</string>
     <string name="smart_effort_hard_description">Adds demanding work only to prepared compound lifts. It is reduced automatically when recovery or history is insufficient.</string>
-    <string name="smart_coach_generated_focus">%1$s workout · Variant %2$s</string>
-    <string name="smart_coach_applied_effort">Applied effort: %1$s</string>
+    <string name="smart_coach_focus_rir">%1$s · RIR %2$s</string>
+    <string name="smart_coach_effort_override">You chose \"%1$s\" → coach set \"%2$s\"</string>
     <string name="smart_effort_adjustment_auto_recovery">Auto selected Light because the target muscles were trained recently.</string>
     <string name="smart_effort_adjustment_readiness_low">Light selected from today’s low-readiness check-in.</string>
     <string name="smart_effort_adjustment_history">Hard was reduced to Standard: more training history is needed.</string>
@@ -921,6 +921,7 @@
     <string name="workout_plan_clear_title">Clear workout plan?</string>
     <string name="workout_plan_clear_message">All exercises and sets will be removed.</string>
     <string name="workout_plan_clear_keep">Keep plan</string>
+    <string name="workout_plan_exercises_more_options">More options</string>
     <string name="today_rest">Rest today</string>
     <string name="today_recovery_reason_target">You reached your weekly target: %1$d of %2$d training days.</string>
     <string name="today_next_recommended_day">Next recommended day: %1$s</string>
@@ -1551,4 +1552,18 @@
     <string name="today_friend_picker_title">Train with a friend</string>
     <string name="today_friend_picker_empty">No friends yet</string>
     <string name="today_friend_picker_row_hint">Starts a live workout with this friend</string>
+    <string name="editor_last_logged">Last logged: %1$s</string>
+    <string name="editor_replace_with_similar">Replace with similar</string>
+    <string name="editor_add_set_short">+ Set</string>
+    <string name="editor_chip_last_weight">Last</string>
+    <string name="editor_chip_previous">Prev.</string>
+    <string name="editor_chip_plus_step">+2.5</string>
+    <string name="editor_chip_copy">Copy</string>
+    <string name="cd_exercise_actions">Exercise actions for %1$s</string>
+    <string name="cd_weight_for_set">Weight for set %1$d</string>
+    <string name="cd_reps_for_set">Repetitions for set %1$d</string>
+    <string name="cd_delete_set">Delete set %1$d</string>
+    <string name="cd_chip_last_weight">Last weight</string>
+    <string name="cd_chip_previous">Previous</string>
+    <string name="cd_chip_copy_set">Copy set</string>
 </resources>

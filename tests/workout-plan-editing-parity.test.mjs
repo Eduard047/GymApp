@@ -916,7 +916,12 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   assert.doesNotMatch(androidEmpty, /R\.string\.action_generate_smart_workout/);
   assert.match(
     androidEditor,
-    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,1500}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*Button\(onClick = onAddExerciseDraft\)/
+    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,1500}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*FilledIconButton\(\s*onClick = onAddExerciseDraft/
+  );
+  // DESIGN.md "Workout plan editor": Clear lives in the "⋯" menu after mic and "+".
+  assert.match(
+    androidEditor,
+    /FilledIconButton\(\s*onClick = onAddExerciseDraft[\s\S]{0,1600}Icons\.Default\.MoreHoriz[\s\S]{0,600}DropdownMenu\([\s\S]{0,1500}showClearConfirmation = true/
   );
   assert.match(
     androidEditor,
@@ -1047,4 +1052,33 @@ test("browser exposes the same editor contract and validated shared-plan handoff
   assert.match(sharedWorkoutScript, /IOS_SCHEME/);
   assert.match(sharedWorkoutScript, /web: `\$\{CANONICAL_SITE\}#\$\{hash\}`/);
   assert.doesNotMatch(sharedWorkoutScript, /localStorage|indexedDB|createWorkout|startWorkout/);
+});
+
+test("Android exercise card matches the iOS compact set rows and single actions menu", () => {
+  const card = androidEditor.slice(
+    androidEditor.indexOf("private fun ExerciseDraftCard("),
+    androidEditor.indexOf("private fun SmartRecommendationPanel(")
+  );
+  // One "⋯" menu: Replace with similar (only with an exercise) + destructive Delete.
+  assert.match(card, /Icons\.Default\.MoreHoriz[\s\S]{0,900}if \(selectedExercise != null\)[\s\S]{0,300}R\.string\.editor_replace_with_similar[\s\S]{0,900}R\.string\.action_delete/);
+  assert.match(card, /R\.string\.editor_last_logged/);
+  assert.doesNotMatch(card, /isExpanded|ExpandLess|ExpandMore|ExerciseMuscleBreakdownCard|OutlinedButton|OutlinedTextField/);
+  assert.doesNotMatch(card, /action_copy_last|action_apply_last_weight|R\.string\.cd_remove_exercise/);
+  // Set row: badge, weight, reps stepper (min 1), delete, then four per-set chips.
+  assert.match(card, /StepCapsule\([\s\S]{0,700}canStepReps\(reps, -1\)[\s\S]{0,1600}R\.string\.cd_delete_set/);
+  assert.match(card, /editor_chip_last_weight[\s\S]{0,400}enabled = lastWeight != null[\s\S]{0,400}editor_chip_previous[\s\S]{0,300}enabled = position > 0[\s\S]{0,400}editor_chip_plus_step[\s\S]{0,400}editor_chip_copy/);
+  // "+ Set" keeps the "Add planned set" accessibility label.
+  assert.match(card, /R\.string\.action_add_planned_set[\s\S]{0,400}R\.string\.editor_add_set_short/);
+  for (const [key, en, uk, ru] of [
+    ["editor_chip_last_weight", "Last", "Ост. вага", "Посл. вес"],
+    ["editor_chip_previous", "Prev.", "Попер.", "Пред."],
+    ["editor_chip_copy", "Copy", "Копія", "Копия"],
+    ["editor_add_set_short", "+ Set", "+ Підхід", "+ Подход"],
+    ["editor_replace_with_similar", "Replace with similar", "Замінити схожою", "Заменить похожим"]
+  ]) {
+    assert.match(androidEnglish, new RegExp(`name="${key}">${en.replace(/[.+]/g, "\\$&")}<`));
+    assert.match(androidUkrainian, new RegExp(`name="${key}">${uk.replace(/[.+]/g, "\\$&")}<`));
+    assert.match(androidRussian, new RegExp(`name="${key}">${ru.replace(/[.+]/g, "\\$&")}<`));
+  }
+  assert.match(androidEditorViewModel, /fun copyPreviousSet\([\s\S]*fun addWeightToSet\([\s\S]*fun duplicateSet\(/);
 });

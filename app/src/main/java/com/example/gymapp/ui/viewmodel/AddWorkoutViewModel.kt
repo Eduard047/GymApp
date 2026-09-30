@@ -165,8 +165,49 @@ data class SmartWorkoutPlanSummaryUiModel(
     val appliedEffort: SmartWorkoutEffort,
     val effortAdjustment: SmartWorkoutEffortAdjustment?,
     val hardExerciseIds: Set<Long> = emptySet(),
-    val trainingProfileSnapshot: TrainingProfile = TrainingProfile()
+    val trainingProfileSnapshot: TrainingProfile = TrainingProfile(),
+    val rirSummary: String = smartWorkoutRirSummary(emptyList(), appliedEffort)
 )
+
+/**
+ * Target-RIR label for the coach focus line, matching iOS `SmartWorkoutPlan.rirSummary`: one
+ * range when every exercise shares it, otherwise the distinct ranges from hardest to easiest
+ * joined by " · ". An empty plan falls back to the applied effort's default range.
+ */
+internal fun smartWorkoutRirSummary(
+    ranges: Collection<IntRange>,
+    appliedEffort: SmartWorkoutEffort
+): String {
+    fun label(range: IntRange) = "${range.first}\u2013${range.last}"
+    val distinct = ranges.map(::label).toSet()
+    if (distinct.size == 1) return distinct.first()
+    if (distinct.isEmpty()) {
+        return label(
+            when (appliedEffort) {
+                SmartWorkoutEffort.Recovery -> 3..4
+                SmartWorkoutEffort.Hard -> 1..2
+                SmartWorkoutEffort.Auto,
+                SmartWorkoutEffort.Standard -> 2..3
+            }
+        )
+    }
+    return listOf(1..2, 2..3, 3..4).map(::label).filter(distinct::contains).joinToString(" \u00b7 ")
+}
+
+/**
+ * The launch payload only records which slots are hard, so rebuild each exercise's target RIR
+ * the way the recommendation engine assigns it: hard slots 1-2, the rest by applied effort.
+ */
+internal fun smartWorkoutLaunchRirRanges(
+    hardSlotFlags: List<Boolean>,
+    appliedEffort: SmartWorkoutEffort
+): List<IntRange> = hardSlotFlags.map { isHard ->
+    when {
+        isHard -> 1..2
+        appliedEffort == SmartWorkoutEffort.Recovery -> 3..4
+        else -> 2..3
+    }
+}
 
 internal data class SmartWorkoutRecommendationPolicy(
     val effort: SmartWorkoutEffort,
@@ -1015,7 +1056,14 @@ class AddWorkoutViewModel internal constructor(
             hardExerciseIds = plan.exercises.asSequence()
                 .filter { it.isHardSlot }
                 .mapTo(linkedSetOf()) { it.exerciseId },
-            trainingProfileSnapshot = plan.trainingProfile
+            trainingProfileSnapshot = plan.trainingProfile,
+            rirSummary = smartWorkoutRirSummary(
+                smartWorkoutLaunchRirRanges(
+                    plan.exercises.map { it.isHardSlot },
+                    plan.appliedEffort
+                ),
+                plan.appliedEffort
+            )
         )
         smartAlternativePicker.value = null
         hasValidationError.value = false
@@ -1128,7 +1176,11 @@ class AddWorkoutViewModel internal constructor(
                 .filter { planned -> planned.recommendation.targetRir == 1..2 }
                 .map { planned -> planned.exercise.id }
                 .toSet(),
-            trainingProfileSnapshot = currentProfile
+            trainingProfileSnapshot = currentProfile,
+            rirSummary = smartWorkoutRirSummary(
+                plan.exercises.map { it.recommendation.targetRir },
+                plan.appliedEffort
+            )
         )
         smartAlternativePicker.value = null
         if (note.value.isBlank()) {
@@ -1388,54 +1440,44 @@ class AddWorkoutViewModel internal constructor(
         }
     }
 
-    fun addSetFromPrevious(draftId: Long, weightDelta: Double = 0.0) {
+    fun applyLastWeightToSet(draftId: Long, setIndex: Int) {
+        val draft = uiState.value.exerciseDrafts.firstOrNull { it.draftId == draftId } ?: return
+        val lastWeight = draft.exerciseId?.let { uiState.value.lastWeights[it] }
+        updateDraftSets(draftId) { it.withLastWeightAt(setIndex, lastWeight) }
+    }
+
+    fun copyPreviousSet(draftId: Long, setIndex: Int) {
+        updateDraftSets(draftId) { it.withPreviousSetCopiedAt(setIndex) }
+    }
+
+    fun addWeightToSet(draftId: Long, setIndex: Int, delta: Double = WORKOUT_SET_QUICK_WEIGHT_STEP) {
+        updateDraftSets(draftId) { it.withWeightAddedAt(setIndex, delta) }
+    }
+
+    fun duplicateSet(draftId: Long, setIndex: Int) {
+        updateDraftSets(draftId, flagValidationWhenUnchanged = true) { it.withSetDuplicatedAfter(setIndex) }
+    }
+
+    /** Applies [transform] to one draft's sets; a null result means "no change". */
+    private fun updateDraftSets(
+        draftId: Long,
+        flagValidationWhenUnchanged: Boolean = false,
+        transform: (List<SetInputState>) -> List<SetInputState>?
+    ) {
         hasValidationError.value = false
         resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
-                if (draft.draftId != draftId) {
-                    draft
-                } else {
-                    if (draft.sets.size >= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                if (draft.draftId != draftId) return@map draft
+                val updated = transform(draft.sets)
+                if (updated == null) {
+                    if (flagValidationWhenUnchanged && draft.sets.size >= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
                         hasValidationError.value = true
-                        return@map draft
                     }
-                    markDraftDirty()
-                    val previousSet = draft.sets.lastOrNull() ?: SetInputState()
-                    val nextWeight = when {
-                        previousSet.weight.isBlank() -> ""
-                        weightDelta == 0.0 -> previousSet.weight
-                        else -> {
-                            val parsedWeight = parseWeightInputOrNull(previousSet.weight)
-                            if (parsedWeight == null) {
-                                previousSet.weight
-                            } else {
-                                val loadProfile = draft.exerciseId?.let {
-                                    uiState.value.exerciseLoadProfiles[it]
-                                }
-                                val adjusted = when {
-                                    loadProfile == null ->
-                                        (parsedWeight + weightDelta).coerceAtLeast(0.0)
-                                    weightDelta > 0.0 ->
-                                        loadProfile.allowedWeightsKg.firstOrNull { it > parsedWeight }
-                                            ?: parsedWeight
-                                    else ->
-                                        loadProfile.allowedWeightsKg.lastOrNull { it < parsedWeight }
-                                            ?: parsedWeight
-                                }
-                                if (WorkoutDataLimits.isValidWeight(adjusted)) {
-                                    formatWeight(adjusted)
-                                } else {
-                                    previousSet.weight
-                                }
-                            }
-                        }
-                    }
-
-                    draft.copy(
-                        sets = draft.sets + previousSet.copy(weight = nextWeight)
-                    )
+                    return@map draft
                 }
+                markDraftDirty()
+                draft.copy(sets = updated)
             }
         }
     }
@@ -1641,30 +1683,6 @@ class AddWorkoutViewModel internal constructor(
             applyWorkoutTemplate(latestWorkout)
             markDraftDirty()
             isTemplateLoading.value = false
-        }
-    }
-
-    fun applyLastWeight(draftId: Long) {
-        resetWatchPlanSyncResult()
-        val draftsSnapshot = uiState.value.exerciseDrafts
-        val selectedExerciseId = draftsSnapshot.firstOrNull { it.draftId == draftId }?.exerciseId ?: return
-        val lastWeight = uiState.value.lastWeights[selectedExerciseId] ?: return
-        val formattedWeight = formatWeight(lastWeight)
-
-        exerciseDrafts.update { current ->
-            current.map { draft ->
-                if (draft.draftId == draftId) {
-                    val updatedSets = draft.sets.map { set ->
-                        if (set.weight.isBlank()) set.copy(weight = formattedWeight) else set
-                    }
-                    if (updatedSets != draft.sets) markDraftDirty()
-                    draft.copy(
-                        sets = updatedSets
-                    )
-                } else {
-                    draft
-                }
-            }
         }
     }
 

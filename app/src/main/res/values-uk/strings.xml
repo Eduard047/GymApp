@@ -869,8 +869,8 @@
     <string name="smart_effort_recovery_description">Знижує вагу й обсяг тренування, зберігаючи корисну технічну роботу.</string>
     <string name="smart_effort_standard_description">Збалансований обсяг і прогресія для звичайного тренувального дня.</string>
     <string name="smart_effort_hard_description">Додає важку роботу лише підготовленим базовим вправам. За слабкого відновлення або недостатньої історії режим буде пом’якшено.</string>
-    <string name="smart_coach_generated_focus">Тренування: %1$s · Варіант %2$s</string>
-    <string name="smart_coach_applied_effort">Застосоване навантаження: %1$s</string>
+    <string name="smart_coach_focus_rir">%1$s · RIR %2$s</string>
+    <string name="smart_coach_effort_override">Обрано «%1$s» → тренер поставив «%2$s»</string>
     <string name="smart_effort_adjustment_auto_recovery">Авто обрало легке навантаження: цільові м’язи тренувалися нещодавно.</string>
     <string name="smart_effort_adjustment_readiness_low">Після сьогоднішньої низької готовності обрано легке навантаження.</string>
     <string name="smart_effort_adjustment_history">Важке навантаження замінено звичайним: поки бракує історії тренувань.</string>
@@ -949,6 +949,7 @@
     <string name="workout_plan_clear_title">Очистити план тренування?</string>
     <string name="workout_plan_clear_message">Усі вправи й підходи буде видалено.</string>
     <string name="workout_plan_clear_keep">Залишити план</string>
+    <string name="workout_plan_exercises_more_options">Більше опцій</string>
     <string name="today_rest">Сьогодні відпочинок</string>
     <string name="today_recovery_reason_target">Тижневу ціль виконано: %1$d із %2$d тренувальних днів.</string>
     <string name="today_next_recommended_day">Наступний рекомендований день: %1$s</string>
@@ -1585,4 +1586,18 @@
     <string name="today_friend_picker_title">Тренуватися з другом</string>
     <string name="today_friend_picker_empty">Поки що немає друзів</string>
     <string name="today_friend_picker_row_hint">Починає живе тренування з цим другом</string>
+    <string name="editor_last_logged">Остання вага: %1$s</string>
+    <string name="editor_replace_with_similar">Замінити схожою</string>
+    <string name="editor_add_set_short">+ Підхід</string>
+    <string name="editor_chip_last_weight">Ост. вага</string>
+    <string name="editor_chip_previous">Попер.</string>
+    <string name="editor_chip_plus_step">+2.5</string>
+    <string name="editor_chip_copy">Копія</string>
+    <string name="cd_exercise_actions">Дії для «%1$s»</string>
+    <string name="cd_weight_for_set">Вага для підходу %1$d</string>
+    <string name="cd_reps_for_set">Повторення для підходу %1$d</string>
+    <string name="cd_delete_set">Видалити підхід %1$d</string>
+    <string name="cd_chip_last_weight">Остання вага</string>
+    <string name="cd_chip_previous">Попередній</string>
+    <string name="cd_chip_copy_set">Копіювати підхід</string>
 </resources>

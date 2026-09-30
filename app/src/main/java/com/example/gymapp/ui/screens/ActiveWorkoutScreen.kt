@@ -2278,7 +2278,7 @@ private fun SetStepCapsules(
  * centre label. The whole capsule is one accessibility element with increase/decrease actions.
  */
 @Composable
-private fun StepCapsule(
+internal fun StepCapsule(
     modifier: Modifier,
     minusText: String?,
     minusIcon: ImageVector?,
@@ -2292,7 +2292,8 @@ private fun StepCapsule(
     label: String,
     value: String,
     decreaseActionLabel: String,
-    increaseActionLabel: String
+    increaseActionLabel: String,
+    emphasizeCenter: Boolean = false
 ) {
     Box(
         modifier = modifier
@@ -2334,8 +2335,16 @@ private fun StepCapsule(
             StepButton(icon = minusIcon, text = minusText, enabled = minusEnabled, onClick = onMinus)
             Text(
                 text = centerLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = if (emphasizeCenter) {
+                    MaterialTheme.typography.titleSmall
+                } else {
+                    MaterialTheme.typography.labelSmall
+                },
+                color = if (emphasizeCenter) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 1,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f)

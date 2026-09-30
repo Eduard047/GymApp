@@ -2418,10 +2418,11 @@ internal fun GymAppRoot(
                                 navController.navigateUp()
                             }
                         },
-                        backContentDescriptionRes = if (isActiveWorkoutRoute) {
-                            R.string.active_workout_minimize
-                        } else {
-                            null
+                        backContentDescriptionRes = when {
+                            isActiveWorkoutRoute -> R.string.active_workout_minimize
+                            currentRoute?.startsWith(AppDestination.AddWorkout.route) == true ->
+                                R.string.action_close
+                            else -> null
                         },
                         backHintRes = if (isActiveWorkoutRoute) {
                             R.string.active_workout_minimize_hint
@@ -3213,11 +3214,15 @@ internal fun GymAppRoot(
                                 onRemoveExerciseDraft = viewModel::removeExerciseDraft,
                                 onExerciseSelected = viewModel::updateExerciseSelection,
                                 onAddSet = viewModel::addSet,
-                                onAddSetFromPrevious = viewModel::addSetFromPrevious,
                                 onRemoveSet = viewModel::removeSet,
                                 onSetWeightChanged = viewModel::updateSetWeight,
                                 onSetRepsChanged = viewModel::updateSetReps,
-                                onApplyLastWeight = viewModel::applyLastWeight,
+                                onApplyLastWeightToSet = viewModel::applyLastWeightToSet,
+                                onCopyPreviousSet = viewModel::copyPreviousSet,
+                                onAddWeightToSet = { draftId, setIndex ->
+                                    viewModel.addWeightToSet(draftId, setIndex)
+                                },
+                                onDuplicateSet = viewModel::duplicateSet,
                                 onApplyWorkoutRecommendation = viewModel::applyWorkoutRecommendation,
                                 onRepeatLastWorkout = viewModel::repeatLastWorkout,
                                 onOpenTemplatePicker = viewModel::openWorkoutTemplatePicker,
