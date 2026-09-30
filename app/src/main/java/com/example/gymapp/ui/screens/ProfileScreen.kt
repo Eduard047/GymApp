@@ -69,6 +69,7 @@ import com.example.gymapp.auth.SocialOutgoingWorkoutInvite
 import com.example.gymapp.auth.SocialPrivacy
 import com.example.gymapp.auth.LiveInvitation
 import com.example.gymapp.auth.LiveInboxRoom
+import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.garmin.openGymWorkoutTrackerInGarminStore
 import com.example.gymapp.garmin.GarminDeviceUiState
 import com.example.gymapp.push.PushUiState
@@ -970,10 +971,7 @@ private fun profileAuthValidationResource(message: String): Int = when (message)
     "Enter the verification code sent to your email." ->
         R.string.account_password_verification_code_required
     "Enter a new password." -> R.string.auth_error_new_password_required
-    "Password must contain at least 12 characters and fit within 72 UTF-8 bytes." ->
-        R.string.auth_error_password_minimum
-    "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol." ->
-        R.string.auth_error_password_complexity
+    NEW_PASSWORD_POLICY_ERROR -> R.string.auth_error_password_minimum
     "Passwords do not match." -> R.string.auth_error_password_mismatch
     else -> R.string.auth_password_update_failed
 }

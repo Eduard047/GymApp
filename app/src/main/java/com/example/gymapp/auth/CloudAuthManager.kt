@@ -3119,6 +3119,8 @@ class CloudAuthManager internal constructor(
             responseCode == 429 || code == "over_email_send_rate_limit" || message?.contains("rate limit", ignoreCase = true) == true ->
                 "Too many authentication emails were requested. Try again later, or contact support if the newest email never arrives."
 
+            isWeakPasswordError(code, message) -> WEAK_PASSWORD_SERVER_ERROR
+
             code == "user_already_exists" || message?.contains("already registered", ignoreCase = true) == true ->
                 "An account with this email already exists. Log in instead."
 

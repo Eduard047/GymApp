@@ -124,22 +124,22 @@ class AuthScreenTest {
             )
         )
         assertEquals(
-            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes.",
+            "Password must contain at least 6 characters and fit within 72 UTF-8 bytes.",
             validateSignUpInput(
                 email = "ed@example.com",
                 emailConfirm = "ed@example.com",
-                password = "Pass1",
-                passwordConfirm = "Pass1",
+                password = "abcde",
+                passwordConfirm = "abcde",
                 displayName = "Ed"
             )
         )
         assertEquals(
-            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.",
+            "Password must contain at least 6 characters and fit within 72 UTF-8 bytes.",
             validateSignUpInput(
                 email = "ed@example.com",
                 emailConfirm = "ed@example.com",
-                password = "PasswordOnly",
-                passwordConfirm = "PasswordOnly",
+                password = "a".repeat(73),
+                passwordConfirm = "a".repeat(73),
                 displayName = "Ed"
             )
         )
@@ -160,6 +160,19 @@ class AuthScreenTest {
                 emailConfirm = "other@example.com",
                 password = "SecurePass9!",
                 passwordConfirm = "SecurePass9!",
+                displayName = "Ed"
+            )
+        )
+    }
+
+    @Test
+    fun signUpValidationAcceptsLowercaseOnlySixCharacterPassword() {
+        assertNull(
+            validateSignUpInput(
+                email = "ed@example.com",
+                emailConfirm = "ed@example.com",
+                password = "abcdef",
+                passwordConfirm = "abcdef",
                 displayName = "Ed"
             )
         )
@@ -229,13 +242,14 @@ class AuthScreenTest {
             validatePasswordUpdateInput("", "")
         )
         assertEquals(
-            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes.",
-            validatePasswordUpdateInput("Pass1", "Pass1")
+            "Password must contain at least 6 characters and fit within 72 UTF-8 bytes.",
+            validatePasswordUpdateInput("abcde", "abcde")
         )
         assertEquals(
-            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.",
-            validatePasswordUpdateInput("PasswordOnly", "PasswordOnly")
+            "Password must contain at least 6 characters and fit within 72 UTF-8 bytes.",
+            validatePasswordUpdateInput("a".repeat(73), "a".repeat(73))
         )
+        assertNull(validatePasswordUpdateInput("abcdef", "abcdef"))
         assertEquals(
             "Passwords do not match.",
             validatePasswordUpdateInput("SecurePass9!", "SecurePass8!")

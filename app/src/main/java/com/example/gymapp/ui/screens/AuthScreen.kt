@@ -93,7 +93,7 @@ import com.example.gymapp.auth.AuthUiState
 import com.example.gymapp.auth.MAX_LOGIN_PASSWORD_UTF8_BYTES
 import com.example.gymapp.auth.SavedLocalProfile
 import com.example.gymapp.auth.boundedNewLocalDisplayNameDraft
-import com.example.gymapp.auth.newPasswordCharacterGroupsAreValid
+import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.auth.newPasswordLengthIsValid
 import com.example.gymapp.auth.validatedNewLocalDisplayNameOrNull
 import com.example.gymapp.ui.components.AppPanel
@@ -1289,10 +1289,7 @@ private fun localizedAuthValidationMessage(context: Context, message: String): S
         "Repeat your email." -> R.string.auth_error_repeat_email
         "Email does not match." -> R.string.auth_error_email_mismatch
         "Display name must be 2-32 characters." -> R.string.auth_error_display_name_length
-        "Password must contain at least 12 characters and fit within 72 UTF-8 bytes." ->
-            R.string.auth_error_password_minimum
-        "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol." ->
-            R.string.auth_error_password_complexity
+        NEW_PASSWORD_POLICY_ERROR -> R.string.auth_error_password_minimum
         "Passwords do not match." -> R.string.auth_error_password_mismatch
         "Enter a new password." -> R.string.auth_error_new_password_required
         "Local profile name is invalid or too long." -> R.string.auth_error_local_profile_name
@@ -1333,10 +1330,7 @@ internal fun validateSignUpInput(
         cleanEmailConfirm.isBlank() -> "Repeat your email."
         cleanEmail != cleanEmailConfirm -> "Email does not match."
         displayName.trim().length !in 2..32 -> "Display name must be 2-32 characters."
-        !newPasswordLengthIsValid(password) ->
-            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes."
-        !newPasswordCharacterGroupsAreValid(password) ->
-            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
+        !newPasswordLengthIsValid(password) -> NEW_PASSWORD_POLICY_ERROR
         password != passwordConfirm -> "Passwords do not match."
         else -> null
     }
@@ -1371,10 +1365,7 @@ internal fun validatePasswordUpdateInput(
 ): String? {
     return when {
         password.isBlank() -> "Enter a new password."
-        !newPasswordLengthIsValid(password) ->
-            "Password must contain at least 12 characters and fit within 72 UTF-8 bytes."
-        !newPasswordCharacterGroupsAreValid(password) ->
-            "Password must include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
+        !newPasswordLengthIsValid(password) -> NEW_PASSWORD_POLICY_ERROR
         password != passwordConfirm -> "Passwords do not match."
         else -> null
     }
