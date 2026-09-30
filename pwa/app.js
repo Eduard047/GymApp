@@ -10525,6 +10525,24 @@ function fmtShortDate(value, now = Date.now()) {
   return state.language === "ru" ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
+// "4h 31m" / "4 г 31 хв" / "4 ч 31 мин": abbreviated hours and minutes, at most two
+// units, zero units dropped, seconds truncated. Mirrors the iOS abbreviated duration
+// formatter; Ukrainian uses U+202F between a number and its unit, English and
+// Russian a plain space. Returns "" when the duration is unknown or not positive.
+function fmtCompactDuration(seconds) {
+  const total = Math.floor(Number(seconds));
+  if (!Number.isFinite(total) || total <= 0) return "";
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const language = state.language;
+  const units = language === "uk" ? ["г", "хв"] : language === "ru" ? ["ч", "мин"] : ["h", "m"];
+  const gap = language === "uk" ? " " : language === "ru" ? " " : "";
+  const parts = [];
+  if (hours > 0) parts.push(`${hours}${gap}${units[0]}`);
+  if (minutes > 0 || !parts.length) parts.push(`${minutes}${gap}${units[1]}`);
+  return parts.join(" ");
+}
+
 // Compact range like "Sep 21 – 27" / "21–27 вер." / "21—27 сент." (same month) or
 // "Sep 28 – Oct 4" (across months). The year appears only when the end date's year
 // differs from the current year. Intl already matches the iOS interval formatter for
@@ -12365,10 +12383,10 @@ function nextWorkoutType(last) {
   return `${tx("Next suggested workout", "Наступне рекомендоване тренування")}: ${profileValueLabel(state.profile.split)}`;
 }
 
-function achievementDefinitions() {
-  const workoutCount = state.sessions.length;
-  const longestStreak = longestProfileWeeklyStreak();
-  const totalLoad = Math.round(totalVolume());
+function achievementDefinitions(sessions = state.sessions) {
+  const workoutCount = sessions.length;
+  const longestStreak = longestProfileWeeklyStreak(sessions);
+  const totalLoad = Math.round(totalVolume(sessions));
   return [
     achievement("first_workout", "fitness", "common", tx("First Workout", "Перше тренування"), tx("Complete your first workout.", "Заверши своє перше тренування."), workoutCount, 1),
     achievement("workout_5", "medal", "common", tx("Starter Habit", "Початок звички"), tx("Complete five workouts.", "Заверши п'ять тренувань."), workoutCount, 5),
@@ -12381,20 +12399,20 @@ function achievementDefinitions() {
     achievement("streak_30", "fire", "epic", tx("Eight-Week Rhythm", "Ритм восьми тижнів"), tx("Meet your weekly target for eight weeks in a row.", "Виконуй тижневу ціль вісім тижнів поспіль."), longestStreak, 8),
     achievement("volume_10k", "weight", "uncommon", tx("Ten Thousand Volume", "Десять тисяч обсягу"), tx("Accumulate ten thousand total volume.", "Набери десять тисяч загального обсягу."), totalLoad, 10_000),
     achievement("volume_50k", "trophy", "rare", tx("Fifty Thousand Volume", "П'ятдесят тисяч обсягу"), tx("Accumulate fifty thousand total volume.", "Набери п'ятдесят тисяч загального обсягу."), totalLoad, 50_000),
-    achievement("comeback", "auto", "rare", tx("Comeback", "Повернення"), tx("Return after a seven day break.", "Повернися після семиденної перерви."), maximumWorkoutGapDays(), 7)
+    achievement("comeback", "auto", "rare", tx("Comeback", "Повернення"), tx("Return after a seven day break.", "Повернися після семиденної перерви."), maximumWorkoutGapDays(sessions), 7)
   ];
 }
 
-function achievementWorkoutEpochDays() {
-  return [...new Set(state.sessions.flatMap(session => {
+function achievementWorkoutEpochDays(sessions = state.sessions) {
+  return [...new Set(sessions.flatMap(session => {
     const date = new Date(Number(session.startedAt));
     if (!Number.isFinite(date.getTime())) return [];
     return [Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000)];
   }))].sort((left, right) => left - right);
 }
 
-function maximumWorkoutGapDays() {
-  const days = achievementWorkoutEpochDays();
+function maximumWorkoutGapDays(sessions = state.sessions) {
+  const days = achievementWorkoutEpochDays(sessions);
   let maximum = 0;
   for (let index = 1; index < days.length; index++) {
     maximum = Math.max(maximum, days[index] - days[index - 1] - 1);
@@ -12417,7 +12435,7 @@ function achievementStatusLabel(isUnlocked) {
   return isUnlocked ? tx3("Unlocked", "Відкрито", "Открыто") : tx3("Locked", "Заблоковано", "Закрыто");
 }
 
-function achievementTileMarkup(item) {
+function achievementTileMarkup(item, { interactive = true } = {}) {
   const fraction = achievementProgressFraction(item);
   const isUnlocked = item.progress >= item.target;
   const dash = Math.round(fraction * 10000) / 100;
@@ -12425,13 +12443,17 @@ function achievementTileMarkup(item) {
   const arc = dash > 0
     ? `<circle class="achievement-ring-arc" cx="30" cy="30" r="28" pathLength="100" stroke-dasharray="${dash} 100" transform="rotate(-90 30 30)"/>`
     : "";
-  return `<button type="button" class="achievement-tile rarity-${escapeAttr(item.rarity)} ${isUnlocked ? "unlocked" : "locked"}" data-action="open-achievement" data-achievement-id="${escapeAttr(item.id)}" aria-haspopup="dialog" aria-label="${escapeAttr(label)}"><span class="achievement-ring"><svg class="achievement-ring-svg" viewBox="0 0 60 60" aria-hidden="true"><circle class="achievement-ring-track" cx="30" cy="30" r="28" pathLength="100"/>${arc}</svg><span class="achievement-icon">${svg(item.icon)}</span>${isUnlocked ? "" : `<span class="achievement-lock">${svg("lock")}</span>`}</span><span class="achievement-name">${escapeHtml(item.title)}</span></button>`;
+  const classes = `achievement-tile rarity-${escapeAttr(item.rarity)} ${isUnlocked ? "unlocked" : "locked"}`;
+  const opening = interactive
+    ? `<button type="button" class="${classes}" data-action="open-achievement" data-achievement-id="${escapeAttr(item.id)}" aria-haspopup="dialog" aria-label="${escapeAttr(label)}">`
+    : `<div class="${classes} static" role="group" aria-label="${escapeAttr(label)}">`;
+  return `${opening}<span class="achievement-ring"><svg class="achievement-ring-svg" viewBox="0 0 60 60" aria-hidden="true"><circle class="achievement-ring-track" cx="30" cy="30" r="28" pathLength="100"/>${arc}</svg><span class="achievement-icon">${svg(item.icon)}</span>${isUnlocked ? "" : `<span class="achievement-lock">${svg("lock")}</span>`}</span><span class="achievement-name">${escapeHtml(item.title)}</span>${interactive ? "</button>" : "</div>"}`;
 }
 
 function achievementsGallery() {
   const achievements = achievementDefinitions();
   const unlocked = achievements.filter(item => item.progress >= item.target).length;
-  return `<section class="achievements-section" aria-labelledby="achievements-title"><div class="achievements-heading"><span class="achievements-eyebrow">${tx3("Achievements", "Досягнення", "Достижения")}</span><h2 id="achievements-title">${tx3("Your badge collection", "Твоя колекція відзнак", "Твоя коллекция значков")}</h2><p>${tx3("Every milestone, its progress and rarity.", "Кожна ціль, її прогрес і рідкість.", "Каждая цель, её прогресс и редкость.")}</p></div><div class="achievements-summary"><span class="pill">${svg("check", "small-icon")}${unlocked} / ${achievements.length}</span><span class="achievements-summary-caption">${tx3("Unlocked collection", "Відкрита колекція", "Открытая коллекция")}</span></div><div class="achievement-gallery">${achievements.map(achievementTileMarkup).join("")}</div></section>`;
+  return `<section class="achievements-section" aria-labelledby="achievements-title"><div class="achievements-heading"><span class="achievements-eyebrow">${tx3("Achievements", "Досягнення", "Достижения")}</span><h2 id="achievements-title">${tx3("Your badge collection", "Твоя колекція відзнак", "Твоя коллекция значков")}</h2><p>${tx3("Every milestone, its progress and rarity.", "Кожна ціль, її прогрес і рідкість.", "Каждая цель, её прогресс и редкость.")}</p></div><div class="achievements-summary"><span class="pill">${svg("check", "small-icon")}${unlocked} / ${achievements.length}</span><span class="achievements-summary-caption">${tx3("Unlocked collection", "Відкрита колекція", "Открытая коллекция")}</span></div><div class="achievement-gallery">${achievements.map(item => achievementTileMarkup(item)).join("")}</div></section>`;
 }
 
 function achievementSheetMarkup(id) {
@@ -16078,56 +16100,100 @@ function isPr(session, exercise) {
 function workoutFeedbackPanel(session) {
   const selected = workoutFeedbackValue(session?.id);
   const choices = [
-    ["easy", tx("Too easy", "Надто легко")],
-    ["normal", tx("Just right", "Саме так")],
-    ["hard", tx("Too hard", "Надто важко")]
+    ["easy", tx3("Easy", "Легко", "Легко")],
+    ["normal", tx3("Just right", "Саме те", "В самый раз")],
+    ["hard", tx3("Hard", "Важко", "Тяжело")]
   ];
   return `<section class="panel compact workout-feedback" aria-labelledby="workout-feedback-title">
-    <h2 id="workout-feedback-title">${tx("How did it feel?", "Як було?")}</h2>
+    <h2 id="workout-feedback-title">${tx3("How did it feel?", "Як було?", "Как было?")}</h2>
     <div class="segmented workout-feedback-options">${choices.map(([value, label]) => `<button class="${selected === value ? "selected" : ""}" data-action="workout-feedback" data-id="${escapeAttr(String(session.id))}" data-value="${value}" aria-pressed="${selected === value}"><strong>${label}</strong></button>`).join("")}</div>
   </section>`;
+}
+
+// One entry per exercise that set a real record in this session, under the same rules
+// as the live record badge: an exercise's first session never counts, a 0 value never
+// counts, and matching the previous best is not a record. Each entry carries the best
+// weight and/or estimated 1RM that beat the history.
+function summaryPersonalRecords(session) {
+  const before = allSets(previousSessions(session));
+  return exerciseReferencesForSession(session).map(exercise => {
+    const previous = before.filter(set => exercisesMatch(set, exercise));
+    if (!previous.length) return null;
+    const current = (session.sets || []).filter(set => exercisesMatch(set, exercise));
+    if (!current.length) return null;
+    const previousWeight = Math.max(...previous.map(set => Number(set.weight) || 0));
+    const previousEstimate = Math.max(...previous.map(set => oneRepMaxEstimate(Number(set.weight) || 0, Number(set.reps) || 0)));
+    const bestWeight = Math.max(...current.map(set => Number(set.weight) || 0));
+    const bestEstimate = Math.max(...current.map(set => oneRepMaxEstimate(Number(set.weight) || 0, Number(set.reps) || 0)));
+    const weight = bestWeight > previousWeight && bestWeight > 0 ? bestWeight : null;
+    const estimatedOneRepMax = bestEstimate > previousEstimate + PERSONAL_RECORD_ESTIMATE_TOLERANCE && bestEstimate > 0
+      ? bestEstimate
+      : null;
+    return weight === null && estimatedOneRepMax === null
+      ? null
+      : { ...exercise, weight, estimatedOneRepMax };
+  }).filter(Boolean);
+}
+
+function summaryRecordDetail(record) {
+  const format = value => new Intl.NumberFormat(displayLocale(), { maximumFractionDigits: 1 }).format(value);
+  const parts = [];
+  if (record.weight !== null) {
+    parts.push(tx3(`${format(record.weight)} kg`, `${format(record.weight)} кг`, `${format(record.weight)} кг`));
+  }
+  if (record.estimatedOneRepMax !== null) {
+    const estimate = format(record.estimatedOneRepMax);
+    parts.push(tx3(`Est. 1RM ${estimate} kg`, `Розрах. 1ПМ ${estimate} кг`, `1ПМ ${estimate} кг`));
+  }
+  return parts.join(" · ");
+}
+
+function summaryRecordsSection(records) {
+  if (!records.length) return "";
+  return `<section class="panel highlighted summary-records" aria-labelledby="summary-records-title"><h2 id="summary-records-title">${tx3("New records", "Нові рекорди", "Новые рекорды")}</h2>${records.map(record => `<div class="summary-record-row">${exerciseMediaThumbnail(record, { className: "summary-record-thumb" }) || `<span class="summary-record-thumb fallback" aria-hidden="true">${svg("trophy")}</span>`}<div class="summary-record-copy"><strong>${escapeHtml(exerciseDisplayName(record))}</strong><span>${escapeHtml(summaryRecordDetail(record))}</span></div></div>`).join("")}</section>`;
+}
+
+function summaryBadgesSection(badges) {
+  if (!badges.length) return "";
+  return `<section class="panel summary-badges" aria-labelledby="summary-badges-title"><h2 id="summary-badges-title">${tx3("New badges", "Нові значки", "Новые значки")}</h2><div class="achievement-gallery">${badges.map(item => achievementTileMarkup(item, { interactive: false })).join("")}</div></section>`;
+}
+
+function summaryHeroMarkup(session, xpGain, xpTotal) {
+  const progress = levelProgress(xpTotal);
+  const level = levelFromXp(xpTotal);
+  const duration = fmtCompactDuration(session.durationSeconds);
+  const dateLine = `${fmtShortDate(session.startedAt)}${duration ? ` · ${duration}` : ""}`;
+  const toNext = Math.max(0, progress.xpForNextLevel - progress.currentLevelXp);
+  return `<section class="hero-panel summary-hero"><div class="summary-hero-title">${svg("checkCircle")}<div><h2>${tx3("Workout complete", "Тренування завершено", "Тренировка завершена")}</h2><p>${escapeHtml(dateLine)}</p></div></div><div class="summary-hero-xp"><strong>+${xpGain} XP</strong><span>${tx3("Session XP", "XP сесії", "XP сессии")}</span></div><div class="summary-hero-level"><strong>${tx3(`Level ${level} · ${rankTitle(xpTotal)}`, `Рівень ${level} · ${rankTitle(xpTotal)}`, `Уровень ${level} · ${rankTitle(xpTotal)}`)}</strong><div class="progress" aria-hidden="true"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div><span>${tx3(`${toNext} XP to level ${level + 1}`, `${toNext} XP до рівня ${level + 1}`, `${toNext} XP до уровня ${level + 1}`)}</span></div></section>`;
 }
 
 function summaryScreen(id) {
   const session = state.sessions.find(s => s.id === id);
   if (!session) return `<div class="empty">${tx("Workout summary unavailable.", "Підсумок тренування недоступний.")}</div>`;
-  const before = previousSessions(session);
-  const through = sessionsThroughCurrent(session);
-  const summary = sessionSummary(session);
   const xpGain = xpForSessions([session]);
-  const xpTotal = xpForSessions(through);
-  const progress = levelProgress(xpTotal);
-  const records = exerciseReferencesForSession(session).map(exercise => {
-    const prev = Math.max(0, ...allSets(before).filter(set => exercisesMatch(set, exercise)).map(set => set.weight));
-    const now = Math.max(0, ...session.sets.filter(set => exercisesMatch(set, exercise)).map(set => set.weight));
-    return now > prev ? { ...exercise, prev, now } : null;
-  }).filter(Boolean);
-  const mStats = muscleStats([session]).filter(m => m.load > 0).sort((a, b) => b.load - a.load);
-  const rewards = summaryRewards(session, records);
-  return `<section class="hero-panel summary-hero"><div class="summary-hero-title">${svg("checkCircle")}<div><h2>${t("workoutComplete")}</h2><p>${escapeHtml(fmtLongDate(session.startedAt))}</p></div></div><div class="metric-grid"><div><span>${tx("XP gained", "Отримано XP")}</span><strong>+${xpGain} XP</strong></div><div><span>${tx("Level progress", "Прогрес рівня")}</span><strong>${tx("Level", "Рівень")} ${levelFromXp(xpTotal)}</strong></div><div><span>${tx("Current title", "Поточний ранг")}</span><strong>${rankTitle(xpTotal)}</strong></div><div><span>${tx("Week streak", "Серія тижнів")}</span><strong>${profileWeeklyStreak(through, session.startedAt)} ${tx("wk", "тиж")}</strong></div></div></section>
-    <section class="panel summary-metrics"><h2>${tx("Workout summary", "Підсумок тренування")}</h2><div class="metric-grid"><div><span>${tx("Exercises", "Вправи")}</span><strong>${summary.exercises}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${summary.sets}</strong></div><div><span>${tx("Volume", "Обсяг")}</span><strong>${Math.round(summary.volume)}</strong></div>${session.durationSeconds == null ? `<div><span>${t("muscleMap")}</span><strong>${escapeHtml(mStats[0]?.label || "—")}</strong></div>` : `<div><span>${tx("Duration", "Тривалість")}</span><strong>${escapeHtml(formatActiveWorkoutElapsed(session.durationSeconds * 1000))}</strong></div>`}</div></section>
+  const xpTotal = xpForSessions(sessionsThroughCurrent(session));
+  const rewards = summaryRewards(session);
+  return `${summaryHeroMarkup(session, xpGain, xpTotal)}
     ${workoutFeedbackPanel(session)}
-    ${workoutComparisonCard(session)}
-    <section class="panel ${mStats.length ? "highlighted" : ""}"><h2>${t("impact")}</h2><p class="muted">${mStats[0] ? `${tx("Most loaded today", "Найбільше навантажено сьогодні")}: ${mStats[0].label}` : tx("Mapped muscle load will appear after sets are saved.", "Навантаження м'язів з'явиться після збереження підходів.")}</p>${mStats.slice(0, 5).map(m => barRow(m.label, m.load, mStats[0]?.load || 1, `${Math.round(m.load)} ${tx("load", "навантаження")} - ${n(m.sets, "set", "sets", "підхід", "підходи", "підходів")}`)).join("")}</section>
-    ${records.length ? `<section class="panel highlighted"><h2>${t("personalRecords")}</h2>${records.map(r => `<div class="row-line"><div><strong>${escapeHtml(exerciseDisplayName(r))}</strong><p>${r.prev ? `${tx("Previous best", "Попередній рекорд")} ${escapeHtml(formatLocalizedSetWeight(r.prev))}` : tx("First logged best", "Перший зафіксований рекорд")}</p></div><span class="pill">${escapeHtml(formatLocalizedSetWeight(r.now))}</span></div>`).join("")}</section>` : ""}
-    <section class="panel"><h2>${t("levelProgress")}</h2><p>${tx("Level", "Рівень")} ${levelFromXp(xpTotal)} - ${rankTitle(xpTotal)}</p><div class="progress"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div><div class="row-line"><span>${progress.currentLevelXp} XP ${tx("into this level", "на цьому рівні")}</span><strong>${progress.xpForNextLevel - progress.currentLevelXp} XP ${tx("to next", "до наступного")}</strong></div></section>
+    ${summaryRecordsSection(summaryPersonalRecords(session))}
     ${summaryRewardsSection(rewards)}
-    <div class="actions vertical"><button class="button full" data-action="summary-view" data-id="${session.id}">${tx("View workout", "Відкрити тренування")}</button><button class="button ghost full" data-action="summary-done">${tx("Back to workouts", "Назад до тренувань")}</button></div>`;
+    ${summaryBadgesSection(rewards.badges)}
+    <div class="summary-actions"><button class="button full" data-action="summary-done">${tx3("Done", "Готово", "Готово")}</button><button class="summary-details-button" type="button" data-action="summary-view" data-id="${escapeAttr(String(session.id))}">${tx3("Workout details", "Деталі тренування", "Детали тренировки")}</button></div>`;
 }
 
-function summaryRewards(session, records) {
-  const sessionIndex = sessionsThroughCurrent(session).length;
+// Missions completed by this session, plus the real achievements it unlocked (present
+// with the sessions through it, absent from the sessions before it).
+function summaryRewards(session) {
   const missionRewards = missionsCompletedBySession(session).slice(0, 5).map(mission => ({
     title: mission.title,
     supporting: mission.summary,
     badge: tx("Mission", "Місія")
   }));
-  const badgeRewards = [
-    sessionIndex === 1 ? { title: tx("First session", "Перша сесія"), supporting: tx("Workout streak started.", "Серію тренувань почато."), reward: 0, badge: tx("Common", "Звичайна") } : null,
-    sessionIndex === 10 ? { title: tx("Ten sessions", "Десять сесій"), supporting: tx("Consistency milestone reached.", "Досягнуто віху стабільності."), reward: 0, badge: tx("Uncommon", "Незвичайна") } : null,
-    records.length ? { title: tx("Personal record", "Особистий рекорд"), supporting: `${countNoun(records.length, "new bests")}`, reward: 0, badge: tx("Rare", "Рідкісна") } : null
-  ].filter(Boolean);
-  return { missions: missionRewards, badges: badgeRewards };
+  const unlocked = definitions => new Set(definitions.filter(item => item.progress >= item.target).map(item => item.id));
+  const alreadyUnlocked = unlocked(achievementDefinitions(previousSessions(session)));
+  const badges = achievementDefinitions(sessionsThroughCurrent(session))
+    .filter(item => item.progress >= item.target && !alreadyUnlocked.has(item.id));
+  return { missions: missionRewards, badges };
 }
 
 function missionsCompletedBySession(session) {
@@ -16140,8 +16206,8 @@ function missionsCompletedBySession(session) {
 }
 
 function summaryRewardsSection(rewards) {
-  const hasRewards = rewards.missions.length || rewards.badges.length;
-  return `<section class="summary-rewards-heading"><span class="eyebrow">${tx("Progress", "Прогрес")}</span><h2>${tx("Missions", "Місії")}</h2><p>${tx("Completed missions and new badges from this finish.", "Завершені місії та нові бейджі після фінішу.")}</p></section>${hasRewards ? [...rewards.missions, ...rewards.badges].map(item => `<section class="panel highlighted reward-card">${rewardRow(item)}</section>`).join("") : `<section class="panel highlighted empty-state-panel"><h3>${tx("No new unlocks", "Нових відкриттів немає")}</h3><p>${tx("Keep logging to unlock more.", "Продовжуй записувати тренування, щоб відкрити більше.")}</p></section>`}`;
+  if (!rewards.missions.length) return "";
+  return `<section class="summary-rewards-heading"><span class="eyebrow">${tx("Progress", "Прогрес")}</span><h2>${tx("Missions", "Місії")}</h2><p>${tx3("Missions completed by this workout.", "Місії, виконані цим тренуванням.", "Миссии, выполненные этой тренировкой.")}</p></section>${rewards.missions.map(item => `<section class="panel highlighted reward-card">${rewardRow(item)}</section>`).join("")}`;
 }
 
 function rewardRow(item) {

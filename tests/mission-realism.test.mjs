@@ -347,9 +347,9 @@ test("post-workout rewards include only missions completed by that session", () 
     const first = session(1, 0);
     const second = session(2, 1);
     state = { ...defaultAppState(), sessions: [first] };
-    const firstRewards = summaryRewards(first, []);
+    const firstRewards = summaryRewards(first);
     state = { ...state, sessions: [first, second] };
-    const secondRewards = summaryRewards(second, []);
+    const secondRewards = summaryRewards(second);
     return {
       firstMissionIds: missionsCompletedBySession(first).map(item => item.id),
       firstMissionTitles: firstRewards.missions.map(item => item.title),
@@ -362,10 +362,10 @@ test("post-workout rewards include only missions completed by that session", () 
 
   assert.ok(result.firstMissionIds.includes("daily-check-in"));
   assert.ok(result.firstMissionTitles.includes("Daily check-in"));
-  assert.ok(result.firstBadges.includes("First session"));
+  assert.ok(result.firstBadges.includes("First Workout"));
   assert.ok(!result.secondMissionIds.includes("daily-check-in"));
   assert.ok(!result.secondMissionTitles.includes("Daily check-in"));
-  assert.ok(!result.secondBadges.includes("First session"));
+  assert.ok(!result.secondBadges.includes("First Workout"));
 });
 
 test("historical summaries use deterministic timestamp and id chronology", () => {
@@ -398,8 +398,8 @@ test("historical summaries use deterministic timestamp and id chronology", () =>
     const laterMissionIds = missionsCompletedBySession(sameTimeLater).map(item => item.id);
 
     state.sessions = [future, sameTimeLater, current];
-    const firstSameTimeBadges = summaryRewards(current, []).badges.map(item => item.title);
-    const secondSameTimeBadges = summaryRewards(sameTimeLater, []).badges.map(item => item.title);
+    const firstSameTimeBadges = summaryRewards(current).badges.map(item => item.title);
+    const secondSameTimeBadges = summaryRewards(sameTimeLater).badges.map(item => item.title);
     return {
       currentPrevious: previousSessions(current, [future, sameTimeLater, current, older]).map(item => item.id),
       currentThrough: currentThrough.map(item => item.id),
@@ -420,13 +420,13 @@ test("historical summaries use deterministic timestamp and id chronology", () =>
   assert.deepEqual(result.laterThrough, [1, 20, 30]);
   assert.notEqual(result.currentProgress.level, result.globalProgress.level,
     "future workouts must not change an old summary level");
-  assert.match(result.currentMarkup, new RegExp(`>Level ${result.currentProgress.level}<`));
-  assert.match(result.currentMarkup, new RegExp(`>${result.currentProgress.currentLevelXp} XP into this level<`));
-  assert.match(result.currentMarkup, /Week streak<\/span><strong>1 wk/);
-  assert.match(result.currentMarkup, /Previous best 10 kg/);
-  assert.match(result.laterMarkup, /Previous best 20 kg/);
+  const toNext = result.currentProgress.xpForNextLevel - result.currentProgress.currentLevelXp;
+  assert.match(result.currentMarkup, new RegExp(`>Level ${result.currentProgress.level} · `));
+  assert.match(result.currentMarkup, new RegExp(`>${toNext} XP to level ${result.currentProgress.level + 1}<`));
+  assert.match(result.currentMarkup, />20 kg · Est\. 1RM 20\.7 kg</);
+  assert.match(result.laterMarkup, />30 kg · Est\. 1RM 31 kg</);
   assert.ok(result.currentMissionIds.includes("daily-check-in"));
   assert.ok(!result.laterMissionIds.includes("daily-check-in"));
-  assert.ok(result.firstSameTimeBadges.includes("First session"));
-  assert.ok(!result.secondSameTimeBadges.includes("First session"));
+  assert.ok(result.firstSameTimeBadges.includes("First Workout"));
+  assert.ok(!result.secondSameTimeBadges.includes("First Workout"));
 });

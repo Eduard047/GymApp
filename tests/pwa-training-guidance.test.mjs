@@ -623,7 +623,7 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
   assert.doesNotMatch(result.populatedScreen, /Tap a workout to open its details/);
   assert.equal((result.feedback.match(/data-action="workout-feedback"/g) || []).length, 3);
   assert.match(result.feedback, /How did it feel\?/);
-  assert.match(result.feedback, /Too easy|Just right|Too hard/);
+  assert.match(result.feedback, />Easy<[\s\S]*>Just right<[\s\S]*>Hard</);
   assert.doesNotMatch(result.feedback, /helpful/i);
   assert.doesNotMatch(result.standardCoach, /smart-rir-guidance|redundant explanation/);
   assert.equal((result.recoveryCoach.match(/smart-rir-guidance/g) || []).length, 1);

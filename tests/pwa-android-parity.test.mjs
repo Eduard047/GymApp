@@ -459,5 +459,5 @@ test("PWA screen composition follows the current Android information hierarchy",
   assert.doesNotMatch(source, /missions-rank-hero/);
   assert.match(source, /summary: missionSummary\(template, cadence\)/);
   assert.match(source, /class="panel highlighted smart-coach-panel"/);
-  assert.equal(source.match(/\$\{workoutComparisonCard\(session\)\}/g)?.length, 2);
+  assert.equal(source.match(/\$\{workoutComparisonCard\(session\)\}/g)?.length, 1);
 });

@@ -1233,6 +1233,12 @@ test("detail, summary, and progress UI do not reclassify a custom label from an 
     progressExerciseId: 1,
     exercises: [{ id: 1, name: "My bench label", catalogKey: "bench_press" }],
     sessions: [{
+      id: 9,
+      startedAt: Date.now() - 86400000,
+      note: "",
+      exerciseNames: ["My bench label"],
+      sets: [{ id: 8, exerciseName: "My bench label", catalogKey: "bench_press", weight: 40, reps: 8, orderIndex: 0 }]
+    }, {
       id: 10,
       startedAt: Date.now(),
       note: "",
@@ -1251,7 +1257,7 @@ test("detail, summary, and progress UI do not reclassify a custom label from an 
   }
   assert.equal(
     vm.runInContext("allSets().filter(set => exercisesMatch(set, state.exercises[0])).length", context),
-    1
+    2
   );
 });
 

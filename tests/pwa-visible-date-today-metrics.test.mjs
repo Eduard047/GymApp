@@ -118,7 +118,7 @@ test("all PWA workout, friend, template, record, and progress calendar surfaces 
   assert.match(appSource, /workout-title[^\n]+fmtDate\(session\.startedAt\)/);
   assert.match(appSource, /workout-detail-hero[^\n]+fmtLongDate\(session\.startedAt\)/);
   assert.match(appSource, /garmin-header[^\n]+fmtLongDate\(session\.startedAt\)/);
-  assert.match(appSource, /summary-hero[^\n]+fmtLongDate\(session\.startedAt\)/);
+  assert.match(appSource, /function summaryHeroMarkup[\s\S]{0,400}fmtShortDate\(session\.startedAt\)/);
   assert.match(appSource, /modal\.type === "template"[^\n]+fmtDate\(session\.startedAt\)/);
   assert.match(appSource, /friend-workout-history-row[^\n]+socialDayLabel\(workout\.workoutDay\)/);
   assert.match(appSource, /friend-record-row[^\n]+socialDayLabel\(record\.lastWorkoutDay\)/);
@@ -698,6 +698,81 @@ test("fmtShortDate matches the iOS short date in EN, UK, and RU", () => {
     const actual = vm.runInContext(`(() => { state.language = language; return fmtShortDate(timestamp, now); })()`, sandbox);
     assert.equal(actual, expected, `${language} ${expected}`);
   }
+});
+
+test("fmtCompactDuration reproduces the iOS abbreviated hour/minute duration", () => {
+  const sandbox = context();
+  const cases = [
+    ["en", 16271, "4h 31m"], ["en", 3600, "1h"], ["en", 2700, "45m"], ["en", 7260, "2h 1m"],
+    ["en", 30, "0m"], ["en", 86400, "24h"], ["en", 3660, "1h 1m"],
+    ["uk", 16271, "4\u202fг 31\u202fхв"], ["uk", 3600, "1\u202fг"], ["uk", 2700, "45\u202fхв"], ["uk", 7260, "2\u202fг 1\u202fхв"],
+    ["ru", 16271, "4 ч 31 мин"], ["ru", 3600, "1 ч"], ["ru", 2700, "45 мин"], ["ru", 7260, "2 ч 1 мин"],
+    ["en", 0, ""], ["en", null, ""], ["ru", undefined, ""], ["uk", -5, ""]
+  ];
+  for (const [language, seconds, expected] of cases) {
+    sandbox.language = language;
+    sandbox.seconds = seconds;
+    const actual = vm.runInContext(`(() => { state.language = language; return fmtCompactDuration(seconds); })()`, sandbox);
+    assert.equal(actual, expected, `${language} ${seconds}`);
+  }
+});
+
+test("post-workout summary shows the iOS hero, records, badges, and actions", () => {
+  const sandbox = context();
+  const out = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+    const at = new Date(2026, 0, 5, 12).getTime();
+    const later = new Date(2026, 0, 6, 12).getTime();
+    const make = (id, startedAt, sets, durationSeconds) => ({
+      id, startedAt, note: "", durationSeconds,
+      exerciseNames: [...new Set(sets.map(set => set[0]))],
+      sets: sets.map(([exerciseName, weight, reps], index) => ({ id: id * 10 + index, exerciseName, weight, reps, orderIndex: index }))
+    });
+    const first = make(1, at, [["Bench Press", 50, 8], ["Squat", 0, 10], ["Row", 40, 10]], 3600);
+    const second = make(2, later, [["Bench Press", 60, 8], ["Squat", 0, 12], ["Row", 40, 10], ["Curl", 10, 10]], 16271);
+    state = { ...defaultAppState(), language: "en", sessions: [first, second] };
+    const screen = summaryScreen(2);
+    const firstScreen = summaryScreen(1);
+    state.language = "ru";
+    const ruScreen = summaryScreen(2);
+    return { screen, firstScreen, ruScreen, records: summaryPersonalRecords(second).map(item => ({ name: item.name, weight: item.weight, est: item.estimatedOneRepMax })) };
+  })())`, sandbox));
+  const { screen } = out;
+  assert.match(screen, /Workout complete/);
+  assert.match(screen, /Tue, Jan 6 · 4h 31m/);
+  assert.match(screen, /\+\d+ XP<\/strong><span>Session XP/);
+  assert.match(screen, /Level \d+ · [^<]+<\/strong><div class="progress"/);
+  assert.match(screen, /\d+ XP to level \d+/);
+  assert.doesNotMatch(screen, /metric-grid|summary-metrics|Level progress|Week streak|Most loaded|Previous best/);
+  assert.match(screen, />Easy<[\s\S]*>Just right<[\s\S]*>Hard</);
+  // Only Bench Press is a record: Row ties, Squat is 0 kg, Curl is a first session.
+  assert.deepEqual(out.records.map(item => item.name), ["Bench Press"]);
+  assert.match(screen, /New records/);
+  assert.match(screen, /60 kg · Est\. 1RM 76 kg/);
+  assert.doesNotMatch(screen, /<strong>Squat<|<strong>Row<|<strong>Curl</);
+  assert.doesNotMatch(out.firstScreen, /New records/);
+  assert.match(out.firstScreen, /New badges/);
+  assert.match(out.firstScreen, /class="achievement-tile[^"]* static"/);
+  assert.doesNotMatch(out.firstScreen, /data-action="open-achievement"/);
+  assert.doesNotMatch(screen, /New badges/);
+  assert.match(screen, /data-action="summary-done">Done<\/button>/);
+  assert.match(screen, /data-action="summary-view"[^>]*>Workout details</);
+  assert.match(out.ruScreen, /Тренировка завершена/);
+  assert.match(out.ruScreen, /Как было\?/);
+  assert.match(out.ruScreen, /В самый раз/);
+  assert.match(out.ruScreen, /Новые рекорды/);
+  assert.match(out.ruScreen, /60 кг · 1ПМ 76 кг/);
+  assert.match(out.ruScreen, /Детали тренировки/);
+});
+
+test("summary feedback chips stay one row of three equal columns and stack only on very narrow screens", () => {
+  const rule = selector => stylesSource.match(new RegExp(`${selector.replace(/[.[\]]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] || "";
+  assert.match(rule(".segmented.workout-feedback-options"), /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  const button = rule(".segmented.workout-feedback-options button");
+  assert.match(button, /min-height:\s*44px/);
+  assert.match(button, /border:\s*1px solid/);
+  assert.match(button, /white-space:\s*nowrap/);
+  assert.match(rule(".segmented.workout-feedback-options button.selected"), /background:\s*var\(--primary\)/);
+  assert.match(stylesSource, /@media \(max-width: 340px\) \{\s*\.segmented\.workout-feedback-options \{ grid-template-columns: 1fr; \}/);
 });
 
 test("fmtDateRange matches the iOS weekly-review range in EN, UK, and RU", () => {
