@@ -5,7 +5,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 const appSources = await Promise.all(
-  ["app.js", "app.v112.js"].map(async filename => ({
+  ["app.js", "app.v113.js", "app.v112.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))
@@ -59,7 +59,8 @@ function loadSensitiveDraftCleaner(source) {
 }
 
 for (const { filename, source } of appSources) {
-  const legacyPolicy = filename !== "app.js";
+  // app.v112.js is the immutable predecessor bundle that still carries the 12-character policy.
+  const legacyPolicy = filename === "app.v112.js";
   const policyError = legacyPolicy
     ? "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
     : "Password must contain at least 6 characters and fit within 72 UTF-8 bytes.";
