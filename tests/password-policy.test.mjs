@@ -59,10 +59,14 @@ function loadSensitiveDraftCleaner(source) {
 }
 
 for (const { filename, source } of appSources) {
+  const legacyPolicy = filename !== "app.js";
+  const policyError = legacyPolicy
+    ? "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol."
+    : "Password must contain at least 6 characters and fit within 72 UTF-8 bytes.";
+
   test(`${filename} preserves legacy login passwords inside the bounded transport contract`, () => {
     const { validNewPassword, validateAuthInput } = loadPasswordPolicy(source);
     const email = "athlete@example.com";
-    const policyError = "Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.";
 
     assert.equal(validateAuthInput(email, "legacy1", "", false), "");
     assert.equal(validateAuthInput(email, "", "", false), "Enter your password.");
@@ -70,20 +74,42 @@ for (const { filename, source } of appSources) {
     assert.equal(validateAuthInput(email, "🙂".repeat(256), "", false), "");
     assert.equal(validateAuthInput(email, "x".repeat(1025), "", false), "Password is too long.");
     assert.equal(validateAuthInput(email, "🙂".repeat(257), "", false), "Password is too long.");
-    assert.equal(validateAuthInput(email, "legacy1", "Athlete", true), policyError);
     assert.equal(validateAuthInput(email, "SecurePass9!", "Athlete", true), "");
 
-    assert.equal(validNewPassword("SecurePass9!"), true);
-    assert.equal(validNewPassword(`Aa1!${"x".repeat(68)}`), true);
-    assert.equal(validNewPassword("Short1!Aa"), false);
-    assert.equal(validNewPassword(`Aa1!${"x".repeat(69)}`), false);
-    assert.equal(validNewPassword("SECUREPASS9!"), false);
-    assert.equal(validNewPassword("securepass9!"), false);
-    assert.equal(validNewPassword("SecurePass!!"), false);
-    assert.equal(validNewPassword("SecurePass9🙂"), false);
+    if (legacyPolicy) {
+      assert.equal(validateAuthInput(email, "legacy1", "Athlete", true), policyError);
+      assert.equal(validNewPassword("SecurePass9!"), true);
+      assert.equal(validNewPassword(`Aa1!${"x".repeat(68)}`), true);
+      assert.equal(validNewPassword("Short1!Aa"), false);
+      assert.equal(validNewPassword(`Aa1!${"x".repeat(69)}`), false);
+      assert.equal(validNewPassword("SECUREPASS9!"), false);
+      assert.equal(validNewPassword("securepass9!"), false);
+      assert.equal(validNewPassword("SecurePass!!"), false);
+      assert.equal(validNewPassword("SecurePass9🙂"), false);
 
-    for (const symbol of "!@#$%^&*()_+-=[]{};'\\:\"|<>?,./`~") {
-      assert.equal(validNewPassword(`SecurePass9${symbol}`), true, symbol);
+      for (const symbol of "!@#$%^&*()_+-=[]{};'\\:\"|<>?,./`~") {
+        assert.equal(validNewPassword(`SecurePass9${symbol}`), true, symbol);
+      }
+    } else {
+      assert.equal(validateAuthInput(email, "abcde", "Athlete", true), policyError);
+      assert.equal(validateAuthInput(email, "abcdef", "Athlete", true), "");
+      assert.equal(validateAuthInput(email, "x".repeat(73), "Athlete", true), policyError);
+
+      assert.equal(validNewPassword("abcdef"), true);
+      assert.equal(validNewPassword("abcde"), false);
+      assert.equal(validNewPassword(""), false);
+      assert.equal(validNewPassword("lowercaseonly"), true);
+      assert.equal(validNewPassword("ALLUPPERCASE"), true);
+      assert.equal(validNewPassword("1234567890"), true);
+      assert.equal(validNewPassword("x".repeat(72)), true);
+      assert.equal(validNewPassword("x".repeat(73)), false);
+      assert.equal(validNewPassword("🙂".repeat(6)), true);
+      assert.equal(validNewPassword("🙂".repeat(5)), false);
+      assert.equal(validNewPassword("🙂".repeat(18)), true);
+      assert.equal(validNewPassword("🙂".repeat(19)), false);
+      assert.equal(validNewPassword(`${"x".repeat(68)}🙂`), true);
+      assert.equal(validNewPassword(`${"x".repeat(69)}🙂`), false);
+      assert.doesNotMatch(source, /SUPABASE_PASSWORD_SYMBOLS/);
     }
   });
 
@@ -91,9 +117,14 @@ for (const { filename, source } of appSources) {
     const { validNewPassword } = loadPasswordPolicy(source);
     assert.equal(validNewPassword(`Aa1!${"x".repeat(8)}${"🙂".repeat(15)}`), true);
     assert.equal(validNewPassword(`Aa1!${"x".repeat(8)}${"🙂".repeat(16)}`), false);
+    const minlength = legacyPolicy ? "12" : "6";
     assert.match(source, /validateAuthInput\(email, password, createAccount \? displayName : "", createAccount\)/);
-    assert.match(source, /id="signup-password"[^>]*minlength="12"[^>]*maxlength="72"/);
-    assert.match(source, /id="signup-password-confirm"[^>]*minlength="12"[^>]*maxlength="72"/);
+    assert.match(source, new RegExp(`id="signup-password"[^>]*minlength="${minlength}"[^>]*maxlength="72"`));
+    assert.match(source, new RegExp(`id="signup-password-confirm"[^>]*minlength="${minlength}"[^>]*maxlength="72"`));
+    for (const id of ["recovery-new-password", "recovery-repeat-password", "change-new-password", "change-repeat-password"]) {
+      assert.match(source, new RegExp(`id="${id}"[^>]*minlength="${minlength}"[^>]*maxlength="72"`), id);
+    }
+    assert.doesNotMatch(source, /id="(?:login-password|change-current-password)"[^>]*minlength=/);
     assert.match(source, /const MAX_LOGIN_PASSWORD_UTF8_BYTES = 1024;/);
     assert.match(source, /id="login-password"[^>]*maxlength="1024"/);
     assert.match(source, /new TextEncoder\(\)\.encode\(cleanPassword\)\.byteLength > MAX_LOGIN_PASSWORD_UTF8_BYTES/);
@@ -134,9 +165,13 @@ test("mobile password policies use the same scalar and UTF-8 byte metrics and pr
   ]);
 
   assert.match(androidPolicy, /codePointCount\(0, password\.length\)/);
-  assert.match(androidPolicy, /toByteArray\(Charsets\.UTF_8\)\.size <= 72/);
-  assert.match(iosAuth, /password\.unicodeScalars/);
-  assert.match(iosAuth, /password\.utf8\.count <= 72/);
+  assert.match(androidPolicy, /NEW_PASSWORD_MIN_CODE_POINTS = 6/);
+  assert.match(androidPolicy, /NEW_PASSWORD_MAX_UTF8_BYTES = 72/);
+  assert.match(androidPolicy, /toByteArray\(Charsets\.UTF_8\)\.size <= NEW_PASSWORD_MAX_UTF8_BYTES/);
+  assert.match(iosAuth, /static let minimumCharacters = 6/);
+  assert.match(iosAuth, /static let maximumUTF8Bytes = 72/);
+  assert.match(iosAuth, /password\.unicodeScalars\.count >= minimumCharacters/);
+  assert.match(iosAuth, /password\.utf8\.count <= maximumUTF8Bytes/);
 
   const androidLogin = androidAuth.slice(
     androidAuth.indexOf("suspend fun login"),
@@ -182,4 +217,12 @@ test("mobile password policies use the same scalar and UTF-8 byte metrics and pr
   assert.match(iosUpdate, /var body: \[String: Any\] = \["password": password\]/);
   assert.match(iosUpdate, /body\["current_password"\] = currentPassword/);
   assert.match(iosUpdate, /if let currentPassword/);
+});
+
+test("local Supabase Auth config matches the client password policy", async () => {
+  const config = await readFile(new URL("../supabase/config.toml", import.meta.url), "utf8");
+  const authTable = config.match(/^\[auth\]\s*$([\s\S]*?)(?=^\[|(?![\s\S]))/m);
+  assert.ok(authTable, "config.toml must define an [auth] table");
+  assert.match(authTable[1], /^minimum_password_length\s*=\s*6\s*$/m);
+  assert.doesNotMatch(authTable[1], /^password_requirements\s*=\s*"(?!")/m);
 });

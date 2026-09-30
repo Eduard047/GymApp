@@ -236,13 +236,12 @@ test("audited Ukrainian runtime labels keep their intended workout, progress, au
     ["Your authenticated cloud row uses a legacy or invalid format. It was not loaded into the app and cannot sync until you choose a recovery action.", "Твій автентифікований хмарний запис має застарілий або некоректний формат. Його не завантажено в застосунок, і синхронізація заблокована, доки не вибереш спосіб відновлення."],
     ["A one-time Garmin token will be shown. It works like a password: paste it only into this watch's Connect IQ settings. GymApp temporarily keeps account-bound retry material in this browser until pairing is recovered, then removes it. Continue?", "Буде показано одноразовий токен Garmin. Він працює як пароль: встав його лише в налаштування Connect IQ цього годинника. GymApp тимчасово зберігає в цьому браузері прив’язані до акаунта дані повтору до відновлення сполучення, а потім видаляє їх. Продовжити?"],
     ["Last session was stable across the sets.", "Результати останнього тренування були стабільними в усіх підходах."],
-    ["Use at least 12 characters (up to 72 UTF-8 bytes) with lowercase and uppercase Latin letters, a number, and a supported symbol such as !, @, #, or $.", "Використай щонайменше 12 символів (до 72 байтів UTF-8): малу й велику латинські літери, цифру та підтримуваний спецсимвол, наприклад !, @, # або $."],
-    ["Password must contain at least 12 characters, fit within 72 UTF-8 bytes, and include a lowercase Latin letter, an uppercase Latin letter, a number, and a supported symbol.", "Пароль має містити щонайменше 12 символів, займати не більше 72 байтів у UTF-8 та включати малу й велику латинські літери, цифру й підтримуваний спецсимвол."],
+    ["Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8)."],
+    ["Password must contain at least 6 characters and fit within 72 UTF-8 bytes.", "Пароль має містити щонайменше 6 символів і займати не більше 72 байтів у UTF-8."],
     ["Repeat email", "Повтори адресу електронної пошти"],
     ["Send email again", "Надіслати лист ще раз"],
     ["The unseen Garmin token could not be persisted or revoked. Keep this page open and retry Garmin sync or sign-out to revoke it.", "Непоказаний токен Garmin не вдалося ні зберегти, ні відкликати. Не закривай цю сторінку: повтори синхронізацію з Garmin або вийди з акаунта, щоб відкликати токен."],
     ["Workout summary unavailable.", "Підсумок тренування недоступний."],
-    ["12–72 UTF-8 bytes with upper and lowercase Latin letters, a number and a symbol.", "12–72 байти UTF-8, великі й малі латинські літери, цифра та спецсимвол."]
   ]);
   for (const [english, ukrainian] of adjacentLiteralCases) {
     const adjacentPair = new RegExp(`${escapeRegExp(JSON.stringify(english))}\\s*,\\s*${escapeRegExp(JSON.stringify(ukrainian))}`);

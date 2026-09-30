@@ -6,6 +6,12 @@ project_id = "gymapp"
 [db]
 major_version = 17
 
+# Client password policy is at least 6 characters and at most 72 UTF-8 bytes,
+# with no required character classes; keep the local Auth server aligned with it.
+[auth]
+minimum_password_length = 6
+password_requirements = ""
+
 # Local Auth email preview/source of truth. Hosted Supabase projects keep their
 # own Auth template settings; review and copy this template in the Dashboard
 # only as an explicit release action.
