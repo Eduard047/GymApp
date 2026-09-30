@@ -6,4 +6,11 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
+
+    <!-- Launch theme for MainActivity (pre-Android 12 launch window shows the brand
+         mark centered on the canvas). MainActivity switches to Theme.GymApp in onCreate
+         so the mark never stays behind app content. -->
+    <style name="Theme.GymApp.Launch" parent="Theme.GymApp">
+        <item name="android:windowBackground">@drawable/launch_window_background</item>
+    </style>
 </resources>

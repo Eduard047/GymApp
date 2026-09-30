@@ -1,6 +1,9 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="window_background">#F4F1EC</color>
+    <!-- Launch canvas: identical to the in-app Canvas / Night background so the
+         system launch window, the window background and the in-app splash are one color. -->
+    <color name="launch_background">#FFF7FAFF</color>
+    <color name="window_background">@color/launch_background</color>
     <color name="active_workout_notification">#FF216BD7</color>
 </resources>

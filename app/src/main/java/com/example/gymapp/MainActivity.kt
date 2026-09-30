@@ -2,6 +2,7 @@ package com.example.gymapp
 
 import android.content.Intent
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -19,7 +20,14 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Leave the launch theme (pre-12 window-background mark) before the decor is built.
+        setTheme(R.style.Theme_GymApp)
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // The in-app splash continues the platform splash at the same mark, size and
+            // color, so skip the system's zoom/fade exit and hand off with no motion.
+            splashScreen.setOnExitAnimationListener { it.remove() }
+        }
 
         val app = application as GymApplication
         runCatching {

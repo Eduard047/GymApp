@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.GymApp" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <!-- Platform splash: canvas color + brand mark centered at 120dp (see splash_brand_mark). -->
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_brand_mark</item>
+    </style>
+
+    <!-- Android 12+ draws the mark in the platform splash; no window-background mark needed. -->
+    <style name="Theme.GymApp.Launch" parent="Theme.GymApp" />
+</resources>

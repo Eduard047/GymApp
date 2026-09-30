@@ -997,6 +997,7 @@
     <string name="progress_session_volume_inline">Vol %1$s</string>
     <string name="chart_no_data">Add sets to see chart.</string>
     <string name="splash_tagline">Build strength with focus and consistency.</string>
+    <string name="splash_wordmark">GymApp</string>
     <string name="splash_loading">Preparing your session...</string>
 
     <string name="exercise_history_sessions">Sessions</string>

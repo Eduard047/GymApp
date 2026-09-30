@@ -1024,7 +1024,8 @@
     <string name="progress_session_max_weight_inline">Макс %1$.1f кг</string>
     <string name="progress_session_volume_inline">Обсяг %1$s</string>
     <string name="chart_no_data">Додайте підходи, щоб побачити графік.</string>
-    <string name="splash_tagline">Будуй силу з фокусом і стабільністю.</string>
+    <string name="splash_tagline">Розвивай силу з фокусом і системністю.</string>
+    <string name="splash_wordmark">GymApp</string>
     <string name="splash_loading">Готуємо твою сесію...</string>
 
     <string name="exercise_history_sessions">Сесії</string>

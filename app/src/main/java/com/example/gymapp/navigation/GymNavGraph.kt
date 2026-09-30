@@ -10,10 +10,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -2310,8 +2310,8 @@ internal fun GymAppRoot(
                 )
                 AnimatedVisibility(
                     visible = showIntro,
-                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 8 }),
-                    exit = fadeOut() + scaleOut(targetScale = 1.03f)
+                    enter = EnterTransition.None,
+                    exit = fadeOut(tween(280)) + scaleOut(targetScale = 1.015f, animationSpec = tween(280))
                 ) {
                     AppIntroSplash()
                 }
@@ -4801,8 +4801,8 @@ internal fun GymAppRoot(
 
             AnimatedVisibility(
                 visible = showIntro,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { it / 8 }),
-                exit = fadeOut() + scaleOut(targetScale = 1.03f)
+                enter = EnterTransition.None,
+                exit = fadeOut(tween(280)) + scaleOut(targetScale = 1.015f, animationSpec = tween(280))
             ) {
                 AppIntroSplash()
             }

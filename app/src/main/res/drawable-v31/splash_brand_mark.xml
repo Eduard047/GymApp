@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ splash icon, expressed as an adaptive icon so the platform lays it
+     out predictably: the 108dp adaptive canvas is drawn at 192dp on screen (x1.778,
+     measured on API 37) and masked to that 192dp circle. The mark must render at
+     120dp, like iOS's 120pt mark and AppIntroSplash, so the item is 120 / 1.778 =
+     67.5dp. The mark is a rounded square (~22% corner radius); its farthest corner
+     point is ~74dp from the center (~148dp diameter), inside the 192dp mask, so
+     nothing is clipped. The background is the launch canvas color so the circular
+     mask area is invisible against the splash background. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/launch_background" />
+    <foreground>
+        <layer-list>
+            <item
+                android:width="67.5dp"
+                android:height="67.5dp"
+                android:gravity="center">
+                <bitmap
+                    android:gravity="fill"
+                    android:src="@drawable/ic_launcher_artwork" />
+            </item>
+        </layer-list>
+    </foreground>
+</adaptive-icon>

@@ -6,12 +6,16 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -46,7 +51,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
@@ -94,6 +98,8 @@ import com.example.gymapp.auth.newPasswordLengthIsValid
 import com.example.gymapp.auth.validatedNewLocalDisplayNameOrNull
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.AppBrandMark
+import com.example.gymapp.ui.components.BrandHeroPanel
+import com.example.gymapp.ui.components.brandButtonColors
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.appLanguageOptions
@@ -148,7 +154,7 @@ class AuthDraftViewModel : ViewModel() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AuthScreen(
     uiState: AuthUiState,
@@ -205,7 +211,10 @@ fun AuthScreen(
                 .padding(start = 16.dp, top = 20.dp, end = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            HeroPanel(modifier = Modifier.fillMaxWidth()) {
+            BrandHeroPanel(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+            ) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val onSelectLanguage: (AppLanguage) -> Unit = { language ->
                         localMessage = null
@@ -215,14 +224,15 @@ fun AuthScreen(
                     if (maxWidth >= 320.dp) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AppBrandMark(modifier = Modifier.size(72.dp))
+                            AppBrandMark(modifier = Modifier.size(48.dp))
                             Text(
                                 text = "GymApp",
                                 modifier = Modifier.weight(1f).semantics { heading() },
-                                style = MaterialTheme.typography.headlineLarge
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
                             )
                             AuthLanguageSelector(
                                 selectedLanguage = selectedLanguage,
@@ -230,12 +240,12 @@ fun AuthScreen(
                             )
                         }
                     } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AppBrandMark(modifier = Modifier.size(56.dp))
+                                AppBrandMark(modifier = Modifier.size(40.dp))
                                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                                 AuthLanguageSelector(
                                     selectedLanguage = selectedLanguage,
@@ -245,7 +255,8 @@ fun AuthScreen(
                             Text(
                                 text = "GymApp",
                                 modifier = Modifier.semantics { heading() },
-                                style = MaterialTheme.typography.headlineLarge
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -474,6 +485,7 @@ fun AuthScreen(
                         },
                         enabled = !uiState.isLoading,
                         shape = RoundedCornerShape(16.dp),
+                        colors = brandButtonColors(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 50.dp)
@@ -485,7 +497,7 @@ fun AuthScreen(
                             if (uiState.isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    color = Color.White,
                                     strokeWidth = 2.dp
                                 )
                             }
@@ -514,29 +526,44 @@ fun AuthScreen(
                             },
                             enabled = !uiState.isLoading,
                             shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
                         ) {
-                            Text(stringResource(R.string.auth_forgot_password))
+                            Text(
+                                text = stringResource(R.string.auth_forgot_password),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    OutlinedButton(
+                    TextButton(
                         onClick = {
                             localProfileMessage = null
                             draft.clearSensitiveFields()
                             showOfflineSheet = true
                         },
                         enabled = !uiState.isLoading,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                        shape = RoundedCornerShape(16.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     ) {
-                        Icon(Icons.Default.PhoneAndroid, contentDescription = null)
+                        Icon(
+                            Icons.Default.PhoneAndroid,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Text(
                             text = stringResource(R.string.auth_continue_offline),
-                            modifier = Modifier.padding(start = 8.dp)
+                            modifier = Modifier.padding(start = 8.dp),
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     }
@@ -547,7 +574,7 @@ fun AuthScreen(
                 Column(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.auth_legal_consequence),
@@ -556,22 +583,25 @@ fun AuthScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
-                    Row(
+                    // One row (28dp apart) when both links fit, otherwise a stacked list with no gap
+                    // (iOS `ViewThatFits`): a label never wraps mid-text.
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(
+                            28.dp,
+                            Alignment.CenterHorizontally
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
                         AuthExternalLink(
                             label = stringResource(R.string.auth_privacy_policy),
                             url = AUTH_PRIVACY_URL,
-                            icon = Icons.Outlined.BackHand,
-                            modifier = Modifier.weight(1f)
+                            icon = Icons.Outlined.BackHand
                         )
                         AuthExternalLink(
                             label = stringResource(R.string.auth_support),
                             url = AUTH_SUPPORT_URL,
-                            icon = Icons.AutoMirrored.Outlined.HelpOutline,
-                            modifier = Modifier.weight(1f)
+                            icon = Icons.AutoMirrored.Outlined.HelpOutline
                         )
                     }
                 }
@@ -631,16 +661,23 @@ fun AuthScreen(
                     },
                     enabled = !uiState.isLoading,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    colors = brandButtonColors()
                 ) {
                     Text(stringResource(R.string.auth_continue_offline))
                 }
-                OutlinedButton(
+                TextButton(
                     onClick = { showOfflineSheet = false },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 ) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(
+                        text = stringResource(R.string.action_cancel),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
                 if (savedLocalProfiles.isNotEmpty()) {
                     Text(
@@ -674,14 +711,16 @@ private fun AuthLanguageSelector(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val languageContentColor = LocalContentColor.current
     Box(modifier = modifier) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, languageContentColor.copy(alpha = 0.28f)),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = languageContentColor),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+        // Capsule on the brand hero: white 12% fill, globe + language code, at least 44dp tall.
+        Row(
+            modifier = Modifier
+                .heightIn(min = 44.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.12f))
+                .clickable(role = Role.Button) { expanded = true }
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Default.Language,
@@ -734,7 +773,7 @@ private fun AuthExternalLink(
     TextButton(
         onClick = { openStaticWebPage(context, url) },
         modifier = modifier.heightIn(min = 48.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp)
+        contentPadding = PaddingValues(horizontal = 2.dp)
     ) {
         Icon(
             imageVector = icon,
@@ -744,8 +783,8 @@ private fun AuthExternalLink(
         Text(
             text = label,
             modifier = Modifier.padding(start = 2.dp),
-            maxLines = 2,
-            softWrap = true,
+            maxLines = 1,
+            softWrap = false,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelMedium
         )

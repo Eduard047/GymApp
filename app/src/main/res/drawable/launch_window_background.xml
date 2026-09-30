@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-Android 12 launch window: canvas color plus the brand mark at the exact
+     center, 120dp (same image, size and point as AppIntroSplash and the iOS
+     launch screen), so the frame before Compose draws matches the in-app splash. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_background" />
+    <item
+        android:width="120dp"
+        android:height="120dp"
+        android:gravity="center">
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/ic_launcher_artwork" />
+    </item>
+</layer-list>

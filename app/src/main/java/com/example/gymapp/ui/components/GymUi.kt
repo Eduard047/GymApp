@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -29,6 +30,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -177,6 +180,20 @@ fun HeroPanel(
 fun BrandHeroPanel(
     modifier: Modifier = Modifier,
     contentPadding: Dp = 16.dp,
+    content: @Composable () -> Unit
+) {
+    BrandHeroPanel(
+        modifier = modifier,
+        contentPadding = PaddingValues(contentPadding),
+        content = content
+    )
+}
+
+/** [BrandHeroPanel] with per-edge content padding (e.g. the compact identity strip on Auth). */
+@Composable
+fun BrandHeroPanel(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues,
     content: @Composable () -> Unit
 ) {
     val brush = if (isSystemInDarkTheme()) {
@@ -564,6 +581,21 @@ fun ScreenHeader(
 @Composable
 fun brandFillColor(): Color =
     if (isSystemInDarkTheme()) BrandFillNight else BrandFill
+
+/**
+ * Primary-action colors shared with iOS (`GymPrimaryButtonStyle(fillColor: brandFill)`): the brand
+ * fill with white content, so the button sits in the same blue family as the brand hero.
+ */
+@Composable
+fun brandButtonColors(): ButtonColors {
+    val fill = brandFillColor()
+    return ButtonDefaults.buttonColors(
+        containerColor = fill,
+        contentColor = Color.White,
+        disabledContainerColor = fill.copy(alpha = 0.6f),
+        disabledContentColor = Color.White.copy(alpha = 0.85f)
+    )
+}
 
 data class GymSegmentItem<T>(
     val value: T,
