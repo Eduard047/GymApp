@@ -913,7 +913,7 @@ test("set deletion is bound to its session when imported set IDs collide", () =>
         sets: [{ id: 8301, exerciseName: "Deadlift", weight: 120, reps: 3, orderIndex: 0 }]
       }
     ];
-    saveState({ queueRemote: false, markDirty: false });
+    localStorage.setItem(activeStorageKey(), JSON.stringify(state));
     deleteSet(8301, 8202);
   `, context);
 
@@ -965,9 +965,12 @@ test("duplicate exercise and session IDs fail closed without deleting several ro
       { id: 8701, startedAt: 1760000000000, note: "A", sets: [] },
       { id: 8701, startedAt: 1760100000000, note: "B", sets: [] }
     ];
-    saveState({ queueRemote: false, markDirty: false });
+    localStorage.setItem(activeStorageKey(), JSON.stringify(state));
   `, context);
   const before = storedState(context);
+  // Saving ambiguous ids is refused outright, so the rows can only exist from older data.
+  assert.throws(() => vm.runInContext("saveState({ queueRemote: false, markDirty: false })", context));
+  assert.equal(storedState(context), before);
 
   vm.runInContext("deleteExercise(8601); deleteSession(8701)", context);
 
@@ -1125,6 +1128,61 @@ test("import rejects duplicate exercise, workout, or set IDs before confirmation
     assert.equal(vm.runInContext("modal.type", context), "import");
     assert.equal(storedState(context), before);
   }
+});
+
+test("allocateUniqueId retries on collision and records the id it returns", () => {
+  const context = loadContext();
+  const draws = [5, 5, 9];
+  context.window.crypto = {
+    getRandomValues(words) {
+      words[0] = 0;
+      words[1] = draws.shift();
+      return words;
+    }
+  };
+  const result = vm.runInContext(`(() => {
+    const used = new Set([5]);
+    const id = allocateUniqueId(used);
+    return { id, hasIt: used.has(id), size: used.size };
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { id: 9, hasIt: true, size: 2 });
+});
+
+test("a stored state with duplicate ids loads with unique ids and refuses to save duplicates", () => {
+  const context = loadContext();
+  vm.runInContext(`
+    localStorage.setItem(activeStorageKey(), JSON.stringify({
+      ...defaultAppState(),
+      exercises: [{ id: 7, name: "Squat" }, { id: 7, name: "Row" }],
+      sessions: [
+        { id: 11, startedAt: 1760000000000, note: "A", sets: [
+          { id: 21, exerciseName: "Squat", weight: 100, reps: 5, orderIndex: 0 },
+          { id: 21, exerciseName: "Squat", weight: 100, reps: 5, orderIndex: 1 }
+        ] },
+        { id: 11, startedAt: 1760100000000, note: "B", sets: [
+          { id: 21, exerciseName: "Row", weight: 60, reps: 8, orderIndex: 0 }
+        ] }
+      ]
+    }));
+  `, context);
+  const loaded = JSON.parse(vm.runInContext("JSON.stringify(loadState())", context));
+  const unique = list => new Set(list).size === list.length && list.every(id => Number.isSafeInteger(id) && id > 0);
+  assert.equal(unique(loaded.exercises.map(exercise => exercise.id)), true);
+  assert.equal(unique(loaded.sessions.map(session => session.id)), true);
+  assert.equal(unique(loaded.sessions.flatMap(session => session.sets.map(set => set.id))), true);
+  assert.equal(loaded.exercises.find(exercise => exercise.name === "Squat").id, 7);
+  assert.equal(loaded.sessions[0].id, 11);
+  assert.equal(loaded.sessions[0].sets[0].id, 21);
+  const again = JSON.parse(vm.runInContext("JSON.stringify(loadState())", context));
+  assert.deepEqual(again.sessions.map(session => session.id), loaded.sessions.map(session => session.id));
+
+  const before = storedState(context);
+  vm.runInContext(`state = { ...defaultAppState(), sessions: [
+    { id: 1, startedAt: 1760000000000, note: "", sets: [] },
+    { id: 1, startedAt: 1760100000000, note: "", sets: [] }
+  ] }`, context);
+  assert.throws(() => vm.runInContext("saveState({ queueRemote: false, markDirty: false })", context));
+  assert.equal(storedState(context), before);
 });
 
 test("failed destructive cloud persistence restores account state and sync metadata", () => {

@@ -6720,6 +6720,7 @@ async function reconcileLoadedRemoteState(cloudState, cachedState, cachedStateEx
     } else {
       bindCloudExtensions(userId, {});
     }
+    remoteState = stabilizeCloudStateIds(remoteState, cachedState);
     remoteState = installActivityOnlyItems(
       remoteState,
       activityReconciliation.items,
@@ -8439,7 +8440,10 @@ function workoutMergedPwaState(mergedCore, localCore, cachedState, userId) {
     if (!fresh) throw new Error("Merged workout could not be imported.");
     sessions.push(fresh);
   }
-  const next = { ...cachedState, exercises: imported.exercises, sessions };
+  const next = stabilizeCloudStateIds(
+    { ...cachedState, exercises: imported.exercises, sessions },
+    cachedState
+  );
   preserveExerciseFavorites(next, cachedState, { preferPrevious: true, preserveMissingLoadProfiles: true });
   preserveLocalProgressExerciseSelection(next, cachedState);
   if (remoteStateFingerprint(next, userId) !== prepared.fingerprint) {
@@ -10137,7 +10141,8 @@ function normalizeImportedState(parsed, fallback = defaultAppState()) {
 function validateImportedEnvelope(input, fallback = defaultAppState(), options = {}) {
   const validated = window.GymStateContract.validateAndNormalize(input, {
     fallback,
-    migrateLegacyExerciseNameControls: options.migrateLegacyExerciseNameControls === true
+    migrateLegacyExerciseNameControls: options.migrateLegacyExerciseNameControls === true,
+    duplicateIds: options.duplicateIds === "reject" ? "reject" : "repair"
   });
   const safe = validated.state;
   return {
@@ -10178,16 +10183,32 @@ function normalizeExerciseMappings(input, fallback = {}) {
 
 function normalizeSessions(sessions) {
   if (!Array.isArray(sessions)) return [];
-  return sessions.flatMap(session => {
+  const normalized = sessions.flatMap(session => {
     if (!session || typeof session !== "object") return [];
     return [{
-      id: Number(session.id || uid()),
+      id: positiveSafeId(session.id),
       startedAt: Number(session.startedAt ?? session.date ?? Date.now()),
       note: session.note ?? "",
       exerciseNames: normalizeSessionExerciseNames(session),
       sets: normalizeSessionSets(session)
     }];
   });
+  // Explicit ids are kept as they are (the state contract already repaired duplicates);
+  // only missing ids are allocated, against every id already in use.
+  const usedSessionIds = new Set(normalized.map(session => session.id).filter(Boolean));
+  const usedSetIds = new Set(normalized.flatMap(session => session.sets.map(set => set.id)).filter(Boolean));
+  for (const session of normalized) {
+    if (!session.id) session.id = allocateUniqueId(usedSessionIds);
+    for (const set of session.sets) {
+      if (!set.id) set.id = allocateUniqueId(usedSetIds);
+    }
+  }
+  return normalized;
+}
+
+function positiveSafeId(value) {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : 0;
 }
 
 function normalizeSessionSets(session) {
@@ -10212,7 +10233,7 @@ function normalizeSessionSets(session) {
     if (!exerciseName) return [];
     const catalogKey = persistedExerciseCatalogKey(set);
     return [{
-      id: Number(set.id || uid() + index),
+      id: positiveSafeId(set.id),
       exerciseName: String(exerciseName).trim(),
       ...(catalogKey ? { catalogKey } : {}),
       weight: Number(set.weight ?? set.weightKg ?? set.kg ?? 0),
@@ -10327,8 +10348,10 @@ function saveState({ queueRemote = true, markDirty = true } = {}) {
   // UI event handlers. This prevents a missed range/count check from reaching
   // local storage or the cloud queue.
   const { timers: _legacyTimers, ...runtimeState } = state;
+  // Duplicate ids fail closed here: nothing is rewritten and the caller's error path runs.
   window.GymStateContract.validateAndNormalize({ schemaVersion: 2, ...runtimeState }, {
-    fallback: defaultAppState()
+    fallback: defaultAppState(),
+    duplicateIds: "reject"
   });
   if (!persistWorkoutDurationLedgerFromState(runtimeState)) {
     throw new Error("Workout durations could not be saved.");
@@ -10357,6 +10380,149 @@ function uid() {
     if (Number.isSafeInteger(value) && value > 0) return value;
   }
   throw new Error("Secure numeric ID generation failed.");
+}
+
+// Returns a fresh id that is not in usedIds and records it there. Collisions retry.
+function allocateUniqueId(usedIds) {
+  const used = usedIds instanceof Set ? usedIds : new Set(usedIds || []);
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const candidate = uid();
+    if (Number.isSafeInteger(candidate) && candidate > 0 && !used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
+  throw new Error("Unable to allocate a unique ID.");
+}
+
+// Every workout and set id currently in the browser state.
+function stateWorkoutIds(source = state) {
+  const ids = new Set();
+  for (const session of source?.sessions || []) {
+    ids.add(Number(session?.id));
+    for (const set of session?.sets || []) ids.add(Number(set?.id));
+  }
+  return ids;
+}
+
+function stateExerciseIds(source = state) {
+  return new Set((source?.exercises || []).map(exercise => Number(exercise?.id)));
+}
+
+// Keeps ids stable across a cloud pull or merge. The wire carries no ids, so the contract
+// invents them; here every pulled workout takes the id of the local workout with the same
+// start time (the sync identity), every set takes the id of the local set with the same
+// exercise and position within that exercise, and exercises match by catalog identity.
+// Only genuinely new items keep their own fresh id, or get a new one when it is taken.
+function stabilizeCloudStateIds(nextState, previousState) {
+  if (!nextState || !Array.isArray(nextState.sessions)) return nextState;
+  const previousSessions = Array.isArray(previousState?.sessions) ? previousState.sessions : [];
+  const previousExercises = Array.isArray(previousState?.exercises) ? previousState.exercises : [];
+  const valid = id => Number.isSafeInteger(id) && id > 0;
+  const setKey = set => window.GymStateContract.portableExerciseNameKey(String(set?.exerciseName ?? ""));
+  const groupedSets = sets => {
+    const groups = new Map();
+    for (const set of sets || []) {
+      const key = setKey(set);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(set);
+    }
+    return groups;
+  };
+  // A generic pass: mapped items take their claimed local id; the rest keep their own id
+  // unless it is reserved by the local state or already claimed, in which case they
+  // get a fresh one.
+  const settle = (items, reserved, claimed, mappedIds) => {
+    const taken = new Set([...reserved, ...claimed]);
+    const everyId = new Set([...taken, ...items.map(item => Number(item.id))]);
+    items.forEach((item, index) => {
+      if (mappedIds[index] !== undefined) return;
+      const own = Number(item.id);
+      if (valid(own) && !taken.has(own)) {
+        taken.add(own);
+        mappedIds[index] = own;
+        return;
+      }
+      const fresh = allocateUniqueId(everyId);
+      taken.add(fresh);
+      mappedIds[index] = fresh;
+    });
+    return mappedIds;
+  };
+
+  const previousByStart = new Map();
+  for (const session of previousSessions) {
+    const start = Number(session?.startedAt);
+    if (!previousByStart.has(start)) previousByStart.set(start, session);
+  }
+  const claimedSessions = new Set();
+  const claimedSets = new Set();
+  const sessionIds = new Array(nextState.sessions.length);
+  const setIdsBySession = nextState.sessions.map(session => new Array((session.sets || []).length));
+  nextState.sessions.forEach((session, sessionIndex) => {
+    const previous = previousByStart.get(Number(session.startedAt));
+    const previousId = Number(previous?.id);
+    if (!previous || !valid(previousId) || claimedSessions.has(previousId)) return;
+    claimedSessions.add(previousId);
+    sessionIds[sessionIndex] = previousId;
+    const previousGroups = groupedSets(previous.sets);
+    const seen = new Map();
+    (session.sets || []).forEach((set, setIndex) => {
+      const key = setKey(set);
+      const occurrence = seen.get(key) || 0;
+      seen.set(key, occurrence + 1);
+      const match = previousGroups.get(key)?.[occurrence];
+      const matchId = Number(match?.id);
+      if (!valid(matchId) || claimedSets.has(matchId)) return;
+      claimedSets.add(matchId);
+      setIdsBySession[sessionIndex][setIndex] = matchId;
+    });
+  });
+  const reservedSessionIds = new Set(previousSessions.map(session => Number(session?.id)).filter(valid));
+  const reservedSetIds = new Set(
+    previousSessions.flatMap(session => (session?.sets || []).map(set => Number(set?.id))).filter(valid)
+  );
+  settle(nextState.sessions, reservedSessionIds, claimedSessions, sessionIds);
+  const flatSets = nextState.sessions.flatMap(session => session.sets || []);
+  const flatSetIds = setIdsBySession.flat();
+  settle(flatSets, reservedSetIds, claimedSets, flatSetIds);
+  let cursor = 0;
+  const sessions = nextState.sessions.map((session, sessionIndex) => {
+    const sets = session.sets || [];
+    const ids = flatSetIds.slice(cursor, cursor + sets.length);
+    cursor += sets.length;
+    const unchanged = Number(session.id) === sessionIds[sessionIndex] &&
+      sets.every((set, index) => Number(set.id) === ids[index]);
+    if (unchanged) return session;
+    return {
+      ...session,
+      id: sessionIds[sessionIndex],
+      sets: sets.map((set, index) => ({ ...set, id: ids[index] }))
+    };
+  });
+
+  let exercises = nextState.exercises;
+  if (Array.isArray(exercises)) {
+    const previousByKey = new Map();
+    for (const exercise of previousExercises) {
+      const key = exerciseMatchKey(exercise);
+      if (!previousByKey.has(key)) previousByKey.set(key, exercise);
+    }
+    const claimedExercises = new Set();
+    const exerciseIds = new Array(exercises.length);
+    exercises.forEach((exercise, index) => {
+      const previousId = Number(previousByKey.get(exerciseMatchKey(exercise))?.id);
+      if (!valid(previousId) || claimedExercises.has(previousId)) return;
+      claimedExercises.add(previousId);
+      exerciseIds[index] = previousId;
+    });
+    const reservedExerciseIds = new Set(previousExercises.map(exercise => Number(exercise?.id)).filter(valid));
+    settle(exercises, reservedExerciseIds, claimedExercises, exerciseIds);
+    exercises = exercises.map((exercise, index) =>
+      Number(exercise.id) === exerciseIds[index] ? exercise : { ...exercise, id: exerciseIds[index] }
+    );
+  }
+  return { ...nextState, exercises, sessions };
 }
 
 function route() {
@@ -13724,7 +13890,7 @@ function trainingBuildAdaptation(workout, reason, minutes = 20, replacement = nu
     const recommendations = smartRecommendationForBlock({ exerciseName: replacement.name, catalogKey: replacement.catalogKey, smartHardSlot: false }).sets;
     if (!recommendations.length) return null;
     const completed = block.sets.filter(set => set.completed);
-    const usedIds = new Set([next.id, ...next.blocks.map(b => b.id), ...next.blocks.flatMap(b => b.sets.map(s => s.id))]);
+    const usedIds = new Set([next.id, ...next.blocks.map(b => b.id), ...next.blocks.flatMap(b => b.sets.map(s => s.id)), ...stateWorkoutIds()]);
     const replacementBlock = { id: completed.length ? activeWorkoutEntityId(usedIds) : block.id,
       exerciseName: replacement.name, ...(persistedExerciseCatalogKey(replacement) ? { catalogKey: persistedExerciseCatalogKey(replacement) } : {}),
       sets: block.sets.filter(set => !set.completed).map((set, i) => ({ ...set,
@@ -29946,6 +30112,7 @@ function saveWorkout() {
   const originalExercises = state.exercises;
   state.exercises = [...state.exercises];
   const sets = [];
+  const usedWorkoutIds = stateWorkoutIds();
   for (const parsedBlock of parsedBlocks) {
     const { block, exerciseName } = parsedBlock;
     const requestedExercise = { name: exerciseName, ...(persistedExerciseCatalogKey(block) ? { catalogKey: persistedExerciseCatalogKey(block) } : {}) };
@@ -29958,7 +30125,7 @@ function saveWorkout() {
     const catalogKey = persistedExerciseCatalogKey(storedExercise);
     parsedBlock.sets.forEach((set, index) => {
       sets.push({
-        id: uid(),
+        id: allocateUniqueId(usedWorkoutIds),
         exerciseName: storedName,
         ...(catalogKey ? { catalogKey } : {}),
         weight: set.weight,
@@ -29967,7 +30134,7 @@ function saveWorkout() {
       });
     });
   }
-  const id = uid();
+  const id = allocateUniqueId(usedWorkoutIds);
   state.sessions.push({ id, startedAt, note, sets });
   try {
     saveState();
@@ -30062,7 +30229,7 @@ function quickAddExercise(exerciseId = Number(document.querySelector("#quick-add
     return showToast(tx("This workout has reached its set limit.", "Тренування досягло ліміту підходів."));
   }
   const catalogKey = persistedExerciseCatalogKey(ex);
-  const set = { id: uid(), exerciseName: ex.name, ...(catalogKey ? { catalogKey } : {}), weight: 0, reps: 8, orderIndex: 0 };
+  const set = { id: allocateUniqueId(stateWorkoutIds()), exerciseName: ex.name, ...(catalogKey ? { catalogKey } : {}), weight: 0, reps: 8, orderIndex: 0 };
   session.sets.unshift(set);
   try {
     saveState();
@@ -30090,7 +30257,7 @@ function addSavedWorkoutSet(sessionId, name) {
   const last = matchingSessionSets.at(-1) || allSets().filter(set => exercisesMatch(set, name)).at(-1);
   const exercise = last || state.exercises.find(item => item.name === name);
   const catalogKey = persistedExerciseCatalogKey(exercise);
-  const set = { id: uid(), exerciseName: name, ...(catalogKey ? { catalogKey } : {}), weight: last?.weight || 0, reps: last?.reps || 8, orderIndex: matchingSessionSets.length };
+  const set = { id: allocateUniqueId(stateWorkoutIds()), exerciseName: name, ...(catalogKey ? { catalogKey } : {}), weight: last?.weight || 0, reps: last?.reps || 8, orderIndex: matchingSessionSets.length };
   const setIndex = session.sets.length;
   session.sets.push(set);
   try {
@@ -30482,7 +30649,7 @@ function ensureExercise(name) {
   const existing = state.exercises.find(exercise => exercisesMatch(exercise, candidate));
   if (existing) return existing;
   if (state.exercises.length >= window.GymStateContract.LIMITS.exercises) return null;
-  const created = { id: uid(), ...candidate };
+  const created = { id: allocateUniqueId(stateExerciseIds()), ...candidate };
   state.exercises.push(created);
   state.exercises.sort((left, right) => exerciseDisplayName(left).localeCompare(exerciseDisplayName(right), state.language));
   return created;
@@ -30682,20 +30849,13 @@ function importAllowed(owner) {
 }
 
 function importedStateIdsAreUnique(candidate) {
-  if (!candidate || !Array.isArray(candidate.exercises) || !Array.isArray(candidate.sessions)) return false;
-  const uniquePositiveIds = values => {
-    const ids = values.map(Number);
-    return ids.every(id => Number.isSafeInteger(id) && id > 0) && new Set(ids).size === ids.length;
-  };
-  return uniquePositiveIds(candidate.exercises.map(exercise => exercise.id)) &&
-    uniquePositiveIds(candidate.sessions.map(session => session.id)) &&
-    uniquePositiveIds(candidate.sessions.flatMap(session => session.sets.map(set => set.id)));
+  return window.GymStateContract.idsAreUnique(candidate);
 }
 
 function applyImport(returnFocus = null) {
   try {
     const raw = document.querySelector("#import-json").value;
-    const imported = validateImportedEnvelope(raw, state);
+    const imported = validateImportedEnvelope(raw, state, { duplicateIds: "reject" });
     if (imported.diagnostics) {
       showToast(tx("A redacted diagnostics report is not a restorable backup.", "Знеособлений звіт діагностики не є резервною копією."));
       return;
@@ -30747,7 +30907,8 @@ async function confirmImport() {
   }
   try {
     window.GymStateContract.validateAndNormalize({ schemaVersion: 2, ...intent.nextState }, {
-      fallback: defaultAppState()
+      fallback: defaultAppState(),
+      duplicateIds: "reject"
     });
   } catch {
     return rejectStaleDestructiveConfirmation();

@@ -388,3 +388,98 @@ test("recommendation content is hydrated with textContent and profile labels fai
   assert.match(index, /Content-Security-Policy/);
   assert.match(index, /script-src 'self'/);
 });
+
+function idBackup() {
+  const set = (id, name = "Bench Press") => ({ ...(id === undefined ? {} : { id }), exerciseName: name, weight: 50, reps: 5, orderIndex: 0 });
+  return {
+    schemaVersion: 2,
+    exercises: [{ id: 5, name: "Bench Press" }, { id: 5, name: "Squat" }, { id: 6, name: "Row" }],
+    sessions: [
+      { id: 100, startedAt: 1760000000000, note: "A", sets: [set(200), set(200, "Squat"), set(201, "Row")] },
+      { id: 100, startedAt: 1760100000000, note: "B", sets: [set(200, "Row"), set(202)] },
+      { id: 101, startedAt: 1760200000000, note: "C", sets: [set(undefined), set(203)] }
+    ]
+  };
+}
+
+function idsOf(state) {
+  return {
+    exercises: state.exercises.map(exercise => exercise.id),
+    sessions: state.sessions.map(session => session.id),
+    sets: state.sessions.flatMap(session => session.sets.map(set => set.id))
+  };
+}
+
+test("duplicate exercise, workout, and set ids are repaired deterministically keeping the first", () => {
+  const first = contract.normalizeState(idBackup());
+  const second = contract.normalizeState(idBackup());
+  assert.deepEqual(idsOf(first), idsOf(second));
+  const ids = idsOf(first);
+  for (const list of Object.values(ids)) {
+    assert.equal(new Set(list).size, list.length);
+    assert.ok(list.every(id => Number.isSafeInteger(id) && id > 0));
+  }
+  assert.equal(first.exercises[0].id, 5);
+  assert.notEqual(first.exercises[1].id, 5);
+  assert.equal(first.exercises[2].id, 6);
+  assert.equal(first.sessions[0].id, 100);
+  assert.notEqual(first.sessions[1].id, 100);
+  assert.equal(first.sessions[2].id, 101);
+  assert.equal(first.sessions[0].sets[0].id, 200);
+  assert.notEqual(first.sessions[0].sets[1].id, 200);
+  assert.equal(first.sessions[0].sets[2].id, 201);
+  assert.notEqual(first.sessions[1].sets[0].id, 200);
+  assert.equal(first.sessions[1].sets[1].id, 202);
+  assert.equal(first.sessions[2].sets[1].id, 203);
+  assert.equal(contract.idsAreUnique(first), true);
+});
+
+test("missing ids are filled around explicit ids without a clock or collisions", () => {
+  const mixed = idBackup();
+  mixed.exercises = [{ name: "Bench Press" }, { id: 1, name: "Squat" }, { name: "Row" }];
+  mixed.sessions.forEach((session, index) => {
+    if (index !== 1) delete session.id;
+  });
+  const realNow = Date.now;
+  Date.now = () => 1786000000000;
+  let a;
+  let b;
+  try {
+    a = contract.normalizeState(mixed);
+    Date.now = () => 1786000000123;
+    b = contract.normalizeState(mixed);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.deepEqual(idsOf(a), idsOf(b));
+  assert.equal(a.exercises[1].id, 1);
+  assert.equal(a.sessions[1].id, 100);
+  for (const list of Object.values(idsOf(a))) assert.equal(new Set(list).size, list.length);
+});
+
+test("reject mode fails closed on any duplicate id while repair mode is the default", () => {
+  for (const mutate of [
+    backup => { backup.exercises[1].id = backup.exercises[0].id; },
+    backup => { backup.sessions[1].id = backup.sessions[0].id; },
+    backup => { backup.sessions[1].sets[0].id = backup.sessions[0].sets[0].id; }
+  ]) {
+    const backup = idBackup();
+    backup.exercises = [{ id: 5, name: "Bench Press" }, { id: 6, name: "Squat" }];
+    backup.sessions = [
+      { id: 100, startedAt: 1760000000000, note: "A", sets: [{ id: 200, exerciseName: "Bench Press", weight: 1, reps: 1 }] },
+      { id: 101, startedAt: 1760100000000, note: "B", sets: [{ id: 201, exerciseName: "Squat", weight: 1, reps: 1 }] }
+    ];
+    mutate(backup);
+    assert.throws(
+      () => contract.validateAndNormalize(backup, { duplicateIds: "reject" }),
+      error => error instanceof contract.StateContractError && error.code === "duplicate_ids"
+    );
+    assert.equal(contract.idsAreUnique(contract.validateAndNormalize(backup).state), true);
+  }
+  const unique = idBackup();
+  unique.exercises[1].id = 7;
+  unique.sessions[1].id = 102;
+  unique.sessions[1].sets[0].id = 210;
+  unique.sessions[0].sets[1].id = 211;
+  assert.doesNotThrow(() => contract.validateAndNormalize(unique, { duplicateIds: "reject" }));
+});

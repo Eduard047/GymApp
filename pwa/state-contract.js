@@ -516,7 +516,7 @@
       ? null
       : normalizeLoadProfile(item.loadProfile, `${path}[${index}].loadProfile`);
     return {
-      id: optionalId(item.id, index + 1, `${path}[${index}].id`),
+      id: optionalId(item.id, null, `${path}[${index}].id`),
       name,
       ...(catalogKey ? { catalogKey } : {}),
       ...(hasFavorite || hasLegacyFavorite ? { favorite } : {}),
@@ -524,7 +524,7 @@
     };
   }
 
-  function normalizeSet(value, index, inheritedName, inheritedCatalogKey, path, idBase) {
+  function normalizeSet(value, index, inheritedName, inheritedCatalogKey, path) {
     const item = assertObject(value, `${path}[${index}]`);
     const name = inheritedName || exerciseName(item, `${path}[${index}]`);
     const catalogKey = optionalCatalogKey(
@@ -547,7 +547,7 @@
       ? index
       : integer(item.orderIndex ?? item.index, `${path}[${index}].orderIndex`, 0, 9999);
     return {
-      id: optionalId(item.id, idBase + index, `${path}[${index}].id`),
+      id: optionalId(item.id, null, `${path}[${index}].id`),
       exerciseName: name,
       ...(catalogKey ? { catalogKey } : {}),
       weight,
@@ -566,7 +566,7 @@
     return selected || [];
   }
 
-  function normalizeNestedExercises(session, sessionIndex, idBase, path) {
+  function normalizeNestedExercises(session, sessionIndex, path) {
     const fields = ["exercises", "workoutExercises", "exerciseDetails", "items"];
     const exercises = arrayField(session, fields, path);
     if (exercises.length > LIMITS.exercisesPerSession) {
@@ -592,15 +592,14 @@
           setIndex,
           name,
           catalogKey,
-          `${path}.exercises[${exerciseIndex}].sets`,
-          idBase + exerciseIndex * LIMITS.setsPerExercise
+          `${path}.exercises[${exerciseIndex}].sets`
         ));
       });
     });
     return { names, sets };
   }
 
-  function normalizeFlatSets(session, sessionIndex, idBase, path) {
+  function normalizeFlatSets(session, sessionIndex, path) {
     if (!("sets" in session) || session.sets == null) return [];
     if (!Array.isArray(session.sets)) fail(`${path}.sets must be an array.`);
     if (session.sets.length > LIMITS.exercisesPerSession * LIMITS.setsPerExercise) {
@@ -608,7 +607,7 @@
     }
     const counts = new Map();
     return session.sets.map((set, setIndex) => {
-      const normalized = normalizeSet(set, setIndex, "", undefined, `${path}.sets`, idBase);
+      const normalized = normalizeSet(set, setIndex, "", undefined, `${path}.sets`);
       const key = portableExerciseNameKey(normalized.exerciseName);
       const next = (counts.get(key) || 0) + 1;
       if (next > LIMITS.setsPerExercise) {
@@ -622,9 +621,8 @@
   function normalizeSession(value, index, counters) {
     const path = `state.sessions[${index}]`;
     const session = assertObject(value, path);
-    const idBase = counters.idBase + counters.totalSets + index * 10001;
-    const nested = normalizeNestedExercises(session, index, idBase, path);
-    const flat = normalizeFlatSets(session, index, idBase, path);
+    const nested = normalizeNestedExercises(session, index, path);
+    const flat = normalizeFlatSets(session, index, path);
     const sets = flat.length ? flat : nested.sets;
     counters.totalSets += sets.length;
     if (counters.totalSets > LIMITS.totalSets) {
@@ -676,7 +674,7 @@
           LIMITS.workoutDurationSeconds
         );
     return {
-      id: optionalId(session.id, counters.idBase + index, `${path}.id`),
+      id: optionalId(session.id, null, `${path}.id`),
       startedAt: timestamp(startedAtValue, `${path}.startedAt`),
       note,
       ...(durationSeconds === null ? {} : { durationSeconds }),
@@ -757,7 +755,84 @@
     };
   }
 
-  function normalizeRoot(root, fallback = {}) {
+  // Identity ids. Every exercise, workout, and set id must be a unique positive safe
+  // integer inside its own collection (sets are unique across all workouts). Missing ids
+  // get a deterministic fallback seed; explicit duplicates keep their first occurrence and
+  // either re-key the later ones ("repair") or fail closed ("reject"). The same input
+  // always produces the same output, and no clock or random source is involved.
+  function nextFreeId(seed, used) {
+    let candidate = Number.isSafeInteger(seed) && seed > 0 ? seed : 1;
+    for (let attempt = 0; attempt <= used.size; attempt += 1) {
+      if (!used.has(candidate)) return candidate;
+      candidate = candidate >= Number.MAX_SAFE_INTEGER ? 1 : candidate + 1;
+    }
+    fail("Unable to allocate a unique identifier.", "duplicate_ids");
+  }
+
+  function resolveIdCollection(entries, mode, label) {
+    // entries: [{ item, seed }]. Pass one claims explicit ids in order, pass two allocates.
+    const used = new Set();
+    const pending = [];
+    for (const entry of entries) {
+      const id = entry.item.id;
+      if (id == null) {
+        pending.push(entry);
+      } else if (used.has(id)) {
+        if (mode === "reject") fail(`${label} contain duplicate ids.`, "duplicate_ids");
+        pending.push({ item: entry.item, seed: id });
+      } else {
+        used.add(id);
+      }
+    }
+    for (const entry of pending) {
+      const id = nextFreeId(entry.seed, used);
+      used.add(id);
+      entry.item.id = id;
+    }
+  }
+
+  function startSeed(startedAt, fallback, multiplier) {
+    const seed = Number(startedAt) * multiplier + fallback;
+    return Number.isSafeInteger(seed) && seed > 0 ? seed : fallback;
+  }
+
+  function resolveStateIds(state, mode) {
+    resolveIdCollection(
+      state.exercises.map((item, index) => ({ item, seed: index + 1 })),
+      mode,
+      "Exercises"
+    );
+    resolveIdCollection(
+      state.sessions.map((item, index) => ({ item, seed: startSeed(item.startedAt, index + 1, 1) })),
+      mode,
+      "Workouts"
+    );
+    resolveIdCollection(
+      state.sessions.flatMap(session => session.sets.map((item, index) => ({
+        item,
+        seed: startSeed(session.startedAt, index + 1, 1000)
+      }))),
+      mode,
+      "Sets"
+    );
+  }
+
+  // True when every exercise, workout, and set id is a unique positive safe integer.
+  function idsAreUnique(candidate) {
+    if (!isRecord(candidate) || !Array.isArray(candidate.exercises) || !Array.isArray(candidate.sessions)) {
+      return false;
+    }
+    if (!candidate.sessions.every(session => isRecord(session) && Array.isArray(session.sets))) return false;
+    const unique = values => {
+      const ids = values.map(value => (isRecord(value) ? Number(value.id) : Number.NaN));
+      return ids.every(id => Number.isSafeInteger(id) && id > 0) && new Set(ids).size === ids.length;
+    };
+    return unique(candidate.exercises) &&
+      unique(candidate.sessions) &&
+      unique(candidate.sessions.flatMap(session => session.sets));
+  }
+
+  function normalizeRoot(root, fallback = {}, duplicateIds = "repair") {
     assertObject(root, "state");
     if (root.schemaVersion != null && root.schemaVersion !== 2) {
       fail("Unsupported GymApp backup schema version.", "unsupported_schema");
@@ -806,7 +881,7 @@
     const knownExerciseNames = new Set(
       normalizedExercises.map(exercise => portableExerciseNameKey(exercise.name))
     );
-    const counters = { totalSets: 0, idBase: Date.now(), knownExerciseNames };
+    const counters = { totalSets: 0, knownExerciseNames };
     const state = {
       language: ["uk", "ru"].includes(languageInput) ? languageInput : "en",
       catalogSeedVersion: root.catalogSeedVersion == null
@@ -817,6 +892,7 @@
       mappings: normalizeMappings(root.mappings ?? pwaExtension?.mappings, fallback.mappings),
       profile: safeProfile(root.profile ?? pwaExtension?.profile, fallback.profile)
     };
+    resolveStateIds(state, duplicateIds);
     if (root.progressExerciseId != null) {
       state.progressExerciseId = optionalId(root.progressExerciseId, 1, "state.progressExerciseId");
     }
@@ -855,7 +931,8 @@
     const migratedLegacyExerciseNameControls = options.migrateLegacyExerciseNameControls === true
       ? migrateLegacyStoredExerciseNames(root)
       : false;
-    const normalized = normalizeRoot(root, options.fallback || {});
+    const duplicateIds = options.duplicateIds === "reject" ? "reject" : "repair";
+    const normalized = normalizeRoot(root, options.fallback || {}, duplicateIds);
     return { ...normalized, migratedLegacyExerciseNameControls };
   }
 
@@ -873,6 +950,7 @@
     migrateLegacyExerciseNameControls,
     portableExerciseNameKey,
     validateAndNormalize,
+    idsAreUnique,
     normalizeState
   });
 });

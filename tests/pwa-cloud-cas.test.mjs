@@ -4888,3 +4888,112 @@ test("local account deletion removes only the confirmed local profile", async ()
   assert.equal(JSON.parse(context.localStorage.getItem("gym-pwa-account-list-v1")).length, 0);
   assert.equal(context.localStorage.getItem("gym-pwa-active-account-v1"), null);
 });
+
+function mergeStubContext(remoteHolder, updatedAtHolder) {
+  return loadContext(async (url, options) => {
+    if ((options?.method || "GET") === "GET") {
+      return new Response(JSON.stringify([{
+        state: remoteHolder.payload,
+        updated_at: updatedAtHolder.value
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (options.method === "PATCH") {
+      return new Response(JSON.stringify([{ updated_at: updatedAtHolder.value.replace(".000001", ".000002") }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
+}
+
+test("a cloud merge keeps local workout and set ids and their feedback", async () => {
+  const remote = {};
+  const stamp = { value: "2026-07-21T10:00:00.000001+00:00" };
+  const context = mergeStubContext(remote, stamp);
+  const remoteState = `(() => {
+    const next = ${twoWorkoutStateExpression({ squatReps: 7 })};
+    next.sessions.push({
+      id: 1, startedAt: 1785960000000, note: "", exerciseNames: ["Deadlift"],
+      sets: [{ id: 2, exerciseName: "Deadlift", catalogKey: "deadlift", weight: 120, reps: 3, orderIndex: 0 }]
+    });
+    return next;
+  })()`;
+  remote.payload = JSON.parse(vm.runInContext(
+    `JSON.stringify(remoteStatePayload(activeAccount.userId, ${remoteState}))`,
+    context
+  ));
+  confirmTwoWorkoutBaseline(context, "2026-07-21T10:00:00.000000+00:00");
+  vm.runInContext(`
+    state.sessions[0].sets[0].reps = 10;
+    saveState({ queueRemote: false });
+    if (!saveWorkoutFeedback(9301, "hard") || !saveWorkoutFeedback(9401, "easy")) throw new Error("feedback");
+  `, context);
+
+  await vm.runInContext("pullRemoteState()", context);
+
+  assert.equal(vm.runInContext("cloudSyncConflict", context), null);
+  assert.deepEqual(
+    JSON.parse(vm.runInContext(`JSON.stringify(state.sessions.slice(0, 2).map(session => [
+      session.id, session.startedAt, session.sets.map(set => set.id)
+    ]))`, context)),
+    [[9301, 1785790000000, [9302]], [9401, 1785876400000, [9402]]]
+  );
+  assert.equal(vm.runInContext("state.sessions.length", context), 3);
+  assert.equal(vm.runInContext("state.sessions[1].sets[0].reps", context), 7);
+  assert.equal(vm.runInContext("workoutFeedbackValue(9301)", context), "hard");
+  assert.equal(vm.runInContext("workoutFeedbackValue(9401)", context), "easy");
+});
+
+test("consecutive cloud merges under a frozen clock never reuse an id", async () => {
+  const remote = {};
+  const stamp = { value: "2026-07-21T10:00:00.000001+00:00" };
+  const context = mergeStubContext(remote, stamp);
+  const realNow = Date.now;
+  const addWorkout = (source, startedAt, name, key) => `(() => {
+    const next = ${source};
+    next.sessions.push({
+      id: 1, startedAt: ${startedAt}, note: "", exerciseNames: [${JSON.stringify(name)}],
+      sets: [{ id: 2, exerciseName: ${JSON.stringify(name)}, catalogKey: ${JSON.stringify(key)}, weight: 50, reps: 5, orderIndex: 0 }]
+    });
+    return next;
+  })()`;
+  try {
+    Date.now = () => 1786000000000;
+    remote.payload = JSON.parse(vm.runInContext(
+      `JSON.stringify(remoteStatePayload(activeAccount.userId, ${addWorkout(twoWorkoutStateExpression({ squatReps: 7 }), 1785960000000, "Deadlift", "deadlift")}))`,
+      context
+    ));
+    confirmTwoWorkoutBaseline(context, "2026-07-21T10:00:00.000000+00:00");
+    vm.runInContext("state.sessions[0].sets[0].reps = 10; saveState({ queueRemote: false });", context);
+    await vm.runInContext("pullRemoteState()", context);
+    assert.equal(vm.runInContext("state.sessions.length", context), 3);
+
+    const second = vm.runInContext(`(() => {
+      const next = JSON.parse(JSON.stringify(state));
+      next.sessions.push({
+        id: 3, startedAt: 1786040000000, note: "", exerciseNames: ["Overhead Press"],
+        sets: [{ id: 4, exerciseName: "Overhead Press", catalogKey: "overhead_press", weight: 40, reps: 6, orderIndex: 0 }]
+      });
+      return JSON.stringify(remoteStatePayload(activeAccount.userId, next));
+    })()`, context);
+    remote.payload = JSON.parse(second);
+    stamp.value = "2026-07-21T10:05:00.000001+00:00";
+    vm.runInContext("state.sessions[0].sets[0].reps = 11; saveState({ queueRemote: false });", context);
+    await vm.runInContext("pullRemoteState()", context);
+  } finally {
+    Date.now = realNow;
+  }
+
+  const ids = JSON.parse(vm.runInContext(`JSON.stringify({
+    sessions: state.sessions.map(session => session.id),
+    sets: state.sessions.flatMap(session => session.sets.map(set => set.id)),
+    exercises: state.exercises.map(exercise => exercise.id)
+  })`, context));
+  assert.equal(ids.sessions.length, 4);
+  for (const list of Object.values(ids)) {
+    assert.equal(new Set(list).size, list.length);
+    assert.ok(list.every(id => Number.isSafeInteger(id) && id > 0));
+  }
+  assert.equal(vm.runInContext("cloudSyncConflict", context), null);
+});
