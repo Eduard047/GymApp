@@ -1231,7 +1231,7 @@ private struct ExerciseProgressChartsCard: View {
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: min(4, chartPoints.count))) {
                     AxisGridLine().foregroundStyle(GymTheme.outline.opacity(0.25))
-                    AxisValueLabel(format: .dateTime.weekday(.narrow).day())
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                 }
             }
             .chartYAxis {
@@ -1241,6 +1241,7 @@ private struct ExerciseProgressChartsCard: View {
                 }
             }
             .frame(minHeight: 210)
+            .environment(\.locale, locale)
             .accessibilityLabel(t("Maximum weight chart", "Графік максимальної ваги", "График максимального веса"))
             .accessibilityValue(weightTrendLabel)
         }
@@ -1278,7 +1279,7 @@ private struct ExerciseProgressChartsCard: View {
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: min(4, chartPoints.count))) {
                     AxisGridLine().foregroundStyle(GymTheme.outline.opacity(0.25))
-                    AxisValueLabel(format: .dateTime.weekday(.narrow).day())
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                 }
             }
             .chartYAxis {
@@ -1288,6 +1289,7 @@ private struct ExerciseProgressChartsCard: View {
                 }
             }
             .frame(minHeight: 210)
+            .environment(\.locale, locale)
             .accessibilityLabel(t("Session volume chart", "Графік обсягу сесій", "График объёма по сессиям"))
             .accessibilityValue(volumeTrendLabel)
         }
