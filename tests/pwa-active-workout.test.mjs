@@ -3712,3 +3712,122 @@ test("the recorded-set banner announces once per confirmation", async () => {
   assert.match(live(vm.runInContext("activeWorkoutScreen()", context)), /^Recorded: 42\.5 kg × 8/,
     "a new confirmation announces again");
 });
+
+test("logging a set carries its weight to the next unplanned set of the same exercise", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "",
+      blocks: [
+        { exerciseName: "Bench Press", catalogKey: "bench_press",
+          sets: [{ weight: 0, reps: 8 }, { weight: 0, reps: 8 }, { weight: 50, reps: 8 }, { weight: 0, reps: 8 }] },
+        { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 0, reps: 5 }] }
+      ]
+    };
+    startWorkout();
+  `, context);
+  const weights = () => JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks.map(block => block.sets.map(set => [set.weight, set.reps])))",
+    context
+  ));
+  const ids = JSON.parse(vm.runInContext(
+    "JSON.stringify(activeWorkout.blocks.map(block => block.sets.map(set => set.id)))",
+    context
+  ));
+  assert.deepEqual(weights()[0].map(row => row[0]), [0, 0, 50, 0]);
+
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, ids[0][0], 60, 6), true);
+  assert.deepEqual(weights(), [[[60, 6], [60, 8], [50, 8], [0, 8]], [[0, 5]]],
+    "only the next set is filled; reps and other exercises stay untouched");
+  const persisted = JSON.parse(vm.runInContext(
+    "localStorage.getItem(activeWorkoutAccountDescriptor().storageKey)", context
+  ));
+  assert.equal(persisted.blocks[0].sets[1].weight, 60, "the carried weight is persisted");
+
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, ids[0][1], 62.5, 8), true);
+  assert.deepEqual(weights()[0].map(row => row[0]), [60, 62.5, 50, 0],
+    "a non-zero planned weight is not overwritten");
+
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, ids[0][2], 0, 8), true);
+  assert.deepEqual(weights()[0].map(row => row[0]), [60, 62.5, 0, 0], "a 0 kg log carries nothing");
+
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, ids[1][0], 100, 5), true);
+  assert.deepEqual(weights()[1], [[100, 5]], "the last set of an exercise has no next set to fill");
+});
+
+test("saved workout PR badge follows the running-best record rules", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    const session = (id, startedAt, rows) => ({
+      id, startedAt, note: "", exerciseNames: ["Bench Press"],
+      sets: rows.map(([weight, reps], index) => ({
+        id: id * 100 + index, exerciseName: "Bench Press", catalogKey: "bench_press", weight, reps, orderIndex: index
+      }))
+    });
+    const exercise = { name: "Bench Press", catalogKey: "bench_press" };
+    const check = (current, history) => {
+      state.sessions = [...history, session(50, 9000, current)];
+      return isPr(state.sessions.at(-1), exercise);
+    };
+    return JSON.stringify({
+      firstEverWorkout: check([[60, 8], [70, 8]], []),
+      beatsHistory: check([[80, 8], [85, 5]], [session(1, 1000, [[80, 8]])]),
+      matchesHistory: check([[80, 8], [80, 8]], [session(1, 1000, [[80, 8]])]),
+      belowHistory: check([[60, 8]], [session(1, 1000, [[80, 8]])]),
+      zeroKilograms: check([[0, 30]], [session(1, 1000, [[0, 8]])]),
+      betterEstimateOnly: check([[75, 12]], [session(1, 1000, [[80, 5]])]),
+      laterSessionIgnored: check([[85, 5]], [session(1, 1000, [[80, 5]]), session(99, 20000, [[200, 5]])])
+    });
+  })()`, context));
+  assert.equal(result.firstEverWorkout, false, "an exercise's first session never shows a PR");
+  assert.equal(result.beatsHistory, true);
+  assert.equal(result.matchesHistory, false);
+  assert.equal(result.belowHistory, false);
+  assert.equal(result.zeroKilograms, false);
+  assert.equal(result.betterEstimateOnly, true);
+  assert.equal(result.laterSessionIgnored, true);
+});
+
+test("Progress defaults to the most logged exercise without writing it to state", () => {
+  const { context } = loadContext();
+  const result = JSON.parse(vm.runInContext(`(() => {
+    state.exercises = [
+      { id: 1, name: "Squat", catalogKey: "squat" },
+      { id: 2, name: "Bench Press", catalogKey: "bench_press" },
+      { id: 3, name: "Deadlift", catalogKey: "deadlift" }
+    ];
+    const session = (id, startedAt, name) => ({
+      id, startedAt, note: "", exerciseNames: [name],
+      sets: [{ id: id * 10, exerciseName: name, weight: 50, reps: 5, orderIndex: 0 }]
+    });
+    const out = {};
+    state.sessions = [];
+    delete state.progressExerciseId;
+    out.noHistory = currentProgressExerciseId();
+    out.noHistoryMost = mostLoggedExerciseId();
+    state.sessions = [session(1, 1000, "Squat"), session(2, 2000, "Bench Press"), session(3, 3000, "Bench Press")];
+    out.mostLogged = currentProgressExerciseId();
+    state.sessions = [session(1, 1000, "Squat"), session(2, 2000, "Bench Press"),
+      session(3, 3000, "Deadlift"), session(4, 4000, "Squat"), session(5, 5000, "Bench Press"),
+      session(6, 6000, "Deadlift")];
+    out.tieLatest = currentProgressExerciseId();
+    state.progressExerciseId = 1;
+    out.explicit = currentProgressExerciseId();
+    state.progressExerciseId = 999;
+    out.staleFallsBack = currentProgressExerciseId();
+    delete state.progressExerciseId;
+    currentProgressExerciseId();
+    out.untouched = Object.hasOwn(state, "progressExerciseId") ? state.progressExerciseId : "unset";
+    out.panelUsesDefault = exerciseProgressPanel().includes("Deadlift");
+    return JSON.stringify(out);
+  })()`, context));
+  assert.equal(result.noHistory, 1, "no history falls back to the first exercise");
+  assert.equal(result.noHistoryMost, null);
+  assert.equal(result.mostLogged, 2);
+  assert.equal(result.tieLatest, 3, "equal counts go to the most recently trained exercise");
+  assert.equal(result.explicit, 1);
+  assert.equal(result.staleFallsBack, 3);
+  assert.equal(result.untouched, "unset");
+  assert.equal(result.panelUsesDefault, true);
+});
