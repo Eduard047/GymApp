@@ -27,9 +27,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -149,7 +147,6 @@ class ExerciseProgressViewModel(
     }
     private val isUkrainian = locale.language.equals("uk", ignoreCase = true)
     private val isRussian = locale.language.equals("ru", ignoreCase = true)
-    private val shortDateFormatter = DateTimeFormatter.ofPattern("EEEEE d", locale)
     private val monthOffset = MutableStateFlow(0)
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
     /** Set once the user picks an exercise, so the most-logged default stops following history. */
@@ -345,11 +342,10 @@ class ExerciseProgressViewModel(
         val maxVolume = visiblePoints.maxOfOrNull { it.totalVolume }?.coerceAtLeast(1.0) ?: 1.0
 
         val chartPoints = visiblePoints.mapIndexed { index, point ->
-            val localDate = Instant.ofEpochMilli(point.sessionDate).atZone(zoneId).toLocalDate()
             ExerciseTrendChartPointUiModel(
                 sessionId = point.sessionId,
                 label = DateTimeUtils.formatDate(point.sessionDate, locale, zoneId),
-                shortLabel = localDate.format(shortDateFormatter),
+                shortLabel = DateTimeUtils.formatChartAxisDate(point.sessionDate, locale, zoneId),
                 maxWeight = point.maxWeight,
                 totalVolume = point.totalVolume,
                 totalReps = point.totalReps,

@@ -167,6 +167,20 @@ object DateTimeUtils {
         }
     }
 
+    /**
+     * Trend chart x-axis label: day and abbreviated month with no weekday, "Sep 8" / "8 вер." /
+     * "8 сент.". The weekday is omitted because a lone initial reads as a stray letter.
+     */
+    fun formatChartAxisDate(
+        timestamp: Long,
+        locale: Locale = Locale.getDefault(),
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): String {
+        val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+        val pattern = if (locale.language.equals("en", ignoreCase = true)) "MMM d" else "d MMM"
+        return date.format(formatter(pattern, locale))
+    }
+
     /** Short date (see [formatShortDate]) for a calendar day given as days since the epoch. */
     fun formatEpochDayShort(
         epochDay: Long,

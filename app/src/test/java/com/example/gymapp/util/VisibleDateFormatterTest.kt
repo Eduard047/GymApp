@@ -59,6 +59,20 @@ class VisibleDateFormatterTest {
     }
 
     @Test
+    fun chartAxisDateIsDayAndShortMonthWithoutWeekdayInitial() {
+        // 2026-08-11 is a Tuesday: the old "EEEEE d" pattern rendered "T 11" in English.
+        fun at(month: Int, day: Int) =
+            LocalDate.of(2026, month, day).atStartOfDay(zoneId).toInstant().toEpochMilli()
+
+        assertEquals("Aug 11", DateTimeUtils.formatChartAxisDate(at(8, 11), Locale.ENGLISH, zoneId))
+        assertEquals("Sep 8", DateTimeUtils.formatChartAxisDate(at(9, 8), Locale.ENGLISH, zoneId))
+        assertEquals("8 вер.", DateTimeUtils.formatChartAxisDate(at(9, 8), Locale("uk"), zoneId))
+        assertEquals("11 серп.", DateTimeUtils.formatChartAxisDate(at(8, 11), Locale("uk"), zoneId))
+        assertEquals("8 сент.", DateTimeUtils.formatChartAxisDate(at(9, 8), Locale("ru"), zoneId))
+        assertEquals("11 авг.", DateTimeUtils.formatChartAxisDate(at(8, 11), Locale("ru"), zoneId))
+    }
+
+    @Test
     fun dateRangeMatchesSharedIosOutput() {
         val now = LocalDate.of(2026, 9, 29)
         fun range(start: LocalDate, end: LocalDate, tag: String) =
