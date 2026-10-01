@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v156";
-// v156 ships the Fluid Focus redesign, in-workout voice logging, and unique workout ids; v155 added on-device voice workout dictation.
+const CACHE_VERSION = "v157";
+// v157 shows store links and a light/dark switch on the sign-in screen; v156 shipped the redesign, in-workout voice logging, and unique workout ids.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,7 +48,7 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v87.css",
+  "./styles.v88.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v73.js",
@@ -59,10 +59,10 @@ const SHELL_ASSETS = [
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v88.js",
+  "./russian-text.v89.js",
   "./exercise-search-vocabulary.v1.js",
   "./voice-workout.v2.js",
-  "./app.v113.js",
+  "./app.v114.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",

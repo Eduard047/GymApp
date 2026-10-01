@@ -41,8 +41,8 @@ function authContext(overrides = {}) {
     accountList: () => [],
     remoteAuthEnabled: () => true,
     languageSelectorMarkup: () => "<div class=\"language-selector\"></div>",
-    storeDownloadPanel: () => "",
-    themePreferencePanel: () => "",
+    storeDownloadPanel: () => "<section class=\"store-card\"></section>",
+    window: {},
     emailConfirmationPanel: footer => `<section class="auth-panel">${footer}</section>`,
     escapeHtml: value => String(value),
     escapeAttr: value => String(value).replace(/"/g, "&quot;"),
@@ -53,8 +53,10 @@ function authContext(overrides = {}) {
   vm.runInContext(
     `${slice("function tx(en, uk)", "const ACTIVE_WORKOUT_STATUS_MESSAGES")}\n` +
     `${slice("function loginScreen()", "function storeDownloadPanel()")}\n` +
+    `${slice("function effectiveTheme()", "function emailConfirmationPanel(")}\n` +
     "globalThis.loginScreen = loginScreen; globalThis.togglePasswordVisibility = togglePasswordVisibility;" +
-    "globalThis.offlineAccountSheetMarkup = offlineAccountSheetMarkup;",
+    "globalThis.offlineAccountSheetMarkup = offlineAccountSheetMarkup;" +
+    "globalThis.toggleAuthTheme = toggleAuthTheme; globalThis.effectiveTheme = effectiveTheme;",
     context
   );
   context.ru = text => text;
@@ -63,7 +65,7 @@ function authContext(overrides = {}) {
 
 test("auth header is a compact brand-gradient identity strip", () => {
   const panel = block(".auth-brand-panel");
-  assert.match(panel, /grid-template-columns:\s*48px minmax\(0, 1fr\) 48px;/);
+  assert.match(panel, /grid-template-columns:\s*48px minmax\(0, 1fr\) auto;/);
   assert.match(panel, /gap:\s*12px;/);
   assert.match(panel, /padding:\s*10px 16px;/);
   assert.match(panel, /linear-gradient\(135deg, var\(--brand-fill\) 0%, var\(--brand-fill-bright\) 100%\)/);
@@ -200,7 +202,67 @@ test("legal links stay single-line 44px targets in one row or a stacked list", (
   assert.match(link, /white-space:\s*nowrap;/);
   assert.match(stylesSource, /@media \(max-width: 360px\)\s*\{\s*\.auth-links\s*\{\s*flex-direction:\s*column;/);
   assert.match(block(".auth-legal-card"), /gap:\s*4px;/);
-  assert.match(login, /<details class="auth-secondary-details">/);
+  assert.doesNotMatch(login, /<details/);
+  assert.doesNotMatch(login, /auth-secondary|Apps & appearance|theme-preference-card/);
+  assert.doesNotMatch(stylesSource, /\.auth-secondary-|\.auth-theme-card/);
+});
+
+test("store card is always visible between the auth panel and the legal card", () => {
+  const login = vm.runInContext("loginScreen()", authContext());
+  const panel = login.indexOf('class="panel highlighted auth-panel"');
+  const store = login.indexOf('<section class="store-card">');
+  const legal = login.indexOf('class="panel auth-legal-card"');
+  assert.ok(panel >= 0 && store > panel && legal > store, "auth panel, store card, legal card order");
+  const offline = vm.runInContext("loginScreen()", authContext({ remoteAuthEnabled: () => false }));
+  assert.ok(offline.indexOf('<section class="store-card">') < offline.indexOf('class="panel auth-legal-card"'));
+});
+
+test("auth header groups a light/dark toggle with the language button", () => {
+  const context = authContext();
+  const light = vm.runInContext("loginScreen()", context);
+  assert.match(light, /<header class="hero-panel auth-brand-panel">[\s\S]*<h1 class="auth-wordmark">GymApp<\/h1>\s*<div class="auth-header-actions"><button type="button" class="icon-button topbar-action auth-theme-toggle" data-action="toggle-auth-theme" aria-label="Switch to dark theme" title="Switch to dark theme"><svg class="" data-icon="sun"><\/svg><\/button><div class="language-selector"><\/div><\/div>\s*<\/header>/);
+  context.window.GymThemePreference = { getPreference: () => "dark", getResolvedTheme: () => "dark" };
+  const dark = vm.runInContext("loginScreen()", context);
+  assert.match(dark, /aria-label="Switch to light theme" title="Switch to light theme"><svg class="" data-icon="moon">/);
+  context.state.language = "uk";
+  assert.match(vm.runInContext("loginScreen()", context), /aria-label="Увімкнути світлу тему"/);
+  context.window.GymThemePreference = { getPreference: () => "light", getResolvedTheme: () => "light" };
+  assert.match(vm.runInContext("loginScreen()", context), /aria-label="Увімкнути темну тему"/);
+  context.state.language = "ru";
+  assert.match(vm.runInContext("loginScreen()", context), /aria-label="Включить тёмную тему"/);
+  context.window.GymThemePreference = { getPreference: () => "dark", getResolvedTheme: () => "dark" };
+  assert.match(vm.runInContext("loginScreen()", context), /aria-label="Включить светлую тему"/);
+  assert.match(appSource, /action === "toggle-auth-theme"/);
+  assert.match(block(".auth-header-actions"), /display:\s*flex;/);
+});
+
+test("auth theme toggle flips only between light and dark", () => {
+  const calls = [];
+  const context = authContext();
+  const install = (preference, resolved) => {
+    calls.length = 0;
+    context.window.GymThemePreference = {
+      getPreference: () => preference,
+      getResolvedTheme: () => resolved,
+      setPreference: value => { calls.push(value); return true; }
+    };
+  };
+  install("light", "light");
+  vm.runInContext("toggleAuthTheme()", context);
+  assert.deepEqual(calls, ["dark"]);
+  install("dark", "dark");
+  vm.runInContext("toggleAuthTheme()", context);
+  assert.deepEqual(calls, ["light"]);
+  install("system", "dark");
+  assert.equal(vm.runInContext("effectiveTheme()", context), "dark");
+  vm.runInContext("toggleAuthTheme()", context);
+  assert.deepEqual(calls, ["light"]);
+  install("system", "light");
+  vm.runInContext("toggleAuthTheme()", context);
+  assert.deepEqual(calls, ["dark"]);
+  // Without the theme API the OS scheme decides.
+  context.window = { matchMedia: () => ({ matches: true }), GymThemePreference: undefined };
+  assert.equal(vm.runInContext("effectiveTheme()", context), "dark");
 });
 
 test("offline sheet has no nested card, a brand primary, and a quiet Cancel", () => {

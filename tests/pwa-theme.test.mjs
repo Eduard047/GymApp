@@ -53,7 +53,7 @@ function loadTheme({ stored = null, dark = false, storageThrows = false } = {}) 
 
 test("the restored PWA loads the shared theme runtime and current immutable stylesheet", () => {
   assert.match(indexHtml, /theme\.v56\.js/);
-  assert.match(indexHtml, /styles\.v87\.css/);
+  assert.match(indexHtml, /styles\.v88\.css/);
   assert.match(indexHtml, /name="theme-color" content="#f7faff"/);
   assert.doesNotMatch(indexHtml, /retirement\.v1\.css/);
   assert.match(styles, /:root\[data-theme="dark"\]/);
@@ -93,7 +93,7 @@ test("PWA exposes an accessible localized three-way theme switch", () => {
   assert.match(appSource, /role="radiogroup"/);
   assert.match(appSource, /role="radio" aria-checked=/);
   assert.match(appSource, /\["system", "light", "dark"\]/);
-  assert.match(appSource, /themePreferencePanel\("auth"\)/);
+  assert.doesNotMatch(appSource, /themePreferencePanel\("auth"\)/);
   assert.match(appSource, /\$\{themePreferencePanel\(\)\}/);
   for (const label of ["Appearance", "Color theme", "System", "Light", "Dark"]) {
     assert.match(russianSource, new RegExp(`\\["${label}"`));
