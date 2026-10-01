@@ -637,8 +637,16 @@ private fun FocusLens(
                     ),
                     value = stringResource(
                         R.string.today_plan_size,
-                        todayPlan.exerciseCount,
-                        todayPlan.setCount
+                        pluralStringResource(
+                            R.plurals.saved_workout_exercise_count,
+                            todayPlan.exerciseCount,
+                            todayPlan.exerciseCount
+                        ),
+                        pluralStringResource(
+                            R.plurals.saved_workout_set_count,
+                            todayPlan.setCount,
+                            todayPlan.setCount
+                        )
                     ),
                     modifier = Modifier.weight(1f)
                 )

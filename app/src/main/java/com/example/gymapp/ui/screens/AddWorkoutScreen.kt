@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
@@ -212,15 +211,6 @@ fun AddWorkoutScreen(
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     var showVoiceWorkoutSheet by rememberSaveable { mutableStateOf(false) }
     val requestClose = onNavigateToHistory
-    val noteTemplates = listOf(
-        stringResource(R.string.note_template_push),
-        stringResource(R.string.note_template_pull),
-        stringResource(R.string.note_template_legs),
-        stringResource(R.string.note_template_upper),
-        stringResource(R.string.note_template_lower),
-        stringResource(R.string.note_template_deload)
-    )
-
     Box(modifier = modifier.fillMaxSize()) {
     LazyColumn(
         modifier = Modifier
@@ -535,26 +525,6 @@ fun AddWorkoutScreen(
                         minLines = 2,
                         maxLines = 4
                     )
-                    Text(
-                        text = stringResource(R.string.add_workout_plan_templates),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(noteTemplates) { template ->
-                            SuggestionChip(
-                                onClick = {
-                                    onNoteChange(
-                                        appendTemplateToNote(
-                                            currentNote = uiState.note,
-                                            template = template
-                                        )
-                                    )
-                                },
-                                label = { Text(template) }
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -566,8 +536,8 @@ fun AddWorkoutScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     SectionTitle(
-                        eyebrow = stringResource(R.string.add_workout_plan_templates),
-                        title = stringResource(R.string.template_picker_title)
+                        eyebrow = "",
+                        title = stringResource(R.string.add_workout_choose_training_day)
                     )
                     OutlinedButton(
                         onClick = onRepeatLastWorkout,
@@ -1091,20 +1061,6 @@ private fun WorkoutTemplatePickerContent(
             }
         }
     }
-}
-
-private fun appendTemplateToNote(
-    currentNote: String,
-    template: String
-): String {
-    val trimmed = currentNote.trim()
-    if (trimmed.isBlank()) {
-        return template
-    }
-    if (trimmed.contains(template, ignoreCase = true)) {
-        return trimmed
-    }
-    return "$trimmed | $template"
 }
 
 @Composable

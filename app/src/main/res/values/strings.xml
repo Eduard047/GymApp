@@ -423,7 +423,7 @@
     <string name="action_continue_workout">Continue workout</string>
     <string name="add_workout_active_exercises">Exercises: %1$d</string>
     <string name="add_workout_total_sets">Sets: %1$d</string>
-    <string name="add_workout_plan_templates">Quick session templates</string>
+    <string name="add_workout_choose_training_day">Choose a training day</string>
     <string name="training_settings_title">Training settings</string>
     <string name="training_settings_done">Done</string>
     <string name="training_settings_split">Split</string>
@@ -573,12 +573,6 @@
     <string name="active_workout_all_sets_saved">Saved %1$d remaining sets together.</string>
     <string name="active_workout_all_sets_saved_rest_failed">All sets were saved, but the old rest timer could not be fully stopped.</string>
     <string name="active_workout_change_saved_rest_failed">The change was saved, but the old rest timer could not be fully stopped.</string>
-    <string name="note_template_push">Push day</string>
-    <string name="note_template_pull">Pull day</string>
-    <string name="note_template_legs">Leg day</string>
-    <string name="note_template_upper">Upper body</string>
-    <string name="note_template_lower">Lower body</string>
-    <string name="note_template_deload">Deload</string>
     <string name="label_exercise_name">Exercise name</string>
     <string name="hint_exercise_name">e.g. Bench Press</string>
     <string name="exercise_rename_title">Rename exercise</string>
@@ -638,7 +632,7 @@
     <string name="message_plan_outside_garmin_limits">The workout plan is outside Garmin limits.</string>
     <string name="message_garmin_plan_set_limit">Garmin plans support up to 30 sets.</string>
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ is not ready. Check the connection and try again.</string>
-    <string name="message_no_trusted_garmin_watch">No trusted Garmin watch is paired.</string>
+    <string name="message_no_trusted_garmin_watch">Connect a Garmin watch in Profile → Your watch before syncing a plan.</string>
     <string name="message_garmin_ack_missing">The watch did not confirm the plan. Open GymApp on the watch and try again.</string>
     <string name="message_garmin_sign_in_required">Sign in before syncing with Garmin.</string>
     <string name="message_garmin_account_changed">The active account changed. Try syncing the plan again.</string>
@@ -1369,7 +1363,7 @@
     <string name="push_live_room_closed_body">Open GymApp to view the latest state.</string>
     <string name="activation_edit_plan">Review exercises</string>
     <string name="activation_create_manually">Create manually</string>
-    <string name="today_plan_size">Exercises: %1$d · sets: %2$d</string>
+    <string name="today_plan_size">%1$s · %2$s</string>
     <string name="today_plan_duration">About %1$d min</string>
     <string name="progress_section_overview">Overview</string>
     <string name="progress_section_exercises">Exercises</string>

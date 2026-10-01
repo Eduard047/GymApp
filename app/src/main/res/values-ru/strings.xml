@@ -423,7 +423,7 @@
     <string name="action_continue_workout">Продолжить тренировку</string>
     <string name="add_workout_active_exercises">Упражнений: %1$d</string>
     <string name="add_workout_total_sets">Подходов: %1$d</string>
-    <string name="add_workout_plan_templates">Быстрые шаблоны сессии</string>
+    <string name="add_workout_choose_training_day">Выбери тип тренировки</string>
     <string name="training_settings_title">Настройки тренировок</string>
     <string name="training_settings_done">Готово</string>
     <string name="training_settings_split">Сплит</string>
@@ -583,12 +583,6 @@
     <string name="active_workout_all_sets_saved">Одновременно сохранено подходов: %1$d.</string>
     <string name="active_workout_all_sets_saved_rest_failed">Все подходы сохранены, но старый таймер отдыха не удалось полностью остановить.</string>
     <string name="active_workout_change_saved_rest_failed">Изменение сохранено, но старый таймер отдыха не удалось полностью остановить.</string>
-    <string name="note_template_push">День жима</string>
-    <string name="note_template_pull">День тяги</string>
-    <string name="note_template_legs">День ног</string>
-    <string name="note_template_upper">Верх тела</string>
-    <string name="note_template_lower">Низ тела</string>
-    <string name="note_template_deload">Разгрузка</string>
     <string name="label_exercise_name">Название упражнения</string>
     <string name="hint_exercise_name">например, Жим лежа</string>
     <string name="exercise_rename_title">Переименовать упражнение</string>
@@ -654,7 +648,7 @@
     <string name="message_plan_outside_garmin_limits">План тренировки выходит за ограничения Garmin.</string>
     <string name="message_garmin_plan_set_limit">В плане Garmin может быть не больше 30 подходов.</string>
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ ещё не готов. Проверь подключение и попробуй снова.</string>
-    <string name="message_no_trusted_garmin_watch">Нет подключённых доверенных часов Garmin.</string>
+    <string name="message_no_trusted_garmin_watch">Подключи часы Garmin в Профиле → Твои часы перед синхронизацией плана.</string>
     <string name="message_garmin_ack_missing">Часы не подтвердили план. Открой GymApp на часах и попробуй снова.</string>
     <string name="message_garmin_sign_in_required">Войди в аккаунт перед синхронизацией с Garmin.</string>
     <string name="message_garmin_account_changed">Активный аккаунт изменился. Попробуй синхронизировать план ещё раз.</string>
@@ -1295,7 +1289,7 @@
     <string name="garmin_reset_pairing_description">Очередь тренировок на доверенных часах будет очищена, после чего начнётся новый защищённый период для квитанций. Не отключайте часы.</string>
     <string name="garmin_reset_pairing_confirm">Сбросить привязку</string>
     <string name="garmin_profile_eyebrow">Garmin</string>
-    <string name="garmin_profile_title">Ваши часы</string>
+    <string name="garmin_profile_title">Твои часы</string>
     <string name="garmin_profile_supporting">Текущее состояние подключения из Garmin Connect на этом телефоне.</string>
     <string name="garmin_profile_connected">Сейчас подключено</string>
     <string name="garmin_profile_offline">Сейчас не подключено</string>
@@ -1397,7 +1391,7 @@
     <string name="push_live_room_closed_body">Открой GymApp, чтобы посмотреть состояние.</string>
     <string name="activation_edit_plan">Посмотреть упражнения</string>
     <string name="activation_create_manually">Создать вручную</string>
-    <string name="today_plan_size">Упражнений: %1$d · подходов: %2$d</string>
+    <string name="today_plan_size">%1$s · %2$s</string>
     <string name="today_plan_duration">Около %1$d мин</string>
     <string name="progress_section_overview">Обзор</string>
     <string name="progress_section_exercises">Упражнения</string>

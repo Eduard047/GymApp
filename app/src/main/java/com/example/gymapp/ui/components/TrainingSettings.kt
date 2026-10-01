@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,9 @@ fun TrainingSettingsSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        // The fully expanded sheet is as tall as the edge-to-edge window; keep its top edge below
+        // the status bar. Bottom insets are applied to the content by the sheet itself.
+        modifier = Modifier.statusBarsPadding(),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         Column(

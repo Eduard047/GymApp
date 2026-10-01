@@ -416,19 +416,35 @@ class ActiveWorkoutViewModel(
     private val recordGate = ActiveWorkoutSetRecordGate()
     private val operationState = MutableStateFlow(ActiveWorkoutOperationState())
 
+    /** Last persisted values per pending set, to tell untouched inputs from user edits. */
+    private var lastPersistedInputs: Map<String, ActiveWorkoutInput> = emptyMap()
+
     private val details = repository.observeActiveWorkout()
         .onEach { activeWorkout ->
+            val previousPersisted = lastPersistedInputs
+            val persistedNow = activeWorkout?.exercises
+                .orEmpty()
+                .flatMap { exercise -> exercise.sets }
+                .associate { set ->
+                    set.id to ActiveWorkoutInput(
+                        weight = formatActiveWeight(set.weight),
+                        reps = set.reps.toString()
+                    )
+                }
+            lastPersistedInputs = persistedNow
             inputs.update { current ->
                 activeWorkout?.exercises
                     .orEmpty()
                     .flatMap { exercise -> exercise.sets }
                     .associate { set ->
-                        val persisted = ActiveWorkoutInput(
-                            weight = formatActiveWeight(set.weight),
-                            reps = set.reps.toString()
-                        )
-                        set.id to if (set.completedAt == null) {
-                            current[set.id] ?: persisted
+                        val persisted = persistedNow.getValue(set.id)
+                        val pending = current[set.id]
+                        set.id to if (set.completedAt == null && pending != null &&
+                            pending != previousPersisted[set.id]
+                        ) {
+                            // Unsaved edits win; untouched inputs follow the stored plan, so a
+                            // weight carried over from the previous set shows up immediately.
+                            pending
                         } else {
                             persisted
                         }

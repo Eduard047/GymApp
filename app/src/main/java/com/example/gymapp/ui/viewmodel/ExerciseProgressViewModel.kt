@@ -110,6 +110,35 @@ internal fun progressFrequentExerciseIds(
     limit = limit
 )
 
+/** Most-logged exercise (distinct sessions, then latest session) that exists in [exercises]. */
+internal fun defaultProgressExerciseId(
+    exercises: List<ExerciseEntity>,
+    history: List<ExerciseHistoryEntry>
+): Long? {
+    if (exercises.isEmpty()) return null
+    val knownIds = exercises.mapTo(hashSetOf()) { it.id }
+    val mostLogged = frequentExerciseIds(
+        frequencies = exerciseFrequencyByExercise(history),
+        limit = Int.MAX_VALUE
+    ).firstOrNull { it in knownIds }
+    return mostLogged ?: exercises.first().id
+}
+
+/**
+ * Keeps an explicit pick while it still exists; otherwise falls back to the most-logged exercise
+ * (or the first listed exercise when nothing is logged yet).
+ */
+internal fun resolveProgressExerciseSelection(
+    exercises: List<ExerciseEntity>,
+    history: List<ExerciseHistoryEntry>,
+    currentId: Long?,
+    userPicked: Boolean
+): Long? {
+    if (exercises.isEmpty()) return null
+    if (userPicked && currentId != null && exercises.any { it.id == currentId }) return currentId
+    return defaultProgressExerciseId(exercises, history)
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExerciseProgressViewModel(
     private val repository: GymRepository
@@ -123,6 +152,8 @@ class ExerciseProgressViewModel(
     private val shortDateFormatter = DateTimeFormatter.ofPattern("EEEEE d", locale)
     private val monthOffset = MutableStateFlow(0)
     private val selectedExerciseId = MutableStateFlow<Long?>(null)
+    /** Set once the user picks an exercise, so the most-logged default stops following history. */
+    private var userPickedExercise = false
 
     private val exercises = repository.observeExercises().stateIn(
         scope = viewModelScope,
@@ -216,21 +247,21 @@ class ExerciseProgressViewModel(
 
     init {
         viewModelScope.launch {
-            exercises.collect { list ->
-                if (list.isEmpty()) {
-                    selectedExerciseId.value = null
-                } else {
-                    val current = selectedExerciseId.value
-                    val stillExists = current != null && list.any { it.id == current }
-                    if (!stillExists) {
-                        selectedExerciseId.value = list.first().id
-                    }
-                }
+            combine(exercises, repository.observeAllExerciseHistory()) { list, history ->
+                list to history
+            }.collect { (list, history) ->
+                selectedExerciseId.value = resolveProgressExerciseSelection(
+                    exercises = list,
+                    history = history,
+                    currentId = selectedExerciseId.value,
+                    userPicked = userPickedExercise
+                )
             }
         }
     }
 
     fun selectExercise(exerciseId: Long) {
+        userPickedExercise = true
         selectedExerciseId.value = exerciseId
     }
 

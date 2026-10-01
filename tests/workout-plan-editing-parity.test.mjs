@@ -457,7 +457,7 @@ test("Android exposes direct Start plan plus Edit plan and the canonical editor 
     "SmartCoachPanel(",
     "itemsIndexed(",
     "onClick = when (primaryAction)",
-    "add_workout_plan_templates"
+    "add_workout_choose_training_day"
   ], "Android workout-plan editor");
 
   for (const operation of [

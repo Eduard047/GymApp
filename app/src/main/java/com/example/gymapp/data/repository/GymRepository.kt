@@ -2231,6 +2231,18 @@ class GymRepository(
                     completedAt = completedAt
                 ) == 1
             ) { "Active set changed while recording it." }
+            details.exercises
+                .firstOrNull { exercise -> exercise.sets.any { set -> set.id == setId } }
+                ?.let { exercise ->
+                    ActiveWorkoutWeightCarryOver.target(exercise.sets, setId, weight)
+                }
+                ?.let { next ->
+                    activeWorkoutDao.carryWeightToPendingSet(
+                        setId = next.id,
+                        expectedActiveWorkoutExerciseId = next.activeWorkoutExerciseId,
+                        weight = weight
+                    )
+                }
             RecordActiveWorkoutSetResult.Recorded(revision = expectedRevision + 1L)
         }
         result

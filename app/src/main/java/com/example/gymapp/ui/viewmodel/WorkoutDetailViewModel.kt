@@ -7,9 +7,12 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.LiveCompletedSet
+import com.example.gymapp.data.repository.LivePersonalRecords
 import com.example.gymapp.data.repository.SetDeletionSnapshot
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.defaultContributionsForExercise
@@ -175,32 +178,7 @@ class WorkoutDetailViewModel(
         if (details == null) {
             emptyMap()
         } else {
-            val maxWeightBeforeSessionByExercise = mutableMapOf<Long, Double>()
-            exerciseHistory.forEach { entry ->
-                if (isWorkoutEarlier(
-                        candidateDate = entry.sessionDate,
-                        candidateId = entry.sessionId,
-                        currentDate = details.session.date,
-                        currentId = sessionId
-                    )
-                ) {
-                    val previousMaximum = maxWeightBeforeSessionByExercise[entry.exerciseId]
-                    if (previousMaximum == null || entry.weight > previousMaximum) {
-                        maxWeightBeforeSessionByExercise[entry.exerciseId] = entry.weight
-                    }
-                }
-            }
-            val flags = mutableMapOf<Long, Boolean>()
-            details.workoutExercises.forEach { workoutExercise ->
-                val maxWeightInSession = workoutExercise.sets.maxOfOrNull { it.weight } ?: 0.0
-                val maxWeightBeforeSession =
-                    maxWeightBeforeSessionByExercise[workoutExercise.workoutExercise.exerciseId]
-                flags[workoutExercise.workoutExercise.id] = (
-                    maxWeightInSession > 0.0 &&
-                        (maxWeightBeforeSession == null || maxWeightInSession > maxWeightBeforeSession)
-                    )
-            }
-            flags
+            storedWorkoutPersonalRecordFlags(details, exerciseHistory)
         }
     }
     private val _events = MutableSharedFlow<WorkoutDetailEvent>()
@@ -500,5 +478,58 @@ internal suspend fun persistWorkoutDetailExercise(
         }
     } finally {
         gate.finish(exerciseId)
+    }
+}
+
+/**
+ * Records inside one saved workout, under the same rules as the live badge
+ * ([LivePersonalRecords]): the baseline is the history of strictly earlier workouts, each set is
+ * compared with the better of that baseline and every earlier set of this workout, an exercise
+ * without earlier history never gets a record, a 0 kg set is never a record, and a weight record
+ * must be strictly heavier while an estimated one-rep max must clear the best by a tolerance.
+ * Returns the ids of the record sets.
+ */
+internal fun storedWorkoutPersonalRecordSetIds(
+    details: WorkoutSessionDetails,
+    exerciseHistory: List<ExerciseHistoryEntry>
+): Set<Long> {
+    val priorHistory = exerciseHistory.filter { entry ->
+        isWorkoutEarlier(
+            candidateDate = entry.sessionDate,
+            candidateId = entry.sessionId,
+            currentDate = details.session.date,
+            currentId = details.session.id
+        )
+    }
+    val completed = details.workoutExercises
+        .sortedBy { it.workoutExercise.orderIndex }
+        .flatMapIndexed { exerciseIndex, workoutExercise ->
+            workoutExercise.sets
+                .sortedBy { it.orderIndex }
+                .mapIndexed { setIndex, set ->
+                    LiveCompletedSet(
+                        exerciseId = workoutExercise.workoutExercise.exerciseId,
+                        setId = set.id.toString(),
+                        weight = set.weight,
+                        reps = set.reps,
+                        completedAt = 0L,
+                        exerciseIndex = exerciseIndex,
+                        setIndex = setIndex
+                    )
+                }
+        }
+    return LivePersonalRecords
+        .recordSetIds(completed, LivePersonalRecords.baselines(priorHistory))
+        .mapTo(linkedSetOf()) { it.toLong() }
+}
+
+/** Per workout exercise: whether any of its sets is a record (see [storedWorkoutPersonalRecordSetIds]). */
+internal fun storedWorkoutPersonalRecordFlags(
+    details: WorkoutSessionDetails,
+    exerciseHistory: List<ExerciseHistoryEntry>
+): Map<Long, Boolean> {
+    val recordSetIds = storedWorkoutPersonalRecordSetIds(details, exerciseHistory)
+    return details.workoutExercises.associate { workoutExercise ->
+        workoutExercise.workoutExercise.id to workoutExercise.sets.any { it.id in recordSetIds }
     }
 }

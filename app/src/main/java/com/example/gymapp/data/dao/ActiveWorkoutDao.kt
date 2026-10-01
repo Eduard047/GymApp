@@ -99,6 +99,23 @@ interface ActiveWorkoutDao {
         completedAt: Long
     ): Int
 
+    /** Fills an unplanned (0 kg) pending set with the weight just recorded on its predecessor. */
+    @Query(
+        """
+        UPDATE active_workout_sets
+        SET weight = :weight
+        WHERE id = :setId
+            AND activeWorkoutExerciseId = :expectedActiveWorkoutExerciseId
+            AND completedAt IS NULL
+            AND weight = 0
+        """
+    )
+    suspend fun carryWeightToPendingSet(
+        setId: String,
+        expectedActiveWorkoutExerciseId: String,
+        weight: Double
+    ): Int
+
     @Query(
         """
         UPDATE active_workout_sets

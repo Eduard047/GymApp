@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -2148,6 +2149,7 @@ private fun SetWeightField(
     description: String,
     fontSize: TextUnit
 ) {
+    val focusManager = LocalFocusManager.current
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val primary = MaterialTheme.colorScheme.primary
@@ -2175,7 +2177,11 @@ private fun SetWeightField(
         singleLine = true,
         textStyle = style,
         cursorBrush = SolidColor(primary),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Decimal,
+            imeAction = ImeAction.Done
+        ),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         interactionSource = interaction,
         modifier = Modifier
             .width(fieldWidth)
