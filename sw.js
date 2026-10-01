@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v157";
-// v157 shows store links and a light/dark switch on the sign-in screen; v156 shipped the redesign, in-workout voice logging, and unique workout ids.
+const CACHE_VERSION = "v158";
+// v158 carries the logged weight to the next empty set, fixes saved-workout record badges, and opens Progress on the most-logged exercise; v157 added sign-in store links and a light/dark switch.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -59,10 +59,10 @@ const SHELL_ASSETS = [
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v89.js",
+  "./russian-text.v90.js",
   "./exercise-search-vocabulary.v1.js",
   "./voice-workout.v2.js",
-  "./app.v114.js",
+  "./app.v115.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
