@@ -321,6 +321,11 @@ final class ActiveWorkoutStore: ObservableObject {
             }
             try Self.validate(weight: set.weight, reps: set.reps)
             candidate.exercises[location.exercise].sets[location.set].completedAt = now
+            Self.carryWeightForward(
+                in: &candidate.exercises[location.exercise],
+                after: location.set,
+                recordedWeight: set.weight
+            )
             candidate.undoableSetID = setID
             if let restSeconds {
                 try Self.pauseTiming(
@@ -965,6 +970,24 @@ final class ActiveWorkoutStore: ObservableObject {
         guard (1 ... maximumReps).contains(reps) else {
             throw ActiveWorkoutStoreError.invalidReps
         }
+    }
+
+    /// After a set is recorded, the next unrecorded set of the same exercise that
+    /// still has no planned weight (0) inherits the recorded weight. Reps and any
+    /// non-zero planned weight are never touched; a 0 kg recorded set (bodyweight)
+    /// carries nothing.
+    static func carryWeightForward(
+        in exercise: inout ActiveWorkoutExercise,
+        after setIndex: Int,
+        recordedWeight: Double
+    ) {
+        guard recordedWeight.isFinite, recordedWeight > 0,
+              let nextIndex = exercise.sets.indices.first(where: {
+                  $0 > setIndex && exercise.sets[$0].completedAt == nil
+              }),
+              exercise.sets[nextIndex].weight == 0
+        else { return }
+        exercise.sets[nextIndex].weight = recordedWeight
     }
 
     private static func setLocation(

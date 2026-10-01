@@ -197,6 +197,13 @@ final class VoiceWorkoutCommandParserTest: XCTestCase {
         XCTAssertNil(dispatchTypedCommand(""))
     }
 
+    @MainActor
+    func testTypedCommandPlaceholderIsLocalizedPerLanguage() {
+        XCTAssertEqual(ActiveWorkoutView.voiceCommandPlaceholder(languageCode: "en"), "80 by 8")
+        XCTAssertEqual(ActiveWorkoutView.voiceCommandPlaceholder(languageCode: "uk"), "80 на 8")
+        XCTAssertEqual(ActiveWorkoutView.voiceCommandPlaceholder(languageCode: "ru"), "80 на 8")
+    }
+
     func testTypedSubmissionMapsUnrecognizedTextToUnknown() {
         guard case let .unknown(transcript, code) = dispatchTypedCommand(" bla bla ") else {
             return XCTFail("Expected unknown")

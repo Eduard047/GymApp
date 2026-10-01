@@ -155,6 +155,10 @@ struct ActiveWorkoutView: View {
     /// Mirrors `RecommendationEngine`'s bodyweight-load exercise set (that
     /// table is private to this module), used only to decide whether a
     /// zero-weight "previous" caption still means something ("previous × 8").
+    static func voiceCommandPlaceholder(languageCode: String) -> String {
+        gymText("80 by 8", "80 на 8", "80 на 8", languageCode: languageCode)
+    }
+
     private static let bodyweightCatalogKeys: Set<String> = [
         "push_up", "dips", "pull_up", "plank", "hanging_leg_raise", "band_assisted_pull_up"
     ]
@@ -187,9 +191,27 @@ struct ActiveWorkoutView: View {
         )
     }
 
+    /// The decimal pad has no return key, so a bar docked above the keyboard
+    /// lets the user dismiss it. It rides the keyboard safe area, which also
+    /// keeps the focused set and its Log button in view.
+    private var weightKeyboardDoneBar: some View {
+        HStack {
+            Spacer()
+            Button(gymLocalized("Done")) {
+                focusedWeightSetID = nil
+            }
+            .font(.body.weight(.semibold))
+            .foregroundStyle(GymTheme.primary)
+            .frame(minHeight: 44)
+        }
+        .padding(.horizontal, GymTheme.screenHorizontalInset)
+        .background(.bar)
+    }
+
     var body: some View {
         GymBackground {
             if let draft = currentDraft {
+                ScrollViewReader { scrollProxy in
                 ScrollView {
                     LazyVStack(spacing: GymTheme.contentSpacing) {
                         if liveWorkoutCoordinator.isAttachedToCurrentDraft {
@@ -228,6 +250,24 @@ struct ActiveWorkoutView: View {
                     .padding(.bottom, GymTheme.screenBottomInset)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if focusedWeightSetID != nil {
+                        weightKeyboardDoneBar
+                    }
+                }
+                .onChange(of: focusedWeightSetID) { _, focusedID in
+                    guard let focusedID else { return }
+                    // Once the keyboard and the Done bar have taken their
+                    // space, bring the focused set (and its Log button) into
+                    // view. One non-animated jump per focus change; scrolling
+                    // never alters focus, so this cannot re-trigger itself.
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        guard focusedWeightSetID == focusedID else { return }
+                        scrollProxy.scrollTo(focusedID, anchor: .center)
+                    }
+                }
+                }
             } else {
                 GymContentUnavailableView {
                     Label(
@@ -1608,7 +1648,7 @@ struct ActiveWorkoutView: View {
                 Button {
                     switchVoiceCommandToTyped(set: set)
                 } label: {
-                    Text(gymText("Type instead", "Ввести текстом", "ввести текстом", languageCode: gymCurrentLanguageCode()))
+                    Text(gymText("Type instead", "Ввести текстом", "Ввести текстом", languageCode: gymCurrentLanguageCode()))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(GymTheme.primary)
                 }
@@ -1647,7 +1687,7 @@ struct ActiveWorkoutView: View {
             .accessibilityLabel(gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()))
 
             ZStack(alignment: .trailing) {
-                TextField("80 на 8", text: $voiceCommandFallbackText)
+                TextField(Self.voiceCommandPlaceholder(languageCode: gymCurrentLanguageCode()), text: $voiceCommandFallbackText)
                     .font(.body)
                     .padding(.leading, 14)
                     .padding(.trailing, 44)

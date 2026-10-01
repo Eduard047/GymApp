@@ -984,9 +984,9 @@ struct AddWorkoutView: View {
                 Text(
                     garminCloud.selectedDevice == nil
                         ? gymText(
-                            "Select or pair a Garmin watch in Account settings before syncing a plan.",
-                            "Вибери або під’єднай годинник Garmin у налаштуваннях облікового запису перед синхронізацією плану.",
-                            "Выбери или подключи часы Garmin в настройках аккаунта перед синхронизацией плана.",
+                            "Connect a Garmin watch in Profile → Your watch before syncing a plan.",
+                            "Підключи годинник Garmin у Профілі → Твій годинник перед синхронізацією плану.",
+                            "Подключи часы Garmin в Профиле → Твои часы перед синхронизацией плана.",
                             languageCode: gymCurrentLanguageCode()
                         )
                         : gymText(
@@ -2077,7 +2077,7 @@ struct AddWorkoutView: View {
             return
         }
         guard isCloudAccount, let binding = garminCloud.selectedDevice else {
-            show(gymLocalized("Select or pair a Garmin watch in Account settings before syncing a plan."), error: true)
+            show(gymLocalized("Connect a Garmin watch in Profile → Your watch before syncing a plan."), error: true)
             return
         }
         do {

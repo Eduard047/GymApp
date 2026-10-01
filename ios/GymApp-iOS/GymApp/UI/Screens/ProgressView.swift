@@ -260,6 +260,38 @@ struct ProgressHubView: View {
     }
 }
 
+/// Default exercise for Progress → Exercises: the one with the most logged
+/// sessions, ties broken by the most recent session; falls back to the first
+/// exercise in the sorted list.
+enum ProgressDefaultExercise {
+    static func id(workouts: [WorkoutSession], sortedExercises: [Exercise]) -> UUID? {
+        let known = Set(sortedExercises.map(\.id))
+        var stats: [UUID: (sessions: Int, latest: Date)] = [:]
+        for workout in workouts {
+            var seen = Set<UUID>()
+            for block in workout.exercises where known.contains(block.exerciseID) && !block.sets.isEmpty {
+                guard seen.insert(block.exerciseID).inserted else { continue }
+                let current = stats[block.exerciseID]
+                stats[block.exerciseID] = (
+                    (current?.sessions ?? 0) + 1,
+                    max(current?.latest ?? .distantPast, workout.date)
+                )
+            }
+        }
+        // Walk in sorted order so any remaining tie resolves to the first name.
+        var best: (id: UUID, sessions: Int, latest: Date)?
+        for exercise in sortedExercises {
+            guard let entry = stats[exercise.id] else { continue }
+            if let current = best,
+               (entry.sessions, entry.latest) <= (current.sessions, current.latest) {
+                continue
+            }
+            best = (exercise.id, entry.sessions, entry.latest)
+        }
+        return best?.id ?? sortedExercises.first?.id
+    }
+}
+
 @MainActor
 struct ExerciseProgressView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
@@ -269,6 +301,9 @@ struct ExerciseProgressView: View {
     @State private var referenceDate = Date()
     @State private var monthOffset = 0
     @State private var selectedExerciseID: UUID?
+    /// Set once the user chooses an exercise themselves; until then the
+    /// default (most-logged exercise) may be re-applied as workouts change.
+    @State private var userPickedExercise = false
     @State private var showingExerciseSelector = false
     private let showsHeader: Bool
 
@@ -323,10 +358,17 @@ struct ExerciseProgressView: View {
         .environment(\.locale, appLocale)
         .onAppear(perform: selectDefaultExerciseIfNeeded)
         .onChange(of: store.exercises) { _, _ in selectDefaultExerciseIfNeeded() }
+        .onChange(of: store.workouts) { _, _ in selectDefaultExerciseIfNeeded() }
         .sheet(isPresented: $showingExerciseSelector) {
             ProgressExerciseSelectorSheet(
                 store: store,
-                selectedExerciseID: $selectedExerciseID,
+                selectedExerciseID: Binding(
+                    get: { selectedExerciseID },
+                    set: { newValue in
+                        selectedExerciseID = newValue
+                        userPickedExercise = true
+                    }
+                ),
                 languageCode: languageCode
             )
         }
@@ -861,9 +903,13 @@ struct ExerciseProgressView: View {
         }
         if let selectedExerciseID,
            store.exercises.contains(where: { $0.id == selectedExerciseID }) {
-            return
+            // Keep an explicit pick; re-derive only while the default is in use.
+            guard !userPickedExercise else { return }
         }
-        selectedExerciseID = sortedExercises.first?.id
+        selectedExerciseID = ProgressDefaultExercise.id(
+            workouts: store.workouts,
+            sortedExercises: sortedExercises
+        )
     }
 
     private func formatWeight(_ value: Double) -> String {

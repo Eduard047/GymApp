@@ -23,7 +23,39 @@ struct PersonalRecordBaseline: Equatable, Sendable {
 /// than stored, so undoing a set removes its record as well.
 enum LivePersonalRecords {
     /// Tolerance for comparing estimates computed from different weight/rep pairs.
-    private static let estimateTolerance = 1e-9
+    static let estimateTolerance = 1e-9
+
+    /// Which record kinds one set achieves against the best seen so far. A 0 kg
+    /// set never qualifies. Weight must be strictly greater; the estimate must
+    /// exceed the best by more than `estimateTolerance`.
+    static func evaluate(
+        weight: Double,
+        reps: Int,
+        against best: PersonalRecordBaseline
+    ) -> (weight: Bool, estimatedOneRepMax: Bool) {
+        guard weight > 0 else { return (false, false) }
+        let estimate = GymOneRepMax.estimate(weight: weight, reps: reps)
+        return (
+            weight > best.bestWeight,
+            estimate > best.bestEstimatedOneRepMax + estimateTolerance
+        )
+    }
+
+    /// The running best after a set has been performed.
+    static func advanced(
+        _ best: PersonalRecordBaseline,
+        weight: Double,
+        reps: Int
+    ) -> PersonalRecordBaseline {
+        guard weight > 0 else { return best }
+        return PersonalRecordBaseline(
+            bestWeight: max(best.bestWeight, weight),
+            bestEstimatedOneRepMax: max(
+                best.bestEstimatedOneRepMax,
+                GymOneRepMax.estimate(weight: weight, reps: reps)
+            )
+        )
+    }
 
     static func baselines(history: [ExerciseHistoryEntry]) -> [UUID: PersonalRecordBaseline] {
         Dictionary(grouping: history, by: \.exerciseID).mapValues { entries in
@@ -67,16 +99,11 @@ enum LivePersonalRecords {
         var records = Set<UUID>()
         for entry in completed {
             guard entry.set.weight > 0, let best = bests[entry.exerciseID] else { continue }
-            let estimate = GymOneRepMax.estimate(weight: entry.set.weight, reps: entry.set.reps)
-            let beatsWeight: Bool = entry.set.weight > best.bestWeight
-            let beatsEstimate: Bool = estimate > best.bestEstimatedOneRepMax + estimateTolerance
-            if beatsWeight || beatsEstimate {
+            let result = evaluate(weight: entry.set.weight, reps: entry.set.reps, against: best)
+            if result.weight || result.estimatedOneRepMax {
                 records.insert(entry.set.id)
             }
-            bests[entry.exerciseID] = PersonalRecordBaseline(
-                bestWeight: max(best.bestWeight, entry.set.weight),
-                bestEstimatedOneRepMax: max(best.bestEstimatedOneRepMax, estimate)
-            )
+            bests[entry.exerciseID] = advanced(best, weight: entry.set.weight, reps: entry.set.reps)
         }
         return records
     }

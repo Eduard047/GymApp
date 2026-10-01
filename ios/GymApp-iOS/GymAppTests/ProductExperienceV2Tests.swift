@@ -486,4 +486,59 @@ final class ProductExperienceV2Tests: XCTestCase {
         XCTAssertEqual(restoredAccount.accountStorageKey, "today-cache-a")
         XCTAssertEqual(restoredAccount.heroMetrics.totalWorkouts, 1)
     }
+
+    func testProgressDefaultExercisePrefersMostLoggedThenMostRecent() {
+        let bench = Exercise(name: "Bench")
+        let curl = Exercise(name: "Curl")
+        let squat = Exercise(name: "Squat")
+        let sorted = [bench, curl, squat]
+        let day: TimeInterval = 86_400
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        func workout(_ offset: Int, _ exercises: [Exercise]) -> WorkoutSession {
+            WorkoutSession(
+                date: base.addingTimeInterval(Double(offset) * day),
+                exercises: exercises.map {
+                    WorkoutExercise(exerciseID: $0.id, sets: [WorkoutSet(weight: 20, reps: 10)])
+                }
+            )
+        }
+
+        // Most sessions wins even though it is alphabetically last.
+        XCTAssertEqual(
+            ProgressDefaultExercise.id(
+                workouts: [workout(0, [squat]), workout(1, [squat, bench]), workout(2, [squat])],
+                sortedExercises: sorted
+            ),
+            squat.id
+        )
+        // Equal session counts: the most recently trained exercise wins.
+        XCTAssertEqual(
+            ProgressDefaultExercise.id(
+                workouts: [workout(0, [bench]), workout(1, [curl]), workout(2, [squat]), workout(3, [bench]), workout(4, [curl])],
+                sortedExercises: sorted
+            ),
+            curl.id
+        )
+        // Two blocks of one exercise in a single workout still count as one session.
+        XCTAssertEqual(
+            ProgressDefaultExercise.id(
+                workouts: [
+                    WorkoutSession(
+                        date: base,
+                        exercises: [
+                            WorkoutExercise(exerciseID: squat.id, sets: [WorkoutSet(weight: 20, reps: 5)]),
+                            WorkoutExercise(exerciseID: squat.id, sets: [WorkoutSet(weight: 20, reps: 5)])
+                        ]
+                    ),
+                    workout(1, [bench]),
+                    workout(2, [bench])
+                ],
+                sortedExercises: sorted
+            ),
+            bench.id
+        )
+        // No logged sessions: first in sorted order. No exercises: nil.
+        XCTAssertEqual(ProgressDefaultExercise.id(workouts: [], sortedExercises: sorted), bench.id)
+        XCTAssertNil(ProgressDefaultExercise.id(workouts: [], sortedExercises: []))
+    }
 }

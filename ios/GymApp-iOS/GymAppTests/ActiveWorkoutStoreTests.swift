@@ -1900,6 +1900,91 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         case cleanupWrite
     }
 
+    func testRecordSetCarriesWeightToNextUnrecordedZeroWeightSetOnly() throws {
+        let context = try makeContext(account: "active-weight-carry-zero")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sets = [
+            ActiveWorkoutSet(weight: 60, reps: 8),
+            ActiveWorkoutSet(weight: 0, reps: 10),
+            ActiveWorkoutSet(weight: 0, reps: 12)
+        ]
+        let started = try startSets(context, sets: sets, now: now)
+
+        let recorded = try context.active.recordSet(
+            draftID: started.id,
+            setID: sets[0].id,
+            expectedRevision: started.revision,
+            now: now.addingTimeInterval(30)
+        )
+
+        let result = try XCTUnwrap(recorded.exercises.first).sets
+        XCTAssertEqual(result[1].weight, 60)
+        XCTAssertEqual(result[1].reps, 10)
+        XCTAssertEqual(result[2].weight, 0)
+        XCTAssertEqual(result[2].reps, 12)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(try XCTUnwrap(reopened.draft?.exercises.first).sets[1].weight, 60)
+    }
+
+    func testRecordSetKeepsNonZeroPlannedWeightAndZeroRecordedWeight() throws {
+        let context = try makeContext(account: "active-weight-carry-untouched")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let planned = [
+            ActiveWorkoutSet(weight: 60, reps: 8),
+            ActiveWorkoutSet(weight: 50, reps: 8),
+            ActiveWorkoutSet(weight: 0, reps: 8)
+        ]
+        let started = try startSets(context, sets: planned, now: now)
+        let afterFirst = try context.active.recordSet(
+            draftID: started.id,
+            setID: planned[0].id,
+            expectedRevision: started.revision,
+            now: now.addingTimeInterval(30)
+        )
+        let afterFirstSets = try XCTUnwrap(afterFirst.exercises.first).sets
+        XCTAssertEqual(afterFirstSets[1].weight, 50)
+        XCTAssertEqual(afterFirstSets[2].weight, 0)
+
+        let bodyweight = [
+            ActiveWorkoutSet(weight: 0, reps: 10),
+            ActiveWorkoutSet(weight: 0, reps: 10)
+        ]
+        let bodyweightContext = try makeContext(account: "active-weight-carry-bodyweight")
+        let bodyweightStarted = try startSets(bodyweightContext, sets: bodyweight, now: now)
+        let bodyweightRecorded = try bodyweightContext.active.recordSet(
+            draftID: bodyweightStarted.id,
+            setID: bodyweight[0].id,
+            expectedRevision: bodyweightStarted.revision,
+            now: now.addingTimeInterval(30)
+        )
+        XCTAssertEqual(try XCTUnwrap(bodyweightRecorded.exercises.first).sets[1].weight, 0)
+    }
+
+    private func startSets(
+        _ context: Context,
+        sets: [ActiveWorkoutSet],
+        now: Date
+    ) throws -> ActiveWorkoutDraft {
+        try context.active.start(
+            workoutDate: now,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    exerciseName: context.exercise.name,
+                    exerciseCatalogKey: context.exercise.catalogKey,
+                    sets: sets
+                )
+            ],
+            workoutStore: context.history,
+            now: now
+        )
+    }
+
     private func makeContext(
         account: String,
         envelopeWriter: ((Data, URL) throws -> Void)? = nil

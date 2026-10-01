@@ -1355,18 +1355,18 @@
         }
       }
     },
-    "Select or pair a Garmin watch in Account settings before syncing a plan." : {
+    "Connect a Garmin watch in Profile → Your watch before syncing a plan." : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перед синхронизацией плана выбери или подключи часы Garmin в настройках аккаунта."
+            "value" : "Подключи часы Garmin в Профиле → Твои часы перед синхронизацией плана."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перед синхронізацією плану вибери або підключи годинник Garmin у налаштуваннях акаунта."
+            "value" : "Підключи годинник Garmin у Профілі → Твій годинник перед синхронізацією плану."
           }
         }
       }
@@ -11858,23 +11858,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Обери всі групи м’язів, які тренує цей рух. Порожній вибір використовує автоматичне зіставлення GymApp за назвою."
-          }
-        }
-      }
-    },
-    "Select or pair a Garmin watch in Account settings before queueing a plan." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Перед добавлением плана в очередь выбери или подключи часы Garmin в настройках аккаунта."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Перш ніж додавати план до черги, вибери або підключи годинник Garmin у налаштуваннях акаунта."
           }
         }
       }

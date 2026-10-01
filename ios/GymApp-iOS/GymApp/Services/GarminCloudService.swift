@@ -601,7 +601,7 @@ enum GarminCloudError: LocalizedError {
         case .invalidRequest: return "The Garmin sync request is too large or malformed."
         case .invalidResponse: return "Garmin cloud sync returned an invalid response."
         case .invalidBinding: return "The selected Garmin watch binding is invalid. Select or pair the watch again."
-        case .pairingRequired: return "Select or pair a Garmin watch in Account settings before queueing a plan."
+        case .pairingRequired: return gymLocalized("Connect a Garmin watch in Profile → Your watch before syncing a plan.")
         case .busy: return "Another Garmin operation is already in progress. Try again."
         case .pendingRevocation: return "A previous Garmin pairing is still awaiting secure revocation. Keep the app open and retry."
         case .bindingPersistenceFailed: return "The Garmin watch selection could not be stored securely, so its one-time token was not shown."

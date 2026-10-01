@@ -63,9 +63,9 @@ struct GarminPlanDeliveryPanel: View {
 
     private var message: String {
         if destinations.isEmpty {
-            return gymText("Select or pair a Garmin watch in Account settings before syncing a plan.",
-                "Вибери або під’єднай годинник Garmin у налаштуваннях облікового запису перед синхронізацією плану.",
-                "Выбери или подключи часы Garmin в настройках аккаунта перед синхронизацией плана.", languageCode: gymCurrentLanguageCode())
+            return gymText("Connect a Garmin watch in Profile → Your watch before syncing a plan.",
+                "Підключи годинник Garmin у Профілі → Твій годинник перед синхронізацією плану.",
+                "Подключи часы Garmin в Профиле → Твои часы перед синхронизацией плана.", languageCode: gymCurrentLanguageCode())
         }
         if selected.hasPrefix("phone:"), let status = phone.planDeliveryMessages[String(selected.dropFirst(6))] { return status }
         return gymText("The current edited plan is sent to the selected watch. No workout is saved or started.",

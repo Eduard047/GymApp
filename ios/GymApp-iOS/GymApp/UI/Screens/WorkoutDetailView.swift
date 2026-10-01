@@ -1195,7 +1195,14 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
     }
 }
 
+/// Record labels for a saved workout, using the same rules as the live
+/// workout (`LivePersonalRecords`): per exercise, sets are walked in order
+/// against a running best seeded from earlier workouts only. An exercise with
+/// no earlier history never gets labels, a 0 kg set is never a record, and
+/// matching the best is not a record.
 struct StoredWorkoutPRBaseline: Equatable {
+    /// Best of earlier workouts for the exercise; nil when it has no earlier history.
+    let prior: PersonalRecordBaseline?
     let maxWeight: Double
     let maxEstimatedOneRepMax: Double
 
@@ -1210,38 +1217,43 @@ struct StoredWorkoutPRBaseline: Equatable {
             }
             return entry.workoutID.uuidString < currentWorkoutID.uuidString
         }
-        let eligiblePriorHistory = priorHistory.filter { Self.isEligibleValue($0.weight) }
-        maxWeight = eligiblePriorHistory.lazy
-            .map(\.weight)
-            .max() ?? 0
-        maxEstimatedOneRepMax = eligiblePriorHistory.lazy
-            .map(\.estimatedOneRepMax)
-            .filter(Self.isEligibleValue)
-            .max() ?? 0
+        if priorHistory.isEmpty {
+            prior = nil
+        } else {
+            prior = PersonalRecordBaseline(
+                bestWeight: priorHistory.lazy.map(\.weight).filter(Self.isEligibleValue).max() ?? 0,
+                bestEstimatedOneRepMax: priorHistory.lazy
+                    .map(\.estimatedOneRepMax)
+                    .filter(Self.isEligibleValue)
+                    .max() ?? 0
+            )
+        }
+        maxWeight = prior?.bestWeight ?? 0
+        maxEstimatedOneRepMax = prior?.bestEstimatedOneRepMax ?? 0
     }
 
-    func labels(for set: WorkoutSet) -> [String] {
-        guard Self.isEligibleValue(set.weight) else { return [] }
-        var labels: [String] = []
-        if Self.isPersonalRecord(set.weight, baseline: maxWeight) {
-            labels.append("Weight PR")
+    /// Labels per set id for one exercise block, walking its sets in order.
+    func labelsBySetID(in block: WorkoutExercise) -> [UUID: [String]] {
+        guard var best = prior else { return [:] }
+        var result: [UUID: [String]] = [:]
+        for set in block.sets {
+            guard Self.isEligibleValue(set.weight) else { continue }
+            let evaluation = LivePersonalRecords.evaluate(weight: set.weight, reps: set.reps, against: best)
+            var labels: [String] = []
+            if evaluation.weight { labels.append("Weight PR") }
+            if evaluation.estimatedOneRepMax { labels.append("Estimated 1RM PR") }
+            if !labels.isEmpty { result[set.id] = labels }
+            best = LivePersonalRecords.advanced(best, weight: set.weight, reps: set.reps)
         }
-        if Self.isPersonalRecord(set.estimatedOneRepMax, baseline: maxEstimatedOneRepMax) {
-            labels.append("Estimated 1RM PR")
-        }
-        return labels
+        return result
     }
 
     func containsPersonalRecord(in block: WorkoutExercise) -> Bool {
-        block.sets.contains { !labels(for: $0).isEmpty }
+        !labelsBySetID(in: block).isEmpty
     }
 
     private static func isEligibleValue(_ value: Double) -> Bool {
         value.isFinite && value > 0
-    }
-
-    private static func isPersonalRecord(_ value: Double, baseline: Double) -> Bool {
-        isEligibleValue(value) && value > baseline
     }
 }
 
@@ -2072,6 +2084,7 @@ struct WorkoutDetailView: View {
             block: block,
             personalRecordBaseline: personalRecordBaseline
         )
+        let personalRecordLabels = personalRecordBaseline.labelsBySetID(in: block)
         let isExpanded = expandedExerciseID == block.id
 
         return GymPanel(highlighted: true) {
@@ -2169,7 +2182,7 @@ struct WorkoutDetailView: View {
                             StoredWorkoutSetEditorRow(
                                 set: set,
                                 position: index,
-                                prLabels: personalRecordBaseline.labels(for: set),
+                                prLabels: personalRecordLabels[set.id] ?? [],
                                 lastWeight: store.lastWeight(exerciseID: block.exerciseID, before: workout.date),
                                 onSave: { weight, reps in
                                     guard isEditing, isStoreContextCurrent() else {
@@ -2206,7 +2219,7 @@ struct WorkoutDetailView: View {
                             StoredWorkoutSetSummaryRow(
                                 set: set,
                                 position: index,
-                                prLabels: personalRecordBaseline.labels(for: set)
+                                prLabels: personalRecordLabels[set.id] ?? []
                             )
                         }
                     }
