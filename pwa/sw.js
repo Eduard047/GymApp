@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v158";
-// v158 carries the logged weight to the next empty set, fixes saved-workout record badges, and opens Progress on the most-logged exercise; v157 added sign-in store links and a light/dark switch.
+const CACHE_VERSION = "v159";
+// v159 labels progress chart axes with day and month; v158 carried the logged weight to the next empty set and fixed record badges.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -62,7 +62,7 @@ const SHELL_ASSETS = [
   "./russian-text.v90.js",
   "./exercise-search-vocabulary.v1.js",
   "./voice-workout.v2.js",
-  "./app.v115.js",
+  "./app.v116.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",

@@ -124,7 +124,7 @@ test("all PWA workout, friend, template, record, and progress calendar surfaces 
   assert.match(appSource, /friend-record-row[^\n]+socialDayLabel\(record\.lastWorkoutDay\)/);
   assert.match(appSource, /friend-workout-detail[^\n]+socialDayLabel\(workout\.workoutDay\)/);
   assert.match(appSource, /weekday: "long", day: "numeric", month: "long"/);
-  assert.match(appSource, /weekday: "narrow", day: "numeric"/);
+  assert.match(appSource, /function fmtChartAxisDate\(value\)[\s\S]{0,120}day: "numeric", month: "short"/);
   assert.match(appSource, /workout-date-weekday[^\n]+fmtDate\(draft\.startedAt, \{ weekday: "long" \}\)/);
   assert.match(appSource, /Exported: \$\{fmtDate\(data\.exportedAt, \{[\s\S]{0,180}weekday: "short"/);
 
@@ -133,18 +133,19 @@ test("all PWA workout, friend, template, record, and progress calendar surfaces 
   assert.match(appSource, /workout-date-today[^\n]+Today/);
 });
 
-test("progress chart labels include a localized narrow weekday within the selected month", () => {
+test("progress chart axis labels are day and short month without a weekday initial", () => {
   const sandbox = context();
-  const timestamp = Date.UTC(2026, 7, 13, 12, 0, 0);
+  const timestamp = Date.UTC(2026, 7, 11, 12, 0, 0); // a Tuesday: the old format read "11 T"
+  const expectedLabels = { en: "Aug 11", uk: "11 серп.", ru: "11 авг." };
   for (const [language, locale] of [["en", "en-US"], ["uk", "uk-UA"], ["ru", "ru-RU"]]) {
     const label = vm.runInContext(`(() => {
       state.language = ${JSON.stringify(language)};
       return progressChartPoints([{ session: { startedAt: ${timestamp} }, sets: [{ weight: 40, reps: 8 }] }])[0].label;
     })()`, sandbox);
-    const expected = new Intl.DateTimeFormat(locale, {
-      weekday: "narrow", day: "numeric"
-    }).format(new Date(timestamp));
+    const expected = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" })
+      .format(new Date(timestamp));
     assert.equal(label, expected, language);
+    assert.equal(label, expectedLabels[language], language);
   }
 });
 

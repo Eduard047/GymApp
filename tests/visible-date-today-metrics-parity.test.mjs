@@ -24,7 +24,7 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/live-workout.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v115.js", "utf8"),
+    readFile("pwa/app.v116.js", "utf8"),
     readFile("pwa/styles.v88.css", "utf8"),
     readFile("pwa/russian-text.v90.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
@@ -103,7 +103,8 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
     /DateTimeUtils\.formatDate\(uiState\.startedAt/
   );
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/ExerciseListScreen.kt"), /DateTimeUtils\.formatDate\(sessionTimestamp, locale\)/);
-  assert.match(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /ofPattern\("EEEEE d", locale\)/);
+  assert.match(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /DateTimeUtils\.formatChartAxisDate\(point\.sessionDate, locale, zoneId\)/);
+  assert.doesNotMatch(source("app/src/main/java/com/example/gymapp/ui/viewmodel/ExerciseProgressViewModel.kt"), /EEEEE/);
   assert.match(source("app/src/main/java/com/example/gymapp/ui/screens/AccountSettingsSheet.kt"), /DateFormat\.getDateTimeInstance/);
 
   for (const path of [
@@ -122,7 +123,11 @@ test("native visible date surfaces use weekday formatters and preserve explicit 
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/AddWorkoutView.swift"), /gymFormattedWeekday\(date\)/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/WorkoutDetailView.swift"), /gymFormattedWeekday\(date\)/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/LeaderboardView.swift"), /\.weekday\(\.abbreviated\)/);
-  assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift"), /\.weekday\(\.narrow\)\.day\(\)/);
+  // Progress chart x-axis labels: "MMM d" style (no narrow weekday) in the in-app language.
+  const iosProgressSource = source("ios/GymApp-iOS/GymApp/UI/Screens/ProgressView.swift");
+  assert.match(iosProgressSource, /AxisValueLabel\(format: \.dateTime\.month\(\.abbreviated\)\.day\(\)\)/);
+  assert.doesNotMatch(iosProgressSource, /\.weekday\(\.narrow\)\.day\(\)/);
+  assert.match(iosProgressSource, /\.frame\(minHeight: 210\)\s*\.environment\(\\\.locale, locale\)/);
   assert.match(source("ios/GymApp-iOS/GymApp/UI/Screens/AccountSettingsView.swift"), /gymFormattedTimestamp\(/);
   assert.match(source("ios/GymApp-iOS/GymApp/Services/ExportService.swift"), /gymFormattedTimestamp\(/);
   // DESIGN.md "Active workout": the hero no longer shows a "Started at"
@@ -238,7 +243,8 @@ test("Today completion and unified training history have one local-calendar cont
 test("PWA date and Today helpers implement the shared localized, history-only contract", () => {
   assert.match(pwaApp, /const DEFAULT_CALENDAR_DATE_OPTIONS = Object\.freeze\(\{[\s\S]*weekday: "short"/);
   assert.match(pwaApp, /function socialDayLabel\(day\)[\s\S]*weekday: "short"[\s\S]*timeZone: "UTC"/);
-  assert.match(pwaApp, /weekday: "narrow", day: "numeric"/);
+  assert.match(pwaApp, /function fmtChartAxisDate\(value\)[\s\S]{0,120}day: "numeric", month: "short"/);
+  assert.doesNotMatch(pwaApp, /weekday: "narrow", day: "numeric"/);
   assert.match(pwaApp, /workout-date-weekday[^\n]+fmtDate\(draft\.startedAt, \{ weekday: "long" \}\)/);
   assert.match(pwaApp, /function todayPlanDashboardMetrics\(\)[\s\S]*session\.sets\.length > 0[\s\S]*totalWorkouts:[\s\S]*weeklyStreak:[\s\S]*totalVolume:/);
   assert.match(pwaApp, /function boundedTodayMetric\(value, maximum\)[\s\S]*Number\.isFinite\(numeric\)/);
@@ -259,18 +265,18 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v115.js",
+    appBundle: "app.v116.js",
     styleBundle: "styles.v88.css",
     russianBundle: "russian-text.v90.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v158"
+    serviceWorkerCache: "gym-pwa-v159"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v115\.js"/);
+  assert.match(pwaIndex, /src="\.\/app\.v116\.js"/);
   assert.match(pwaIndex, /href="\.\/styles\.v88\.css"/);
   assert.match(pwaIndex, /src="\.\/russian-text\.v90\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v158"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v115\.js"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v159"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v116\.js"/);
   assert.match(pwaServiceWorker, /"\.\/styles\.v88\.css"/);
   assert.match(pwaServiceWorker, /"\.\/russian-text\.v90\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
