@@ -766,7 +766,7 @@ test("post-workout summary shows the iOS hero, records, badges, and actions", ()
 });
 
 test("summary feedback chips stay one row of three equal columns and stack only on very narrow screens", () => {
-  const rule = selector => stylesSource.match(new RegExp(`${selector.replace(/[.[\]]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] || "";
+  const rule = selector => stylesSource.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] || "";
   assert.match(rule(".segmented.workout-feedback-options"), /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   const button = rule(".segmented.workout-feedback-options button");
   assert.match(button, /min-height:\s*44px/);

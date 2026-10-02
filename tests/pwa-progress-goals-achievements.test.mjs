@@ -61,10 +61,11 @@ function context() {
 
 function progressPanel(language, withSessions) {
   const sandbox = context();
+  sandbox.__testLanguage = language;
   return vm.runInContext(`(() => {
     state = {
       ...defaultAppState(),
-      language: ${JSON.stringify(language)},
+      language: __testLanguage,
       exercises: [{ id: 1, name: "Bench Press" }],
       mappings: {},
       progressExerciseId: 1,
@@ -79,7 +80,8 @@ function progressPanel(language, withSessions) {
 
 function run(language, code) {
   const sandbox = context();
-  return vm.runInContext(`(() => { state = { ...defaultAppState(), language: ${JSON.stringify(language)} }; ${code} })()`, sandbox);
+  sandbox.__testLanguage = language;
+  return vm.runInContext(`(() => { state = { ...defaultAppState(), language: __testLanguage }; ${code} })()`, sandbox);
 }
 
 test("X1 exercise progress uses the inline month navigator and the card switcher is gone", () => {

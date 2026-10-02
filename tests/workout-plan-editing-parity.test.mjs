@@ -1076,9 +1076,9 @@ test("Android exercise card matches the iOS compact set rows and single actions 
     ["editor_add_set_short", "+ Set", "+ Підхід", "+ Подход"],
     ["editor_replace_with_similar", "Replace with similar", "Замінити схожою", "Заменить похожим"]
   ]) {
-    assert.match(androidEnglish, new RegExp(`name="${key}">${en.replace(/[.+]/g, "\\$&")}<`));
-    assert.match(androidUkrainian, new RegExp(`name="${key}">${uk.replace(/[.+]/g, "\\$&")}<`));
-    assert.match(androidRussian, new RegExp(`name="${key}">${ru.replace(/[.+]/g, "\\$&")}<`));
+    assert.match(androidEnglish, new RegExp(`name="${key}">${en.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<`));
+    assert.match(androidUkrainian, new RegExp(`name="${key}">${uk.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<`));
+    assert.match(androidRussian, new RegExp(`name="${key}">${ru.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<`));
   }
   assert.match(androidEditorViewModel, /fun copyPreviousSet\([\s\S]*fun addWeightToSet\([\s\S]*fun duplicateSet\(/);
 });
