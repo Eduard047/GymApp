@@ -654,7 +654,10 @@ struct ProfileView: View {
                             status: device.connected
                                 ? gymText("Connected now", "Зараз підключено", "Подключены сейчас", languageCode: languageCode)
                                 : gymText("Not connected now", "Зараз не підключено", "Сейчас не подключены", languageCode: languageCode),
-                            connected: device.connected
+                            connected: device.connected,
+                            note: device.lite
+                                ? GarminPhoneSyncProtocol.liteWatchMessage(languageCode: languageCode)
+                                : nil
                         )
                     }
                     if garminPhoneSync.devices.isEmpty, let device = selectedCloudDevice {
@@ -681,7 +684,8 @@ struct ProfileView: View {
         name: String,
         detail: String,
         status: String,
-        connected: Bool
+        connected: Bool,
+        note: String? = nil
     ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "applewatch")
@@ -699,6 +703,12 @@ struct ProfileView: View {
                 Text(status)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
+                if let note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 4)
         }

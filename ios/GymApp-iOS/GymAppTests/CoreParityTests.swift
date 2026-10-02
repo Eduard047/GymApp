@@ -17484,6 +17484,179 @@ final class CoreParityTests: XCTestCase {
         XCTAssertNil(try freshStore.load(account: account.storageKey, binding: binding))
     }
 
+    func testGarminLiteWatchMarkersBindingOnlyPayloadAndNonLiteUnchanged() throws {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        func request(version: String?) -> [String: Any] {
+            var message: [String: Any] = [
+                "type": "request_sync",
+                "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+                "requestId": "request-11111111-2222-3333-4444-555555555555",
+                "accountBinding": binding.account,
+                "deviceBinding": binding.device,
+                "pairingGeneration": binding.pairingGeneration,
+                "status": "SYNC REQ"
+            ]
+            if let version { message["watchVersion"] = version }
+            return message
+        }
+        let liteClaim = try XCTUnwrap(GarminPhoneSyncProtocol.syncRequestClaim(
+            request(version: "2026.09.01.1200-lite"), sourceDeviceBinding: binding.device))
+        XCTAssertTrue(liteClaim.lite)
+        for version in [String?.none, "2026.08.01.1232", "lite", "2026-lite.1"] {
+            let claim = try XCTUnwrap(GarminPhoneSyncProtocol.syncRequestClaim(
+                request(version: version), sourceDeviceBinding: binding.device))
+            XCTAssertFalse(claim.lite, "version \(version ?? "nil") must not be lite")
+        }
+
+        let plan = [NamedWorkoutSetDraft(exerciseName: "Squat", weight: 100, reps: 5)]
+        let full = try XCTUnwrap(GarminPhoneSyncProtocol.syncPayload(
+            binding: binding, syncID: "sync-11111111-2222-3333", revision: 7, language: "en",
+            exercises: ["Squat", "Bench"], resetWorkout: false, plan: plan))
+        XCTAssertEqual(full["planNames"] as? [String], ["Squat"])
+        XCTAssertEqual(full["exercises"] as? [String], ["Squat", "Bench"])
+
+        let lite = try XCTUnwrap(GarminPhoneSyncProtocol.syncPayload(
+            binding: binding, syncID: "sync-11111111-2222-3333", revision: 7, language: "en",
+            exercises: ["Squat", "Bench"], resetWorkout: false, plan: plan, bindingOnly: true))
+        XCTAssertEqual(lite["planNames"] as? [String], [])
+        XCTAssertEqual(lite["planWeights"] as? [Double], [])
+        XCTAssertEqual(lite["planReps"] as? [Int], [])
+        XCTAssertNil(lite["exercises"])
+        // Everything except the plan columns and the catalog is identical.
+        var comparableFull = full
+        for key in ["planNames", "planWeights", "planReps", "exercises"] { comparableFull[key] = nil }
+        var comparableLite = lite
+        for key in ["planNames", "planWeights", "planReps"] { comparableLite[key] = nil }
+        XCTAssertEqual(NSDictionary(dictionary: comparableLite), NSDictionary(dictionary: comparableFull))
+        XCTAssertEqual(lite["type"] as? String, "sync")
+        XCTAssertEqual(lite["accountBinding"] as? String, binding.account)
+        XCTAssertEqual(lite["resetWorkout"] as? Bool, false)
+
+        let liteReset = try XCTUnwrap(GarminPhoneSyncProtocol.syncPayload(
+            binding: binding, syncID: "sync-11111111-2222-3333", revision: 8, language: "uk",
+            exercises: [], resetWorkout: true, bindingOnly: true))
+        XCTAssertEqual(liteReset["resetWorkout"] as? Bool, true)
+        XCTAssertNil(liteReset["exercises"])
+
+        let ack: [String: Any] = [
+            "type": "sync_ack", "lite": 1, "applied": true
+        ]
+        XCTAssertTrue(GarminPhoneSyncProtocol.acknowledgementIsLite(ack))
+        XCTAssertFalse(GarminPhoneSyncProtocol.acknowledgementIsLite(ack.merging(["lite": 0]) { _, v in v }))
+        XCTAssertFalse(GarminPhoneSyncProtocol.acknowledgementIsLite(ack.merging(["lite": true]) { _, v in v }))
+        XCTAssertFalse(GarminPhoneSyncProtocol.acknowledgementIsLite(ack.merging(["lite": "1"]) { _, v in v }))
+        XCTAssertFalse(GarminPhoneSyncProtocol.acknowledgementIsLite(["type": "sync_ack", "applied": true]))
+    }
+
+    func testGarminLiteWatchFromRequestSyncGetsBindingOnlySyncAndNoPlan() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-lite-request")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000212", displayName: "Lite request")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "phone-lite-request-workouts"))
+        _ = try store.addExercise(name: "Catalog exercise")
+        let directory = try temporaryDirectory(named: "phone-lite-request-deliveries")
+        let planStore = GarminPhonePlanStore(root: directory)
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555556")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Instinct 2", friendlyName: "Lite watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .notConnected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport, planStore: planStore)
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        XCTAssertEqual(service.devices.first?.lite, false)
+        // A plan saved before the watch identified itself must not be sent to it afterwards.
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Plan test",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Squat", sets: [.init(weight: 52.5, reps: 9, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        transport.statuses[id] = .connected
+        service.deviceStatusChanged(device, status: .connected)
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        var request = syncRequest(claiming: transport.sent[0].message)
+        request["watchVersion"] = "2026.09.01.1200-lite"
+        service.receivedMessage(request, from: transport.sent[0].app)
+        let resent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(resent)
+        XCTAssertEqual(service.devices.first?.lite, true)
+        let handshake = transport.sent[1].message
+        XCTAssertEqual(handshake["resetWorkout"] as? Bool, true)
+        XCTAssertEqual(handshake["planNames"] as? [String], [])
+        XCTAssertNil(handshake["exercises"])
+        service.receivedMessage(syncAcknowledgement(for: handshake), from: transport.sent[1].app)
+        let followUp = await waitUntil { transport.sent.count == 3 }
+        XCTAssertTrue(followUp)
+        let binding = transport.sent[2].message
+        XCTAssertEqual(binding["planNames"] as? [String], [])
+        XCTAssertEqual(binding["planWeights"] as? [Double], [])
+        XCTAssertEqual(binding["planReps"] as? [Int], [])
+        XCTAssertNil(binding["exercises"])
+        XCTAssertEqual(binding["accountBinding"] as? String, handshake["accountBinding"] as? String)
+        XCTAssertEqual(binding["pairingGeneration"] as? String, handshake["pairingGeneration"] as? String)
+        // The lite mark is not shown as a delivered plan.
+        XCTAssertNotEqual(service.planDeliveryMessages[id.uuidString.lowercased()],
+            gymText("Plan received by the watch.", "Годинник отримав план.", "Часы получили план.",
+                languageCode: gymCurrentLanguageCode()))
+    }
+
+    func testGarminLiteAcknowledgementMarksWatchAndPlanDeliveryIsRefused() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-lite-ack")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000213", displayName: "Lite ack")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "phone-lite-ack-workouts"))
+        _ = try store.addExercise(name: "Catalog exercise")
+        let directory = try temporaryDirectory(named: "phone-lite-ack-deliveries")
+        let planStore = GarminPhonePlanStore(root: directory)
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555557")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Instinct 2S", friendlyName: "Lite ack watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .connected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport, planStore: planStore)
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        XCTAssertEqual(service.devices.first?.lite, false)
+        var ack = syncAcknowledgement(for: transport.sent[0].message)
+        ack["lite"] = 1
+        service.receivedMessage(ack, from: transport.sent[0].app)
+        let followUp = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(followUp)
+        XCTAssertEqual(service.devices.first?.lite, true)
+        XCTAssertNil(transport.sent[1].message["exercises"])
+        XCTAssertEqual(transport.sent[1].message["planNames"] as? [String], [])
+
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Plan test",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Squat", sets: [.init(weight: 52.5, reps: 9, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(transport.sent.count, 2, "no plan may be sent to a lite watch")
+        XCTAssertEqual(service.planDeliveryMessages[id.uuidString.lowercased()],
+            GarminPhoneSyncProtocol.liteWatchMessage(languageCode: gymCurrentLanguageCode()))
+        let binding = GarminPhoneBinding(
+            account: try XCTUnwrap(transport.sent[1].message["accountBinding"] as? String),
+            device: try XCTUnwrap(transport.sent[1].message["deviceBinding"] as? String),
+            pairingGeneration: try XCTUnwrap(transport.sent[1].message["pairingGeneration"] as? String))
+        XCTAssertNil(try planStore.load(account: account.storageKey, binding: binding))
+        XCTAssertTrue(GarminPhoneSyncProtocol.liteWatchMessage(languageCode: "uk").contains("вільні тренування"))
+        XCTAssertTrue(GarminPhoneSyncProtocol.liteWatchMessage(languageCode: "ru").contains("свободные тренировки"))
+        XCTAssertEqual(GarminPhoneSyncProtocol.liteWatchMessage(languageCode: "en"),
+            "This watch supports free workouts only. Plans stay on your phone.")
+    }
+
     private func syncAcknowledgement(for message: [String: Any]) -> [String: Any] {
         [
             "type": "sync_ack",

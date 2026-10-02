@@ -9,6 +9,8 @@ struct GarminPhoneDeviceSummary: Identifiable, Equatable {
     let name: String
     let model: String
     let connected: Bool
+    /// 96 KiB watches record free workouts only and never receive plans.
+    var lite: Bool = false
 }
 
 struct GarminPhoneBinding: Codable, Equatable {
@@ -36,6 +38,8 @@ struct GarminPhoneSyncRequestClaim: Equatable {
     let account: String
     let device: String
     let pairingGeneration: String?
+    /// True when `watchVersion` ends with the lite-profile suffix.
+    var lite: Bool = false
 }
 
 private struct GarminPhoneDeviceHandshakeMarker: Codable, Equatable {
@@ -57,6 +61,20 @@ private struct GarminPhoneResetAuthorization: Codable, Equatable {
 enum GarminPhoneSyncProtocol {
     static let maximumSyncRevision: Int64 = 9_007_199_254_740_991
     static let maximumMessageEntries = 16
+    static let liteVersionSuffix = "-lite"
+
+    static func isLiteWatchVersion(_ version: String) -> Bool {
+        version.hasSuffix(liteVersionSuffix)
+    }
+
+    static func liteWatchMessage(languageCode: String) -> String {
+        gymText(
+            "This watch supports free workouts only. Plans stay on your phone.",
+            "Цей годинник підтримує лише вільні тренування. Плани залишаються на телефоні.",
+            "Эти часы поддерживают только свободные тренировки. Планы остаются на телефоне.",
+            languageCode: languageCode
+        )
+    }
 
     static func nextRevision(lastRevision: Int64?, nowMilliseconds: Int64) -> Int64? {
         guard nowMilliseconds > 0,
@@ -102,8 +120,13 @@ enum GarminPhoneSyncProtocol {
         exercises: [String],
         resetWorkout: Bool,
         repairPairing: Bool = false,
-        plan: [NamedWorkoutSetDraft] = []
+        plan: [NamedWorkoutSetDraft] = [],
+        bindingOnly: Bool = false
     ) -> [String: Any]? {
+        // A lite watch gets the binding fields only: empty plan arrays and no
+        // exercise catalog, so the payload it must deserialize stays tiny.
+        let exercises = bindingOnly ? [] : exercises
+        let plan = bindingOnly ? [] : plan
         guard binding.account.isGarminBinding,
               binding.device.utf8.count <= 128,
               !binding.device.isEmpty,
@@ -156,9 +179,9 @@ enum GarminPhoneSyncProtocol {
             "language": language,
             "planNames": validPlan.map(\.exerciseName),
             "planWeights": validPlan.map(\.weight),
-            "planReps": validPlan.map(\.reps),
-            "exercises": boundedExercises
+            "planReps": validPlan.map(\.reps)
         ]
+        if !bindingOnly { payload["exercises"] = boundedExercises }
         if repairPairing {
             payload["repairPairing"] = true
         } else {
@@ -234,11 +257,13 @@ enum GarminPhoneSyncProtocol {
            boolean(supported) == nil {
             return nil
         }
+        var lite = false
         if let rawVersion = message["watchVersion"] {
             guard let version = rawVersion as? String,
                   version.utf8.count <= 64 else {
                 return nil
             }
+            lite = isLiteWatchVersion(version)
         }
         if let rawStatus = message["status"] {
             guard let status = rawStatus as? String,
@@ -249,8 +274,16 @@ enum GarminPhoneSyncProtocol {
         return GarminPhoneSyncRequestClaim(
             account: account,
             device: device,
-            pairingGeneration: generation
+            pairingGeneration: generation,
+            lite: lite
         )
+    }
+
+    /// `lite: 1` is an additive key on every acknowledgement of a lite watch.
+    /// Call it only for an acknowledgement that already passed `acknowledgementMatches`.
+    static func acknowledgementIsLite(_ rawMessage: Any) -> Bool {
+        guard let message = dictionary(rawMessage) else { return false }
+        return integer(message["lite"]) == 1
     }
 
     static func acknowledgementMatches(
@@ -1811,6 +1844,12 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
               let store = readyWorkoutStore(), let account = activeStorageKey else {
             throw GarminCloudError.invalidBinding
         }
+        if isLiteWatch(deviceBinding: binding.device) {
+            // A lite watch cannot hold a plan: save nothing, send nothing, claim nothing.
+            planDeliveryMessages[binding.device] = GarminPhoneSyncProtocol.liteWatchMessage(
+                languageCode: normalizedLanguage(gymCurrentLanguageCode(defaults: defaults)))
+            return
+        }
         let sets = plan.exercises.flatMap { exercise in
             exercise.sets.map { NamedWorkoutSetDraft(exerciseName: exercise.name, weight: $0.weight, reps: $0.reps) }
         }
@@ -1991,7 +2030,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                     id: (device.uuid as UUID).uuidString.lowercased(),
                     name: device.friendlyName,
                     model: device.modelName,
-                    connected: connected
+                    connected: connected,
+                    lite: isLiteWatch(deviceBinding: (device.uuid as UUID).uuidString.lowercased())
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -2144,8 +2184,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             transition = pending
         }
 
+        let lite = isLiteWatch(deviceBinding: binding.device)
         var delivery: GarminPhonePlanDelivery?
-        if transition == nil, let account = activeStorageKey {
+        if transition == nil, !lite, let account = activeStorageKey {
             do {
                 if let cached = try planStore.load(account: account, binding: binding) {
                     guard let catalog = GarminPhoneSyncProtocol.exerciseCatalog(
@@ -2192,7 +2233,8 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
             exercises: transition?.exercises ?? delivery?.exercises ?? currentExercises,
             resetWorkout: transition?.handshake == .reset,
             repairPairing: transition?.handshake == .repair,
-            plan: delivery?.sets ?? []
+            plan: delivery?.sets ?? [],
+            bindingOnly: lite
         ) else {
             syncInFlight.removeValue(forKey: deviceID)
             publishStatus("The Garmin sync payload is outside the supported limits.", isError: true)
@@ -2269,6 +2311,9 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                   expected: pending,
                   sourceDeviceBinding: (app.device.uuid as UUID).uuidString.lowercased()
            ) {
+            if GarminPhoneSyncProtocol.acknowledgementIsLite(rawMessage) {
+                markLiteWatch(deviceBinding: binding.device)
+            }
             guard confirmBinding(binding) else {
                 publishStatus("The Garmin account binding could not be stored safely.", isError: true)
                 return
@@ -2284,6 +2329,11 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
                   GarminPhoneSyncProtocol.acknowledgementMatches(rawMessage,
                     binding: binding, syncID: delivery.syncID, revision: delivery.revision,
                     sourceDeviceBinding: (app.device.uuid as UUID).uuidString.lowercased()) else { return }
+            if GarminPhoneSyncProtocol.acknowledgementIsLite(rawMessage) {
+                // A lite watch never holds a plan: do not record or announce delivery.
+                markLiteWatch(deviceBinding: binding.device)
+                return
+            }
             delivery.acknowledged = true
             try planStore.save(delivery, account: account)
             cancelSyncAttempt(deviceID: app.device.uuid as UUID)
@@ -2304,6 +2354,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
               ) else {
             return
         }
+        if claim.lite { markLiteWatch(deviceBinding: claim.device) }
 
         if claim.account != binding.account {
             guard let claimedGeneration = claim.pairingGeneration,
@@ -2389,6 +2440,24 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         }
         cancelSyncAttempt(deviceID: app.device.uuid as UUID)
         sendSync(to: app)
+    }
+
+    private func liteWatchKey(deviceBinding: String) -> String {
+        "garmin-phone-lite-watch.v1.\(Data(deviceBinding.utf8).garminSHA256Hex)"
+    }
+
+    private func isLiteWatch(deviceBinding: String) -> Bool {
+        defaults.bool(forKey: liteWatchKey(deviceBinding: deviceBinding))
+    }
+
+    /// The lite tier is a hardware property of the watch, so the mark is sticky.
+    private func markLiteWatch(deviceBinding: String) {
+        guard !isLiteWatch(deviceBinding: deviceBinding) else { return }
+        let key = liteWatchKey(deviceBinding: deviceBinding)
+        defaults.set(true, forKey: key)
+        if let storageKey = activeStorageKey { rememberStateKey(key, storageKey: storageKey) }
+        planDeliveryMessages.removeValue(forKey: deviceBinding)
+        refreshDeviceSummaries()
     }
 
     private func cancelSyncAttempt(deviceID: UUID) {

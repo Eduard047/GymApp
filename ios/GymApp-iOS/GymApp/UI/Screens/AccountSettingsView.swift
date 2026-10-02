@@ -841,6 +841,13 @@ private struct GarminSettingsCard: View {
                                     Text(device.model)
                                         .font(.caption)
                                         .foregroundStyle(GymTheme.textSecondary)
+                                    if device.lite {
+                                        Text(GarminPhoneSyncProtocol.liteWatchMessage(
+                                            languageCode: gymCurrentLanguageCode()))
+                                            .font(.caption)
+                                            .foregroundStyle(GymTheme.textSecondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
                                 }
                                 Spacer()
                                 Text(device.connected ? "Connected" : "Offline")

@@ -29,6 +29,13 @@ struct GarminPlanDeliveryPanel: View {
 
     private var ids: [String] { destinations.map(\.id) }
 
+    /// Lite watches (96 KiB tier) record free workouts only; plans never go to them.
+    private var selectedIsLite: Bool {
+        guard selected.hasPrefix("phone:") else { return false }
+        let id = String(selected.dropFirst(6))
+        return phone.devices.first(where: { $0.id == id })?.lite == true
+    }
+
     var body: some View {
         GymPanel {
             VStack(alignment: .leading, spacing: 10) {
@@ -49,7 +56,7 @@ struct GarminPlanDeliveryPanel: View {
                         languageCode: gymCurrentLanguageCode()), systemImage: "applewatch.radiowaves.left.and.right")
                 }
                 .buttonStyle(GymSecondaryButtonStyle())
-                .disabled(isEmpty || cloud.isWorking || !ids.contains(selected))
+                .disabled(isEmpty || cloud.isWorking || !ids.contains(selected) || selectedIsLite)
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
@@ -67,6 +74,7 @@ struct GarminPlanDeliveryPanel: View {
                 "Підключи годинник Garmin у Профілі → Твій годинник перед синхронізацією плану.",
                 "Подключи часы Garmin в Профиле → Твои часы перед синхронизацией плана.", languageCode: gymCurrentLanguageCode())
         }
+        if selectedIsLite { return GarminPhoneSyncProtocol.liteWatchMessage(languageCode: gymCurrentLanguageCode()) }
         if selected.hasPrefix("phone:"), let status = phone.planDeliveryMessages[String(selected.dropFirst(6))] { return status }
         return gymText("The current edited plan is sent to the selected watch. No workout is saved or started.",
             "Поточний відредагований план буде надіслано на вибраний годинник. Тренування не буде збережено чи розпочато.",
