@@ -383,7 +383,7 @@ class GymPendingJournal {
     static function begin(metadata) {
         staged = null; nextName = 0; stagedTotals = null; stagedIntervalMode = 0;
         if (!(metadata instanceof Lang.Dictionary) && !(metadata instanceof Lang.Array)) { return -1; }
-        if (!readable || GymStore.pendingCount() >= 8 ||
+        if (!readable || GymStore.pendingCount() >= GymStore.queueLimit ||
             !GymStore.hasPreparedWorkout() || (!GymStore.preparedWorkoutFitSaved() &&
                 !GymSession.fitOutcomeUnknownAfterRestart())) { return -1; }
         var header = GymActiveJournal.snapshot();
@@ -470,7 +470,7 @@ class GymPendingJournal {
                 if (!addInterval(staged, stagedTotals, value[4])) { staged = null; return -1; }
                 var name = GymStore.exercises[value[1]];
                 var bytes = GymStore.utf8Bytes(name).size();
-                if (staged[2] + bytes + totalNameBytes() > 12000) { staged = null; return -1; }
+                if (staged[2] + bytes + totalNameBytes() > GymStore.queueNameBudget) { staged = null; return -1; }
                 Storage.setValue(nameKey(staged[1][6], value[1]), [value[0], value[1], name]);
                 staged[2] += bytes; nextName += 1;
                 return 0;

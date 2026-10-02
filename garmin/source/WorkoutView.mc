@@ -74,6 +74,7 @@ class WorkoutView extends Ui.View {
 
     // Negative phases serialize set actions after native sensor buffers leave
     // the input callback; positive phases keep the existing workout save flow.
+    (:richWorkoutMode)
     function changeSet(action) {
         saveStage = action;
         if (GymWorkoutMode.recordingSetLimit == 30) {
@@ -116,22 +117,6 @@ class WorkoutView extends Ui.View {
             autoPromptWasActive = GymSession.autoLogPrompt;
             Attention.vibrate([new Attention.VibeProfile(45, 90), new Attention.VibeProfile(45, 90)]);
         }
-    }
-
-    // 96 KiB devices expose explicit set entry only; undo is omitted to keep
-    // the constrained profile's durable commit path small.
-    (:compactWorkoutMode96)
-    function continueSetAction() {
-        var action = saveStage;
-        saveStage = 0;
-        if (!GymWorkoutMode.allowsDetailedTracking()) { return; }
-        if (action == -1) {
-            if (GymStore.addSet()) {
-                GymStore.clearTransientSetActions();
-                Attention.vibrate([new Attention.VibeProfile(60, 150)]);
-            }
-        }
-        Ui.requestUpdate();
     }
 
     function initialize() {
@@ -198,10 +183,6 @@ class WorkoutView extends Ui.View {
 
     (:compactWorkoutMode96)
     function onShow() {
-        if (saveStage < 0) {
-            ticker.start(method(:continueSetAction), 50, false);
-            return;
-        }
         ticker.start(method(:tick), 1000, true);
         if (GymStore.hasPreparedWorkout()) {
             page = 3;
@@ -417,10 +398,6 @@ class WorkoutView extends Ui.View {
 
     (:compactWorkoutMode96)
     function tick() {
-        if (saveStage < 0) {
-            continueSetAction();
-            return;
-        }
         if (saveStage > 0) {
             continueSaving();
             return;
@@ -439,17 +416,11 @@ class WorkoutView extends Ui.View {
         }
         if (GymSession.paused) { return; }
         GymSession.tick();
-        var rest = GymStore.restSeconds();
-        var activeRest = rest > 0;
-        if (restWasActive && !activeRest) {
-            Attention.vibrate([new Attention.VibeProfile(100, 500), new Attention.VibeProfile(100, 500)]);
-            GymStore.status = GymStatus.REST_DONE;
-        }
-        restWasActive = activeRest;
         GymStore.checkpointLiveWorkout(false);
         Ui.requestUpdate();
     }
 
+    (:richWorkoutMode)
     function restoreSuspendedRest() {
         if (GymStore.restDurationMs > 0 && GymStore.restStartedAt == null) {
             GymStore.restStartedAt = System.getTimer();
@@ -675,11 +646,6 @@ class WorkoutView extends Ui.View {
             Ui.requestUpdate();
             return false;
         }
-        // Resolve the first exercise label while the sensor buffers are still
-        // idle. Rendering then needs only the small cached translation.
-        if (GymWorkoutMode.allowsDetailedTracking()) {
-            GymStore.exerciseLabelCacheValue = GymStore.currentExerciseLabel();
-        }
         var started = false;
         if (GymSession.recording) {
             if (GymSession.paused) {
@@ -768,6 +734,7 @@ class WorkoutView extends Ui.View {
             GymStore.preparedWorkoutSetsOnlyMessage();
     }
 
+    (:richWorkoutMode)
     function finishWorkout() {
         return finishWorkoutMessage(buildFinishWorkoutMessage());
     }
@@ -1175,13 +1142,7 @@ class WorkoutView extends Ui.View {
         if (page == 7) {
             drawReady(dc, w, h);
         } else if (page == 0) {
-            if (GymWorkoutMode.isFree()) {
-                drawFreeSessionDashboard(dc, w, h, false);
-            } else {
-                drawManualDashboard(dc, w, h, false);
-            }
-        } else if (page == 1) {
-            drawEntry(dc, w, h);
+            drawFreeSessionDashboard(dc, w, h, false);
         } else if (page == 2) {
             drawPauseMenu(dc, w, h);
         } else if (page == 3) {
@@ -1288,12 +1249,9 @@ class WorkoutView extends Ui.View {
         return !hasWorkoutToResume() && GymWorkoutMode.hasStartablePlan() ? 4 : 3;
     }
 
+    // Lite watches record free workouts only: two actions on every Ready card.
     (:compactWorkoutMode96)
-    function readyActionCount() {
-        if (GymLocalWorkout.snapshot != null || hasWorkoutToResume() ||
-            GymStore.pendingCount() > 0) { return 2; }
-        return GymWorkoutMode.hasStartablePlan() ? 3 : 2;
-    }
+    function readyActionCount() { return 2; }
 
     (:richWorkoutMode)
     function readyActionText(index, count) {
@@ -1329,27 +1287,12 @@ class WorkoutView extends Ui.View {
         if (GymLocalWorkout.snapshot != null && index == 1) {
             return GymStore.tr("LATER", "ПІЗНІШЕ", "ПОЗЖЕ");
         }
-        if (!hasWorkoutToResume() && GymStore.pendingCount() > 0) {
-            return index == 0 ?
-                GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.") :
-                GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
-        }
-        if (hasWorkoutToResume()) {
-            return index == 0 ?
-                GymStore.tr("RESUME", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ") :
-                GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН");
-        }
-        if (GymWorkoutMode.hasStartablePlan()) {
-            if (index == 0) {
-                return GymStore.tr("START PLAN", "ПОЧАТИ ПЛАН", "НАЧАТЬ ПЛАН");
-            }
-            if (index == 1) {
-                return GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
-            }
-        } else if (index == 0) {
-            return GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
-        }
-        return GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН");
+        var sync = GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.");
+        var free = GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
+        var first = hasWorkoutToResume() ?
+            GymStore.tr("RESUME", "ПРОДОВЖИТИ", "ПРОДОЛЖИТЬ") : free;
+        if (!hasWorkoutToResume() && GymStore.pendingCount() > 0) { first = sync; }
+        return index == 0 ? first : (first == sync ? free : sync);
     }
 
     (:fullLegacyState)
@@ -1383,12 +1326,9 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h * 0.18, Gfx.FONT_XTINY,
             fitText(readyStatusText(), 20), Gfx.TEXT_JUSTIFY_CENTER);
-        var count = readyActionCount();
-        var top = h * (count == 4 ? 0.34 : 0.40);
-        var step = h * (count == 4 ? 0.13 : 0.16);
-        for (var i = 0; i < count; i += 1) {
-            drawMinimalLine(dc, w, top + i * step,
-                readyActionText(i, count), i == selected);
+        for (var i = 0; i < 2; i += 1) {
+            drawMinimalLine(dc, w, h * (0.40 + i * 0.16),
+                readyActionText(i, 2), i == selected);
         }
     }
 
@@ -1744,34 +1684,6 @@ class WorkoutView extends Ui.View {
     }
 
     (:compactWorkoutMode96)
-    function drawManualDashboard(dc, w, h, saveAction) {
-        var center = w / 2;
-        var heart = GymSession.hr == null ? "--" : GymSession.hr.toString();
-        var elapsed = GymSession.elapsedText();
-        var rest = GymStore.restSeconds();
-        var restText = rest > 0 ? countdownText(rest) : "--";
-        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(center, h * 0.20, Gfx.FONT_XTINY,
-            fitText(GymStore.currentExerciseLabel(), 20),
-            Gfx.TEXT_JUSTIFY_CENTER);
-        dc.drawText(center, h * 0.34, Gfx.FONT_TINY,
-            GymStore.tr("SET ", "ПІДХІД ", "ПОДХОД ") +
-                (GymStore.sets.size() + 1).toString(),
-            Gfx.TEXT_JUSTIFY_CENTER);
-        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(center, h * 0.47, Gfx.FONT_XTINY, setSummaryText(),
-            Gfx.TEXT_JUSTIFY_CENTER);
-        drawMinimalLine(dc, w, h * 0.61,
-            GymStore.tr("HR ", "ПУЛЬС ", "ПУЛЬС ") + heart + " " + elapsed, false);
-        drawMinimalLine(dc, w, h * 0.73,
-            GymStore.tr("KCAL ", "ККАЛ ", "ККАЛ ") +
-                GymStore.totalGymCalories().format("%.0f") + " " +
-                GymStore.tr("REST ", "ВІДП ", "ОТД. ") + restText, false);
-        drawMinimalLine(dc, w, h * 0.86,
-            GymStore.tr("SELECT: SET ENTRY", "ВИБІР: ПІДХІД", "ВЫБОР: ПОДХОД"), false);
-    }
-
-    (:compactWorkoutMode96)
     function drawFreeSessionDashboard(dc, w, h, saveAction) {
         var center = w / 2;
         var heart = GymSession.hr == null ? "--" : GymSession.hr.toString();
@@ -1922,6 +1834,7 @@ class WorkoutView extends Ui.View {
             Gfx.TEXT_JUSTIFY_LEFT);
     }
 
+    (:richWorkoutMode)
     function countdownText(seconds) {
         var minutes = (seconds / 60).toNumber();
         var remaining = seconds % 60;
@@ -2129,6 +2042,7 @@ class WorkoutView extends Ui.View {
         return effortLabel(GymSession.effortState);
     }
 
+    (:richWorkoutMode)
     function workoutErrorText() {
         var current = GymStore.status;
         if (current == GymStatus.RECOVERY_FAIL || current == GymStatus.SAVE_FAIL) {
@@ -2205,37 +2119,6 @@ class WorkoutView extends Ui.View {
         drawAdjustRow(dc, w, h, selected, 126, label, value);
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawCentered(dc, 192, Gfx.FONT_XTINY, setSummaryText());
-    }
-
-    (:compactWorkoutMode96)
-    function drawEntry(dc, w, h) {
-        var font = Gfx.FONT_XTINY;
-        dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.12, font,
-            GymStore.tr("ADD SET", "ДОДАТИ ПІДХІД", "ДОБАВИТЬ ПОДХОД"),
-            Gfx.TEXT_JUSTIFY_CENTER);
-        for (var index = 0; index < 4; index += 1) {
-            var label;
-            var value;
-            if (index == 0) {
-                label = GymStore.tr("EXERCISE", "ВПРАВА", "УПРАЖН");
-                value = GymStore.currentExerciseLabel();
-            } else if (index == 1) {
-                label = "KG";
-                value = localizedDecimal(GymStore.weight);
-            } else if (index == 2) {
-                label = GymStore.tr("REPS", "ПОВТ", "ПОВТ");
-                value = GymStore.reps.toString();
-            } else {
-                label = GymStore.tr("SAVE SET", "ЗБЕРЕГТИ", "СОХРАНИТЬ");
-                value = GymStore.sets.size().toString();
-            }
-            drawMinimalLine(dc, w, h * (0.30 + index * 0.14),
-                label + "  " + value, index == selected);
-        }
-        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.88, font, fitText(setSummaryText(), 20),
-            Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     (:richWorkoutMode)
@@ -2564,6 +2447,7 @@ class WorkoutView extends Ui.View {
         return text.substring(0, length - 2) + "," + text.substring(length - 1, length);
     }
 
+    (:richWorkoutMode)
     function setSummaryText() {
         return localizedDecimal(GymStore.weight) +
             (GymStore.isUk() || GymStore.isRu() ? " кг × " : "kg x ") + GymStore.reps.toString();
@@ -2722,6 +2606,7 @@ class WorkoutView extends Ui.View {
             fitText(value.toString(), 16), Gfx.TEXT_JUSTIFY_CENTER);
     }
 
+    (:richWorkoutMode)
     function drawHeader(dc, w, h, label) {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawCentered(dc, 34, Gfx.FONT_XTINY, label);
@@ -2769,7 +2654,7 @@ class WorkoutView extends Ui.View {
         }
     }
 
-    (:noPageDots)
+    (:richWorkoutMode, :noPageDots)
     function drawPageDots(dc, w, h) {
         // Compact products keep the same hardware-key navigation without the
         // decorative page indicator. Omitting it preserves the product memory
@@ -2943,13 +2828,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 6) {
             handleDiscardConfirmation();
         } else if (view.page == 0) {
-            if (GymWorkoutMode.isFree()) {
-                openPauseMenu();
-            } else {
-                view.page = 1;
-            }
-        } else if (view.page == 1) {
-            handleSelect();
+            openPauseMenu();
         }
         Ui.requestUpdate();
         return true;
@@ -3006,10 +2885,6 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             view.pauseSelected = (view.pauseSelected + 3 + delta) % 3;
         } else if (view.page == 6) {
             moveDiscardSelection(delta);
-        } else if (view.page == 1) {
-            view.selected = (view.selected + 4 + delta) % 4;
-        } else if (view.page == 0 && !GymWorkoutMode.isFree()) {
-            view.page = 1;
         }
         Ui.requestUpdate();
         return true;
@@ -3029,6 +2904,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         moveSavedSummary(delta);
     }
 
+    (:richWorkoutMode)
     function moveSavedSummary(delta) {
         if (delta > 0) {
             view.page = 0;
@@ -3196,8 +3072,6 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 2) {
             view.page = 0;
             view.pauseSelected = 0;
-        } else if (view.page == 1) {
-            view.page = 0;
         } else {
             openPauseMenu();
         }
@@ -3427,15 +3301,14 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     (:compactWorkoutMode96)
     function adjustContent(delta) {
-        if (view.page == 1) {
-            activate(delta);
-        } else if (view.page == 6) {
+        if (view.page == 6) {
             moveDiscardSelection(delta);
         } else {
             navigateContent(delta);
         }
     }
 
+    (:richWorkoutMode)
     function handleSelect() {
         // onSelect has already handled every non-entry page and modal state.
         activate(1);
@@ -3496,21 +3369,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             exitReady();
             return;
         }
-        var resuming = view.hasWorkoutToResume();
-        if (!resuming && GymStore.pendingCount() > 0) {
-            if (view.selected == 0) { view.syncFromReady(); }
-            else { view.startOrResumeWorkout(false); }
-            return;
-        }
-        var hasPlan = !resuming && GymWorkoutMode.hasStartablePlan();
-        if (resuming) {
-            if (view.selected == 0) { view.startOrResumeWorkout(false); }
-            else { view.syncFromReady(); }
-        } else if (hasPlan && view.selected == 0) {
-            view.startOrResumeWorkout(true);
-        } else if (hasPlan && view.selected == 1) {
-            view.startOrResumeWorkout(false);
-        } else if (view.selected == (hasPlan ? 2 : 1)) {
+        var first = !view.hasWorkoutToResume() && GymStore.pendingCount() > 0;
+        if ((view.selected == 0) == first) {
             view.syncFromReady();
         } else {
             view.startOrResumeWorkout(false);
@@ -3577,13 +3437,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
     }
 
     (:compactWorkoutMode96)
-    function navigateContent(delta) {
-        if (GymWorkoutMode.isFree() || view.page == 2 ||
-            view.page == 3 || view.page == 6) {
-            return;
-        }
-        view.page = view.page == 0 ? 1 : 0;
-    }
+    function navigateContent(delta) {}
 
     function handlePauseMenu() {
         if (view.pauseSelected == 0) {
@@ -3674,32 +3528,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         GymStore.saveCurrentEntry();
     }
 
-    (:compactWorkoutMode96)
-    function activate(delta) {
-        if (!GymWorkoutMode.allowsDetailedTracking()) { return; }
-        if (view.selected == 0) {
-            GymStore.nextExercise(delta);
-        } else if (view.selected == 1) {
-            GymStore.weight += GymStore.weightStep * delta;
-            if (GymStore.weight < 0.0) {
-                GymStore.weight = 0.0;
-            } else if (GymStore.weight > GymStore.maxWeight) {
-                GymStore.weight = GymStore.maxWeight;
-            }
-        } else if (view.selected == 2) {
-            GymStore.reps += delta;
-            if (GymStore.reps < 1) {
-                GymStore.reps = 1;
-            } else if (GymStore.reps > GymStore.maxReps) {
-                GymStore.reps = GymStore.maxReps;
-            }
-        } else if (view.selected == 3) {
-            if (delta > 0) { recordSet(); }
-            return;
-        }
-        GymStore.saveCurrentEntry();
-    }
-
+    (:richWorkoutMode)
     function recordSet() { view.changeSet(-1); }
 
     (:richWorkoutMode)
@@ -3712,9 +3541,6 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             view.restoreSuspendedRest();
         }
     }
-
-    (:compactWorkoutMode96)
-    function rejectSetPrompt() {}
 
     (:richWorkoutMode)
     function undoLastSet() { view.changeSet(-2); }

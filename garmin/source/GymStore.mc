@@ -133,6 +133,13 @@ class GymStore {
     // the compact watch never carries another live session beside queued data.
     // The byte budgets remain authoritative; no queued workout is evicted.
     private static const maxPendingWorkouts = 8;
+    // New-queue limits for the 96 KiB lite profile (GymPendingJournal.begin and
+    // advance). Stored legacy queues stay valid under the limits above and are
+    // never trimmed.
+    (:compactWorkoutMode96)
+    static const queueLimit = 3;
+    (:compactWorkoutMode96)
+    static const queueNameBudget = 4500;
     private static const maxPendingNameBytes = 12000;
     private static const maxExerciseNameLength = 160;
     private static const maxExerciseNameBytes = 640;
@@ -173,11 +180,6 @@ class GymStore {
 
     // The manual 96 KiB profile also avoids reviving the old per-key set
     // mirror. The plan and pending migration paths remain independent.
-    (:compactWorkoutMode96, :inline)
-    static function restoreLegacySetMirrorIfSnapshotAbsent(savedActive) {
-        return false;
-    }
-
     (:notFr55Memory, :richWorkoutMode, :inline)
     static function discardLegacyUnboundActiveWorkout() {
     }
@@ -195,16 +197,6 @@ class GymStore {
     // Drop only the obsolete ownerless active set mirror after the existing
     // plan and pending values have been migrated and validated. The v6 active
     // journal path does not enter this legacy-quarantine branch.
-    (:compactWorkoutMode96, :inline)
-    static function discardLegacyUnboundActiveWorkout() {
-        sets = [];
-        activeWorkoutStartedAtSeconds = null;
-        resumedWorkoutIntervalsInvalid = false;
-        resetActiveWorkoutSnapshotState();
-        resetRuntimeCheckpointState();
-        if (legacyCompactCount != -2) { legacyCompactCount = 0; }
-    }
-
     (:fullLegacyState)
     static function load() {
         parkedPending = null;
@@ -736,35 +728,24 @@ class GymStore {
         value = Storage.getValue("cloudDeviceBinding");
         cloudDeviceBinding = isBoundedText(value, maxBindingLength) ? value.toString() : null;
 
-        var loadedV5Plan = ownerMatches && loadBoundV5Plan96();
-        if (!ownerMatches && !accountMarkersConflict) {
-            preserveUnownedPlan96();
-        } else if (accountMarkersConflict) {
-            plan = [];
-            persistedPlanSource = plan;
-            persistedPlanBytes = 0;
-            persistedPlanNeedsV5Write = false;
-        }
-
-        // The current V5 plan owns its name strings. Once the independently
-        // validated catalog is loaded, point equal catalog entries at those
-        // strings without changing order, indices, or storage.
-        value = ownerMatches ? Storage.getValue("exercises") : null;
-        var savedExerciseCatalogValid =
-            isValidExerciseList(value, maxPlanSets) && value.size() > 0;
-        exerciseCatalogNeedsWrite = !savedExerciseCatalogValid;
-        exercises = savedExerciseCatalogValid ? value : builtInExercises();
-        value = null;
-        if (ownerMatches && loadedV5Plan && savedExerciseCatalogValid) {
-            for (var p = 0; p < plan.size(); p += 1) {
-                var planName = GymPlanAccess.nameAt(plan, p);
-                for (var e = 0; e < exercises.size(); e += 1) {
-                    if (exercises[e].equals(planName)) {
-                        exercises[e] = planName;
-                        break;
-                    }
-                }
-            }
+        // Lite watches hold no plan. Stale plan state is removed once without
+        // being read; the catalog is the fixed built-in list unless a queued or
+        // active workout still addresses a stored catalog by index.
+        plan = [];
+        persistedPlanSource = plan;
+        persistedPlanBytes = 0;
+        persistedPlanNeedsV5Write = false;
+        var savedExerciseCatalogValid = true;
+        exerciseCatalogNeedsWrite = false;
+        if (purgePlanState96()) {
+            exercises = builtInExercises();
+        } else {
+            value = ownerMatches ? Storage.getValue("exercises") : null;
+            savedExerciseCatalogValid =
+                isValidExerciseList(value, maxPlanSets) && value.size() > 0;
+            exerciseCatalogNeedsWrite = !savedExerciseCatalogValid;
+            exercises = savedExerciseCatalogValid ? value : builtInExercises();
+            value = null;
         }
 
         var phoneFence = Storage.getValue("phoneSyncFence");
@@ -864,70 +845,32 @@ class GymStore {
             savedPreparedWorkout, persistedPlanBytes];
     }
 
+    // Returns true once the plan/catalog/legacy-plan keys are gone (marker set).
+    // The keys are deleted blind. Nothing is deleted while an active or prepared
+    // workout row or a queued journal entry exists: those address exercises by
+    // catalog index, so the purge waits for a later start with an idle store.
     (:compactCheckpoint96)
-    private static function loadBoundV5Plan96() {
-        var value = null;
+    private static function purgePlanState96() {
         try {
-            value = Storage.getValue("plan");
-        } catch (e) {
-            plan = [];
-            persistedPlanSource = plan;
-            persistedPlanBytes = maxLegacyStoredValueBytes + 1;
-            persistedPlanNeedsV5Write = false;
-            status = GymStatus.RECOVERY_FAIL;
-            return false;
-        }
-        if (value == null) {
-            plan = [];
-            persistedPlanSource = plan;
-            persistedPlanBytes = 0;
-            persistedPlanNeedsV5Write = false;
-            return false;
-        }
-        if (value instanceof Lang.Array && value.size() == 0) {
-            plan = value;
-            persistedPlanSource = plan;
-            persistedPlanBytes = estimatedValueBytes(value);
-            persistedPlanNeedsV5Write = false;
-            return false;
-        }
-        if (value instanceof Lang.Array && value.size() == 4 &&
-            value[0] instanceof Lang.Number && value[0] == 5) {
-            var v5 = new GymPlanList(value);
-            if (v5.valid(maxPlanSets, true)) {
-                plan = v5;
-                persistedPlanSource = plan;
-                persistedPlanBytes = estimatedValueBytes(value);
-                persistedPlanNeedsV5Write = false;
-                value = null;
-                return true;
+            if (Storage.getValue("lite96PurgedV1") != null) { return true; }
+            var journal = Storage.getValue("pendingJournalV1");
+            if (storedActiveSnapshotHasSets(Storage.getValue("activeWorkoutV1")) ||
+                Storage.getValue("preparedWorkoutV1") != null ||
+                (journal instanceof Lang.Array && journal.size() > 1 &&
+                    journal[journal.size() - 1] instanceof Lang.Array &&
+                    journal[journal.size() - 1].size() > 0)) {
+                return false;
             }
-        }
-        // Preserve unsupported raw rows or malformed values until an authenticated,
-        // valid phone sync replaces them. Do not migrate or write an empty plan.
-        plan = [];
-        persistedPlanSource = plan;
-        persistedPlanBytes = estimatedValueBytes(value);
-        persistedPlanNeedsV5Write = false;
-        status = GymStatus.RECOVERY_FAIL;
-        value = null;
-        return false;
-    }
-
-    (:compactCheckpoint96)
-    private static function preserveUnownedPlan96() {
-        var value = null;
-        try {
-            value = Storage.getValue("plan");
-            persistedPlanBytes = value == null ? 0 : estimatedValueBytes(value);
+            Storage.deleteValue("plan");
+            Storage.deleteValue("exercises");
+            Storage.deleteValue("deferredSync");
+            Storage.deleteValue("legacyQuarantinePlan");
+            Storage.deleteValue("legacyQuarantineExercises");
+            Storage.setValue("lite96PurgedV1", 1);
+            return true;
         } catch (e) {
-            persistedPlanBytes = maxLegacyStoredValueBytes + 1;
-            status = GymStatus.RECOVERY_FAIL;
+            return false;
         }
-        plan = [];
-        persistedPlanSource = plan;
-        persistedPlanNeedsV5Write = false;
-        value = null;
     }
 
     (:compactLegacyState, :richWorkoutMode)
@@ -1690,39 +1633,7 @@ class GymStore {
         return true;
     }
 
-    (:compactCheckpoint96)
-    static function saveCurrentEntry() {
-        GymSession.deferMotionForStorage();
-        if (!hasAccountBinding()) { return false; }
-        if (legacyUnboundState) {
-            return save();
-        }
-        var exerciseName = currentExercise();
-        if (!isValidExerciseName(exerciseName) ||
-            !isValidWeight(weight) || !isValidReps(reps)) {
-            status = GymStatus.SAVE_FAIL;
-            return false;
-        }
-        try {
-            Storage.setValue("currentEntryV1", [
-                sets.size(), exerciseName, weight, reps
-            ]);
-        } catch (e) {
-            status = GymStatus.SAVE_FAIL;
-            return false;
-        }
-        // These two keys are a downgrade mirror only. Current versions restore
-        // the exercise and its inputs from the single atomic envelope above.
-        try {
-            Storage.setValue("weight", weight);
-            Storage.setValue("reps", reps);
-        } catch (e) {
-            // A mirror failure must not invalidate the committed current entry.
-        }
-        return true;
-    }
-
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function restoreCurrentEntry(value) {
         if (!(value instanceof Lang.Array) ||
             (value.size() != 2 && value.size() != 4) ||
@@ -1924,6 +1835,7 @@ class GymStore {
         return areSnapshotIntervalsConsistent(snapshotSets, checkpoint);
     }
 
+    (:richWorkoutMode)
     static function isValidCompactV4ActiveWorkoutSnapshot(snapshot) {
         if (!(snapshot instanceof Lang.Array) || !(snapshot.size() == 7 || snapshot.size() == 10) ||
             !(snapshot[0] instanceof Lang.Number) || !GymActiveJournal.validBindings(snapshot)) {
@@ -2148,12 +2060,12 @@ class GymStore {
 
     // Products that have always used the compact schema must not carry the
     // FR55-only transition graph in their much smaller runtime budget.
-    (:noFr55UpgradeBridge)
+    (:richWorkoutMode, :noFr55UpgradeBridge)
     static function compactActiveSnapshotFromFullV3(value) {
         return null;
     }
 
-    (:noFr55UpgradeBridge, :inline)
+    (:richWorkoutMode, :noFr55UpgradeBridge, :inline)
     static function restoreMigratedActiveWorkout(savedActive) {
         return false;
     }
@@ -2408,12 +2320,12 @@ class GymStore {
         return {"exerciseName" => name, "weight" => setWeight, "reps" => setReps};
     }
 
-    (:compactLegacyState, :inline)
+    (:richWorkoutMode, :compactLegacyState, :inline)
     static function syncedPlanRow(name, setWeight, setReps) {
         return {"exerciseName" => name, "weight" => setWeight, "reps" => setReps};
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function restoredCompactV4Sets(snapshot) {
         if (snapshot[0] == 6) { return GymActiveJournal.restored(snapshot); }
         var restored = [];
@@ -2709,7 +2621,7 @@ class GymStore {
         return [0, 0.0, null, 0, 0, 0, null, 0];
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function setIntervalForCurrentTimeline(source) {
         if (source == null && GymWorkoutMode.permitsOmittedSetIntervals()) { return null; }
         var interval = GymSession.copySetInterval(source);
@@ -2905,7 +2817,7 @@ class GymStore {
         return isRu() ? ru : en;
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function onOff(value) {
         if (isUk()) {
             return value ? "ТАК" : "НІ";
@@ -2928,6 +2840,7 @@ class GymStore {
 
     // Translate only at render time. Canonical exercise names remain unchanged in
     // storage, workout sets, phone messages, and cloud synchronization.
+    (:richWorkoutMode)
     static function currentExerciseLabel() {
         return localizedExerciseName(currentExercise());
     }
@@ -2993,6 +2906,7 @@ class GymStore {
         return bucket;
     }
 
+    (:richWorkoutMode)
     static function applyCurrentPlanSet() {
         if (!GymWorkoutMode.isPlanned() || plan.size() == 0) {
             return false;
@@ -3002,6 +2916,7 @@ class GymStore {
         return applyPlanItem(planItemForExerciseAfterCompleted(exerciseName, completed));
     }
 
+    (:richWorkoutMode)
     static function planItemForExerciseAfterCompleted(exerciseName, completed) {
         var item = null;
         var matchingIndex = 0;
@@ -3019,6 +2934,7 @@ class GymStore {
         return item;
     }
 
+    (:richWorkoutMode)
     static function applyPlanItem(item) {
         if (!(isSetRecord(item))) {
             return false;
@@ -3051,7 +2967,7 @@ class GymStore {
         return completed;
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function remainingPlannedSetsForExercise(exerciseName) {
         var remaining = plannedSetsForExercise(exerciseName) - completedSetsForExercise(exerciseName);
         return remaining > 0 ? remaining : 0;
@@ -3112,6 +3028,7 @@ class GymStore {
         return -1;
     }
 
+    (:richWorkoutMode)
     static function selectNextPlanSlotInGlobalOrder() {
         // This is only an initial fallback when no current/last exercise exists.
         // Once a set exists, free-order recovery always prefers the athlete's
@@ -3126,6 +3043,7 @@ class GymStore {
         return applyPlanItem(item);
     }
 
+    (:richWorkoutMode)
     static function nextExercise(delta) {
         if (!GymWorkoutMode.allowsDetailedTracking() || exercises.size() == 0) {
             status = GymStatus.PLAN_ONLY;
@@ -3138,6 +3056,7 @@ class GymStore {
         applyCurrentPlanSet();
     }
 
+    (:richWorkoutMode)
     static function addSet() {
         GymSession.deferMotionForStorage();
         if (!GymWorkoutMode.allowsDetailedTracking()) {
@@ -3333,7 +3252,7 @@ class GymStore {
         };
     }
 
-    (:compactLegacyState, :inline)
+    (:richWorkoutMode, :compactLegacyState, :inline)
     static function recordedSet(name, setWeight, setReps, statistics, restBefore, setInterval) {
         // The durable compact checkpoint already omits optional detector fields.
         // Keep the live graph equally small; undo uses lastSetStatistics separately.
@@ -3470,12 +3389,6 @@ class GymStore {
 
     // Keep the shared storage API available on 96 KiB products while omitting
     // the undo state and its commit path from their executable.
-    (:compactCheckpoint96)
-    static function canUndoLastSet() { return false; }
-
-    (:compactCheckpoint96)
-    static function undoLastSet() { return false; }
-
     static function clearTransientSetActions() {
         lastSetUndoStartedAt = null;
         lastSetBoost = 0.0;
@@ -3484,7 +3397,7 @@ class GymStore {
         lastSetPreviousLoggedEnd = 0;
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function adjustWeightStep(delta) {
         if (delta < 0) {
             if (weightStep > 5.0) {
@@ -3504,7 +3417,7 @@ class GymStore {
         save();
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function adjustRestDefault(delta) {
         if (delta < 0) {
             if (restSecondsDefault > 120) {
@@ -3528,7 +3441,7 @@ class GymStore {
         save();
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function toggleAutoPrompt() {
         autoPromptEnabled = !autoPromptEnabled;
         if (!autoPromptEnabled) {
@@ -3537,13 +3450,13 @@ class GymStore {
         save();
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function adjustSensitivity(delta) {
         sensitivityIndex = (sensitivityIndex + (delta < 0 ? 2 : 1)) % 3;
         save();
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function sensitivityLabel() {
         if (sensitivityIndex == 0) {
             return tr("LOW", "НИЗ", "НИЗ");
@@ -3635,6 +3548,7 @@ class GymStore {
         return cleared;
     }
 
+    (:richWorkoutMode)
     static function restSeconds() {
         if (!GymWorkoutMode.allowsDetailedTracking() || restDurationMs <= 0 ||
             restStartedAt == null) {
@@ -3926,12 +3840,13 @@ class GymStore {
         return false;
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function shouldStartTutorial() {
         return hasAccountBinding() && !tutorialHandledForActiveAccount() &&
             !hasUnfinishedWorkout() && !hasPreparedWorkout();
     }
 
+    (:richWorkoutMode)
     static function markTutorialHandled() {
         if (!hasAccountBinding()) {
             return false;
@@ -4483,6 +4398,7 @@ class GymStore {
         return false;
     }
 
+    (:richWorkoutMode)
     static function applyValidatedSync(message) {
         applyValidatedLanguage(message);
         var flatNames = message.get("planNames");
@@ -4556,6 +4472,7 @@ class GymStore {
         }
     }
 
+    (:richWorkoutMode)
     static function syncPlanMatchesCurrentState(message) {
         var names = message.get("planNames");
         var weights = message.get("planWeights");
@@ -4580,6 +4497,7 @@ class GymStore {
         return incomingExercises == null || sameTextArray(incomingExercises, exercises);
     }
 
+    (:richWorkoutMode)
     static function applyDeferredSyncIfIdle() {
         if (sets.size() != 0 || !(deferredSync instanceof Lang.Dictionary)) {
             return;
@@ -4591,6 +4509,21 @@ class GymStore {
             applyValidatedSync(message);
         }
     }
+
+    (:compactWorkoutMode96)
+    static function applyDeferredSyncIfIdle() { return; }
+
+    // A 96 KiB watch keeps no plan. The pairing and language fields of a
+    // validated sync are applied by applySyncFromSource; the plan columns and
+    // catalog were already dropped by GymApp.handleSyncMessage.
+    (:compactWorkoutMode96, :inline)
+    static function applyValidatedSync(message) {
+        status = GymStatus.SYNC_OK;
+        return true;
+    }
+
+    (:compactWorkoutMode96, :inline)
+    static function syncPlanMatchesCurrentState(message) { return true; }
 
     (:fullLegacyState)
     static function isValidSyncMessage(message, trustedSource) {
@@ -4940,7 +4873,7 @@ class GymStore {
 
     // A legacy queue is already durable and immutable during a live workout.
     // Retain only its bounded identity and budget until it is actually needed.
-    (:inline)
+    (:richWorkoutMode, :inline)
     private static function parkPendingForSnapshot(value) {
         if (!(value instanceof Lang.Array) || value.size() < 6) { return; }
         parkPendingDuringLongWorkout(value[5] instanceof Lang.Array ? value[5].size() : value[5]);
@@ -5262,7 +5195,7 @@ class GymStore {
         }
     }
 
-    (:inline)
+    (:richWorkoutMode, :inline)
     static function adoptLegacyStateOwner() {
         if (!isValidAccountBinding(accountBinding)) {
             return false;
@@ -6885,11 +6818,6 @@ class GymStore {
         return true;
     }
 
-    (:compactRecovery96)
-    static function migrateFullLegacyQuarantineToCompact() {
-        return false;
-    }
-
     (:compactLegacyState, :richWorkoutMode)
     static function ensureUnboundAtomicQuarantine() {
         if (hasAccountBinding()) {
@@ -6910,11 +6838,6 @@ class GymStore {
         } catch (e) {
             return false;
         }
-    }
-
-    (:compactCheckpoint96)
-    static function ensureUnboundAtomicQuarantine() {
-        return hasAccountBinding();
     }
 
     (:compactLegacyState)
@@ -6944,7 +6867,7 @@ class GymStore {
         }
     }
 
-    (:compactLegacyState)
+    (:richWorkoutMode, :compactLegacyState)
     static function restoreLegacyCurrentQuarantine(allowSeed) {
         var snapshot = Storage.getValue("legacyCompactCurrentV1");
         if (snapshot == null) {
@@ -6964,7 +6887,7 @@ class GymStore {
         return true;
     }
 
-    (:compactLegacyState)
+    (:richWorkoutMode, :compactLegacyState)
     static function legacyCurrentSetCount() {
         return legacyCompactCount;
     }
@@ -6973,6 +6896,7 @@ class GymStore {
         return ["Bench Press", "Squat", "Deadlift", "Pull Up", "Overhead Press"];
     }
 
+    (:richWorkoutMode)
     static function containsName(list, name) {
         for (var i = 0; i < list.size(); i += 1) {
             if (list[i].toString().equals(name)) {

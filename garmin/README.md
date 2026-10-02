@@ -34,6 +34,17 @@ extraction uses explicit substring bounds for older Connect IQ runtimes.
 - Finished workouts remain queued locally until Garmin Connect can deliver them to a compatible phone client.
 - FIT finalization, queue append, queue recovery and final cleanup run in separate callbacks on Save. The saving screen consumes repeated input, and a failed stage returns to explicit retry. The durable owner/device/request marker remains authoritative across restarts.
 
+## Lite mode (96 KiB watches)
+
+- Applies to the 96 KiB tier: Instinct 2, 2S, 2X, Crossover and Descent G1. These watches record free workouts only; their heap cannot hold a plan, so plan mode, manual set entry and plan sync are not part of their build.
+- Pairing still works. A `sync` message is applied for its binding fields (account, device, pairing generation, revision, language) with the same validation, replay, revision and ownership checks as every other profile. `planNames`, `planWeights`, `planReps` and `exercises` are replaced by empty values before validation and are never copied or stored.
+- The watch answers with a lean `sync_ack`: the usual correlation and binding fields, `applied` (true when applied or an exact replay, false when refused) and an additive `lite: 1` key. It carries no plan counts. Queued workouts are sent after the acknowledgement, as on other profiles.
+- `request_sync` identifies the tier by a `-lite` suffix on `watchVersion`; no new key is added because released phone parsers reject unknown `request_sync` keys.
+- Phones that recognize the suffix should send a binding-only sync (empty plan arrays, no `exercises`). Released phones keep sending their full plan; the watch drops it and still acknowledges, so pairing completes either way.
+- A plan stored by an older build is deleted once at startup (marker `lite96PurgedV1`), only while no active, prepared or queued workout depends on the exercise catalog.
+- A finished free workout is queued (up to 3 on this tier) and sent as `create_workout` with `workoutMode: "free"`, no sets and the recorded duration and heart-rate summary. Android and iOS store it as an activity-only workout.
+- Contract: `shared/garmin-lite-mode-v1.json`. Other profiles are unchanged; the lite code is selected with the `compactWorkoutMode96` / `richWorkoutMode` annotations.
+
 ## Workout data
 
 - Garmin FIT activity is recorded as a strength-training workout through Connect IQ activity recording.

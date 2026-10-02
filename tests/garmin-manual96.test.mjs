@@ -96,8 +96,8 @@ test("96 KiB selects manual set bookkeeping while 128 KiB keeps rich tracking", 
     "static function allowsDetailedTracking()");
   const richTracking = annotatedBody(mode, "richWorkoutMode",
     "static function allowsDetailedTracking()");
-  assert.match(manualTracking, /return state == MODE_PLANNED;/,
-    "96 KiB allows manual sets in planned workouts while FREE remains duration-only");
+  assert.match(manualTracking, /return false;/,
+    "96 KiB lite mode has no plan and no manual set entry; every workout is duration-only FREE");
   assert.match(richTracking, /return state == MODE_PLANNED;/,
     "richer products preserve the existing detector-backed mode guard");
 });
@@ -156,7 +156,7 @@ test("manual 96 KiB capture omits set intervals while keeping aggregate metrics 
     "96 KiB manual capture leaves per-set interval detail absent");
   assert.match(manualCapture, /capturedSetInterval\(ended, ended\)/,
     "the compact capture path stores no per-set interval value");
-  assert.match(manualTracking, /return state == MODE_PLANNED;/);
+  assert.match(manualTracking, /return false;/);
   assert.match(addSet,
     /if \(!GymWorkoutMode\.allowsDetailedTracking\(\)\) \{\s*status = GymStatus\.PLAN_ONLY;\s*return false;\s*\}[\s\S]*GymSession\.captureSetStatistics\(\)[\s\S]*recordedSet\([\s\S]*nextSets\.add\(setItem\)[\s\S]*persistActiveWorkoutSnapshot/,
     "FREE set input is rejected before capture while PLANNED manual sets keep the durable path");
@@ -197,19 +197,20 @@ test("96 KiB restart ignores unfinished active journals and keeps finalization r
   const store = await readFile("garmin/source/GymStore.mc", "utf8");
   const beginLoad = annotatedBody(store, "compactCheckpoint96",
     "static function beginLoad()");
-  const planLoader = annotatedBody(store, "compactCheckpoint96",
-    "private static function loadBoundV5Plan96()");
+  const purge = annotatedBody(store, "compactCheckpoint96",
+    "private static function purgePlanState96()");
   const load = annotatedBody(store, "compactCheckpoint96", "static function load()");
   const completeLoad = annotatedBody(store, "compactCheckpoint96",
     "static function completeLoad(startup)");
   const richCompleteLoad = annotatedBody(store, "compactLegacyState",
     "static function completeLoad(startup)");
 
-  assert.match(beginLoad, /loadBoundV5Plan96\(\)/,
-    "the bound V5 plan uses its independent reader");
-  assert.match(planLoader,
-    /Storage\.getValue\("plan"\)[\s\S]*new GymPlanList\(value\)[\s\S]*v5\.valid\(maxPlanSets, true\)[\s\S]*plan = v5;/,
-    "the current plan remains independently validated and loadable");
+  assert.match(beginLoad, /purgePlanState96\(\)/,
+    "lite startup removes stale plan state instead of loading it");
+  assert.doesNotMatch(beginLoad, /Storage\.getValue\("plan"\)/,
+    "the plan key is never read on 96 KiB products");
+  assert.doesNotMatch(purge, /Storage\.getValue\("(plan|exercises|deferredSync)"\)/,
+    "purged plan keys are deleted without being read");
   assert.match(beginLoad,
     /Storage\.getValue\("pending"\)[\s\S]*isValidPendingList\(value\)/,
     "completed workout messages load independently of the unfinished draft");

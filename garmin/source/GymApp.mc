@@ -114,15 +114,7 @@ class GymApp extends App.AppBase {
         }
         var typeText = type.toString();
         if (typeText != null && typeText.equals("sync")) {
-            GymStore.status = GymStatus.SYNC_RX;
-            var applied = false;
-            try {
-                applied = GymStore.applyPhoneSync(message);
-            } catch (e) {
-                applied = false;
-                GymStore.status = GymStatus.SYNC_FAIL;
-            }
-            sendSyncAck(message, applied);
+            handleSyncMessage(message);
         } else if (typeText.equals("workout_part_ack")) {
             if (GymPendingJournal.acknowledgePart(message)) { sendNextPendingWorkout(); }
         } else if (typeText != null && typeText.equals("ack")) {
@@ -138,6 +130,75 @@ class GymApp extends App.AppBase {
         }
     }
 
+    (:richWorkoutMode)
+    function handleSyncMessage(message) {
+        GymStore.status = GymStatus.SYNC_RX;
+        var applied = false;
+        try {
+            applied = GymStore.applyPhoneSync(message);
+        } catch (e) {
+            applied = false;
+            GymStore.status = GymStatus.SYNC_FAIL;
+        }
+        sendSyncAck(message, applied);
+    }
+
+    // 96 KiB watches run free workouts only. A sync is applied for its pairing
+    // and language fields with the same validation as every other profile; the
+    // plan columns and catalog are dropped first and never copied or stored.
+    (:compactWorkoutMode96)
+    function handleSyncMessage(message) {
+        GymStore.status = GymStatus.SYNC_RX;
+        message.put("planNames", []);
+        message.put("planWeights", []);
+        message.put("planReps", []);
+        message.remove("exercises");
+        var applied = false;
+        try {
+            applied = GymStore.applyPhoneSync(message);
+        } catch (e) {
+            applied = false;
+            GymStore.status = GymStatus.SYNC_FAIL;
+        }
+        sendSyncAck(message, applied);
+    }
+
+    // Lean acknowledgement: the correlation and binding fields plus the
+    // additive lite=1 marker; no plan counts.
+    (:compactWorkoutMode96)
+    function sendSyncAck(message, applied) {
+        var syncId = message.get("syncId");
+        var syncRevision = message.get("syncRevision");
+        if (!GymStore.isBoundedText(syncId, GymStore.maxBindingLength) ||
+            !syncId.equals(message.get("requestId")) ||
+            !GymStore.isValidCounter(syncRevision, GymStore.maxPhoneSyncRevision) ||
+            !GymStore.bindingsMatch(message)) {
+            return;
+        }
+        message = null;
+        GymStore.status = GymStatus.ACKING;
+        try {
+            var ack = {
+                "type" => "sync_ack",
+                "bindingVersion" => GymStore.bindingVersion,
+                "syncId" => syncId,
+                "requestId" => syncId,
+                "syncRevision" => syncRevision.toLong(),
+                "accountBinding" => GymStore.accountBinding,
+                "deviceBinding" => GymStore.deviceBinding,
+                "applied" => applied,
+                "lite" => 1
+            };
+            if (GymStore.isValidAccountBinding(GymStore.pairingGeneration)) {
+                ack.put("pairingGeneration", GymStore.pairingGeneration);
+            }
+            GymComm.send(ack, method(:onSyncAckSent));
+        } catch (e) {
+            GymStore.status = GymStatus.ACK_FAIL;
+        }
+    }
+
+    (:richWorkoutMode)
     function sendSyncAck(message, applied) {
         var syncId = message.get("syncId");
         var requestId = message.get("requestId");

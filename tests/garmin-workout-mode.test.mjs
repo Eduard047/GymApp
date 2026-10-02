@@ -169,19 +169,22 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   assert.match(resumePlan, /state == MODE_PLANNED && hasValidPlan\(\)/);
   assert.match(richSetGate, /return state == MODE_PLANNED;/,
     "128 KiB rich profiles retain the detector-backed set gate");
-  assert.match(manualSetGate, /return state == MODE_PLANNED;/,
-    "96 KiB profiles allow athlete-entered sets in planned mode while FREE stays duration-only");
+  assert.match(manualSetGate, /return false;/,
+    "96 KiB lite profiles have no plan, so athlete-entered sets are never allowed");
   const begin = section(mode, "(:richWorkoutMode)\n    static function begin(usePlan)", "(:compactWorkoutMode96)\n    static function begin(usePlan)");
   const compactBegin = section(mode, "(:compactWorkoutMode96)\n    static function begin(usePlan)", "(:richWorkoutMode)\n    static function restore()");
   for (const implementation of [begin, compactBegin]) {
     assert.match(implementation, /!GymPendingJournal\.readable \|\| GymStore\.pendingCount\(\) > 0/,
       "new workouts must reserve a durable pending queue slot");
-    assert.match(implementation, /usePlan && !hasStartablePlan\(\)/);
   }
+  assert.match(begin, /usePlan && !hasStartablePlan\(\)/);
+  assert.match(compactBegin, /usePlan \|\| state != MODE_IDLE/,
+    "96 KiB lite mode rejects plan starts; every workout begins FREE");
+  assert.match(compactBegin, /state = MODE_FREE;/);
   assert.match(mode, /state = usePlan \? MODE_PLANNED : MODE_FREE/);
   assert.match(mode, /activeWorkoutModeV1/);
-  assert.match(mode, /markerSize == 2 \|\| markerSize == 5/,
-    "96 KiB mode recovery must accept the released 3.1.x marker");
+  assert.match(mode, /marker instanceof Lang\.Array && marker\.size\(\) > 0/,
+    "96 KiB mode recovery accepts any released marker size and resumes it as FREE");
   assert.match(mode, /GymStore\.hasUnfinishedWorkout\(\)/,
     "the compact marker is usable only beside an accepted owner-bound workout");
 
@@ -228,23 +231,14 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
   assert.match(overview, /drawHeartRateZones\(dc, w, h/);
   assert.match(overview, /GymStore\.totalGymCalories\(\)/);
   assert.doesNotMatch(freeDashboard + overview, /currentExercise|weight|reps|sets|rest|autoLog|motion/i);
-  const manualDashboard = section(view,
-    "(:compactWorkoutMode96)\n    function drawManualDashboard",
-    "(:fullLegacyState)\n    function drawCompactHeartIcon");
-  assert.match(manualDashboard, /GymStore\.currentExerciseLabel\(\)/,
-    "96 KiB planned workouts show the selected exercise name");
-  assert.match(manualDashboard, /GymStore\.sets\.size\(\) \+ 1/,
-    "96 KiB planned workouts show the next manual set number");
-  assert.match(manualDashboard, /setSummaryText\(\)/,
-    "96 KiB planned workouts show the current set summary");
-  assert.doesNotMatch(manualDashboard, /autoLogPrompt|startMotionListener|motion|EFFORT_(ACTIVE|CANDIDATE)/i,
-    "96 KiB manual UI omits detector state and labels");
+  assert.doesNotMatch(view, /compactWorkoutMode96\)\s*function (drawManualDashboard|drawEntry)/,
+    "96 KiB lite mode has no manual set dashboard or entry screen");
   const freeSession = section(view,
     "(:compactWorkoutMode96)\n    function drawFreeSessionDashboard",
     "(:fullLegacyState)\n    function drawCompactHeartIcon");
   assert.match(view,
-    /if \(GymWorkoutMode\.isFree\(\)\) \{\s*drawFreeSessionDashboard\(dc, w, h, false\);\s*\} else \{\s*drawManualDashboard\(dc, w, h, false\);/,
-    "FREE and planned manual workouts use separate 96 KiB dashboards");
+    /\} else if \(page == 0\) \{\s*drawFreeSessionDashboard\(dc, w, h, false\);\s*\} else if \(page == 2\)/,
+    "96 KiB lite mode always draws the FREE dashboard");
   assert.match(freeSession,
     /"HR " \+ heart[\s\S]*GymSession\.elapsedText\(\)[\s\S]*"KCAL " \+ GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/,
     "FREE displays aggregate heart rate, elapsed time, and calories");
@@ -261,10 +255,10 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
     "compact recovery must localize exactly the released data-retention statuses");
   assert.doesNotMatch(compactReadyStatus, /current\.find\("FAIL"\)/,
     "unrelated internal failures must not be mislabeled as retained workout data");
-  assert.match(view, /GymWorkoutMode\.isFree\(\)[\s\S]*openPauseMenu\(\)/);
-  assert.match(view, /if \(GymWorkoutMode\.isFree\(\)\) \{\s*openPauseMenu\(\);\s*\}/,
-    "SELECT on duration-only FREE opens the pause menu");
-  assert.match(view, /function navigateContent\(delta\) \{\s*if \(GymWorkoutMode\.isFree\(\)/);
+  assert.match(view, /\} else if \(view\.page == 0\) \{\s*openPauseMenu\(\);\s*\}/,
+    "SELECT on the FREE dashboard opens the pause menu");
+  assert.match(view, /function navigateContent\(delta\) \{\}/,
+    "96 KiB lite mode has no page navigation");
   assert.match(view, /function hasPendingSetPrompt\(\) \{\s*if \(!GymWorkoutMode\.allowsDetailedTracking\(\)\)/);
 });
 

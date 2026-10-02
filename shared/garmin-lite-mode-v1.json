@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "name": "garmin-lite-mode",
+  "profile": "96 KiB watch tier (instinct2, instinct2s, instinct2x, instinctcrossover, descentg1)",
+  "capabilities": ["free_workout", "workout_upload", "pairing"],
+  "unsupported": ["plan_sync", "plan_workout", "manual_set_entry"],
+  "marker": {
+    "request_sync": {
+      "field": "watchVersion",
+      "rule": "The value ends with the suffix -lite. No new key is added because released phone parsers reject unknown request_sync keys."
+    },
+    "sync_ack": {
+      "field": "lite",
+      "value": 1,
+      "rule": "Additive integer key present on every sync_ack sent by a lite watch. Released receivers ignore unknown keys."
+    }
+  },
+  "sync": {
+    "phoneBehavior": "A phone that sees the -lite suffix sends a binding-only sync: the existing sync message with empty planNames, planWeights and planReps and without exercises.",
+    "releasedPhoneBehavior": "Released phones keep sending their full plan. The watch accepts that message and drops the plan columns and the catalog immediately.",
+    "watchBehavior": "The watch applies the pairing fields (bindingVersion, syncId, requestId, accountBinding, deviceBinding, pairingGeneration, syncRevision, resetWorkout, repairPairing) and language with the same validation, replay, revision, ownership and account-transition checks as every other profile. planNames, planWeights, planReps and exercises are replaced by empty values before validation and are never copied or stored.",
+    "planState": "The watch holds no plan. A plan stored by an older build is deleted once at startup (marker lite96PurgedV1), but only while no active, prepared or queued workout depends on the exercise catalog.",
+    "response": {
+      "type": "sync_ack",
+      "applied": "true when the sync was applied or is an exact replay of an applied revision; false when it was refused (bad binding, stale revision, workout in progress, save failure)",
+      "lite": 1,
+      "echoes": ["bindingVersion", "syncId", "requestId", "syncRevision", "accountBinding", "deviceBinding", "pairingGeneration"],
+      "sentOnlyWhen": "the message passes the correlation and binding checks, as on every other profile",
+      "omits": ["language", "planCount", "exerciseCount"]
+    },
+    "ackAcceptance": {
+      "android": "Accepts the acknowledgement when type, syncId, requestId, syncRevision and applied=true match; other keys are ignored.",
+      "ios": "Accepts the acknowledgement when bindingVersion, ids, revision, accountBinding, deviceBinding, pairingGeneration and applied=true match; other keys are ignored."
+    }
+  },
+  "freeWorkout": {
+    "message": "create_workout with workoutMode=free, sets=[], durationSeconds, gymCalories and optional heart-rate keys; no plannedSetCount, plannedTargetSetCount, completedPlannedSetCount, setMetrics or setIntervals.",
+    "queue": "Up to 3 finished workouts stay queued on the watch and are sent one at a time; each is removed on its own ack.",
+    "phoneBehavior": "Android and iOS create an activity-only workout with the received duration."
+  },
+  "rules": [
+    "Phones that recognize the lite marker must not send plan arrays to that watch.",
+    "A lite watch records free workouts only; a plan is never shown or started on it.",
+    "Free workouts recorded on a lite watch upload through the existing create_workout and workout_part contracts unchanged.",
+    "Non-lite watches never send the marker and keep the full plan sync behavior."
+  ]
+}

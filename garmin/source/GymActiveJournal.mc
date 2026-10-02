@@ -22,6 +22,7 @@ class GymActiveJournal {
     static function releaseReadCache() { rowCacheRef = null; rowCache = null; }
     static function currentRecords() { return records; }
 
+    (:richWorkoutMode)
     static function rememberLegacy(value) {
         if (value[0] != 6) { legacyCount = value[5].size(); }
     }

@@ -120,7 +120,13 @@ class GymCommListener extends Comm.ConnectionListener {
 }
 
 class GymComm {
+    (:richWorkoutMode)
     static var watchVersion = "2026.08.20.1521";
+    // The "-lite" suffix marks free-workout-only watches. It rides in the
+    // existing bounded watchVersion text because phones reject unknown keys in
+    // request_sync.
+    (:compactWorkoutMode96)
+    static var watchVersion = "2026.08.20.1521-lite";
     (:fullLegacyState)
     static var cloudSyncUrl = "https://owrcbsrectdgaotndtxy.supabase.co/functions/v1/garmin-sync";
     (:fullLegacyState)

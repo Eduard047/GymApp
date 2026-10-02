@@ -44,7 +44,7 @@ class GymWorkoutMode {
     // duration-only, matching the existing save wire contract.
     (:compactWorkoutMode96, :inline)
     static function allowsDetailedTracking() {
-        return state == MODE_PLANNED;
+        return false;
     }
 
     // Keep optional per-set interval rows on richer profiles; the 96 KiB
@@ -55,6 +55,7 @@ class GymWorkoutMode {
     (:compactWorkoutMode96, :inline)
     static function permitsOmittedSetIntervals() { return true; }
 
+    (:richWorkoutMode)
     static function hasValidPlan() {
         var currentPlan = GymStore.plan;
         if (!GymStore.isValidLiveSetList(currentPlan, GymStore.maxPlanSets, true) ||
@@ -71,9 +72,14 @@ class GymWorkoutMode {
         return true;
     }
 
+    (:richWorkoutMode)
     static function hasStartablePlan() {
         return GymStore.plan.size() <= GymStore.maxNewWorkoutSets && hasValidPlan();
     }
+
+    // The 96 KiB lite profile has no plan; every workout is FREE.
+    (:compactWorkoutMode96, :inline)
+    static function hasValidPlan() { return false; }
 
     static function canResume() {
         return state == MODE_FREE ||
@@ -150,46 +156,26 @@ class GymWorkoutMode {
             GymStore.status = GymStatus.RECOVERY_FAIL;
             return false;
         }
-        if (!(usePlan instanceof Lang.Boolean) || state != MODE_IDLE ||
-            GymStore.hasUnfinishedWorkout()) {
+        if (usePlan || state != MODE_IDLE || GymStore.hasUnfinishedWorkout()) {
             GymStore.status = GymStatus.MODE_FAIL;
             return false;
         }
-        // Reserve a queue slot before any new workout or picker state is written.
+        // Reserve a queue slot before any new workout state is written.
         // Resume bypasses begin(), so an existing recording remains recoverable.
         if (!GymPendingJournal.readable || GymStore.pendingCount() > 0) {
             GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }
-        if (usePlan && !hasStartablePlan()) {
-            GymStore.status = GymStatus.NO_PLAN;
-            return false;
-        }
-        state = usePlan ? MODE_PLANNED : MODE_FREE;
-        if (usePlan) {
-            if (!GymStore.selectNextPlanSlotInGlobalOrder()) {
-                state = MODE_IDLE;
-                GymStore.status = GymStatus.NO_PLAN;
-                return false;
-            }
-        } else {
-            GymStore.restDurationMs = 0;
-            GymStore.restStartedAt = null;
-        }
-        // Persist the first target before a zero-set activity can be resumed.
-        if (usePlan && !GymStore.saveCurrentEntry()) {
-            state = MODE_IDLE;
-            return false;
-        }
+        state = MODE_FREE;
+        GymStore.restDurationMs = 0;
+        GymStore.restStartedAt = null;
         if (!GymStore.hasAccountBinding()) {
             return true;
         }
-        // The compact marker is authorized transitively by the validated,
-        // owner/device/generation-bound active snapshot required by restore().
-        // A crash before that snapshot exists leaves no resumable workout and
-        // therefore cannot activate this marker for any account.
+        // The marker is authorized transitively by the validated active
+        // snapshot required by restore().
         try {
-            Storage.setValue("activeWorkoutModeV1", [1, usePlan]);
+            Storage.setValue("activeWorkoutModeV1", [1, false]);
             return true;
         } catch (e) {
             state = MODE_IDLE;
@@ -229,33 +215,19 @@ class GymWorkoutMode {
         }
     }
 
+    // A workout that an older build recorded in plan mode resumes as FREE; its
+    // stored rows are kept and uploaded unchanged.
     (:compactWorkoutMode96)
     static function restore() {
         state = MODE_IDLE;
-        // A valid phase marker is already account/device/generation-bound by
-        // GymStore. It is the later journal, so it authoritatively restores the
-        // exact mode even if the smaller active marker was lost or stale.
         if (GymStore.hasPreparedWorkout()) {
-            var preparedFree = GymStore.preparedWorkout.size() == 7 &&
-                GymStore.preparedWorkout[6];
-            if (preparedFree || hasValidPlan()) {
-                state = preparedFree ? MODE_FREE : MODE_PLANNED;
-            }
+            state = MODE_FREE;
             return;
         }
         var marker = Storage.getValue("activeWorkoutModeV1");
-        var markerSize = marker instanceof Lang.Array ? marker.size() : 0;
-        var modeIndex = markerSize - 1;
-        // Size five is the released 3.1.x marker. Its duplicated bindings need
-        // not be re-evaluated here because GymStore has already accepted the
-        // exact active snapshot under those same three bindings.
-        var valid = (markerSize == 2 || markerSize == 5) &&
-            marker[0] instanceof Lang.Number && marker[0] == 1 &&
-            marker[modeIndex] instanceof Lang.Boolean &&
-            GymStore.hasUnfinishedWorkout() &&
-            (!marker[modeIndex] || hasValidPlan());
-        if (valid) {
-            state = marker[modeIndex] ? MODE_PLANNED : MODE_FREE;
+        if (marker instanceof Lang.Array && marker.size() > 0 &&
+            GymStore.hasUnfinishedWorkout()) {
+            state = MODE_FREE;
             return;
         }
         clear();
