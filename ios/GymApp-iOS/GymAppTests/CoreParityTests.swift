@@ -18495,13 +18495,11 @@ private final class FakeGarminPhoneConnectIQTransport: GarminPhoneConnectIQTrans
     var sendCompletionResult: Bool? = true
     private(set) var sent: [SentMessage] = []
     private(set) var initializedURLScheme: String?
-    private(set) var initializedRestorationIdentifier: String?
     private var deviceDelegates: [UUID: IQDeviceEventDelegate] = [:]
     private var appDelegates: [UUID: IQAppMessageDelegate] = [:]
 
-    func initialize(urlScheme: String, restorationIdentifier: String) {
+    func initialize(urlScheme: String) {
         initializedURLScheme = urlScheme
-        initializedRestorationIdentifier = restorationIdentifier
     }
 
     func showDeviceSelection() {}

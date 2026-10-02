@@ -333,7 +333,7 @@ enum GarminPhoneSyncProtocol {
 }
 
 protocol GarminPhoneConnectIQTransport: AnyObject {
-    func initialize(urlScheme: String, restorationIdentifier: String)
+    func initialize(urlScheme: String)
     func showDeviceSelection()
     func parseDeviceSelectionResponse(from url: URL) -> [IQDevice]?
     func registerDeviceEvents(_ device: IQDevice, delegate: IQDeviceEventDelegate)
@@ -355,11 +355,14 @@ private final class LiveGarminPhoneConnectIQTransport: GarminPhoneConnectIQTrans
         self.connectIQ = connectIQ
     }
 
-    func initialize(urlScheme: String, restorationIdentifier: String) {
+    func initialize(urlScheme: String) {
+        // Background BLE relaunch is intentionally disabled: the app has no
+        // bluetooth-central background mode, and CoreBluetooth aborts when a
+        // central manager is created with a state-restoration identifier
+        // without it. Use the initializer that sets no restoration identifier.
         self.connectIQ.initialize(
             withUrlScheme: urlScheme,
-            uiOverrideDelegate: nil,
-            stateRestorationIdentifier: restorationIdentifier
+            uiOverrideDelegate: nil
         )
     }
 
@@ -1741,7 +1744,6 @@ private struct GarminDeviceSelectionTransaction: Codable, Equatable {
 @MainActor
 final class GarminPhoneSyncService: NSObject, ObservableObject {
     private static let returnURLScheme = "com.setforge.gymapp.ios"
-    private static let restorationIdentifier = "com.setforge.gymapp.ios.connectiq"
     private static let appUUID = UUID(uuidString: "A72A5B9F-4E3D-4E5A-8B72-C1D9F6123E40")!
     private static let storeUUID = UUID(uuidString: "fe82a300-4d9f-4588-8b10-365d75280b8f")!
     private static let maximumArchivedDevicesBytes = 128 * 1_024
@@ -1783,10 +1785,7 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         self.syncDeliveryTimeout = syncDeliveryTimeout
         self.planStore = planStore
         super.init()
-        self.connectIQ.initialize(
-            urlScheme: Self.returnURLScheme,
-            restorationIdentifier: Self.restorationIdentifier
-        )
+        self.connectIQ.initialize(urlScheme: Self.returnURLScheme)
         sessionSubscription = auth.$session
             .removeDuplicates(by: { $0?.storageKey == $1?.storageKey })
             .sink { [weak self] session in

@@ -46,6 +46,30 @@ test("native clients open our Garmin listing with platform store fallbacks", asy
   assert.equal(iosSettings.includes(OLD_QA_DOWNLOAD), false);
 });
 
+test("iOS Info.plist declares no background BLE mode and keeps foreground Bluetooth usage strings", async () => {
+  const iosInfo = await readFile("ios/GymApp-iOS/GymApp/Resources/Info.plist", "utf8");
+  const modes = iosInfo.match(/<key>UIBackgroundModes<\/key>\s*<array>([\s\S]*?)<\/array>/);
+
+  assert.notEqual(modes, null, "UIBackgroundModes must remain declared for remote notifications");
+  assert.equal(modes[1].includes("bluetooth-central"), false);
+  assert.equal(modes[1].includes("<string>remote-notification</string>"), true);
+  assert.equal(iosInfo.includes("<key>NSBluetoothAlwaysUsageDescription</key>"), true);
+  assert.equal(iosInfo.includes("<key>NSBluetoothPeripheralUsageDescription</key>"), true);
+});
+
+test("iOS initializes the Connect IQ SDK without a Bluetooth state-restoration identifier", async () => {
+  const service = await readFile("ios/GymApp-iOS/GymApp/Services/GarminPhoneSyncService.swift", "utf8");
+  const iosInfo = await readFile("ios/GymApp-iOS/GymApp/Resources/Info.plist", "utf8");
+
+  assert.equal(iosInfo.includes("bluetooth-central"), false);
+  assert.equal(service.includes("stateRestorationIdentifier"), false);
+  assert.equal(service.includes("restorationIdentifier"), false);
+  assert.match(
+    service,
+    /connectIQ\.initialize\(\s*withUrlScheme: urlScheme,\s*uiOverrideDelegate: nil\s*\)/
+  );
+});
+
 test("Android profile relies on the app bar and the two-section switcher", async () => {
   const androidScreen = await readFile(
     "app/src/main/java/com/example/gymapp/ui/screens/ProfileScreen.kt",
