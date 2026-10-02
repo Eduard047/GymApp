@@ -3,7 +3,7 @@ base.sourcePath = source
 base.resourcePath = resources
 base.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBridge;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;enhancedCompactCheckpoint;noPageDots;tightFullDebugState;compactWorkoutMode96;fr55Memory
 
-# These five products have a 128 KiB watch-app ceiling. The full legacy
+# These seven products have a 128 KiB watch-app ceiling. The full legacy
 # quarantine/direct-cloud parser exceeds that real compiler limit, so use the
 # enhanced compact state profile: indexed atomic workouts, FIT, phone sync,
 # queueing, tutorial, and rich recovery remain available.
@@ -12,6 +12,8 @@ fenix6.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery9
 fenix6s.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory
 fr245.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory
 venusq.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory
+instincte40mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory
+instincte45mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory
 
 # These five API 3.4 products cap watch apps at 98,304 bytes. Select the compact
 # one-time legacy migration path while retaining the current atomic workout,

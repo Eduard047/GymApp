@@ -4946,7 +4946,7 @@ class GymStore {
         parkPendingDuringLongWorkout(value[5] instanceof Lang.Array ? value[5].size() : value[5]);
     }
 
-    (:fullLegacyState, :compactLegacyState, :richWorkoutMode)
+    (:richWorkoutMode)
     static function parkPendingDuringLongWorkout(count) {
         if (!isBoundedInteger(count, 0, maxWorkoutSets) ||
             (GymWorkoutMode.recordingSetLimit != 30 && count < 15) ||

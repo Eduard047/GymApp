@@ -31,9 +31,6 @@ class WorkoutView extends Ui.View {
     var savedSetFlashStartedAt = null;
     var savedSetNumber = 0;
     var lastSyncRequestAt = null;
-    (:fr55Memory)
-    var savePlanReleased = false;
-    (:compactWorkoutMode96)
     var savePlanReleased = false;
     var syncRequestInFlight = false;
     var syncRequestTimedOut = false;
