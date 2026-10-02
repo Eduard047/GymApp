@@ -7,6 +7,7 @@ final class AppBootstrap: ObservableObject {
 
     @Published private(set) var appState: AppState?
     @Published private(set) var startupErrorMessage: String?
+    @Published private(set) var hasAttemptedStart = false
 
     init() {
         let auth = AuthService()
@@ -14,7 +15,6 @@ final class AppBootstrap: ObservableObject {
         let nativePush = NativePushManager(auth: auth)
         self.nativePush = nativePush
         NativePushAppDelegate.manager = nativePush
-        start()
     }
 
     func start() {
@@ -27,6 +27,16 @@ final class AppBootstrap: ObservableObject {
             appState = nil
             startupErrorMessage = gymErrorMessage(error)
         }
+        hasAttemptedStart = true
+    }
+
+    /// Builds the heavy app state only after the first frame (the intro splash)
+    /// has been committed, so the system launch screen hands off to drawn content
+    /// instead of an empty window.
+    func startIfNeeded() async {
+        guard appState == nil, !hasAttemptedStart else { return }
+        try? await Task.sleep(for: .milliseconds(60))
+        start()
     }
 }
 
@@ -34,17 +44,20 @@ final class AppBootstrap: ObservableObject {
 @MainActor
 struct GymAppIOS: App {
     @UIApplicationDelegateAdaptor(NativePushAppDelegate.self) private var appDelegate
-    @StateObject private var bootstrap: AppBootstrap
-
-    init() {
-        _bootstrap = StateObject(wrappedValue: AppBootstrap())
-    }
+    @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @StateObject private var bootstrap = AppBootstrap()
+    @State private var showsIntro = true
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if let appState = bootstrap.appState {
-                    AppRootView(appState: appState, nativePush: bootstrap.nativePush)
+            ZStack {
+                Group {
+                    if let appState = bootstrap.appState {
+                        AppRootView(
+                            appState: appState,
+                            nativePush: bootstrap.nativePush,
+                            showsIntro: $showsIntro
+                        )
                         .environmentObject(appState)
                         .environmentObject(appState.workoutStore)
                         .environmentObject(bootstrap.auth)
@@ -61,12 +74,27 @@ struct GymAppIOS: App {
                                 Task { await bootstrap.auth.handleOpenURL(url) }
                             }
                         }
-                } else {
-                    StartupFailureView(
-                        message: bootstrap.startupErrorMessage,
-                        retry: bootstrap.start
-                    )
+                    } else if bootstrap.hasAttemptedStart {
+                        StartupFailureView(
+                            message: bootstrap.startupErrorMessage,
+                            retry: bootstrap.start
+                        )
+                    }
                 }
+
+                if showsIntro {
+                    IntroSplashView()
+                        .environment(
+                            \.locale,
+                            AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en")
+                        )
+                        .transition(.opacity.combined(with: .scale(scale: 1.015)))
+                        .zIndex(20)
+                }
+            }
+            .task { await bootstrap.startIfNeeded() }
+            .onChange(of: bootstrap.hasAttemptedStart) { _, attempted in
+                if attempted, bootstrap.appState == nil { showsIntro = false }
             }
         }
     }

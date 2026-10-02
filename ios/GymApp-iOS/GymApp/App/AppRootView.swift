@@ -9,10 +9,11 @@ struct AppRootView: View {
     @ObservedObject private var auth: AuthService
     @ObservedObject private var nativePush: NativePushManager
 
-    @State private var showsIntro = true
+    @Binding private var showsIntro: Bool
     @State private var showsPasswordUpdate = false
 
-    init(appState: AppState, nativePush: NativePushManager) {
+    init(appState: AppState, nativePush: NativePushManager, showsIntro: Binding<Bool>) {
+        self._showsIntro = showsIntro
         self.appState = appState
         self.auth = appState.auth
         self.nativePush = nativePush
@@ -64,17 +65,6 @@ struct AppRootView: View {
                         .accessibilityLabel("Please wait…")
                 }
                 .zIndex(30)
-            }
-        }
-        .overlay {
-            if showsIntro {
-                IntroSplashView()
-                    .environment(
-                        \.locale,
-                        AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en")
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 1.015)))
-                    .zIndex(20)
             }
         }
         .sheet(isPresented: $showsPasswordUpdate) {

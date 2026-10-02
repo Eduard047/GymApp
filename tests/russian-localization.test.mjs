@@ -277,9 +277,10 @@ test("retained browser source accepts Russian while the public landing owns its 
 });
 
 test("runtime language switches invalidate cached labels on every client", async () => {
-  const [androidRoot, iosRoot, iosAuth, iosWorkouts, iosProfile, iosProgress, iosMedia, iosAccountSettings, pwaApp] = await Promise.all([
+  const [androidRoot, iosRoot, iosEntry, iosAuth, iosWorkouts, iosProfile, iosProgress, iosMedia, iosAccountSettings, pwaApp] = await Promise.all([
     readFile("app/src/main/java/com/example/gymapp/navigation/GymNavGraph.kt", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/App/AppRootView.swift", "utf8"),
+    readFile("ios/GymApp-iOS/GymApp/App/GymAppIOS.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Screens/AuthView.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Screens/WorkoutsView.swift", "utf8"),
     readFile("ios/GymApp-iOS/GymApp/UI/Screens/ProfileView.swift", "utf8"),
@@ -291,7 +292,8 @@ test("runtime language switches invalidate cached labels on every client", async
   assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{ rememberNavController\(\) \}/);
   assert.match(androidRoot, /key\(uiIsolationKey, selectedLanguage\) \{[\s\S]*GymBackground/);
   assert.match(iosRoot, /@AppStorage\("app-language"\)[\s\S]*\.environment\(\\\.locale/);
-  const introOverlay = iosRoot.match(/if showsIntro \{[\s\S]*?\.zIndex\(20\)/)?.[0];
+  assert.match(iosEntry, /@AppStorage\("app-language"\)/);
+  const introOverlay = iosEntry.match(/if showsIntro \{[\s\S]*?\.zIndex\(20\)/)?.[0];
   assert.ok(introOverlay, "iOS intro splash overlay must remain present");
   assert.match(
     introOverlay,
