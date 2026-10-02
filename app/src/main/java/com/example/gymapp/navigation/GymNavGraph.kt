@@ -3229,6 +3229,9 @@ internal fun GymAppRoot(
                                 onCloseTemplatePicker = viewModel::closeWorkoutTemplatePicker,
                                 onCopyWorkoutTemplate = viewModel::copyWorkoutTemplate,
                                 onSyncPlanToWatch = viewModel::syncPlanToWatch,
+                                garminWatchIsLite = applicationContext.gymApplication
+                                    .garminSyncManager.deviceUiState
+                                    .collectAsStateWithLifecycle().value.trustedWatchIsLite,
                                 onShareWorkout = {
                                     val plan = viewModel.prepareSharedWorkoutPlan()
                                     if (plan == null) {

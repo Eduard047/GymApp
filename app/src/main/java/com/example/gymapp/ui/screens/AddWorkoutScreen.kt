@@ -167,6 +167,7 @@ fun AddWorkoutScreen(
     onCopyWorkoutTemplate: (Long) -> Unit,
     onSyncPlanToWatch: () -> Unit,
     onShareWorkout: () -> Unit,
+    garminWatchIsLite: Boolean = false,
     liveInviteTargetName: String? = null,
     hasLiveInviteTarget: Boolean = !liveInviteTargetName.isNullOrBlank(),
     isLiveInviteAvailable: Boolean = true,
@@ -580,10 +581,19 @@ fun AddWorkoutScreen(
                         title = stringResource(R.string.action_sync_plan_to_garmin),
                         supporting = stringResource(R.string.add_workout_plan_mode_hint)
                     )
+                    if (garminWatchIsLite) {
+                        Text(
+                            text = stringResource(R.string.garmin_lite_free_only_notice),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     OutlinedButton(
                         onClick = onSyncPlanToWatch,
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = selectedExerciseCount > 0 && !uiState.isSyncingPlanToWatch
+                        enabled = selectedExerciseCount > 0 &&
+                            !uiState.isSyncingPlanToWatch &&
+                            !garminWatchIsLite
                     ) {
                         if (uiState.isSyncingPlanToWatch) {
                             CircularProgressIndicator(

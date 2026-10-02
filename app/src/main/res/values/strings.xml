@@ -1266,6 +1266,7 @@
     <string name="garmin_profile_connected">Connected now</string>
     <string name="garmin_profile_offline">Not connected now</string>
     <string name="garmin_profile_paired">Paired</string>
+    <string name="garmin_lite_free_only_notice">This watch supports free workouts only. Plans stay on your phone.</string>
     <string name="garmin_profile_no_devices">No Garmin watch is paired in Garmin Connect.</string>
     <string name="garmin_profile_unavailable">Garmin Connect is unavailable. Open it and try again.</string>
     <string name="exercise_media_title">Exercise preview</string>

@@ -744,6 +744,13 @@ private fun GarminDeviceCard(
                             )
                         }
                     }
+                    if (device.liteMode) {
+                        Text(
+                            text = stringResource(R.string.garmin_lite_free_only_notice),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             OutlinedButton(

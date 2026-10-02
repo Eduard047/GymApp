@@ -21,7 +21,9 @@ class PlanSyncErrorTextTest {
             "No trusted Garmin watch is paired" to R.string.message_no_trusted_garmin_watch,
             "sync_ack was not received" to R.string.message_garmin_ack_missing,
             "Send status failed" to R.string.message_garmin_send_failed,
-            "Send timeout" to R.string.message_garmin_send_failed
+            "Send timeout" to R.string.message_garmin_send_failed,
+            "Garmin lite watch supports free workouts only" to
+                R.string.garmin_lite_free_only_notice
         )
 
         cases.forEach { (message, expectedResource) ->

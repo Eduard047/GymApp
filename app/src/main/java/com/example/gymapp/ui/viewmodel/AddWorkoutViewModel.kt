@@ -33,6 +33,7 @@ import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.WorkoutExerciseDraft
 import com.example.gymapp.data.repository.WorkoutSetDraft
+import com.example.gymapp.garmin.GARMIN_LITE_PLAN_UNSUPPORTED_STATUS
 import com.example.gymapp.sync.PhoneSyncClient
 import com.example.gymapp.util.CalorieMode
 import com.example.gymapp.util.LocalizedText
@@ -512,6 +513,8 @@ internal fun planSyncErrorText(error: Throwable): LocalizedText {
             R.string.message_plan_outside_garmin_limits
         message == "Garmin plan exceeds the 30-set limit" ->
             R.string.message_garmin_plan_set_limit
+        message == GARMIN_LITE_PLAN_UNSUPPORTED_STATUS ->
+            R.string.garmin_lite_free_only_notice
         message.contains("Garmin SDK", ignoreCase = true) ->
             R.string.message_garmin_sdk_not_ready
         message == "Sign in before Garmin sync" -> R.string.message_garmin_sign_in_required

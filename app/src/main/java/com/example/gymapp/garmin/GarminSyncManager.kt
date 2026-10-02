@@ -52,6 +52,7 @@ private const val GLOBAL_TRUSTED_DEVICE_KEY = "trusted_physical_device_v2"
 private const val PAIRING_GENERATION_KEY_PREFIX = "pairing_generation_v1"
 private const val PENDING_PAIRING_GENERATION_KEY_PREFIX = "pairing_generation_pending_v1"
 private const val PAIRING_GENERATION_CAPABILITY_KEY_PREFIX = "pairing_generation_capable_v1"
+private const val LITE_WATCH_KEY_PREFIX = "watch_lite_v1"
 private const val LAST_READY_AUTH_TRANSITION_KEY = "auth_transition_ready_v1"
 private const val PENDING_AUTH_TRANSITION_KEY = "auth_transition_pending_key_v1"
 private const val PENDING_AUTH_ACCOUNT_BINDING_KEY = "auth_transition_pending_binding_v1"
@@ -151,13 +152,19 @@ internal fun garminCloudAccountLocalCleanupPlan(
 data class GarminDeviceSummary(
     val name: String,
     val connected: Boolean,
-    val trustedForActiveAccount: Boolean
+    val trustedForActiveAccount: Boolean,
+    /** Free-workout-only watch (96 KiB tier): it never receives or shows plans. */
+    val liteMode: Boolean = false
 )
 
 data class GarminDeviceUiState(
     val sdkReady: Boolean = false,
     val devices: List<GarminDeviceSummary> = emptyList()
-)
+) {
+    /** True when the watch paired to the active account is a free-workout-only watch. */
+    val trustedWatchIsLite: Boolean
+        get() = devices.any { it.trustedForActiveAccount && it.liteMode }
+}
 
 /** Builds the bounded, portable note stored with a trusted Garmin workout. */
 internal fun garminWorkoutNote(
@@ -331,6 +338,19 @@ class GarminSyncManager(
     @Volatile private var sdkInitializationRequested = false
     @Volatile private var readyAuthTransitionKey: String? = null
     private val pairingStateMutex = Mutex()
+    private val liteWatches = GarminLiteWatchTracker(
+        object : GarminLiteFlagStore {
+            override fun read(deviceBinding: String): Boolean? {
+                val key = garminStorageKey(LITE_WATCH_KEY_PREFIX, deviceBinding)
+                return preferences().all[key] as? Boolean
+            }
+
+            override fun write(deviceBinding: String, lite: Boolean) {
+                val key = garminStorageKey(LITE_WATCH_KEY_PREFIX, deviceBinding)
+                preferences().edit().putBoolean(key, lite).apply()
+            }
+        }
+    )
 
     private data class GarminAccountContext(
         val session: AccountSession,
@@ -874,6 +894,18 @@ class GarminSyncManager(
                     }
                     val envelopes = boundedGarminInboundEnvelopes(messages)
                     envelopes.forEach { envelope ->
+                        if (envelope.kind == GarminInboundCommandKind.SyncRequest) {
+                            // Payload-size hint only, never a trust decision: it lets the phone
+                            // send a tiny binding-only sync to a free-workout-only watch, even
+                            // while that watch is still unpaired.
+                            if (liteWatches.recordRequestSync(
+                                    deviceBinding(source),
+                                    envelope.command
+                                )
+                            ) {
+                                refreshDeviceUiState()
+                            }
+                        }
                         if (!isPotentiallyTrustedInboundSource(source, envelope)) {
                             return@forEach
                         }
@@ -918,11 +950,15 @@ class GarminSyncManager(
                     pending.binding.device == sourceBinding &&
                     garminBindingDecision(envelope.command, pending.binding) ==
                         GarminBindingDecision.Bound &&
-                    garminSyncAckMatches(
+                    (garminSyncAckMatches(
                         command = envelope.command,
                         expectedSyncId = syncId,
                         expectedRevision = pending.revision
-                    )
+                    ) || garminLiteSyncAckRefused(
+                        command = envelope.command,
+                        expectedSyncId = syncId,
+                        expectedRevision = pending.revision
+                    ))
             }
         }
     }
@@ -936,23 +972,43 @@ class GarminSyncManager(
             command = command,
             expected = pending.binding
         )
+        val applied = garminSyncAckMatches(
+            command = command,
+            expectedSyncId = syncId,
+            expectedRevision = pending.revision
+        )
+        val liteRefused = !applied && garminLiteSyncAckRefused(
+            command = command,
+            expectedSyncId = syncId,
+            expectedRevision = pending.revision
+        )
         if (
             !pendingContextIsCurrent(pending) ||
             deviceBinding(device) != pending.binding.device ||
             decision != GarminBindingDecision.Bound ||
-            !garminSyncAckMatches(
-                command = command,
-                expectedSyncId = syncId,
-                expectedRevision = pending.revision
-            )
+            (!applied && !liteRefused)
         ) {
             Log.i(TAG, "Rejected unbound or unsuccessful Garmin sync acknowledgement")
             return
         }
+        if (liteWatches.recordSyncAck(deviceBinding(device), command)) {
+            refreshDeviceUiState()
+        }
         if (pendingSyncAcks.remove(syncId, pending)) {
-            lastPlanSyncStatus = "Garmin plan acknowledged"
-            Log.i(TAG, "Garmin sync acknowledged")
-            pending.deferred.complete(true)
+            if (liteRefused) {
+                // The watch answered, so repeating the same message cannot help.
+                lastPlanSyncStatus = "Garmin lite watch refused the sync"
+                Log.i(TAG, "Garmin lite sync refused by the watch")
+                pending.deferred.complete(false)
+            } else {
+                lastPlanSyncStatus = if (garminSyncAckIsLite(command)) {
+                    "Garmin lite watch paired; plans stay on the phone"
+                } else {
+                    "Garmin plan acknowledged"
+                }
+                Log.i(TAG, "Garmin sync acknowledged")
+                pending.deferred.complete(true)
+            }
         }
     }
 
@@ -1294,22 +1350,28 @@ class GarminSyncManager(
         outboundSyncMutex.withLock {
             if (!isStillActive(account)) return@withLock
             if (trustedDeviceBinding(account) != deviceBinding(device)) return@withLock
-            val repository = application.repositoryFor(account.session)
-            val exercises = repository.getExerciseNamesForSync(limit = MAX_WATCH_EXERCISES)
-            if (!isStillActive(account)) return@withLock
             val deviceBinding = deviceBinding(device)
+            // A free-workout-only watch holds no plan: skip the catalog and plan work entirely.
+            val lite = liteWatches.isLite(deviceBinding)
             val plan = cachedPlan(account, deviceBinding)
-            val safeCatalog = mergedGarminExerciseCatalogWithinDurableBudget(
-                plan = plan,
-                exercises = exercises,
-                accountBinding = account.binding,
-                deviceBinding = deviceBinding,
-                // Gate before activePairingGeneration can allocate local state.
-                pairingGeneration = account.binding,
-                maximumCount = MAX_WATCH_EXERCISES
-            ) ?: run {
-                lastPlanSyncStatus = "Garmin plan exceeds the durable watch budget"
-                return@withLock
+            val safeCatalog = if (lite) {
+                emptyList()
+            } else {
+                val repository = application.repositoryFor(account.session)
+                val exercises = repository.getExerciseNamesForSync(limit = MAX_WATCH_EXERCISES)
+                if (!isStillActive(account)) return@withLock
+                mergedGarminExerciseCatalogWithinDurableBudget(
+                    plan = plan,
+                    exercises = exercises,
+                    accountBinding = account.binding,
+                    deviceBinding = deviceBinding,
+                    // Gate before activePairingGeneration can allocate local state.
+                    pairingGeneration = account.binding,
+                    maximumCount = MAX_WATCH_EXERCISES
+                ) ?: run {
+                    lastPlanSyncStatus = "Garmin plan exceeds the durable watch budget"
+                    return@withLock
+                }
             }
             val supportsGeneration = generationSupportOverride
                 ?: pairingGenerationSupported(account, deviceBinding)
@@ -1324,13 +1386,21 @@ class GarminSyncManager(
                 pairingGeneration = pairingGeneration
             )
             val syncId = newGarminMessageId()
-            val basePayload = syncPayload(
-                exercises = safeCatalog,
-                plan = plan,
-                syncId = syncId,
-                resetWorkout = false,
-                repairPairing = repairPairing
-            )
+            val basePayload = if (lite) {
+                garminBindingOnlySyncPayload(
+                    language = application.languageManager.currentLanguage().tag,
+                    syncId = syncId,
+                    repairPairing = repairPairing
+                )
+            } else {
+                syncPayload(
+                    exercises = safeCatalog,
+                    plan = plan,
+                    syncId = syncId,
+                    resetWorkout = false,
+                    repairPairing = repairPairing
+                )
+            }
             if (!cachePlan(plan, account, deviceBinding)) return@withLock
             if (!isStillActive(account)) return@withLock
             val revision = allocateSyncRevision(binding) ?: run {
@@ -1528,6 +1598,19 @@ class GarminSyncManager(
                 lastPlanSyncStatus = "Cannot persist trusted Garmin device"
                 return false
             }
+            if (liteWatches.isLite(deviceBinding)) {
+                // Free-workout-only watch: pair it with a binding-only sync, never send the
+                // plan, and do not report a plan as sent.
+                val paired = sendLiteBindingSync(
+                    device = device,
+                    account = account,
+                    binding = binding,
+                    supportsGeneration = supportsGeneration,
+                    language = language
+                )
+                if (paired) lastPlanSyncStatus = GARMIN_LITE_PLAN_UNSUPPORTED_STATUS
+                return false
+            }
             if (!cachePlan(planToCache, account, deviceBinding)) {
                 lastPlanSyncStatus = "Cannot persist Garmin plan"
                 return false
@@ -1585,6 +1668,35 @@ class GarminSyncManager(
             }
         }
         return false
+    }
+
+    /** Pairs a free-workout-only watch: the sync carries bindings and language, never a plan. */
+    private suspend fun sendLiteBindingSync(
+        device: IQDevice,
+        account: GarminAccountContext,
+        binding: GarminBinding,
+        supportsGeneration: Boolean,
+        language: AppLanguage
+    ): Boolean {
+        val syncId = newGarminMessageId()
+        val revision = allocateSyncRevision(binding) ?: return false
+        val payload = boundGarminSyncPayload(
+            garminBindingOnlySyncPayload(language = language.tag, syncId = syncId),
+            binding,
+            revision,
+            includePairingGeneration = supportsGeneration
+        ) ?: return false
+        Log.i(TAG, "Sending binding-only sync to a lite Garmin watch payload=${payloadSummary(payload)}")
+        return sendAndConfirmSync(
+            device = device,
+            payload = payload,
+            syncId = syncId,
+            account = account,
+            authTransitionKey = account.authTransitionKey,
+            requireReadyAccount = true,
+            binding = binding,
+            revision = revision
+        )
     }
 
     private suspend fun sendPendingAuthResetIfPossible(trigger: GarminPendingResetTrigger) {
@@ -1828,7 +1940,8 @@ class GarminSyncManager(
                         name = name,
                         connected = latestDeviceStatuses[device.deviceIdentifier] ==
                             IQDevice.IQDeviceStatus.CONNECTED,
-                        trustedForActiveAccount = trustedBinding == deviceBinding(device)
+                        trustedForActiveAccount = trustedBinding == deviceBinding(device),
+                        liteMode = liteWatches.isLite(deviceBinding(device))
                     )
                 }
         )
@@ -1918,7 +2031,7 @@ class GarminSyncManager(
                 }
                 false
             } ?: false
-            if (!confirmed) {
+            if (!confirmed && !ack.isCompleted) {
                 lastPlanSyncStatus =
                     "Garmin watch did not acknowledge the sync after bounded retries"
                 Log.i(TAG, "Garmin sync acknowledgement retries exhausted")

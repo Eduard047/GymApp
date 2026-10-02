@@ -1294,6 +1294,7 @@
     <string name="garmin_profile_connected">Зараз підключено</string>
     <string name="garmin_profile_offline">Зараз не підключено</string>
     <string name="garmin_profile_paired">Прив’язано</string>
+    <string name="garmin_lite_free_only_notice">Цей годинник підтримує лише вільні тренування. Плани залишаються на телефоні.</string>
     <string name="garmin_profile_no_devices">У Garmin Connect немає сполученого годинника.</string>
     <string name="garmin_profile_unavailable">Garmin Connect недоступний. Відкрийте його й повторіть спробу.</string>
     <string name="exercise_media_title">Демонстрація вправи</string>
