@@ -102,7 +102,6 @@ class GymApp extends App.AppBase {
     }
 
     function handlePhonePayload(message) {
-        if (finishedDurably) { return; }
         if (!(message instanceof Lang.Dictionary)) {
             GymStore.status = GymStatus.BAD_MSG;
             return;
@@ -114,7 +113,8 @@ class GymApp extends App.AppBase {
         }
         var typeText = type.toString();
         if (typeText != null && typeText.equals("sync")) {
-            handleSyncMessage(message);
+            // After a durable finish only acks are useful; a sync is dropped.
+            if (!finishedDurably) { handleSyncMessage(message); }
         } else if (typeText.equals("workout_part_ack")) {
             if (GymPendingJournal.acknowledgePart(message)) { sendNextPendingWorkout(); }
         } else if (typeText != null && typeText.equals("ack")) {

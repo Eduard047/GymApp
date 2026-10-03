@@ -5046,6 +5046,7 @@ class GymStore {
             return false;
         }
         if (!restorePendingForMutation()) { return false; }
+        if (exercises.size() == 0) { return removeAckedAfterRelease(requestId); }
         if (pending.size() == 0) {
             if (!GymPendingJournal.remove(requestId)) { return false; }
             lastWorkoutSyncAtSeconds = Time.now().value();
@@ -5070,6 +5071,27 @@ class GymStore {
         }
         load();
         return false;
+    }
+
+    // A durable finish releases the plan and catalog, so save() would fail
+    // there and trigger load(). Such an ack rewrites only the queue head and
+    // the last sync time, and an unwritable queue is left to resend.
+    private static function removeAckedAfterRelease(requestId) {
+        if (pending.size() == 0) {
+            if (!GymPendingJournal.remove(requestId)) { return false; }
+        } else {
+            var item = pending[0];
+            if (!(item instanceof Lang.Dictionary) ||
+                !requestId.toString().equals(item.get("requestId"))) { return false; }
+            var rest = pending.slice(1, null);
+            try { Storage.setValue("pending", rest); } catch (e) { return false; }
+            pendingEstimateSource = null; pending = rest;
+        }
+        lastWorkoutSyncAtSeconds = Time.now().value();
+        try {
+            Storage.setValue("lastWorkoutSyncV1", [1, accountBinding, lastWorkoutSyncAtSeconds]);
+        } catch (e) { }
+        return true;
     }
 
     static function rotatePairingGenerationForPending(previousGeneration, nextGeneration) {

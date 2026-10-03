@@ -33,6 +33,8 @@ extraction uses explicit substring bounds for older Connect IQ runtimes.
 - `DISCARD` opens an explicit warning screen. `KEEP WORKOUT` is selected by default, `BACK` cancels, and only `YES, DISCARD` exits without saving the Garmin activity or sending the GymApp workout.
 - Finished workouts remain queued locally until Garmin Connect can deliver them to a compatible phone client.
 - FIT finalization, queue append, queue recovery and final cleanup run in separate callbacks on Save. The saving screen consumes repeated input, and a failed stage returns to explicit retry. The durable owner/device/request marker remains authoritative across restarts.
+- After the final cleanup the watch shows `SENDING...` while the phone is connected and stays open until the phone acknowledges the queue, 30 s pass without progress, or any button is pressed. The queue is kept on every early exit. The next set offset of a multi-part transfer is stored, so a restart resumes from it; a phone that no longer holds the staged transfer makes the watch restart from the first set.
+- A failed save names its cause where it is known: a full queue shows the sync prompt and a storage budget overrun shows the storage status; other failures keep the generic save error.
 
 ## Lite mode (96 KiB watches)
 
@@ -73,7 +75,7 @@ extraction uses explicit substring bounds for older Connect IQ runtimes.
 - FREE activities refresh a bounded checkpoint every 15 seconds and at lifecycle boundaries; bound compact workouts update only the empty-set header. Unpaired activities keep their separate watch-local journal. Resume restores elapsed time and metrics only after an explicit action. Pairing waits until that local activity is resolved; the journal never becomes a phone queue payload. A prepared/saved FIT phase prevents an uncertain save result from silently starting a duplicate activity after restart.
 - Compact active snapshot v6 commits a bounded header after immutable, epoch-bound set rows. Undo and replacement keep the previous committed prefix readable until the new header is durable. Legacy v2/v3/v4 snapshots remain readable, and numeric values retain their original precision.
 - Completed journal workouts pin their row bank. The queue writes bounded entries into an inactive slot before committing its small index; interrupted writes leave the previous index readable. Account/device/generation checks apply to the whole queue and every outgoing frame.
-- Large compact workouts use `workout_part` frames with one set each. Android and iOS persist the ordered transfer before partial acknowledgement and acknowledge the complete workout only after durable import. Update the phone client before distributing a watch build that uses these frames; older clients ignore them and the watch retains the queue.
+- Large compact workouts, and every workout with sets on 128 KiB watches, use `workout_part` frames with one set each. Android and iOS persist the ordered transfer before partial acknowledgement and acknowledge the complete workout only after durable import. Update the phone client before distributing a watch build that uses these frames; older clients ignore them and the watch retains the queue.
 
 ## Auto set detection
 

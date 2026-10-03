@@ -12,6 +12,9 @@ class WorkoutView extends Ui.View {
     var saveStage = 0;
     var saveMessage = null;
     var saveSetsOnly = false;
+    // Stage 7 waits for the phone: last progress marker and ticks without change.
+    var sendProgress = 0;
+    var sendIdle = 0;
     var selected = 0;
     // Page 7 is the compact, non-recording launch surface. Opening GymApp must
     // never be interpreted as consent to start a FIT activity or contact a
@@ -700,7 +703,8 @@ class WorkoutView extends Ui.View {
         }
         if (!(saveStage == 5 ? GymStore.appendWorkout(message) : GymStore.queueWorkout(message))) {
             if (!(GymStore.status == GymStatus.SYNC_FULL) &&
-                !(GymStore.status == GymStatus.QUEUE_FULL)) {
+                !(GymStore.status == GymStatus.QUEUE_FULL) &&
+                !(GymStore.status == GymStatus.STORE_FULL)) {
                 GymStore.status = GymStatus.SAVE_FAIL;
             }
             Ui.requestUpdate();
@@ -741,8 +745,7 @@ class WorkoutView extends Ui.View {
 
     (:richRecovery, :notFr55Memory)
     function finishFitRecovery(activityFound) {
-        if (GymActiveJournal.snapshot() != null &&
-            (GymStore.sets.size() > 14 || GymStore.pendingCount() > 0)) {
+        if (savesViaJournal()) {
             if (activityFound && !GymStore.markPreparedWorkoutFitSaved()) { return false; }
             saveSetsOnly = !activityFound; saveStage = 1;
             Ui.requestUpdate();
@@ -949,12 +952,37 @@ class WorkoutView extends Ui.View {
         Ui.requestUpdate();
     }
 
+    // 128 KiB watches queue any recorded set through the journal: building the
+    // whole create_workout message peaks several KB above the journal rows.
+    // A workout without sets keeps the message path.
+    (:mem128)
+    static const journalMinSets = 1;
+    (:noMem128)
+    static const journalMinSets = 15;
+
+    function savesViaJournal() {
+        return GymActiveJournal.snapshot() != null &&
+            (GymStore.sets.size() >= journalMinSets || GymStore.pendingCount() > 0);
+    }
+
+    function exitAfterSave() {
+        Attention.vibrate([new Attention.VibeProfile(80, 250)]);
+        System.exit();
+    }
+
+    function savingText() {
+        return saveStage == 7 ? GymStore.tr("SENDING...", "НАДСИЛАННЯ...", "ОТПРАВКА...") :
+            GymStore.tr("SAVING...", "ЗБЕРЕЖЕННЯ...", "СОХРАНЕНИЕ...");
+    }
+
     function continueSaving() {
         if (saveStage == 1) {
-            if (GymActiveJournal.snapshot() != null &&
-            (GymStore.sets.size() > 14 || GymStore.pendingCount() > 0)) {
+            var fail = GymStatus.SAVE_FAIL;
+            if (savesViaJournal()) {
                 var metadata = GymStore.preparedWorkoutJournalMetadata(saveSetsOnly);
-                saveStage = GymPendingJournal.begin(metadata) == 0 ? 6 : 0;
+                var started = GymPendingJournal.begin(metadata);
+                saveStage = started == 0 ? 6 : 0;
+                if (started == -2) { fail = GymStatus.QUEUE_FULL; }
                 if (saveStage == 6) {
                     if (shouldReleasePlanMemoryAfterSave() &&
                         GymStore.plan == GymStore.persistedPlanSource) {
@@ -973,13 +1001,16 @@ class WorkoutView extends Ui.View {
                 saveMessage = buildFinishWorkoutMessage();
                 saveStage = saveMessage != null ? 5 : 0;
             }
-            if (saveStage == 0) { GymStore.status = GymStatus.SAVE_FAIL; }
+            if (saveStage == 0) { GymStore.status = fail; }
         } else if (saveStage == 6) {
+            var result = 0;
             for (var row = 0; row < 4 && saveStage == 6; row += 1) {
-                var result = GymPendingJournal.advance();
+                result = GymPendingJournal.advance();
                 if (result != 0) { saveStage = result == 1 ? 2 : 0; }
             }
-            if (saveStage == 0) { GymStore.status = GymStatus.SAVE_FAIL; }
+            if (saveStage == 0) {
+                GymStore.status = result == -2 ? GymStatus.STORE_FULL : GymStatus.SAVE_FAIL;
+            }
         } else if (saveStage == 5) {
             // Append only; its durable marker prevents sending until recovery.
             saveStage = finishWorkoutMessage(saveMessage) ? 2 : 0;
@@ -1003,11 +1034,25 @@ class WorkoutView extends Ui.View {
                 if (sendQueued) {
                     flushPending();
                 }
-                Attention.vibrate([new Attention.VibeProfile(80, 250)]);
-                System.exit();
+                if (sendQueued && pendingSendInFlight) {
+                    // Keep the process alive so the phone can ack every part.
+                    saveStage = 7;
+                    getApp().finishedDurably = true;
+                    ticker.start(method(:tick), 500, true);
+                } else {
+                    exitAfterSave();
+                }
             } else {
                 GymStore.status = GymStatus.SAVE_FAIL;
             }
+        } else if (saveStage == 7) {
+            var progress = GymStore.pendingCount() * 1000 + GymPendingJournal.offset;
+            sendIdle = progress == sendProgress ? sendIdle + 1 : 0;
+            sendProgress = progress;
+            maybeRetryPending();
+            // The queue keeps the workout and resends it later on any early exit.
+            // 60 ticks of 500 ms without progress is the 30 s limit.
+            if (progress < 1000 || sendIdle >= 60 || !GymComm.isPhoneConnected()) { exitAfterSave(); }
         }
         if (saveStage == 0) { ticker.start(method(:tick), 1000, true); }
         Ui.requestUpdate();
@@ -1027,7 +1072,7 @@ class WorkoutView extends Ui.View {
         }
         if (saveStage > 0) {
             dc.drawText(w / 2, h / 2 - dc.getFontHeight(Gfx.FONT_XTINY) / 2,
-                Gfx.FONT_XTINY, GymStore.tr("SAVING...", "ЗБЕРЕЖЕННЯ...", "СОХРАНЕНИЕ..."),
+                Gfx.FONT_XTINY, savingText(),
                 Gfx.TEXT_JUSTIFY_CENTER);
             return;
         }
@@ -1082,7 +1127,7 @@ class WorkoutView extends Ui.View {
         }
         if (saveStage > 0) {
             dc.drawText(w / 2, h / 2 - dc.getFontHeight(Gfx.FONT_XTINY) / 2,
-                Gfx.FONT_XTINY, GymStore.tr("SAVING...", "ЗБЕРЕЖЕННЯ...", "СОХРАНЕНИЕ..."),
+                Gfx.FONT_XTINY, savingText(),
                 Gfx.TEXT_JUSTIFY_CENTER);
             return;
         }
@@ -1135,7 +1180,7 @@ class WorkoutView extends Ui.View {
         }
         if (saveStage > 0) {
             dc.drawText(w / 2, h / 2 - dc.getFontHeight(Gfx.FONT_XTINY) / 2,
-                Gfx.FONT_XTINY, GymStore.tr("SAVING...", "ЗБЕРЕЖЕННЯ...", "СОХРАНЕНИЕ..."),
+                Gfx.FONT_XTINY, savingText(),
                 Gfx.TEXT_JUSTIFY_CENTER);
             return;
         }
@@ -2048,6 +2093,9 @@ class WorkoutView extends Ui.View {
         if (current == GymStatus.RECOVERY_FAIL || current == GymStatus.SAVE_FAIL) {
             return GymStore.tr("SAVE FAILED", "НЕ ЗБЕРЕЖЕНО", "НЕ СОХРАНЕНО");
         }
+        if (current == GymStatus.QUEUE_FULL) {
+            return GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.");
+        }
         if (current == GymStatus.STORE_FULL) {
             return GymStore.tr("STORAGE FULL", "ПАМ'ЯТЬ ПОВНА", "ПАМЯТЬ ПОЛНА");
         }
@@ -2759,6 +2807,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             System.exit();
             return true;
         }
+        if (view.saveStage == 7) { view.exitAfterSave(); }
         return view.saveStage != 0;
     }
 

@@ -12,7 +12,7 @@ class GymPendingJournal {
     private static var dirty = false;
     private static var transferId = null;
     private static var attempt = null;
-    private static var offset = 0;
+    static var offset = 0;
     private static var sentAt = null;
     private static var indexSlot = 0;
     private static var stagedNameBytes = null;
@@ -270,6 +270,7 @@ class GymPendingJournal {
         }
         if (bytes > 12000) { readable = false; return false; }
         entries = next;
+        restoreProgress();
         return true;
     }
 
@@ -353,16 +354,19 @@ class GymPendingJournal {
         }
         if (bytes > 12000) { readable = false; return false; }
         entries = next;
+        restoreProgress();
         return true;
     }
 
     // Returns 0 while names are being pinned, 1 after the durable queue commit,
-    // or -1 on failure. The active snapshot/marker remain intact on every failure.
+    // -1 on failure, or -2 when the queue (begin) or the storage budget (advance)
+    // is full. The active snapshot/marker remain intact on every failure.
     (:richWorkoutMode)
     static function begin(metadata) {
         staged = null; nextName = 0; stagedTotals = null;
         if (!(metadata instanceof Lang.Dictionary) && !(metadata instanceof Lang.Array)) { return -1; }
-        if (!readable || GymStore.pendingCount() >= 8 ||
+        if (GymStore.pendingCount() >= 8) { return -2; }
+        if (!readable ||
             !GymStore.hasPreparedWorkout() || (!GymStore.preparedWorkoutFitSaved() &&
                 !GymSession.fitOutcomeUnknownAfterRestart())) { return -1; }
         var header = GymActiveJournal.snapshot();
@@ -383,7 +387,8 @@ class GymPendingJournal {
     static function begin(metadata) {
         staged = null; nextName = 0; stagedTotals = null; stagedIntervalMode = 0;
         if (!(metadata instanceof Lang.Dictionary) && !(metadata instanceof Lang.Array)) { return -1; }
-        if (!readable || GymStore.pendingCount() >= GymStore.queueLimit ||
+        if (GymStore.pendingCount() >= GymStore.queueLimit) { return -2; }
+        if (!readable ||
             !GymStore.hasPreparedWorkout() || (!GymStore.preparedWorkoutFitSaved() &&
                 !GymSession.fitOutcomeUnknownAfterRestart())) { return -1; }
         var header = GymActiveJournal.snapshot();
@@ -420,7 +425,7 @@ class GymPendingJournal {
                     !addInterval(staged, stagedTotals, value[4])) { staged = null; return -1; }
                 var name = GymStore.exercises[value[1]];
                 var bytes = GymStore.utf8Bytes(name).size();
-                if (staged[2] + bytes + totalNameBytes() > 12000) { staged = null; return -1; }
+                if (staged[2] + bytes + totalNameBytes() > 12000) { staged = null; return -2; }
                 Storage.setValue(nameKey(staged[1][6], value[1]), [value[0], value[1], name]);
                 staged[2] += bytes; nextName += 1;
                 return 0;
@@ -435,7 +440,7 @@ class GymPendingJournal {
             try { withinBudget = GymStore.isWithinStorageBudget(); }
             catch (budgetError) { withinBudget = false; }
             entries = previousEntries;
-            if (!withinBudget) { staged = null; return -1; }
+            if (!withinBudget) { staged = null; return -2; }
             Storage.setValue("queuedActiveRequestId", GymStore.preparedWorkout[4]);
             if (!storeIndex(next)) { staged = null; return -1; }
             entries = next; staged = null; nextName = 0;
@@ -470,7 +475,7 @@ class GymPendingJournal {
                 if (!addInterval(staged, stagedTotals, value[4])) { staged = null; return -1; }
                 var name = GymStore.exercises[value[1]];
                 var bytes = GymStore.utf8Bytes(name).size();
-                if (staged[2] + bytes + totalNameBytes() > GymStore.queueNameBudget) { staged = null; return -1; }
+                if (staged[2] + bytes + totalNameBytes() > GymStore.queueNameBudget) { staged = null; return -2; }
                 Storage.setValue(nameKey(staged[1][6], value[1]), [value[0], value[1], name]);
                 staged[2] += bytes; nextName += 1;
                 return 0;
@@ -485,7 +490,7 @@ class GymPendingJournal {
             try { withinBudget = GymStore.isWithinStorageBudget(); }
             catch (budgetError) { withinBudget = false; }
             entries = previousEntries;
-            if (!withinBudget) { staged = null; return -1; }
+            if (!withinBudget) { staged = null; return -2; }
             Storage.setValue("queuedActiveRequestId", GymStore.preparedWorkout[4]);
             if (!storeIndex(next)) { staged = null; return -1; }
             entries = next; staged = null; nextName = 0;
@@ -703,8 +708,25 @@ class GymPendingJournal {
             !GymStore.isBoundedInteger(message["nextOffset"], offset + 1, entry[1][5] - 1)) { return false; }
         // Only a fresh, exact phone response advances this in-memory cursor.
         // No partial response removes any persistent workout data.
-        offset = message["nextOffset"]; attempt = null; sentAt = null;
+        offset = message["nextOffset"];
+        // Resume point across a watch restart.
+        try { Storage.setValue("sendProgressV1", [transferId, offset]); } catch (e) { }
+        attempt = null; sentAt = null;
         return true;
+    }
+
+    // Resume point [requestId, nextOffset] for the head being sent. It is used
+    // only when the id equals the head's; frame() still rejects an offset past
+    // the real count, and a stale or odd value is simply never matched.
+    private static function restoreProgress() {
+        try {
+            var value = Storage.getValue("sendProgressV1");
+            // A missing or malformed value throws here and is ignored below.
+            if (requestIdOf(entries[0]).equals(value[0]) &&
+                GymStore.isBoundedInteger(value[1], 1, GymStore.maxWorkoutSets - 1)) {
+                transferId = value[0]; offset = value[1];
+            }
+        } catch (e) { }
     }
 
     static function frame(offset, attemptId) {

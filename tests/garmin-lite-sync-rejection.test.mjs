@@ -50,7 +50,7 @@ test("96 KiB sync applies pairing fields only and drops the plan before validati
   assert.doesNotMatch(richHandler, /planNames|"lite"/);
 
   const dispatch = annotatedBodyFree(app, "function handlePhonePayload(");
-  assert.match(dispatch, /equals\("sync"\)\) \{\s*handleSyncMessage\(message\);/);
+  assert.match(dispatch, /equals\("sync"\)\) \{[^}]*handleSyncMessage\(message\);/);
   assert.doesNotMatch(dispatch, /applyPhoneSync/);
 });
 

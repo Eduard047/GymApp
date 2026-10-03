@@ -118,8 +118,13 @@ test("Garmin saves FIT before making account-bound sets sendable while unbound F
   assert.match(richUnboundFreeFinish, /return false;/,
     "the rich path always requires the normal active-workout clear");
   assert.match(completion,
-    /else if \(saveStage == 3 \|\| saveStage == 4\)[\s\S]*if \(canFinishUnboundFreeWithoutStoreClear\(\) \|\|\s*GymStore\.clearActiveWorkout\(\)\) \{[\s\S]*?System\.exit\(\);\s*\} else \{\s*GymStore\.status = GymStatus\.SAVE_FAIL;/,
+    /else if \(saveStage == 3 \|\| saveStage == 4\)[\s\S]*if \(canFinishUnboundFreeWithoutStoreClear\(\) \|\|\s*GymStore\.clearActiveWorkout\(\)\) \{[\s\S]*?exitAfterSave\(\);\s*\}\s*\} else \{\s*GymStore\.status = GymStatus\.SAVE_FAIL;/,
     "bound workouts exit only after active-state cleanup succeeds; safe unbound FREE may skip that owned-key clear");
+  assert.match(completion,
+    /clearActiveWorkout\(\)\) \{[\s\S]*?flushPending\(\);[\s\S]*?saveStage = 7;[\s\S]*?\} else \{\s*exitAfterSave\(\);/,
+    "queued sets are sent only after the active-state clear, and the process then waits (stage 7) or exits");
+  assert.match(view, /function exitAfterSave\(\) \{\s*Attention\.vibrate\([^;]*\);\s*System\.exit\(\);\s*\}/,
+    "every save exit vibrates and exits through one helper");
   assert.match(completion, /saveStage == 2[\s\S]*GymStore\.recoverQueuedWorkout\(\) \? 3 : 0/);
   assert.match(completion, /else \{\s*GymStore\.status = GymStatus\.SAVE_FAIL/);
   const saveTicks = [...view.matchAll(/\(:([^)]*)\)\s+function tick\(\) \{/g)];
