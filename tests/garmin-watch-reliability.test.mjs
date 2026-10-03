@@ -198,13 +198,13 @@ test("Garmin restart restores the selected exercise only for the matching active
   const load = section(store, "static function load()", "static function save()");
   const compactLoad = section(
     store,
-    "(:compactLegacyState)\n    static function load()",
-    "(:compactLegacyState)\n    static function save()"
+    "(:compactLegacyState, :richWorkoutMode)\n    static function completeLoad(startup)",
+    "(:compactCheckpoint96)\n    static function completeLoad(startup)"
   );
   const compactBeginLoad = section(
     store,
-    "(:compactLegacyState)\n    static function beginLoad()",
-    "(:compactLegacyState)\n    static function load()"
+    "(:compactLegacyState, :richWorkoutMode)\n    static function beginLoad()",
+    "(:compactLegacyState, :richWorkoutMode)\n    static function load()"
   );
   const save = section(store, "static function save()", "static function resetActiveWorkoutSnapshotState()");
   const currentEntry = section(

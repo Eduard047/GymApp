@@ -70,7 +70,7 @@ test("Garmin tracking prefers activity HR, samples sensor HR only for fallback o
   assert.match(tick, /var sampledSensorHeartRate = null/);
   assert.match(
     tick,
-    /if \(!appliedActivityHeartRate \|\| showSensorDiagnostics\) \{\s*sampledSensorHeartRate = readHeartRateFromSensor\(\);/
+    /if \(GymStore\.keepsSetDiagnostics \|\| !appliedActivityHeartRate\) \{\s*sampledSensorHeartRate = readHeartRateFromSensor\(\);/
   );
   assert.match(tick, /if \(!appliedActivityHeartRate\)[\s\S]*applyHeartRate\(sampledSensorHeartRate\)/);
   assert.match(tick, /expireStaleHeartRate\(\)/);
@@ -86,7 +86,11 @@ test("Garmin tracking prefers activity HR, samples sensor HR only for fallback o
   assert.match(session, /static function hasValidHeartRateZones\(\)/);
   assert.match(view, /"ACT", GymSession\.activityHr/);
   assert.match(view, /"SNS", GymSession\.sensorHr/);
-  assert.equal((view.match(/GymSession\.tick\(page == 4\);/g) || []).length, 2);
+  // Diagnostics sampling is a per-product compile-time profile
+  // (GymStore.keepsSetDiagnostics), so the view's tick variants no longer
+  // pass a page-4 flag to the session.
+  assert.equal((view.match(/GymSession\.tick\(\);/g) || []).length, 3);
+  assert.doesNotMatch(view, /GymSession\.tick\(page == 4\)/);
   assert.match(view, /"MOV", motionDebugText\(\)/);
   assert.match(view, /function motionDebugText\(\)[\s\S]*GymSession\.motionAvailable/);
   assert.match(view, /"CONF", GymSession\.setConfidence/);
@@ -221,7 +225,7 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
   const calories = section(session, "static function updateCalories()", "static function setBoostFor(");
 
   assert.match(onShow, /ticker\.start\(method\(:tick\), 1000, true\)/);
-  assert.match(viewTick, /GymSession\.tick\(page == 4\)/);
+  assert.match(viewTick, /GymSession\.tick\(\);/);
   assert.match(viewTick, /Ui\.requestUpdate\(\)/);
   assert.match(sessionTick, /elapsedSeconds = now - startedAt - pausedAccumSeconds - currentPaused/);
   assert.ok(
@@ -247,7 +251,7 @@ test("Garmin workout clock, pause lifecycle, and calorie display keep advancing 
   assert.match(view, /GymStore\.totalGymCalories\(\)\.format\("%\.1f"\)/);
   const compactTinyDashboard = section(
     view,
-    "(:compactLegacyState)\n    function drawTinyDashboard(",
+    "(:compactLegacyState, :richWorkoutMode)\n    function drawTinyDashboard(",
     "(:fullLegacyState)\n    function drawCompactHeartIcon("
   );
   assert.match(
@@ -489,7 +493,7 @@ test("Garmin motion lifecycle uses gyro opportunistically, rejects noise, and as
   assert.match(lifecycle, /motionDuration >= motionMinimumSetSeconds\(\)[\s\S]*endSetFromMotion\(\)[\s\S]*else if \(currentSetMotionOnly\)[\s\S]*discardShortMotionInterval\(\)/);
   assert.match(lifecycle, /if \(!GymStore\.autoPromptEnabled\) \{\s*return;/);
   assert.match(lifecycle, /static function endSetFromMotion\(\)/);
-  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState, :inline)\n    static function endSetFromMotion()");
+  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState, :inline, :richWorkoutMode)\n    static function endSetFromMotion()");
   assert.match(motionEnd, /var ended = lastCredibleMotionSeconds/);
   assert.match(motionEnd, /ended < activeStartSeconds[\s\S]*ended > elapsedSeconds/);
   assert.doesNotMatch(motionEnd, /activeEvidenceEndSeconds\(\)/);
@@ -731,7 +735,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   const stopMotion = section(
     session,
     "static function stopMotionListener()",
-    "(:fullLegacyState)\n    static function onSensorData"
+    "(:fullLegacyState, :richWorkoutMode)\n    static function onSensorData"
   );
   const inactiveReset = stopMotion.slice(stopMotion.indexOf("if (!activeSetSeen)"));
   assert.doesNotMatch(
@@ -752,7 +756,7 @@ test("Garmin preserves active evidence, suspended rest, and prompts across UI tr
   );
   const evidenceTotals = section(session, "static function captureActiveEvidenceTotals()", "static function captureEndedSetTotals()");
   assert.doesNotMatch(evidenceTotals, /currentSetEndGymCalories|currentSetEndGarminCalories/);
-  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState, :inline)\n    static function endSetFromMotion()");
+  const motionEnd = section(session, "static function endSetFromMotion()", "(:compactLegacyState, :inline, :richWorkoutMode)\n    static function endSetFromMotion()");
   assert.doesNotMatch(motionEnd, /currentSetLastEvidenceGymCalories|currentSetLastEvidenceGarminCalories/);
   const initialMotionSnapshot = section(session, "static function initializeMotionSetSnapshot()", "static function motionMinimumSetSeconds()");
   assert.match(initialMotionSnapshot, /currentSetEndGymCalories = gymCalories/);
@@ -1481,7 +1485,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
 
   assert.match(
     jungle,
-    /^base\.excludeAnnotations = .*compactLegacyState.*compactRecovery96.*compactCheckpoint96.*enhancedCompactCheckpoint.*noPageDots.*tightFullDebugState;compactWorkoutMode96;fr55Memory$/m
+    /^base\.excludeAnnotations = .*compactLegacyState.*compactRecovery96.*compactCheckpoint96.*enhancedCompactCheckpoint.*noPageDots.*tightFullDebugState;compactWorkoutMode96;fr55Memory;mem128;mem128Wide$/m
   );
   const compactProducts = [
     "descentg1",
@@ -1493,17 +1497,21 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   ];
   assert.match(
     jungle,
-    /^fr55\.excludeAnnotations = fullLegacyState;fr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory$/m
+    /^fr55\.excludeAnnotations = fullLegacyState;fr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory;noMem128;mem128Wide$/m
   );
   for (const product of compactProducts.filter((product) => product !== "fr55")) {
     assert.match(jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory$`, "m"));
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide$`, "m"));
   }
-  assert.equal((jungle.match(/;richWorkoutMode;fr55Memory$/gm) || []).length, 5);
-  assert.equal((jungle.match(/;compactWorkoutMode96;(?:notFr55Memory|fr55Memory)$/gm) || []).length, 7);
+  assert.equal((jungle.match(/;richWorkoutMode;fr55Memory;mem128;mem128Wide$/gm) || []).length, 5);
+  // base + FR55 + the eight 128 KiB products carry the compact 96 workout mode.
+  assert.equal(
+    (jungle.match(/;compactWorkoutMode96;(?:notFr55Memory|fr55Memory);(?:mem128|noMem128);(?:mem128Wide|noMem128Wide)$/gm) || []).length,
+    10
+  );
   assert.equal(
     (jungle.match(/\.excludeAnnotations = fullLegacyState/g) || []).length,
-    compactProducts.length + 5
+    compactProducts.length + 8
   );
   assert.match(bashBuild, /build-garmin-program\.mjs/);
   assert.match(powershellBuild, /build-garmin-program\.mjs/);
@@ -1517,19 +1525,29 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   assert.match(readme, /cannot reattach Garmin's native ActivityRecording[\s\S]*explicit Resume starts a new FIT session/);
   assert.match(readme, /paused rest[\s\S]*last compact checkpoint/);
 
-  const constrained128Products = ["enduro", "fenix6", "fenix6s", "fr245", "venusq"];
-  for (const product of constrained128Products) {
+  // 128 KiB products: five tight-tier plus three wide-tier (Instinct E / 3 Solar).
+  const constrained128Products = [
+    ["enduro", "mem128Wide"],
+    ["fenix6", "mem128Wide"],
+    ["fenix6s", "mem128Wide"],
+    ["fr245", "mem128Wide"],
+    ["venusq", "mem128Wide"],
+    ["instincte40mm", "noMem128Wide"],
+    ["instincte45mm", "noMem128Wide"],
+    ["instinct3solar45mm", "noMem128Wide"]
+  ];
+  for (const [product, wideAnnotation] of constrained128Products) {
     assert.match(
       jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory$`, "m")
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;${wideAnnotation}$`, "m")
     );
   }
-  assert.match(readme, /Enduro, Fenix 6, Fenix 6S, Forerunner 245, and Venu Sq/);
+  assert.match(readme, /Enduro, Fenix 6, Fenix 6S, Forerunner 245, Venu Sq, Instinct E \(40 mm and\s+45 mm\), and Instinct 3 Solar 45 mm/);
   assert.match(readme, /128 KiB[\s\S]*enhanced compact state profile/);
 
   const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
   assert.match(view, /\(:pageDots\)\s+function drawPageDots\([\s\S]*dc\.fillCircle/);
-  assert.match(view, /\(:noPageDots\)\s+function drawPageDots\([\s\S]*decorative page indicator/);
+  assert.match(view, /\(:richWorkoutMode, :noPageDots\)\s+function drawPageDots\([\s\S]*decorative page indicator/);
   assert.match(view, /\(:fullDebugState\)\s+function drawDebug\([\s\S]*"MOV", motionDebugText\(\)/);
   assert.match(view, /\(:tightFullDebugState\)\s+function drawDebug\([\s\S]*"STATUS"/);
 
@@ -1540,7 +1558,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   );
   const load = section(
     store,
-    "(:compactLegacyState)\n    static function beginLoad()",
+    "(:compactLegacyState, :richWorkoutMode)\n    static function beginLoad()",
     "(:compactLegacyState)\n    static function save()"
   );
   assert.match(
@@ -1579,7 +1597,7 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   assert.match(compact, /legacyCompactCount = sets\.size\(\)/);
   assert.match(
     compact,
-    /static function ensureLegacyQuarantine\(\)[\s\S]*legacyCompactCount != -2/
+    /static function ensureLegacyQuarantine\(\) \{\s*if \(legacyCompactCount == -2\) \{ return false; \}/
   );
   const compactRestore = section(
     compact,
@@ -1650,7 +1668,7 @@ test("Garmin missing catalogs quarantine indexed snapshots until repair is durab
   );
   const compactLoad = section(
     store,
-    "(:compactLegacyState)\n    static function beginLoad()",
+    "(:compactLegacyState, :richWorkoutMode)\n    static function beginLoad()",
     "(:compactLegacyState)\n    static function save()"
   );
   const durableCatalog = section(
@@ -1727,13 +1745,13 @@ test("Garmin full-to-compact ownerless quarantine retries the full snapshot befo
   const store = await readFile("garmin/source/GymStore.mc", "utf8");
   const compactLoad = section(
     store,
-    "(:compactLegacyState)\n    static function beginLoad()",
+    "(:compactLegacyState, :richWorkoutMode)\n    static function beginLoad()",
     "(:compactLegacyState)\n    static function save()"
   );
   const migration = section(
     store,
     "static function migrateFullLegacyQuarantineToCompact()",
-    "(:compactRecovery96)\n    static function migrateFullLegacyQuarantineToCompact()"
+    "(:compactLegacyState, :richWorkoutMode)\n    static function ensureUnboundAtomicQuarantine()"
   );
 
   assert.ok(
@@ -1833,7 +1851,7 @@ test("Garmin atomically resumes bounded interval timelines without mixing segmen
   assert.match(load, /restoreActiveWorkoutSnapshot\(savedActiveWorkout\)/);
   const compactLoad = section(
     store,
-    "(:compactLegacyState)\n    static function beginLoad()",
+    "(:compactLegacyState, :richWorkoutMode)\n    static function beginLoad()",
     "(:compactLegacyState)\n    static function save()"
   );
   assert.match(

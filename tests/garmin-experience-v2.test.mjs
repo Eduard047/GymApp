@@ -116,13 +116,13 @@ test("128 KiB Garmin profiles bridge full-v3 into indexed v4 and merge their run
   for (const product of bridgeProducts) {
     assert.match(
       jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory$`, "m"),
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;mem128Wide$`, "m"),
       `${product} keeps the full-v3 bridge for its released active-workout schema`
     );
   }
   assert.match(
     jungle,
-    /^fr55\.excludeAnnotations = fullLegacyState;fr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory$/m,
+    /^fr55\.excludeAnnotations = fullLegacyState;fr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;notFr55Memory;noMem128;mem128Wide$/m,
     "FR55 excludes the full-v3 active-workout bridge"
   );
   const runtimeBridge = section(
@@ -133,22 +133,22 @@ test("128 KiB Garmin profiles bridge full-v3 into indexed v4 and merge their run
   const converter = section(
     store,
     "static function compactActiveSnapshotFromFullV3(value)",
-    "(:noFr55UpgradeBridge)\n    static function compactActiveSnapshotFromFullV3(value)"
+    "(:richWorkoutMode, :noFr55UpgradeBridge)\n    static function compactActiveSnapshotFromFullV3(value)"
   );
   const compactLoad = section(
     store,
-    "(:compactLegacyState)\n    static function load()",
-    "(:compactLegacyState)\n    static function save()"
+    "(:compactLegacyState, :richWorkoutMode)\n    static function completeLoad(startup)",
+    "(:compactCheckpoint96)\n    static function completeLoad(startup)"
   );
   const migration = section(
     store,
     "(:fr55UpgradeBridge, :inline)\n    static function restoreMigratedActiveWorkout(savedActive)",
-    "(:noFr55UpgradeBridge)\n    static function compactActiveSnapshotFromFullV3(value)"
+    "(:richWorkoutMode, :noFr55UpgradeBridge)\n    static function compactActiveSnapshotFromFullV3(value)"
   );
 
   assert.match(converter, /value\.size\(\) != 11/);
   assert.match(store, /\(:fr55UpgradeBridge\)[\s\S]*static function compactActiveSnapshotFromFullV3/);
-  assert.match(store, /\(:noFr55UpgradeBridge\)[\s\S]*static function compactActiveSnapshotFromFullV3\(value\)[\s\S]*return null/);
+  assert.match(store, /\(:richWorkoutMode, :noFr55UpgradeBridge\)[\s\S]*static function compactActiveSnapshotFromFullV3\(value\)[\s\S]*return null/);
   assert.match(converter, /activeWorkoutSnapshotMatchesBindings\(value\)/);
   assert.ok(
     converter.indexOf("activeWorkoutSnapshotMatchesBindings(value)") <
@@ -382,7 +382,9 @@ test("Forerunner 55 checkpoints explicit lifecycle boundaries without periodic h
   );
 
   assert.match(compactValidation, /return isValidCompactV4ActiveWorkoutSnapshot\(snapshot\)/);
-  assert.match(compact96Validation, /return isValidCompactV4ActiveWorkoutSnapshot\(snapshot\)/);
+  // 96 KiB products intentionally accept only the current v6 row journal (ba15bb2).
+  assert.match(compact96Validation, /snapshot\.size\(\) == 10 &&\s*snapshot\[0\] == 6 && GymActiveJournal\.validate\(snapshot\)/);
+  assert.doesNotMatch(compact96Validation, /isValidCompactV4ActiveWorkoutSnapshot/);
   const sharedValidation = section(store, "static function isValidCompactV4ActiveWorkoutSnapshot(snapshot)", "// The compact hardware tier accepts legacy");
   assert.match(sharedValidation, /items\.size\(\) == 0 && origin != null[\s\S]*snapshot\[0\] != 3[\s\S]*checkpoint == null[\s\S]*isValidWorkoutStartedAtSeconds/);
   assert.match(sharedValidation, /GymActiveJournal\.validBindings\(snapshot\)/);
@@ -443,13 +445,13 @@ test("96 KiB phase-zero retry is sets-only, idempotent, and cannot race an ACK",
   );
   const compactFinish = section(
     view,
-    "(:compactRecovery96)\n    function buildFinishWorkoutMessage()",
-    "(:richRecovery, :notFr55Memory)\n    function finishFitRecovery(activityFound)"
+    "(:compactWorkoutMode96)\n    function buildFinishWorkoutMessage()",
+    "(:fr55Memory)\n    function buildFinishWorkoutMessage()"
   );
   const compactSave = section(
     view,
-    "(:compactRecovery96)\n    function saveAndExit()",
-    "(:fullLegacyState)\n    function onUpdate(dc)"
+    "(:compactWorkoutMode96)\n    function saveAndExit()",
+    "(:fr55Memory)\n    function saveAndExit()"
   );
   const queue = section(
     store,

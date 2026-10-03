@@ -41,14 +41,19 @@ test("bound Garmin loads defer the legacy sets mirror until snapshot repair is r
 });
 
 test("compact plan restore stays columnar and cannot overwrite an unreadable legacy value", () => {
-  const compactLoadPlanIndex = compactLoad.indexOf("loadLegacyStoredPlan();");
-  const compactCatalogIndex = compactLoad.indexOf('Storage.getValue("exercises")');
+  // The 96 KiB beginLoad precedes the compact-legacy one in the file and reads
+  // its own catalog; order is checked inside the compact-legacy loader only.
+  const compactLegacyLoad = compactLoad.slice(
+    compactLoad.indexOf("(:compactLegacyState, :richWorkoutMode)\n    static function beginLoad() {")
+  );
+  const compactLoadPlanIndex = compactLegacyLoad.indexOf("loadLegacyStoredPlan();");
+  const compactCatalogIndex = compactLegacyLoad.indexOf('Storage.getValue("exercises")');
   assert.ok(compactLoadPlanIndex >= 0 && compactCatalogIndex > compactLoadPlanIndex);
 
   assert.match(planAccess, /if \(cachedIndex != index\) \{\s*cachedRow = \{[\s\S]*?"exerciseName" => columns\[1\]\[index\],[\s\S]*?"weight" => columns\[2\]\[index\],[\s\S]*?"reps" => columns\[3\]\[index\][\s\S]*?cachedIndex = index;[\s\S]*?return cachedRow;/);
   assert.match(planAccess, /if \(value instanceof GymPlanList\) \{ return value\.columns\[1\]\[index\]; \}/);
 
-  const restoreStart = source.indexOf("(:compactLegacyState, :inline)\n    static function restoredPlan(value)");
+  const restoreStart = source.indexOf("(:compactLegacyState, :richWorkoutMode, :inline)\n    static function restoredPlan(value)");
   const restoreEnd = source.indexOf("(:compactLegacyState)\n    static function storedPlan()", restoreStart);
   assert.ok(restoreStart >= 0 && restoreEnd > restoreStart);
   const compactRestore = source.slice(restoreStart, restoreEnd);
@@ -88,7 +93,7 @@ test("compact plan restore stays columnar and cannot overwrite an unreadable leg
   assert.doesNotMatch(migration.slice(migrationCatch), /persistedPlanNeedsV5Write\s*=\s*false/);
 
   const compactSaveStart = source.indexOf("(:compactLegacyState)\n    static function save() {");
-  const compactSaveEnd = source.indexOf("(:compactLegacyState)\n    private static function loadLegacyStoredPlan()", compactSaveStart);
+  const compactSaveEnd = source.indexOf("(:compactLegacyState, :richWorkoutMode)\n    private static function loadLegacyStoredPlan()", compactSaveStart);
   assert.ok(compactSaveStart >= 0 && compactSaveEnd > compactSaveStart);
   const compactSave = source.slice(compactSaveStart, compactSaveEnd);
   assert.match(compactSave, /var planChanged = plan != persistedPlanSource \|\| persistedPlanNeedsV5Write;/);

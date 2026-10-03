@@ -14,17 +14,17 @@ test("Garmin full-profile motion callbacks validate each adjacent sample once", 
   const source = await readFile("garmin/source/GymSession.mc", "utf8");
   const full = section(
     source,
-    "(:fullLegacyState)\n    static function onSensorData(data)",
-    "(:fullLegacyState)\n    static function axisDeltaScore"
+    "(:fullLegacyState, :richWorkoutMode)\n    static function onSensorData(data)",
+    "(:fullLegacyState, :richWorkoutMode)\n    static function axisDeltaScore"
   );
   const gyro = section(
     source,
-    "(:fullLegacyState)\n    static function axisDeltaScore(sensorData)",
-    "(:compactLegacyState)\n    static function onSensorData(data)"
+    "(:fullLegacyState, :richWorkoutMode)\n    static function axisDeltaScore(sensorData)",
+    "(:compactLegacyState, :richWorkoutMode)\n    static function onSensorData(data)"
   );
   const compact = section(
     source,
-    "(:compactLegacyState)\n    static function onSensorData(data)",
+    "(:compactLegacyState, :richWorkoutMode)\n    static function onSensorData(data)",
     "static function isFiniteSensorNumber"
   );
 
@@ -57,7 +57,7 @@ test("Garmin full profile throttles static redraws and caches plan progress", as
 
   assert.match(tick, /if \(page == 7 \|\| !GymSession\.recording\) \{[\s\S]*staticRefreshTicks \+= 1/);
   assert.ok(
-    tick.indexOf("if (GymSession.paused)") < tick.indexOf("GymSession.tick(page == 4)"),
+    tick.indexOf("if (GymSession.paused)") < tick.indexOf("GymSession.tick();"),
     "paused menus should not execute or redraw the live dashboard tick"
   );
   assert.match(
@@ -77,7 +77,7 @@ test("Garmin full-profile text fitting preserves the longest prefix logarithmica
   const fit = section(
     view,
     "(:fullLegacyState)\n    function fitTextWidth(",
-    "(:compactLegacyState)\n    function fitTextWidth("
+    "(:compactLegacyState, :richWorkoutMode)\n    function fitTextWidth("
   );
   assert.match(fit, /var low = 3/);
   assert.match(fit, /var high = value\.length\(\) - 1/);
@@ -124,8 +124,8 @@ test("Garmin recording polls incoming messages without allocating periodic outbo
   const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
   for (const tick of view.matchAll(/function tick\(\) \{[\s\S]*?(?=\n    (?:\(:|function ))/g)) {
     assert.match(tick[0], /getApp\(\)\.pollMailbox\(\)/);
-    assert.match(tick[0], /GymSession\.tick\(page == 4\)/,
-      "sensor diagnostics are enabled only on the diagnostics page");
+    // GymSession.tick() no longer takes a diagnostics flag (removed in ba15bb2).
+    assert.match(tick[0], /GymSession\.tick\(\);/);
     assert.doesNotMatch(tick[0], /requestSyncNow\(\)/);
   }
   const retry = section(view, "function maybeRetryPending()", "function hasWorkoutToResume()");

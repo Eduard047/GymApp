@@ -39,14 +39,23 @@ test("Start and Resume are explicit, single-shot, and fail closed", async () => 
   const start = section(
     view,
     "(:enhancedRecoveryCheckpoint)\n    function startOrResumeWorkout(usePlan)",
-    "(:compactRecovery96)\n    function startOrResumeWorkout(usePlan)"
+    "(:compactWorkoutMode96)\n    function startOrResumeWorkout(usePlan)"
   );
   const compactStart = section(
     view,
-    "(:compactRecovery96)\n    function startOrResumeWorkout(usePlan)",
+    "(:compactWorkoutMode96)\n    function startOrResumeWorkout(usePlan)",
     "function syncFromReady()"
   );
-  const fitStart = section(session, "static function start()", "static function failStartAndCleanup()");
+  const fitStart = section(
+    session,
+    "(:richWorkoutMode)\n    static function start()",
+    "(:compactWorkoutMode96)\n    static function start()"
+  );
+  const compactFitStart = section(
+    session,
+    "(:compactWorkoutMode96)\n    static function start()",
+    "static function failStartAndCleanup()"
+  );
   const failedFitStart = section(session, "static function failStartAndCleanup()", "static function pause()");
 
   assert.match(start, /if \(page != 7 \|\| GymSession\.fitSaved \|\| GymStore\.hasPreparedWorkout\(\)\)/);
@@ -64,6 +73,12 @@ test("Start and Resume are explicit, single-shot, and fail closed", async () => 
     "sensor listeners must be gated by the authoritative FIT start result"
   );
   assert.equal((fitStart.match(/failStartAndCleanup\(\)/g) || []).length, 3);
+  assert.equal((compactFitStart.match(/failStartAndCleanup\(\)/g) || []).length, 3);
+  assert.match(compactFitStart, /if \(recording\) \{\s*startSensors\(\);\s*\} else \{\s*stopSensors\(\);/);
+  assert.ok(
+    compactFitStart.indexOf("if (recording)") > compactFitStart.indexOf("session.start()"),
+    "compact sensor listeners must be gated by the authoritative FIT start result"
+  );
   assert.match(failedFitStart, /fitCleanupPending = session != null && !discard\(\)/);
   assert.match(failedFitStart, /recording = false[\s\S]*startedAt = 0/);
   assert.match(failedFitStart, /fitCleanupPending \? GymStatus\.FIT_RETRY : GymStatus\.REC_FAIL/);
@@ -151,7 +166,7 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
     "without a startable plan, Free Workout remains the first Ready action");
   const ready = section(view, "(:fullLegacyState)\n    function drawReady(dc, w, h)", "(:compactRichRecovery)\n    function drawReady(dc, w, h)");
   assert.match(ready, /count = readyActionCount\(\)[\s\S]*count == 4[\s\S]*i < 4[\s\S]*readyActionText\(i, count\)/);
-  const compactReady = section(view, "(:compactRichRecovery)\n    function drawReady(dc, w, h)", "(:compactRecovery96)\n    function drawReady(dc, w, h)");
+  const compactReady = section(view, "(:compactRichRecovery)\n    function drawReady(dc, w, h)", "(:compactWorkoutMode96)\n    function drawReady(dc, w, h)");
   const compactMenu = section(view, "function drawCompactReady(dc, w, h)", "function startTutorial()");
   assert.match(compactReady, /drawCompactReady\(dc, w, h\)/);
   assert.match(compactMenu, /i < count[\s\S]*readyActionText\(i, count\)/);

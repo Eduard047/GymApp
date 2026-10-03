@@ -209,9 +209,14 @@ test("Garmin load defers old-bound pairing stages and completes target-bound par
   assert.match(compactApplySync, /revisionStatus == 0[\s\S]*isExactStagedSync\(safeMessage, bindingSource\)[\s\S]*!syncBindingsMatch\(safeMessage\)[\s\S]*revisionStatus = 1[\s\S]*status = GymStatus\.SYNC_DUP[\s\S]*clearSyncStageIfMatches\(safeMessage, bindingSource\)[\s\S]*return true/);
 
   const fullSaveStart = storeSource.indexOf("(:fullLegacyState)\n    static function save()");
-  const fullSaveEnd = storeSource.indexOf("(:compactLegacyState)\n    static function beginLoad()", fullSaveStart);
+  const fullSaveEnd = storeSource.indexOf("(:compactCheckpoint96)\n    static function beginLoad()", fullSaveStart);
   const compactSaveStart = storeSource.indexOf("(:compactLegacyState)\n    static function save()");
-  const compactSaveEnd = storeSource.indexOf("static function ensureDurableExerciseCatalog()", compactSaveStart);
+  const compactSaveEnd = storeSource.indexOf(
+    "(:compactLegacyState, :richWorkoutMode)\n    private static function loadLegacyStoredPlan()",
+    compactSaveStart
+  );
+  assert.ok(fullSaveStart >= 0 && fullSaveEnd > fullSaveStart &&
+    compactSaveStart >= 0 && compactSaveEnd > compactSaveStart, "missing save source");
   for (const save of [
     storeSource.slice(fullSaveStart, fullSaveEnd),
     storeSource.slice(compactSaveStart, compactSaveEnd)

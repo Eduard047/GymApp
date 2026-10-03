@@ -34,7 +34,9 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
     /isBoundedText\(value, maxExerciseNameLength\) &&\s*utf8Bytes\(value\)\.size\(\) <= maxExerciseNameBytes/,
     "exercise names retain both character-count and UTF-8 byte limits"
   );
-  assert.match(store, /flatNames\.size\(\) != flatWeights\.size\(\)/);
+  assert.match(store, /weights\.size\(\) != names\.size\(\) \|\|\s*setReps\.size\(\) != names\.size\(\)/,
+    "plan columns must keep equal lengths (isValidPlanColumns)");
+  assert.match(store, /isValidPlanColumns\(flatNames, flatWeights, flatReps, maxPlanSets\)/);
   assert.match(store, /processedSyncIds/);
   assert.match(store, /stateOwnerBinding/);
   assert.match(store, /queuedActiveRequestId/);
@@ -145,7 +147,7 @@ test("Garmin messages are bounded, account-bound, replay-aware, and acked by id"
   assert.match(sessionTick, /var sampledSensorHeartRate = null/);
   assert.match(
     sessionTick,
-    /if \(!appliedActivityHeartRate \|\| showSensorDiagnostics\) \{\s*sampledSensorHeartRate = readHeartRateFromSensor\(\);/
+    /if \(GymStore\.keepsSetDiagnostics \|\| !appliedActivityHeartRate\) \{\s*sampledSensorHeartRate = readHeartRateFromSensor\(\);/
   );
   assert.match(
     sessionTick,
@@ -236,11 +238,13 @@ test("Garmin phone sync retries the same revision until an idempotent watch ack"
   assert.match(confirmation, /pendingSyncAcks\.remove\(syncId, pending\)/);
   assert.match(
     confirmation,
-    /if \(!confirmed\)[\s\S]*Garmin watch did not acknowledge the sync after bounded retries/
+    /if \(!confirmed && !ack\.isCompleted\)[\s\S]*Garmin watch did not acknowledge the sync after bounded retries/
   );
   assert.doesNotMatch(confirmation, /newGarminMessageId|allocateSyncRevision/);
   assert.match(store, /revisionStatus == 0[\s\S]*status = GymStatus\.SYNC_DUP[\s\S]*return true/);
-  assert.match(app, /sendSyncAck\(message, applied\)/);
+  assert.match(app, /sendSyncAck\(message, applied, null\)/);
+  assert.match(app, /sendSyncAck\(message, reason == null && applied, reason\)/);
+  assert.match(app, /sendSyncAck\(message, applied\);/);
 
   let durableMutations = 0;
   let watchFence = null;
