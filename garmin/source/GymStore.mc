@@ -134,7 +134,7 @@ class GymStore {
     // Preserve a bounded offline backlog. New workouts wait for phone ACKs so
     // the compact watch never carries another live session beside queued data.
     // The byte budgets remain authoritative; no queued workout is evicted.
-    private static const maxPendingWorkouts = 8;
+    static const maxPendingWorkouts = 8;
     // New-queue limits for the 96 KiB lite profile (GymPendingJournal.begin and
     // advance). Stored legacy queues stay valid under the limits above and are
     // never trimmed.
@@ -154,13 +154,13 @@ class GymStore {
     (:mem128Wide)
     static const memCatalogChars = 700;
     (:mem128, :fr55Memory)
-    static const memPlanSets = 8;
+    static const memPlanSets = 5;
     (:mem128, :fr55Memory)
-    static const memPlanChars = 160;
+    static const memPlanChars = 100;
     (:mem128, :fr55Memory)
-    static const memCatalogEntries = 12;
+    static const memCatalogEntries = 8;
     (:mem128, :fr55Memory)
-    static const memCatalogChars = 240;
+    static const memCatalogChars = 160;
 
     // True when the raw incoming plan fits this tier. Runs on the transport
     // dictionary before any copy; malformed shapes return true so the normal
@@ -3933,7 +3933,7 @@ class GymStore {
     (:richWorkoutMode, :inline)
     static function shouldStartTutorial() {
         return hasAccountBinding() && !tutorialHandledForActiveAccount() &&
-            !hasUnfinishedWorkout() && !hasPreparedWorkout();
+            !hasUnfinishedWorkout() && !hasPreparedWorkout() && pendingCount() == 0;
     }
 
     (:richWorkoutMode)
@@ -3952,13 +3952,10 @@ class GymStore {
         while (next.size() > maxTutorialAccounts) {
             next.remove(next[0]);
         }
-        var previous = tutorialHistory;
+        // Keep the marker in memory even if this save fails: the overlay stays
+        // closed for the session and the next successful save() persists it.
         tutorialHistory = next;
-        if (save()) {
-            return true;
-        }
-        tutorialHistory = previous;
-        return false;
+        return save();
     }
 
     static function workoutMessage(requestId) {
@@ -5028,6 +5025,21 @@ class GymStore {
             if (parkedPending[0][i].equals(requestId)) { return parkedPending[3][i]; }
         }
         return null;
+    }
+
+    // Owner-confirmed "delete unsent": drops every queued GymApp upload. Refused
+    // while any workout is active or prepared. Each list is committed on its own,
+    // so an interruption leaves a smaller valid queue, never a corrupt one. Plan,
+    // catalog, bindings, settings and FIT files are not touched.
+    (:notFr55Memory)
+    static function discardUnsentQueue() {
+        if (GymSession.recording || hasUnfinishedWorkout() || hasPreparedWorkout() ||
+            !recoverQueuedWorkout()) { return false; }
+        try { Storage.setValue("pending", []); } catch (e) { return false; }
+        pending = []; parkedPending = null; pendingEstimateSource = null;
+        if (!GymPendingJournal.discardAll()) { return false; }
+        try { Storage.deleteValue("queuedActiveRequestId"); } catch (e) { }
+        return true;
     }
 
     static function removePendingByRequestId(requestId) {

@@ -161,7 +161,30 @@ test("Ready copy, order, version, and redacted sync status stay compact in EN UK
   assert.match(plannedChoices, /else if \(index == 1\) \{\s*return GymStore\.tr\("FREE WORKOUT"/);
   assert.match(plannedChoices, /index -= 1;/);
   const remainingChoices = actions.slice(actions.indexOf("return index == 1 ?"));
-  assert.match(remainingChoices, /return index == 1 \?\s*GymStore\.tr\("SYNC PLAN"[\s\S]*?:\s*GymStore\.tr\("SETTINGS"/);
+  assert.match(remainingChoices, /return index == 1 \? \(GymStore\.pendingCount\(\) > 0 \?\s*GymStore\.tr\("SYNC WITH PHONE"[\s\S]*?GymStore\.tr\("SYNC PLAN"[\s\S]*?\)\) :\s*GymStore\.tr\("SETTINGS"/,
+    "a queued workout relabels the plan-sync row as SYNC WITH PHONE");
+  assert.match(actions, /pendingCount\(\) >= GymWorkoutMode\.startQueueLimit/,
+    "the two-row sync-only Ready layout is limited to a full or strict queue");
+  const queued = section(view, "(:notFr55Memory)\n    function queuedSyncText(waiting)", "(:compactWorkoutMode96, :notFr55Memory)\n    function openPhoneText()");
+  assert.match(queued, /silentAtCount == waiting && GymComm\.isPhoneConnected\(\)/);
+  assert.match(queued, /"SENDING\.\.\.", "НАДСИЛАННЯ\.\.\.", "ОТПРАВКА\.\.\."/);
+  assert.match(view, /\(:richWorkoutMode, :notFr55Memory\)\s+function openPhoneText\(\)/);
+  assert.match(view, /"OPEN GYMAPP ON PHONE", "ВІДКРИЙ GYMAPP НА ТЕЛ\.", "ОТКРОЙ GYMAPP НА ТЕЛ\."/);
+  assert.match(view, /pendingRetryDelayMs >= 20000\) \{[^}]*silentAtCount = GymStore\.pendingCount\(\);/);
+  // The 128 KiB Forerunner 55 keeps the plain 4.0.1 "TO SYNC: N" line: no
+  // silence tracking, no open-phone hint, no sending state.
+  const fr55Queued = section(view, "(:fr55Memory)\n    function queuedSyncText(waiting)", "(:notFr55Memory)\n    function queuedSyncText(waiting)");
+  assert.match(fr55Queued, /"В ОЧЕРЕДИ: "[\s\S]*"У ЧЕРЗІ: "[\s\S]*"TO SYNC: "/);
+  assert.doesNotMatch(fr55Queued, /silentAtCount|openPhoneText|SENDING|isPhoneConnected/);
+  assert.match(view, /\(:notFr55Memory\)\s+var silentAtCount = 0;/);
+  const fr55Retry = section(view, "(:fr55Memory)\n    function maybeRetryPending()", "function hasWorkoutToResume()");
+  assert.doesNotMatch(fr55Retry, /silentAtCount|activityAt|lastActivityAt/);
+  const fr55Sync = section(view, "(:fr55Memory)\n    function syncFromReady()", "Ui.requestUpdate();\n    }");
+  assert.doesNotMatch(fr55Sync, /silentAtCount/);
+  assert.match(view, /function tutorialRow\(\)[\s\S]*?return row < count \? row : count - 1;/,
+    "the tutorial highlight always targets an existing Ready row");
+  assert.doesNotMatch(view, /markTutorialHandled\(\)\) \{/,
+    "a failed tutorial save must never keep the overlay open");
   assert.match(actions, /else if \(index == 0\) \{\s*return GymStore\.tr\("FREE WORKOUT"/,
     "without a startable plan, Free Workout remains the first Ready action");
   const ready = section(view, "(:fullLegacyState)\n    function drawReady(dc, w, h)", "(:compactRichRecovery)\n    function drawReady(dc, w, h)");

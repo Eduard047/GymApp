@@ -19,6 +19,13 @@ class GymWorkoutMode {
     static const recordingSetLimit = 30;
     (:notFr55Memory)
     static const recordingSetLimit = 60;
+    // A new workout may start while fewer than this many wait in the queue.
+    // The full profile keeps the whole queue capacity; 128 KiB watches keep
+    // the strict one-session-beside-no-queued-data gate. Lite never reads it.
+    (:richWorkoutMode, :noMem128)
+    static const startQueueLimit = GymStore.maxPendingWorkouts;
+    (:mem128)
+    static const startQueueLimit = 1;
 
     (:richWorkoutMode, :inline)
     static function isIdle() {
@@ -99,7 +106,7 @@ class GymWorkoutMode {
         }
         // Reserve a queue slot before any new workout or picker state is written.
         // Resume bypasses begin(), so an existing recording remains recoverable.
-        if (!GymPendingJournal.readable || GymStore.pendingCount() > 0) {
+        if (!GymPendingJournal.readable || GymStore.pendingCount() >= startQueueLimit) {
             GymStore.status = GymStatus.QUEUE_FULL;
             return false;
         }

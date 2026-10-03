@@ -22,6 +22,9 @@ class WorkoutView extends Ui.View {
     var page = 7;
     var pauseSelected = 0;
     var discardSelected = 0;
+    // 1 or 2 while page 6 asks to delete the unsent queue (first/second confirmation).
+    (:notFr55Memory)
+    var clearStage = 0;
     var settingsSelected = 0;
     (:notFr55Memory, :richWorkoutMode)
     var settingsCount = 7;
@@ -40,6 +43,10 @@ class WorkoutView extends Ui.View {
     var pendingRetryStartedAt = null;
     var pendingRetryDelayMs = 5000;
     var pendingSendInFlight = false;
+    // Queue size when a 20 s retry found no phone answer; 0 when none.
+    // The 128 KiB Forerunner 55 keeps the 4.0.1 Ready status instead.
+    (:notFr55Memory)
+    var silentAtCount = 0;
     var tutorialActive = false;
     (:notFr55Memory, :richWorkoutMode)
     var tutorialStep = 0;
@@ -542,9 +549,45 @@ class WorkoutView extends Ui.View {
         return next;
     }
 
+    (:notFr55Memory)
     function maybeRetryPending() {
         // Serialization/transmit buffers compete with sensors and set commits
         // on small watches. Keep durable queued work until recording is closed.
+        if (GymSession.recording) { return; }
+        if (!GymStore.hasAccountBinding() || GymStore.pendingCount() == 0) {
+            pendingSendInFlight = false;
+            pendingRetryStartedAt = null;
+            pendingRetryDelayMs = 5000;
+            silentAtCount = 0;
+            return;
+        }
+        if (pendingSendInFlight) {
+            return;
+        }
+        var activityAt = GymComm.lastActivityAt;
+        if (activityAt != GymComm.seenActivityAt) {
+            // A phone ack came in (own transmits mark themselves seen):
+            // count silence from now.
+            GymComm.seenActivityAt = activityAt;
+            pendingRetryStartedAt = activityAt;
+            silentAtCount = 0;
+        }
+        if (pendingRetryStartedAt == null) {
+            pendingRetryStartedAt = System.getTimer();
+            return;
+        }
+        if (GymStore.timerElapsedMs(pendingRetryStartedAt) >=
+            pendingRetryDelayMs.toLong()) {
+            if (pendingRetryDelayMs >= 20000) {
+                // The last send went out but no answer came back in 20 s.
+                silentAtCount = GymStore.pendingCount();
+            }
+            flushPending();
+        }
+    }
+
+    (:fr55Memory)
+    function maybeRetryPending() {
         if (GymSession.recording) { return; }
         if (!GymStore.hasAccountBinding() || GymStore.pendingCount() == 0) {
             pendingSendInFlight = false;
@@ -679,6 +722,18 @@ class WorkoutView extends Ui.View {
         return true;
     }
 
+    (:notFr55Memory)
+    function syncFromReady() {
+        silentAtCount = 0;
+        requestSyncNow();
+        flushPending();
+        if (GymComm.hasCloudDeviceToken()) {
+            requestCloudSyncNow();
+        }
+        Ui.requestUpdate();
+    }
+
+    (:fr55Memory)
     function syncFromReady() {
         requestSyncNow();
         flushPending();
@@ -1197,6 +1252,40 @@ class WorkoutView extends Ui.View {
         }
     }
 
+    // Ready status for a non-empty queue: sending, phone silent for 20 s, or idle.
+    // The 128 KiB Forerunner 55 shows only the plain 4.0.1 "TO SYNC: N" line.
+    (:fr55Memory)
+    function queuedSyncText(waiting) {
+        return (GymStore.isRu() ? "В ОЧЕРЕДИ: " : (GymStore.isUk() ? "У ЧЕРЗІ: " : "TO SYNC: ")) +
+            waiting.toString();
+    }
+
+    (:notFr55Memory)
+    function queuedSyncText(waiting) {
+        var current = GymStore.status;
+        if (silentAtCount == waiting && GymComm.isPhoneConnected()) {
+            return openPhoneText();
+        }
+        if (pendingSendInFlight || syncRequestInFlight ||
+            current == GymStatus.WAITING_ACK || current == GymStatus.SENDING_NEXT ||
+            current == GymStatus.SYNC_REQ) {
+            return GymStore.tr("SENDING...", "НАДСИЛАННЯ...", "ОТПРАВКА...");
+        }
+        return (GymStore.isRu() ? "В ОЧЕРЕДИ: " : (GymStore.isUk() ? "У ЧЕРЗІ: " : "TO SYNC: ")) +
+            waiting.toString();
+    }
+
+    // The lite status line is capped at 20 characters, so it gets the short form.
+    (:compactWorkoutMode96, :notFr55Memory)
+    function openPhoneText() {
+        return GymStore.tr("OPEN GYMAPP", "ВІДКРИЙ GYMAPP", "ОТКРОЙ GYMAPP");
+    }
+
+    (:richWorkoutMode, :notFr55Memory)
+    function openPhoneText() {
+        return GymStore.tr("OPEN GYMAPP ON PHONE", "ВІДКРИЙ GYMAPP НА ТЕЛ.", "ОТКРОЙ GYMAPP НА ТЕЛ.");
+    }
+
     (:fullLegacyState)
     function readyPlanText() {
         if (GymWorkoutMode.isFree() || !GymWorkoutMode.hasValidPlan()) {
@@ -1245,10 +1334,7 @@ class WorkoutView extends Ui.View {
         if (!GymStore.hasAccountBinding()) {
             return GymStore.tr("NOT PAIRED", "НЕ ПРИВ'ЯЗАНО", "НЕ СОПРЯЖЕНО");
         }
-        if (waiting > 0) {
-            return (GymStore.isRu() ? "В ОЧЕРЕДИ: " : (GymStore.isUk() ? "У ЧЕРЗІ: " : "TO SYNC: ")) +
-                waiting.toString();
-        }
+        if (waiting > 0) { return queuedSyncText(waiting); }
         if (GymStore.lastWorkoutSyncAtSeconds != null) {
             return GymStore.tr("SYNC: ", "СИНХ: ", "СИНХ: ") + GymStore.lastWorkoutSyncText();
         }
@@ -1280,30 +1366,73 @@ class WorkoutView extends Ui.View {
             return GymStore.tr("NOT PAIRED", "НЕ ПРИВ'ЯЗАНО", "НЕ СОПРЯЖЕНО");
         }
         var waiting = GymStore.pendingCount();
-        if (waiting > 0) {
-            return (GymStore.isRu() ? "В ОЧЕРЕДИ: " : (GymStore.isUk() ? "У ЧЕРЗІ: " : "TO SYNC: ")) +
-                waiting.toString();
-        }
+        if (waiting > 0) { return queuedSyncText(waiting); }
         return GymStore.tr("READY", "ГОТОВО", "ГОТОВО");
     }
+
+    // Unsent uploads can be deleted only while no workout is active or prepared.
+    // The whole delete-unsent feature is compiled out of the 128 KiB Forerunner 55.
+    (:notFr55Memory)
+    function clearQueueAvailable() {
+        return GymStore.pendingCount() > 0 && !hasWorkoutToResume() &&
+            !GymStore.hasPreparedWorkout();
+    }
+
+    // Delete-unsent copy. 0/1 settings row label/value, 2 title, 3/4 detail
+    // lines, 5 safe option, 6 delete option.
+    (:notFr55Memory)
+    function clearQueueText(part) {
+        var n = GymStore.pendingCount().toString();
+        var again = clearStage == 2;
+        if (part == 0) {
+            return GymStore.tr("QUEUE", "ЧЕРГА", "ОЧЕРЕДЬ");
+        } else if (part == 1) {
+            return GymStore.tr("CLEAR", "ОЧИСТ.", "ОЧИСТ.") + " (" + n + ")";
+        } else if (part == 2) {
+            return again ? GymStore.tr("DELETE " + n + "?", "ВИДАЛИТИ " + n + "?", "УДАЛИТЬ " + n + "?") :
+                GymStore.tr("DELETE " + n + " UNSENT?", "ВИДАЛИТИ " + n + " ТРЕН.?", "УДАЛИТЬ " + n + " ТРЕН.?");
+        } else if (part == 3) {
+            return again ? GymStore.tr("THIS CANNOT BE UNDONE", "ЦЕ НЕ СКАСУВАТИ", "ЭТО НЕЛЬЗЯ ОТМЕНИТЬ") :
+                GymStore.tr("WON'T REACH GYMAPP", "НЕ ПОТРАПЛЯТЬ У GYMAPP", "НЕ ПОПАДУТ В GYMAPP");
+        } else if (part == 4) {
+            return again ? "" : GymStore.tr("GARMIN KEEPS ACTIVITIES", "GARMIN ЗБЕРЕЖЕ ЗАПИСИ", "GARMIN СОХРАНИТ ЗАПИСИ");
+        } else if (part == 5) {
+            return again ? GymStore.tr("CANCEL", "ВІДМІНИТИ", "ОТМЕНИТЬ") :
+                GymStore.tr("KEEP", "ЗАЛИШИТИ", "ОСТАВИТЬ");
+        }
+        return GymStore.tr("DELETE", "ВИДАЛИТИ", "УДАЛИТЬ");
+    }
+
+    // Settings rows: the fixed rows plus the delete-unsent row while it applies.
+    // A selection left on a row that just vanished falls back to the first row.
+    (:notFr55Memory, :richWorkoutMode)
+    function settingsRows() {
+        var rows = settingsCount + (clearQueueAvailable() ? 1 : 0);
+        if (settingsSelected >= rows) { settingsSelected = 0; }
+        return rows;
+    }
+
+    (:fr55Memory)
+    function settingsRows() { return settingsCount; }
 
     (:richWorkoutMode)
     function readyActionCount() {
         if (GymLocalWorkout.snapshot != null) { return 2; }
-        if (!hasWorkoutToResume() && GymStore.pendingCount() > 0) { return 2; }
+        if (!hasWorkoutToResume() && GymStore.pendingCount() >= GymWorkoutMode.startQueueLimit) { return 2; }
         return !hasWorkoutToResume() && GymWorkoutMode.hasStartablePlan() ? 4 : 3;
     }
 
     // Lite watches record free workouts only: two actions on every Ready card.
+    // The third row (delete unsent) appears only while it is allowed.
     (:compactWorkoutMode96)
-    function readyActionCount() { return 2; }
+    function readyActionCount() { return clearQueueAvailable() ? 3 : 2; }
 
     (:richWorkoutMode)
     function readyActionText(index, count) {
         if (GymLocalWorkout.snapshot != null && index == 1) {
             return GymStore.tr("LATER", "ПІЗНІШЕ", "ПОЗЖЕ");
         }
-        if (!hasWorkoutToResume() && GymStore.pendingCount() > 0) {
+        if (!hasWorkoutToResume() && GymStore.pendingCount() >= GymWorkoutMode.startQueueLimit) {
             return index == 0 ?
                 GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.") :
                 GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
@@ -1322,13 +1451,18 @@ class WorkoutView extends Ui.View {
         } else if (index == 0) {
             return GymStore.tr("FREE WORKOUT", "ВІЛЬНЕ ТРЕН.", "СВОБ. ТРЕН.");
         }
-        return index == 1 ?
-            GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН") :
+        return index == 1 ? (GymStore.pendingCount() > 0 ?
+            GymStore.tr("SYNC WITH PHONE", "СИНХР. З ТЕЛ.", "СИНХР. С ТЕЛ.") :
+            GymStore.tr("SYNC PLAN", "СИНХ. ПЛАН", "СИНХ. ПЛАН")) :
             GymStore.tr("SETTINGS", "НАЛАШТ.", "НАСТРОЙКИ");
     }
 
     (:compactWorkoutMode96)
     function readyActionText(index, count) {
+        if (index == 2) {
+            return GymStore.tr("CLEAR QUEUE (", "ОЧИСТИТИ ЧЕРГУ (", "ОЧИСТИТЬ ОЧЕРЕДЬ (") +
+                GymStore.pendingCount().toString() + ")";
+        }
         if (GymLocalWorkout.snapshot != null && index == 1) {
             return GymStore.tr("LATER", "ПІЗНІШЕ", "ПОЗЖЕ");
         }
@@ -1371,9 +1505,10 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h * 0.18, Gfx.FONT_XTINY,
             fitText(readyStatusText(), 20), Gfx.TEXT_JUSTIFY_CENTER);
-        for (var i = 0; i < 2; i += 1) {
+        var count = readyActionCount();
+        for (var i = 0; i < count; i += 1) {
             drawMinimalLine(dc, w, h * (0.40 + i * 0.16),
-                readyActionText(i, 2), i == selected);
+                readyActionText(i, count), i == selected);
         }
     }
 
@@ -1437,17 +1572,14 @@ class WorkoutView extends Ui.View {
         }
         if (tutorialStep < 2) {
             tutorialStep += 1;
-            selected = readyActionCount() == 4 && tutorialStep > 0 ?
-                tutorialStep + 1 : tutorialStep;
+            selected = tutorialRow();
             return;
         }
-        if (GymStore.markTutorialHandled()) {
-            tutorialActive = false;
-            selected = 0;
-            GymStore.status = GymStatus.READY;
-        } else {
-            GymStore.status = GymStatus.SAVE_FAIL;
-        }
+        // A failed save must not trap the athlete behind the overlay.
+        GymStore.markTutorialHandled();
+        tutorialActive = false;
+        selected = 0;
+        GymStore.status = GymStatus.READY;
     }
 
     (:notFr55Memory, :richWorkoutMode)
@@ -1457,16 +1589,20 @@ class WorkoutView extends Ui.View {
         }
         if (tutorialStep > 0) {
             tutorialStep -= 1;
-            selected = readyActionCount() == 4 && tutorialStep > 0 ?
-                tutorialStep + 1 : tutorialStep;
+            selected = tutorialRow();
             return;
         }
-        if (GymStore.markTutorialHandled()) {
-            tutorialActive = false;
-            selected = 0;
-        } else {
-            GymStore.status = GymStatus.SAVE_FAIL;
-        }
+        GymStore.markTutorialHandled();
+        tutorialActive = false;
+        selected = 0;
+    }
+
+    // Ready row the current step explains, always an existing row.
+    (:notFr55Memory, :richWorkoutMode)
+    function tutorialRow() {
+        var count = readyActionCount();
+        var row = count == 4 && tutorialStep > 0 ? tutorialStep + 1 : tutorialStep;
+        return row < count ? row : count - 1;
     }
 
     (:fr55Memory)
@@ -1478,8 +1614,7 @@ class WorkoutView extends Ui.View {
     (:fullLegacyState, :notFr55Memory)
     function drawTutorialOverlay(dc, w, h) {
         var targetY = readyActionCount() == 4 ?
-            (tutorialStep == 0 ? 91 : (tutorialStep == 1 ? 167 : 205)) :
-            (tutorialStep == 0 ? 106 : (tutorialStep == 1 ? 151 : 196));
+            91 + tutorialRow() * 38 : 106 + tutorialRow() * 45;
         dc.setColor(Gfx.COLOR_BLUE, Gfx.COLOR_TRANSPARENT);
         dc.drawRoundedRectangle(sx(w, 42), sy(h, targetY - 5),
             sr(w, h, 176), sr(w, h, 44), sr(w, h, 11));
@@ -2195,8 +2330,35 @@ class WorkoutView extends Ui.View {
             GymStore.tr("DISCARD", "СКАСУВАТИ", "СБРОСИТЬ"), pauseSelected == 2);
     }
 
+    // Delete-unsent confirmation shares page 6 with the discard warning.
+    (:notFr55Memory, :richWorkoutMode)
+    function drawClearQueueConfirmation(dc, w, h) {
+        dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
+        drawCentered(dc, 34, Gfx.FONT_XTINY, fitTextWidth(dc, clearQueueText(2), Gfx.FONT_XTINY, w * 8 / 10));
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        drawCentered(dc, 64, Gfx.FONT_XTINY, fitTextWidth(dc, clearQueueText(3), Gfx.FONT_XTINY, w * 8 / 10));
+        drawCentered(dc, 86, Gfx.FONT_XTINY, fitTextWidth(dc, clearQueueText(4), Gfx.FONT_XTINY, w * 8 / 10));
+        drawDiscardRow(dc, w, h, 0, 144, clearQueueText(5), false);
+        drawDiscardRow(dc, w, h, 1, 192, clearQueueText(6), true);
+    }
+
+    (:compactWorkoutMode96)
+    function drawClearQueueConfirmation(dc, w, h) {
+        dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.20, Gfx.FONT_XTINY, fitText(clearQueueText(2), 20),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.32, Gfx.FONT_XTINY, fitText(clearQueueText(3), 22),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(w / 2, h * 0.43, Gfx.FONT_XTINY, fitText(clearQueueText(4), 22),
+            Gfx.TEXT_JUSTIFY_CENTER);
+        drawMinimalLine(dc, w, h * 0.60, clearQueueText(5), discardSelected == 0);
+        drawMinimalLine(dc, w, h * 0.74, clearQueueText(6), discardSelected == 1);
+    }
+
     (:fullLegacyState)
     function drawDiscardConfirmation(dc, w, h) {
+        if (clearStage != 0) { drawClearQueueConfirmation(dc, w, h); return; }
         dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
         drawCentered(dc, 34, Gfx.FONT_XTINY, GymStore.tr("DISCARD WORKOUT?", "СКАСУВАТИ?", "СБРОСИТЬ?"));
 
@@ -2211,7 +2373,15 @@ class WorkoutView extends Ui.View {
         drawDiscardRow(dc, w, h, 1, 192, GymStore.tr("YES, DISCARD", "ТАК, СКАСУВАТИ", "ДА, СБРОСИТЬ"), true);
     }
 
-    (:compactLegacyState, :richWorkoutMode)
+    (:compactLegacyState, :richWorkoutMode, :notFr55Memory)
+    function drawDiscardConfirmation(dc, w, h) {
+        if (clearStage != 0) { drawClearQueueConfirmation(dc, w, h); return; }
+        drawHeader(dc, w, h, GymStore.tr("DISCARD?", "СКАСУВАТИ?", "СБРОСИТЬ?"));
+        drawDiscardRow(dc, w, h, 0, 112, GymStore.tr("KEEP", "ЗАЛИШИТИ", "ОСТАВИТЬ"), false);
+        drawDiscardRow(dc, w, h, 1, 166, GymStore.tr("DISCARD", "СКАСУВАТИ", "СБРОСИТЬ"), true);
+    }
+
+    (:compactLegacyState, :richWorkoutMode, :fr55Memory)
     function drawDiscardConfirmation(dc, w, h) {
         drawHeader(dc, w, h, GymStore.tr("DISCARD?", "СКАСУВАТИ?", "СБРОСИТЬ?"));
         drawDiscardRow(dc, w, h, 0, 112, GymStore.tr("KEEP", "ЗАЛИШИТИ", "ОСТАВИТЬ"), false);
@@ -2220,6 +2390,7 @@ class WorkoutView extends Ui.View {
 
     (:compactWorkoutMode96)
     function drawDiscardConfirmation(dc, w, h) {
+        if (clearStage != 0) { drawClearQueueConfirmation(dc, w, h); return; }
         dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h * 0.22, Gfx.FONT_XTINY,
             GymStore.tr("DISCARD WORKOUT?", "СКАСУВАТИ?", "СБРОСИТЬ?"),
@@ -2429,13 +2600,20 @@ class WorkoutView extends Ui.View {
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         drawCentered(dc, 18, Gfx.FONT_XTINY, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"));
 
-        drawSettingsRow(dc, w, h, 0, 43, GymStore.tr("AUTO SET", "АВТО ПІДХ", "АВТО ПОДХ"), GymStore.onOff(GymStore.autoPromptEnabled));
-        drawSettingsRow(dc, w, h, 1, 71, GymStore.tr("SENSITIVITY", "ЧУТЛИВІСТЬ", "ЧУВСТВИТ."), GymStore.sensitivityLabel());
-        drawSettingsRow(dc, w, h, 2, 99, GymStore.tr("WEIGHT STEP", "КРОК ВАГИ", "ШАГ ВЕСА"), localizedDecimal(GymStore.weightStep));
-        drawSettingsRow(dc, w, h, 3, 127, GymStore.tr("REST", "ВІДПОЧИНОК", "ОТДЫХ"), GymStore.restSecondsDefault.toString() + GymStore.tr("s", "с", "с"));
-        drawSettingsRow(dc, w, h, 4, 155, GymStore.tr("DEFAULT REPS", "ПОВТ. БАЗА", "ПОВТ. БАЗА"), GymStore.reps.toString());
-        drawSettingsRow(dc, w, h, 5, 183, GymStore.tr("CLOUD PLAN", "ПЛАН З ХМАРИ", "ПЛАН ИЗ ОБЛ."), GymStore.tr("SYNC", "СИНХ", "СИНХ"));
-        drawSettingsRow(dc, w, h, 6, 211, GymStore.tr("TUTORIAL", "НАВЧАННЯ", "ОБУЧЕНИЕ"), GymStore.tr("OPEN", "ВІДКР", "ОТКР"));
+        // The delete-unsent row makes eight rows, so they pack a little tighter.
+        var rows = settingsRows();
+        var top = rows > settingsCount ? 40 : 43;
+        var step = rows > settingsCount ? 24 : 28;
+        drawSettingsRow(dc, w, h, 0, top, GymStore.tr("AUTO SET", "АВТО ПІДХ", "АВТО ПОДХ"), GymStore.onOff(GymStore.autoPromptEnabled));
+        drawSettingsRow(dc, w, h, 1, top + step, GymStore.tr("SENSITIVITY", "ЧУТЛИВІСТЬ", "ЧУВСТВИТ."), GymStore.sensitivityLabel());
+        drawSettingsRow(dc, w, h, 2, top + step * 2, GymStore.tr("WEIGHT STEP", "КРОК ВАГИ", "ШАГ ВЕСА"), localizedDecimal(GymStore.weightStep));
+        drawSettingsRow(dc, w, h, 3, top + step * 3, GymStore.tr("REST", "ВІДПОЧИНОК", "ОТДЫХ"), GymStore.restSecondsDefault.toString() + GymStore.tr("s", "с", "с"));
+        drawSettingsRow(dc, w, h, 4, top + step * 4, GymStore.tr("DEFAULT REPS", "ПОВТ. БАЗА", "ПОВТ. БАЗА"), GymStore.reps.toString());
+        drawSettingsRow(dc, w, h, 5, top + step * 5, GymStore.tr("CLOUD PLAN", "ПЛАН З ХМАРИ", "ПЛАН ИЗ ОБЛ."), GymStore.tr("SYNC", "СИНХ", "СИНХ"));
+        drawSettingsRow(dc, w, h, 6, top + step * 6, GymStore.tr("TUTORIAL", "НАВЧАННЯ", "ОБУЧЕНИЕ"), GymStore.tr("OPEN", "ВІДКР", "ОТКР"));
+        if (rows > settingsCount) {
+            drawSettingsRow(dc, w, h, 7, top + step * 7, clearQueueText(0), clearQueueText(1));
+        }
     }
 
     (:compactLegacyState, :notFr55Memory, :richWorkoutMode)
@@ -2443,6 +2621,7 @@ class WorkoutView extends Ui.View {
         drawHeader(dc, w, h, GymStore.tr("SETTINGS", "НАЛАШТ", "НАСТРОЙКИ"));
         var label;
         var value;
+        settingsRows();
         if (settingsSelected == 0) {
             label = "AUTO";
             value = GymStore.onOff(GymStore.autoPromptEnabled);
@@ -2461,9 +2640,12 @@ class WorkoutView extends Ui.View {
         } else if (settingsSelected == 5) {
             label = GymStore.tr("CLOUD", "ХМАРА", "ОБЛАКО");
             value = GymStore.tr("SYNC", "СИНХ", "СИНХ");
-        } else {
+        } else if (settingsSelected == 6) {
             label = GymStore.tr("TUTORIAL", "НАВЧАННЯ", "ОБУЧЕНИЕ");
             value = GymStore.tr("OPEN", "ВІДКР", "ОТКР");
+        } else {
+            label = clearQueueText(0);
+            value = clearQueueText(1);
         }
         drawSettingsRow(dc, w, h, settingsSelected, 116, label, value);
     }
@@ -2914,7 +3096,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.page == 1) {
             view.selected = (view.selected + 4 + delta) % 4;
         } else if (view.page == 5) {
-            view.settingsSelected = (view.settingsSelected + view.settingsCount + delta) % view.settingsCount;
+            var rows = view.settingsRows();
+            view.settingsSelected = (view.settingsSelected + rows + delta) % rows;
         } else if (view.page == 4) {
             view.page = delta > 0 ? 5 : 1;
         } else {
@@ -3203,7 +3386,9 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
                 handlePauseMenu();
             }
         } else if (view.page == 5) {
-            var settingsRow = rowAt(y, 43, 28, view.settingsCount);
+            var rows = view.settingsRows();
+            var settingsRow = rows > view.settingsCount ?
+                rowAt(y, 40, 24, rows) : rowAt(y, 43, 28, rows);
             if (settingsRow >= 0) {
                 view.settingsSelected = settingsRow;
                 handleSettings(x < (view.screenWidth / 2) ? -1 : 1);
@@ -3392,7 +3577,7 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
             return;
         }
         var resuming = view.hasWorkoutToResume();
-        if (!resuming && GymStore.pendingCount() > 0) {
+        if (!resuming && GymStore.pendingCount() >= GymWorkoutMode.startQueueLimit) {
             if (view.selected == 0) {
                 view.syncFromReady();
             } else {
@@ -3414,6 +3599,10 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
 
     (:compactWorkoutMode96)
     function handleReadySelection() {
+        if (view.selected == 2) {
+            openClearQueue();
+            return;
+        }
         if (GymLocalWorkout.snapshot != null && view.selected == 1) {
             exitReady();
             return;
@@ -3500,16 +3689,65 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
+    (:notFr55Memory)
+    function openDiscardConfirmation() {
+        // The safe action is always focused first, regardless of how DISCARD was reached.
+        view.discardSelected = 0;
+        view.clearStage = 0;
+        view.page = 6;
+    }
+
+    (:fr55Memory)
     function openDiscardConfirmation() {
         // The safe action is always focused first, regardless of how DISCARD was reached.
         view.discardSelected = 0;
         view.page = 6;
     }
 
+    // Delete-unsent reuses page 6: stage 1 asks, stage 2 asks again, and every
+    // cancel path (Back, Menu, the safe option) returns to Ready untouched.
+    (:notFr55Memory)
+    function openClearQueue() {
+        if (!view.clearQueueAvailable()) { return; }
+        view.discardSelected = 0;
+        view.clearStage = 1;
+        view.page = 6;
+    }
+
+    (:notFr55Memory)
+    function cancelDiscardConfirmation() {
+        view.discardSelected = 0;
+        if (view.clearStage != 0) {
+            view.clearStage = 0;
+            view.selected = 0;
+            view.page = 7;
+            return;
+        }
+        view.pauseSelected = 0;
+        view.page = 2;
+    }
+
+    (:fr55Memory)
     function cancelDiscardConfirmation() {
         view.discardSelected = 0;
         view.pauseSelected = 0;
         view.page = 2;
+    }
+
+    (:notFr55Memory)
+    function handleClearQueue() {
+        if (view.discardSelected == 0 || !view.clearQueueAvailable()) {
+            cancelDiscardConfirmation();
+        } else if (view.clearStage == 1) {
+            view.clearStage = 2;
+            view.discardSelected = 0;
+        } else {
+            GymStore.status = GymStore.discardUnsentQueue() ?
+                GymStatus.READY : GymStatus.SAVE_FAIL;
+            view.clearStage = 0;
+            view.selected = 0;
+            view.page = 7;
+        }
     }
 
     function moveDiscardSelection(delta) {
@@ -3518,6 +3756,34 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         }
     }
 
+    (:notFr55Memory)
+    function handleDiscardConfirmation() {
+        if (view.clearStage != 0) {
+            handleClearQueue();
+            return;
+        }
+        if (view.discardSelected == 0) {
+            cancelDiscardConfirmation();
+            return;
+        }
+        if (!GymSession.discard()) {
+            Ui.requestUpdate();
+            return;
+        }
+        if (view.canFinishUnboundFreeWithoutStoreClear()) {
+            getApp().finishedDurably = true;
+            System.exit();
+            return;
+        }
+        if (!GymStore.clearWorkout()) {
+            GymStore.status = GymStatus.SAVE_FAIL;
+            Ui.requestUpdate();
+            return;
+        }
+        System.exit();
+    }
+
+    (:fr55Memory)
     function handleDiscardConfirmation() {
         if (view.discardSelected == 0) {
             cancelDiscardConfirmation();
@@ -3620,6 +3886,8 @@ class WorkoutDelegate extends Ui.BehaviorDelegate {
         } else if (view.settingsSelected == 6) {
             view.page = 7;
             view.startTutorial();
+        } else if (view.settingsSelected == 7) {
+            openClearQueue();
         }
     }
 

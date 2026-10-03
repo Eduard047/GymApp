@@ -9,8 +9,8 @@
     },
     "fr55": {
       "devices": ["fr55"],
-      "limits": { "planSets": 8, "planChars": 160, "catalogEntries": 12, "catalogChars": 240 },
-      "note": "These limits leave about 3 KB of heap free during a sync."
+      "limits": { "planSets": 5, "planChars": 100, "catalogEntries": 8, "catalogChars": 160 },
+      "note": "These limits keep about 2 KB of heap free during a sync."
     }
   },
   "counting": {

@@ -102,6 +102,19 @@ class GymCommListener extends Comm.ConnectionListener {
         callback = resultCallback;
     }
 
+    // Own transmits are marked seen, so only a phone ack counts as new news.
+    (:notFr55Memory)
+    function onComplete() {
+        GymComm.lastActivityAt = Toybox.System.getTimer();
+        GymComm.seenActivityAt = GymComm.lastActivityAt;
+        if (callback != null) {
+            var completed = callback;
+            callback = null;
+            completed.invoke(true);
+        }
+    }
+
+    (:fr55Memory)
     function onComplete() {
         if (callback != null) {
             var completed = callback;
@@ -120,6 +133,22 @@ class GymCommListener extends Comm.ConnectionListener {
 }
 
 class GymComm {
+    // Last successful transmit or phone ack; the Ready "open GymApp" hint
+    // counts its 20 s of silence from here.
+    // Compiled out of the 128 KiB Forerunner 55 (4.0.1 Ready status there).
+    (:notFr55Memory)
+    static var lastActivityAt = null;
+    (:notFr55Memory)
+    static var seenActivityAt = null;
+
+    (:notFr55Memory)
+    static function noteActivity() {
+        lastActivityAt = Toybox.System.getTimer();
+    }
+
+    (:fr55Memory, :inline)
+    static function noteActivity() {}
+
     (:richWorkoutMode, :noMem128)
     static var watchVersion = "2026.08.20.1521";
     // 128 KiB watches report "-c128" (fr55 "-fr55") so the phone can size plans.

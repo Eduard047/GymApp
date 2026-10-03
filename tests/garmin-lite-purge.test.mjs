@@ -63,7 +63,8 @@ test("lite startup purges plan state blind, once, and never touches queue or own
 test("96 KiB queue limits are lower than the unchanged full-profile constants", async () => {
   const store = await read("GymStore.mc");
   const journal = await read("GymPendingJournal.mc");
-  assert.match(store, /private static const maxPendingWorkouts = 8;/);
+  assert.match(store, /\n    static const maxPendingWorkouts = 8;/,
+    "the full-profile start gate reads the same queue capacity");
   assert.match(store, /private static const maxPendingNameBytes = 12000;/);
   assert.match(store, /private static const maxTotalNameBytes = 12000;/);
   assert.match(store, /private static const maxEstimatedStoreBytes = 24000;/);
@@ -95,7 +96,8 @@ test("plan UI and plan start paths are excluded from the 96 KiB build", async ()
   assert.match(view, /\(:richWorkoutMode\)\s*function recordSet\(/);
 
   const count = bodyFrom(view, "function readyActionCount()", "compactWorkoutMode96");
-  assert.match(count, /return 2;/);
+  // Two actions, plus the delete-unsent row while the queue can be cleared.
+  assert.match(count, /return clearQueueAvailable\(\) \? 3 : 2;/);
   const text = bodyFrom(view, "function readyActionText(index, count)", "compactWorkoutMode96");
   assert.doesNotMatch(text, /PLAN/, "no plan strings on the lite Ready card");
   assert.match(text, /FREE WORKOUT", "ВІЛЬНЕ ТРЕН\.", "СВОБ\. ТРЕН\."/, "free start has EN/UK/RU text");

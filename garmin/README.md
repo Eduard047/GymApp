@@ -35,6 +35,8 @@ extraction uses explicit substring bounds for older Connect IQ runtimes.
 - FIT finalization, queue append, queue recovery and final cleanup run in separate callbacks on Save. The saving screen consumes repeated input, and a failed stage returns to explicit retry. The durable owner/device/request marker remains authoritative across restarts.
 - After the final cleanup the watch shows `SENDING...` while the phone is connected and stays open until the phone acknowledges the queue, 30 s pass without progress, or any button is pressed. The queue is kept on every early exit. The next set offset of a multi-part transfer is stored, so a restart resumes from it; a phone that no longer holds the staged transfer makes the watch restart from the first set.
 - A failed save names its cause where it is known: a full queue shows the sync prompt and a storage budget overrun shows the storage status; other failures keep the generic save error.
+- Watches with enough memory can start a new workout while up to 7 earlier workouts wait for the phone; the Ready screen keeps START PLAN and FREE WORKOUT and offers SYNC WITH PHONE. 128 KiB and lite watches still require an empty queue. The Ready status shows SENDING... during a transfer and OPEN GYMAPP ON PHONE after 20 s without an answer.
+- Settings (the Ready screen on lite watches) offers clearing the unsent queue. Two confirmations default to keeping the workouts; the action is refused while a workout is active or being saved, removes only queued GymApp transfers and leaves FIT activities, the plan and the pairing untouched. Forerunner 55 omits it to keep enough free memory.
 
 ## Lite mode (96 KiB watches)
 
@@ -55,9 +57,9 @@ extraction uses explicit substring bounds for older Connect IQ runtimes.
   | Tier | Devices | Plan (sets / chars) | Catalog (entries / chars) |
   | --- | --- | --- | --- |
   | wide | Instinct E 40 mm, Instinct E 45 mm, Instinct 3 Solar 45 mm | 20 / 500 | 40 / 700 |
-  | fr55 | Forerunner 55 | 8 / 160 | 12 / 240 |
+  | fr55 | Forerunner 55 | 5 / 100 | 8 / 160 |
 
-- Plan characters are the summed `String.length()` of `planNames`. Measured in the simulator: the fr55 limits leave about 3 KB free during a sync, while saving a planned workout remains the tightest step.
+- Plan characters are the summed `String.length()` of `planNames`. Measured in the simulator: the fr55 limits keep about 2 KB free during a sync, while saving a planned workout remains the tightest step.
 - A plan over the limit is refused before any copy: plan and catalog are dropped, pairing is still applied, and the watch sends `sync_ack` with `applied: false` and an additive `reason: "plan_too_large"`. A catalog over the limit is trimmed to its leading entries and the sync continues.
 - `request_sync` marks the tier with a `-c128` suffix on `watchVersion` (`-fr55` on Forerunner 55); no new key is added.
 - Android and iOS stop retrying when the acknowledgement matches exactly (correlation fields, `applied: false`, reason `plan_too_large`), keep the plan undelivered and show "This plan is too large for this watch. Shorten it and sync again."

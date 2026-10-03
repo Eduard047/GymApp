@@ -608,6 +608,34 @@ class GymPendingJournal {
         return true;
     }
 
+    // Owner-confirmed "delete unsent": drops every queued upload. Deleting the
+    // index is the commit, so a failure keeps the whole old queue. Rows left by
+    // an interrupted cleanup are unreferenced and overwritten on bank reuse.
+    (:notFr55Memory)
+    static function discardAll() {
+        if (!readable) { return false; }
+        var banks = [];
+        for (var i = 0; i < entries.size(); i += 1) { banks.add(bankOf(entries[i])); }
+        try { Storage.deleteValue("pendingJournalV1"); }
+        catch (e) { return false; }
+        try { Storage.deleteValue("sendProgressV1"); } catch (e) { }
+        reset();
+        try {
+            var active = Storage.getValue("activeWorkoutV1");
+            var keep = GymActiveJournal.validHeader(active) ? active[6] : -1;
+            for (var b = 0; b < banks.size(); b += 1) {
+                Storage.deleteValue(entryKey(0, banks[b]));
+                Storage.deleteValue(entryKey(1, banks[b]));
+                if (banks[b] == keep) { continue; }
+                for (var n = 0; n < 60; n += 1) {
+                    Storage.deleteValue(GymActiveJournal.key(banks[b], n));
+                    Storage.deleteValue(nameKey(banks[b], n));
+                }
+            }
+        } catch (e) { }
+        return true;
+    }
+
     static function origin(requestId) {
         if (!readable) { return null; }
         for (var i = 0; i < entries.size(); i += 1) {

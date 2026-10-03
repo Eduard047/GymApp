@@ -116,9 +116,11 @@ class GymApp extends App.AppBase {
             // After a durable finish only acks are useful; a sync is dropped.
             if (!finishedDurably) { handleSyncMessage(message); }
         } else if (typeText.equals("workout_part_ack")) {
+            GymComm.noteActivity();
             if (GymPendingJournal.acknowledgePart(message)) { sendNextPendingWorkout(); }
         } else if (typeText != null && typeText.equals("ack")) {
             var ackRequestId = message.get("requestId");
+            GymComm.noteActivity();
             if (GymStore.bindingsMatch(message) && GymStore.removePendingByRequestId(ackRequestId)) {
                 GymStore.status = GymStatus.SAVED;
                 sendNextPendingWorkout();

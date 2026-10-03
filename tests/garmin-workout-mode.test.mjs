@@ -173,10 +173,14 @@ test("Monkey C implementation gates sensors, detector, detailed mutations, and F
     "96 KiB lite profiles have no plan, so athlete-entered sets are never allowed");
   const begin = section(mode, "(:richWorkoutMode)\n    static function begin(usePlan)", "(:compactWorkoutMode96)\n    static function begin(usePlan)");
   const compactBegin = section(mode, "(:compactWorkoutMode96)\n    static function begin(usePlan)", "(:richWorkoutMode)\n    static function restore()");
-  for (const implementation of [begin, compactBegin]) {
-    assert.match(implementation, /!GymPendingJournal\.readable \|\| GymStore\.pendingCount\(\) > 0/,
-      "new workouts must reserve a durable pending queue slot");
-  }
+  assert.match(begin, /!GymPendingJournal\.readable \|\| GymStore\.pendingCount\(\) >= startQueueLimit/,
+    "rich new workouts must reserve a durable pending queue slot");
+  assert.match(compactBegin, /!GymPendingJournal\.readable \|\| GymStore\.pendingCount\(\) > 0/,
+    "lite new workouts keep the strict empty-queue gate");
+  assert.match(mode, /\(:richWorkoutMode, :noMem128\)\s*static const startQueueLimit = GymStore\.maxPendingWorkouts;/,
+    "only the full profile may start while queued workouts wait, up to queue capacity");
+  assert.match(mode, /\(:mem128\)\s*static const startQueueLimit = 1;/,
+    "128 KiB profiles keep the strict empty-queue gate");
   assert.match(begin, /usePlan && !hasStartablePlan\(\)/);
   assert.match(compactBegin, /usePlan \|\| state != MODE_IDLE/,
     "96 KiB lite mode rejects plan starts; every workout begins FREE");
