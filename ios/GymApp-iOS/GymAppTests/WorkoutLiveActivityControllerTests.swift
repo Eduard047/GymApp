@@ -596,6 +596,29 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         XCTAssertEqual(russian.nextSetSummary, "62,5 кг × 8")
     }
 
+    func testButtonTitlesAreLocalizedByTheAppInEveryLanguage() {
+        let bench = Fixture.exercise(
+            name: "Bench Press",
+            sets: [Fixture.set(weight: 60, reps: 8, completed: false)]
+        )
+        let draft = Fixture.draft(exercises: [bench])
+        let expected: [(String, String, String)] = [
+            ("en", "Record set", "Skip rest"),
+            ("uk", "Записати підхід", "Пропустити відпочинок"),
+            ("ru", "Записать подход", "Пропустить отдых")
+        ]
+
+        for (code, record, skip) in expected {
+            let state = WorkoutLiveActivityController.contentState(
+                for: draft, workoutStore: nil, languageCode: code
+            )
+            XCTAssertEqual(state.recordSetButtonTitle, record, code)
+            XCTAssertEqual(state.skipRestButtonTitle, skip, code)
+            XCTAssertEqual(state.resolvedRecordSetButtonTitle, record, code)
+            XCTAssertEqual(state.resolvedSkipRestButtonTitle, skip, code)
+        }
+    }
+
     func testFinishedStateStillCarriesALocalizedSetProgressLabel() {
         let row = Fixture.exercise(
             name: "Row",
@@ -624,6 +647,10 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         )
 
         XCTAssertNil(state.setProgressLabel)
+        XCTAssertNil(state.recordSetButtonTitle)
+        XCTAssertNil(state.skipRestButtonTitle)
+        XCTAssertEqual(state.resolvedRecordSetButtonTitle, "Record set")
+        XCTAssertEqual(state.resolvedSkipRestButtonTitle, "Skip rest")
         XCTAssertEqual(state.setIndex, 2)
         XCTAssertEqual(state.setCount, 4)
     }

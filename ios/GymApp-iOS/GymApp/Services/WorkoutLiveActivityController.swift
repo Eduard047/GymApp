@@ -365,6 +365,15 @@ final class WorkoutLiveActivityController: ObservableObject {
         )
     }
 
+    /// Button titles built in the app (in-app language, not the system one).
+    static func recordSetButtonTitle(languageCode: String) -> String {
+        gymText("Record set", "Записати підхід", "Записать подход", languageCode: languageCode)
+    }
+
+    static func skipRestButtonTitle(languageCode: String) -> String {
+        gymText("Skip rest", "Пропустити відпочинок", "Пропустить отдых", languageCode: languageCode)
+    }
+
     static func contentState(
         for draft: ActiveWorkoutDraft,
         workoutStore: WorkoutStore?,
@@ -396,7 +405,9 @@ final class WorkoutLiveActivityController: ObservableObject {
                     languageCode: languageCode
                 ),
                 isResting: false,
-                currentSetID: nil
+                currentSetID: nil,
+                recordSetButtonTitle: recordSetButtonTitle(languageCode: languageCode),
+                skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode)
             )
         }
 
@@ -417,7 +428,9 @@ final class WorkoutLiveActivityController: ObservableObject {
             restEndsAt: restEndsAt,
             nextSetSummary: nextSetSummary,
             isResting: restEndsAt != nil,
-            currentSetID: set.id
+            currentSetID: set.id,
+            recordSetButtonTitle: recordSetButtonTitle(languageCode: languageCode),
+            skipRestButtonTitle: skipRestButtonTitle(languageCode: languageCode)
         )
     }
 }

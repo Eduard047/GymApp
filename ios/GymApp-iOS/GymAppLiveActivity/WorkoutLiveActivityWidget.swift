@@ -52,16 +52,18 @@ struct WorkoutLiveActivityWidget: Widget {
                                 workoutID: context.attributes.workoutID,
                                 setID: context.state.currentSetID
                             )) {
-                                Label("Записать подход", systemImage: "checkmark")
+                                Label(context.state.resolvedRecordSetButtonTitle, systemImage: "checkmark")
                             }
+                            .accessibilityLabel(context.state.resolvedRecordSetButtonTitle)
                             .tint(LiveActivityColor.brand)
                             if context.state.isResting, let restEndsAt = context.state.restEndsAt {
                                 Button(intent: SkipRestIntent(
                                     workoutID: context.attributes.workoutID,
                                     restEndsAt: restEndsAt
                                 )) {
-                                    Label("Пропустить отдых", systemImage: "forward.fill")
+                                    Label(context.state.resolvedSkipRestButtonTitle, systemImage: "forward.fill")
                                 }
+                                .accessibilityLabel(context.state.resolvedSkipRestButtonTitle)
                                 .tint(.secondary)
                             }
                         }
@@ -140,17 +142,19 @@ private struct LockScreenLiveActivityView: View {
                     workoutID: attributes.workoutID,
                     setID: state.currentSetID
                 )) {
-                    Label("Записать подход", systemImage: "checkmark")
+                    Label(state.resolvedRecordSetButtonTitle, systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }
+                .accessibilityLabel(state.resolvedRecordSetButtonTitle)
                 if state.isResting, let restEndsAt = state.restEndsAt {
                     Button(intent: SkipRestIntent(
                         workoutID: attributes.workoutID,
                         restEndsAt: restEndsAt
                     )) {
-                        Label("Пропустить отдых", systemImage: "forward.fill")
+                        Label(state.resolvedSkipRestButtonTitle, systemImage: "forward.fill")
                             .frame(maxWidth: .infinity)
                     }
+                    .accessibilityLabel(state.resolvedSkipRestButtonTitle)
                 }
             }
             .buttonStyle(.borderedProminent)

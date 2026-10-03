@@ -27,7 +27,7 @@ import OSLog
 /// / `.skipRest(workoutID:expectedRestEndsAt:)` for the matching guards.
 private let liveActivityIntentLog = Logger(subsystem: "com.setforge.gymapp.ios", category: "LiveActivityIntent")
 
-/// Tapped from the Live Activity / Dynamic Island "Записать подход" button.
+/// Tapped from the Live Activity / Dynamic Island "Record set" button.
 /// The system launches the app in the background if it isn't already
 /// running, without bringing it to the foreground — so the trainee never
 /// leaves the Lock Screen / Dynamic Island. Recording goes through
@@ -65,7 +65,7 @@ struct RecordCurrentSetIntent: LiveActivityIntent {
     }
 }
 
-/// Tapped from the Live Activity / Dynamic Island "Пропустить отдых" button.
+/// Tapped from the Live Activity / Dynamic Island "Skip rest" button.
 /// Same in-process, no-foreground execution as `RecordCurrentSetIntent`.
 struct SkipRestIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Skip rest"

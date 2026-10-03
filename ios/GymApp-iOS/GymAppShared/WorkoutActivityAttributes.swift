@@ -36,13 +36,22 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
         public let nextSetSummary: String
         /// Whether a rest timer is currently running.
         public let isResting: Bool
-        /// The exact set the "Записать подход" button targets, i.e. the id
+        /// The exact set the "Record set" button targets, i.e. the id
         /// `currentSet(in:)` resolved to when this state was built. `nil`
         /// once every set is recorded (there is nothing left to target).
         /// The button intent carries this id so a duplicate/replayed tap can
         /// only record the set it was drawn for, not "whatever is now
         /// current" — see `LiveActivityActionBridge.recordCurrentSet`.
         public let currentSetID: UUID?
+        /// Already-localized title of the "record set" button. Optional so a
+        /// state encoded by an older app build still decodes; the widget then
+        /// falls back to English.
+        public let recordSetButtonTitle: String?
+        /// Already-localized title of the "skip rest" button (same fallback).
+        public let skipRestButtonTitle: String?
+
+        public static let defaultRecordSetButtonTitle = "Record set"
+        public static let defaultSkipRestButtonTitle = "Skip rest"
 
         public init(
             exerciseName: String,
@@ -54,7 +63,9 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             restEndsAt: Date?,
             nextSetSummary: String,
             isResting: Bool,
-            currentSetID: UUID?
+            currentSetID: UUID?,
+            recordSetButtonTitle: String? = nil,
+            skipRestButtonTitle: String? = nil
         ) {
             self.exerciseName = exerciseName
             self.setIndex = setIndex
@@ -66,6 +77,16 @@ public struct WorkoutActivityAttributes: ActivityAttributes {
             self.nextSetSummary = nextSetSummary
             self.isResting = isResting
             self.currentSetID = currentSetID
+            self.recordSetButtonTitle = recordSetButtonTitle
+            self.skipRestButtonTitle = skipRestButtonTitle
+        }
+
+        public var resolvedRecordSetButtonTitle: String {
+            recordSetButtonTitle ?? Self.defaultRecordSetButtonTitle
+        }
+
+        public var resolvedSkipRestButtonTitle: String {
+            skipRestButtonTitle ?? Self.defaultSkipRestButtonTitle
         }
 
         /// Fraction of the workout completed, clamped to [0, 1].
