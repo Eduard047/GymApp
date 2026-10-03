@@ -169,6 +169,9 @@ struct AddWorkoutView: View {
     @State private var drafts: [WorkoutEditorExerciseDraft] = []
     @State private var garminDraftSubmission: GarminDraftSubmission?
     @State private var showingExercisePicker = false
+    /// Bumped each time an exercise is inserted at the top of the plan, so the
+    /// editor can keep the Exercises header and the new card in view.
+    @State private var exerciseInsertionCount = 0
     @State private var showingPreviousPicker = false
     @State private var replacementRequest: SmartReplacementRequest?
     @State private var statusMessage: String?
@@ -393,6 +396,13 @@ struct AddWorkoutView: View {
                     .padding(.bottom, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .onChange(of: exerciseInsertionCount) { _, _ in
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            scrollProxy.scrollTo("workout-plan-exercises-header", anchor: .top)
+                        }
+                    }
+                }
                 .onChange(of: drafts.isEmpty) { _, isEmpty in
                     guard isEmpty else { return }
                     DispatchQueue.main.async {
@@ -902,6 +912,7 @@ struct AddWorkoutView: View {
             }
         }
         .padding(.horizontal, 4)
+        .id("workout-plan-exercises-header")
 
         if drafts.isEmpty {
             Button {
@@ -1659,6 +1670,7 @@ struct AddWorkoutView: View {
             ),
             at: 0
         )
+        exerciseInsertionCount += 1
     }
 
     private func applyPreviousWorkout(_ workout: WorkoutSession) {

@@ -70,7 +70,7 @@
 		<key>UIImageName</key>
 		<string>BrandMark</string>
 		<key>UIImageRespectsSafeAreaInsets</key>
-		<true/>
+		<false/>
 	</dict>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>

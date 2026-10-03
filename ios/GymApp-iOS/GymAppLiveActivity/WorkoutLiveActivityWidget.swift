@@ -19,17 +19,17 @@ struct WorkoutLiveActivityWidget: Widget {
                 .activitySystemActionForegroundColor(LiveActivityColor.onBrand)
         } dynamicIsland: { context in
             DynamicIsland {
+                // Leading/trailing sit in the island's rounded top corners next
+                // to the camera cutout, so they carry only compact glyphs. All
+                // text lives in the center and bottom regions, which span the
+                // full width and are never clipped by the corner curve.
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(context.state.exerciseName)
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .lineLimit(1)
-                        Text("\(context.attributes.setLabel) \(context.state.setIndex)/\(context.state.setCount)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    Image(systemName: "figure.strengthtraining.traditional")
+                        .font(.title3)
+                        .foregroundStyle(LiveActivityColor.brand)
+                        .accessibilityHidden(true)
                 }
+                .contentMargins(.leading, 4)
                 DynamicIslandExpandedRegion(.trailing) {
                     if context.state.isResting, let restEndsAt = context.state.restEndsAt {
                         Text(timerInterval: Date()...restEndsAt, countsDown: true)
@@ -37,16 +37,40 @@ struct WorkoutLiveActivityWidget: Widget {
                             .fontWeight(.semibold)
                             .monospacedDigit()
                             .foregroundStyle(LiveActivityColor.brand)
+                            .frame(maxWidth: 64, alignment: .trailing)
+                            .multilineTextAlignment(.trailing)
                     } else {
                         Image(systemName: "checkmark.circle")
+                            .font(.title3)
                             .foregroundStyle(LiveActivityColor.brand)
+                            .accessibilityHidden(true)
                     }
+                }
+                .contentMargins(.trailing, 4)
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(spacing: 2) {
+                        Text(context.state.exerciseName)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Text(
+                            context.state.setProgressLabel
+                                ?? "\(context.attributes.setLabel) \(context.state.setIndex)/\(context.state.setCount)"
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    }
+                    .multilineTextAlignment(.center)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 8) {
                         Text("\(context.attributes.nextLabel) \(context.state.nextSetSummary)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                         HStack(spacing: 12) {
                             Button(intent: RecordCurrentSetIntent(
                                 workoutID: context.attributes.workoutID,

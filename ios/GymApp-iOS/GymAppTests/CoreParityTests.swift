@@ -12792,6 +12792,13 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(editorSource.contains(
             "scrollProxy.scrollTo(\"workout-plan-editor-top\", anchor: .top)"
         ))
+        // A newly added exercise is inserted at index 0 and the editor keeps
+        // the Exercises header (and so the new card) in view.
+        XCTAssertTrue(editorSource.contains("            at: 0\n        )\n        exerciseInsertionCount += 1"))
+        XCTAssertTrue(editorSource.contains(".id(\"workout-plan-exercises-header\")"))
+        XCTAssertTrue(editorSource.contains(
+            "scrollProxy.scrollTo(\"workout-plan-exercises-header\", anchor: .top)"
+        ))
         XCTAssertTrue(editorSource.contains("title: \"Smart Coach\""))
         XCTAssertTrue(editorSource.contains("title: \"Exercises\""))
         XCTAssertTrue(editorSource.contains(

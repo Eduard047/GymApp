@@ -211,7 +211,7 @@ final class WorkoutLiveActivityControllerDecisionTests: XCTestCase {
         XCTAssertEqual(requester.requestCount, 1, "A second sync while already running must update, not start again")
     }
 
-    func testSyncWithNilDraftEndsWithDelayedDismissal() {
+    func testSyncWithNilDraftEndsWithImmediateDismissal() {
         let requester = FakeLiveActivityRequester()
         let controller = WorkoutLiveActivityController(requester: requester)
         let draft = Fixture.draft(exercises: [
@@ -229,11 +229,10 @@ final class WorkoutLiveActivityControllerDecisionTests: XCTestCase {
         }
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(handle.endCount, 1)
-        XCTAssertNotNil(handle.lastDismissalPolicy)
-        XCTAssertNotEqual(
+        XCTAssertEqual(
             handle.lastDismissalPolicy,
             .immediate,
-            "Finishing should use a delayed dismissal policy, not immediate"
+            "Finishing must remove the Lock Screen card together with the Dynamic Island"
         )
     }
 
@@ -294,7 +293,7 @@ final class WorkoutLiveActivityControllerAdoptionTests: XCTestCase {
 
         // The adoption update is dispatched via `Task { await handle.update }`,
         // same as every other handle mutation in this controller (see
-        // `testSyncWithNilDraftEndsWithDelayedDismissal` etc.) — give it a
+        // `testSyncWithNilDraftEndsWithImmediateDismissal` etc.) — give it a
         // beat to land before asserting, instead of racing it.
         let adoptionUpdateExpectation = expectation(description: "adoption update lands")
         Task { @MainActor in

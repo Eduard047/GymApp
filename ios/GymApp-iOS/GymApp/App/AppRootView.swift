@@ -706,7 +706,7 @@ private struct MainTabShell: View {
                         draftID: activeDraft.id,
                         friendGhosts: friendGhosts,
                         onFinished: { workoutID in
-                            appState.liveActivityController.endAfterDelay()
+                            appState.liveActivityController.endImmediately()
                             showsActiveWorkout = false
                             selectedTab = .workouts
                             Task { @MainActor in

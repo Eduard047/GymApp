@@ -6,7 +6,9 @@ import SwiftUI
 /// (`UILaunchScreen` in Info.plist, `BrandMark` / `LaunchBackground` in
 /// Assets.xcassets) already renders it at — same image, same ~120pt size,
 /// same centered position, same canvas color — so the handoff from launch
-/// screen to this view shows no jump. Nothing added below the icon ever
+/// screen to this view shows no jump. Both center the mark on the full
+/// screen, not the safe area: `UIImageRespectsSafeAreaInsets` is off in
+/// Info.plist and this view measures the whole display. Nothing added below the icon ever
 /// moves it: the title/tagline and the spinner are anchored independently,
 /// below a fixed gap from the icon's position.
 public struct IntroSplashView: View {
@@ -63,6 +65,10 @@ public struct IntroSplashView: View {
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
+            // Measure the whole display so `center` is the true screen center
+            // (the safe area is asymmetric: status bar/island above, home
+            // indicator below, which would push the mark ~12pt low).
+            .ignoresSafeArea()
         }
         .task {
             if reduceMotion {

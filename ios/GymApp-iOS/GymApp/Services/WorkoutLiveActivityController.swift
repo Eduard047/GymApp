@@ -184,11 +184,11 @@ final class WorkoutLiveActivityController: ObservableObject {
 
     /// Call whenever the active draft changes (start, set recorded/undone,
     /// rest started/stopped/adjusted, exercise progression). `nil` ends the
-    /// activity with a short "still visible for a moment" dismissal, matching
-    /// a normal finish; call `endImmediately()` first for an explicit discard.
+    /// activity immediately, matching a finish or a discard: a lingering Lock
+    /// Screen card for a workout that is already over would be misleading.
     func sync(draft: ActiveWorkoutDraft?) {
         guard let draft else {
-            endAfterDelay()
+            endImmediately()
             return
         }
         guard requester.areActivitiesEnabled() else { return }
@@ -201,15 +201,10 @@ final class WorkoutLiveActivityController: ObservableObject {
         }
     }
 
-    /// Ends the activity right away (workout discarded).
+    /// Ends the activity right away (workout finished or discarded). Removes
+    /// both the Dynamic Island and the Lock Screen presentation.
     func endImmediately() {
         end(dismissalPolicy: .immediate)
-    }
-
-    /// Ends the activity after a short delay so the trainee still sees the
-    /// final state on the lock screen for a moment (workout finished).
-    func endAfterDelay() {
-        end(dismissalPolicy: .after(Date().addingTimeInterval(3 * 60)))
     }
 
     private func start(draft: ActiveWorkoutDraft, state: WorkoutActivityAttributes.ContentState) {
