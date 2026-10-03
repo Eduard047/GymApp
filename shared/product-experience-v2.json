@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "productVersion": "4.0.1",
+  "productVersion": "4.0.2",
   "fullClients": ["android", "ios", "pwa"],
   "wearableClient": "garmin",
   "terminology": {
