@@ -295,10 +295,47 @@ enum GarminPhoneSyncProtocol {
             revision: expected.revision, sourceDeviceBinding: sourceDeviceBinding)
     }
 
+    static let planTooLargeReason = "plan_too_large"
+    static let maximumAcknowledgementReasonBytes = 32
+
     static func acknowledgementMatches(
         _ rawMessage: Any, binding: GarminPhoneBinding, syncID: String,
         revision: Int64, sourceDeviceBinding: String
     ) -> Bool {
+        guard let message = correlatedAcknowledgement(rawMessage, binding: binding, syncID: syncID,
+                revision: revision, sourceDeviceBinding: sourceDeviceBinding) else { return false }
+        return boolean(message["applied"]) == true
+    }
+
+    /// A small watch refuses a plan or catalog it cannot hold with the normal
+    /// acknowledgement, `applied: false` and the exact reason `plan_too_large`.
+    /// Every correlation field must match exactly as for an applied acknowledgement.
+    static func acknowledgementRefusesPlanTooLarge(
+        _ rawMessage: Any, binding: GarminPhoneBinding, syncID: String,
+        revision: Int64, sourceDeviceBinding: String
+    ) -> Bool {
+        guard let message = correlatedAcknowledgement(rawMessage, binding: binding, syncID: syncID,
+                revision: revision, sourceDeviceBinding: sourceDeviceBinding),
+              boolean(message["applied"]) == false,
+              let reason = message["reason"] as? String,
+              reason.utf8.count <= maximumAcknowledgementReasonBytes,
+              reason == planTooLargeReason else { return false }
+        return true
+    }
+
+    static func planTooLargeMessage(languageCode: String) -> String {
+        gymText(
+            "This plan is too large for this watch. Shorten it and sync again.",
+            "План завеликий для цього годинника. Скороти його та синхронізуй знову.",
+            "План слишком большой для этих часов. Сократи его и синхронизируй снова.",
+            languageCode: languageCode
+        )
+    }
+
+    private static func correlatedAcknowledgement(
+        _ rawMessage: Any, binding: GarminPhoneBinding, syncID: String,
+        revision: Int64, sourceDeviceBinding: String
+    ) -> [AnyHashable: Any]? {
         guard sourceDeviceBinding == binding.device,
               binding.account.isGarminBinding,
               binding.pairingGeneration.isGarminBinding,
@@ -313,11 +350,10 @@ enum GarminPhoneSyncProtocol {
               integer(message["syncRevision"]) == revision,
               message["accountBinding"] as? String == binding.account,
               message["deviceBinding"] as? String == binding.device,
-              message["pairingGeneration"] as? String == binding.pairingGeneration,
-              boolean(message["applied"]) == true else {
-            return false
+              message["pairingGeneration"] as? String == binding.pairingGeneration else {
+            return nil
         }
-        return true
+        return message
     }
 
     private static func dictionary(_ value: Any) -> [AnyHashable: Any]? {
@@ -2325,10 +2361,21 @@ final class GarminPhoneSyncService: NSObject, ObservableObject {
         }
         guard isBindingConfirmed(binding), let account = activeStorageKey else { return }
         do {
-            guard var delivery = try planStore.load(account: account, binding: binding),
-                  GarminPhoneSyncProtocol.acknowledgementMatches(rawMessage,
-                    binding: binding, syncID: delivery.syncID, revision: delivery.revision,
-                    sourceDeviceBinding: (app.device.uuid as UUID).uuidString.lowercased()) else { return }
+            guard var delivery = try planStore.load(account: account, binding: binding) else { return }
+            let sourceDevice = (app.device.uuid as UUID).uuidString.lowercased()
+            if GarminPhoneSyncProtocol.acknowledgementRefusesPlanTooLarge(rawMessage,
+                binding: binding, syncID: delivery.syncID, revision: delivery.revision,
+                sourceDeviceBinding: sourceDevice) {
+                // The watch refused this plan: stop waiting, keep it undelivered and do not resend.
+                cancelSyncAttempt(deviceID: app.device.uuid as UUID)
+                let message = GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: delivery.language)
+                planDeliveryMessages[binding.device] = message
+                publishStatus(message, isError: true)
+                return
+            }
+            guard GarminPhoneSyncProtocol.acknowledgementMatches(rawMessage,
+                binding: binding, syncID: delivery.syncID, revision: delivery.revision,
+                sourceDeviceBinding: sourceDevice) else { return }
             if GarminPhoneSyncProtocol.acknowledgementIsLite(rawMessage) {
                 // A lite watch never holds a plan: do not record or announce delivery.
                 markLiteWatch(deviceBinding: binding.device)

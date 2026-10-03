@@ -17657,6 +17657,141 @@ final class CoreParityTests: XCTestCase {
             "This watch supports free workouts only. Plans stay on your phone.")
     }
 
+    func testGarminPlanTooLargeRefusalRequiresExactCorrelationAndExactReason() {
+        let binding = GarminPhoneBinding(
+            account: String(repeating: "a", count: 64),
+            device: "11111111-2222-3333-4444-555555555555",
+            pairingGeneration: String(repeating: "b", count: 64)
+        )
+        let syncID = "sync-11111111-2222-3333"
+        let revision: Int64 = 12
+        let refusal: [String: Any] = [
+            "type": "sync_ack",
+            "bindingVersion": GarminPhoneWorkoutParser.bindingVersion,
+            "syncId": syncID, "requestId": syncID, "syncRevision": revision,
+            "accountBinding": binding.account, "deviceBinding": binding.device,
+            "pairingGeneration": binding.pairingGeneration,
+            "language": "en", "planCount": 0, "exerciseCount": 0,
+            "applied": false, "reason": "plan_too_large"
+        ]
+        func refuses(_ message: [String: Any], device: String? = nil) -> Bool {
+            GarminPhoneSyncProtocol.acknowledgementRefusesPlanTooLarge(message, binding: binding,
+                syncID: syncID, revision: revision, sourceDeviceBinding: device ?? binding.device)
+        }
+        func applied(_ message: [String: Any]) -> Bool {
+            GarminPhoneSyncProtocol.acknowledgementMatches(message, binding: binding,
+                syncID: syncID, revision: revision, sourceDeviceBinding: binding.device)
+        }
+        XCTAssertTrue(refuses(refusal))
+        // A refusal is never an applied acknowledgement.
+        XCTAssertFalse(applied(refusal))
+        func changed(_ key: String, _ value: Any?) -> [String: Any] {
+            var message = refusal
+            message[key] = value
+            return message
+        }
+        XCTAssertFalse(refuses(changed("syncId", "other-sync")))
+        XCTAssertFalse(refuses(changed("requestId", "other-sync")))
+        XCTAssertFalse(refuses(changed("syncRevision", revision + 1)))
+        XCTAssertFalse(refuses(changed("accountBinding", String(repeating: "c", count: 64))))
+        XCTAssertFalse(refuses(changed("deviceBinding", "99999999-2222-3333-4444-555555555555")))
+        XCTAssertFalse(refuses(changed("pairingGeneration", String(repeating: "c", count: 64))))
+        XCTAssertFalse(refuses(changed("pairingGeneration", nil)))
+        XCTAssertFalse(refuses(changed("bindingVersion", 1)))
+        XCTAssertFalse(refuses(changed("type", "request_sync")))
+        XCTAssertFalse(refuses(refusal, device: "99999999-2222-3333-4444-555555555555"))
+        XCTAssertFalse(refuses(changed("reason", nil)))
+        XCTAssertFalse(refuses(changed("reason", "PLAN_TOO_LARGE")))
+        XCTAssertFalse(refuses(changed("reason", "plan_too_large ")))
+        XCTAssertFalse(refuses(changed("reason", "unknown")))
+        XCTAssertFalse(refuses(changed("reason", String(repeating: "x", count: 33))))
+        XCTAssertFalse(refuses(changed("reason", 1)))
+        XCTAssertFalse(refuses(changed("applied", true)))
+        XCTAssertFalse(refuses(changed("applied", nil)))
+        XCTAssertFalse(refuses(changed("applied", "false")))
+        var oversized = refusal
+        for index in 0 ..< GarminPhoneSyncProtocol.maximumMessageEntries { oversized["extra\(index)"] = index }
+        XCTAssertFalse(refuses(oversized))
+        // The applied path is unchanged.
+        var ack = refusal
+        ack["applied"] = true
+        ack["reason"] = nil
+        XCTAssertTrue(applied(ack))
+        XCTAssertFalse(refuses(ack))
+        XCTAssertFalse(applied(changed("applied", false)))
+        XCTAssertTrue(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "uk").contains("Скороти його"))
+        XCTAssertTrue(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "ru").contains("Сократи его"))
+        XCTAssertEqual(GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: "en"),
+            "This plan is too large for this watch. Shorten it and sync again.")
+    }
+
+    func testGarminPlanTooLargeRefusalStopsWaitingKeepsPlanUndeliveredAndShowsStatus() async throws {
+        let defaults = temporaryDefaults(named: "garmin-phone-too-large")
+        let auth = AuthService(keychain: InMemoryKeychainStore(), defaults: defaults)
+        let account = AppAccountSession.local(id: "00000000-0000-4000-8000-000000000214", displayName: "Too large")
+        try auth.installSessionForTesting(account)
+        let store = try WorkoutStore(accountStorageKey: account.storageKey,
+            directoryURL: try temporaryDirectory(named: "phone-too-large-workouts"))
+        _ = try store.addExercise(name: "Catalog exercise")
+        let directory = try temporaryDirectory(named: "phone-too-large-deliveries")
+        let planStore = GarminPhonePlanStore(root: directory)
+        let transport = FakeGarminPhoneConnectIQTransport()
+        let id = UUID(uuidString: "11111111-2222-3333-4444-555555555558")!
+        let device = try XCTUnwrap(IQDevice(id: id, modelName: "Forerunner 55", friendlyName: "Small watch"))
+        transport.selectionResponse = [device]
+        transport.statuses[id] = .notConnected
+        let service = GarminPhoneSyncService(auth: auth, defaults: defaults, connectIQ: transport,
+            syncDeliveryTimeout: .milliseconds(600), planStore: planStore)
+        service.bind(workoutStore: store)
+        service.selectDevices()
+        XCTAssertTrue(service.handleOpenURL(URL(string: "com.setforge.gymapp.ios://devices")!))
+        let plan = GarminWorkoutPlan(source: "gymapp-ios", version: 1, title: "Plan test",
+            createdAt: "2026-09-08T10:00:00.000Z", startedAt: "2026-09-08T10:00:00.000Z", note: "",
+            exercises: [.init(name: "Squat", sets: [.init(weight: 52.5, reps: 9, orderIndex: 0)])])
+        try service.queuePlan(plan, deviceID: id.uuidString)
+        transport.statuses[id] = .connected
+        service.deviceStatusChanged(device, status: .connected)
+        let handshakeSent = await waitUntil { transport.sent.count == 1 }
+        XCTAssertTrue(handshakeSent)
+        service.receivedMessage(syncAcknowledgement(for: transport.sent[0].message), from: transport.sent[0].app)
+        let planSent = await waitUntil { transport.sent.count == 2 }
+        XCTAssertTrue(planSent)
+        let delivery = try XCTUnwrap(transport.sent.last)
+        let binding = GarminPhoneBinding(account: try XCTUnwrap(delivery.message["accountBinding"] as? String),
+            device: try XCTUnwrap(delivery.message["deviceBinding"] as? String),
+            pairingGeneration: try XCTUnwrap(delivery.message["pairingGeneration"] as? String))
+        func refusal(_ overrides: [String: Any] = [:]) -> [String: Any] {
+            var message = syncAcknowledgement(for: delivery.message)
+            message["language"] = "en"
+            message["planCount"] = 0
+            message["exerciseCount"] = 0
+            message["applied"] = false
+            message["reason"] = "plan_too_large"
+            for (key, value) in overrides { message[key] = value }
+            return message
+        }
+        let expected = GarminPhoneSyncProtocol.planTooLargeMessage(languageCode: gymCurrentLanguageCode())
+        // Wrong correlation or reason is ignored.
+        service.receivedMessage(refusal(["syncId": "wrong-plan"]), from: delivery.app)
+        service.receivedMessage(refusal(["reason": "other"]), from: delivery.app)
+        service.receivedMessage(refusal(["accountBinding": String(repeating: "c", count: 64)]), from: delivery.app)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertNotEqual(service.statusMessage, expected)
+        XCTAssertNil(service.planDeliveryMessages[binding.device])
+        // The exact refusal stops the wait and reports the problem.
+        service.receivedMessage(refusal(), from: delivery.app)
+        let shown = await waitUntil { service.statusMessage == expected }
+        XCTAssertTrue(shown)
+        XCTAssertTrue(service.statusIsError)
+        XCTAssertEqual(service.planDeliveryMessages[binding.device], expected)
+        XCTAssertEqual(try planStore.load(account: account.storageKey, binding: binding)?.acknowledged, false)
+        // No timeout message replaces it and nothing is resent on its own.
+        try? await Task.sleep(for: .milliseconds(900))
+        XCTAssertEqual(service.statusMessage, expected)
+        XCTAssertEqual(transport.sent.count, 2)
+        XCTAssertEqual(try planStore.load(account: account.storageKey, binding: binding)?.acknowledged, false)
+    }
+
     private func syncAcknowledgement(for message: [String: Any]) -> [String: Any] {
         [
             "type": "sync_ack",
