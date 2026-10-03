@@ -5,18 +5,13 @@ base.excludeAnnotations = compactLegacyState;compactRichRecovery;fr55UpgradeBrid
 
 # mem128Wide marks the three Instinct products with the most measured heap
 # headroom, so they take the larger incoming plan/catalog limits.
-# These eight products have a 128 KiB watch-app ceiling. The full legacy
+# These three products have a 128 KiB watch-app ceiling. The full legacy
 # quarantine/direct-cloud parser exceeds that real compiler limit, so use the
 # enhanced compact state profile: indexed atomic workouts, FIT, phone sync,
 # queueing, tutorial, and rich recovery remain available.
-enduro.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;mem128Wide
-fenix6.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;mem128Wide
-fenix6s.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;mem128Wide
-fr245.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;mem128Wide
-venusq.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;mem128Wide
-instincte40mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;noMem128Wide
-instincte45mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;noMem128Wide
-instinct3solar45mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;noMem128Wide
+instincte40mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128
+instincte45mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128
+instinct3solar45mm.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128
 
 # These five API 3.4 products cap watch apps at 98,304 bytes. Select the compact
 # one-time legacy migration path while retaining the current atomic workout,
@@ -30,3 +25,11 @@ instinct2.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBr
 instinct2s.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide
 instinct2x.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide
 instinctcrossover.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide
+# Enduro, Fenix 6, Fenix 6S, Forerunner 245 and Venu Sq have a 128 KiB ceiling
+# but under 1 KB of heap free once paired, so they share the 96 KiB lite
+# free-workout profile (no plan, no mem128 sync code). Ten products use it.
+enduro.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide
+fenix6.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide
+fenix6s.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide
+fr245.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide
+venusq.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide

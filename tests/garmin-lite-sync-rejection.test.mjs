@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const liteDevices = ["instinct2", "instinct2s", "instinct2x", "instinctcrossover", "descentg1"];
+const liteDevices = ["instinct2", "instinct2s", "instinct2x", "instinctcrossover", "descentg1",
+  "enduro", "fenix6", "fenix6s", "fr245", "venusq"];
 
 function annotatedBody(source, annotation, signature) {
   let at = source.indexOf(signature);

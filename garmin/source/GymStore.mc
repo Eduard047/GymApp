@@ -143,16 +143,8 @@ class GymStore {
     (:compactWorkoutMode96)
     static const queueNameBudget = 4500;
     // 128 KiB tier limits for an incoming phone sync, from simulator heap
-    // measurements that keep a 2 KB free-heap floor. Three profiles: the tight
-    // default (no plan, small catalog), the wide Instinct profile, and fr55.
-    (:mem128, :notFr55Memory, :noMem128Wide)
-    static const memPlanSets = 0;
-    (:mem128, :notFr55Memory, :noMem128Wide)
-    static const memPlanChars = 0;
-    (:mem128, :notFr55Memory, :noMem128Wide)
-    static const memCatalogEntries = 5;
-    (:mem128, :notFr55Memory, :noMem128Wide)
-    static const memCatalogChars = 100;
+    // measurements that keep a 2 KB free-heap floor. Two profiles: the wide
+    // Instinct profile and fr55.
     (:mem128Wide)
     static const memPlanSets = 20;
     (:mem128Wide)

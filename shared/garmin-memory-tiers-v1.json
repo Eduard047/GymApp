@@ -1,13 +1,8 @@
 {
   "version": 1,
   "name": "garmin-memory-tiers",
-  "profile": "128 KiB watch tier, split into three incoming-sync memory tiers (tight, wide, fr55)",
+  "profile": "128 KiB watch tier, split into two incoming-sync memory tiers (wide, fr55)",
   "tiers": {
-    "tight": {
-      "devices": ["enduro", "fenix6", "fenix6s", "fr245", "venusq"],
-      "limits": { "planSets": 0, "planChars": 0, "catalogEntries": 5, "catalogChars": 100 },
-      "note": "Under 1 KB of heap is free at Ready once paired, so the watch holds no plan and refuses every non-empty plan; even a small sync may not fit."
-    },
     "wide": {
       "devices": ["instincte40mm", "instincte45mm", "instinct3solar45mm"],
       "limits": { "planSets": 20, "planChars": 500, "catalogEntries": 40, "catalogChars": 700 }
@@ -27,8 +22,8 @@
   "marker": {
     "request_sync": {
       "field": "watchVersion",
-      "suffixes": { "tight": "-c128", "wide": "-c128", "fr55": "-fr55" },
-      "rule": "The value ends with -c128 (128 KiB watches other than fr55) or -fr55. Both suffixes stay within 32 characters of [A-Za-z0-9._+-]. No new key is added because released phone parsers reject unknown request_sync keys."
+      "suffixes": { "wide": "-c128", "fr55": "-fr55" },
+      "rule": "The value ends with -c128 (the wide 128 KiB watches) or -fr55. Both suffixes stay within 32 characters of [A-Za-z0-9._+-]. No new key is added because released phone parsers reject unknown request_sync keys."
     },
     "sync_ack": {
       "field": "reason",

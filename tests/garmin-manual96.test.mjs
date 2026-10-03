@@ -79,15 +79,18 @@ test("96 KiB selects manual set bookkeeping while 128 KiB keeps rich tracking", 
     return new Set(line.split(";"));
   };
   const descent = profileAnnotations("descentg1");
+  const wide128 = profileAnnotations("instincte40mm");
   const enduro = profileAnnotations("enduro");
   const fr55 = profileAnnotations("fr55");
 
   assert.ok(descent.has("richWorkoutMode"));
   assert.ok(!descent.has("compactWorkoutMode96"),
     "descentg1 must compile the manual 96 KiB implementation");
-  assert.ok(enduro.has("compactWorkoutMode96"));
-  assert.ok(!enduro.has("richWorkoutMode"),
+  assert.ok(wide128.has("compactWorkoutMode96"));
+  assert.ok(!wide128.has("richWorkoutMode"),
     "128 KiB products must retain rich workout code");
+  assert.ok(enduro.has("richWorkoutMode") && !enduro.has("compactWorkoutMode96"),
+    "enduro runs the 96 KiB lite profile");
   assert.ok(fr55.has("compactWorkoutMode96"));
   assert.ok(!fr55.has("richWorkoutMode"),
     "FR55 remains on the unchanged 128 KiB rich profile");

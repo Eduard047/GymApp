@@ -10,7 +10,6 @@ const jungle = await readFile("garmin/monkey.jungle", "utf8");
 
 // Annotation set required to select each tier's limit constants.
 const tierAnnotations = {
-  tight: ["mem128", "notFr55Memory", "noMem128Wide"],
   wide: ["mem128Wide"],
   fr55: ["mem128", "fr55Memory"],
 };
@@ -45,9 +44,9 @@ function jungleDevices(excludedAnnotation) {
   return devices;
 }
 
-test("contract names exactly three tiers with the expected shape", () => {
+test("contract names exactly two tiers with the expected shape", () => {
   assert.equal(contract.version, 1);
-  assert.deepEqual(Object.keys(contract.tiers).sort(), ["fr55", "tight", "wide"]);
+  assert.deepEqual(Object.keys(contract.tiers).sort(), ["fr55", "wide"]);
   for (const tier of Object.values(contract.tiers)) {
     assert.deepEqual(Object.keys(tier.limits).sort(), Object.keys(limitConsts).sort());
     assert.ok(tier.devices.length > 0);
@@ -67,7 +66,14 @@ test("jungle membership matches the contract device lists", () => {
   assert.equal(new Set(all).size, all.length, "a device appears in two tiers");
   // Devices built with the 128 KiB sync code are those that do not exclude it.
   assert.ok(sameSet(jungleDevices("noMem128"), all));
-  assert.ok(sameSet(jungleDevices("noMem128Wide"), contract.tiers.wide.devices));
+  // Wide devices are the 128 KiB devices that do not exclude mem128Wide.
+  const wideExcluded = jungleDevices("mem128Wide");
+  assert.ok(sameSet(jungleDevices("noMem128").filter((d) => !wideExcluded.includes(d)), contract.tiers.wide.devices));
+  // The former tight group now builds the 96 KiB lite profile: no mem128 code.
+  for (const device of ["enduro", "fenix6", "fenix6s", "fr245", "venusq"]) {
+    assert.ok(jungleDevices("mem128").includes(device), `${device} must not compile mem128 code`);
+    assert.ok(!jungleDevices("noMem128").includes(device));
+  }
   // fr55 is the only 128 KiB device that takes the fr55 limits.
   const fr55Devices = jungleDevices("notFr55Memory");
   assert.ok(sameSet(fr55Devices, contract.tiers.fr55.devices));
@@ -88,9 +94,9 @@ test("watchVersion suffixes match the contract and stay phone-parsable", () => {
   };
   const c128 = found(["mem128", "notFr55Memory"]);
   const fr55 = found(["mem128", "fr55Memory"]);
-  assert.ok(c128.endsWith(suffixes.tight) && c128.endsWith(suffixes.wide));
+  assert.ok(c128.endsWith(suffixes.wide));
   assert.ok(fr55.endsWith(suffixes.fr55));
-  assert.equal(suffixes.tight, "-c128");
+  assert.equal(suffixes.wide, "-c128");
   assert.equal(suffixes.fr55, "-fr55");
   for (const version of [c128, fr55]) {
     assert.ok(version.length <= 32, `${version} is longer than 32 characters`);

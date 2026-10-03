@@ -112,12 +112,21 @@ test("128 KiB Garmin profiles bridge full-v3 into indexed v4 and merge their run
     read("garmin/source/GymStore.mc"),
     read("garmin/monkey.jungle")
   ]);
-  const bridgeProducts = ["enduro", "fenix6", "fenix6s", "fr245", "venusq"];
+  // The bridge is kept only by the enhanced 128 KiB profile (Instinct E / 3 Solar).
+  const bridgeProducts = ["instincte40mm", "instincte45mm", "instinct3solar45mm"];
   for (const product of bridgeProducts) {
     assert.match(
       jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;mem128Wide$`, "m"),
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128$`, "m"),
       `${product} keeps the full-v3 bridge for its released active-workout schema`
+    );
+  }
+  // These 128 KiB watches moved to the lite profile and drop the bridge, like Instinct 2.
+  for (const product of ["enduro", "fenix6", "fenix6s", "fr245", "venusq"]) {
+    assert.match(
+      jungle,
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;`, "m"),
+      `${product} runs the lite profile without the full-v3 bridge`
     );
   }
   assert.match(

@@ -1,7 +1,8 @@
 {
   "version": 2,
   "name": "garmin-lite-mode",
-  "profile": "96 KiB watch tier (instinct2, instinct2s, instinct2x, instinctcrossover, descentg1)",
+  "profile": "96 KiB watch tier (instinct2, instinct2s, instinct2x, instinctcrossover, descentg1) plus the 128 KiB watches with under 1 KB of free heap once paired (enduro, fenix6, fenix6s, fr245, venusq)",
+  "devices": ["instinct2", "instinct2s", "instinct2x", "instinctcrossover", "descentg1", "enduro", "fenix6", "fenix6s", "fr245", "venusq"],
   "capabilities": ["free_workout", "workout_upload", "pairing"],
   "unsupported": ["plan_sync", "plan_workout", "manual_set_entry"],
   "marker": {

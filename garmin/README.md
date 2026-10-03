@@ -38,26 +38,26 @@ extraction uses explicit substring bounds for older Connect IQ runtimes.
 
 ## Lite mode (96 KiB watches)
 
-- Applies to the 96 KiB tier: Instinct 2, 2S, 2X, Crossover and Descent G1. These watches record free workouts only; their heap cannot hold a plan, so plan mode, manual set entry and plan sync are not part of their build.
+- Applies to the 96 KiB tier (Instinct 2, 2S, 2X, Crossover and Descent G1) and to the 128 KiB watches that have under 1 KB of heap free once paired (Enduro, Fenix 6, Fenix 6S, Forerunner 245 and Venu Sq). These watches record free workouts only; their heap cannot hold a plan, so plan mode, manual set entry and plan sync are not part of their build.
 - Pairing still works. A `sync` message is applied for its binding fields (account, device, pairing generation, revision, language) with the same validation, replay, revision and ownership checks as every other profile. `planNames`, `planWeights`, `planReps` and `exercises` are replaced by empty values before validation and are never copied or stored.
 - The watch answers with a lean `sync_ack`: the usual correlation and binding fields, `applied` (true when applied or an exact replay, false when refused) and an additive `lite: 1` key. It carries no plan counts. Queued workouts are sent after the acknowledgement, as on other profiles.
 - `request_sync` identifies the tier by a `-lite` suffix on `watchVersion`; no new key is added because released phone parsers reject unknown `request_sync` keys.
 - Phones that recognize the suffix should send a binding-only sync (empty plan arrays, no `exercises`). Released phones keep sending their full plan; the watch drops it and still acknowledges, so pairing completes either way.
 - A plan stored by an older build is deleted once at startup (marker `lite96PurgedV1`), only while no active, prepared or queued workout depends on the exercise catalog.
 - A finished free workout is queued (up to 3 on this tier) and sent as `create_workout` with `workoutMode: "free"`, no sets and the recorded duration and heart-rate summary. Android and iOS store it as an activity-only workout.
+- On Enduro, Fenix 6, Fenix 6S, Forerunner 245 and Venu Sq the update from the earlier rich build switches the profile to lite. As on Instinct 2, a workout in progress during the update is not restored; workouts already queued are kept and sent.
 - Contract: `shared/garmin-lite-mode-v1.json`. Other profiles are unchanged; the lite code is selected with the `compactWorkoutMode96` / `richWorkoutMode` annotations.
 
 ## Memory tiers (128 KiB watches)
 
-- The 128 KiB products take one of three incoming-sync tiers, chosen at build time (annotations `mem128` / `mem128Wide`):
+- The 128 KiB products that keep plan sync take one of two incoming-sync tiers, chosen at build time (annotations `mem128` / `mem128Wide`). Enduro, Fenix 6, Fenix 6S, Forerunner 245 and Venu Sq run the lite free-workout profile (see Lite mode) and are not part of these tiers:
 
   | Tier | Devices | Plan (sets / chars) | Catalog (entries / chars) |
   | --- | --- | --- | --- |
-  | tight | Enduro, Fenix 6, Fenix 6S, Forerunner 245, Venu Sq | 0 / 0 | 5 / 100 |
   | wide | Instinct E 40 mm, Instinct E 45 mm, Instinct 3 Solar 45 mm | 20 / 500 | 40 / 700 |
   | fr55 | Forerunner 55 | 8 / 160 | 12 / 240 |
 
-- Plan characters are the summed `String.length()` of `planNames`. Measured in the simulator: the tight group has under 1 KB of heap free at Ready once paired, so it accepts no plan and even a small sync may not fit; the fr55 limits leave about 3 KB free during a sync, while saving a planned workout remains the tightest step.
+- Plan characters are the summed `String.length()` of `planNames`. Measured in the simulator: the fr55 limits leave about 3 KB free during a sync, while saving a planned workout remains the tightest step.
 - A plan over the limit is refused before any copy: plan and catalog are dropped, pairing is still applied, and the watch sends `sync_ack` with `applied: false` and an additive `reason: "plan_too_large"`. A catalog over the limit is trimmed to its leading entries and the sync continues.
 - `request_sync` marks the tier with a `-c128` suffix on `watchVersion` (`-fr55` on Forerunner 55); no new key is added.
 - Android and iOS stop retrying when the acknowledgement matches exactly (correlation fields, `applied: false`, reason `plan_too_large`), keep the plan undelivered and show "This plan is too large for this watch. Shorten it and sync again."
@@ -132,18 +132,19 @@ session; the next explicit Resume starts a new FIT session, and a paused rest
 countdown may resume from the last compact checkpoint rather than the exact
 instant of termination. On `fr55` and larger profiles, a phase-zero restart
 opens an explicit FIT-history decision before any GymApp sync. The five 96 KiB
-profiles keep the smaller Summary: a second explicit Save & Exit safely queues
+profiles and the five lite-profile 128 KiB watches keep the smaller Summary: a second explicit Save & Exit safely queues
 the preserved sets with the same request ID, without claiming that the unknown
 FIT activity was saved and without calling Garmin's recording API again. Use a
 larger-memory target when source-level simulator debugging is required.
 
-Enduro, Fenix 6, Fenix 6S, Forerunner 245, Venu Sq, Instinct E (40 mm and
-45 mm), and Instinct 3 Solar 45 mm also have a real 128 KiB watch-app ceiling
-(Forerunner 55 shares it on its own profile; see Memory tiers). Their enhanced compact state profile retains indexed atomic
+Instinct E (40 mm and 45 mm) and Instinct 3 Solar 45 mm also have a real
+128 KiB watch-app ceiling (Forerunner 55 shares it on its own profile; see
+Memory tiers). Enduro, Fenix 6, Fenix 6S, Forerunner 245 and Venu Sq share it
+but run the lite free-workout profile (see Lite mode). The enhanced compact state profile of the three Instinct products retains indexed atomic
 workouts, FIT, phone sync, queueing, the tutorial, rich recovery, and the same
 hardware-key workout actions while omitting the full legacy quarantine and
 direct-cloud parser that do not fit the compiler limit. Cloud plans still reach
-these products through the paired GymApp phone flow.
+the Instinct products through the paired GymApp phone flow.
 
 Store export:
 

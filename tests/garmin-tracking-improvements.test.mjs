@@ -1493,7 +1493,13 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
     "instinct2",
     "instinct2s",
     "instinct2x",
-    "instinctcrossover"
+    "instinctcrossover",
+    // 128 KiB watches with under 1 KB of heap free once paired use the lite profile.
+    "enduro",
+    "fenix6",
+    "fenix6s",
+    "fr245",
+    "venusq"
   ];
   assert.match(
     jungle,
@@ -1503,15 +1509,15 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
     assert.match(jungle,
       new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;compactRichRecovery;fr55UpgradeBridge;richRecovery;richRecoveryNavigation;recoveryCore;enhancedCompactCheckpoint;enhancedRecoveryCheckpoint;pageDots;fullDebugState;tightFullDebugState;richWorkoutMode;fr55Memory;mem128;mem128Wide$`, "m"));
   }
-  assert.equal((jungle.match(/;richWorkoutMode;fr55Memory;mem128;mem128Wide$/gm) || []).length, 5);
-  // base + FR55 + the eight 128 KiB products carry the compact 96 workout mode.
+  assert.equal((jungle.match(/;richWorkoutMode;fr55Memory;mem128;mem128Wide$/gm) || []).length, 10);
+  // base + FR55 + the three enhanced 128 KiB Instinct products carry the compact 96 workout mode.
   assert.equal(
-    (jungle.match(/;compactWorkoutMode96;(?:notFr55Memory|fr55Memory);(?:mem128|noMem128);(?:mem128Wide|noMem128Wide)$/gm) || []).length,
-    10
+    (jungle.match(/;compactWorkoutMode96;(?:notFr55Memory|fr55Memory);(?:mem128;mem128Wide|noMem128;mem128Wide|noMem128)$/gm) || []).length,
+    5
   );
   assert.equal(
     (jungle.match(/\.excludeAnnotations = fullLegacyState/g) || []).length,
-    compactProducts.length + 8
+    compactProducts.length + 3
   );
   assert.match(bashBuild, /build-garmin-program\.mjs/);
   assert.match(powershellBuild, /build-garmin-program\.mjs/);
@@ -1525,24 +1531,15 @@ test("Garmin low-memory products keep an atomic compact ownerless recovery bound
   assert.match(readme, /cannot reattach Garmin's native ActivityRecording[\s\S]*explicit Resume starts a new FIT session/);
   assert.match(readme, /paused rest[\s\S]*last compact checkpoint/);
 
-  // 128 KiB products: five tight-tier plus three wide-tier (Instinct E / 3 Solar).
-  const constrained128Products = [
-    ["enduro", "mem128Wide"],
-    ["fenix6", "mem128Wide"],
-    ["fenix6s", "mem128Wide"],
-    ["fr245", "mem128Wide"],
-    ["venusq", "mem128Wide"],
-    ["instincte40mm", "noMem128Wide"],
-    ["instincte45mm", "noMem128Wide"],
-    ["instinct3solar45mm", "noMem128Wide"]
-  ];
-  for (const [product, wideAnnotation] of constrained128Products) {
+  // 128 KiB products on the enhanced profile: the wide tier (Instinct E / 3 Solar).
+  for (const product of ["instincte40mm", "instincte45mm", "instinct3solar45mm"]) {
     assert.match(
       jungle,
-      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128;${wideAnnotation}$`, "m")
+      new RegExp(`^${product}\\.excludeAnnotations = fullLegacyState;noFr55UpgradeBridge;compactRecovery96;compactCheckpoint96;pageDots;fullDebugState;tightFullDebugState;compactWorkoutMode96;fr55Memory;noMem128$`, "m")
     );
   }
-  assert.match(readme, /Enduro, Fenix 6, Fenix 6S, Forerunner 245, Venu Sq, Instinct E \(40 mm and\s+45 mm\), and Instinct 3 Solar 45 mm/);
+  assert.match(readme, /Instinct E \(40 mm and\s+45 mm\) and Instinct 3 Solar 45 mm also have a real/);
+  assert.match(readme, /Enduro, Fenix 6, Fenix 6S, Forerunner 245 and Venu Sq share it\s+but run the lite free-workout profile/);
   assert.match(readme, /128 KiB[\s\S]*enhanced compact state profile/);
 
   const view = await readFile("garmin/source/WorkoutView.mc", "utf8");
