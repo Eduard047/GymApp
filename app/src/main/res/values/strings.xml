@@ -634,6 +634,7 @@
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ is not ready. Check the connection and try again.</string>
     <string name="message_no_trusted_garmin_watch">Connect a Garmin watch in Profile → Your watch before syncing a plan.</string>
     <string name="message_garmin_ack_missing">The watch did not confirm the plan. Open GymApp on the watch and try again.</string>
+    <string name="message_garmin_plan_too_large">This plan is too large for this watch. Shorten it and sync again.</string>
     <string name="message_garmin_sign_in_required">Sign in before syncing with Garmin.</string>
     <string name="message_garmin_account_changed">The active account changed. Try syncing the plan again.</string>
     <string name="message_garmin_reconnect_account_cleanup">Reconnect the trusted Garmin watch to finish clearing data from the previous account.</string>

@@ -23,7 +23,9 @@ class PlanSyncErrorTextTest {
             "Send status failed" to R.string.message_garmin_send_failed,
             "Send timeout" to R.string.message_garmin_send_failed,
             "Garmin lite watch supports free workouts only" to
-                R.string.garmin_lite_free_only_notice
+                R.string.garmin_lite_free_only_notice,
+            "Garmin plan is too large for this watch" to
+                R.string.message_garmin_plan_too_large
         )
 
         cases.forEach { (message, expectedResource) ->

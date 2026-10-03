@@ -661,6 +661,35 @@ internal fun garminSyncAckMatches(
     return command["applied"] == true
 }
 
+/** Status text surfaced to the UI layer when the watch refuses a plan as too large for its memory. */
+internal const val GARMIN_PLAN_TOO_LARGE_STATUS = "Garmin plan is too large for this watch"
+internal const val GARMIN_PLAN_TOO_LARGE_REASON = "plan_too_large"
+
+/**
+ * A watch with a small memory tier refused a plan or catalog it cannot hold: the normal
+ * `sync_ack` with `applied=false` and `reason=plan_too_large`. Resending the same message cannot
+ * help, so the sender stops retrying. Correlation matches [garminSyncAckMatches] exactly; binding
+ * checks are the caller's.
+ */
+internal fun garminPlanTooLargeAckRefused(
+    command: Map<Any?, Any?>,
+    expectedSyncId: String,
+    expectedRevision: Long
+): Boolean {
+    if (command.size > MAX_GARMIN_COMMAND_ENTRIES) return false
+    if (!isValidGarminMessageId(expectedSyncId, MAX_GARMIN_SYNC_ID_LENGTH)) return false
+    if (expectedRevision !in 1L..MAX_GARMIN_SYNC_REVISION) return false
+    if (command["type"] != "sync_ack") return false
+    if (command["syncId"] != expectedSyncId || command["requestId"] != expectedSyncId) {
+        return false
+    }
+    if (command["syncRevision"] !is Long || command["syncRevision"] != expectedRevision) {
+        return false
+    }
+    if (command["applied"] != false) return false
+    return command["reason"] == GARMIN_PLAN_TOO_LARGE_REASON
+}
+
 internal fun boundedGarminInboundEnvelopes(
     messages: List<*>
 ): List<GarminInboundCommandEnvelope> {

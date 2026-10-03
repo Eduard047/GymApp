@@ -650,6 +650,7 @@
     <string name="message_garmin_sdk_not_ready">Garmin Connect IQ ще не готовий. Перевір з’єднання та спробуй ще раз.</string>
     <string name="message_no_trusted_garmin_watch">Підключи годинник Garmin у Профілі → Твій годинник перед синхронізацією плану.</string>
     <string name="message_garmin_ack_missing">Годинник не підтвердив план. Відкрий GymApp на годиннику та спробуй ще раз.</string>
+    <string name="message_garmin_plan_too_large">План завеликий для цього годинника. Скороти його та синхронізуй знову.</string>
     <string name="message_garmin_sign_in_required">Увійди в обліковий запис перед синхронізацією з Garmin.</string>
     <string name="message_garmin_account_changed">Активний обліковий запис змінився. Спробуй синхронізувати план ще раз.</string>
     <string name="message_garmin_reconnect_account_cleanup">Повторно підключи довірений годинник Garmin, щоб завершити очищення даних попереднього облікового запису.</string>

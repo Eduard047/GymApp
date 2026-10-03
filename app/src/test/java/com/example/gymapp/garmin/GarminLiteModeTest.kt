@@ -115,6 +115,40 @@ class GarminLiteModeTest {
     }
 
     @Test
+    fun planTooLargeRefusalNeedsExactCorrelationAndReason() {
+        val revision = 1_800_000_000_123L
+        val refused = ack(applied = false) + ("reason" to "plan_too_large")
+        assertTrue(garminPlanTooLargeAckRefused(refused, syncId, revision))
+        // Also accepted from a watch that adds the lite marker.
+        assertTrue(garminPlanTooLargeAckRefused(refused + ("lite" to 1), syncId, revision))
+        assertFalse(garminSyncAckMatches(refused, syncId, revision))
+
+        assertFalse(garminPlanTooLargeAckRefused(ack(applied = false), syncId, revision))
+        assertFalse(
+            garminPlanTooLargeAckRefused(
+                ack(applied = false) + ("reason" to "other"),
+                syncId,
+                revision
+            )
+        )
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("reason" to "PLAN_TOO_LARGE"), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("reason" to null), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("applied" to true), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("applied" to "false"), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("applied" to null), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused, syncId, revision + 1))
+        assertFalse(garminPlanTooLargeAckRefused(refused, "other-sync-1234567890", revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("syncId" to "other-sync-1234567890"), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("requestId" to "other-id-12345678901"), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("syncRevision" to 5), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused + ("type" to "sync"), syncId, revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused, "bad id", revision))
+        assertFalse(garminPlanTooLargeAckRefused(refused, syncId, 0L))
+        val oversized = refused + (1..MAX_GARMIN_COMMAND_ENTRIES).associate { "x$it" to 1 }
+        assertFalse(garminPlanTooLargeAckRefused(oversized, syncId, revision))
+    }
+
+    @Test
     fun bindingOnlyPayloadHasEmptyPlanArraysAndNoCatalog() {
         val base = garminBindingOnlySyncPayload(language = "uk", syncId = syncId)
         assertEquals("sync", base["type"])

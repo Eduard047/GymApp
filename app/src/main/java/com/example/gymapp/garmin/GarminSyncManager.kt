@@ -958,6 +958,10 @@ class GarminSyncManager(
                         command = envelope.command,
                         expectedSyncId = syncId,
                         expectedRevision = pending.revision
+                    ) || garminPlanTooLargeAckRefused(
+                        command = envelope.command,
+                        expectedSyncId = syncId,
+                        expectedRevision = pending.revision
                     ))
             }
         }
@@ -977,7 +981,12 @@ class GarminSyncManager(
             expectedSyncId = syncId,
             expectedRevision = pending.revision
         )
-        val liteRefused = !applied && garminLiteSyncAckRefused(
+        val planTooLarge = !applied && garminPlanTooLargeAckRefused(
+            command = command,
+            expectedSyncId = syncId,
+            expectedRevision = pending.revision
+        )
+        val liteRefused = !applied && !planTooLarge && garminLiteSyncAckRefused(
             command = command,
             expectedSyncId = syncId,
             expectedRevision = pending.revision
@@ -986,7 +995,7 @@ class GarminSyncManager(
             !pendingContextIsCurrent(pending) ||
             deviceBinding(device) != pending.binding.device ||
             decision != GarminBindingDecision.Bound ||
-            (!applied && !liteRefused)
+            (!applied && !liteRefused && !planTooLarge)
         ) {
             Log.i(TAG, "Rejected unbound or unsuccessful Garmin sync acknowledgement")
             return
@@ -995,7 +1004,13 @@ class GarminSyncManager(
             refreshDeviceUiState()
         }
         if (pendingSyncAcks.remove(syncId, pending)) {
-            if (liteRefused) {
+            if (planTooLarge) {
+                // The watch answered that the plan does not fit; resending cannot change that.
+                // Pairing fields in the sync were still applied by the watch.
+                lastPlanSyncStatus = GARMIN_PLAN_TOO_LARGE_STATUS
+                Log.i(TAG, "Garmin watch refused a plan that is too large")
+                pending.deferred.complete(false)
+            } else if (liteRefused) {
                 // The watch answered, so repeating the same message cannot help.
                 lastPlanSyncStatus = "Garmin lite watch refused the sync"
                 Log.i(TAG, "Garmin lite sync refused by the watch")
