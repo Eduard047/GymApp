@@ -120,8 +120,13 @@ class GymCommListener extends Comm.ConnectionListener {
 }
 
 class GymComm {
-    (:richWorkoutMode)
+    (:richWorkoutMode, :noMem128)
     static var watchVersion = "2026.08.20.1521";
+    // 128 KiB watches report "-c128" (fr55 "-fr55") so the phone can size plans.
+    (:mem128, :notFr55Memory)
+    static var watchVersion = "2026.08.20.1521-c128";
+    (:mem128, :fr55Memory)
+    static var watchVersion = "2026.08.20.1521-fr55";
     // The "-lite" suffix marks free-workout-only watches. It rides in the
     // existing bounded watchVersion text because phones reject unknown keys in
     // request_sync.

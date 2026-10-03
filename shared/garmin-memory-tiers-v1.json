@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "name": "garmin-memory-tiers",
+  "profile": "128 KiB watch tier, split into three incoming-sync memory tiers (tight, wide, fr55)",
+  "tiers": {
+    "tight": {
+      "devices": ["enduro", "fenix6", "fenix6s", "fr245", "venusq"],
+      "limits": { "planSets": 0, "planChars": 0, "catalogEntries": 5, "catalogChars": 100 },
+      "note": "Under 1 KB of heap is free at Ready once paired, so the watch holds no plan and refuses every non-empty plan; even a small sync may not fit."
+    },
+    "wide": {
+      "devices": ["instincte40mm", "instincte45mm", "instinct3solar45mm"],
+      "limits": { "planSets": 20, "planChars": 500, "catalogEntries": 40, "catalogChars": 700 }
+    },
+    "fr55": {
+      "devices": ["fr55"],
+      "limits": { "planSets": 8, "planChars": 160, "catalogEntries": 12, "catalogChars": 240 },
+      "note": "These limits leave about 3 KB of heap free during a sync."
+    }
+  },
+  "counting": {
+    "planSets": "Number of entries in planNames.",
+    "planChars": "Sum of String.length() over the entries of planNames, counted on the raw incoming message before any copy.",
+    "catalogEntries": "Number of entries kept from exercises.",
+    "catalogChars": "Sum of String.length() over the kept entries of exercises."
+  },
+  "marker": {
+    "request_sync": {
+      "field": "watchVersion",
+      "suffixes": { "tight": "-c128", "wide": "-c128", "fr55": "-fr55" },
+      "rule": "The value ends with -c128 (128 KiB watches other than fr55) or -fr55. Both suffixes stay within 32 characters of [A-Za-z0-9._+-]. No new key is added because released phone parsers reject unknown request_sync keys."
+    },
+    "sync_ack": {
+      "field": "reason",
+      "value": "plan_too_large",
+      "rule": "Additive string key present only on an acknowledgement with applied=false that refuses an oversized plan. Released receivers ignore unknown keys."
+    }
+  },
+  "sync": {
+    "planOverLimit": {
+      "behavior": "refuse",
+      "check": "planNames count or character total exceeds the tier limit; evaluated on the raw message before any copy or replay check.",
+      "watchBehavior": "planNames, planWeights, planReps and exercises are replaced by empty values; the pairing fields and language are still applied with the usual validation, replay, revision and ownership checks.",
+      "response": {
+        "type": "sync_ack",
+        "applied": false,
+        "reason": "plan_too_large",
+        "echoes": ["bindingVersion", "syncId", "requestId", "syncRevision", "accountBinding", "deviceBinding", "pairingGeneration"]
+      }
+    },
+    "catalogOverLimit": {
+      "behavior": "trim",
+      "watchBehavior": "The leading entries that fit both the entry and the character limit are kept and the sync continues; the acknowledgement is the normal one without a reason."
+    }
+  },
+  "coldStart": {
+    "marker": "mem128SizedV1",
+    "rule": "Once, at startup, a plan or catalog stored before the tier limits existed is deleted so every stored copy fits again; the phone resends it through the normal sync.",
+    "deletes": ["plan", "exercises", "deferredSync", "legacyQuarantinePlan", "legacyQuarantineExercises"],
+    "skippedWhen": ["an active workout has logged sets", "a workout is prepared"],
+    "neverDeletes": ["queued workouts"]
+  },
+  "phones": {
+    "recognition": "A phone that sees the plan_too_large reason on an applied=false sync_ack whose correlation fields match exactly stops retrying that sync.",
+    "android": {
+      "function": "garminPlanTooLargeAckRefused",
+      "rule": "Type, syncId, requestId, syncRevision, applied=false and reason equal to plan_too_large must all match exactly."
+    },
+    "ios": {
+      "function": "acknowledgementRefusesPlanTooLarge",
+      "rule": "Binding, ids, revision, accountBinding, deviceBinding, pairingGeneration, applied=false and reason equal to plan_too_large must all match exactly; the reason is at most 32 bytes."
+    },
+    "both": {
+      "planState": "The plan stays undelivered; no further retries of the same sync are sent.",
+      "userMessage": "This plan is too large for this watch. Shorten it and sync again.",
+      "localized": ["en", "uk", "ru"]
+    }
+  },
+  "rules": [
+    "A refused plan is never partially stored on the watch.",
+    "A refused plan still completes pairing.",
+    "Queued workouts are never deleted by a plan refusal or by the cold-start purge.",
+    "Watches outside the 128 KiB tier never send the reason and keep their existing sync behavior."
+  ]
+}

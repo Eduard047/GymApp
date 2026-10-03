@@ -118,6 +118,8 @@ class GymStore {
     (:fullLegacyState)
     static var legacyRawPending = null;
     static var legacyCompactCount = -1;
+    (:compactLegacyState)
+    static var legacyPendingUnarchived = false;
     static var requestCounter = 0;
 
     (:fullLegacyState)
@@ -140,6 +142,73 @@ class GymStore {
     static const queueLimit = 3;
     (:compactWorkoutMode96)
     static const queueNameBudget = 4500;
+    // 128 KiB tier limits for an incoming phone sync, from simulator heap
+    // measurements that keep a 2 KB free-heap floor. Three profiles: the tight
+    // default (no plan, small catalog), the wide Instinct profile, and fr55.
+    (:mem128, :notFr55Memory, :noMem128Wide)
+    static const memPlanSets = 0;
+    (:mem128, :notFr55Memory, :noMem128Wide)
+    static const memPlanChars = 0;
+    (:mem128, :notFr55Memory, :noMem128Wide)
+    static const memCatalogEntries = 5;
+    (:mem128, :notFr55Memory, :noMem128Wide)
+    static const memCatalogChars = 100;
+    (:mem128Wide)
+    static const memPlanSets = 20;
+    (:mem128Wide)
+    static const memPlanChars = 500;
+    (:mem128Wide)
+    static const memCatalogEntries = 40;
+    (:mem128Wide)
+    static const memCatalogChars = 700;
+    (:mem128, :fr55Memory)
+    static const memPlanSets = 8;
+    (:mem128, :fr55Memory)
+    static const memPlanChars = 160;
+    (:mem128, :fr55Memory)
+    static const memCatalogEntries = 12;
+    (:mem128, :fr55Memory)
+    static const memCatalogChars = 240;
+
+    // True when the raw incoming plan fits this tier. Runs on the transport
+    // dictionary before any copy; malformed shapes return true so the normal
+    // validation rejects them. The catalog is trimmed by trimSyncCatalog.
+    (:mem128)
+    static function syncFitsMemory(message) {
+        var names = message.get("planNames");
+        if (names instanceof Lang.Array) {
+            var count = names.size();
+            if (count > memPlanSets) { return false; }
+            var chars = 0;
+            for (var i = 0; i < count; i++) {
+                var item = names[i];
+                if (!(item instanceof Lang.String)) { return true; }
+                chars += item.length();
+                if (chars > memPlanChars) { return false; }
+            }
+        }
+        return true;
+    }
+
+    // Keeps the leading catalog entries that fit the tier's entry and character
+    // limits. A catalog that is not an array of strings is left for the normal
+    // validation to reject.
+    (:mem128)
+    static function trimSyncCatalog(message) {
+        var catalog = message.get("exercises");
+        if (!(catalog instanceof Lang.Array)) { return; }
+        var total = catalog.size();
+        var keep = 0;
+        var chars = 0;
+        for (var i = 0; i < total; i++) {
+            var entry = catalog[i];
+            if (!(entry instanceof Lang.String)) { return; }
+            if (i >= memCatalogEntries) { continue; }
+            chars += entry.length();
+            if (keep == i && chars <= memCatalogChars) { keep = i + 1; }
+        }
+        if (keep < total) { message.put("exercises", catalog.slice(0, keep)); }
+    }
     private static const maxPendingNameBytes = 12000;
     private static const maxExerciseNameLength = 160;
     private static const maxExerciseNameBytes = 640;
@@ -873,6 +942,30 @@ class GymStore {
         }
     }
 
+    // One-time cold-start cleanup for 128 KiB watches: a plan or catalog stored
+    // before the tier limits existed is removed so every stored copy fits again.
+    // The phone resends it through the normal sync. Queued workouts are kept
+    // untouched: their rows pin their own exercise names in separate keys. The
+    // purge still waits for an idle store (no active workout rows, no prepared
+    // workout) because those address exercises by catalog index.
+    (:mem128)
+    private static function purgeOversizedPlanState128() {
+        try {
+            if (Storage.getValue("mem128SizedV1") != null) { return; }
+            if (storedActiveSnapshotHasSets(Storage.getValue("activeWorkoutV1")) ||
+                Storage.getValue("preparedWorkoutV1") != null) {
+                return;
+            }
+            Storage.deleteValue("plan");
+            Storage.deleteValue("exercises");
+            Storage.deleteValue("deferredSync");
+            Storage.deleteValue("legacyQuarantinePlan");
+            Storage.deleteValue("legacyQuarantineExercises");
+            Storage.setValue("mem128SizedV1", 1);
+        } catch (e) {
+        }
+    }
+
     (:compactLegacyState, :richWorkoutMode)
     static function beginLoad() {
         parkedPending = null;
@@ -894,6 +987,9 @@ class GymStore {
         persistedPlanBytes = 0;
         persistedPlanNeedsV5Write = false;
         var value = null;
+        // Compact beginLoad exists only on 128 KiB builds; run before any
+        // plan, catalog or deferred-sync read.
+        purgeOversizedPlanState128();
 
         var savedAccount = Storage.getValue("accountBinding");
         var savedOwner = Storage.getValue("stateOwnerBinding");
@@ -976,6 +1072,8 @@ class GymStore {
         // validated messages durable on disk until a send or ACK needs them.
         value = Storage.getValue("pending");
         pending = isValidPendingList(value) ? value : [];
+        legacyPendingUnarchived = legacyUnboundState &&
+            value instanceof Lang.Array && value.size() > 0;
         value = null;
         // Fully bound legacy messages can stay on disk while the indexed queue
         // is decoded. Pairing recovery retains its complete mutation graph.
@@ -6795,10 +6893,9 @@ class GymStore {
             return true;
         }
         try {
+            // An empty snapshot queue keeps any archive of the raw ownerless queue.
             if (value.get("pending").size() > 0) {
                 Storage.setValue("legacyQuarantinePending", value.get("pending"));
-            } else {
-                Storage.deleteValue("legacyQuarantinePending");
             }
         } catch (e) {
             // Retain the complete full snapshot until its unsendable queue is archived.
@@ -6842,7 +6939,21 @@ class GymStore {
 
     (:compactLegacyState)
     static function ensureLegacyQuarantine() {
-        return legacyCompactCount != -2;
+        if (legacyCompactCount == -2) { return false; }
+        if (legacyPendingUnarchived) {
+            // The ownerless queue is unsendable here, but save and account
+            // transitions replace "pending"; keep its exact value first.
+            try {
+                var raw = Storage.getValue("pending");
+                if (raw instanceof Lang.Array) {
+                    Storage.setValue("legacyQuarantinePending", raw);
+                }
+                legacyPendingUnarchived = false;
+            } catch (e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     (:compactLegacyState)

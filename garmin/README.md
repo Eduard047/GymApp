@@ -45,6 +45,23 @@ extraction uses explicit substring bounds for older Connect IQ runtimes.
 - A finished free workout is queued (up to 3 on this tier) and sent as `create_workout` with `workoutMode: "free"`, no sets and the recorded duration and heart-rate summary. Android and iOS store it as an activity-only workout.
 - Contract: `shared/garmin-lite-mode-v1.json`. Other profiles are unchanged; the lite code is selected with the `compactWorkoutMode96` / `richWorkoutMode` annotations.
 
+## Memory tiers (128 KiB watches)
+
+- The 128 KiB products take one of three incoming-sync tiers, chosen at build time (annotations `mem128` / `mem128Wide`):
+
+  | Tier | Devices | Plan (sets / chars) | Catalog (entries / chars) |
+  | --- | --- | --- | --- |
+  | tight | Enduro, Fenix 6, Fenix 6S, Forerunner 245, Venu Sq | 0 / 0 | 5 / 100 |
+  | wide | Instinct E 40 mm, Instinct E 45 mm, Instinct 3 Solar 45 mm | 20 / 500 | 40 / 700 |
+  | fr55 | Forerunner 55 | 8 / 160 | 12 / 240 |
+
+- Plan characters are the summed `String.length()` of `planNames`. Measured in the simulator: the tight group has under 1 KB of heap free at Ready once paired, so it accepts no plan and even a small sync may not fit; the fr55 limits leave about 3 KB free during a sync, while saving a planned workout remains the tightest step.
+- A plan over the limit is refused before any copy: plan and catalog are dropped, pairing is still applied, and the watch sends `sync_ack` with `applied: false` and an additive `reason: "plan_too_large"`. A catalog over the limit is trimmed to its leading entries and the sync continues.
+- `request_sync` marks the tier with a `-c128` suffix on `watchVersion` (`-fr55` on Forerunner 55); no new key is added.
+- Android and iOS stop retrying when the acknowledgement matches exactly (correlation fields, `applied: false`, reason `plan_too_large`), keep the plan undelivered and show "This plan is too large for this watch. Shorten it and sync again."
+- Once at startup (marker `mem128SizedV1`) a stored plan, catalog, deferred sync and legacy quarantine copies are deleted, except while a workout is active or prepared. Queued workouts are never deleted.
+- Contract: `shared/garmin-memory-tiers-v1.json`.
+
 ## Workout data
 
 - Garmin FIT activity is recorded as a strength-training workout through Connect IQ activity recording.
@@ -118,8 +135,9 @@ the preserved sets with the same request ID, without claiming that the unknown
 FIT activity was saved and without calling Garmin's recording API again. Use a
 larger-memory target when source-level simulator debugging is required.
 
-Enduro, Fenix 6, Fenix 6S, Forerunner 245, and Venu Sq also have a real 128 KiB
-watch-app ceiling. Their enhanced compact state profile retains indexed atomic
+Enduro, Fenix 6, Fenix 6S, Forerunner 245, Venu Sq, Instinct E (40 mm and
+45 mm), and Instinct 3 Solar 45 mm also have a real 128 KiB watch-app ceiling
+(Forerunner 55 shares it on its own profile; see Memory tiers). Their enhanced compact state profile retains indexed atomic
 workouts, FIT, phone sync, queueing, the tutorial, rich recovery, and the same
 hardware-key workout actions while omitting the full legacy quarantine and
 direct-cloud parser that do not fit the compiler limit. Cloud plans still reach

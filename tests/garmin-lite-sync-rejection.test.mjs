@@ -109,7 +109,7 @@ test("lite variants are selected only on the 96 KiB profiles", async () => {
 test("lite capability marker rides existing fields and is documented", async () => {
   const comm = await readFile("garmin/source/GymComm.mc", "utf8");
   const lite = comm.match(/\(:compactWorkoutMode96\)\s*static var watchVersion = "([^"]+)"/);
-  const rich = comm.match(/\(:richWorkoutMode\)\s*static var watchVersion = "([^"]+)"/);
+  const rich = comm.match(/\(:richWorkoutMode, :noMem128\)\s*static var watchVersion = "([^"]+)"/);
   assert.ok(lite && rich);
   assert.equal(lite[1], `${rich[1]}-lite`);
   assert.ok(Buffer.byteLength(lite[1]) <= 64, "released iOS parsers cap watchVersion at 64 bytes");

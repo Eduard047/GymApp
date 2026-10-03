@@ -130,7 +130,7 @@ class GymApp extends App.AppBase {
         }
     }
 
-    (:richWorkoutMode)
+    (:richWorkoutMode, :noMem128)
     function handleSyncMessage(message) {
         GymStore.status = GymStatus.SYNC_RX;
         var applied = false;
@@ -140,7 +140,35 @@ class GymApp extends App.AppBase {
             applied = false;
             GymStore.status = GymStatus.SYNC_FAIL;
         }
-        sendSyncAck(message, applied);
+        sendSyncAck(message, applied, null);
+    }
+
+    // 128 KiB watches refuse a plan larger than their tier limit before any
+    // copy or replay check, so a resend is refused again. Pairing fields are
+    // still applied with the lite-style empty plan, and the ack reports
+    // applied=false with a reason. A catalog over the limit is trimmed to the
+    // entries that fit and the sync continues.
+    (:mem128)
+    function handleSyncMessage(message) {
+        GymStore.status = GymStatus.SYNC_RX;
+        var reason = null;
+        if (!GymStore.syncFitsMemory(message)) {
+            reason = "plan_too_large";
+            message.put("planNames", []);
+            message.put("planWeights", []);
+            message.put("planReps", []);
+            message.put("exercises", []);
+        } else {
+            GymStore.trimSyncCatalog(message);
+        }
+        var applied = false;
+        try {
+            applied = GymStore.applyPhoneSync(message);
+        } catch (e) {
+            applied = false;
+            GymStore.status = GymStatus.SYNC_FAIL;
+        }
+        sendSyncAck(message, reason == null && applied, reason);
     }
 
     // 96 KiB watches run free workouts only. A sync is applied for its pairing
@@ -199,7 +227,7 @@ class GymApp extends App.AppBase {
     }
 
     (:richWorkoutMode)
-    function sendSyncAck(message, applied) {
+    function sendSyncAck(message, applied, reason) {
         var syncId = message.get("syncId");
         var requestId = message.get("requestId");
         var syncRevision = message.get("syncRevision");
@@ -227,6 +255,9 @@ class GymApp extends App.AppBase {
             };
             if (GymStore.isValidAccountBinding(GymStore.pairingGeneration)) {
                 ack.put("pairingGeneration", GymStore.pairingGeneration.toString());
+            }
+            if (reason != null) {
+                ack.put("reason", reason);
             }
             GymComm.send(ack, method(:onSyncAckSent));
         } catch (e) {
