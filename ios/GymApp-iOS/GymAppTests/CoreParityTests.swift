@@ -6226,6 +6226,70 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
+    private func makeStatusAppState(named name: String, delay: Duration) throws -> AppState {
+        let defaults = temporaryDefaults(named: name)
+        let appState = try AppState(
+            auth: AuthService(keychain: InMemoryKeychainStore(), defaults: defaults),
+            defaults: defaults,
+            workoutDirectoryURL: try temporaryDirectory(named: name)
+        )
+        appState.statusAutoDismissDelay = delay
+        return appState
+    }
+
+    func testStatusMessageDefaultAutoDismissDelayIsFourSeconds() {
+        XCTAssertEqual(AppState.defaultStatusAutoDismissDelay, .seconds(4))
+    }
+
+    func testInformationalStatusMessageClearsAfterDelay() async throws {
+        let appState = try makeStatusAppState(named: "status-auto-dismiss", delay: .milliseconds(80))
+
+        appState.show(message: "Saved.", isError: false)
+        XCTAssertEqual(appState.statusMessage, "Saved.")
+        let cleared = await waitUntil { appState.statusMessage == nil }
+        XCTAssertTrue(cleared)
+    }
+
+    func testErrorStatusMessageStaysUntilDismissed() async throws {
+        let appState = try makeStatusAppState(named: "status-error-sticky", delay: .milliseconds(40))
+
+        appState.show(message: "Failed.", isError: true)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(appState.statusMessage, "Failed.")
+        XCTAssertTrue(appState.statusIsError)
+        appState.clearStatus()
+        XCTAssertNil(appState.statusMessage)
+    }
+
+    func testNewerStatusMessageIsNotClearedByOlderTimer() async throws {
+        let appState = try makeStatusAppState(named: "status-newer-message", delay: .milliseconds(150))
+
+        appState.show(message: "First.", isError: false)
+        try await Task.sleep(for: .milliseconds(100))
+        appState.show(message: "Second.", isError: false)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(appState.statusMessage, "Second.")
+        let cleared = await waitUntil { appState.statusMessage == nil }
+        XCTAssertTrue(cleared)
+
+        appState.show(message: "Early.", isError: false)
+        appState.show(message: "Sticky error.", isError: true)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(appState.statusMessage, "Sticky error.")
+        XCTAssertTrue(appState.statusIsError)
+    }
+
+    func testClearStatusCancelsPendingAutoDismiss() async throws {
+        let appState = try makeStatusAppState(named: "status-clear-cancels", delay: .milliseconds(120))
+
+        appState.show(message: "Saved.", isError: false)
+        appState.clearStatus()
+        appState.statusMessage = "Set directly."
+        appState.statusIsError = false
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(appState.statusMessage, "Set directly.")
+    }
+
     func testSmartPlanRotatesOneTrunkSlotInEveryWorkout() {
         let now = Date(timeIntervalSince1970: 1_780_000_000)
         let exercises = [

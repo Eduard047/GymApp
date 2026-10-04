@@ -1981,15 +1981,6 @@ struct AddWorkoutView: View {
                 },
                 workoutStore: store
             )
-            reportStatus(
-                gymText(
-                    "Workout started. Record each set when it is complete.",
-                    "Тренування розпочато. Записуй кожен підхід після виконання.",
-                    "Тренировка начата. Записывай каждый подход после выполнения.",
-                    languageCode: gymCurrentLanguageCode()
-                ),
-                false
-            )
             onStarted(active.id)
         } catch {
             show(gymErrorMessage(error), error: true)

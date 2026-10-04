@@ -1,6 +1,7 @@
 import Combine
 import CryptoKit
 import Foundation
+import SwiftUI
 
 func leaderboardHiddenProfilesDefaultsKey(for accountStorageKey: String) -> String {
     "leaderboard-hidden-profile-ids.\(accountStorageKey)"
@@ -118,6 +119,10 @@ final class AppState: ObservableObject {
     private var liveActivityDraftSubscription: AnyCancellable?
     @Published var statusMessage: String?
     @Published var statusIsError = false
+    /// Informational banners dismiss themselves after this delay; errors stay until tapped.
+    static let defaultStatusAutoDismissDelay: Duration = .seconds(4)
+    var statusAutoDismissDelay = AppState.defaultStatusAutoDismissDelay
+    private var statusDismissTask: Task<Void, Never>?
     @Published private(set) var isPreparingAccount = false
     @Published private(set) var activeAccountStorageKey: String?
     @Published private(set) var accountPreparationError: String?
@@ -2822,11 +2827,23 @@ final class AppState: ObservableObject {
     }
 
     func show(message: String, isError: Bool) {
+        statusDismissTask?.cancel()
+        statusDismissTask = nil
         statusMessage = message
         statusIsError = isError
+        guard !isError else { return }
+        let delay = statusAutoDismissDelay
+        statusDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self,
+                  self.statusMessage == message, !self.statusIsError else { return }
+            withAnimation { self.clearStatus() }
+        }
     }
 
     func clearStatus() {
+        statusDismissTask?.cancel()
+        statusDismissTask = nil
         statusMessage = nil
     }
 
