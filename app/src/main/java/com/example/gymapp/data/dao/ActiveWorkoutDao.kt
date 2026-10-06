@@ -149,6 +149,75 @@ interface ActiveWorkoutDao {
         expectedCompletedAt: Long
     ): Int
 
+    /** Revision bump that keeps the single-set undo target (a pending-set edit cannot own it). */
+    @Query(
+        """
+        UPDATE active_workouts
+        SET revision = revision + 1
+        WHERE id = :activeWorkoutId
+            AND revision = :expectedRevision
+            AND revision >= 0
+            AND revision < 9223372036854775807
+        """
+    )
+    suspend fun advanceRevisionKeepingUndoable(
+        activeWorkoutId: Long,
+        expectedRevision: Long
+    ): Int
+
+    @Query(
+        """
+        DELETE FROM active_workout_sets
+        WHERE id = :setId
+            AND activeWorkoutExerciseId = :expectedActiveWorkoutExerciseId
+            AND completedAt IS NULL
+        """
+    )
+    suspend fun deletePendingSet(
+        setId: String,
+        expectedActiveWorkoutExerciseId: String
+    ): Int
+
+    @Query(
+        """
+        UPDATE active_workout_sets
+        SET orderIndex = :orderIndex
+        WHERE id = :setId
+            AND activeWorkoutExerciseId = :expectedActiveWorkoutExerciseId
+        """
+    )
+    suspend fun updateSetOrderIndex(
+        setId: String,
+        expectedActiveWorkoutExerciseId: String,
+        orderIndex: Int
+    ): Int
+
+    @Query("DELETE FROM active_workout_sets WHERE activeWorkoutExerciseId = :exerciseId")
+    suspend fun deleteSetsOfExercise(exerciseId: String): Int
+
+    @Query(
+        """
+        DELETE FROM active_workout_exercises
+        WHERE id = :exerciseId
+            AND activeWorkoutId = :activeWorkoutId
+        """
+    )
+    suspend fun deleteExercise(activeWorkoutId: Long, exerciseId: String): Int
+
+    @Query(
+        """
+        UPDATE active_workout_exercises
+        SET orderIndex = :orderIndex
+        WHERE id = :exerciseId
+            AND activeWorkoutId = :activeWorkoutId
+        """
+    )
+    suspend fun updateExerciseOrderIndex(
+        activeWorkoutId: Long,
+        exerciseId: String,
+        orderIndex: Int
+    ): Int
+
     @Query(
         """
         DELETE FROM active_workouts

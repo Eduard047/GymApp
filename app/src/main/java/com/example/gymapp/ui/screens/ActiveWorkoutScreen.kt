@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.platform.LocalFocusManager
@@ -190,6 +192,8 @@ fun ActiveWorkoutScreen(
     onSaveExercise: (String) -> Unit,
     onAddSet: (String) -> Unit,
     onSkipRemainingSets: (String) -> Unit = {},
+    onDeleteSet: (String) -> Unit = {},
+    onRemoveExercise: (String) -> Unit = {},
     onRecordSet: (String) -> Unit,
     onRecordAllPendingSets: () -> Unit,
     onUndoLatestSet: (String) -> Unit,
@@ -484,6 +488,9 @@ fun ActiveWorkoutScreen(
                 onSaveExercise = { onSaveExercise(exercise.id) },
                 onAddSet = { onAddSet(exercise.id) },
                 onSkipRemainingSets = { onSkipRemainingSets(exercise.id) },
+                canRemoveExercise = uiState.liveConnectionMode == null && uiState.exercises.size > 1,
+                onRemoveExercise = { onRemoveExercise(exercise.id) },
+                onDeleteSet = onDeleteSet,
                 onRecordSet = onRecordSet,
                 onUndoLatestSet = onUndoLatestSet,
                 onAdjustRestTimer = onAdjustRestTimer,
@@ -982,6 +989,9 @@ private fun ActiveWorkoutExerciseCard(
     onSaveExercise: () -> Unit,
     onAddSet: () -> Unit,
     onSkipRemainingSets: () -> Unit,
+    canRemoveExercise: Boolean,
+    onRemoveExercise: () -> Unit,
+    onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
     onUndoLatestSet: (String) -> Unit,
     onAdjustRestTimer: (Int) -> Unit,
@@ -999,6 +1009,7 @@ private fun ActiveWorkoutExerciseCard(
         mutableStateOf(initiallyExpanded || containsLatestCompletedSet)
     }
     var showFinishDialog by remember(exercise.id) { mutableStateOf(false) }
+    var showRemoveDialog by remember(exercise.id) { mutableStateOf(false) }
     // Set when the finish dialog starts a save or skip; the card then collapses as soon as every
     // remaining set is done, even though the latest recorded set still belongs to it.
     var collapseAfterFinish by remember(exercise.id) { mutableStateOf(false) }
@@ -1030,220 +1041,200 @@ private fun ActiveWorkoutExerciseCard(
     val totalCount = exercise.sets.size
     val exerciseName = localizedExerciseName(exercise.exerciseName)
     val progressValue = "$completedCount / $totalCount"
-    val toggleLabel = stringResource(
-        if (isExpanded) R.string.cd_collapse_exercise else R.string.cd_expand_exercise
-    )
-    AppPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                exercise.exerciseId?.let { exerciseId ->
-                    ExerciseMediaPreview(
+    WorkoutExerciseCardShell {
+        WorkoutExerciseCardHeader(
+            title = exerciseName,
+            expanded = isExpanded,
+            onToggleExpanded = { isExpanded = !isExpanded },
+            stateText = progressValue,
+            media = exercise.exerciseId?.let { exerciseId ->
+                {
+                    WorkoutExerciseMedia(
                         exerciseId = exerciseId,
                         exerciseName = exercise.exerciseName,
-                        ownerKey = exerciseMediaOwnerKey,
-                        width = 76.dp,
-                        height = 64.dp,
-                        editable = false
+                        ownerKey = exerciseMediaOwnerKey
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .clickable(
-                            onClickLabel = toggleLabel,
-                            role = Role.Button,
-                            onClick = { isExpanded = !isExpanded }
-                        )
-                        .semantics {
-                            contentDescription = exerciseName
-                            stateDescription = progressValue
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(
-                            text = exerciseName,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (isExpanded) {
-                            if (totalCount > 0) {
-                                val index = exercise.sets
-                                    .indexOfFirst { set -> !set.isCompleted }
-                                    .takeIf { it >= 0 } ?: (totalCount - 1)
-                                Text(
-                                    text = stringResource(
-                                        R.string.active_workout_exercise_set_subtitle,
-                                        index + 1,
-                                        totalCount
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-                        } else {
-                            val progressColor = if (fullyCompleted) {
-                                MaterialTheme.colorScheme.secondary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (fullyCompleted) {
-                                        Icons.Default.Verified
-                                    } else {
-                                        Icons.Default.RadioButtonUnchecked
-                                    },
-                                    contentDescription = null,
-                                    tint = progressColor,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = progressValue,
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        fontWeight = FontWeight.Bold
-                                    ).tabularDigits(),
-                                    color = progressColor
-                                )
-                            }
-                            if (!isCurrent) {
-                                Text(
-                                    text = if (fullyCompleted) {
-                                        stringResource(R.string.active_workout_exercise_done)
-                                    } else {
-                                        pluralStringResource(
-                                            R.plurals.active_workout_exercise_up_next_sets,
-                                            totalCount,
-                                            totalCount
-                                        )
-                                    },
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontWeight = FontWeight.SemiBold
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    Icon(
-                        imageVector = if (isExpanded) {
-                            Icons.Default.ExpandLess
-                        } else {
-                            Icons.Default.ExpandMore
-                        },
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            menu = if (canRemoveExercise) {
+                {
+                    WorkoutExerciseMenu(
+                        enabled = !operationInProgress,
+                        onRemove = { showRemoveDialog = true }
                     )
                 }
+            } else {
+                null
             }
-            if (isExpanded && friendGhost != null) friendGhost.let { ghost ->
+        ) {
+            if (isExpanded) {
+                if (totalCount > 0) {
+                    val index = exercise.sets
+                        .indexOfFirst { set -> !set.isCompleted }
+                        .takeIf { it >= 0 } ?: (totalCount - 1)
+                    Text(
+                        text = stringResource(
+                            R.string.active_workout_exercise_set_subtitle,
+                            index + 1,
+                            totalCount
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            } else {
+                val progressColor = if (fullyCompleted) {
+                    MaterialTheme.colorScheme.secondary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Group,
+                        imageVector = if (fullyCompleted) {
+                            Icons.Default.Verified
+                        } else {
+                            Icons.Default.RadioButtonUnchecked
+                        },
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = progressColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = friendGhostLine(ghost),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2
+                        text = progressValue,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ).tabularDigits(),
+                        color = progressColor
                     )
                 }
-            }
-            if (isExpanded) Column(modifier = Modifier.fillMaxWidth()) {
-                exercise.sets.forEachIndexed { index, set ->
-                    val isCurrentSet = set.id == currentSetId && !set.isCompleted
-                    val followsCurrentSet = index > 0 && exercise.sets[index - 1].let { previous ->
-                        previous.id == currentSetId && !previous.isCompleted
-                    }
-                    // Thin dividers separate plain rows only, never the current set's card.
-                    if (index > 0 && !isCurrentSet && !followsCurrentSet) {
-                        HorizontalDivider(
-                            thickness = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                        )
-                    }
-                    ActiveWorkoutSetRow(
-                        set = set,
-                        operationInProgress = operationInProgress,
-                        editable = !set.isCompleted,
-                        isCurrent = set.id == currentSetId,
-                        isRecording = set.id in inFlightSetIds,
-                        isLatestCompleted = set.id == latestCompletedSetId,
-                        showsPlateCalculator = PlateCalculator.applies(exercise.catalogKey),
-                        isBodyweight = isBodyweightCatalogKey(exercise.catalogKey),
-                        restDurationSeconds = exercise.restDurationSeconds,
-                        restSecondsRemaining = if (set.id == latestCompletedSetId) {
-                            restSecondsRemaining
+                if (!isCurrent) {
+                    Text(
+                        text = if (fullyCompleted) {
+                            stringResource(R.string.active_workout_exercise_done)
                         } else {
-                            0
+                            pluralStringResource(
+                                R.plurals.active_workout_exercise_up_next_sets,
+                                totalCount,
+                                totalCount
+                            )
                         },
-                        inlineMessage = inlineMessage.takeIf { inlineMessageSetId == set.id },
-                        onWeightChanged = { value -> onSetWeightChanged(set.id, value) },
-                        onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
-                        onRecord = { onRecordSet(set.id) },
-                        onUndo = { onUndoLatestSet(set.id) },
-                        onAdjustRestTimer = onAdjustRestTimer,
-                        onStopRestTimer = onStopRestTimer,
-                        onDismissMessage = onDismissMessage,
-                        isRestActive = restSecondsRemaining > 0,
-                        onRecorded = { weightText, repsText ->
-                            onSetRecorded(set.id, weightText, repsText, exercise.restDurationSeconds)
-                        },
-                        onVoiceStarted = onVoiceStarted,
-                        onVoiceCommandFeedback = onVoiceCommandFeedback
-                    )
-                }
-            }
-            if (isExpanded && allowExerciseActions) {
-                // Two equal columns, no divider: dashed "+ Set" leading, solid "Finish" trailing.
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ActiveWorkoutFooterButton(
-                        label = stringResource(R.string.active_workout_add_set_short),
-                        accessibilityLabel = stringResource(R.string.active_workout_add_set),
-                        dashed = true,
-                        enabled = !operationInProgress,
-                        onClick = onAddSet,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ActiveWorkoutFooterButton(
-                        label = stringResource(R.string.active_workout_finish_exercise),
-                        accessibilityLabel = stringResource(R.string.active_workout_save_exercise),
-                        dashed = false,
-                        enabled = !operationInProgress,
-                        onClick = {
-                            // Nothing unrecorded: finish immediately (collapse). Otherwise ask first.
-                            if (unrecordedCount > 0) showFinishDialog = true else isExpanded = false
-                        },
-                        modifier = Modifier.weight(1f)
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
+        if (isExpanded && friendGhost != null) friendGhost.let { ghost ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Group,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = friendGhostLine(ghost),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
+        }
+        if (isExpanded) Column(modifier = Modifier.fillMaxWidth()) {
+            exercise.sets.forEachIndexed { index, set ->
+                val isCurrentSet = set.id == currentSetId && !set.isCompleted
+                val followsCurrentSet = index > 0 && exercise.sets[index - 1].let { previous ->
+                    previous.id == currentSetId && !previous.isCompleted
+                }
+                // Thin dividers separate plain rows only, never the current set's card.
+                if (index > 0 && !isCurrentSet && !followsCurrentSet) {
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    )
+                }
+                ActiveWorkoutSetRow(
+                    set = set,
+                    operationInProgress = operationInProgress,
+                    editable = !set.isCompleted,
+                    isCurrent = set.id == currentSetId,
+                    isRecording = set.id in inFlightSetIds,
+                    isLatestCompleted = set.id == latestCompletedSetId,
+                    showsPlateCalculator = PlateCalculator.applies(exercise.catalogKey),
+                    isBodyweight = isBodyweightCatalogKey(exercise.catalogKey),
+                    restDurationSeconds = exercise.restDurationSeconds,
+                    restSecondsRemaining = if (set.id == latestCompletedSetId) {
+                        restSecondsRemaining
+                    } else {
+                        0
+                    },
+                    inlineMessage = inlineMessage.takeIf { inlineMessageSetId == set.id },
+                    onWeightChanged = { value -> onSetWeightChanged(set.id, value) },
+                    onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
+                    onRecord = { onRecordSet(set.id) },
+                    onUndo = { onUndoLatestSet(set.id) },
+                    canDelete = allowExerciseActions && !set.isCompleted &&
+                        exercise.sets.size > 1 && !operationInProgress,
+                    onDelete = { onDeleteSet(set.id) },
+                    onAdjustRestTimer = onAdjustRestTimer,
+                    onStopRestTimer = onStopRestTimer,
+                    onDismissMessage = onDismissMessage,
+                    isRestActive = restSecondsRemaining > 0,
+                    onRecorded = { weightText, repsText ->
+                        onSetRecorded(set.id, weightText, repsText, exercise.restDurationSeconds)
+                    },
+                    onVoiceStarted = onVoiceStarted,
+                    onVoiceCommandFeedback = onVoiceCommandFeedback
+                )
+            }
+        }
+        if (isExpanded && allowExerciseActions) {
+            // Two equal columns, no divider: dashed "+ Set" leading, solid "Finish" trailing.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                WorkoutFooterButton(
+                    label = stringResource(R.string.active_workout_add_set_short),
+                    accessibilityLabel = stringResource(R.string.active_workout_add_set),
+                    dashed = true,
+                    enabled = !operationInProgress,
+                    onClick = onAddSet,
+                    modifier = Modifier.weight(1f)
+                )
+                WorkoutFooterButton(
+                    label = stringResource(R.string.active_workout_finish_exercise),
+                    accessibilityLabel = stringResource(R.string.active_workout_save_exercise),
+                    dashed = false,
+                    enabled = !operationInProgress,
+                    onClick = {
+                        // Nothing unrecorded: finish immediately (collapse). Otherwise ask first.
+                        if (unrecordedCount > 0) showFinishDialog = true else isExpanded = false
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+    if (showRemoveDialog) {
+        WorkoutRemoveExerciseDialog(
+            exerciseName = exerciseName,
+            recordedCount = completedCount,
+            onConfirm = {
+                showRemoveDialog = false
+                onRemoveExercise()
+            },
+            onDismiss = { showRemoveDialog = false }
+        )
     }
     if (showFinishDialog && unrecordedCount > 0) {
         ActiveWorkoutFinishExerciseDialog(
@@ -1260,67 +1251,6 @@ private fun ActiveWorkoutExerciseCard(
                 onSkipRemainingSets()
             },
             onDismiss = { showFinishDialog = false }
-        )
-    }
-}
-
-/** Outlined footer action: dashed (primary 50%) for "+ Set", solid (primary 70%) for "Finish". */
-@Composable
-private fun ActiveWorkoutFooterButton(
-    label: String,
-    accessibilityLabel: String,
-    dashed: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val primary = MaterialTheme.colorScheme.primary
-    val contentColor = if (enabled) primary else primary.copy(alpha = 0.38f)
-    val borderColor = primary.copy(alpha = if (dashed) 0.5f else 0.7f).let {
-        if (enabled) it else it.copy(alpha = it.alpha * 0.5f)
-    }
-    val shape = RoundedCornerShape(12.dp)
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    Box(
-        modifier = modifier
-            .heightIn(min = 44.dp)
-            .clip(shape)
-            .clickable(
-                enabled = enabled,
-                role = androidx.compose.ui.semantics.Role.Button,
-                onClick = onClick
-            )
-            .semantics(mergeDescendants = true) { contentDescription = accessibilityLabel }
-            .drawBehind {
-                val strokeWidth = with(density) { 1.dp.toPx() }
-                val inset = strokeWidth / 2f
-                drawRoundRect(
-                    color = borderColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                    size = androidx.compose.ui.geometry.Size(size.width - strokeWidth, size.height - strokeWidth),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(with(density) { 12.dp.toPx() } - inset),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(
-                        width = strokeWidth,
-                        pathEffect = if (dashed) {
-                            androidx.compose.ui.graphics.PathEffect.dashPathEffect(
-                                floatArrayOf(with(density) { 4.dp.toPx() }, with(density) { 3.dp.toPx() })
-                            )
-                        } else {
-                            null
-                        }
-                    )
-                )
-            }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleSmall,
-            color = contentColor,
-            maxLines = 1,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.clearAndSetSemantics {}
         )
     }
 }
@@ -1393,6 +1323,8 @@ private fun ActiveWorkoutSetRow(
     onRepsChanged: (String) -> Unit,
     onRecord: () -> Unit,
     onUndo: () -> Unit,
+    canDelete: Boolean,
+    onDelete: () -> Unit,
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit,
     onDismissMessage: () -> Unit,
@@ -1428,13 +1360,23 @@ private fun ActiveWorkoutSetRow(
                 onRecorded = onRecorded,
                 onVoiceStarted = onVoiceStarted,
                 onStopRestTimer = onStopRestTimer,
-                onVoiceCommandFeedback = onVoiceCommandFeedback
+                onVoiceCommandFeedback = onVoiceCommandFeedback,
+                canDelete = canDelete,
+                onDelete = onDelete
             )
             else -> UpcomingSetRow(
                 set = set,
                 editorsEnabled = editable && !operationInProgress,
+                canLog = validSetInput && !operationInProgress,
+                isRecording = isRecording,
+                canDelete = canDelete,
                 onWeightChanged = onWeightChanged,
-                onRepsChanged = onRepsChanged
+                onRepsChanged = onRepsChanged,
+                onRecord = {
+                    onRecord()
+                    onRecorded(set.weightInput.ifBlank { "0" }, set.repsInput.ifBlank { "0" })
+                },
+                onDelete = onDelete
             )
         }
         inlineMessage?.let { message ->
@@ -1460,174 +1402,88 @@ private fun ActiveWorkoutSetRow(
     }
 }
 
-@Composable
-private fun rememberDecimalFormat(): NumberFormat {
-    val locale = LocalConfiguration.current.locales[0]
-    return remember(locale) {
-        NumberFormat.getNumberInstance(locale).apply { maximumFractionDigits = 3 }
-    }
-}
-
-private val PlainSetRowPadding = 10.dp
-
 /** A not-yet-reached set: one plain line, tappable to expand into an inline editor. */
 @Composable
 private fun UpcomingSetRow(
     set: ActiveWorkoutSetUiState,
     editorsEnabled: Boolean,
+    canLog: Boolean,
+    isRecording: Boolean,
+    canDelete: Boolean,
     onWeightChanged: (String) -> Unit,
-    onRepsChanged: (String) -> Unit
+    onRepsChanged: (String) -> Unit,
+    onRecord: () -> Unit,
+    onDelete: () -> Unit
 ) {
     var isExpanded by rememberSaveable(set.id) { mutableStateOf(false) }
     val number = set.orderIndex + 1
-    val summary = stringResource(
-        R.string.active_workout_set_summary,
-        set.weightInput.ifBlank { "0" },
-        set.repsInput.ifBlank { "0" }
-    )
-    val rowDescription = stringResource(R.string.active_workout_set_upcoming_cd, number, summary)
-    val editHint = stringResource(R.string.active_workout_set_upcoming_hint)
-    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
+    val summary = rememberSetSummary(set.weightInput, set.repsInput)
+    EditableSetRow(
+        number = number,
+        summary = summary,
+        rowDescription = stringResource(R.string.active_workout_set_upcoming_cd, number, summary),
+        editHint = stringResource(R.string.active_workout_set_upcoming_hint),
+        deleteLabel = stringResource(R.string.active_workout_delete_set),
+        expanded = isExpanded,
+        onExpandedChange = { isExpanded = it },
+        canDelete = canDelete,
+        onDelete = onDelete,
+        trailing = {
+            UpcomingLogButton(
+                enabled = canLog,
+                isRecording = isRecording,
+                description = stringResource(R.string.active_workout_log_set_cd, number),
+                onClick = onRecord
+            )
+        }
+    ) {
+        SetPendingEditor(
+            number = number,
+            weightInput = set.weightInput,
+            repsInput = set.repsInput,
+            enabled = editorsEnabled,
+            onWeightChanged = onWeightChanged,
+            onRepsChanged = onRepsChanged
+        )
+    }
+}
+
+/** Compact "Log" pill on a pending row: logs this set now, in any order. */
+@Composable
+private fun UpcomingLogButton(
+    enabled: Boolean,
+    isRecording: Boolean,
+    description: String,
+    onClick: () -> Unit
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val contentColor = if (enabled) primary else primary.copy(alpha = 0.38f)
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = PlainSetRowPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .heightIn(min = 44.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .clickable(
-                    onClickLabel = editHint,
-                    role = Role.Button,
-                    onClick = { isExpanded = !isExpanded }
-                )
-                .semantics {
-                    contentDescription = rowDescription
-                    stateDescription = if (isExpanded) "▲" else "▼"
-                },
+                .background(primary.copy(alpha = if (enabled) 0.12f else 0.06f), CircleShape)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                    .clearAndSetSemantics {},
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = number.toString(),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold
-                    ).tabularDigits(),
-                    color = secondary
-                )
+            if (isRecording) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
             }
             Text(
-                text = summary,
-                style = MaterialTheme.typography.titleSmall,
-                color = secondary,
-                modifier = Modifier
-                    .weight(1f)
-                    .clearAndSetSemantics {}
+                text = stringResource(R.string.action_log_set),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = contentColor,
+                maxLines = 1,
+                modifier = Modifier.clearAndSetSemantics {}
             )
-            Icon(
-                imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-                tint = secondary,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        if (isExpanded) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .heightIn(min = 44.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                        .padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    SetWeightField(
-                        value = set.weightInput,
-                        onValueChange = onWeightChanged,
-                        enabled = editorsEnabled,
-                        description = stringResource(R.string.active_workout_weight_field_cd, number),
-                        fontSize = 17.sp
-                    )
-                    Text(
-                        text = stringResource(R.string.active_workout_unit_kg),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = secondary
-                    )
-                }
-                Text(
-                    text = "×",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = secondary,
-                    modifier = Modifier.clearAndSetSemantics {}
-                )
-                val reps = set.repsInput.trim().toIntOrNull()
-                val canDecrease = editorsEnabled && canStepReps(reps, -1)
-                val canIncrease = editorsEnabled && canStepReps(reps, 1)
-                val decreaseLabel = stringResource(R.string.active_workout_decrease_reps)
-                val increaseLabel = stringResource(R.string.active_workout_increase_reps)
-                val repsDescription = stringResource(R.string.active_workout_reps_field_cd, number)
-                Row(
-                    modifier = Modifier
-                        .heightIn(min = 44.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                        .clearAndSetSemantics {
-                            contentDescription = repsDescription
-                            stateDescription = set.repsInput
-                            customActions = listOf(
-                                CustomAccessibilityAction(decreaseLabel) {
-                                    if (canDecrease) {
-                                        onRepsChanged(steppedReps(reps, -1).toString())
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                },
-                                CustomAccessibilityAction(increaseLabel) {
-                                    if (canIncrease) {
-                                        onRepsChanged(steppedReps(reps, 1).toString())
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                }
-                            )
-                        },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StepButton(
-                        icon = Icons.Default.Remove,
-                        text = null,
-                        enabled = canDecrease,
-                        onClick = { onRepsChanged(steppedReps(reps, -1).toString()) }
-                    )
-                    Text(
-                        text = set.repsInput.ifBlank { "0" },
-                        style = MaterialTheme.typography.titleSmall.tabularDigits(),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.widthIn(min = 20.dp),
-                        textAlign = TextAlign.Center
-                    )
-                    StepButton(
-                        icon = Icons.Default.Add,
-                        text = null,
-                        enabled = canIncrease,
-                        onClick = { onRepsChanged(steppedReps(reps, 1).toString()) }
-                    )
-                }
-            }
         }
     }
 }
@@ -1651,11 +1507,7 @@ private fun CompletedSetRow(
     onStopRestTimer: () -> Unit
 ) {
     val number = set.orderIndex + 1
-    val summary = stringResource(
-        R.string.active_workout_set_summary,
-        set.weightInput.ifBlank { "0" },
-        set.repsInput.ifBlank { "0" }
-    )
+    val summary = rememberSetSummary(set.weightInput, set.repsInput)
     val description = stringResource(
         if (set.isPersonalRecord) {
             R.string.active_workout_set_recorded_record_cd
@@ -1666,129 +1518,27 @@ private fun CompletedSetRow(
         summary
     )
     val canUndo = isLatestCompleted && !operationInProgress
-    val undoLabel = stringResource(R.string.active_workout_undo_action)
-    val haptics = LocalHapticFeedback.current
-    var menuOpen by remember { mutableStateOf(false) }
     val showsRest = isLatestCompleted && restSecondsRemaining > 0
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = PlainSetRowPadding)
-            .testTag(activeWorkoutCompletedSetTag(set.id))
-            .pointerInput(canUndo) {
-                if (canUndo) {
-                    detectTapGestures(onLongPress = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        menuOpen = true
-                    })
-                }
-            }
-    ) {
-        AdaptiveTrailingRow(
-            modifier = Modifier.fillMaxWidth(),
-            leading = {
-                Row(
-                    modifier = Modifier.clearAndSetSemantics {
-                        contentDescription = description
-                        if (canUndo) {
-                            customActions = listOf(
-                                CustomAccessibilityAction(undoLabel) {
-                                    menuOpen = false
-                                    onUndo()
-                                    true
-                                }
-                            )
-                        }
-                    },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                    if (set.isPersonalRecord) {
-                        PersonalRecordBadge()
-                    }
-                }
-            },
-            trailing = if (showsRest) {
-                {
-                    CompactRestControls(
-                        remainingSeconds = restSecondsRemaining,
-                        enabled = !operationInProgress,
-                        onAdjustRestTimer = onAdjustRestTimer,
-                        onStopRestTimer = onStopRestTimer
-                    )
-                }
-            } else {
-                null
-            }
-        )
-        DropdownMenu(expanded = menuOpen && canUndo, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(
-                text = { Text(undoLabel) },
-                onClick = {
-                    menuOpen = false
-                    onUndo()
-                }
-            )
-        }
-    }
-}
-
-/**
- * [leading] at the start and [trailing] at the end of one line when both fit, otherwise
- * [trailing] on its own line under [leading] (large font sizes).
- */
-@Composable
-private fun AdaptiveTrailingRow(
-    modifier: Modifier,
-    leading: @Composable () -> Unit,
-    trailing: (@Composable () -> Unit)?
-) {
-    Layout(
-        content = {
-            leading()
-            trailing?.invoke()
-        },
-        modifier = modifier
-    ) { measurables, constraints ->
-        val gap = 8.dp.roundToPx()
-        val loose = constraints.copy(minWidth = 0, minHeight = 0)
-        val lead = measurables[0].measure(loose)
-        val trail = measurables.getOrNull(1)?.measure(loose)
-        val width = constraints.maxWidth
-        if (trail == null) {
-            layout(width, lead.height) { lead.placeRelative(0, 0) }
-        } else if (lead.width + gap + trail.width <= width) {
-            val height = maxOf(lead.height, trail.height)
-            layout(width, height) {
-                lead.placeRelative(0, (height - lead.height) / 2)
-                trail.placeRelative(width - trail.width, (height - trail.height) / 2)
+    RecordedSetRow(
+        summary = summary,
+        description = description,
+        isPersonalRecord = set.isPersonalRecord,
+        modifier = Modifier.testTag(activeWorkoutCompletedSetTag(set.id)),
+        longPressActionLabel = stringResource(R.string.active_workout_undo_action).takeIf { canUndo },
+        onLongPressAction = onUndo.takeIf { canUndo },
+        trailing = if (showsRest) {
+            {
+                CompactRestControls(
+                    remainingSeconds = restSecondsRemaining,
+                    enabled = !operationInProgress,
+                    onAdjustRestTimer = onAdjustRestTimer,
+                    onStopRestTimer = onStopRestTimer
+                )
             }
         } else {
-            layout(width, lead.height + trail.height) {
-                lead.placeRelative(0, 0)
-                trail.placeRelative(0, lead.height)
-            }
+            null
         }
-    }
+    )
 }
 
 /** Monospaced countdown + "−15" / "+15" / stop pills (~32dp visual, 44dp targets). */
@@ -1955,8 +1705,13 @@ private fun CurrentSetCard(
     onRecorded: (weightText: String, repsText: String) -> Unit,
     onVoiceStarted: () -> Unit,
     onStopRestTimer: () -> Unit,
-    onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit
+    onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit,
+    canDelete: Boolean = false,
+    onDelete: () -> Unit = {}
 ) {
+    var deleteMenuOpen by remember { mutableStateOf(false) }
+    val deleteHaptics = LocalHapticFeedback.current
+    val deleteLabel = stringResource(R.string.active_workout_delete_set)
     val voice = rememberSetVoiceCommand(
         set = set,
         enabled = !operationInProgress,
@@ -1975,6 +1730,7 @@ private fun CurrentSetCard(
     val repeatReps = set.repeatReps
     val currentSetState = stringResource(R.string.active_workout_current_set_state)
     val editorsEnabled = !operationInProgress
+    Box {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1983,10 +1739,28 @@ private fun CurrentSetCard(
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
                 RoundedCornerShape(16.dp)
             )
+            .pointerInput(canDelete) {
+                // Long-press on an empty part of the card; its buttons and fields consume their own presses.
+                if (canDelete) {
+                    detectTapGestures(onLongPress = {
+                        deleteHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        deleteMenuOpen = true
+                    })
+                }
+            }
             .padding(10.dp)
             .semantics {
                 selected = true
                 stateDescription = currentSetState
+                if (canDelete) {
+                    customActions = listOf(
+                        CustomAccessibilityAction(deleteLabel) {
+                            deleteMenuOpen = false
+                            onDelete()
+                            true
+                        }
+                    )
+                }
             },
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -2055,12 +1829,16 @@ private fun CurrentSetCard(
             VoiceListeningValueLine(transcript = voice.partial)
         } else {
             SetValueLine(
-                set = set,
+                number = set.orderIndex + 1,
+                weightInput = set.weightInput,
+                repsInput = set.repsInput,
                 enabled = editorsEnabled,
                 onWeightChanged = onWeightChanged
             )
             SetStepCapsules(
-                set = set,
+                weightInput = set.weightInput,
+                repsInput = set.repsInput,
+                allowedWeights = set.allowedWeights,
                 enabled = editorsEnabled,
                 format = format,
                 onWeightChanged = onWeightChanged,
@@ -2089,302 +1867,15 @@ private fun CurrentSetCard(
             }
         }
     }
-}
-
-/** "60 kg × 8": editable weight (plain text, underline only while focused), read-only reps. */
-@Composable
-private fun SetValueLine(
-    set: ActiveWorkoutSetUiState,
-    enabled: Boolean,
-    onWeightChanged: (String) -> Unit
-) {
-    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    val valueStyle = TextStyle(
-        fontSize = 30.sp,
-        fontWeight = FontWeight.SemiBold
-    ).tabularDigits()
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        SetWeightField(
-            value = set.weightInput,
-            onValueChange = onWeightChanged,
-            enabled = enabled,
-            description = stringResource(R.string.active_workout_weight_field_cd, set.orderIndex + 1),
-            fontSize = 30.sp
-        )
-        Text(
-            text = stringResource(R.string.active_workout_unit_kg),
-            fontSize = 15.sp,
-            color = secondary,
-            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
-        )
-        Text(
-            text = "×",
-            style = valueStyle,
-            color = secondary,
-            modifier = Modifier
-                .padding(start = 4.dp)
-                .clearAndSetSemantics {}
-        )
-        Text(
-            text = set.repsInput.ifBlank { "0" },
-            style = valueStyle,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            modifier = Modifier
-                .padding(start = 4.dp)
-                .clearAndSetSemantics {}
-        )
-    }
-}
-
-@Composable
-private fun SetWeightField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    enabled: Boolean,
-    description: String,
-    fontSize: TextUnit
-) {
-    val focusManager = LocalFocusManager.current
-    val interaction = remember { MutableInteractionSource() }
-    val focused by interaction.collectIsFocusedAsState()
-    val primary = MaterialTheme.colorScheme.primary
-    val style = TextStyle(
-        fontSize = fontSize,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface,
-        textAlign = TextAlign.End
-    ).tabularDigits()
-    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-    // Fit the width to the measured text: at least one digit, at most six, plus room for the caret.
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    val fieldWidth = remember(value, style, density) {
-        val text = value.ifEmpty { "0" }
-        val digit = measurer.measure("0", style, maxLines = 1).size.width
-        val widest = measurer.measure("0".repeat(6), style, maxLines = 1).size.width
-        val measured = measurer.measure(text, style, maxLines = 1).size.width
-        with(density) { measured.coerceIn(digit, widest).toDp() + 6.dp }
-    }
-    BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        singleLine = true,
-        textStyle = style,
-        cursorBrush = SolidColor(primary),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Decimal,
-            imeAction = ImeAction.Done
-        ),
-        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-        interactionSource = interaction,
-        modifier = Modifier
-            .width(fieldWidth)
-            .semantics { contentDescription = description },
-        decorationBox = { innerTextField ->
-            Box(
-                modifier = Modifier.drawBehind {
-                    if (focused) {
-                        val stroke = 1.5.dp.toPx()
-                        drawLine(
-                            color = primary,
-                            start = Offset(0f, size.height - stroke / 2f),
-                            end = Offset(size.width, size.height - stroke / 2f),
-                            strokeWidth = stroke
-                        )
-                    }
-                },
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                if (value.isEmpty()) {
-                    Text(text = "0", style = style.copy(color = placeholderColor))
-                }
-                innerTextField()
+    DropdownMenu(expanded = deleteMenuOpen && canDelete, onDismissRequest = { deleteMenuOpen = false }) {
+        DropdownMenuItem(
+            text = { Text(deleteLabel, color = MaterialTheme.colorScheme.error) },
+            onClick = {
+                deleteMenuOpen = false
+                onDelete()
             }
-        }
-    )
-}
-
-@Composable
-private fun SetStepCapsules(
-    set: ActiveWorkoutSetUiState,
-    enabled: Boolean,
-    format: NumberFormat,
-    onWeightChanged: (String) -> Unit,
-    onRepsChanged: (String) -> Unit
-) {
-    val plan = weightStepPlan(weightForStepping(set.weightInput), set.allowedWeights)
-    val reps = set.repsInput.trim().toIntOrNull()
-    val minusDelta = format.format(plan.minus.delta)
-    val plusDelta = format.format(plan.plus.delta)
-    val weightValue = weightForStepping(set.weightInput)?.let { format.format(it) } ?: set.weightInput
-    val stepWeightTo = { side: WeightStepSide ->
-        onWeightChanged(VoiceWorkoutDraftParser.formatWeight(side.target))
-    }
-    val weightCapsule: @Composable (Modifier) -> Unit = { modifier ->
-        StepCapsule(
-            modifier = modifier,
-            minusText = "−$minusDelta",
-            minusIcon = null,
-            minusEnabled = enabled && plan.minus.canMove,
-            onMinus = { stepWeightTo(plan.minus) },
-            centerLabel = stringResource(R.string.active_workout_step_weight_center),
-            plusText = "+$plusDelta",
-            plusIcon = null,
-            plusEnabled = enabled && plan.plus.canMove,
-            onPlus = { stepWeightTo(plan.plus) },
-            label = stringResource(R.string.active_workout_step_weight_label),
-            value = stringResource(R.string.active_workout_step_weight_value, weightValue),
-            decreaseActionLabel = stringResource(R.string.active_workout_decrease_weight, minusDelta),
-            increaseActionLabel = stringResource(R.string.active_workout_increase_weight, plusDelta)
         )
     }
-    val repsCapsule: @Composable (Modifier) -> Unit = { modifier ->
-        StepCapsule(
-            modifier = modifier,
-            minusText = null,
-            minusIcon = Icons.Default.Remove,
-            minusEnabled = enabled && canStepReps(reps, -1),
-            onMinus = { onRepsChanged(steppedReps(reps, -1).toString()) },
-            centerLabel = stringResource(R.string.active_workout_step_reps_center),
-            plusText = null,
-            plusIcon = Icons.Default.Add,
-            plusEnabled = enabled && canStepReps(reps, 1),
-            onPlus = { onRepsChanged(steppedReps(reps, 1).toString()) },
-            label = stringResource(R.string.active_workout_step_reps_label),
-            value = set.repsInput,
-            decreaseActionLabel = stringResource(R.string.active_workout_decrease_reps),
-            increaseActionLabel = stringResource(R.string.active_workout_increase_reps)
-        )
-    }
-    // Two equal columns; a single column at large font scales, like Dynamic Type accessibility sizes.
-    if (LocalConfiguration.current.fontScale >= 1.5f) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            weightCapsule(Modifier.fillMaxWidth())
-            repsCapsule(Modifier.fillMaxWidth())
-        }
-    } else {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            weightCapsule(Modifier.weight(1f))
-            repsCapsule(Modifier.weight(1f))
-        }
-    }
-}
-
-/**
- * Slim (34dp) capsule with a step button at each end (each a full 44dp target) and a small
- * centre label. The whole capsule is one accessibility element with increase/decrease actions.
- */
-@Composable
-internal fun StepCapsule(
-    modifier: Modifier,
-    minusText: String?,
-    minusIcon: ImageVector?,
-    minusEnabled: Boolean,
-    onMinus: () -> Unit,
-    centerLabel: String,
-    plusText: String?,
-    plusIcon: ImageVector?,
-    plusEnabled: Boolean,
-    onPlus: () -> Unit,
-    label: String,
-    value: String,
-    decreaseActionLabel: String,
-    increaseActionLabel: String,
-    emphasizeCenter: Boolean = false
-) {
-    Box(
-        modifier = modifier
-            .heightIn(min = 44.dp)
-            .clearAndSetSemantics {
-                contentDescription = label
-                stateDescription = value
-                customActions = listOf(
-                    CustomAccessibilityAction(decreaseActionLabel) {
-                        if (minusEnabled) {
-                            onMinus()
-                            true
-                        } else {
-                            false
-                        }
-                    },
-                    CustomAccessibilityAction(increaseActionLabel) {
-                        if (plusEnabled) {
-                            onPlus()
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .background(MaterialTheme.colorScheme.surface, CircleShape)
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StepButton(icon = minusIcon, text = minusText, enabled = minusEnabled, onClick = onMinus)
-            Text(
-                text = centerLabel,
-                style = if (emphasizeCenter) {
-                    MaterialTheme.typography.titleSmall
-                } else {
-                    MaterialTheme.typography.labelSmall
-                },
-                color = if (emphasizeCenter) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f)
-            )
-            StepButton(icon = plusIcon, text = plusText, enabled = plusEnabled, onClick = onPlus)
-        }
-    }
-}
-
-@Composable
-private fun StepButton(
-    icon: ImageVector?,
-    text: String?,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.38f)
-    Box(
-        modifier = Modifier
-            .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        if (icon != null) {
-            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        } else if (text != null) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = tint,
-                maxLines = 1,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-        }
     }
 }
 
@@ -2431,32 +1922,6 @@ private fun SetLogButton(
             overflow = TextOverflow.Clip,
             modifier = Modifier.clearAndSetSemantics { contentDescription = description }
         )
-    }
-}
-
-@Composable
-private fun PersonalRecordBadge() {
-    Surface(
-        shape = RoundedCornerShape(percent = 50),
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.EmojiEvents,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp)
-            )
-            Text(
-                text = stringResource(R.string.active_workout_personal_record),
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1
-            )
-        }
     }
 }
 

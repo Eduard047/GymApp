@@ -511,6 +511,18 @@
     <string name="active_workout_undo_changed">Скасувати можна лише останній записаний підхід. Показано актуальне збережене тренування.</string>
     <string name="active_workout_undo_failed">Не вдалося скасувати останній підхід. Збережені дані не змінено.</string>
     <string name="active_workout_undo_action">Скасувати підхід</string>
+    <string name="active_workout_delete_set">Видалити підхід</string>
+    <string name="active_workout_log_set_cd">Записати підхід %1$d</string>
+    <string name="active_workout_remove_exercise">Видалити вправу</string>
+    <string name="active_workout_remove_exercise_title">Видалити вправу?</string>
+    <string name="active_workout_remove_exercise_message">Її заплановані підходи буде видалено з цього тренування.</string>
+    <plurals name="active_workout_remove_exercise_recorded_sets">
+        <item quantity="one">%1$d записаний підхід буде видалено.</item>
+        <item quantity="few">%1$d записані підходи буде видалено.</item>
+        <item quantity="many">%1$d записаних підходів буде видалено.</item>
+        <item quantity="other">%1$d записаного підходу буде видалено.</item>
+    </plurals>
+    <string name="active_workout_remove_exercise_confirm">Видалити</string>
     <string name="action_log_set">Записати</string>
     <string name="active_workout_unit_kg">кг</string>
     <string name="active_workout_set_summary">%1$s кг × %2$s</string>
@@ -1597,4 +1609,12 @@
     <string name="cd_chip_last_weight">Остання вага</string>
     <string name="cd_chip_previous">Попередній</string>
     <string name="cd_chip_copy_set">Копіювати підхід</string>
+    <string name="action_ok">OK</string>
+    <string name="workout_detail_add_exercise_short">+ Додати вправу</string>
+    <string name="workout_detail_details_title">Дата й нотатка</string>
+    <string name="message_workout_details_saved">Дані тренування збережено</string>
+    <string name="message_workout_details_invalid">Перевірте дату й нотатку</string>
+    <string name="message_workout_details_failed">Не вдалося зберегти дані тренування</string>
+    <string name="message_exercise_removed">Вправу видалено</string>
+    <string name="message_remove_exercise_failed">Не вдалося видалити вправу. Оновіть тренування та спробуйте ще раз.</string>
 </resources>

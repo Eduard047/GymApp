@@ -131,6 +131,31 @@ sealed interface UndoActiveWorkoutSetResult {
     data object TargetChanged : UndoActiveWorkoutSetResult
 }
 
+sealed interface DeleteActiveWorkoutSetResult {
+    data class Deleted(val revision: Long) : DeleteActiveWorkoutSetResult
+    data object Missing : DeleteActiveWorkoutSetResult
+    data object Stale : DeleteActiveWorkoutSetResult
+    data object TargetChanged : DeleteActiveWorkoutSetResult
+    /** Recorded sets are never deleted; the user undoes the latest one first. */
+    data object SetRecorded : DeleteActiveWorkoutSetResult
+    data object LastSet : DeleteActiveWorkoutSetResult
+    data object LivePlanFrozen : DeleteActiveWorkoutSetResult
+}
+
+sealed interface RemoveActiveWorkoutExerciseResult {
+    /** [removedRecordedSets] recorded sets went away with the exercise; [clearedUndo] when the undo target was one of them. */
+    data class Removed(
+        val revision: Long,
+        val removedRecordedSets: Int,
+        val clearedUndo: Boolean
+    ) : RemoveActiveWorkoutExerciseResult
+    data object Missing : RemoveActiveWorkoutExerciseResult
+    data object Stale : RemoveActiveWorkoutExerciseResult
+    data object TargetChanged : RemoveActiveWorkoutExerciseResult
+    data object LastExercise : RemoveActiveWorkoutExerciseResult
+    data object LivePlanFrozen : RemoveActiveWorkoutExerciseResult
+}
+
 sealed interface ApplyActiveWorkoutAdaptationResult {
     data class Applied(val revision: Long) : ApplyActiveWorkoutAdaptationResult
     data object Missing : ApplyActiveWorkoutAdaptationResult
@@ -2413,6 +2438,129 @@ class GymRepository(
         }
     }
 
+    /**
+     * Deletes one not-yet-recorded set and renumbers the remaining sets of its exercise. The
+     * exercise must keep at least one set. The undo target and rest timer are untouched because a
+     * pending set can never own them.
+     */
+    suspend fun deleteActiveWorkoutSet(
+        setId: String,
+        expectedRevision: Long
+    ): DeleteActiveWorkoutSetResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(setId)) { "Active set identifier is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction DeleteActiveWorkoutSetResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction DeleteActiveWorkoutSetResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction DeleteActiveWorkoutSetResult.LivePlanFrozen
+            }
+            val exercise = details.exercises.firstOrNull { block ->
+                block.sets.any { set -> set.id == setId }
+            } ?: return@withTransaction DeleteActiveWorkoutSetResult.TargetChanged
+            val target = exercise.sets.first { set -> set.id == setId }
+            if (target.completedAt != null) {
+                return@withTransaction DeleteActiveWorkoutSetResult.SetRecorded
+            }
+            if (exercise.sets.size <= 1) {
+                return@withTransaction DeleteActiveWorkoutSetResult.LastSet
+            }
+            val exerciseId = exercise.activeWorkoutExercise.id
+            check(
+                activeWorkoutDao.advanceRevisionKeepingUndoable(
+                    ACTIVE_WORKOUT_ID,
+                    expectedRevision
+                ) == 1
+            ) { "Active workout changed while deleting the set." }
+            check(activeWorkoutDao.deletePendingSet(setId, exerciseId) == 1) {
+                "Active set changed while deleting it."
+            }
+            // Ascending one-by-one renumbering keeps the unique (exercise, orderIndex) index valid.
+            exercise.sets.filter { set -> set.id != setId }.forEachIndexed { index, set ->
+                if (set.orderIndex != index) {
+                    check(activeWorkoutDao.updateSetOrderIndex(set.id, exerciseId, index) == 1)
+                }
+            }
+            DeleteActiveWorkoutSetResult.Deleted(expectedRevision + 1L)
+        }
+    }
+
+    /**
+     * Removes a whole exercise (with any recorded sets) from the running workout and renumbers the
+     * remaining exercises. The workout must keep at least one exercise. Undo is kept unless the
+     * undo target was one of the removed sets.
+     */
+    suspend fun removeActiveWorkoutExercise(
+        exerciseId: String,
+        expectedRevision: Long
+    ): RemoveActiveWorkoutExerciseResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(exerciseId)) { "Active exercise identifier is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction RemoveActiveWorkoutExerciseResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction RemoveActiveWorkoutExerciseResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction RemoveActiveWorkoutExerciseResult.LivePlanFrozen
+            }
+            val target = details.exercises.firstOrNull { block ->
+                block.activeWorkoutExercise.id == exerciseId
+            } ?: return@withTransaction RemoveActiveWorkoutExerciseResult.TargetChanged
+            if (details.exercises.size <= 1) {
+                return@withTransaction RemoveActiveWorkoutExerciseResult.LastExercise
+            }
+            val undoableSetId = details.activeWorkout.undoableSetId
+            val clearsUndo = undoableSetId != null && target.sets.any { it.id == undoableSetId }
+            val advanced = if (clearsUndo) {
+                activeWorkoutDao.advanceRevisionForBulkRecord(ACTIVE_WORKOUT_ID, expectedRevision)
+            } else {
+                activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision)
+            }
+            check(advanced == 1) { "Active workout changed while removing the exercise." }
+            activeWorkoutDao.deleteSetsOfExercise(exerciseId)
+            check(activeWorkoutDao.deleteExercise(ACTIVE_WORKOUT_ID, exerciseId) == 1) {
+                "Active exercise changed while removing it."
+            }
+            details.exercises.filter { block -> block.activeWorkoutExercise.id != exerciseId }
+                .forEachIndexed { index, block ->
+                    if (block.activeWorkoutExercise.orderIndex != index) {
+                        check(
+                            activeWorkoutDao.updateExerciseOrderIndex(
+                                ACTIVE_WORKOUT_ID,
+                                block.activeWorkoutExercise.id,
+                                index
+                            ) == 1
+                        )
+                    }
+                }
+            RemoveActiveWorkoutExerciseResult.Removed(
+                revision = expectedRevision + 1L,
+                removedRecordedSets = target.sets.count { it.completedAt != null },
+                clearedUndo = clearsUndo
+            )
+        }
+    }
+
+    /** A live room that is bound to the running workout freezes its plan (see adaptation). */
+    private fun activeWorkoutPlanIsLiveFrozen(startedAt: Long): Boolean {
+        val sidecar = liveWorkoutSidecarStore ?: return false
+        val userId = liveReservationUserId ?: return false
+        return sidecar.hasActiveBinding(userId, startedAt)
+    }
+
     suspend fun undoLatestActiveWorkoutSet(
         setId: String,
         expectedRevision: Long
@@ -2795,6 +2943,50 @@ class GymRepository(
                 restoreActivityOnlyMirrorIfUnshadowed(details.session.date)
             }
         }
+    }
+
+    /**
+     * Removes one exercise block (and, through the foreign-key cascade, its sets) from a saved
+     * workout and renumbers the remaining blocks 0..n-1 in one transaction. The last exercise is
+     * never removed (the whole workout is deleted through [deleteWorkoutSessionById]); returns
+     * false, changing nothing, when the block is not part of [sessionId] or is the only one.
+     * Statistics, records and the Garmin comparison are derived from these tables on read, so
+     * nothing else needs invalidating; Garmin provenance follows the session, which stays.
+     */
+    suspend fun removeExerciseFromSession(sessionId: Long, workoutExerciseId: Long): Boolean {
+        if (sessionId <= 0 || workoutExerciseId <= 0) return false
+        return database.withTransaction {
+            val blocks = workoutDao.getSessionDetailsSnapshot(sessionId)
+                ?.workoutExercises
+                ?.map { it.workoutExercise }
+                ?.sortedBy { it.orderIndex }
+                ?: return@withTransaction false
+            if (blocks.size < 2 || blocks.none { it.id == workoutExerciseId }) {
+                return@withTransaction false
+            }
+            workoutDao.deleteWorkoutExerciseById(workoutExerciseId)
+            // Ascending, each target index <= its old one, so the unique (session, order) index
+            // is never violated mid-way.
+            blocks.filterNot { it.id == workoutExerciseId }.forEachIndexed { index, block ->
+                if (block.orderIndex != index) {
+                    workoutDao.updateWorkoutExercise(block.copy(orderIndex = index))
+                }
+            }
+            true
+        }
+    }
+
+    /**
+     * Updates the date and note of a saved workout (the same fields the iOS "Save session
+     * details" edits). The note is trimmed and stored as null when blank; the timestamp and note
+     * limits are those of every other workout write. The workout's exercises are untouched.
+     */
+    suspend fun updateWorkoutSessionDetails(sessionId: Long, date: Long, note: String?) {
+        require(sessionId > 0) { "Workout identifier is invalid." }
+        val previous = checkNotNull(workoutDao.getSessionDetailsSnapshot(sessionId)) {
+            "Workout no longer exists."
+        }.session
+        updateWorkoutSession(previous.copy(date = date, note = normalizedWorkoutNote(note)))
     }
 
     suspend fun addSet(
@@ -3889,3 +4081,6 @@ private fun exerciseBackupJson(
             }
         }
 }
+
+/** Trimmed note, or null when blank: the shape every saved workout note is stored in. */
+internal fun normalizedWorkoutNote(raw: String?): String? = raw?.trim()?.takeIf { it.isNotEmpty() }

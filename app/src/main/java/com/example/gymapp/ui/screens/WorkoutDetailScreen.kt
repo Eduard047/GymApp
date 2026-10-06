@@ -1,6 +1,22 @@
 ﻿package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import com.example.gymapp.data.entity.WorkoutExerciseWithDetails
+import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
+import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.data.repository.normalizedWorkoutNote
+import com.example.gymapp.ui.components.tabularDigits
+import com.example.gymapp.ui.viewmodel.parseActiveWorkoutSetInput
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.Canvas
@@ -107,10 +123,6 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
 
-private const val SETS_TABLE_SET_WEIGHT = 0.95f
-private const val SETS_TABLE_WEIGHT_WEIGHT = 1.1f
-private const val SETS_TABLE_REPS_WEIGHT = 0.9f
-private val SETS_TABLE_ACTIONS_WIDTH = 104.dp
 private val GARMIN_ZONE_COLORS = listOf(
     Color(0xFF718096),
     Color(0xFF4EA8DE),
@@ -122,6 +134,8 @@ private val GARMIN_ZONE_COLORS = listOf(
 
 internal data class WorkoutDetailControlVisibility(
     val showAddExercise: Boolean,
+    val showEditDetails: Boolean,
+    val showRemoveExercise: Boolean,
     val showAddSet: Boolean,
     val showSetActions: Boolean,
     val showDeleteWorkout: Boolean,
@@ -133,6 +147,8 @@ internal fun workoutDetailControlVisibility(
     isEditingWorkout: Boolean
 ): WorkoutDetailControlVisibility = WorkoutDetailControlVisibility(
     showAddExercise = isEditingWorkout,
+    showEditDetails = isEditingWorkout,
+    showRemoveExercise = isEditingWorkout,
     showAddSet = isEditingWorkout,
     showSetActions = isEditingWorkout,
     showDeleteWorkout = isEditingWorkout,
@@ -149,10 +165,35 @@ internal fun nextExpandedWorkoutExerciseId(
     selectedExerciseId
 }
 
-internal fun selectedWorkoutExerciseQuickAddId(
-    selectedExerciseId: Long?,
-    availableExerciseIds: Set<Long>
-): Long? = selectedExerciseId?.takeIf { it in availableExerciseIds }
+/** The last exercise of a saved workout cannot be removed; the whole workout is deleted instead. */
+internal fun canRemoveWorkoutExercise(exerciseCount: Int): Boolean = exerciseCount > 1
+
+/**
+ * The picked calendar day (a UTC-midnight millis value, as Material's DatePicker reports it) at
+ * the time of day of [existingMillis] in [zone]: editing the date keeps the workout's time.
+ */
+internal fun workoutDateWithPickedDay(
+    existingMillis: Long,
+    pickedUtcMillis: Long,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault()
+): Long {
+    val day = java.time.Instant.ofEpochMilli(pickedUtcMillis)
+        .atZone(java.time.ZoneOffset.UTC)
+        .toLocalDate()
+    val time = java.time.Instant.ofEpochMilli(existingMillis).atZone(zone).toLocalTime()
+    return java.time.LocalDateTime.of(day, time).atZone(zone).toInstant().toEpochMilli()
+}
+
+/** The UTC-midnight millis a DatePicker needs to preselect the local day of [existingMillis]. */
+internal fun datePickerUtcMillisForWorkout(
+    existingMillis: Long,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault()
+): Long = java.time.Instant.ofEpochMilli(existingMillis)
+    .atZone(zone)
+    .toLocalDate()
+    .atStartOfDay(java.time.ZoneOffset.UTC)
+    .toInstant()
+    .toEpochMilli()
 
 internal fun shareWorkoutUrl(
     context: Context,
@@ -182,18 +223,19 @@ internal fun WorkoutDetailScreen(
     onDeleteSession: () -> Unit,
     onSessionDeleted: () -> Unit,
     onUpdateSet: (SetEntryEntity, String, String) -> Unit,
+    onRemoveExercise: (Long) -> Unit = {},
+    onUpdateSessionDetails: (Long, String) -> Unit = { _, _ -> },
     onShareWorkout: ((SharedWorkoutPlan) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var editingSet by remember { mutableStateOf<SetEntryEntity?>(null) }
-    var editWeight by remember { mutableStateOf("") }
-    var editReps by remember { mutableStateOf("") }
+    var exerciseToRemoveId by remember { mutableStateOf<Long?>(null) }
     var confirmDeleteSession by remember { mutableStateOf(false) }
     var editingWorkoutSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
     var expandedExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var expandedSetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var areWatchMetricsExpanded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(events, context) {
@@ -238,6 +280,41 @@ internal fun WorkoutDetailScreen(
                     )
                 }
 
+                WorkoutDetailEvent.ExerciseRemoved -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_exercise_removed),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
+                WorkoutDetailEvent.RemoveExerciseFailed -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_remove_exercise_failed),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
+                WorkoutDetailEvent.DetailsSaved -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_workout_details_saved),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
+                WorkoutDetailEvent.DetailsInvalid -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_workout_details_invalid),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
+                WorkoutDetailEvent.DetailsSaveFailed -> {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.message_workout_details_failed),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+
                 WorkoutDetailEvent.DeleteFailed -> {
                     snackbarHostState.showSnackbar(
                         message = context.getString(R.string.message_delete_failed),
@@ -273,7 +350,8 @@ internal fun WorkoutDetailScreen(
             val listState = rememberLazyListState()
             val toggleEditMode = {
                 editingWorkoutSessionId = if (isEditingWorkout) {
-                    editingSet = null
+                    expandedSetId = null
+                    exerciseToRemoveId = null
                     confirmDeleteSession = false
                     onDismissDeleteSet()
                     null
@@ -391,15 +469,14 @@ internal fun WorkoutDetailScreen(
                     }
                 }
 
-                if (controls.showAddExercise) {
+                if (controls.showEditDetails && !isActivityOnly) {
                     item {
-                        WorkoutExerciseQuickAddCard(
-                            availableExercises = uiState.availableExercisesToAdd,
-                            frequentExerciseIds = uiState.frequentExerciseIds,
-                            exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
-                            exerciseMuscleIds = uiState.exerciseMuscleIds,
-                            exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                            onAddExerciseToWorkout = onAddExerciseToWorkout
+                        WorkoutDetailsEditPanel(
+                            sessionId = details.session.id,
+                            dateMillis = details.session.date,
+                            note = details.session.note,
+                            noteEditable = !isGarminWorkout,
+                            onSave = onUpdateSessionDetails
                         )
                     }
                 }
@@ -409,273 +486,51 @@ internal fun WorkoutDetailScreen(
                     key = { it.workoutExercise.id }
                 ) { exerciseDetails ->
                     val workoutExerciseId = exerciseDetails.workoutExercise.id
-                    val displayExerciseName = localizedExerciseName(exerciseDetails.exercise.name)
-                    val isExpanded = expandedExerciseId == workoutExerciseId
-                    val muscleIntensities = remember(exerciseDetails.exercise.name) {
-                        defaultContributionsForExercise(exerciseDetails.exercise.name)
-                            .associate { contribution ->
-                                contribution.muscleId to contribution.weight.toFloat()
-                            }
-                    }
-                    val setCount = exerciseDetails.sets.size
-                    val repCount = exerciseDetails.sets.sumOf { it.reps }
-                    val setCountLabel = pluralStringResource(
-                        R.plurals.saved_workout_set_count,
-                        setCount,
-                        setCount
+                    SavedWorkoutExerciseCard(
+                        exerciseDetails = exerciseDetails,
+                        exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                        isExpanded = expandedExerciseId == workoutExerciseId,
+                        onToggleExpanded = {
+                            expandedExerciseId = nextExpandedWorkoutExerciseId(
+                                currentExpandedExerciseId = expandedExerciseId,
+                                selectedExerciseId = workoutExerciseId
+                            )
+                        },
+                        isGarminWorkout = isGarminWorkout,
+                        controls = controls,
+                        canRemoveExercise = canRemoveWorkoutExercise(details.workoutExercises.size),
+                        personalRecordSetIds = uiState.personalRecordSetIds,
+                        isAddingSet = workoutExerciseId in uiState.setAdditionsInFlight,
+                        expandedSetId = expandedSetId,
+                        onExpandedSetChange = { expandedSetId = it },
+                        onUpdateSet = onUpdateSet,
+                        onDeleteSet = onDeleteSet,
+                        onAddSet = { onAddSet(workoutExerciseId) },
+                        onRequestRemoveExercise = { exerciseToRemoveId = workoutExerciseId }
                     )
-                    val repsLabel = pluralStringResource(
-                        R.plurals.saved_workout_rep_count,
-                        repCount,
-                        repCount
-                    )
-                    val volumeLabel = stringResource(
-                        R.string.stats_volume,
-                        exerciseDetails.sets.sumOf { it.weight * it.reps }
-                    )
-                    val setSummary = remember(setCountLabel, repsLabel, volumeLabel) {
-                        "$setCountLabel · $repsLabel · $volumeLabel"
-                    }
+                }
 
-                    AppPanel(
-                        modifier = Modifier.fillMaxWidth(),
-                        highlighted = true
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                ExerciseMediaPreview(
-                                    exerciseId = exerciseDetails.exercise.id,
-                                    exerciseName = exerciseDetails.exercise.name,
-                                    ownerKey = exerciseMediaOwnerKey,
-                                    width = 72.dp,
-                                    height = 60.dp
+                if (controls.showAddExercise) {
+                    item {
+                        ExerciseCatalogSelector(
+                            selectedExerciseId = null,
+                            exercises = uiState.availableExercisesToAdd,
+                            frequentExerciseIds = uiState.frequentExerciseIds,
+                            exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
+                            exerciseMuscleIds = uiState.exerciseMuscleIds,
+                            exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                            onExerciseSelected = onAddExerciseToWorkout,
+                            trigger = { openPicker ->
+                                WorkoutFooterButton(
+                                    label = stringResource(R.string.workout_detail_add_exercise_short),
+                                    accessibilityLabel = stringResource(R.string.action_add_exercise),
+                                    dashed = true,
+                                    enabled = uiState.availableExercisesToAdd.isNotEmpty(),
+                                    onClick = openPicker,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                                Text(
-                                    text = displayExerciseName,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                IconButton(
-                                    onClick = {
-                                        expandedExerciseId = nextExpandedWorkoutExerciseId(
-                                            currentExpandedExerciseId = expandedExerciseId,
-                                            selectedExerciseId = workoutExerciseId
-                                        )
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = if (isExpanded) {
-                                            Icons.Default.ExpandLess
-                                        } else {
-                                            Icons.Default.ExpandMore
-                                        },
-                                        contentDescription = stringResource(
-                                            if (isExpanded) {
-                                                R.string.cd_collapse_exercise
-                                            } else {
-                                                R.string.cd_expand_exercise
-                                            }
-                                        )
-                                    )
-                                }
                             }
-
-                            if (uiState.personalRecordFlags[workoutExerciseId] == true) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    InfoPill(
-                                        text = stringResource(R.string.label_personal_record),
-                                        accent = MaterialTheme.colorScheme.tertiary
-                                    )
-                                }
-                            }
-
-                            if (!isExpanded) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Text(
-                                        text = setSummary,
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (muscleIntensities.isNotEmpty()) {
-                                        ExerciseMuscleMap(
-                                            muscleIntensities = muscleIntensities,
-                                            modifier = Modifier.size(width = 96.dp, height = 72.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (isExpanded) {
-                                if (!isGarminWorkout && muscleIntensities.isNotEmpty()) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(
-                                            text = stringResource(R.string.exercise_muscles_title),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        ExerciseMuscleMap(
-                                            muscleIntensities = muscleIntensities,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(132.dp)
-                                        )
-                                    }
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.label_set_short),
-                                        modifier = Modifier.weight(SETS_TABLE_SET_WEIGHT),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.label_weight_kg),
-                                        modifier = Modifier.weight(SETS_TABLE_WEIGHT_WEIGHT),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.label_reps),
-                                        modifier = Modifier.weight(SETS_TABLE_REPS_WEIGHT),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (controls.showSetActions) {
-                                        Box(modifier = Modifier.width(SETS_TABLE_ACTIONS_WIDTH))
-                                    }
-                                }
-
-                                exerciseDetails.sets.forEachIndexed { setIndex, setEntry ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(GymControlShape)
-                                            .background(
-                                                MaterialTheme.colorScheme.surfaceVariant.copy(
-                                                    alpha = 0.42f
-                                                )
-                                            )
-                                            .padding(vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.label_set, setIndex + 1),
-                                            modifier = Modifier.weight(SETS_TABLE_SET_WEIGHT),
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = String.format(
-                                                Locale.getDefault(),
-                                                "%.1f",
-                                                setEntry.weight
-                                            ),
-                                            modifier = Modifier.weight(SETS_TABLE_WEIGHT_WEIGHT),
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = setEntry.reps.toString(),
-                                            modifier = Modifier.weight(SETS_TABLE_REPS_WEIGHT),
-                                            maxLines = 1
-                                        )
-                                        if (controls.showSetActions) {
-                                            Box(modifier = Modifier.width(SETS_TABLE_ACTIONS_WIDTH)) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(
-                                                        8.dp,
-                                                        Alignment.End
-                                                    ),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    IconButton(
-                                                        onClick = {
-                                                            editingSet = setEntry
-                                                            editWeight = if (setEntry.weight == 0.0) {
-                                                                ""
-                                                            } else {
-                                                                String.format(
-                                                                    Locale.getDefault(),
-                                                                    "%.1f",
-                                                                    setEntry.weight
-                                                                )
-                                                            }
-                                                            editReps = setEntry.reps.toString()
-                                                        }
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Edit,
-                                                            contentDescription = stringResource(
-                                                                R.string.cd_edit
-                                                            )
-                                                        )
-                                                    }
-                                                    IconButton(
-                                                        onClick = { onDeleteSet(setEntry) }
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Delete,
-                                                            contentDescription = stringResource(
-                                                                R.string.cd_delete_set_named,
-                                                                setIndex + 1,
-                                                                displayExerciseName
-                                                            ),
-                                                            tint = MaterialTheme.colorScheme.error
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if (exerciseDetails.sets.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.empty_progress),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                if (controls.showAddSet) {
-                                    OutlinedButton(
-                                        onClick = { onAddSet(workoutExerciseId) },
-                                        enabled = workoutExerciseId !in uiState.setAdditionsInFlight,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(text = stringResource(R.string.action_add_set))
-                                    }
-                                }
-                            }
-                        }
+                        )
                     }
                 }
             }
@@ -692,48 +547,23 @@ internal fun WorkoutDetailScreen(
     val currentSessionId = uiState.sessionDetails?.session?.id
     val isEditingWorkout = currentSessionId != null && editingWorkoutSessionId == currentSessionId
 
-    if (editingSet != null && isEditingWorkout) {
-        AlertDialog(
-            onDismissRequest = { editingSet = null },
-            title = { Text(text = stringResource(R.string.dialog_edit_set_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = editWeight,
-                        onValueChange = { editWeight = it },
-                        label = { Text(stringResource(R.string.label_weight_kg)) },
-                        placeholder = { Text(stringResource(R.string.hint_optional)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = editReps,
-                        onValueChange = { editReps = it },
-                        label = { Text(stringResource(R.string.label_reps)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                OutlinedButton(
-                    onClick = {
-                        val setEntry = editingSet
-                        if (setEntry != null) {
-                            onUpdateSet(setEntry, editWeight, editReps)
-                        }
-                        editingSet = null
-                    }
-                ) {
-                    Text(text = stringResource(R.string.action_save))
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { editingSet = null }) {
-                    Text(text = stringResource(R.string.action_cancel))
-                }
+    if (isEditingWorkout) {
+        val removalTarget = exerciseToRemoveId?.let { targetId ->
+            uiState.sessionDetails?.workoutExercises?.firstOrNull {
+                it.workoutExercise.id == targetId
             }
-        )
+        }
+        if (removalTarget != null) {
+            WorkoutRemoveExerciseDialog(
+                exerciseName = localizedExerciseName(removalTarget.exercise.name),
+                recordedCount = removalTarget.sets.size,
+                onConfirm = {
+                    exerciseToRemoveId = null
+                    onRemoveExercise(removalTarget.workoutExercise.id)
+                },
+                onDismiss = { exerciseToRemoveId = null }
+            )
+        }
     }
 
     if (isEditingWorkout) {
@@ -2172,76 +2002,365 @@ private fun GarminMetricCell(
 }
 
 @Composable
-private fun WorkoutExerciseQuickAddCard(
-    availableExercises: List<ExerciseEntity>,
-    frequentExerciseIds: List<Long>,
-    exerciseWorkoutCounts: Map<Long, Int>,
-    exerciseMuscleIds: Map<String, Set<String>>,
+private fun SavedWorkoutExerciseCard(
+    exerciseDetails: WorkoutExerciseWithDetails,
     exerciseMediaOwnerKey: String,
-    onAddExerciseToWorkout: (Long) -> Unit
+    isExpanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    isGarminWorkout: Boolean,
+    controls: WorkoutDetailControlVisibility,
+    canRemoveExercise: Boolean,
+    personalRecordSetIds: Set<Long>,
+    isAddingSet: Boolean,
+    expandedSetId: Long?,
+    onExpandedSetChange: (Long?) -> Unit,
+    onUpdateSet: (SetEntryEntity, String, String) -> Unit,
+    onDeleteSet: (SetEntryEntity) -> Unit,
+    onAddSet: () -> Unit,
+    onRequestRemoveExercise: () -> Unit
 ) {
-    var selectedExerciseId by remember(availableExercises) {
-        mutableStateOf<Long?>(null)
+    val displayExerciseName = localizedExerciseName(exerciseDetails.exercise.name)
+    val muscleIntensities = remember(exerciseDetails.exercise.name) {
+        defaultContributionsForExercise(exerciseDetails.exercise.name)
+            .associate { contribution ->
+                contribution.muscleId to contribution.weight.toFloat()
+            }
     }
-    val availableExerciseIds = remember(availableExercises) {
-        availableExercises.mapTo(linkedSetOf()) { it.id }
+    val sets = exerciseDetails.sets.sortedBy { it.orderIndex }
+    val setCount = sets.size
+    val repCount = sets.sumOf { it.reps }
+    val setCountLabel = pluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
+    val repsLabel = pluralStringResource(R.plurals.saved_workout_rep_count, repCount, repCount)
+    val volumeLabel = stringResource(R.string.stats_volume, sets.sumOf { it.weight * it.reps })
+    val removeLabel = stringResource(R.string.active_workout_remove_exercise)
+    val removeAction = canRemoveExercise && controls.showRemoveExercise
+    val deleteSetLabel = stringResource(R.string.active_workout_delete_set)
+
+    WorkoutExerciseCardShell {
+        WorkoutExerciseCardHeader(
+            title = displayExerciseName,
+            expanded = isExpanded,
+            onToggleExpanded = onToggleExpanded,
+            stateText = setCountLabel,
+            media = {
+                WorkoutExerciseMedia(
+                    exerciseId = exerciseDetails.exercise.id,
+                    exerciseName = exerciseDetails.exercise.name,
+                    ownerKey = exerciseMediaOwnerKey,
+                    editable = true
+                )
+            },
+            menu = if (removeAction) {
+                { WorkoutExerciseMenu(enabled = true, onRemove = onRequestRemoveExercise) }
+            } else {
+                null
+            },
+            accessibilityActions = if (removeAction) {
+                listOf(
+                    CustomAccessibilityAction(removeLabel) {
+                        onRequestRemoveExercise()
+                        true
+                    }
+                )
+            } else {
+                emptyList()
+            }
+        ) {
+            if (isExpanded) {
+                Text(
+                    text = "$setCountLabel · $repsLabel · $volumeLabel",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else {
+                val progressColor = MaterialTheme.colorScheme.secondary
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Verified,
+                        contentDescription = null,
+                        tint = progressColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = setCountLabel,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ).tabularDigits(),
+                        color = progressColor
+                    )
+                }
+                Text(
+                    text = "$repsLabel · $volumeLabel",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        if (isExpanded) {
+            if (!isGarminWorkout && muscleIntensities.isNotEmpty()) {
+                ExerciseMuscleMap(
+                    muscleIntensities = muscleIntensities,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                )
+            }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                sets.forEachIndexed { index, setEntry ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            thickness = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                    val number = index + 1
+                    val weightText = VoiceWorkoutDraftParser.formatWeight(setEntry.weight)
+                    val repsText = setEntry.reps.toString()
+                    val summary = rememberSetSummary(weightText, repsText)
+                    val isRecord = setEntry.id in personalRecordSetIds
+                    if (controls.showSetActions) {
+                        EditableSetRow(
+                            number = number,
+                            summary = summary,
+                            rowDescription = stringResource(
+                                R.string.active_workout_set_upcoming_cd,
+                                number,
+                                summary
+                            ),
+                            editHint = stringResource(R.string.active_workout_set_upcoming_hint),
+                            deleteLabel = deleteSetLabel,
+                            deleteActionLabel = stringResource(
+                                R.string.cd_delete_set_named,
+                                number,
+                                displayExerciseName
+                            ),
+                            expanded = expandedSetId == setEntry.id,
+                            onExpandedChange = { open ->
+                                onExpandedSetChange(if (open) setEntry.id else null)
+                            },
+                            canDelete = true,
+                            onDelete = { onDeleteSet(setEntry) },
+                            summaryBadge = if (isRecord) {
+                                { PersonalRecordBadge() }
+                            } else {
+                                null
+                            }
+                        ) {
+                            SavedSetEditor(
+                                number = number,
+                                initialWeight = weightText,
+                                initialReps = repsText,
+                                setKey = setEntry,
+                                onSave = { weight, reps ->
+                                    onUpdateSet(setEntry, weight, reps)
+                                    onExpandedSetChange(null)
+                                }
+                            )
+                        }
+                    } else {
+                        RecordedSetRow(
+                            summary = summary,
+                            description = stringResource(
+                                if (isRecord) {
+                                    R.string.active_workout_set_recorded_record_cd
+                                } else {
+                                    R.string.active_workout_set_recorded_cd
+                                },
+                                number,
+                                summary
+                            ),
+                            isPersonalRecord = isRecord
+                        )
+                    }
+                }
+                if (sets.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.empty_progress),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (controls.showAddSet) {
+                WorkoutFooterButton(
+                    label = stringResource(R.string.active_workout_add_set_short),
+                    accessibilityLabel = stringResource(R.string.active_workout_add_set),
+                    dashed = true,
+                    enabled = !isAddingSet,
+                    onClick = onAddSet,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
     }
-    val addableExerciseId = selectedWorkoutExerciseQuickAddId(
-        selectedExerciseId = selectedExerciseId,
-        availableExerciseIds = availableExerciseIds
-    )
+}
+
+/**
+ * Inline editor of one saved set, like the active workout's current-set editor: weight value,
+ * step capsules and a primary Save. The draft restarts whenever the stored set changes.
+ */
+@Composable
+private fun SavedSetEditor(
+    number: Int,
+    initialWeight: String,
+    initialReps: String,
+    setKey: SetEntryEntity,
+    onSave: (weight: String, reps: String) -> Unit
+) {
+    var weightText by rememberSaveable(setKey.id, setKey.weight, setKey.reps) {
+        mutableStateOf(initialWeight)
+    }
+    var repsText by rememberSaveable(setKey.id, setKey.weight, setKey.reps) {
+        mutableStateOf(initialReps)
+    }
+    val format = rememberDecimalFormat()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                RoundedCornerShape(16.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        SetValueLine(
+            number = number,
+            weightInput = weightText,
+            repsInput = repsText,
+            enabled = true,
+            onWeightChanged = { weightText = it }
+        )
+        SetStepCapsules(
+            weightInput = weightText,
+            repsInput = repsText,
+            allowedWeights = emptyList(),
+            enabled = true,
+            format = format,
+            onWeightChanged = { weightText = it },
+            onRepsChanged = { repsText = it }
+        )
+        Button(
+            onClick = { onSave(weightText.ifBlank { "0" }, repsText) },
+            enabled = parseActiveWorkoutSetInput(weightText, repsText) != null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.action_save),
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+    }
+}
+
+/** Edit-mode panel under the hero: workout date (time of day kept) and note, saved together. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkoutDetailsEditPanel(
+    sessionId: Long,
+    dateMillis: Long,
+    note: String?,
+    noteEditable: Boolean,
+    onSave: (Long, String) -> Unit
+) {
+    var draftDate by rememberSaveable(sessionId, dateMillis) { mutableStateOf(dateMillis) }
+    var draftNote by rememberSaveable(sessionId, note) { mutableStateOf(note.orEmpty()) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val changed = draftDate != dateMillis ||
+        (noteEditable && normalizedWorkoutNote(draftNote) != normalizedWorkoutNote(note))
 
     AppPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Text(
+                text = stringResource(
+                    if (noteEditable) {
+                        R.string.workout_detail_details_title
+                    } else {
+                        R.string.label_workout_date
+                    }
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            OutlinedButton(
+                onClick = { showDatePicker = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                 Text(
-                    text = stringResource(R.string.title_add_exercise_to_workout_section),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    text = DateTimeUtils.formatLongDate(draftDate),
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
-
-            if (availableExercises.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.label_all_exercises_added),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                ExerciseCatalogSelector(
-                    selectedExerciseId = addableExerciseId,
-                    exercises = availableExercises,
-                    frequentExerciseIds = frequentExerciseIds,
-                    exerciseWorkoutCounts = exerciseWorkoutCounts,
-                    exerciseMuscleIds = exerciseMuscleIds,
-                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                    onExerciseSelected = { selectedExerciseId = it },
+            if (noteEditable) {
+                OutlinedTextField(
+                    value = draftNote,
+                    onValueChange = {
+                        if (it.length <= WorkoutDataLimits.MAX_NOTE_LENGTH) draftNote = it
+                    },
+                    label = { Text(stringResource(R.string.label_note)) },
+                    placeholder = { Text(stringResource(R.string.hint_note)) },
+                    minLines = 2,
+                    maxLines = 5,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+            Button(
+                onClick = {
+                    onSave(draftDate, if (noteEditable) draftNote else note.orEmpty())
+                },
+                enabled = changed,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Text(text = stringResource(R.string.action_save))
+            }
+        }
+    }
 
-                Button(
+    if (showDatePicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = datePickerUtcMillisForWorkout(draftDate)
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
                     onClick = {
-                        val selectedId = addableExerciseId ?: return@Button
-                        onAddExerciseToWorkout(selectedId)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = addableExerciseId != null
+                        pickerState.selectedDateMillis?.let { picked ->
+                            draftDate = workoutDateWithPickedDay(draftDate, picked)
+                        }
+                        showDatePicker = false
+                    }
                 ) {
-                    Text(text = stringResource(R.string.action_add_to_workout))
+                    Text(text = stringResource(R.string.action_ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text(text = stringResource(R.string.action_cancel))
                 }
             }
+        ) {
+            DatePicker(state = pickerState)
         }
     }
 }

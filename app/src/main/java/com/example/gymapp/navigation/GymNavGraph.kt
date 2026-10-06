@@ -3507,6 +3507,8 @@ internal fun GymAppRoot(
                                 onSaveExercise = viewModel::saveExercise,
                                 onAddSet = viewModel::addSet,
                                 onSkipRemainingSets = viewModel::skipRemainingSets,
+                                onDeleteSet = viewModel::deleteSet,
+                                onRemoveExercise = viewModel::removeExercise,
                                 onRecordSet = viewModel::recordSet,
                                 onRecordAllPendingSets = viewModel::recordAllPendingSets,
                                 onUndoLatestSet = viewModel::undoLatestSet,
@@ -3685,6 +3687,8 @@ internal fun GymAppRoot(
                                 onDeleteSession = viewModel::deleteSession,
                                 onSessionDeleted = { navController.popBackStack() },
                                 onUpdateSet = viewModel::updateSet,
+                                onRemoveExercise = viewModel::removeExercise,
+                                onUpdateSessionDetails = viewModel::updateSessionDetails,
                                 onShareWorkout = { workoutPlanToShare = it },
                                 modifier = Modifier.fillMaxSize()
                             )

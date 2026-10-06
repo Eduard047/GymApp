@@ -511,6 +511,18 @@
     <string name="active_workout_undo_changed">Отменить можно только последний записанный подход. Показана актуальная сохранённая тренировка.</string>
     <string name="active_workout_undo_failed">Не удалось отменить последний подход. Сохранённые данные не изменены.</string>
     <string name="active_workout_undo_action">Отменить подход</string>
+    <string name="active_workout_delete_set">Удалить подход</string>
+    <string name="active_workout_log_set_cd">Записать подход %1$d</string>
+    <string name="active_workout_remove_exercise">Удалить упражнение</string>
+    <string name="active_workout_remove_exercise_title">Удалить упражнение?</string>
+    <string name="active_workout_remove_exercise_message">Его запланированные подходы будут удалены из этой тренировки.</string>
+    <plurals name="active_workout_remove_exercise_recorded_sets">
+        <item quantity="one">%1$d записанный подход будет удалён.</item>
+        <item quantity="few">%1$d записанных подхода будут удалены.</item>
+        <item quantity="many">%1$d записанных подходов будут удалены.</item>
+        <item quantity="other">%1$d записанного подхода будут удалены.</item>
+    </plurals>
+    <string name="active_workout_remove_exercise_confirm">Удалить</string>
     <string name="action_log_set">Записать</string>
     <string name="active_workout_unit_kg">кг</string>
     <string name="active_workout_set_summary">%1$s кг × %2$s</string>
@@ -1597,4 +1609,12 @@
     <string name="cd_chip_last_weight">Последний вес</string>
     <string name="cd_chip_previous">Предыдущий</string>
     <string name="cd_chip_copy_set">Копировать подход</string>
+    <string name="action_ok">ОК</string>
+    <string name="workout_detail_add_exercise_short">+ Добавить упражнение</string>
+    <string name="workout_detail_details_title">Дата и заметка</string>
+    <string name="message_workout_details_saved">Данные тренировки сохранены</string>
+    <string name="message_workout_details_invalid">Проверьте дату и заметку</string>
+    <string name="message_workout_details_failed">Не удалось сохранить данные тренировки</string>
+    <string name="message_exercise_removed">Упражнение удалено</string>
+    <string name="message_remove_exercise_failed">Не удалось удалить упражнение. Обновите тренировку и попробуйте снова.</string>
 </resources>

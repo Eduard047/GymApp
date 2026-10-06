@@ -505,6 +505,16 @@
     <string name="active_workout_undo_changed">Only the latest recorded set can be undone. The saved workout has been refreshed.</string>
     <string name="active_workout_undo_failed">The latest set could not be undone. Its saved data was not changed.</string>
     <string name="active_workout_undo_action">Undo set</string>
+    <string name="active_workout_delete_set">Delete set</string>
+    <string name="active_workout_log_set_cd">Log set %1$d</string>
+    <string name="active_workout_remove_exercise">Remove exercise</string>
+    <string name="active_workout_remove_exercise_title">Remove exercise?</string>
+    <string name="active_workout_remove_exercise_message">Its planned sets will be removed from this workout.</string>
+    <plurals name="active_workout_remove_exercise_recorded_sets">
+        <item quantity="one">%1$d recorded set will be removed.</item>
+        <item quantity="other">%1$d recorded sets will be removed.</item>
+    </plurals>
+    <string name="active_workout_remove_exercise_confirm">Remove</string>
     <string name="action_log_set">Log</string>
     <string name="active_workout_unit_kg">kg</string>
     <string name="active_workout_set_summary">%1$s kg × %2$s</string>
@@ -1563,4 +1573,12 @@
     <string name="cd_chip_last_weight">Last weight</string>
     <string name="cd_chip_previous">Previous</string>
     <string name="cd_chip_copy_set">Copy set</string>
+    <string name="action_ok">OK</string>
+    <string name="workout_detail_add_exercise_short">+ Add exercise</string>
+    <string name="workout_detail_details_title">Date and note</string>
+    <string name="message_workout_details_saved">Workout details saved</string>
+    <string name="message_workout_details_invalid">Check the date and note</string>
+    <string name="message_workout_details_failed">Could not save the workout details</string>
+    <string name="message_exercise_removed">Exercise removed</string>
+    <string name="message_remove_exercise_failed">Could not remove the exercise. Refresh the workout and try again.</string>
 </resources>

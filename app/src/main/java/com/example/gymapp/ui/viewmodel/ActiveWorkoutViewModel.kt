@@ -18,11 +18,13 @@ import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.ActiveWorkoutSetUpdate
 import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
+import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
 import com.example.gymapp.data.repository.DiscardActiveWorkoutResult
 import com.example.gymapp.data.repository.FinishActiveWorkoutResult
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetsResult
+import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.SaveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.UndoActiveWorkoutSetResult
 import com.example.gymapp.data.repository.WorkoutDataLimits
@@ -142,6 +144,64 @@ data class ActiveWorkoutUiState(
 internal fun activeWorkoutSkipOutcomeMessage(result: ApplyActiveWorkoutAdaptationResult): Int = when (result) {
     is ApplyActiveWorkoutAdaptationResult.Applied -> R.string.active_workout_remaining_sets_skipped
     ApplyActiveWorkoutAdaptationResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    else -> R.string.active_workout_changed
+}
+
+/** Why deleting a pending set or removing an exercise is not offered right now. */
+internal enum class ActiveWorkoutEditBlock {
+    Allowed,
+    LiveRoom,
+    Busy,
+    Missing,
+    SetRecorded,
+    LastSet,
+    LastExercise
+}
+
+/** A pending set can be deleted unless a live room owns the plan, it is recorded, or it is the exercise's last set. */
+internal fun activeWorkoutSetDeletionBlock(
+    details: ActiveWorkoutDetails?,
+    setId: String,
+    inLiveRoom: Boolean,
+    operationInProgress: Boolean
+): ActiveWorkoutEditBlock {
+    if (inLiveRoom) return ActiveWorkoutEditBlock.LiveRoom
+    if (operationInProgress) return ActiveWorkoutEditBlock.Busy
+    val exercise = details?.exercises?.firstOrNull { block -> block.sets.any { it.id == setId } }
+        ?: return ActiveWorkoutEditBlock.Missing
+    if (exercise.sets.first { it.id == setId }.completedAt != null) return ActiveWorkoutEditBlock.SetRecorded
+    if (exercise.sets.size <= 1) return ActiveWorkoutEditBlock.LastSet
+    return ActiveWorkoutEditBlock.Allowed
+}
+
+/** An exercise (with any recorded sets) can be removed unless a live room owns the plan or it is the last exercise. */
+internal fun activeWorkoutExerciseRemovalBlock(
+    details: ActiveWorkoutDetails?,
+    exerciseId: String,
+    inLiveRoom: Boolean,
+    operationInProgress: Boolean
+): ActiveWorkoutEditBlock {
+    if (inLiveRoom) return ActiveWorkoutEditBlock.LiveRoom
+    if (operationInProgress) return ActiveWorkoutEditBlock.Busy
+    details ?: return ActiveWorkoutEditBlock.Missing
+    if (details.exercises.none { it.activeWorkoutExercise.id == exerciseId }) {
+        return ActiveWorkoutEditBlock.Missing
+    }
+    if (details.exercises.size <= 1) return ActiveWorkoutEditBlock.LastExercise
+    return ActiveWorkoutEditBlock.Allowed
+}
+
+internal fun activeWorkoutDeleteSetOutcomeMessage(result: DeleteActiveWorkoutSetResult): Int? = when (result) {
+    is DeleteActiveWorkoutSetResult.Deleted -> null
+    DeleteActiveWorkoutSetResult.Missing -> R.string.active_workout_missing
+    DeleteActiveWorkoutSetResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    else -> R.string.active_workout_changed
+}
+
+internal fun activeWorkoutRemoveExerciseOutcomeMessage(result: RemoveActiveWorkoutExerciseResult): Int? = when (result) {
+    is RemoveActiveWorkoutExerciseResult.Removed -> null
+    RemoveActiveWorkoutExerciseResult.Missing -> R.string.active_workout_missing
+    RemoveActiveWorkoutExerciseResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
     else -> R.string.active_workout_changed
 }
 
@@ -1101,6 +1161,111 @@ class ActiveWorkoutViewModel(
                         message = LocalizedText(R.string.active_workout_changed)
                     )
                 }
+            }
+        }
+    }
+
+    /** Deletes a not-yet-recorded set (long-press menu). Hidden in live rooms and for an exercise's last set. */
+    fun deleteSet(setId: String) {
+        val snapshot = details.value
+        val block = activeWorkoutSetDeletionBlock(
+            details = snapshot,
+            setId = setId,
+            inLiveRoom = isInLiveRoom(),
+            operationInProgress = activeWorkoutOperationInProgress()
+        )
+        if (block == ActiveWorkoutEditBlock.LiveRoom) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
+            }
+            return
+        }
+        if (block != ActiveWorkoutEditBlock.Allowed) {
+            if (block != ActiveWorkoutEditBlock.Busy) {
+                operationState.update {
+                    it.copy(message = LocalizedText(R.string.active_workout_changed), messageSetId = null)
+                }
+            }
+            return
+        }
+        val revision = checkNotNull(snapshot).activeWorkout.revision
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching { repository.deleteActiveWorkoutSet(setId, revision) }.getOrNull()
+            operationState.update {
+                val message = if (result == null) {
+                    R.string.active_workout_changed
+                } else {
+                    activeWorkoutDeleteSetOutcomeMessage(result)
+                }
+                it.copy(
+                    isRecordingAll = false,
+                    message = message?.let { id -> LocalizedText(id) },
+                    messageSetId = null
+                )
+            }
+        }
+    }
+
+    /** Removes a whole exercise from the running workout (confirmed in the UI). */
+    fun removeExercise(exerciseId: String) {
+        val snapshot = details.value
+        val block = activeWorkoutExerciseRemovalBlock(
+            details = snapshot,
+            exerciseId = exerciseId,
+            inLiveRoom = isInLiveRoom(),
+            operationInProgress = activeWorkoutOperationInProgress()
+        )
+        if (block == ActiveWorkoutEditBlock.LiveRoom) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
+            }
+            return
+        }
+        if (block != ActiveWorkoutEditBlock.Allowed) {
+            if (block != ActiveWorkoutEditBlock.Busy) {
+                operationState.update {
+                    it.copy(message = LocalizedText(R.string.active_workout_changed), messageSetId = null)
+                }
+            }
+            return
+        }
+        val workout = checkNotNull(snapshot)
+        val revision = workout.activeWorkout.revision
+        val startedAt = workout.activeWorkout.startedAt
+        // The rest timer belongs to the latest recorded set (the undo target); it only stops when
+        // that set goes away with the exercise.
+        val undoableSetId = workout.activeWorkout.undoableSetId
+        val ownsRest = undoableSetId != null && workout.exercises.any { block ->
+            block.activeWorkoutExercise.id == exerciseId && block.sets.any { it.id == undoableSetId }
+        }
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val outcome = runCatching {
+                persistActiveWorkoutMutationAndReconcileRest(
+                    persist = { repository.removeActiveWorkoutExercise(exerciseId, revision) },
+                    isCommitted = { it is RemoveActiveWorkoutExerciseResult.Removed },
+                    stopRest = {
+                        if (ownsRest) {
+                            restTimerController.stopActiveWorkoutRest(timerAccountKey, startedAt)
+                        } else {
+                            true
+                        }
+                    }
+                )
+            }.getOrNull()
+            operationState.update {
+                val restCleanupFailed = outcome?.restStatus == ActiveWorkoutRestReconciliationStatus.Failed
+                val message = when {
+                    outcome == null -> R.string.active_workout_changed
+                    restCleanupFailed -> R.string.active_workout_change_saved_rest_failed
+                    else -> activeWorkoutRemoveExerciseOutcomeMessage(outcome.repositoryResult)
+                }
+                it.copy(
+                    isRecordingAll = false,
+                    message = message?.let { id -> LocalizedText(id) },
+                    messageSetId = null
+                )
             }
         }
     }

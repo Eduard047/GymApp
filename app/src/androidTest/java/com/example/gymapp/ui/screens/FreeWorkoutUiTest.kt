@@ -81,9 +81,9 @@ class FreeWorkoutUiTest {
         }
         fun action(id: Int) = rule.onNodeWithText(rule.activity.getString(id))
         action(R.string.action_complete_free_workout).assertIsDisplayed().performClick()
-        action(R.string.label_select_exercise).performScrollTo().performClick()
+        rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_add_exercise))
+            .performScrollTo().performClick()
         rule.onNodeWithText(exercise.name).assertIsDisplayed().performClick()
-        action(R.string.action_add_to_workout).performScrollTo().performClick()
         rule.onNodeWithText(exercise.name).performScrollTo().assertIsDisplayed()
         rule.runOnIdle {
             assertEquals(session, state.value.sessionDetails!!.session)

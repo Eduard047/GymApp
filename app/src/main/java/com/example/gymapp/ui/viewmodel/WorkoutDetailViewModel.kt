@@ -17,6 +17,7 @@ import com.example.gymapp.data.repository.SetDeletionSnapshot
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
+import com.example.gymapp.data.repository.normalizedWorkoutNote
 import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.garmin.WorkoutComparison
 import com.example.gymapp.garmin.buildWorkoutComparisonForSession
@@ -45,6 +46,7 @@ data class WorkoutDetailUiState(
     val isSetDeletionInProgress: Boolean = false,
     val setDeletionError: LocalizedText? = null,
     val personalRecordFlags: Map<Long, Boolean> = emptyMap(),
+    val personalRecordSetIds: Set<Long> = emptySet(),
     val setAdditionsInFlight: Set<Long> = emptySet(),
     val availableExercisesToAdd: List<ExerciseEntity> = emptyList(),
     val frequentExerciseIds: List<Long> = emptyList(),
@@ -65,6 +67,11 @@ private data class SetDeletionState(
     val error: LocalizedText?
 )
 
+private data class WorkoutDetailRecords(
+    val flags: Map<Long, Boolean>,
+    val setIds: Set<Long>
+)
+
 private data class WorkoutDetailMutationState(
     val setAdditionsInFlight: Set<Long>,
     val exerciseAdditionsInFlight: Set<Long>
@@ -83,6 +90,11 @@ sealed interface WorkoutDetailEvent {
     data object SetDeleted : WorkoutDetailEvent
     data object SessionDeleted : WorkoutDetailEvent
     data object InvalidInput : WorkoutDetailEvent
+    data object ExerciseRemoved : WorkoutDetailEvent
+    data object RemoveExerciseFailed : WorkoutDetailEvent
+    data object DetailsSaved : WorkoutDetailEvent
+    data object DetailsInvalid : WorkoutDetailEvent
+    data object DetailsSaveFailed : WorkoutDetailEvent
     data object DeleteTargetChanged : WorkoutDetailEvent
     data object DeleteFailed : WorkoutDetailEvent
 }
@@ -176,9 +188,16 @@ class WorkoutDetailViewModel(
         allExerciseHistoryFlow
     ) { details, exerciseHistory ->
         if (details == null) {
-            emptyMap()
+            WorkoutDetailRecords(emptyMap(), emptySet())
         } else {
-            storedWorkoutPersonalRecordFlags(details, exerciseHistory)
+            val setIds = storedWorkoutPersonalRecordSetIds(details, exerciseHistory)
+            WorkoutDetailRecords(
+                flags = details.workoutExercises.associate { workoutExercise ->
+                    workoutExercise.workoutExercise.id to
+                        workoutExercise.sets.any { it.id in setIds }
+                },
+                setIds = setIds
+            )
         }
     }
     private val _events = MutableSharedFlow<WorkoutDetailEvent>()
@@ -199,7 +218,7 @@ class WorkoutDetailViewModel(
         personalRecordFlags,
         mutationState,
         exerciseCatalogFlow
-    ) { sessionContext, deletion, prFlags, mutations, catalog ->
+    ) { sessionContext, deletion, records, mutations, catalog ->
         val details = sessionContext.details
         val selectedExerciseIds = details
             ?.workoutExercises
@@ -212,7 +231,8 @@ class WorkoutDetailViewModel(
             pendingSetDeletion = deletion.pending,
             isSetDeletionInProgress = deletion.isInProgress,
             setDeletionError = deletion.error,
-            personalRecordFlags = prFlags,
+            personalRecordFlags = records.flags,
+            personalRecordSetIds = records.setIds,
             setAdditionsInFlight = mutations.setAdditionsInFlight,
             availableExercisesToAdd = catalog.exercises.filterNot {
                 it.id in selectedExerciseIds || it.id in mutations.exerciseAdditionsInFlight
@@ -376,6 +396,42 @@ class WorkoutDetailViewModel(
         }
     }
 
+    /** Removes one exercise block from this saved workout; the last exercise is never removed. */
+    fun removeExercise(workoutExerciseId: Long) {
+        viewModelScope.launch {
+            try {
+                val canRemove = (uiState.value.sessionDetails?.workoutExercises?.size ?: 0) > 1
+                if (canRemove && repository.removeExerciseFromSession(sessionId, workoutExerciseId)) {
+                    _events.emit(WorkoutDetailEvent.ExerciseRemoved)
+                } else {
+                    _events.emit(WorkoutDetailEvent.RemoveExerciseFailed)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                _events.emit(WorkoutDetailEvent.RemoveExerciseFailed)
+            }
+        }
+    }
+
+    /** Saves the workout date and note (blank note clears it), like iOS "Save session details". */
+    fun updateSessionDetails(dateMillis: Long, note: String) {
+        if (!isValidWorkoutDetailsInput(dateMillis, note)) {
+            viewModelScope.launch { _events.emit(WorkoutDetailEvent.DetailsInvalid) }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repository.updateWorkoutSessionDetails(sessionId, dateMillis, note)
+                _events.emit(WorkoutDetailEvent.DetailsSaved)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                _events.emit(WorkoutDetailEvent.DetailsSaveFailed)
+            }
+        }
+    }
+
     fun deleteSession() {
         viewModelScope.launch {
             repository.deleteWorkoutSessionById(sessionId)
@@ -533,3 +589,8 @@ internal fun storedWorkoutPersonalRecordFlags(
         workoutExercise.workoutExercise.id to workoutExercise.sets.any { it.id in recordSetIds }
     }
 }
+
+/** Date within the supported timestamp range and a note within the shared note limits. */
+internal fun isValidWorkoutDetailsInput(dateMillis: Long, note: String): Boolean =
+    WorkoutDataLimits.isValidTimestamp(dateMillis) &&
+        WorkoutDataLimits.isValidNote(normalizedWorkoutNote(note))
