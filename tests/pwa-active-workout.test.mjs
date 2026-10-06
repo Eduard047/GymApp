@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
@@ -779,7 +780,7 @@ test("recording persists the completed set before starting the durable 180-secon
   ));
   const initialMarkup = vm.runInContext("activeWorkoutScreen()", context);
   assert.match(initialMarkup, new RegExp(`data-action="record-active-set" data-id="${setId}"`));
-  assert.doesNotMatch(initialMarkup, new RegExp(`data-action="record-active-set" data-id="${nextSetId}"`));
+  assert.match(initialMarkup, new RegExp(`data-action="record-active-set" data-id="${nextSetId}"`), "every unrecorded set can be logged");
   assert.doesNotMatch(initialMarkup, /data-action="undo-active-set"|data-timer-display=|data-active-set-confirmation/);
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "81,5" });
   runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "7" });
@@ -3830,4 +3831,365 @@ test("Progress defaults to the most logged exercise without writing it to state"
   assert.equal(result.staleFallsBack, 3);
   assert.equal(result.untouched, "unset");
   assert.equal(result.panelUsesDefault, true);
+});
+
+// ---- Log any pending set, delete a pending set, remove an exercise (cross-client parity) ----
+
+function activeRunJson(context, code) {
+  return JSON.parse(vm.runInContext(`JSON.stringify(${code})`, context));
+}
+
+function undoMarkerSetId(context) {
+  return vm.runInContext("activeUndoableSetId(activeWorkout)", context);
+}
+
+test("every unrecorded set row in every exercise gets a compact Log button; the first one keeps the current emphasis", async () => {
+  const { context } = loadContext();
+  await startFinishWorkout(context);
+  const bench = blockSetIds(context, 0);
+  const squat = blockSetIds(context, 1);
+  for (const [language, log, aria] of [
+    ["en", "Log", n => `Log set ${n}`],
+    ["uk", "Записати", n => `Записати підхід ${n}`],
+    ["ru", "Записать", n => `Записать подход ${n}`]
+  ]) {
+    const markup = vm.runInContext(`state.language = ${JSON.stringify(language)}; activeWorkoutScreen()`, context);
+    for (const id of [...bench, ...squat]) {
+      assert.match(markup, new RegExp(`data-action="record-active-set" data-id="${id}"`), `${language}: set ${id} is loggable`);
+    }
+    assert.ok(markup.includes(`aria-label="${aria(2)}"`), `${language}: aria-label on a pending upcoming set`);
+    assert.ok(markup.includes(`>${log}</button>`));
+    // Only the first unrecorded set of the current exercise is the "current" card.
+    assert.equal((markup.match(/active-set-row current/g) || []).length, 1);
+    assert.match(markup, new RegExp(`active-set-row current" data-active-set-row="${bench[0]}"`));
+  }
+});
+
+test("a later pending set can be logged first and the weight carries only within the same exercise", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startFinishWorkout(context, [
+    { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }, { weight: 0, reps: 8 }, { weight: 0, reps: 8 }] },
+    { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 0, reps: 5 }] }
+  ]);
+  const [first, second, third] = blockSetIds(context, 0);
+  const [squat] = blockSetIds(context, 1);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, second, 50, 7), true);
+  const sets = activeRunJson(context, "activeWorkout.blocks.map(block => block.sets)");
+  assert.equal(sets[0][0].completed, false, "set 1 stays unrecorded");
+  assert.equal(sets[0][1].completed, true);
+  assert.equal(sets[0][1].weight, 50);
+  assert.equal(sets[0][2].weight, 50, "carry-over reaches the next empty set of the same exercise");
+  assert.equal(sets[0][0].weight, 80);
+  assert.equal(sets[1][0].weight, 0, "other exercises are untouched");
+  assert.equal(undoMarkerSetId(context), second, "undo and confirmation behave like logging the current set");
+  assert.ok(vm.runInContext(`timerRemaining(activeWorkout.id + ":Bench Press")`, context) > 0, "rest timer starts");
+  void first; void third; void squat;
+});
+
+test("a pending set exposes Delete set by button, long-press and context menu, only where it is allowed", async () => {
+  const { context } = loadContext();
+  await startFinishWorkout(context);
+  const bench = blockSetIds(context, 0);
+  const squat = blockSetIds(context, 1);
+  for (const language of ["en", "uk", "ru"]) {
+    const markup = vm.runInContext(`state.language = ${JSON.stringify(language)}; activeWorkoutScreen()`, context);
+    const label = { en: "Delete set", uk: "Видалити підхід", ru: "Удалить подход" }[language];
+    for (const id of bench) {
+      assert.match(markup, new RegExp(`<button class="active-set-delete-key" type="button" data-action="delete-active-set" data-id="${id}">${label}</button>`));
+      assert.match(markup, new RegExp(`data-active-set-deletable="${id}"`));
+    }
+    assert.doesNotMatch(markup, new RegExp(`data-action="delete-active-set" data-id="${squat[0]}"`), "the only set of an exercise cannot be deleted");
+    assert.doesNotMatch(markup, /open-active-set-delete|active-set-delete"/, "no always-visible delete control");
+    assert.doesNotMatch(markup, new RegExp(`data-active-set-deletable="${squat[0]}"`));
+  }
+  vm.runInContext("state.language = 'en'", context);
+  assert.equal(vm.runInContext(`openActiveSetDeleteMenu(${bench[1]})`, context), true);
+  const sheet = vm.runInContext("modalMarkup()", context);
+  assert.match(sheet, /role="dialog"/);
+  assert.match(sheet, new RegExp(`data-action="delete-active-set" data-id="${bench[1]}">Delete set</button>`));
+  assert.match(sheet, /Set 2 · /);
+  vm.runInContext("modal = null", context);
+  // Guard: a mutation in flight blocks the menu.
+  vm.runInContext("activeSetMutationsInFlight = 1", context);
+  assert.equal(vm.runInContext(`openActiveSetDeleteMenu(${bench[1]})`, context), false);
+  vm.runInContext("activeSetMutationsInFlight = 0", context);
+  assert.equal(vm.runInContext(`openActiveSetDeleteMenu(${squat[0]})`, context), false);
+  // The gesture target resolves to delete for pending rows and undo for the recorded latest row.
+  const target = { closest: selector => selector === "[data-active-set-deletable]" ? { dataset: { activeSetDeletable: String(bench[0]) } } : null };
+  context.__target = target;
+  assert.deepEqual(activeRunJson(context, "activeSetRowMenuTarget(globalThis.__target)"), { kind: "delete", setId: bench[0] });
+});
+
+test("long-pressing a pending row, summary included, opens Delete set and swallows the release click", async () => {
+  const { context } = loadContext();
+  await startFinishWorkout(context);
+  const [first, second] = blockSetIds(context, 0);
+  const rowFor = id => ({ dataset: { activeSetDeletable: String(id) } });
+  const press = (id, inside = null) => ({
+    isPrimary: true,
+    button: 0,
+    clientX: 5,
+    clientY: 5,
+    target: {
+      closest: selector => selector === "[data-active-set-deletable]" ? rowFor(id)
+        : selector.startsWith("button") ? inside : null
+    }
+  });
+  context.__press = press(second);
+  vm.runInContext("beginActiveSetLongPress(globalThis.__press)", context);
+  await new Promise(resolve => setTimeout(resolve, 600));
+  assert.equal(vm.runInContext("modal?.type", context), "active-set-delete");
+  assert.equal(vm.runInContext("modal.setId", context), second);
+  const calls = [];
+  context.__click = { preventDefault: () => calls.push("prevent"), stopPropagation: () => calls.push("stop") };
+  vm.runInContext("swallowActiveSetLongPressClick(globalThis.__click)", context);
+  assert.deepEqual(calls, ["prevent", "stop"], "the click after the long-press is swallowed");
+  vm.runInContext("swallowActiveSetLongPressClick(globalThis.__click)", context);
+  assert.equal(calls.length, 2, "only that one click is swallowed");
+
+  // A press on a real button (Log) never starts the gesture; a refused menu swallows nothing.
+  vm.runInContext("modal = null", context);
+  context.__press = press(first, {});
+  vm.runInContext("beginActiveSetLongPress(globalThis.__press)", context);
+  await new Promise(resolve => setTimeout(resolve, 600));
+  assert.equal(vm.runInContext("modal", context), null);
+  vm.runInContext("activeSetMutationsInFlight = 1", context);
+  context.__press = press(first);
+  vm.runInContext("beginActiveSetLongPress(globalThis.__press)", context);
+  await new Promise(resolve => setTimeout(resolve, 600));
+  vm.runInContext("activeSetMutationsInFlight = 0", context);
+  assert.equal(vm.runInContext("modal", context), null);
+  vm.runInContext("swallowActiveSetLongPressClick(globalThis.__click)", context);
+  assert.equal(calls.length, 2, "a refused long-press does not eat the next click");
+  assert.match(readFileSync("pwa/styles.css", "utf8"), /\.active-set-delete-key:focus-visible/);
+});
+
+test("deleting a pending set renumbers the exercise, bumps the revision, persists and keeps undo and rest", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context);
+  const [first, second, third] = blockSetIds(context, 0);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  const revisionBefore = vm.runInContext("activeWorkout.revision", context);
+  const timerKey = vm.runInContext(`activeWorkout.id + ":Bench Press"`, context);
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(timerKey)})`, context) > 0);
+
+  assert.equal(await vm.runInContext(`deleteActiveWorkoutSet(${second})`, context), true);
+
+  assert.deepEqual(blockSetIds(context, 0), [first, third], "later sets are renumbered by position");
+  assert.equal(vm.runInContext("activeWorkout.revision", context), revisionBefore + 1);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), vm.runInContext("activeWorkoutStorageRaw", context));
+  assert.equal(JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks[0].sets.length, 2);
+  assert.equal(undoMarkerSetId(context), first, "the undo target survives deleting an unrecorded set");
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(timerKey)})`, context) > 0, "rest keeps running");
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.doesNotMatch(markup, new RegExp(`data-id="${second}"`));
+  assert.match(markup, new RegExp(`aria-label="Log set 2"|aria-label="Weight for set 2"`));
+  assert.equal(vm.runInContext("typeof lastToast", context), "undefined", "success is silent");
+  assert.equal(vm.runInContext("activeWorkoutStatusText()", context), "");
+  // "N sets left" follows the new set count.
+  assert.equal(vm.runInContext("activeWorkoutSetCounts(activeWorkout).total", context), 3);
+  // Undo still works against the surviving marker.
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${first})`, context), true);
+});
+
+test("delete set refuses recorded sets, the last set, a live room, a stale tab and an unknown id", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context);
+  const [first, second] = blockSetIds(context, 0);
+  const [squat] = blockSetIds(context, 1);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  const before = localStorage.getItem(activeStorageKey(context));
+
+  assert.equal(await vm.runInContext(`deleteActiveWorkoutSet(${first})`, context), false, "recorded set");
+  assert.equal(await vm.runInContext(`deleteActiveWorkoutSet(${squat})`, context), false, "only set of the exercise");
+  assert.equal(await vm.runInContext("deleteActiveWorkoutSet(999)", context), false, "unknown id");
+  assert.equal(await vm.runInContext("deleteActiveWorkoutSet('1')", context), false, "non-integer id");
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", context);
+  assert.equal(await vm.runInContext(`deleteActiveWorkoutSet(${second})`, context), false, "live room");
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /delete-active-set|data-active-set-deletable/);
+  vm.runInContext("liveWorkoutBinding = null", context);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before, "refusals never write");
+
+  // Stale: another tab rewrote the stored workout after this tab loaded it.
+  const foreign = JSON.parse(before);
+  foreign.revision += 1;
+  foreign.updatedAt += 1;
+  localStorage.setItem(activeStorageKey(context), JSON.stringify(foreign));
+  assert.equal(await vm.runInContext(`deleteActiveWorkoutSet(${second})`, context), false);
+  assert.equal(JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks[0].sets.length, 3, "stale delete changes nothing");
+});
+
+test("Remove exercise is offered in the block header only when there are several exercises and no live room", async () => {
+  const { context } = loadContext();
+  await startFinishWorkout(context);
+  const ids = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  for (const [language, name] of [["en", "Exercise options"], ["uk", "Дії з вправою"], ["ru", "Действия с упражнением"]]) {
+    const markup = vm.runInContext(`state.language = ${JSON.stringify(language)}; activeWorkoutScreen()`, context);
+    for (const [index, id] of ids.entries()) {
+      assert.match(markup, new RegExp(`data-action="open-active-exercise-more" data-block-id="${id}" aria-haspopup="dialog" aria-label="${name}: [^"]+"`), `${language} block ${index}`);
+    }
+  }
+  vm.runInContext("state.language = 'en'", context);
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", context);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /open-active-exercise-more/);
+  assert.equal(vm.runInContext(`openActiveExerciseMoreMenu(${ids[0]})`, context), false);
+  vm.runInContext("liveWorkoutBinding = null", context);
+
+  const single = loadContext();
+  await startTwoSetWorkout(single.context);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", single.context), /open-active-exercise-more/);
+  assert.equal(vm.runInContext("requestRemoveActiveExercise(activeWorkout.blocks[0].id)", single.context), false);
+});
+
+test("Remove exercise confirmation names the exercise and counts recorded sets with locale plurals", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startFinishWorkout(context);
+  const [bench] = [vm.runInContext("activeWorkout.blocks[0].id", context)];
+  assert.equal(vm.runInContext(`openActiveExerciseMoreMenu(${bench})`, context), true);
+  const more = vm.runInContext("modalMarkup()", context);
+  assert.match(more, new RegExp(`data-action="remove-active-exercise" data-block-id="${bench}">Remove exercise</button>`));
+  assert.match(more, /class="button danger full"/);
+  assert.equal(vm.runInContext(`requestRemoveActiveExercise(${bench})`, context), true);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-remove-active-exercise");
+  const planned = vm.runInContext("modalMarkup()", context);
+  assert.match(planned, /role="alertdialog"/);
+  assert.match(planned, />Remove exercise\?<\/h2>/);
+  assert.match(planned, /<strong>Bench Press<\/strong>/);
+  assert.match(planned, /Its planned sets will be removed from this workout\./);
+  assert.match(planned, />Cancel<\/button>/);
+  assert.match(planned, /data-action="confirm-remove-active-exercise">Remove<\/button>/);
+  vm.runInContext("modal = null", context);
+
+  const expected = {
+    en: { 1: "1 recorded set will be removed.", 2: "2 recorded sets will be removed.", 5: "5 recorded sets will be removed." },
+    uk: { 1: "1 записаний підхід буде видалено.", 2: "2 записані підходи буде видалено.", 5: "5 записаних підходів буде видалено.", 21: "21 записаний підхід буде видалено." },
+    ru: { 1: "1 записанный подход будет удалён.", 2: "2 записанных подхода будут удалены.", 5: "5 записанных подходов будут удалены.", 22: "22 записанных подхода будут удалены." }
+  };
+  for (const [language, byCount] of Object.entries(expected)) {
+    for (const [count, text] of Object.entries(byCount)) {
+      assert.equal(
+        vm.runInContext(`state.language = ${JSON.stringify(language)}; activeRemoveExerciseBodyText(${count})`, context),
+        text
+      );
+    }
+  }
+  const titles = {
+    uk: ["Видалити вправу?", "Її заплановані підходи буде видалено з цього тренування.", "Видалити", "Скасувати"],
+    ru: ["Удалить упражнение?", "Его запланированные подходы будут удалены из этой тренировки.", "Удалить", "Отмена"]
+  };
+  for (const [language, [title, body, remove, cancel]] of Object.entries(titles)) {
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    vm.runInContext(`requestRemoveActiveExercise(${bench})`, context);
+    const markup = vm.runInContext("modalMarkup()", context);
+    assert.ok(markup.includes(`>${title}</h2>`) && markup.includes(body) && markup.includes(`>${remove}</button>`) && markup.includes(`>${cancel}</button>`), language);
+    vm.runInContext("modal = null", context);
+  }
+  vm.runInContext("state.language = 'en'", context);
+  void runtimeNodes;
+});
+
+test("removing an exercise keeps the undo target and rest of another exercise, and clears them when it owned them", async () => {
+  // Case 1: the undo target lives in the kept exercise.
+  const kept = loadContext();
+  await startFinishWorkout(kept.context);
+  const [benchId, squatId] = activeRunJson(kept.context, "activeWorkout.blocks.map(block => block.id)");
+  const [squatSet] = blockSetIds(kept.context, 1);
+  assert.equal(await recordTwoSetWorkoutSet(kept.context, kept.runtimeNodes, squatSet, 100, 5), true);
+  const squatTimer = vm.runInContext(`activeWorkout.id + ":Squat"`, kept.context);
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(squatTimer)})`, kept.context) > 0);
+  assert.equal(vm.runInContext(`requestRemoveActiveExercise(${benchId})`, kept.context), true);
+  assert.equal(await vm.runInContext("confirmRemoveActiveExercise()", kept.context), true);
+  assert.equal(vm.runInContext("modal", kept.context), null);
+  assert.deepEqual(activeRunJson(kept.context, "activeWorkout.blocks.map(block => block.exerciseName)"), ["Squat"]);
+  assert.equal(undoMarkerSetId(kept.context), squatSet, "undo survives removing another exercise");
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(squatTimer)})`, kept.context) > 0, "rest survives");
+  assert.equal(kept.localStorage.getItem(activeStorageKey(kept.context)), vm.runInContext("activeWorkoutStorageRaw", kept.context));
+  assert.equal(vm.runInContext("typeof lastToast", kept.context), "undefined", "success is silent");
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", kept.context), /open-active-exercise-more/, "last exercise cannot be removed");
+  void squatId;
+
+  // Case 2: the removed exercise owned the undo target and the running rest.
+  const owned = loadContext();
+  await startFinishWorkout(owned.context);
+  const ownedBench = vm.runInContext("activeWorkout.blocks[0].id", owned.context);
+  const [benchSet] = blockSetIds(owned.context, 0);
+  assert.equal(await recordTwoSetWorkoutSet(owned.context, owned.runtimeNodes, benchSet, 80, 8), true);
+  const benchTimer = vm.runInContext(`activeWorkout.id + ":Bench Press"`, owned.context);
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(benchTimer)})`, owned.context) > 0);
+  assert.equal(await vm.runInContext(`removeActiveWorkoutExercise(${ownedBench})`, owned.context), true);
+  assert.equal(undoMarkerSetId(owned.context), null, "undo target removed with its exercise");
+  assert.equal(vm.runInContext(`timerRemaining(${JSON.stringify(benchTimer)})`, owned.context), 0, "its rest timer is stopped");
+  assert.deepEqual(activeRunJson(owned.context, "activeWorkout.blocks.map(block => block.exerciseName)"), ["Squat"]);
+  assert.equal(vm.runInContext("activeWorkoutSetCounts(activeWorkout).total", owned.context), 1, "set counts follow the removal");
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", owned.context), /undo-active-set/);
+});
+
+test("remove exercise refuses the last exercise, a live room, an unknown block and a stale confirmation", async () => {
+  const { context, localStorage } = loadContext();
+  await startFinishWorkout(context);
+  const [benchId, squatId] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  const before = localStorage.getItem(activeStorageKey(context));
+  assert.equal(await vm.runInContext("removeActiveWorkoutExercise(999)", context), false, "unknown block");
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", context);
+  assert.equal(await vm.runInContext(`removeActiveWorkoutExercise(${benchId})`, context), false, "live room");
+  assert.equal(vm.runInContext(`requestRemoveActiveExercise(${benchId})`, context), false);
+  vm.runInContext("liveWorkoutBinding = null", context);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+
+  // Stale confirmation: the workout changed after the dialog opened.
+  assert.equal(vm.runInContext(`requestRemoveActiveExercise(${benchId})`, context), true);
+  const foreign = JSON.parse(before);
+  foreign.revision += 1;
+  foreign.updatedAt += 1;
+  localStorage.setItem(activeStorageKey(context), JSON.stringify(foreign));
+  assert.equal(await vm.runInContext("confirmRemoveActiveExercise()", context), false);
+  assert.equal(JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks.length, 2, "stale confirmation removes nothing");
+
+  // Removing down to one exercise, then the last one is refused at the handler.
+  const fresh = loadContext();
+  await startFinishWorkout(fresh.context);
+  const [a, b] = activeRunJson(fresh.context, "activeWorkout.blocks.map(block => block.id)");
+  assert.equal(await vm.runInContext(`removeActiveWorkoutExercise(${a})`, fresh.context), true);
+  assert.equal(await vm.runInContext(`removeActiveWorkoutExercise(${b})`, fresh.context), false);
+  assert.equal(JSON.parse(fresh.localStorage.getItem(activeStorageKey(fresh.context))).blocks.length, 1);
+  void squatId;
+});
+
+test("delete and remove markup escape untrusted exercise names and the action path is wired", async () => {
+  const { context } = loadContext();
+  await vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "n",
+      blocks: [
+        { exerciseName: "<img src=x onerror=alert(1)>", sets: [{ weight: 10, reps: 8 }, { weight: 10, reps: 8 }] },
+        { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 100, reps: 5 }] }
+      ]
+    };
+    startWorkout();
+  `, context);
+  const blockId = vm.runInContext("activeWorkout.blocks[0].id", context);
+  const screen = vm.runInContext("activeWorkoutScreen()", context);
+  assert.doesNotMatch(screen, /<img\b[^>]*\bonerror\s*=/i);
+  assert.match(screen, /aria-label="Exercise options: &lt;img src=x onerror=alert\(1\)&gt;"/);
+  vm.runInContext(`openActiveExerciseMoreMenu(${blockId})`, context);
+  assert.doesNotMatch(vm.runInContext("modalMarkup()", context), /<img\b[^>]*\bonerror\s*=/i);
+  vm.runInContext("modal = null", context);
+  vm.runInContext(`requestRemoveActiveExercise(${blockId})`, context);
+  const confirmation = vm.runInContext("modalMarkup()", context);
+  assert.doesNotMatch(confirmation, /<img\b[^>]*\bonerror\s*=/i);
+  assert.match(confirmation, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  vm.runInContext("modal = null", context);
+  // Draft values typed into a pending set are untrusted too.
+  const setId = vm.runInContext("activeWorkout.blocks[0].sets[1].id", context);
+  vm.runInContext(`activeLiveDraftInputs = { roomId: activeWorkoutInputScope(activeWorkout), localWorkoutId: activeWorkout.id, values: new Map([[${setId}, { weight: '<b>9</b>', reps: '"><i>' }]]) }`, context);
+  vm.runInContext(`openActiveSetDeleteMenu(${setId})`, context);
+  const sheet = vm.runInContext("modalMarkup()", context);
+  assert.doesNotMatch(sheet, /<b>9<\/b>|<i>/);
+
+  // The click router reaches the handlers and the destructive modal registry covers the confirmation.
+  assert.equal(vm.runInContext("isDestructiveConfirmationModal({ type: 'confirm-remove-active-exercise' })", context), true);
+  vm.runInContext("modal = null", context);
+  assert.equal(await vm.runInContext(`handleAction("delete-active-set", { dataset: { id: "${setId}" } })`, context), true);
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].sets.length", context), 1);
 });

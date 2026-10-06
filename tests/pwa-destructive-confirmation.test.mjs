@@ -149,7 +149,7 @@ test("destructive controls use explicit accessible in-app confirmation markup", 
   assert.match(appSource, /formatLocalizedSetWeight\(location\.set\.weight\)/);
   assert.doesNotMatch(appSource, /Number\(location\.set\.weight\)\.toFixed\(1\) kg/);
   const labelledDeleteSets = appSource.match(
-    /data-action="delete-set"[^>]+data-session="[^>]+aria-label="\$\{txAttr\("Delete set"/g
+    /data-action="delete-set"[^>]+data-session="[^>]+aria-label="\$\{escapeAttr\(savedSetDeleteLabel\(/g
   ) || [];
   assert.equal(labelledDeleteSets.length, 1, "saved-set deletion must exist only in detail edit mode");
 });
@@ -1248,4 +1248,82 @@ test("a backup for another account never reaches destructive confirmation", () =
   vm.runInContext("modal = { type: 'import' }; applyImport()", context);
   assert.equal(vm.runInContext("modal.type", context), "import");
   assert.equal(storedState(context), before);
+});
+
+test("saved exercise removal confirms, is atomic and fails closed when the workout changes", async () => {
+  const context = loadContext();
+  vm.runInContext(`
+    state.sessions.push({
+      id: 8601,
+      startedAt: 1760000000000,
+      note: "Remove exercise test",
+      sets: [
+        { id: 8611, exerciseName: "Squat", catalogKey: "squat", weight: 100, reps: 5, orderIndex: 0 },
+        { id: 8612, exerciseName: "Squat", catalogKey: "squat", weight: 90, reps: 10, orderIndex: 1 },
+        { id: 8613, exerciseName: "Bench Press", catalogKey: "bench_press", weight: 60, reps: 8, orderIndex: 0 }
+      ]
+    });
+    saveState({ queueRemote: false, markDirty: false });
+    nav = [{ name: "workouts" }, { name: "detail", id: 8601 }];
+    workoutDetailEditSessionId = 8601;
+    render = () => {};
+  `, context);
+  const before = storedState(context);
+
+  assert.equal(vm.runInContext("openSavedExerciseMoreMenu(8601, 'Squat')", context), true);
+  assert.equal(vm.runInContext("modal.type", context), "saved-exercise-more");
+  assert.match(vm.runInContext("modalMarkup()", context), /data-action="remove-saved-exercise"[^>]*data-name="Squat"/);
+  vm.runInContext("modal = null", context);
+
+  assert.equal(vm.runInContext("requestRemoveSavedExercise(8601, 'Squat')", context), true);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-remove-saved-exercise");
+  const markup = vm.runInContext("modalMarkup()", context);
+  assert.match(markup, /role="alertdialog"/);
+  assert.match(markup, /Remove exercise\?/);
+  assert.match(markup, /2 recorded sets will be removed\./);
+  assert.match(markup, /data-action="confirm-remove-saved-exercise"/);
+  vm.runInContext("closeModal()", context);
+  assert.equal(storedState(context), before);
+
+  vm.runInContext("requestRemoveSavedExercise(8601, 'Squat'); setLocation(8612, 8601).set.reps = 11;", context);
+  await vm.runInContext("confirmRemoveSavedExercise()", context);
+  assert.equal(storedState(context), before);
+  assert.equal(vm.runInContext("setLocation(8611, 8601) !== null", context), true);
+
+  vm.runInContext("setLocation(8612, 8601).set.reps = 10; requestRemoveSavedExercise(8601, 'Squat');", context);
+  await vm.runInContext("confirmRemoveSavedExercise()", context);
+  assert.equal(vm.runInContext("setLocation(8611, 8601)", context), null);
+  assert.equal(vm.runInContext("setLocation(8612, 8601)", context), null);
+  assert.deepEqual(JSON.parse(storedState(context)).sessions.at(-1).sets.map(set => set.id), [8613]);
+  assert.equal(vm.runInContext("modal", context), null);
+
+  // The last remaining exercise can no longer be removed.
+  assert.equal(vm.runInContext("requestRemoveSavedExercise(8601, 'Bench Press')", context), false);
+  assert.equal(vm.runInContext("openSavedExerciseMoreMenu(8601, 'Bench Press')", context), false);
+});
+
+test("saved set rows route long-press and context menu to the existing delete-set confirmation", () => {
+  const context = loadContext();
+  vm.runInContext(`
+    state.sessions.push({
+      id: 8701,
+      startedAt: 1760000000000,
+      note: "",
+      sets: [{ id: 8711, exerciseName: "Squat", catalogKey: "squat", weight: 100, reps: 5, orderIndex: 0 }]
+    });
+    saveState({ queueRemote: false, markDirty: false });
+    nav = [{ name: "workouts" }, { name: "detail", id: 8701 }];
+    workoutDetailEditSessionId = 8701;
+    render = () => {};
+    globalThis.row = { dataset: { savedSetDeletable: "8711", savedSetSession: "8701" } };
+    globalThis.target = { closest: selector => selector.includes("data-saved-set-deletable") ? row : null };
+  `, context);
+  const menu = vm.runInContext("activeSetRowMenuTarget(target)", context);
+  assert.equal(menu.kind, "saved-delete");
+  assert.equal(menu.setId, 8711);
+  assert.equal(vm.runInContext("openActiveSetRowMenu(activeSetRowMenuTarget(target))", context), true);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-delete-set");
+  vm.runInContext("closeModal(); workoutDetailEditSessionId = null", context);
+  assert.equal(vm.runInContext("openActiveSetRowMenu(activeSetRowMenuTarget(target))", context), false);
+  assert.equal(vm.runInContext("modal", context), null);
 });

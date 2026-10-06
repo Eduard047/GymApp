@@ -449,7 +449,8 @@ for (const { filename, source } of appSources) {
     assert.equal(vm.runInContext("parseGarminWorkoutMetrics(state.sessions[0].note)", context), null);
     const html = vm.runInContext("detailScreen(10)", context);
     assert.doesNotMatch(html, /garmin-metrics|Garmin strength metrics/);
-    assert.match(html, /READ MODE/);
+    assert.match(html, /data-action="edit-workout"/);
+    assert.doesNotMatch(html, /READ MODE|saved-workout-mode/);
     assert.doesNotMatch(html, /Log set · rest 90 s|data-action="timer"/);
   });
 }

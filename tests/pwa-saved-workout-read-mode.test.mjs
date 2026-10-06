@@ -106,35 +106,85 @@ function installWorkoutFixture(context) {
   `, context);
 }
 
-test("saved workout opens as compact read-only cards with no live controls", () => {
+test("saved workout read mode uses the live card with completed-style set rows", () => {
   const context = loadPwaContext();
   installWorkoutFixture(context);
   const html = vm.runInContext("detailScreen(201)", context);
 
-  assert.match(html, /READ MODE/);
-  assert.match(html, /data-action="edit-workout"/);
+  assert.doesNotMatch(html, /READ MODE|EDIT MODE|saved-workout-mode|saved-workout-table|<table/);
+  assert.equal((html.match(/data-action="edit-workout"/g) || []).length, 1);
+  assert.match(html, /<section class="hero-panel workout-detail-hero">[\s\S]*data-action="edit-workout"[\s\S]*<\/section>/);
   assert.equal((html.match(/data-saved-workout-exercise/g) || []).length, 2);
-  assert.equal((html.match(/aria-expanded="false"/g) || []).length, 2);
   assert.doesNotMatch(html, /<details[^>]*data-saved-workout-exercise[^>]*\sopen(?:\s|>)/);
   assert.match(html, /2 sets · 18 reps · 1,120 kg volume/);
   assert.match(html, /1 set · 5 reps · 450 kg volume/);
-  assert.doesNotMatch(html, /data-action="(?:delete-session|delete-set|edit-set|add-saved-workout-set|timer|detail-add-set)"/);
+  assert.equal((html.match(/class="active-set-row completed saved-set-row"/g) || []).length, 3);
+  assert.match(html, /<span class="active-set-summary-text">60 kg × 10<\/span>/);
+  assert.match(html, /exercise-media-thumb/);
+  assert.doesNotMatch(html, /data-action="(?:delete-session|delete-set|edit-set|add-saved-workout-set|open-saved-exercise-more|open-workout-exercise-picker|save-saved-set|timer|detail-add-set)"/);
+  assert.doesNotMatch(html, /saved-workout-details|data-saved-detail/);
   assert.match(html, /data-action="share-session"/);
+});
+
+test("saved read mode badges only the set that beats the earlier history", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    state.sessions.unshift({
+      id: 200, startedAt: 1690000000000, note: "",
+      sets: [{ id: 290, exerciseName: "Bench Press", weight: 60, reps: 10, orderIndex: 0 }]
+    });
+  `, context);
+  const html = vm.runInContext("detailScreen(201)", context);
+  assert.equal((html.match(/personal-record-badge/g) || []).length, 1);
+  const recordRow = html.match(/<div class="active-set-row completed saved-set-row" data-saved-set-row="302"[\s\S]*?<\/div><\/div><\/div>/)?.[0] || "";
+  assert.match(recordRow, /personal-record-badge/);
+  assert.equal(vm.runInContext("isPr(state.sessions[1], { name: 'Bench Press' })", context), true);
+});
+
+test("saved workout edit mode shows numbered rows, inline editors, menus and dashed add buttons", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext("workoutDetailEditSessionId = 201", context);
+  const html = vm.runInContext("detailScreen(201)", context);
+
+  assert.doesNotMatch(html, /READ MODE|EDIT MODE|saved-workout-mode|saved-workout-table|data-action="edit-set"|apply-edit-set/);
+  assert.equal((html.match(/data-action="finish-workout-edit"/g) || []).length, 1);
+  assert.doesNotMatch(html, /data-action="edit-workout"/);
+  assert.match(html, /data-action="delete-session"/);
+  assert.match(html, /<span class="active-set-index" aria-hidden="true">2<\/span>/);
+  assert.equal((html.match(/data-saved-set-deletable=/g) || []).length, 3);
+  assert.match(html, /aria-label="Delete set 1 for Bench Press"[^>]*>Delete set<\/button>/);
+  assert.equal((html.match(/data-action="save-saved-set"/g) || []).length, 3);
+  assert.match(html, /data-action="saved-step-weight"[^>]*aria-label="Increase weight by 2\.5"/);
+  assert.match(html, /data-action="saved-step-reps"/);
+  assert.equal((html.match(/data-action="add-saved-workout-set"/g) || []).length, 2);
+  assert.match(html, /\+ Set<\/button>/);
+  assert.equal((html.match(/data-action="open-saved-exercise-more"/g) || []).length, 2);
+  assert.match(html, /aria-label="Exercise options: Bench Press"/);
+  assert.match(html, /class="button full saved-workout-add-exercise"[^>]*data-action="open-workout-exercise-picker"[^>]*>\+ Add exercise<\/button>/);
+  assert.doesNotMatch(html, /Add Exercise to This Workout/);
+  assert.match(html, /<section class="panel saved-workout-details"[\s\S]*Date and note[\s\S]*data-saved-detail-date value="2023-11-15"/);
+  assert.match(html, /data-saved-details-save disabled>Save<\/button>/);
+  assert.ok(html.indexOf("saved-workout-details") < html.indexOf("saved-workout-exercise-list"));
+  assert.ok(html.indexOf("saved-workout-exercise-list") < html.indexOf("saved-workout-add-exercise"));
+
+  vm.runInContext("state.language = 'uk'", context);
+  const uk = vm.runInContext("detailScreen(201)", context);
+  assert.match(uk, /Дата і нотатка/);
+  assert.match(uk, /\+ Додати вправу/);
+  assert.match(uk, /Видалити підхід 1 для/);
+  vm.runInContext("state.language = 'ru'", context);
+  const ru = vm.runInContext("detailScreen(201)", context);
+  assert.match(ru, /Дата и заметка/);
+  assert.match(ru, /\+ Добавить упражнение/);
+  assert.match(ru, /Удалить подход 1 для/);
 });
 
 test("saved workout edit mode gates mutations and adds a set without a rest callback", () => {
   const context = loadPwaContext();
   installWorkoutFixture(context);
   vm.runInContext("workoutDetailEditSessionId = 201", context);
-  const html = vm.runInContext("detailScreen(201)", context);
-
-  assert.match(html, /EDIT MODE/);
-  assert.match(html, /data-action="delete-session"/);
-  assert.match(html, /data-action="open-workout-exercise-picker"/);
-  assert.match(html, /data-action="add-saved-workout-set"/);
-  assert.match(html, /data-action="edit-set"/);
-  assert.match(html, /data-action="delete-set"/);
-  assert.doesNotMatch(html, /data-action="timer"|detail-add-set|Exercise Rest/);
 
   vm.runInContext(`
     render = () => {};
@@ -149,6 +199,165 @@ test("saved workout edit mode gates mutations and adds a set without a rest call
   vm.runInContext("workoutDetailEditSessionId = null", context);
   assert.equal(vm.runInContext("addSavedWorkoutSet(201, 'Bench Press')", context), false);
   assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 4);
+});
+
+test("inline set editor saves valid values, rejects invalid drafts and rolls back a failed save", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDetailEditSessionId = 201;
+    render = () => {};
+    saveState = () => {};
+    showToast = message => { globalThis.lastToast = message; };
+    savedEditUiFor(201).drafts.set(301, { weight: "62,5", reps: "12" });
+    savedEditUiFor(201).expanded.add(301);
+  `, context);
+  assert.match(vm.runInContext("detailScreen(201)", context), /data-saved-set-details="301" open/);
+  assert.match(vm.runInContext("detailScreen(201)", context), /data-saved-field="weight"[^>]*value="62,5"/);
+  assert.equal(vm.runInContext("saveSavedSet(301, 201)", context), true);
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].weight", context), 62.5);
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].reps", context), 12);
+  assert.equal(vm.runInContext("savedEditUiFor(201).drafts.has(301)", context), false);
+  assert.equal(vm.runInContext("savedEditUiFor(201).expanded.has(301)", context), false);
+
+  for (const [weight, reps] of [["-1", "5"], ["abc", "5"], ["60", "0"], ["60", "1.5"], ["60", ""],
+    [String(context.window.GymStateContract.LIMITS.weightMax + 1), "5"],
+    ["60", String(context.window.GymStateContract.LIMITS.repsMax + 1)]]) {
+    vm.runInContext(`savedEditUiFor(201).drafts.set(302, { weight: ${JSON.stringify(weight)}, reps: ${JSON.stringify(reps)} })`, context);
+    assert.equal(vm.runInContext("saveSavedSet(302, 201)", context), undefined, `${weight} x ${reps}`);
+    assert.equal(vm.runInContext("state.sessions[0].sets[1].weight", context), 65);
+    assert.equal(vm.runInContext("state.sessions[0].sets[1].reps", context), 8);
+  }
+
+  vm.runInContext(`
+    savedEditUiFor(201).drafts.set(302, { weight: "70", reps: "6" });
+    saveState = () => { throw new Error("quota"); };
+  `, context);
+  assert.equal(vm.runInContext("saveSavedSet(302, 201)", context), undefined);
+  assert.equal(vm.runInContext("state.sessions[0].sets[1].weight", context), 65);
+  assert.equal(vm.runInContext("state.sessions[0].sets[1].reps", context), 8);
+
+  vm.runInContext("workoutDetailEditSessionId = null", context);
+  assert.equal(vm.runInContext("saveSavedSet(302, 201)", context), false);
+});
+
+test("saved steppers move weight by 2.5 and reps by 1 inside the draft inputs", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDetailEditSessionId = 201;
+    nav = [{ name: "workouts" }, { name: "detail", id: 201 }];
+    const weight = { value: "60", dataset: { savedSetId: "301", savedField: "weight" } };
+    const reps = { value: "10", dataset: { savedSetId: "301", savedField: "reps" } };
+    app.querySelector = selector => selector.includes('data-saved-field="weight"') ? weight
+      : selector.includes('data-saved-field="reps"') ? reps : null;
+    globalThis.weightInput = weight;
+    globalThis.repsInput = reps;
+  `, context);
+  assert.equal(vm.runInContext("applySavedStep(301, 'weight', 1)", context), true);
+  assert.equal(vm.runInContext("weightInput.value", context), "62.5");
+  assert.equal(vm.runInContext("applySavedStep(301, 'reps', -1)", context), true);
+  assert.equal(vm.runInContext("repsInput.value", context), "9");
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(savedEditUiFor(201).drafts.get(301))", context)), { weight: "62.5", reps: "9" });
+  assert.equal(vm.runInContext("state.sessions[0].sets[0].weight", context), 60);
+  vm.runInContext("workoutDetailEditSessionId = null", context);
+  assert.equal(vm.runInContext("applySavedStep(301, 'weight', 1)", context), false);
+});
+
+test("date and note panel keeps the time of day, trims and bounds the note, and keeps Garmin notes read-only", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDetailEditSessionId = 201;
+    render = () => {};
+    saveState = () => {};
+    showToast = message => { globalThis.lastToast = message; };
+    globalThis.original = state.sessions[0].startedAt;
+    const date = { value: "2023-11-10" };
+    const note = { value: "  Felt strong  " };
+    app.querySelector = selector => selector.includes("detail-date") ? date : selector.includes("detail-note") ? note : null;
+    globalThis.dateInput = date;
+    globalThis.noteInput = note;
+  `, context);
+  assert.equal(vm.runInContext("saveSavedWorkoutDetails(201)", context), true);
+  assert.equal(vm.runInContext("state.sessions[0].note", context), "Felt strong");
+  const moved = vm.runInContext("state.sessions[0].startedAt", context);
+  const originalDate = new Date(vm.runInContext("original", context));
+  const movedDate = new Date(moved);
+  assert.equal(movedDate.getDate(), 10);
+  assert.deepEqual(
+    [movedDate.getHours(), movedDate.getMinutes(), movedDate.getSeconds()],
+    [originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds()]
+  );
+
+  vm.runInContext(`dateInput.value = localDateInputValue(state.sessions[0].startedAt); noteInput.value = "   ";`, context);
+  assert.equal(vm.runInContext("saveSavedWorkoutDetails(201)", context), true);
+  assert.equal(vm.runInContext("Object.hasOwn(state.sessions[0], 'note')", context), false);
+
+  const before = vm.runInContext("state.sessions[0].startedAt", context);
+  vm.runInContext(`dateInput.value = "2999-01-01"`, context);
+  assert.equal(vm.runInContext("saveSavedWorkoutDetails(201)", context), undefined);
+  assert.equal(vm.runInContext("state.sessions[0].startedAt", context), before);
+  vm.runInContext(`dateInput.value = localDateInputValue(state.sessions[0].startedAt); noteInput.value = "x".repeat(SAVED_WORKOUT_NOTE_MAX_CHARACTERS + 1)`, context);
+  assert.equal(vm.runInContext("saveSavedWorkoutDetails(201)", context), undefined);
+  assert.equal(vm.runInContext("Object.hasOwn(state.sessions[0], 'note')", context), false);
+
+  vm.runInContext(`
+    noteInput.value = "kept";
+    saveState = () => { throw new Error("quota"); };
+  `, context);
+  assert.equal(vm.runInContext("saveSavedWorkoutDetails(201)", context), undefined);
+  assert.equal(vm.runInContext("Object.hasOwn(state.sessions[0], 'note')", context), false);
+
+  const garminNote = "Garmin · Duration 12:34 · Gym kcal 40 · Garmin kcal 38 · Avg HR 130 · Max HR 165 · HR zone Z3";
+  vm.runInContext(`
+    saveState = () => {};
+    state.sessions[0].note = ${JSON.stringify(garminNote)};
+    dateInput.value = "2023-11-09";
+    noteInput.value = "tampered";
+  `, context);
+  const panel = vm.runInContext("detailScreen(201)", context);
+  assert.match(panel, /<textarea[^>]*data-saved-detail-note[^>]*readonly>/);
+  assert.match(panel, /stays read-only/);
+  assert.equal(vm.runInContext("saveSavedWorkoutDetails(201)", context), true);
+  assert.equal(vm.runInContext("state.sessions[0].note", context), garminNote);
+  assert.equal(new Date(vm.runInContext("state.sessions[0].startedAt", context)).getDate(), 9);
+});
+
+test("date and note panel escapes the stored note and bounds the textarea", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDetailEditSessionId = 201;
+    state.sessions[0].note = '</textarea><img src=x onerror="alert(1)">';
+  `, context);
+  const html = vm.runInContext("detailScreen(201)", context);
+  assert.doesNotMatch(html, /<img src=x onerror=/);
+  assert.match(html, /&lt;\/textarea&gt;&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  assert.match(html, /data-saved-detail-note maxlength="4000"/);
+});
+
+test("saved exercise names and notes stay escaped in the rebuilt card", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDetailEditSessionId = 201;
+    state.sessions[0].sets[2].exerciseName = '"><img src=x onerror=alert(1)>';
+  `, context);
+  const html = vm.runInContext("detailScreen(201)", context);
+  assert.doesNotMatch(html, /<img src=x onerror=/);
+  assert.match(html, /&quot;&gt;&lt;img src=x onerror=alert\(1\)&gt;/);
+});
+
+test("remove exercise is offered only while another exercise with sets remains", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`workoutDetailEditSessionId = 201; state.sessions[0].sets = state.sessions[0].sets.filter(set => set.exerciseName === "Bench Press")`, context);
+  const html = vm.runInContext("detailScreen(201)", context);
+  assert.doesNotMatch(html, /open-saved-exercise-more/);
+  assert.match(html, /data-action="add-saved-workout-set"/);
+  assert.equal(vm.runInContext("openSavedExerciseMoreMenu(201, 'Bench Press')", context), false);
+  assert.equal(vm.runInContext("requestRemoveSavedExercise(201, 'Bench Press')", context), false);
 });
 
 test("Garmin metrics and insights are collapsed behind Watch metrics", () => {
@@ -306,12 +515,11 @@ test("workout history scroll position survives detail navigation", () => {
   assert.equal(vm.runInContext("globalThis.restoredTop", context), 428);
 });
 
-test("saved-workout details bind exclusive expansion and synchronize aria-expanded", () => {
+test("saved workout cards keep their own open state and no longer force exclusive expansion", () => {
+  assert.doesNotMatch(appSource, /if \(other !== details && other\.open\) other\.open = false/);
   assert.match(appSource, /details\[data-saved-workout-exercise\]/);
-  assert.match(appSource, /if \(other !== details && other\.open\) other\.open = false/);
-  assert.match(appSource, /setAttribute\("aria-expanded", String\(item\.open\)\)/);
+  assert.match(appSource, /\.open\.set\(key, details\.open\)/);
 });
-
 
 test("free workout enrichment preserves watch metrics through save and sync replay", () => {
   const context = loadPwaContext();

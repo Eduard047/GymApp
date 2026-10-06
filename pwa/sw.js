@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v159";
-// v159 labels progress chart axes with day and month; v158 carried the logged weight to the next empty set and fixed record badges.
+const CACHE_VERSION = "v160";
+// v160 lets saved and active workouts be edited set by set; v159 labeled progress chart axes with day and month.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,7 +48,7 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v88.css",
+  "./styles.v89.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v73.js",
@@ -62,7 +62,7 @@ const SHELL_ASSETS = [
   "./russian-text.v90.js",
   "./exercise-search-vocabulary.v1.js",
   "./voice-workout.v2.js",
-  "./app.v116.js",
+  "./app.v117.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
