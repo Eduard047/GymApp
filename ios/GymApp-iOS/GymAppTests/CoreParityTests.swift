@@ -18480,7 +18480,7 @@ final class CoreParityTests: XCTestCase {
         // Undo is reachable without a standing button: a long-press context
         // menu and an equivalent VoiceOver accessibility action, both named
         // the same, on the latest completed row only (`canUndo`).
-        XCTAssertTrue(source.contains(".accessibilityAction(named: undoActionName)"))
+        XCTAssertTrue(source.contains("Button(undoActionName) { undoLatestSet(set, draft: draft) }"))
         XCTAssertTrue(source.contains(".contextMenu {"))
         XCTAssertFalse(source.contains("Undo latest set"), "the old standing full-width undo button text must be gone")
 

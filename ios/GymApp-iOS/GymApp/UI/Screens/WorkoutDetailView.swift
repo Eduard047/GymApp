@@ -2269,6 +2269,23 @@ struct WorkoutDetailView: View {
                             "Сохранить подход \(position + 1)",
                             languageCode: languageCode
                         ),
+                        deleteAccessibilityLabel: pendingDeletion == nil
+                            ? gymText(
+                                "Delete set \(position + 1) for \(exerciseName)",
+                                "Видалити підхід \(position + 1) для \(exerciseName)",
+                                "Удалить подход \(position + 1) для \(exerciseName)",
+                                languageCode: languageCode
+                            )
+                            : nil,
+                        onDelete: {
+                            requestSetDeletion(
+                                workout: workout,
+                                block: block,
+                                set: set,
+                                position: position,
+                                exerciseName: exerciseName
+                            )
+                        },
                         onSave: { weight, reps in
                             saveSet(workout: workout, block: block, set: set, weight: weight, reps: reps)
                         }

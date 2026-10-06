@@ -1210,6 +1210,38 @@
         }
       }
     },
+    "An exercise keeps at least one set. Remove the exercise instead." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В упражнении должен остаться хотя бы один подход. Удалите упражнение."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "У вправі має залишитися хоча б один підхід. Видаліть вправу."
+          }
+        }
+      }
+    },
+    "This exercise is already in the workout." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это упражнение уже есть в тренировке."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ця вправа вже є в тренуванні."
+          }
+        }
+      }
+    },
     "Password reset email sent. Open the newest email on this iPhone, then tap Open GymApp to choose a new password." : {
       "localizations" : {
         "ru" : {

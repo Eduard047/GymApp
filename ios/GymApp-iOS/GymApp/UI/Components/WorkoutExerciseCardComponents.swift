@@ -84,11 +84,16 @@ func workoutDetailCanSaveSet(weight: Double, reps: Int) -> Bool {
 struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: View {
     let name: String
     var highlighted = false
-    let isCollapsed: Bool
+    /// False for a card that is always open (the plan editor): no chevron and
+    /// no toggle, just the header and the body.
+    var collapsible = true
+    var isCollapsed = false
     var accessibilityLabelText: String?
-    var accessibilityValueText: String
+    var accessibilityValueText = ""
     var accessibilityHintText: String?
-    let onToggle: () -> Void
+    /// Gap between the header and the body.
+    var contentSpacing: CGFloat = 14
+    var onToggle: () -> Void = {}
     @ViewBuilder let media: () -> Media
     @ViewBuilder let info: () -> Info
     @ViewBuilder let overflow: () -> Overflow
@@ -96,27 +101,29 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
 
     var body: some View {
         GymPanel(highlighted: highlighted) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: contentSpacing) {
                 HStack(spacing: 10) {
                     media()
-                    Button(action: onToggle) {
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(name)
-                                    .font(.headline)
-                                    .foregroundStyle(GymTheme.textPrimary)
-                                info()
+                    if collapsible {
+                        Button(action: onToggle) {
+                            HStack(spacing: 8) {
+                                titleBlock
+                                Spacer(minLength: 8)
+                                Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                                    .foregroundStyle(GymTheme.textSecondary)
                             }
-                            Spacer(minLength: 8)
-                            Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
-                                .foregroundStyle(GymTheme.textSecondary)
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(accessibilityLabelText ?? name)
+                        .accessibilityValue(accessibilityValueText)
+                        .accessibilityHint(accessibilityHintText ?? "")
+                    } else {
+                        titleBlock
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityAddTraits(.isHeader)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(accessibilityLabelText ?? name)
-                    .accessibilityValue(accessibilityValueText)
-                    .accessibilityHint(accessibilityHintText ?? "")
 
                     overflow()
                 }
@@ -124,18 +131,33 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
             }
         }
     }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(name)
+                .font(.headline)
+                .foregroundStyle(GymTheme.textPrimary)
+            info()
+        }
+    }
 }
 
-/// Ellipsis menu in an exercise header whose only action is the destructive
-/// "Remove exercise"; the caller decides whether to show it at all.
-struct GymExerciseOverflowMenu: View {
+/// Ellipsis menu in an exercise header: optional extra items (for example
+/// "Replace with similar") above the destructive remove action; the caller
+/// decides whether to show it at all.
+struct GymExerciseOverflowMenu<Extra: View>: View {
     var disabled = false
+    /// Title of the destructive item ("Remove exercise" by default).
+    var removeTitle = gymRemoveExerciseActionTitle()
+    var accessibilityLabelText: String?
     let onRemove: () -> Void
+    @ViewBuilder let extraItems: () -> Extra
 
     var body: some View {
         Menu {
+            extraItems()
             Button(role: .destructive, action: onRemove) {
-                Label(gymRemoveExerciseActionTitle(), systemImage: "trash")
+                Label(removeTitle, systemImage: "trash")
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -146,10 +168,27 @@ struct GymExerciseOverflowMenu: View {
         }
         .disabled(disabled)
         .accessibilityLabel(
-            gymText(
+            accessibilityLabelText ?? gymText(
                 "More exercise options", "Інші дії з вправою", "Другие действия с упражнением",
                 languageCode: gymCurrentLanguageCode()
             )
+        )
+    }
+}
+
+extension GymExerciseOverflowMenu where Extra == EmptyView {
+    init(
+        disabled: Bool = false,
+        removeTitle: String = gymRemoveExerciseActionTitle(),
+        accessibilityLabelText: String? = nil,
+        onRemove: @escaping () -> Void
+    ) {
+        self.init(
+            disabled: disabled,
+            removeTitle: removeTitle,
+            accessibilityLabelText: accessibilityLabelText,
+            onRemove: onRemove,
+            extraItems: { EmptyView() }
         )
     }
 }
@@ -159,7 +198,7 @@ struct GymDashedAddButton: View {
     let title: String
     let accessibilityLabelText: String
     var accessibilityHintText: String?
-    var minHeight: CGFloat = 40
+    var minHeight: CGFloat = 48
     var disabled = false
     let action: () -> Void
 
@@ -236,9 +275,26 @@ struct GymCompletedSetRow: View {
                 .layoutPriority(1)
             Spacer(minLength: 8)
         }
+        .frame(minHeight: 44)
         .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabelText)
+    }
+}
+
+/// Outlined 22pt set-number circle shared by the active, saved, and plan rows.
+struct GymSetNumberBadge: View {
+    let position: Int
+
+    var body: some View {
+        Text("\(position + 1)")
+            .font(.caption.weight(.bold).monospacedDigit())
+            .foregroundStyle(GymTheme.textSecondary)
+            .frame(width: 22, height: 22)
+            .overlay(
+                Circle().strokeBorder(GymTheme.outlineSoft, lineWidth: 1.5)
+            )
+            .accessibilityHidden(true)
     }
 }
 
@@ -260,13 +316,7 @@ struct GymExpandableSetRow<Trailing: View, Editor: View>: View {
             HStack(spacing: 8) {
                 Button(action: onToggle) {
                     HStack(spacing: 8) {
-                        Text("\(position + 1)")
-                            .font(.caption.weight(.bold).monospacedDigit())
-                            .foregroundStyle(GymTheme.textSecondary)
-                            .frame(width: 22, height: 22)
-                            .overlay(
-                                Circle().strokeBorder(GymTheme.outlineSoft, lineWidth: 1.5)
-                            )
+                        GymSetNumberBadge(position: position)
                         Text(summary)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GymTheme.textSecondary)
@@ -464,50 +514,139 @@ struct GymRepsStepCapsule: View {
     }
 }
 
-/// Inline editor for one saved set: the big "weight kg × reps" line, the same
-/// weight/reps step capsules the active workout uses, and a primary action
-/// ("Save"). Holds the draft values locally and re-syncs when the stored set
-/// changes underneath it.
-struct GymSetStepperEditor: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var weight: Double
-    @State private var reps: Int
+// MARK: - Shared set editor
 
-    let position: Int
-    let storedWeight: Double
-    let storedReps: Int
-    var allowedWeights: [Double] = []
+/// Height of every capsule in the set editor; the trash target beside them is the
+/// same 44pt.
+let gymSetEditorCapsuleHeight: CGFloat = 44
+
+/// Step targets for a weight capsule: honors a machine's allowed weights (empty
+/// means the default 2.5 kg) and keeps the nominal step visible for a blocked
+/// direction.
+func gymWeightStepTargets(
+    weight: Double,
+    allowedWeights: [Double]
+) -> (minus: Double, minusDelta: Double, plus: Double, plusDelta: Double) {
+    let nominalStep: Double = {
+        guard allowedWeights.count >= 2 else { return 2.5 }
+        let gaps = zip(allowedWeights, allowedWeights.dropFirst()).map { $1 - $0 }
+        return gaps.min() ?? 2.5
+    }()
+    let minus = TrainingTools.stepWeight(weight, direction: -1, allowed: allowedWeights)
+    let plus = TrainingTools.stepWeight(weight, direction: 1, allowed: allowedWeights)
+    return (
+        minus,
+        minus != weight ? abs(minus - weight) : nominalStep,
+        plus,
+        plus != weight ? abs(plus - weight) : nominalStep
+    )
+}
+
+/// Trash button with a 44pt target and error tint, named for VoiceOver.
+struct GymSetDeleteButton: View {
+    let accessibilityLabelText: String
     var disabled = false
-    let actionTitle: String
-    let actionAccessibilityLabel: String
-    let onSave: (Double, Int) -> Void
-
-    init(
-        position: Int,
-        storedWeight: Double,
-        storedReps: Int,
-        allowedWeights: [Double] = [],
-        disabled: Bool = false,
-        actionTitle: String,
-        actionAccessibilityLabel: String,
-        onSave: @escaping (Double, Int) -> Void
-    ) {
-        self.position = position
-        self.storedWeight = storedWeight
-        self.storedReps = storedReps
-        self.allowedWeights = allowedWeights
-        self.disabled = disabled
-        self.actionTitle = actionTitle
-        self.actionAccessibilityLabel = actionAccessibilityLabel
-        self.onSave = onSave
-        _weight = State(initialValue: storedWeight)
-        _reps = State(initialValue: storedReps)
-    }
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Spacer(minLength: 0)
+        Button(action: action) {
+            Image(systemName: "trash")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(GymTheme.error.opacity(disabled ? 0.38 : 1))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityLabel(accessibilityLabelText)
+    }
+}
+
+/// The one set editor: a `− 12 kg +` weight capsule and a `− 4 +` reps capsule of
+/// equal size and fill, side by side (stacked at accessibility text sizes), with
+/// an optional trash button at the end. The weight value is tappable for keyboard
+/// entry; stepping follows `allowedWeights` (empty = 2.5 kg). Used by the active
+/// workout's upcoming sets and the saved workout's set editor.
+struct GymSetEditorCapsules: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @FocusState private var weightFieldFocused: Bool
+
+    let position: Int
+    @Binding var weight: Double
+    @Binding var reps: Int
+    var allowedWeights: [Double] = []
+    var disabled = false
+    /// Parent-driven focus (the active screen's keyboard Done bar) and its report.
+    var externalWeightFocus = false
+    var onWeightFocusChange: ((Bool) -> Void)?
+    var deleteAccessibilityLabel: String?
+    var onDelete: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 8) { weightCapsule; repsCapsule }
+            } else {
+                // The weight capsule carries "102.5 kg" next to the step buttons,
+                // so it gets ~1.4x the reps capsule's width at the same height.
+                GymWeightedRow(weights: [1.4, 1], spacing: 8) { weightCapsule; repsCapsule }
+            }
+            if let onDelete, let deleteAccessibilityLabel {
+                GymSetDeleteButton(
+                    accessibilityLabelText: deleteAccessibilityLabel,
+                    disabled: disabled,
+                    action: onDelete
+                )
+            }
+        }
+        .onChange(of: weightFieldFocused) { _, focused in onWeightFocusChange?(focused) }
+        .onChange(of: externalWeightFocus) { _, focused in
+            if weightFieldFocused != focused { weightFieldFocused = focused }
+        }
+    }
+
+    /// Long values ("102.5") shrink a little instead of clipping in the
+    /// narrower weight capsule on small phones.
+    private var weightValueFontSize: CGFloat {
+        let characters = weight.formatted(
+            .number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))
+        ).count
+        switch characters {
+        case ...4: return 17
+        case 5: return 15
+        default: return 13
+        }
+    }
+
+    private var weightCapsule: some View {
+        let targets = gymWeightStepTargets(weight: weight, allowedWeights: allowedWeights)
+        let kg = gymLocalized("kg")
+        let minusText = targets.minusDelta.formatted(.number.locale(gymAppLocale()))
+        let plusText = targets.plusDelta.formatted(.number.locale(gymAppLocale()))
+        let minusCanMove = targets.minus != weight
+        let plusCanMove = targets.plus != weight
+        return GymSetValueCapsule(
+            minusSystemImage: "minus",
+            minusDisabled: disabled || !minusCanMove,
+            minusAction: { weight = targets.minus },
+            minusAccessibilityLabel: gymText(
+                "Decrease weight by \(minusText) \(kg)",
+                "Зменшити вагу на \(minusText) \(kg)",
+                "Уменьшить вес на \(minusText) \(kg)",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            plusSystemImage: "plus",
+            plusDisabled: disabled || !plusCanMove,
+            plusAction: { weight = targets.plus },
+            plusAccessibilityLabel: gymText(
+                "Increase weight by \(plusText) \(kg)",
+                "Збільшити вагу на \(plusText) \(kg)",
+                "Увеличить вес на \(plusText) \(kg)",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            stepButtonWidth: 34
+        ) {
+            HStack(spacing: 3) {
                 TextField(
                     "0",
                     value: $weight,
@@ -515,8 +654,9 @@ struct GymSetStepperEditor: View {
                 )
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
-                .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                .font(.system(size: weightValueFontSize, weight: .semibold).monospacedDigit())
                 .foregroundStyle(GymTheme.textPrimary)
+                .focused($weightFieldFocused)
                 .fixedSize()
                 .disabled(disabled)
                 .accessibilityLabel(
@@ -527,28 +667,203 @@ struct GymSetStepperEditor: View {
                         languageCode: gymCurrentLanguageCode()
                     )
                 )
-
-                Text(gymLocalized("kg"))
-                    .font(.system(size: 15))
+                Text(kg)
+                    .font(weightValueFontSize < 17 ? .caption2 : .footnote)
                     .foregroundStyle(GymTheme.textSecondary)
-
-                Text(verbatim: "×")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(GymTheme.textSecondary)
+                    .lineLimit(1)
                     .accessibilityHidden(true)
-
-                Text(reps.formatted(.number.locale(gymAppLocale())))
-                    .font(.system(size: 30, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(GymTheme.textPrimary)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { if !disabled { weightFieldFocused = true } }
+        }
+    }
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 8) { steppers }
-            } else {
-                HStack(spacing: 8) { steppers }
-            }
+    private var repsCapsule: some View {
+        GymSetValueCapsule(
+            minusSystemImage: "minus",
+            minusDisabled: disabled || reps <= 1,
+            minusAction: { reps = max(1, reps - 1) },
+            minusAccessibilityLabel: gymText(
+                "Decrease reps", "Зменшити повторення", "Уменьшить повторения",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            plusSystemImage: "plus",
+            plusDisabled: disabled,
+            plusAction: { reps += 1 },
+            plusAccessibilityLabel: gymText(
+                "Increase reps", "Збільшити повторення", "Увеличить повторения",
+                languageCode: gymCurrentLanguageCode()
+            )
+        ) {
+            Text(reps.formatted(.number.locale(gymAppLocale())))
+                .font(.system(size: 17, weight: .semibold).monospacedDigit())
+                .foregroundStyle(GymTheme.textPrimary)
+                .lineLimit(1)
+                .accessibilityLabel(
+                    gymText(
+                        "Repetitions for set \(position + 1)",
+                        "Повторення для підходу \(position + 1)",
+                        "Повторения для подхода \(position + 1)",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+                .accessibilityValue(reps.formatted(.number.locale(gymAppLocale())))
+        }
+    }
+}
+
+/// Horizontal stack that splits its width between subviews in fixed ratios
+/// (every child proposed `weight / total` of the free width).
+struct GymWeightedRow: Layout {
+    let weights: [CGFloat]
+    var spacing: CGFloat = 8
+
+    init(weights: [CGFloat], spacing: CGFloat = 8) {
+        self.weights = weights
+        self.spacing = spacing
+    }
+
+    private func widths(for subviews: Subviews, total: CGFloat) -> [CGFloat] {
+        let count = CGFloat(subviews.count)
+        let free = max(0, total - spacing * max(0, count - 1))
+        let weightSum = subviews.indices.reduce(CGFloat(0)) { $0 + (weights.indices.contains($1) ? weights[$1] : 1) }
+        return subviews.indices.map { index in
+            free * (weights.indices.contains(index) ? weights[index] : 1) / max(weightSum, 0.001)
+        }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let total = proposal.width.map { $0.isFinite ? $0 : 320 } ?? 240
+        let columnWidths = widths(for: subviews, total: total)
+        let height = zip(subviews, columnWidths).map {
+            $0.sizeThatFits(ProposedViewSize(width: $1, height: proposal.height)).height
+        }.max() ?? 0
+        return CGSize(width: total, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let columnWidths = widths(for: subviews, total: bounds.width)
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, columnWidths) {
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: bounds.height)
+            )
+            x += width + spacing
+        }
+    }
+}
+
+/// One capsule of the set editor: step button, centered value content, step
+/// button. 44pt tall, fully rounded, shared fill.
+private struct GymSetValueCapsule<Center: View>: View {
+    let minusSystemImage: String
+    let minusDisabled: Bool
+    let minusAction: () -> Void
+    let minusAccessibilityLabel: String
+    let plusSystemImage: String
+    let plusDisabled: Bool
+    let plusAction: () -> Void
+    let plusAccessibilityLabel: String
+    var stepButtonWidth: CGFloat = 38
+    @ViewBuilder let center: () -> Center
+
+    var body: some View {
+        HStack(spacing: 0) {
+            stepButton(
+                systemImage: minusSystemImage,
+                disabled: minusDisabled,
+                label: minusAccessibilityLabel,
+                action: minusAction
+            )
+            center()
+                .frame(maxWidth: .infinity)
+            stepButton(
+                systemImage: plusSystemImage,
+                disabled: plusDisabled,
+                label: plusAccessibilityLabel,
+                action: plusAction
+            )
+        }
+        .frame(maxWidth: .infinity, minHeight: gymSetEditorCapsuleHeight)
+        .background(Capsule().fill(GymTheme.surface))
+    }
+
+    private func stepButton(
+        systemImage: String,
+        disabled: Bool,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(GymTheme.primary.opacity(disabled ? 0.38 : 1))
+                .frame(width: stepButtonWidth, height: gymSetEditorCapsuleHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Inline editor for one saved set: the shared capsule editor (with the trash
+/// button when deletion is allowed) and a primary action ("Save") under it. Holds
+/// the draft values locally and re-syncs when the stored set changes underneath it.
+struct GymSetStepperEditor: View {
+    @State private var weight: Double
+    @State private var reps: Int
+
+    let position: Int
+    let storedWeight: Double
+    let storedReps: Int
+    var allowedWeights: [Double] = []
+    var disabled = false
+    let actionTitle: String
+    let actionAccessibilityLabel: String
+    var deleteAccessibilityLabel: String?
+    var onDelete: (() -> Void)?
+    let onSave: (Double, Int) -> Void
+
+    init(
+        position: Int,
+        storedWeight: Double,
+        storedReps: Int,
+        allowedWeights: [Double] = [],
+        disabled: Bool = false,
+        actionTitle: String,
+        actionAccessibilityLabel: String,
+        deleteAccessibilityLabel: String? = nil,
+        onDelete: (() -> Void)? = nil,
+        onSave: @escaping (Double, Int) -> Void
+    ) {
+        self.position = position
+        self.storedWeight = storedWeight
+        self.storedReps = storedReps
+        self.allowedWeights = allowedWeights
+        self.disabled = disabled
+        self.actionTitle = actionTitle
+        self.actionAccessibilityLabel = actionAccessibilityLabel
+        self.deleteAccessibilityLabel = deleteAccessibilityLabel
+        self.onDelete = onDelete
+        self.onSave = onSave
+        _weight = State(initialValue: storedWeight)
+        _reps = State(initialValue: storedReps)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GymSetEditorCapsules(
+                position: position,
+                weight: $weight,
+                reps: $reps,
+                allowedWeights: allowedWeights,
+                disabled: disabled,
+                deleteAccessibilityLabel: deleteAccessibilityLabel,
+                onDelete: onDelete
+            )
 
             Button {
                 onSave(weight, reps)
@@ -561,20 +876,7 @@ struct GymSetStepperEditor: View {
             .disabled(disabled || !workoutDetailCanSaveSet(weight: weight, reps: reps))
             .accessibilityLabel(actionAccessibilityLabel)
         }
-        .padding(10)
-        .background(GymTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
         .onChange(of: storedWeight) { _, newValue in weight = newValue }
         .onChange(of: storedReps) { _, newValue in reps = newValue }
-    }
-
-    @ViewBuilder
-    private var steppers: some View {
-        GymWeightStepCapsule(
-            weight: weight,
-            allowedWeights: allowedWeights,
-            disabled: disabled,
-            onChange: { weight = $0 }
-        )
-        GymRepsStepCapsule(reps: $reps, disabled: disabled)
     }
 }

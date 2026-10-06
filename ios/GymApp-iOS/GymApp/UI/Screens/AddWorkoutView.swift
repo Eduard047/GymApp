@@ -939,6 +939,7 @@ struct AddWorkoutView: View {
                         rawExerciseName: exercise.name,
                         exerciseCatalogKey: exercise.catalogKey,
                         lastWeight: store.lastWeight(exerciseID: exercise.id),
+                        allowedWeights: exercise.machineLoadProfile?.allowedWeightsKg ?? [],
                         onShowSimilar: { showAlternatives(for: item.id) },
                         onDeleteExercise: {
                             smartGeneratedDraftIDs.remove(item.id)
@@ -948,6 +949,23 @@ struct AddWorkoutView: View {
                     )
                 }
             }
+
+            // Same add flow as the header "+": a dashed footer after the list.
+            GymDashedAddButton(
+                title: gymText(
+                    "+ Add exercise",
+                    "+ Додати вправу",
+                    "+ Добавить упражнение",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                accessibilityLabelText: gymText(
+                    "Add exercise",
+                    "Додати вправу",
+                    "Добавить упражнение",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                action: { showingExercisePicker = true }
+            )
         }
     }
 

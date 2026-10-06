@@ -18,6 +18,8 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case invalidWeight
     case invalidReps
     case limitExceeded
+    case lastSetRequired
+    case exerciseAlreadyInWorkout
 
     var errorDescription: String? {
         switch self {
@@ -53,6 +55,10 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
             "Repetitions must be between 1 and 10,000."
         case .limitExceeded:
             "The active workout is too large."
+        case .lastSetRequired:
+            "An exercise keeps at least one set. Remove the exercise instead."
+        case .exerciseAlreadyInWorkout:
+            "This exercise is already in the workout."
         }
     }
 }
@@ -564,11 +570,11 @@ final class ActiveWorkoutStore: ObservableObject {
         }
     }
 
-    /// Removes one not-yet-recorded set (e.g. one added by mistake). Recorded sets,
-    /// an exercise's only set, a finishing workout, a stale revision, and a plan
-    /// frozen by a live room or reservation are all refused here, not only in the UI.
-    /// Remaining sets keep their order, so positions renumber implicitly. The undo
-    /// target is untouched because it can only point at a recorded set.
+    /// Removes one set, pending or recorded. An exercise's only set, a finishing
+    /// workout, a stale revision, and a plan frozen by a live room or reservation
+    /// are refused here, not only in the UI. Remaining sets keep their order, so
+    /// positions renumber implicitly. The undo target survives unless it is the
+    /// deleted set: then it is cleared and the rest that set started stops with it.
     @discardableResult
     func deleteSet(
         draftID: UUID,
@@ -584,14 +590,108 @@ final class ActiveWorkoutStore: ObservableObject {
             now: now
         ) { candidate in
             let location = try Self.setLocation(setID: setID, in: candidate)
-            guard candidate.exercises[location.exercise].sets[location.set].completedAt == nil else {
-                throw ActiveWorkoutStoreError.setAlreadyCompleted
-            }
             guard candidate.exercises[location.exercise].sets.count > 1 else {
-                throw ActiveWorkoutStoreError.invalidDraft
+                throw ActiveWorkoutStoreError.lastSetRequired
             }
             candidate.exercises[location.exercise].sets.remove(at: location.set)
+            if candidate.undoableSetID == setID {
+                candidate.undoableSetID = nil
+                var timing = Self.normalizedTiming(in: candidate, at: now)
+                if timing.restingUntil != nil {
+                    timing.restingUntil = nil
+                    timing.activeSince = now
+                }
+                candidate.timing = timing
+            }
         }
+    }
+
+    /// Sets an exercise added mid-workout starts with, and the weight/reps used
+    /// when the exercise has no usable history.
+    static let addedExerciseSetCount = 3
+    static let addedExerciseDefaultWeight = 20.0
+    static let addedExerciseDefaultReps = 10
+
+    /// Appends a catalog exercise to the end of the running workout with
+    /// `addedExerciseSetCount` pending sets prefilled from the last set logged for
+    /// it in saved workouts before this workout started (20 kg x 10 without
+    /// history). Atomic and revision-checked; refused for an exercise already in
+    /// the workout (same id or catalog key), at the exercise/set limits, and while
+    /// a live room or reservation freezes the plan. All new sets are pending, so
+    /// the undo target and a running rest are untouched.
+    @discardableResult
+    func addExercise(
+        draftID: UUID,
+        exerciseID: UUID,
+        expectedRevision: UInt64,
+        workoutStore: WorkoutStore,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        guard workoutStore.accountStorageKey == accountStorageKey else {
+            throw ActiveWorkoutStoreError.accountMismatch
+        }
+        guard let storedExercise = workoutStore.exercise(id: exerciseID) else {
+            throw ActiveWorkoutStoreError.exerciseUnavailable
+        }
+        return try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard !candidate.exercises.contains(where: { block in
+                block.exerciseID == storedExercise.id
+                    || (storedExercise.catalogKey != nil
+                        && block.exerciseCatalogKey == storedExercise.catalogKey)
+            }) else {
+                throw ActiveWorkoutStoreError.exerciseAlreadyInWorkout
+            }
+            guard candidate.exercises.count < Self.maximumExercises,
+                  candidate.plannedSetCount + Self.addedExerciseSetCount <= Self.maximumTotalSets else {
+                throw ActiveWorkoutStoreError.limitExceeded
+            }
+            let seed = Self.lastLoggedSet(
+                exerciseID: storedExercise.id,
+                before: candidate.startedAt,
+                in: workoutStore
+            )
+            var weight = Self.addedExerciseDefaultWeight
+            var reps = Self.addedExerciseDefaultReps
+            if let seed, (try? Self.validate(weight: seed.weight, reps: seed.reps)) != nil {
+                weight = seed.weight
+                reps = seed.reps
+            }
+            candidate.exercises.append(
+                ActiveWorkoutExercise(
+                    exerciseID: storedExercise.id,
+                    exerciseName: storedExercise.name,
+                    exerciseCatalogKey: storedExercise.catalogKey,
+                    sets: (0 ..< Self.addedExerciseSetCount).map { _ in
+                        ActiveWorkoutSet(weight: weight, reps: reps)
+                    }
+                )
+            )
+        }
+    }
+
+    /// The most recent saved set of an exercise from a workout dated before `date`.
+    private static func lastLoggedSet(
+        exerciseID: UUID,
+        before date: Date,
+        in workoutStore: WorkoutStore
+    ) -> (weight: Double, reps: Int)? {
+        workoutStore.workouts
+            .filter { $0.date < date }
+            .sorted { $0.date > $1.date }
+            .lazy
+            .flatMap { workout in
+                workout.exercises
+                    .filter { $0.exerciseID == exerciseID }
+                    .flatMap { $0.sets.reversed() }
+            }
+            .first
+            .map { ($0.weight, $0.reps) }
     }
 
     /// Removes a whole exercise block together with any sets already recorded in it.

@@ -56,6 +56,30 @@ func activeWorkoutCanDeleteSet(
     !isCompleted && exerciseSetCount > 1 && !hasCommitIntent && !isLivePlanFrozen
 }
 
+/// "Delete set" on a recorded set (long-press menu, confirmed by an alert): same
+/// rules as a pending set. `ActiveWorkoutStore.deleteSet` enforces them.
+func activeWorkoutCanDeleteRecordedSet(
+    exerciseSetCount: Int,
+    hasCommitIntent: Bool,
+    isLivePlanFrozen: Bool
+) -> Bool {
+    activeWorkoutCanDeleteSet(
+        isCompleted: false,
+        exerciseSetCount: exerciseSetCount,
+        hasCommitIntent: hasCommitIntent,
+        isLivePlanFrozen: isLivePlanFrozen
+    )
+}
+
+/// "+ Add exercise" is hidden while the workout is finishing and in a live room.
+/// `ActiveWorkoutStore.addExercise` enforces the same rules.
+func activeWorkoutCanAddExercise(
+    hasCommitIntent: Bool,
+    isLivePlanFrozen: Bool
+) -> Bool {
+    !hasCommitIntent && !isLivePlanFrozen
+}
+
 /// "Remove exercise" is hidden for the workout's only exercise, while finishing,
 /// and in a live room. `ActiveWorkoutStore.removeExercise` enforces the same rules.
 func activeWorkoutCanRemoveExercise(
@@ -143,6 +167,10 @@ struct ActiveWorkoutView: View {
     /// id is kept; the alert re-derives the live exercise so it never acts on
     /// stale data.
     @State private var pendingRemoveExerciseID: UUID?
+    /// The recorded set a "Delete set" tap is asking to confirm (id only; the alert
+    /// re-derives the live set so it never acts on stale data).
+    @State private var pendingDeleteRecordedSetID: UUID?
+    @State private var showingAddExercisePicker = false
     @State private var collapsedExerciseIDs = Set<UUID>()
     @State private var expandedSetIDs = Set<UUID>()
     @FocusState private var focusedWeightSetID: UUID?
@@ -258,6 +286,13 @@ struct ActiveWorkoutView: View {
 
                             ForEach(draft.exercises) { exercise in
                                 exercisePanel(exercise, draft: draft)
+                            }
+
+                            if activeWorkoutCanAddExercise(
+                                hasCommitIntent: draft.commitIntent != nil,
+                                isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                            ) {
+                                addExerciseButton
                             }
 
                             finishPanel(draft)
@@ -481,6 +516,48 @@ struct ActiveWorkoutView: View {
             }
         } message: {
             Text(removeExerciseAlertMessage)
+        }
+        .alert(
+            gymText(
+                "Delete set?", "Видалити підхід?", "Удалить подход?",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            isPresented: Binding(
+                get: { pendingDeleteRecordedSetID != nil },
+                set: { isPresented in if !isPresented { pendingDeleteRecordedSetID = nil } }
+            )
+        ) {
+            Button(
+                gymText("Delete", "Видалити", "Удалить", languageCode: gymCurrentLanguageCode()),
+                role: .destructive
+            ) {
+                if let id = pendingDeleteRecordedSetID,
+                   let draft = currentDraft,
+                   let set = activeSet(id: id) {
+                    deleteSet(set, draft: draft)
+                }
+                pendingDeleteRecordedSetID = nil
+            }
+            Button(
+                gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()),
+                role: .cancel
+            ) {
+                pendingDeleteRecordedSetID = nil
+            }
+        } message: {
+            Text(deleteRecordedSetAlertMessage)
+        }
+        .sheet(isPresented: $showingAddExercisePicker) {
+            ExercisePickerSheet(
+                exercises: addableExercises,
+                selectedExerciseIDs: [],
+                exerciseMediaOwnerKey: workoutStore.accountStorageKey,
+                muscleMappings: workoutStore.muscleMappings,
+                sessionCounts: addExerciseSessionCounts,
+                onSelect: addExercise,
+                onCreate: { name in try workoutStore.addExercise(name: name) }
+            )
+            .presentationDetents([.large])
         }
         .confirmationDialog(
             finishExerciseDialogTitle(unrecordedCount: pendingFinishExerciseUnrecordedCount),
@@ -1296,7 +1373,7 @@ struct ActiveWorkoutView: View {
                             )
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(GymTheme.primary)
-                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .frame(maxWidth: .infinity, minHeight: 48)
                         }
                         .buttonStyle(.plain)
                         .overlay(
@@ -1319,7 +1396,6 @@ struct ActiveWorkoutView: View {
                             )
                         )
                     }
-                    .padding(.top, 12)
                 }
             }
         )
@@ -1335,7 +1411,13 @@ struct ActiveWorkoutView: View {
     ) -> some View {
         let isCurrent = currentSetID(in: draft) == set.id
         if set.isCompleted {
-            completedSetRow(set, position: position, draft: draft)
+            completedSetRow(
+                set,
+                position: position,
+                exercise: exercise,
+                exerciseName: exerciseName,
+                draft: draft
+            )
         } else if isCurrent {
             currentSetRow(set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
         } else {
@@ -1420,6 +1502,16 @@ struct ActiveWorkoutView: View {
                         last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
                         isBodyweight: isBodyweightExercise, set: set, draft: draft
                     )
+                }
+
+                if canDeletePendingSet(set, exercise: exercise, draft: draft) {
+                    GymSetDeleteButton(
+                        accessibilityLabelText: deleteSetAccessibilityLabel(
+                            position: position, exerciseName: exerciseName
+                        )
+                    ) {
+                        deleteSet(set, draft: draft)
+                    }
                 }
             }
 
@@ -1854,23 +1946,26 @@ struct ActiveWorkoutView: View {
                 compactLogButton(set: set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
             },
             editor: {
-                HStack(spacing: 8) {
-                    GymSetWeightField(
-                        weight: weightBinding(setID: set.id),
-                        disabled: fieldsDisabled,
-                        accessibilityLabel: Text(weightAccessibilityLabel(position: position))
-                    )
-                    Text(verbatim: "×")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .accessibilityHidden(true)
-                    GymSetRepsCapsule(
-                        reps: repsBinding(setID: set.id),
-                        disabled: fieldsDisabled,
-                        accessibilityLabel: Text(repsAccessibilityLabel(position: position))
-                    )
-                    Spacer(minLength: 4)
-                }
+                GymSetEditorCapsules(
+                    position: position,
+                    weight: weightBinding(setID: set.id),
+                    reps: repsBinding(setID: set.id),
+                    allowedWeights: workoutStore.exercise(id: exercise.exerciseID)?
+                        .machineLoadProfile?.allowedWeightsKg ?? [],
+                    disabled: fieldsDisabled,
+                    externalWeightFocus: focusedWeightSetID == set.id,
+                    onWeightFocusChange: { focused in
+                        if focused {
+                            if focusedWeightSetID != set.id { focusedWeightSetID = set.id }
+                        } else if focusedWeightSetID == set.id {
+                            focusedWeightSetID = nil
+                        }
+                    },
+                    deleteAccessibilityLabel: canDeletePendingSet(set, exercise: exercise, draft: draft)
+                        ? deleteSetAccessibilityLabel(position: position, exerciseName: exerciseName)
+                        : nil,
+                    onDelete: { deleteSet(set, draft: draft) }
+                )
             }
         )
         return deleteSetActions(content, set: set, exercise: exercise, draft: draft)
@@ -1938,6 +2033,28 @@ struct ActiveWorkoutView: View {
         }
     }
 
+    private func canDeletePendingSet(
+        _ set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        draft: ActiveWorkoutDraft
+    ) -> Bool {
+        activeWorkoutCanDeleteSet(
+            isCompleted: set.isCompleted,
+            exerciseSetCount: exercise.sets.count,
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+        )
+    }
+
+    private func deleteSetAccessibilityLabel(position: Int, exerciseName: String) -> String {
+        gymText(
+            "Delete set \(position + 1) for \(exerciseName)",
+            "Видалити підхід \(position + 1) для \(exerciseName)",
+            "Удалить подход \(position + 1) для \(exerciseName)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
     /// A completed row is one compact line — checkmark, weight×reps, and
     /// (only for the latest completed set, only while resting) a trailing
     /// countdown + three small rest-control capsules. Undo lives in the
@@ -1948,10 +2065,18 @@ struct ActiveWorkoutView: View {
     private func completedSetRow(
         _ set: ActiveWorkoutSet,
         position: Int,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
         draft: ActiveWorkoutDraft
     ) -> some View {
         let isLatestCompleted = draft.undoableSetID == set.id
         let canUndo = isLatestCompleted && draft.commitIntent == nil
+        let canDelete = activeWorkoutCanDeleteRecordedSet(
+            exerciseSetCount: exercise.sets.count,
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+        )
+        let deleteActionName = gymDeleteSetActionTitle()
         let isPersonalRecord = LivePersonalRecords
             .recordSetIDs(in: draft, baselines: personalRecordBaselines)
             .contains(set.id)
@@ -1994,22 +2119,44 @@ struct ActiveWorkoutView: View {
         .accessibilityLabel(label)
 
         return Group {
-            if canUndo {
+            if canUndo || canDelete {
                 content
-                    .accessibilityAction(named: undoActionName) {
-                        undoLatestSet(set, draft: draft)
+                    .accessibilityActions {
+                        if canUndo {
+                            Button(undoActionName) { undoLatestSet(set, draft: draft) }
+                        }
+                        if canDelete {
+                            Button(
+                                gymText(
+                                    "Delete set \(position + 1) for \(exerciseName)",
+                                    "Видалити підхід \(position + 1) для \(exerciseName)",
+                                    "Удалить подход \(position + 1) для \(exerciseName)",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            ) { pendingDeleteRecordedSetID = set.id }
+                        }
                     }
                     .contextMenu {
-                        Button {
-                            undoLatestSet(set, draft: draft)
-                        } label: {
-                            Label(undoActionName, systemImage: "arrow.uturn.backward")
+                        if canUndo {
+                            Button {
+                                undoLatestSet(set, draft: draft)
+                            } label: {
+                                Label(undoActionName, systemImage: "arrow.uturn.backward")
+                            }
+                        }
+                        if canDelete {
+                            Button(role: .destructive) {
+                                pendingDeleteRecordedSetID = set.id
+                            } label: {
+                                Label(deleteActionName, systemImage: "trash")
+                            }
                         }
                     }
             } else {
                 content
             }
         }
+        .frame(minHeight: 44)
         .padding(.vertical, 10)
     }
 
@@ -2952,7 +3099,109 @@ struct ActiveWorkoutView: View {
         )
     }
 
-    /// Deletes one not-yet-recorded set. Success is silent: the list simply
+    /// Name, "Set N: 40 kg × 10" and the consequence line for the "Delete set?" alert.
+    /// Re-derived from the live draft on every render, never from a snapshot.
+    private var deleteRecordedSetAlertMessage: String {
+        guard let id = pendingDeleteRecordedSetID,
+              let draft = currentDraft,
+              let exercise = draft.exercises.first(where: { $0.sets.contains(where: { $0.id == id }) }),
+              let index = exercise.sets.firstIndex(where: { $0.id == id }) else { return "" }
+        let set = exercise.sets[index]
+        let name = workoutStore.exercise(id: exercise.exerciseID).map { gymExerciseName($0) }
+            ?? exercise.exerciseName
+            ?? gymText(
+                "Unavailable exercise",
+                "Недоступна вправа",
+                "Недоступное упражнение",
+                languageCode: gymCurrentLanguageCode()
+            )
+        let target = gymText(
+            "Set \(index + 1): \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+            "Підхід \(index + 1): \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+            "Подход \(index + 1): \(weightRepsSummary(weight: set.weight, reps: set.reps))",
+            languageCode: gymCurrentLanguageCode()
+        )
+        let impact = gymText(
+            "This recorded set will be removed from the workout.",
+            "Цей записаний підхід буде видалено з тренування.",
+            "Этот записанный подход будет удалён из тренировки.",
+            languageCode: gymCurrentLanguageCode()
+        )
+        return [name, target, impact].joined(separator: "\n")
+    }
+
+    /// Dashed "+ Add exercise" between the last exercise panel and the finish panel.
+    private var addExerciseButton: some View {
+        GymDashedAddButton(
+            title: gymText(
+                "+ Add exercise", "+ Додати вправу", "+ Добавить упражнение",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            accessibilityLabelText: gymText(
+                "Add exercise to workout",
+                "Додати вправу до тренування",
+                "Добавить упражнение в тренировку",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            minHeight: 48
+        ) {
+            showingAddExercisePicker = true
+        }
+    }
+
+    /// Catalog exercises that are not already part of the running workout.
+    private var addableExercises: [Exercise] {
+        let present = currentDraft?.exercises ?? []
+        let presentIDs = Set(present.map(\.exerciseID))
+        let presentKeys = Set(present.compactMap(\.exerciseCatalogKey))
+        return workoutStore.exercises.filter { exercise in
+            !presentIDs.contains(exercise.id)
+                && !(exercise.catalogKey.map(presentKeys.contains) ?? false)
+        }
+    }
+
+    private var addExerciseSessionCounts: [UUID: Int] {
+        Dictionary(
+            uniqueKeysWithValues: workoutStore.exercises.map { exercise in
+                (exercise.id, workoutStore.progressStats(exerciseID: exercise.id).sessionCount)
+            }
+        )
+    }
+
+    /// Appends the picked exercise (3 prefilled pending sets) through the store, which
+    /// checks the revision, duplicates, limits and the live-room freeze itself.
+    private func addExercise(_ exercise: Exercise) {
+        guard let draft = currentDraft else { return }
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        do {
+            let updated = try activeWorkoutStore.addExercise(
+                draftID: draft.id,
+                exerciseID: exercise.id,
+                expectedRevision: draft.revision,
+                workoutStore: workoutStore,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(restCleanupWarning)
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    /// Deletes one set (pending or recorded). Success is silent: the list simply
     /// updates (the Live Activity follows the draft publisher).
     private func deleteSet(_ set: ActiveWorkoutSet, draft: ActiveWorkoutDraft) {
         guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
