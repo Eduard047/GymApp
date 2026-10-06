@@ -117,8 +117,7 @@ test("iOS String Catalog has Russian values for every key and preserves format p
   // 'Add planned set'" — the visible label is now "+ Set", with "Add planned
   // set" kept as the accessibility label so the assistive-tech string is
   // unchanged.
-  assert.match(workoutEditor, /Text\("\+ Set"\)/);
-  assert.match(workoutEditor, /\.accessibilityLabel\(Text\("Add planned set"\)\)/);
+  assert.match(workoutEditor, /GymDashedAddButton\(\s*title: gymLocalized\("\+ Set"\),\s*accessibilityLabelText: gymLocalized\("Add planned set"\)/);
   const draftCard = workoutEditor.match(/struct WorkoutDraftExerciseCard:[\s\S]*?private func binding/)[0];
   assert.doesNotMatch(draftCard, /restTimers\.start|WorkoutRestTimerControls/);
   assert.equal(
@@ -268,10 +267,10 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
   assert.match(indexSource, /russian-text\.v90\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v117\.js/);
+  assert.match(indexSource, /app\.v118\.js/);
   assert.match(workerSource, /russian-text\.v90\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v117\.js/);
+  assert.match(workerSource, /app\.v118\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });

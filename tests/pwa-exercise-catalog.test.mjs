@@ -6605,24 +6605,43 @@ test("plan editor set row keeps real inputs, a reps stepper with a floor of one,
   const markup = vm.runInContext("draftBlock(workoutDraft.blocks[0], 0)", context);
   assert.match(markup, /class="set-badge"[^>]*>1</);
   assert.doesNotMatch(markup, /<details|<summary|exercise-muscle-breakdown|detail-collapsed-map/);
-  assert.match(markup, /^<section class="draft-exercise panel highlighted"><div class="draft-exercise-head">/);
+  assert.match(markup, /^<section class="draft-exercise panel highlighted active-workout-exercise"><div class="draft-exercise-head">/);
   assert.match(markup, /class="subpanel smart"/);
   assert.match(markup, /data-set="0" data-field="weight"/);
   assert.match(markup, /data-set="0" data-field="reps"/);
-  assert.equal((markup.match(/data-action="reps-step"/g) || []).length, 6);
-  assert.match(markup, /class="set-add-button" data-action="add-set" data-block="0" aria-label="Add planned set">\+ Set</);
+  assert.equal((markup.match(/data-action="draft-step-reps"/g) || []).length, 6);
+  assert.equal((markup.match(/data-action="draft-step-weight"/g) || []).length, 6);
+  assert.doesNotMatch(markup, /data-action="plus-set"|\+2\.5<\/button>/);
+  assert.match(markup, /class="set-add-button draft-dashed-button" data-action="add-set" data-block="0" aria-label="Add planned set">\+ Set</);
   assert.match(markup, /aria-label="Exercise actions for [^"]+"/);
   assert.match(vm.runInContext(`state.language = "ru"; draftBlock(workoutDraft.blocks[0], 0)`, context), /Посл\. вес[\s\S]*Пред\.[\s\S]*Копия[\s\S]*\+ Подход/);
 
-  const input = { value: "1", dataset: { block: "0", set: "0", field: "reps" } };
-  const button = dir => ({ dataset: { dir }, parentElement: { querySelector: () => input } });
-  context.__button = button("-1");
-  await vm.runInContext(`handleAction("reps-step", __button)`, context);
-  assert.equal(input.value, "1");
-  context.__button = button("1");
-  await vm.runInContext(`handleAction("reps-step", __button)`, context);
-  assert.equal(input.value, "2");
+  const inputs = {
+    weight: { value: "60", dataset: { block: "0", set: "0", field: "weight" }, closest: () => null },
+    reps: { value: "1", dataset: { block: "0", set: "0", field: "reps" }, closest: () => null }
+  };
+  context.__stubQuery = selector => inputs[/data-field="(\w+)"/.exec(selector)?.[1]] || null;
+  vm.runInContext(`app.querySelector = __stubQuery`, context);
+  const step = (action, dir) => vm.runInContext(`handleAction("${action}", { dataset: { block: "0", set: "0", dir: "${dir}" } })`, context);
+  await step("draft-step-reps", "-1");
+  assert.equal(inputs.reps.value, "1");
+  await step("draft-step-reps", "1");
+  assert.equal(inputs.reps.value, "2");
   assert.equal(vm.runInContext("workoutDraft.blocks[0].sets[0].reps", context), "2");
+  await step("draft-step-weight", "1");
+  assert.equal(inputs.weight.value, "62.5");
+  assert.equal(vm.runInContext("workoutDraft.blocks[0].sets[0].weight", context), "62.5");
+  await step("draft-step-weight", "-1");
+  await step("draft-step-weight", "-1");
+  assert.equal(inputs.weight.value, "57.5");
+});
+
+test("plan editor ends the draft list with a dashed Add exercise that opens the same picker target as the header plus", () => {
+  const context = planEditorContext([{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: planEditorSets }]);
+  const screen = vm.runInContext("addWorkoutScreen()", context);
+  assert.match(screen, /draft-add-exercise" data-action="open-workout-exercise-picker" data-picker-target="draft-new"[^>]*>[\s\S]*Add exercise<\/button><\/section>/);
+  vm.runInContext("workoutDraft.blocks = []", context);
+  assert.doesNotMatch(vm.runInContext("addWorkoutScreen()", context), /draft-add-exercise/);
 });
 
 test("plan editor header menu holds Clear plan and Discard plan and each exercise menu holds Delete", async () => {

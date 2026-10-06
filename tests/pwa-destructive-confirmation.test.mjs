@@ -149,9 +149,15 @@ test("destructive controls use explicit accessible in-app confirmation markup", 
   assert.match(appSource, /formatLocalizedSetWeight\(location\.set\.weight\)/);
   assert.doesNotMatch(appSource, /Number\(location\.set\.weight\)\.toFixed\(1\) kg/);
   const labelledDeleteSets = appSource.match(
-    /data-action="delete-set"[^>]+data-session="[^>]+aria-label="\$\{escapeAttr\(savedSetDeleteLabel\(/g
+    /setDeleteIconMarkup\("delete-set", set\.id, savedSetDeleteLabel\(/g
   ) || [];
   assert.equal(labelledDeleteSets.length, 1, "saved-set deletion must exist only in detail edit mode");
+  // Recorded active sets: undo sheet -> destructive confirmation -> one atomic delete.
+  assert.match(appSource, /isDestructiveConfirmationModal[\s\S]*"confirm-delete-active-set"/);
+  assert.match(appSource, /data-action="request-delete-active-set"/);
+  assert.match(appSource, /data-action="confirm-delete-active-set"/);
+  assert.match(appSource, /delete-active-set-target delete-active-set-description/);
+  assert.match(appSource, /tx3\("Delete set\?", "Видалити підхід\?", "Удалить подход\?"\)/);
 });
 
 test("Today can confirm cancelling its retained plan without deleting workout history", () => {

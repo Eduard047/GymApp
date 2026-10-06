@@ -1032,7 +1032,7 @@ test("an active workout keeps Continue instead of exposing a second plan editor"
   assert.match(iosWorkouts, /activeWorkoutDraft != nil[\s\S]*activeFocusLens/);
   assert.match(iosWorkouts, /private var activeFocusLens[\s\S]*"Continue workout"/);
   assert.match(iosRoot, /if activeWorkoutStore\.draft != nil[\s\S]*showsActiveWorkout = true[\s\S]*return false/);
-  assert.doesNotMatch(iosActive, /applySmartCoach|showingExercisePicker/);
+  assert.doesNotMatch(iosActive, /applySmartCoach/);
 });
 
 test("browser exposes the same editor contract and validated shared-plan handoff", () => {
@@ -1054,21 +1054,32 @@ test("browser exposes the same editor contract and validated shared-plan handoff
   assert.doesNotMatch(sharedWorkoutScript, /localStorage|indexedDB|createWorkout|startWorkout/);
 });
 
-test("Android exercise card matches the iOS compact set rows and single actions menu", () => {
+test("Android exercise card matches the iOS compact set rows and single actions menu", async () => {
   const card = androidEditor.slice(
     androidEditor.indexOf("private fun ExerciseDraftCard("),
     androidEditor.indexOf("private fun SmartRecommendationPanel(")
   );
-  // One "⋯" menu: Replace with similar (only with an exercise) + destructive Delete.
-  assert.match(card, /Icons\.Default\.MoreHoriz[\s\S]{0,900}if \(selectedExercise != null\)[\s\S]{0,300}R\.string\.editor_replace_with_similar[\s\S]{0,900}R\.string\.action_delete/);
+  const shared = await readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutExerciseCardComponents.kt", "utf8");
+  // The card is built from the same pieces as the active and saved workout cards, highlighted and never collapsible.
+  assert.match(card, /WorkoutExerciseCardShell\(highlighted = true\)[\s\S]{0,200}WorkoutExerciseCardHeader\([\s\S]{0,200}onToggleExpanded = null/);
+  assert.match(card, /WorkoutExerciseMedia\(/);
+  // One "⋯" menu (shared overflow): Replace with similar (only with an exercise) + destructive Delete.
+  assert.match(card, /WorkoutExerciseMenu\([\s\S]{0,900}removeLabel = stringResource\(R\.string\.action_delete\)[\s\S]{0,600}if \(selectedExercise != null\)[\s\S]{0,300}R\.string\.editor_replace_with_similar/);
+  assert.match(shared, /Icons\.Default\.MoreVert[\s\S]{0,800}extraItems \{ expanded = false \}[\s\S]{0,300}text = removeLabel/);
   assert.match(card, /R\.string\.editor_last_logged/);
-  assert.doesNotMatch(card, /isExpanded|ExpandLess|ExpandMore|ExerciseMuscleBreakdownCard|OutlinedButton|OutlinedTextField/);
+  assert.doesNotMatch(card, /isExpanded|ExpandLess|ExpandMore|ExerciseMuscleBreakdownCard|OutlinedButton|OutlinedTextField|MoreHoriz/);
   assert.doesNotMatch(card, /action_copy_last|action_apply_last_weight|R\.string\.cd_remove_exercise/);
-  // Set row: badge, weight, reps stepper (min 1), delete, then four per-set chips.
-  assert.match(card, /StepCapsule\([\s\S]{0,700}canStepReps\(reps, -1\)[\s\S]{0,1600}R\.string\.cd_delete_set/);
-  assert.match(card, /editor_chip_last_weight[\s\S]{0,400}enabled = lastWeight != null[\s\S]{0,400}editor_chip_previous[\s\S]{0,300}enabled = position > 0[\s\S]{0,400}editor_chip_plus_step[\s\S]{0,400}editor_chip_copy/);
-  // "+ Set" keeps the "Add planned set" accessibility label.
-  assert.match(card, /R\.string\.action_add_planned_set[\s\S]{0,400}R\.string\.editor_add_set_short/);
+  // Set row: shared number badge + shared weight/reps capsules + named trash (the stepper keeps reps at 1 or more).
+  assert.match(card, /SetNumberBadge\(number\)[\s\S]{0,200}SetEditorCapsules\([\s\S]{0,700}allowedWeights = allowedWeights[\s\S]{0,500}R\.string\.cd_delete_set_named/);
+  assert.match(shared, /canStepReps\(reps, -1\)[\s\S]{0,200}steppedReps\(reps, -1\)/);
+  assert.match(androidEditor, /uiState\.exerciseLoadProfiles\[it\]\?\.allowedWeightsKg/);
+  // Compact tonal pills under the capsules: Last, Prev., Copy; the redundant "+2.5" chip is gone.
+  assert.match(card, /editor_chip_last_weight[\s\S]{0,400}enabled = lastWeight != null[\s\S]{0,400}editor_chip_previous[\s\S]{0,300}enabled = position > 0[\s\S]{0,400}editor_chip_copy/);
+  assert.doesNotMatch(card, /editor_chip_plus_step|StepCapsule\(/);
+  // "+ Set" is a dashed footer button that keeps the "Add planned set" accessibility label.
+  assert.match(card, /R\.string\.action_add_planned_set[\s\S]*WorkoutFooterButton\([\s\S]{0,200}R\.string\.editor_add_set_short[\s\S]{0,200}accessibilityLabel = addSetDescription[\s\S]{0,100}dashed = true/);
+  // "+ Add exercise" is a dashed footer after the exercise list and reuses the existing add flow.
+  assert.match(androidEditor, /itemsIndexed\([\s\S]*if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*item\(key = "workout_plan_add_exercise_footer"\)[\s\S]{0,700}WorkoutFooterButton\([\s\S]{0,500}onClick = onAddExerciseDraft[\s\S]*if \(uiState\.hasValidationError\)/);
   for (const [key, en, uk, ru] of [
     ["editor_chip_last_weight", "Last", "Ост. вага", "Посл. вес"],
     ["editor_chip_previous", "Prev.", "Попер.", "Пред."],

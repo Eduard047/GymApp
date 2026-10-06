@@ -154,7 +154,14 @@ test("saved workout edit mode shows numbered rows, inline editors, menus and das
   assert.match(html, /data-action="delete-session"/);
   assert.match(html, /<span class="active-set-index" aria-hidden="true">2<\/span>/);
   assert.equal((html.match(/data-saved-set-deletable=/g) || []).length, 3);
-  assert.match(html, /aria-label="Delete set 1 for Bench Press"[^>]*>Delete set<\/button>/);
+  // One editor layout: two equal capsules with the value inputs inside, and a visible trash icon.
+  assert.equal((html.match(/class="set-editor-capsules"/g) || []).length, 3);
+  assert.equal((html.match(/class="set-editor-capsule"/g) || []).length, 6);
+  assert.match(html, /<div class="set-editor-capsule" role="group" data-step-field="weight"[^>]*>[\s\S]*?<span class="set-editor-value"><input class="set-editor-input" data-saved-set-id="\d+" data-saved-field="weight"[^>]*><span class="set-editor-unit" aria-hidden="true">kg<\/span><\/span>/);
+  assert.match(html, /<span class="set-editor-value"><input class="set-editor-input" data-saved-set-id="\d+" data-saved-field="reps"/);
+  assert.doesNotMatch(html, /active-set-capsule-label|active-set-value-line|data-saved-reps-display/);
+  assert.match(html, /<button class="set-delete-icon" type="button" data-action="delete-set" data-id="\d+" data-session="201" aria-label="Delete set 1 for Bench Press"><svg/);
+  assert.equal((html.match(/class="set-delete-icon"/g) || []).length, 3);
   assert.equal((html.match(/data-action="save-saved-set"/g) || []).length, 3);
   assert.match(html, /data-action="saved-step-weight"[^>]*aria-label="Increase weight by 2\.5"/);
   assert.match(html, /data-action="saved-step-reps"/);
