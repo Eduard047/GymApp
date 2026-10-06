@@ -1275,6 +1275,14 @@ enum WorkoutDetailDisclosurePolicy {
     static func toggledExercise(current: UUID?, tapped: UUID) -> UUID? {
         current == tapped ? nil : tapped
     }
+
+    /// Saved-workout cards start expanded, like the active workout; tapping a
+    /// header collapses or re-expands just that card.
+    static func toggledCollapsed(_ collapsed: Set<UUID>, tapped: UUID) -> Set<UUID> {
+        var result = collapsed
+        if result.contains(tapped) { result.remove(tapped) } else { result.insert(tapped) }
+        return result
+    }
 }
 
 /// Presented via `.sheet(item:)` so the share sheet's content is always
@@ -1292,11 +1300,13 @@ struct WorkoutDetailView: View {
     private enum ActiveAlert: Identifiable {
         case deleteWorkout(WorkoutDetailWorkoutDeletionTarget)
         case deleteItem(WorkoutDetailDeletionTarget)
+        case removeExercise(WorkoutDetailDeletionTarget)
 
         var id: String {
             switch self {
             case let .deleteWorkout(target): "delete-workout-\(target.id.uuidString)"
             case let .deleteItem(target): "delete-\(target.id)"
+            case let .removeExercise(target): "remove-\(target.id)"
             }
         }
     }
@@ -1305,7 +1315,8 @@ struct WorkoutDetailView: View {
     @State private var date: Date
     @State private var note: String
     @State private var isEditing = false
-    @State private var expandedExerciseID: UUID?
+    @State private var collapsedExerciseIDs: Set<UUID> = []
+    @State private var expandedSetIDs: Set<UUID> = []
     @State private var showsWatchMetrics = false
     @State private var showingExercisePicker = false
     @State private var activeAlert: ActiveAlert?
@@ -2017,21 +2028,25 @@ struct WorkoutDetailView: View {
 
     private func metadataPanel(isGarminWorkout: Bool) -> some View {
         GymPanel {
-            VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: 14) {
                 GymSectionTitle(
                     title: isGarminWorkout ? "Date" : "Date and note",
                     supporting: isGarminWorkout
                         ? "Garmin receipt data is kept unchanged so charts remain accurate."
                         : nil
                 )
-                DatePicker("Workout date", selection: $date, displayedComponents: [.date, .hourAndMinute])
-                    .accessibilityValue(
-                        gymFormattedDate(date, date: .long, time: .shortened)
-                    )
-                Text(gymFormattedWeekday(date))
-                    .font(.caption)
-                    .foregroundStyle(GymTheme.textSecondary)
-                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 6) {
+                    DatePicker("Workout date", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                        .accessibilityValue(
+                            gymFormattedDate(date, date: .long, time: .shortened)
+                        )
+                    Text(gymFormattedWeekday(date))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .accessibilityHidden(true)
+                }
+                .padding(10)
+                .background(GymTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
                 if !isGarminWorkout {
                     TextField("Notes (optional)", text: $note, axis: .vertical)
                         .lineLimit(2 ... 5)
@@ -2039,33 +2054,44 @@ struct WorkoutDetailView: View {
                 }
                 Button(action: saveMetadata) {
                     Label("Save session details", systemImage: "square.and.arrow.down")
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(GymSecondaryButtonStyle())
+                .buttonStyle(GymPrimaryButtonStyle())
             }
         }
     }
 
     @ViewBuilder
     private func exerciseSection(_ workout: WorkoutSession) -> some View {
-        HStack {
-            GymSectionTitle(
-                title: "Exercises and sets"
-            )
-            Spacer(minLength: 8)
-            if isEditing {
-                Button {
-                    showingExercisePicker = true
-                } label: {
-                    Label("Add", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityLabel("Add exercise to workout")
-            }
-        }
+        GymSectionTitle(
+            title: "Exercises and sets"
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
 
         ForEach(visibleExercises(workout)) { block in
             storedExerciseCard(workout: workout, block: block)
+        }
+
+        if isEditing {
+            GymDashedAddButton(
+                title: gymText(
+                    "+ Add exercise",
+                    "+ Додати вправу",
+                    "+ Добавить упражнение",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                accessibilityLabelText: gymText(
+                    "Add exercise to workout",
+                    "Додати вправу до тренування",
+                    "Добавить упражнение в тренировку",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                minHeight: 48
+            ) {
+                showingExercisePicker = true
+            }
         }
     }
 
@@ -2085,169 +2111,198 @@ struct WorkoutDetailView: View {
             personalRecordBaseline: personalRecordBaseline
         )
         let personalRecordLabels = personalRecordBaseline.labelsBySetID(in: block)
-        let isExpanded = expandedExerciseID == block.id
+        let isCollapsed = collapsedExerciseIDs.contains(block.id)
+        let summaryText = exerciseSummaryText(summary)
+        let sets = visibleSets(block)
+        let canRemoveExercise = workoutDetailCanRemoveExercise(
+            isEditing: isEditing,
+            exerciseCount: workout.exercises.count,
+            hasPendingDeletion: pendingDeletion != nil
+        )
 
-        return GymPanel(highlighted: true) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 10) {
-                    if let exercise {
-                        ExerciseMediaButton(
-                            rawExerciseName: exercise.name,
-                            catalogKey: exercise.catalogKey,
-                            exerciseID: exercise.id,
-                            ownerKey: store.accountStorageKey
-                        )
-                    }
-                    Button {
-                        withAnimation(.snappy(duration: 0.25)) {
-                            expandedExerciseID = WorkoutDetailDisclosurePolicy.toggledExercise(
-                                current: expandedExerciseID,
-                                tapped: block.id
-                            )
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(name)
-                                    .font(.headline)
-                                    .foregroundStyle(GymTheme.textPrimary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text(exerciseSummaryText(summary))
-                                    .font(.caption)
-                                    .foregroundStyle(GymTheme.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                if summary.hasPersonalRecord {
-                                    GymInfoPill(
-                                        gymText(
-                                            "Personal record",
-                                            "Особистий рекорд",
-                                            "Личный рекорд",
-                                            languageCode: gymCurrentLanguageCode()
-                                        ),
-                                        systemImage: "trophy.fill",
-                                        accent: GymTheme.tertiary
-                                    )
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(GymTheme.textSecondary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        "\(name), \(exerciseSummaryText(summary))"
+        return GymExerciseCard(
+            name: name,
+            isCollapsed: isCollapsed,
+            accessibilityValueText: summaryText,
+            accessibilityHintText: gymText(
+                isCollapsed ? "Expands sets" : "Collapses sets",
+                isCollapsed ? "Розгортає підходи" : "Згортає підходи",
+                isCollapsed ? "Разворачивает подходы" : "Сворачивает подходы",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            onToggle: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    collapsedExerciseIDs = WorkoutDetailDisclosurePolicy.toggledCollapsed(
+                        collapsedExerciseIDs,
+                        tapped: block.id
                     )
-                    .accessibilityHint(gymText(
-                        isExpanded ? "Collapses sets" : "Expands sets",
-                        isExpanded ? "Згортає підходи" : "Розгортає підходи",
-                        isExpanded ? "Сворачивает подходы" : "Разворачивает подходы",
-                        languageCode: gymCurrentLanguageCode()
-                    ))
-
-                    if isEditing {
-                        Button(role: .destructive) {
-                            presentDeletionConfirmation(
-                                .exercise(
-                                    store: store,
-                                    workout: workout,
-                                    block: block,
-                                    exerciseName: name
-                                )
-                            )
-                        } label: {
-                            Image(systemName: "trash")
-                                .frame(width: 44, height: 44)
-                        }
-                        .accessibilityLabel(
-                            gymText(
-                                "Delete \(name) from workout",
-                                "Видалити «\(name)» із тренування",
-                                "Удалить «\(name)» из тренировки",
-                                languageCode: gymCurrentLanguageCode()
-                            )
-                        )
-                        .disabled(pendingDeletion != nil)
+                }
+            },
+            media: {
+                if let exercise {
+                    ExerciseMediaButton(
+                        rawExerciseName: exercise.name,
+                        catalogKey: exercise.catalogKey,
+                        exerciseID: exercise.id,
+                        ownerKey: store.accountStorageKey
+                    )
+                }
+            },
+            info: {
+                Text(summaryText)
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            },
+            overflow: {
+                if canRemoveExercise {
+                    GymExerciseOverflowMenu {
+                        presentExerciseRemoval(workout: workout, block: block, exerciseName: name)
                     }
                 }
-
-                if isExpanded {
-                    Divider()
-
-                    ForEach(Array(visibleSets(block).enumerated()), id: \.element.id) { index, set in
-                        if isEditing {
-                            StoredWorkoutSetEditorRow(
-                                set: set,
-                                position: index,
-                                prLabels: personalRecordLabels[set.id] ?? [],
-                                lastWeight: store.lastWeight(exerciseID: block.exerciseID, before: workout.date),
-                                onSave: { weight, reps in
-                                    guard isEditing, isStoreContextCurrent() else {
-                                        showStaleDeletion()
-                                        return
-                                    }
-                                    do {
-                                        try store.updateSet(
-                                            workoutID: workout.id,
-                                            workoutExerciseID: block.id,
-                                            setID: set.id,
-                                            weight: weight,
-                                            reps: reps
-                                        )
-                                    } catch {
-                                        show(error)
-                                    }
-                                },
-                                onDelete: {
-                                    presentDeletionConfirmation(
-                                        .set(
-                                            store: store,
-                                            workout: workout,
-                                            block: block,
-                                            set: set,
-                                            position: index,
-                                            exerciseName: name
-                                        )
-                                    )
-                                }
-                            )
-                            .disabled(pendingDeletion != nil)
-                        } else {
-                            StoredWorkoutSetSummaryRow(
+            },
+            content: {
+                if !isCollapsed {
+                    // Tight inner stack, as on the active screen: each row's own
+                    // vertical padding is the only gap between rows and dividers.
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
+                            storedSetRow(
+                                workout: workout,
+                                block: block,
+                                exercise: exercise,
+                                exerciseName: name,
                                 set: set,
                                 position: index,
                                 prLabels: personalRecordLabels[set.id] ?? []
                             )
+                            if index < sets.count - 1 {
+                                Divider().overlay(GymTheme.outlineSoft)
+                            }
                         }
                     }
 
                     if isEditing {
-                        Button {
-                            addSet(to: block, workout: workout)
-                        } label: {
-                            Label(
-                                gymText(
-                                    "Add set",
-                                    "Додати підхід",
-                                    "Добавить подход",
-                                    languageCode: gymCurrentLanguageCode()
-                                ),
-                                systemImage: "plus.circle.fill"
+                        GymDashedAddButton(
+                            title: gymText(
+                                "+ Set",
+                                "+ Підхід",
+                                "+ Подход",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            accessibilityLabelText: gymText(
+                                "Add set",
+                                "Додати підхід",
+                                "Добавить подход",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            accessibilityHintText: gymText(
+                                "Adds a set to this saved workout",
+                                "Додає підхід до цього збереженого тренування",
+                                "Добавляет подход в эту сохранённую тренировку",
+                                languageCode: gymCurrentLanguageCode()
                             )
+                        ) {
+                            addSet(to: block, workout: workout)
                         }
-                        .buttonStyle(GymSecondaryButtonStyle())
-                        .accessibilityHint(gymText(
-                            "Adds a set to this saved workout",
-                            "Додає підхід до цього збереженого тренування",
-                            "Добавляет подход в эту сохранённую тренировку",
-                            languageCode: gymCurrentLanguageCode()
-                        ))
                     }
                 }
             }
+        )
+    }
+
+    /// One saved set: a completed-style line in read mode; in edit mode the same
+    /// line expands into the inline stepper editor, and long-press / the
+    /// VoiceOver action offers "Delete set".
+    @ViewBuilder
+    private func storedSetRow(
+        workout: WorkoutSession,
+        block: WorkoutExercise,
+        exercise: Exercise?,
+        exerciseName: String,
+        set: WorkoutSet,
+        position: Int,
+        prLabels: [String]
+    ) -> some View {
+        let languageCode = gymCurrentLanguageCode()
+        let summary = gymSetWeightRepsSummary(weight: set.weight, reps: set.reps)
+        let isRecord = !prLabels.isEmpty
+        let recordSuffix = isRecord
+            ? ", " + prLabels.map { gymLocalized($0, languageCode: languageCode) }.joined(separator: ", ")
+            : ""
+        if isEditing {
+            let isExpanded = expandedSetIDs.contains(set.id)
+            GymExpandableSetRow(
+                position: position,
+                summary: summary,
+                isPersonalRecord: isRecord,
+                isExpanded: isExpanded,
+                accessibilityLabelText: gymText(
+                    "Set \(position + 1), \(summary)",
+                    "Підхід \(position + 1), \(summary)",
+                    "Подход \(position + 1), \(summary)",
+                    languageCode: languageCode
+                ) + recordSuffix,
+                accessibilityHintText: gymText(
+                    "Double tap to edit this set",
+                    "Двічі торкніться, щоб редагувати цей підхід",
+                    "Дважды нажмите, чтобы редактировать этот подход",
+                    languageCode: languageCode
+                ),
+                onToggle: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if isExpanded { expandedSetIDs.remove(set.id) } else { expandedSetIDs.insert(set.id) }
+                    }
+                },
+                trailing: { EmptyView() },
+                editor: {
+                    GymSetStepperEditor(
+                        position: position,
+                        storedWeight: set.weight,
+                        storedReps: set.reps,
+                        allowedWeights: exercise?.machineLoadProfile?.allowedWeightsKg ?? [],
+                        disabled: pendingDeletion != nil,
+                        actionTitle: gymText("Save", "Зберегти", "Сохранить", languageCode: languageCode),
+                        actionAccessibilityLabel: gymText(
+                            "Save set \(position + 1)",
+                            "Зберегти підхід \(position + 1)",
+                            "Сохранить подход \(position + 1)",
+                            languageCode: languageCode
+                        ),
+                        onSave: { weight, reps in
+                            saveSet(workout: workout, block: block, set: set, weight: weight, reps: reps)
+                        }
+                    )
+                }
+            )
+            .gymSetDeleteActions(
+                isEnabled: pendingDeletion == nil,
+                accessibilityActionName: gymText(
+                    "Delete set \(position + 1) for \(exerciseName)",
+                    "Видалити підхід \(position + 1) для \(exerciseName)",
+                    "Удалить подход \(position + 1) для \(exerciseName)",
+                    languageCode: languageCode
+                )
+            ) {
+                requestSetDeletion(
+                    workout: workout,
+                    block: block,
+                    set: set,
+                    position: position,
+                    exerciseName: exerciseName
+                )
+            }
+        } else {
+            GymCompletedSetRow(
+                summary: summary,
+                isPersonalRecord: isRecord,
+                accessibilityLabelText: gymText(
+                    "Set \(position + 1), \(summary)",
+                    "Підхід \(position + 1), \(summary)",
+                    "Подход \(position + 1), \(summary)",
+                    languageCode: languageCode
+                ) + recordSuffix
+            )
         }
     }
 
@@ -2328,6 +2383,7 @@ struct WorkoutDetailView: View {
         }
         date = workout.date
         note = workout.note ?? ""
+        expandedSetIDs = []
         isEditing = true
     }
 
@@ -2342,6 +2398,7 @@ struct WorkoutDetailView: View {
             statusMessage = nil
             reportStatus("Workout details updated.", false)
             showingExercisePicker = false
+            expandedSetIDs = []
             isEditing = false
         } catch {
             show(error)
@@ -2388,6 +2445,90 @@ struct WorkoutDetailView: View {
         }
     }
 
+    private func saveSet(
+        workout: WorkoutSession,
+        block: WorkoutExercise,
+        set: WorkoutSet,
+        weight: Double,
+        reps: Int
+    ) {
+        guard isEditing, isStoreContextCurrent() else {
+            showStaleDeletion()
+            return
+        }
+        do {
+            try store.updateSet(
+                workoutID: workout.id,
+                workoutExerciseID: block.id,
+                setID: set.id,
+                weight: weight,
+                reps: reps
+            )
+            withAnimation(.easeInOut(duration: 0.2)) {
+                _ = expandedSetIDs.remove(set.id)
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    /// Long-press "Delete set". A set that leaves its exercise with other sets
+    /// is staged immediately and offers the 5-second undo bar; a final set also
+    /// removes its exercise (or the workout), so that case keeps the explicit
+    /// confirmation first.
+    private func requestSetDeletion(
+        workout: WorkoutSession,
+        block: WorkoutExercise,
+        set: WorkoutSet,
+        position: Int,
+        exerciseName: String
+    ) {
+        guard isEditing else {
+            showStaleDeletion()
+            return
+        }
+        let target = WorkoutDetailDeletionTarget.set(
+            store: store,
+            workout: workout,
+            block: block,
+            set: set,
+            position: position,
+            exerciseName: exerciseName
+        )
+        if target.impact == .setOnly {
+            confirmDeletion(target)
+        } else {
+            presentDeletionConfirmation(target)
+        }
+    }
+
+    /// Overflow-menu "Remove exercise": the same "Remove exercise?" alert as the
+    /// active workout, then the usual staged deletion with its undo bar.
+    private func presentExerciseRemoval(
+        workout: WorkoutSession,
+        block: WorkoutExercise,
+        exerciseName: String
+    ) {
+        guard isEditing,
+              pendingDeletion == nil,
+              workout.exercises.count > 1,
+              isStoreContextCurrent() else {
+            showStaleDeletion()
+            return
+        }
+        let target = WorkoutDetailDeletionTarget.exercise(
+            store: store,
+            workout: workout,
+            block: block,
+            exerciseName: exerciseName
+        )
+        guard target.isCurrent(in: store, expectedWorkoutID: workoutID) else {
+            showStaleDeletion()
+            return
+        }
+        activeAlert = .removeExercise(target)
+    }
+
     private func createExerciseForEditing(_ name: String) throws -> Exercise {
         guard isEditing, isStoreContextCurrent() else {
             throw WorkoutStoreError.invalidWorkout("The workout changed. Reopen it and try again.")
@@ -2419,6 +2560,29 @@ struct WorkoutDetailView: View {
                     deleteWorkout(target)
                 },
                 secondaryButton: .cancel(Text("Cancel"))
+            )
+        case let .removeExercise(target):
+            let languageCode = gymCurrentLanguageCode()
+            var message = ""
+            if case let .exercise(_, block, exerciseName) = target {
+                message = gymRemoveExerciseAlertMessage(
+                    name: exerciseName,
+                    recordedSetCount: block.sets.count,
+                    languageCode: languageCode
+                )
+            }
+            return Alert(
+                title: Text(gymText(
+                    "Remove exercise?", "Видалити вправу?", "Удалить упражнение?",
+                    languageCode: languageCode
+                )),
+                message: Text(message),
+                primaryButton: .destructive(Text(
+                    gymText("Remove", "Видалити", "Удалить", languageCode: languageCode)
+                )) {
+                    confirmDeletion(target)
+                },
+                secondaryButton: .cancel(Text(gymLocalized("Cancel", languageCode: languageCode)))
             )
         case let .deleteItem(target):
             let languageCode = gymCurrentLanguageCode()
@@ -2797,196 +2961,4 @@ func gymWorkoutSetValueLabelText(weight: Double, reps: Int, languageCode: String
         languageCode: languageCode
     )
     return "\(gymWeightText(weight, languageCode: languageCode)) × \(repsText)"
-}
-
-private struct StoredWorkoutSetSummaryRow: View {
-    let set: WorkoutSet
-    let position: Int
-    let prLabels: [String]
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                setLabel
-                Spacer(minLength: 6)
-                valueLabel
-                prPills
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    setLabel
-                    Spacer(minLength: 6)
-                    prPills
-                }
-                valueLabel
-            }
-        }
-        .padding(12)
-        .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var setLabel: some View {
-        Text(gymText(
-            "Set \(position + 1)",
-            "Підхід \(position + 1)",
-            "Подход \(position + 1)",
-            languageCode: gymCurrentLanguageCode()
-        ))
-        .font(.subheadline.weight(.bold))
-        .foregroundStyle(GymTheme.textPrimary)
-    }
-
-    private var valueLabel: some View {
-        Text(gymWorkoutSetValueLabelText(
-            weight: set.weight,
-            reps: set.reps,
-            languageCode: gymCurrentLanguageCode()
-        ))
-        .font(.subheadline.monospacedDigit())
-        .foregroundStyle(GymTheme.textSecondary)
-    }
-
-    private var prPills: some View {
-        HStack(spacing: 5) {
-            ForEach(prLabels, id: \.self) { label in
-                GymInfoPill(label, systemImage: "trophy.fill", accent: GymTheme.tertiary)
-            }
-        }
-    }
-}
-
-private struct StoredWorkoutSetEditorRow: View {
-    @State private var weight: Double
-    @State private var reps: Int
-
-    let set: WorkoutSet
-    let position: Int
-    let prLabels: [String]
-    let lastWeight: Double?
-    let onSave: (Double, Int) -> Void
-    let onDelete: () -> Void
-
-    init(
-        set: WorkoutSet,
-        position: Int,
-        prLabels: [String],
-        lastWeight: Double?,
-        onSave: @escaping (Double, Int) -> Void,
-        onDelete: @escaping () -> Void
-    ) {
-        self.set = set
-        self.position = position
-        self.prLabels = prLabels
-        self.lastWeight = lastWeight
-        self.onSave = onSave
-        self.onDelete = onDelete
-        _weight = State(initialValue: set.weight)
-        _reps = State(initialValue: set.reps)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(
-                    gymText(
-                        "Set \(position + 1)",
-                        "Підхід \(position + 1)",
-                        "Подход \(position + 1)",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-                    .font(.subheadline.weight(.bold))
-                Spacer(minLength: 4)
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel(
-                    gymText(
-                        "Delete set \(position + 1)",
-                        "Видалити підхід \(position + 1)",
-                        "Удалить подход \(position + 1)",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                )
-            }
-
-            ForEach(prLabels, id: \.self) { label in
-                GymInfoPill(label, systemImage: "trophy.fill", accent: GymTheme.tertiary)
-            }
-
-            VStack(spacing: 10) { editors }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { actions }
-                VStack(alignment: .leading, spacing: 8) { actions }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        }
-        .padding(12)
-        .background(GymTheme.surfaceVariant.opacity(0.48), in: RoundedRectangle(cornerRadius: 16))
-        .onChange(of: set.weight) { _, newValue in weight = newValue }
-        .onChange(of: set.reps) { _, newValue in reps = newValue }
-    }
-
-    @ViewBuilder
-    private var editors: some View {
-        TextField(
-            "Weight",
-            value: $weight,
-            format: .number.precision(.fractionLength(0 ... 2))
-        )
-        .keyboardType(.decimalPad)
-        .gymTextFieldChrome()
-        .accessibilityLabel(
-            gymText(
-                "Weight for set \(position + 1)",
-                "Вага для підходу \(position + 1)",
-                "Вес для подхода \(position + 1)",
-                languageCode: gymCurrentLanguageCode()
-            )
-        )
-
-        Stepper(value: $reps, in: 1 ... 10_000) {
-            Text(
-                gymText(
-                    "\(reps) \(reps == 1 ? "rep" : "reps")",
-                    "\(reps) повт.",
-                    "\(reps) повт.",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-                .font(.body.monospacedDigit())
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(GymTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
-    }
-
-    @ViewBuilder
-    private var actions: some View {
-        Button {
-            if let lastWeight { weight = lastWeight }
-        } label: {
-            Label("Last", systemImage: "clock.arrow.circlepath")
-        }
-        .disabled(lastWeight == nil)
-
-        Button {
-            weight += 2.5
-        } label: {
-            Label("+2.5", systemImage: "plus")
-        }
-
-        Button {
-            onSave(weight, reps)
-        } label: {
-            Label("Save set", systemImage: "checkmark")
-        }
-        .disabled(!weight.isFinite || weight < 0 || reps < 1)
-    }
 }

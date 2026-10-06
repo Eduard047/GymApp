@@ -44,6 +44,28 @@ func activeWorkoutStructuralActionsAreDisabled(
     !hasStoredExercise || hasCommitIntent || isLivePlanFrozen
 }
 
+/// "Delete set" is offered only for a not-yet-recorded set of an exercise that
+/// keeps at least one set, while the plan is editable (no finishing lock, no live
+/// room). `ActiveWorkoutStore.deleteSet` enforces the same rules.
+func activeWorkoutCanDeleteSet(
+    isCompleted: Bool,
+    exerciseSetCount: Int,
+    hasCommitIntent: Bool,
+    isLivePlanFrozen: Bool
+) -> Bool {
+    !isCompleted && exerciseSetCount > 1 && !hasCommitIntent && !isLivePlanFrozen
+}
+
+/// "Remove exercise" is hidden for the workout's only exercise, while finishing,
+/// and in a live room. `ActiveWorkoutStore.removeExercise` enforces the same rules.
+func activeWorkoutCanRemoveExercise(
+    exerciseCount: Int,
+    hasCommitIntent: Bool,
+    isLivePlanFrozen: Bool
+) -> Bool {
+    exerciseCount > 1 && !hasCommitIntent && !isLivePlanFrozen
+}
+
 /// The active-workout file owns the rest deadline. RestTimerManager is a
 /// recoverable countdown projection, so a crash between their writes is healed
 /// in this direction only and can never extend the committed rest interval.
@@ -117,6 +139,10 @@ struct ActiveWorkoutView: View {
     /// re-derives the live exercise/draft so the dialog's buttons never act
     /// on stale data.
     @State private var pendingFinishExerciseID: UUID?
+    /// The exercise block a "Remove exercise" tap is asking to confirm. Only the
+    /// id is kept; the alert re-derives the live exercise so it never acts on
+    /// stale data.
+    @State private var pendingRemoveExerciseID: UUID?
     @State private var collapsedExerciseIDs = Set<UUID>()
     @State private var expandedSetIDs = Set<UUID>()
     @FocusState private var focusedWeightSetID: UUID?
@@ -427,6 +453,34 @@ struct ActiveWorkoutView: View {
                     languageCode: gymCurrentLanguageCode()
                 )
             )
+        }
+        .alert(
+            gymText(
+                "Remove exercise?",
+                "Видалити вправу?",
+                "Удалить упражнение?",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            isPresented: Binding(
+                get: { pendingRemoveExerciseID != nil },
+                set: { isPresented in if !isPresented { pendingRemoveExerciseID = nil } }
+            )
+        ) {
+            Button(
+                gymText("Remove", "Видалити", "Удалить", languageCode: gymCurrentLanguageCode()),
+                role: .destructive
+            ) {
+                if let id = pendingRemoveExerciseID { removeExercise(id: id) }
+                pendingRemoveExerciseID = nil
+            }
+            Button(
+                gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()),
+                role: .cancel
+            ) {
+                pendingRemoveExerciseID = nil
+            }
+        } message: {
+            Text(removeExerciseAlertMessage)
         }
         .confirmationDialog(
             finishExerciseDialogTitle(unrecordedCount: pendingFinishExerciseUnrecordedCount),
@@ -1102,75 +1156,74 @@ struct ActiveWorkoutView: View {
             ukrainianMany: "підходів",
             languageCode: gymCurrentLanguageCode()
         )
-        return GymPanel(highlighted: isCurrent) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    if let storedExercise {
-                        ExerciseMediaButton(
-                            rawExerciseName: storedExercise.name,
-                            catalogKey: storedExercise.catalogKey,
-                            exerciseID: storedExercise.id,
-                            ownerKey: workoutStore.accountStorageKey,
-                            editable: ExerciseMediaPresentation.isEditable(on: .activeWorkout)
-                        )
-                    }
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if isCollapsed { collapsedExerciseIDs.remove(exercise.id) }
-                            else { collapsedExerciseIDs.insert(exercise.id) }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(exerciseName)
-                                    .font(.headline)
-                                    .foregroundStyle(GymTheme.textPrimary)
-                                if isCollapsed {
-                                    Label(
-                                        "\(completedCount) / \(exercise.sets.count)",
-                                        systemImage: fullyCompleted
-                                            ? "checkmark.seal.fill"
-                                            : "circle.dotted"
-                                    )
-                                    .font(.subheadline.monospacedDigit().weight(.bold))
-                                    .foregroundStyle(
-                                        fullyCompleted ? GymTheme.secondary : GymTheme.textSecondary
-                                    )
-                                    if !isCurrent {
-                                        Text(
-                                            fullyCompleted
-                                                ? gymText(
-                                                    "Completed", "Завершено", "Завершено",
-                                                    languageCode: gymCurrentLanguageCode()
-                                                )
-                                                : gymText(
-                                                    "Up next · \(setCountPhrase)",
-                                                    "Далі · \(setCountPhrase)",
-                                                    "Далее · \(setCountPhrase)",
-                                                    languageCode: gymCurrentLanguageCode()
-                                                )
-                                        )
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(GymTheme.textSecondary)
-                                    }
-                                } else {
-                                    Text(exerciseSetSubtitle(exercise: exercise, draft: draft))
-                                        .font(.caption)
-                                        .foregroundStyle(GymTheme.textSecondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
-                                .foregroundStyle(GymTheme.textSecondary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(exerciseName)
-                    .accessibilityValue("\(completedCount) / \(exercise.sets.count)")
+        return GymExerciseCard(
+            name: exerciseName,
+            highlighted: isCurrent,
+            isCollapsed: isCollapsed,
+            accessibilityValueText: "\(completedCount) / \(exercise.sets.count)",
+            onToggle: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isCollapsed { collapsedExerciseIDs.remove(exercise.id) }
+                    else { collapsedExerciseIDs.insert(exercise.id) }
                 }
-
+            },
+            media: {
+                if let storedExercise {
+                    ExerciseMediaButton(
+                        rawExerciseName: storedExercise.name,
+                        catalogKey: storedExercise.catalogKey,
+                        exerciseID: storedExercise.id,
+                        ownerKey: workoutStore.accountStorageKey,
+                        editable: ExerciseMediaPresentation.isEditable(on: .activeWorkout)
+                    )
+                }
+            },
+            info: {
+                if isCollapsed {
+                    Label(
+                        "\(completedCount) / \(exercise.sets.count)",
+                        systemImage: fullyCompleted
+                            ? "checkmark.seal.fill"
+                            : "circle.dotted"
+                    )
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(
+                        fullyCompleted ? GymTheme.secondary : GymTheme.textSecondary
+                    )
+                    if !isCurrent {
+                        Text(
+                            fullyCompleted
+                                ? gymText(
+                                    "Completed", "Завершено", "Завершено",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                                : gymText(
+                                    "Up next · \(setCountPhrase)",
+                                    "Далі · \(setCountPhrase)",
+                                    "Далее · \(setCountPhrase)",
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(GymTheme.textSecondary)
+                    }
+                } else {
+                    Text(exerciseSetSubtitle(exercise: exercise, draft: draft))
+                        .font(.caption)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(1)
+                }
+            },
+            overflow: {
+                if activeWorkoutCanRemoveExercise(
+                    exerciseCount: draft.exercises.count,
+                    hasCommitIntent: draft.commitIntent != nil,
+                    isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+                ) {
+                    exerciseOverflowMenu(exercise)
+                }
+            },
+            content: {
                 if !isCollapsed, let ghost = friendGhost(for: exercise, storedExercise: storedExercise) {
                     Label(
                         FriendGhosts.line(for: ghost, languageCode: gymCurrentLanguageCode()),
@@ -1208,41 +1261,27 @@ struct ActiveWorkoutView: View {
                     }
 
                     HStack(spacing: 8) {
-                        Button {
-                            appendSet(to: exercise)
-                        } label: {
-                            Text(
-                                gymText(
-                                    "+ Set",
-                                    "+ Підхід",
-                                    "+ Подход",
-                                    languageCode: gymCurrentLanguageCode()
-                                )
-                            )
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(GymTheme.primary)
-                            .frame(maxWidth: .infinity, minHeight: 40)
-                        }
-                        .buttonStyle(.plain)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(GymTheme.primary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        )
-                        .accessibilityLabel(
-                            gymText(
+                        GymDashedAddButton(
+                            title: gymText(
+                                "+ Set",
+                                "+ Підхід",
+                                "+ Подход",
+                                languageCode: gymCurrentLanguageCode()
+                            ),
+                            accessibilityLabelText: gymText(
                                 "Add set",
                                 "Додати підхід",
                                 "Добавить подход",
                                 languageCode: gymCurrentLanguageCode()
-                            )
-                        )
-                        .disabled(
-                            activeWorkoutStructuralActionsAreDisabled(
+                            ),
+                            disabled: activeWorkoutStructuralActionsAreDisabled(
                                 hasStoredExercise: storedExercise != nil,
                                 hasCommitIntent: draft.commitIntent != nil,
                                 isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
                             )
-                        )
+                        ) {
+                            appendSet(to: exercise)
+                        }
 
                         Button {
                             beginFinishExercise(exercise, draft: draft)
@@ -1283,7 +1322,7 @@ struct ActiveWorkoutView: View {
                     .padding(.top, 12)
                 }
             }
-        }
+        )
     }
 
     @ViewBuilder
@@ -1300,7 +1339,15 @@ struct ActiveWorkoutView: View {
         } else if isCurrent {
             currentSetRow(set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
         } else {
-            upcomingSetRow(set, position: position, draft: draft)
+            upcomingSetRow(set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
+        }
+    }
+
+    /// Overflow (ellipsis) menu in the exercise header. Rendered only while the
+    /// plan is editable; the destructive action asks for confirmation first.
+    private func exerciseOverflowMenu(_ exercise: ActiveWorkoutExercise) -> some View {
+        GymExerciseOverflowMenu {
+            pendingRemoveExerciseID = exercise.id
         }
     }
 
@@ -1349,7 +1396,7 @@ struct ActiveWorkoutView: View {
         let isListeningHere = voiceCommandSetID == set.id && voiceCommandPhase == .listening
         let isTypedHere = voiceCommandSetID == set.id && voiceCommandPhase == .typed
 
-        return VStack(alignment: .leading, spacing: 10) {
+        let content = VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text(
                     gymText(
@@ -1438,7 +1485,7 @@ struct ActiveWorkoutView: View {
             } else {
                 HStack(spacing: 8) {
                     voiceMicButton(set: set, exercise: exercise, exerciseName: exerciseName, position: position, draft: draft)
-                    logButton(set: set, exercise: exercise, exerciseName: exerciseName, draft: draft, restSeconds: restSeconds)
+                    logButton(set: set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft, restSeconds: restSeconds)
                 }
             }
         }
@@ -1449,12 +1496,14 @@ struct ActiveWorkoutView: View {
         .accessibilityValue(
             gymText("Current set", "Поточний підхід", "Текущий подход", languageCode: gymCurrentLanguageCode())
         )
+        return deleteSetActions(content, set: set, exercise: exercise, draft: draft)
     }
 
     /// "Записать подход · отдых 3:00" button, extracted so the action row can
     /// place it beside the mic button.
     private func logButton(
         set: ActiveWorkoutSet,
+        position: Int,
         exercise: ActiveWorkoutExercise,
         exerciseName: String,
         draft: ActiveWorkoutDraft,
@@ -1473,7 +1522,7 @@ struct ActiveWorkoutView: View {
         }
         .buttonStyle(GymPrimaryButtonStyle())
         .disabled(draft.commitIntent != nil)
-        .accessibilityLabel(logButtonLabel(restSeconds: restSeconds))
+        .accessibilityLabel(logButtonLabel(position: position, restSeconds: restSeconds))
         .accessibilityHint(
             gymText(
                 "Saves this set before starting its movement-based rest timer",
@@ -1739,72 +1788,6 @@ struct ActiveWorkoutView: View {
         return main + suffix
     }
 
-    /// One slim, equal-height pill shared by the weight and reps rows: a
-    /// step button at each end (44pt tap target via a larger button frame),
-    /// a tiny center label, and a 32–36pt-tall visual capsule centered
-    /// within that larger tap frame via `.background(alignment:)`.
-    private func stepCapsule(
-        minusLabel: String,
-        minusAccessibilityLabel: String,
-        minusDisabled: Bool,
-        minusAction: @escaping () -> Void,
-        centerLabel: String,
-        plusLabel: String,
-        plusAccessibilityLabel: String,
-        plusDisabled: Bool,
-        plusAction: @escaping () -> Void,
-        accessibilityLabel: String,
-        accessibilityValue: String,
-        useSymbolGlyphs: Bool = false,
-        adjustableAction: @escaping (AccessibilityAdjustmentDirection) -> Void
-    ) -> some View {
-        HStack(spacing: 0) {
-            Button(action: minusAction) {
-                Group {
-                    if useSymbolGlyphs {
-                        Image(systemName: minusLabel)
-                    } else {
-                        Text(minusLabel)
-                    }
-                }
-                .font(useSymbolGlyphs ? .body.weight(.semibold) : .caption2.weight(.bold))
-                .frame(minWidth: 44, minHeight: 44)
-            }
-            .disabled(minusDisabled)
-
-            Text(centerLabel)
-                .font(.caption2)
-                .foregroundStyle(GymTheme.textSecondary)
-                .frame(maxWidth: .infinity)
-
-            Button(action: plusAction) {
-                Group {
-                    if useSymbolGlyphs {
-                        Image(systemName: plusLabel)
-                    } else {
-                        Text(plusLabel)
-                    }
-                }
-                .font(useSymbolGlyphs ? .body.weight(.semibold) : .caption2.weight(.bold))
-                .frame(minWidth: 44, minHeight: 44)
-            }
-            .disabled(plusDisabled)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(GymTheme.primary)
-        .background(alignment: .center) {
-            Capsule().fill(GymTheme.surface).frame(height: 34)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(accessibilityValue)
-        .accessibilityAdjustableAction { direction in
-            guard !(minusDisabled && plusDisabled) else { return }
-            adjustableAction(direction)
-        }
-    }
-
     /// "−2,5   вес   +2,5" capsule: same nominal-step/disabled logic the
     /// old weight-step chips used (honors a machine's `allowedWeightsKg`).
     private func weightStepCapsule(
@@ -1814,69 +1797,19 @@ struct ActiveWorkoutView: View {
         draft: ActiveWorkoutDraft,
         disabled: Bool
     ) -> some View {
-        let allowed = workoutStore.exercise(id: exercise.exerciseID)?.machineLoadProfile?.allowedWeightsKg ?? []
-        // Nominal step shown even when that direction is blocked (e.g. at
-        // 0 kg or at the machine's lowest stop): the default 2.5 kg
-        // increment, or the smallest gap between the machine's allowed
-        // weights when it has one.
-        let nominalStep: Double = {
-            guard allowed.count >= 2 else { return 2.5 }
-            let gaps = zip(allowed, allowed.dropFirst()).map { $1 - $0 }
-            return gaps.min() ?? 2.5
-        }()
-        let minusWeight = TrainingTools.stepWeight(set.weight, direction: -1, allowed: allowed)
-        let minusCanMove = minusWeight != set.weight
-        let minusDelta = minusCanMove ? abs(minusWeight - set.weight) : nominalStep
-        let plusWeight = TrainingTools.stepWeight(set.weight, direction: 1, allowed: allowed)
-        let plusCanMove = plusWeight != set.weight
-        let plusDelta = plusCanMove ? abs(plusWeight - set.weight) : nominalStep
-
-        return stepCapsule(
-            minusLabel: "−" + minusDelta.formatted(.number.locale(gymAppLocale())),
-            minusAccessibilityLabel: gymText("Decrease weight by \(minusDelta.formatted(.number.locale(gymAppLocale())))", "Зменшити вагу на \(minusDelta.formatted(.number.locale(gymAppLocale())))", "Уменьшить вес на \(minusDelta.formatted(.number.locale(gymAppLocale())))", languageCode: gymCurrentLanguageCode()),
-            minusDisabled: disabled || !minusCanMove,
-            minusAction: { updateSet(draft: draft, setID: set.id, weight: minusWeight, reps: set.reps) },
-            centerLabel: gymText("weight", "вага", "вес", languageCode: gymCurrentLanguageCode()),
-            plusLabel: "+" + plusDelta.formatted(.number.locale(gymAppLocale())),
-            plusAccessibilityLabel: gymText("Increase weight by \(plusDelta.formatted(.number.locale(gymAppLocale())))", "Збільшити вагу на \(plusDelta.formatted(.number.locale(gymAppLocale())))", "Увеличить вес на \(plusDelta.formatted(.number.locale(gymAppLocale())))", languageCode: gymCurrentLanguageCode()),
-            plusDisabled: disabled || !plusCanMove,
-            plusAction: { updateSet(draft: draft, setID: set.id, weight: plusWeight, reps: set.reps) },
-            accessibilityLabel: gymText("Weight", "Вага", "Вес", languageCode: gymCurrentLanguageCode()),
-            accessibilityValue: "\(set.weight.formatted(.number.locale(gymAppLocale()))) \(gymLocalized("kg"))",
-            adjustableAction: { direction in
-                switch direction {
-                case .increment: if plusCanMove { updateSet(draft: draft, setID: set.id, weight: plusWeight, reps: set.reps) }
-                case .decrement: if minusCanMove { updateSet(draft: draft, setID: set.id, weight: minusWeight, reps: set.reps) }
-                @unknown default: break
-                }
+        GymWeightStepCapsule(
+            weight: set.weight,
+            allowedWeights: workoutStore.exercise(id: exercise.exerciseID)?.machineLoadProfile?.allowedWeightsKg ?? [],
+            disabled: disabled,
+            onChange: { newWeight in
+                updateSet(draft: draft, setID: set.id, weight: newWeight, reps: set.reps)
             }
         )
     }
 
     /// "−   повт.   +" capsule for reps.
     private func repsStepCapsule(set: ActiveWorkoutSet, position: Int, disabled: Bool) -> some View {
-        let reps = repsBinding(setID: set.id)
-        return stepCapsule(
-            minusLabel: "minus",
-            minusAccessibilityLabel: gymText("Decrease reps", "Зменшити повторення", "Уменьшить повторения", languageCode: gymCurrentLanguageCode()),
-            minusDisabled: disabled || reps.wrappedValue <= 1,
-            minusAction: { reps.wrappedValue = max(1, reps.wrappedValue - 1) },
-            centerLabel: gymText("reps", "повт.", "повт.", languageCode: gymCurrentLanguageCode()),
-            plusLabel: "plus",
-            plusAccessibilityLabel: gymText("Increase reps", "Збільшити повторення", "Увеличить повторения", languageCode: gymCurrentLanguageCode()),
-            plusDisabled: disabled,
-            plusAction: { reps.wrappedValue += 1 },
-            accessibilityLabel: gymText("Reps", "Повторення", "Повторы", languageCode: gymCurrentLanguageCode()),
-            accessibilityValue: reps.wrappedValue.formatted(.number.locale(gymAppLocale())),
-            useSymbolGlyphs: true,
-            adjustableAction: { direction in
-                switch direction {
-                case .increment: reps.wrappedValue += 1
-                case .decrement: reps.wrappedValue = max(1, reps.wrappedValue - 1)
-                @unknown default: break
-                }
-            }
-        )
+        GymRepsStepCapsule(reps: repsBinding(setID: set.id), disabled: disabled)
     }
 
     /// A not-yet-reached set: one compact read-only line, tappable to
@@ -1885,6 +1818,8 @@ struct ActiveWorkoutView: View {
     private func upcomingSetRow(
         _ set: ActiveWorkoutSet,
         position: Int,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
         draft: ActiveWorkoutDraft
     ) -> some View {
         let isExpanded = expandedSetIDs.contains(set.id)
@@ -1893,49 +1828,32 @@ struct ActiveWorkoutView: View {
             hasCommitIntent: draft.commitIntent != nil,
             isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
         )
-        return VStack(alignment: .leading, spacing: 10) {
-            Button {
+        let summary = weightRepsSummary(weight: set.weight, reps: set.reps)
+        let content = GymExpandableSetRow(
+            position: position,
+            summary: summary,
+            isExpanded: isExpanded,
+            accessibilityLabelText: gymText(
+                "Set \(position + 1), \(summary)",
+                "Підхід \(position + 1), \(summary)",
+                "Подход \(position + 1), \(summary)",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            accessibilityHintText: gymText(
+                "Double tap to edit this set",
+                "Двічі торкніться, щоб редагувати цей підхід",
+                "Дважды нажмите, чтобы редактировать этот подход",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            onToggle: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     if isExpanded { expandedSetIDs.remove(set.id) } else { expandedSetIDs.insert(set.id) }
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Text("\(position + 1)")
-                        .font(.caption.weight(.bold).monospacedDigit())
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .frame(width: 22, height: 22)
-                        .overlay(
-                            Circle().strokeBorder(GymTheme.outlineSoft, lineWidth: 1.5)
-                        )
-                    Text(weightRepsSummary(weight: set.weight, reps: set.reps))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GymTheme.textSecondary)
-                    Spacer(minLength: 8)
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.textSecondary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                gymText(
-                    "Set \(position + 1), \(weightRepsSummary(weight: set.weight, reps: set.reps))",
-                    "Підхід \(position + 1), \(weightRepsSummary(weight: set.weight, reps: set.reps))",
-                    "Подход \(position + 1), \(weightRepsSummary(weight: set.weight, reps: set.reps))",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-            .accessibilityHint(
-                gymText(
-                    "Double tap to edit this set",
-                    "Двічі торкніться, щоб редагувати цей підхід",
-                    "Дважды нажмите, чтобы редактировать этот подход",
-                    languageCode: gymCurrentLanguageCode()
-                )
-            )
-
-            if isExpanded {
+            },
+            trailing: {
+                compactLogButton(set: set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
+            },
+            editor: {
                 HStack(spacing: 8) {
                     GymSetWeightField(
                         weight: weightBinding(setID: set.id),
@@ -1954,8 +1872,70 @@ struct ActiveWorkoutView: View {
                     Spacer(minLength: 4)
                 }
             }
+        )
+        return deleteSetActions(content, set: set, exercise: exercise, draft: draft)
+    }
+
+    /// Compact "Log" action for a pending set that is not the first incomplete
+    /// one. Same rules as the current set's button: it records this exact set
+    /// (out of order is allowed), and is disabled only while the workout is
+    /// finishing.
+    private func compactLogButton(
+        set: ActiveWorkoutSet,
+        position: Int,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        // Tonal pill (matches Android): primary text on a faint primary wash so
+        // it stays secondary to the current set's filled "Log · 3:00" button.
+        let isEnabled = draft.commitIntent == nil
+        return Button {
+            recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)
+        } label: {
+            Text(gymText("Log", "Записати", "Записать", languageCode: gymCurrentLanguageCode()))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(GymTheme.primary.opacity(isEnabled ? 1 : 0.38))
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(minWidth: 44, minHeight: 36)
+                .background(Capsule().fill(GymTheme.primary.opacity(isEnabled ? 0.12 : 0.06)))
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
-        .padding(.vertical, 10)
+        .buttonStyle(.plain)
+        .disabled(draft.commitIntent != nil)
+        .accessibilityLabel(logSetAccessibilityLabel(position: position))
+    }
+
+    private func logSetAccessibilityLabel(position: Int) -> String {
+        gymText(
+            "Log set \(position + 1)",
+            "Записати підхід \(position + 1)",
+            "Записать подход \(position + 1)",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    /// Long-press "Delete set" (and the matching VoiceOver action) for a
+    /// not-yet-recorded row, mirroring how Undo is exposed on a completed row.
+    /// Attached only when the store would accept the delete.
+    private func deleteSetActions<Content: View>(
+        _ content: Content,
+        set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        content.gymSetDeleteActions(
+            isEnabled: activeWorkoutCanDeleteSet(
+                isCompleted: set.isCompleted,
+                exerciseSetCount: exercise.sets.count,
+                hasCommitIntent: draft.commitIntent != nil,
+                isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+            )
+        ) {
+            deleteSet(set, draft: draft)
+        }
     }
 
     /// A completed row is one compact line — checkmark, weight×reps, and
@@ -2043,20 +2023,10 @@ struct ActiveWorkoutView: View {
         isPersonalRecord: Bool,
         remainingRestSeconds: Int?
     ) -> some View {
-        let summary = HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.subheadline)
-                .foregroundStyle(GymTheme.secondary)
-                .frame(width: 22, height: 22)
-                .background(GymTheme.secondary.opacity(0.18), in: Circle())
-            Text(weightRepsSummary(weight: set.weight, reps: set.reps))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(GymTheme.textSecondary)
-                .lineLimit(1)
-            if isPersonalRecord {
-                personalRecordBadge
-            }
-        }
+        let summary = GymCompletedSetSummary(
+            summary: weightRepsSummary(weight: set.weight, reps: set.reps),
+            isPersonalRecord: isPersonalRecord
+        )
         .layoutPriority(1)
 
         return Group {
@@ -2080,23 +2050,6 @@ struct ActiveWorkoutView: View {
                 }
             }
         }
-    }
-
-    /// "Рекорд" capsule on a set that beats this exercise's best weight or
-    /// estimated 1RM. The row's accessibility label already says so.
-    private var personalRecordBadge: some View {
-        Label(
-            gymText("Record", "Рекорд", "Рекорд", languageCode: gymCurrentLanguageCode()),
-            systemImage: "trophy.fill"
-        )
-        .font(.caption2.weight(.bold))
-        .foregroundStyle(.white)
-        .lineLimit(1)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(GymTheme.brandFill))
-        .fixedSize()
-        .accessibilityHidden(true)
     }
 
     private func loadPersonalRecordBaselines() {
@@ -2258,19 +2211,18 @@ struct ActiveWorkoutView: View {
     }
 
     private func weightRepsSummary(weight: Double, reps: Int) -> String {
-        "\(weight.formatted(.number.locale(gymAppLocale()))) \(gymLocalized("kg")) × \(reps)"
+        gymSetWeightRepsSummary(weight: weight, reps: reps)
     }
 
 
-    private func logButtonLabel(restSeconds: Int) -> String {
-        guard restSeconds > 0 else {
-            return gymText("Log", "Записати", "Записать", languageCode: gymCurrentLanguageCode())
-        }
+    private func logButtonLabel(position: Int, restSeconds: Int) -> String {
+        let base = logSetAccessibilityLabel(position: position)
+        guard restSeconds > 0 else { return base }
         let mmss = String(format: "%d:%02d", restSeconds / 60, restSeconds % 60)
-        return gymText(
-            "Log · rest \(mmss)",
-            "Записати · відпочинок \(mmss)",
-            "Записать · отдых \(mmss)",
+        return base + " · " + gymText(
+            "rest \(mmss)",
+            "відпочинок \(mmss)",
+            "отдых \(mmss)",
             languageCode: gymCurrentLanguageCode()
         )
     }
@@ -2978,6 +2930,112 @@ struct ActiveWorkoutView: View {
             }
         } catch {
             show(error)
+        }
+    }
+
+    /// Exercise name plus consequence line for the "Remove exercise?" alert.
+    /// Re-derived from the live draft on every render, never from a snapshot.
+    private var removeExerciseAlertMessage: String {
+        guard let id = pendingRemoveExerciseID,
+              let exercise = currentDraft?.exercises.first(where: { $0.id == id }) else { return "" }
+        let name = workoutStore.exercise(id: exercise.exerciseID).map { gymExerciseName($0) }
+            ?? exercise.exerciseName
+            ?? gymText(
+                "Unavailable exercise",
+                "Недоступна вправа",
+                "Недоступное упражнение",
+                languageCode: gymCurrentLanguageCode()
+            )
+        return gymRemoveExerciseAlertMessage(
+            name: name,
+            recordedSetCount: exercise.sets.lazy.filter(\.isCompleted).count
+        )
+    }
+
+    /// Deletes one not-yet-recorded set. Success is silent: the list simply
+    /// updates (the Live Activity follows the draft publisher).
+    private func deleteSet(_ set: ActiveWorkoutSet, draft: ActiveWorkoutDraft) {
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        do {
+            let updated = try activeWorkoutStore.deleteSet(
+                draftID: draft.id,
+                setID: set.id,
+                expectedRevision: draft.revision,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+            forgetTransientState(forSetIDs: [set.id])
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(restCleanupWarning)
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    /// Removes a whole exercise (and any sets recorded in it). A rest started
+    /// by one of its sets stops with it; otherwise the timer is untouched.
+    private func removeExercise(id: UUID) {
+        guard let draft = currentDraft,
+              let exercise = draft.exercises.first(where: { $0.id == id }) else { return }
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        do {
+            let updated = try activeWorkoutStore.removeExercise(
+                draftID: draft.id,
+                exerciseBlockID: exercise.id,
+                expectedRevision: draft.revision,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+            collapsedExerciseIDs.remove(exercise.id)
+            if pendingFinishExerciseID == exercise.id { pendingFinishExerciseID = nil }
+            forgetTransientState(forSetIDs: Set(exercise.sets.map(\.id)))
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            if restOutcome == .synchronized {
+                statusMessage = nil
+                statusIsError = false
+            } else {
+                showRestProjectionWarning(restCleanupWarning)
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    private var restCleanupWarning: String {
+        gymText(
+            "Workout updated, but old local rest controls could not be fully cleared.",
+            "Тренування оновлено, але старі локальні елементи відпочинку не вдалося повністю очистити.",
+            "Тренировка обновлена, но старые локальные элементы отдыха не удалось полностью очистить.",
+            languageCode: gymCurrentLanguageCode()
+        )
+    }
+
+    /// Drops view-only state that pointed at sets that no longer exist.
+    private func forgetTransientState(forSetIDs ids: Set<UUID>) {
+        expandedSetIDs.subtract(ids)
+        if let focused = focusedWeightSetID, ids.contains(focused) { focusedWeightSetID = nil }
+        if let voiceID = voiceCommandSetID, ids.contains(voiceID) { cancelVoiceCommand() }
+        if let confirmation = recordedSetConfirmation, ids.contains(confirmation.setID) {
+            recordedSetConfirmation = nil
         }
     }
 

@@ -18472,8 +18472,9 @@ final class CoreParityTests: XCTestCase {
         // The compact rest capsules and the weight/reps step capsules each
         // guarantee an explicit >=44pt tap target even where their visual
         // pill is smaller.
+        let stepCapsuleSource = try iosSource("GymApp/UI/Components/WorkoutExerciseCardComponents.swift")
         XCTAssertGreaterThanOrEqual(
-            source.components(separatedBy: "minWidth: 44, minHeight: 44").count - 1,
+            (source + stepCapsuleSource).components(separatedBy: "minWidth: 44, minHeight: 44").count - 1,
             3
         )
         // Undo is reachable without a standing button: a long-press context
@@ -18484,9 +18485,12 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(source.contains("Undo latest set"), "the old standing full-width undo button text must be gone")
 
         for localizedCopy in [
-            "Log · rest \\(mmss)",
-            "Записати · відпочинок \\(mmss)",
-            "Записать · отдых \\(mmss)",
+            "Log set \\(position + 1)",
+            "Записати підхід \\(position + 1)",
+            "Записать подход \\(position + 1)",
+            "rest \\(mmss)",
+            "відпочинок \\(mmss)",
+            "отдых \\(mmss)",
             "Decrease rest by 15 seconds",
             "Зменшити відпочинок на 15 секунд",
             "Уменьшить отдых на 15 секунд",

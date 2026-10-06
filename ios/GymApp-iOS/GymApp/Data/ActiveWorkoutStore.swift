@@ -564,6 +564,88 @@ final class ActiveWorkoutStore: ObservableObject {
         }
     }
 
+    /// Removes one not-yet-recorded set (e.g. one added by mistake). Recorded sets,
+    /// an exercise's only set, a finishing workout, a stale revision, and a plan
+    /// frozen by a live room or reservation are all refused here, not only in the UI.
+    /// Remaining sets keep their order, so positions renumber implicitly. The undo
+    /// target is untouched because it can only point at a recorded set.
+    @discardableResult
+    func deleteSet(
+        draftID: UUID,
+        setID: UUID,
+        expectedRevision: UInt64,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        return try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            let location = try Self.setLocation(setID: setID, in: candidate)
+            guard candidate.exercises[location.exercise].sets[location.set].completedAt == nil else {
+                throw ActiveWorkoutStoreError.setAlreadyCompleted
+            }
+            guard candidate.exercises[location.exercise].sets.count > 1 else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            candidate.exercises[location.exercise].sets.remove(at: location.set)
+        }
+    }
+
+    /// Removes a whole exercise block together with any sets already recorded in it.
+    /// Refuses the workout's last exercise and a frozen live plan. The undo target
+    /// survives unless it belonged to the removed block; in that case it is cleared
+    /// and a running rest (which that recorded set started) stops with it. A rest
+    /// owned by another exercise's set keeps running.
+    @discardableResult
+    func removeExercise(
+        draftID: UUID,
+        exerciseBlockID: UUID,
+        expectedRevision: UInt64,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        return try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard let exerciseIndex = candidate.exercises.firstIndex(where: {
+                $0.id == exerciseBlockID
+            }) else {
+                throw ActiveWorkoutStoreError.exerciseUnavailable
+            }
+            guard candidate.exercises.count > 1 else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            let removed = candidate.exercises.remove(at: exerciseIndex)
+            if let undoableSetID = candidate.undoableSetID,
+               removed.sets.contains(where: { $0.id == undoableSetID }) {
+                candidate.undoableSetID = nil
+                var timing = Self.normalizedTiming(in: candidate, at: now)
+                if timing.restingUntil != nil {
+                    timing.restingUntil = nil
+                    timing.activeSince = now
+                }
+                candidate.timing = timing
+            }
+        }
+    }
+
+    private func assertStructuralChangeAllowed(isSolo: () -> Bool) throws {
+        guard isSolo() else { throw ActiveWorkoutStoreError.invalidDraft }
+        do {
+            try liveSlotReservationStore.assertOrdinaryStartAllowed()
+        } catch LiveWorkoutSlotReservationError.slotReserved {
+            throw ActiveWorkoutStoreError.liveWorkoutReserved
+        } catch LiveWorkoutSlotReservationError.storageUnavailable {
+            throw ActiveWorkoutStoreError.storageUnavailable
+        }
+    }
+
     /// Cloud restore intentionally recreates local exercise UUIDs because UUIDs are not
     /// part of the shared contract. Rebind only by the local stable catalog/name identity,
     /// and persist that mapping before the draft is presented again.

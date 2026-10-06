@@ -1964,6 +1964,248 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(bodyweightRecorded.exercises.first).sets[1].weight, 0)
     }
 
+    // MARK: Log any pending set, delete a set, remove an exercise
+
+    private func startTwoExercises(
+        _ context: Context,
+        first: [ActiveWorkoutSet],
+        second: [ActiveWorkoutSet],
+        now: Date
+    ) throws -> (draft: ActiveWorkoutDraft, firstBlock: UUID, secondBlock: UUID) {
+        let other = try context.history.addExercise(name: "Active Test Other \(UUID().uuidString)")
+        let firstBlock = ActiveWorkoutExercise(
+            exerciseID: context.exercise.id,
+            exerciseName: context.exercise.name,
+            exerciseCatalogKey: context.exercise.catalogKey,
+            sets: first
+        )
+        let secondBlock = ActiveWorkoutExercise(
+            exerciseID: other.id,
+            exerciseName: other.name,
+            exerciseCatalogKey: other.catalogKey,
+            sets: second
+        )
+        let draft = try context.active.start(
+            workoutDate: now,
+            note: nil,
+            exercises: [firstBlock, secondBlock],
+            workoutStore: context.history,
+            now: now
+        )
+        return (draft, firstBlock.id, secondBlock.id)
+    }
+
+    func testRecordSetLogsNonCurrentSetOutOfOrderAndCarriesWeightWithinSameExercise() throws {
+        let context = try makeContext(account: "active-log-non-current")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = (0 ..< 3).map { _ in ActiveWorkoutSet(weight: 0, reps: 8) }
+        let second = [ActiveWorkoutSet(weight: 0, reps: 5)]
+        let started = try startTwoExercises(context, first: first, second: second, now: now)
+
+        // Log the SECOND set of the first exercise and the only set of the second
+        // exercise while the first set of the first exercise is still pending.
+        let middle = try context.active.updateSet(
+            draftID: started.draft.id, setID: first[1].id, weight: 50, reps: 8,
+            expectedRevision: started.draft.revision, now: now.addingTimeInterval(5)
+        )
+        let afterMiddle = try context.active.recordSet(
+            draftID: middle.id, setID: first[1].id, expectedRevision: middle.revision,
+            restSeconds: 90, now: now.addingTimeInterval(10)
+        )
+        let sets = try XCTUnwrap(afterMiddle.exercises.first).sets
+        XCTAssertFalse(sets[0].isCompleted)
+        XCTAssertTrue(sets[1].isCompleted)
+        XCTAssertEqual(sets[2].weight, 50, "weight carries to the next empty set of the same exercise")
+        XCTAssertEqual(afterMiddle.exercises[1].sets[0].weight, 0, "other exercises are never touched")
+        XCTAssertEqual(afterMiddle.undoableSetID, first[1].id)
+        XCTAssertNotNil(afterMiddle.timing?.restingUntil)
+
+        let afterOther = try context.active.recordSet(
+            draftID: afterMiddle.id, setID: second[0].id, expectedRevision: afterMiddle.revision,
+            now: now.addingTimeInterval(20)
+        )
+        XCTAssertTrue(afterOther.exercises[1].sets[0].isCompleted)
+        XCTAssertFalse(afterOther.exercises[0].sets[0].isCompleted)
+        XCTAssertEqual(afterOther.undoableSetID, second[0].id)
+    }
+
+    func testDeleteSetRemovesPendingSetRenumbersAndKeepsUndoTarget() throws {
+        let context = try makeContext(account: "active-delete-set")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sets = [
+            ActiveWorkoutSet(weight: 60, reps: 8),
+            ActiveWorkoutSet(weight: 60, reps: 9),
+            ActiveWorkoutSet(weight: 60, reps: 10)
+        ]
+        let started = try startSets(context, sets: sets, now: now)
+        let recorded = try context.active.recordSet(
+            draftID: started.id, setID: sets[0].id, expectedRevision: started.revision,
+            restSeconds: 60, now: now.addingTimeInterval(10)
+        )
+
+        let deleted = try context.active.deleteSet(
+            draftID: recorded.id, setID: sets[1].id, expectedRevision: recorded.revision,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )
+        let remaining = try XCTUnwrap(deleted.exercises.first).sets
+        XCTAssertEqual(remaining.map(\.id), [sets[0].id, sets[2].id])
+        XCTAssertEqual(remaining[1].reps, 10)
+        XCTAssertEqual(deleted.undoableSetID, sets[0].id, "undo target survives a set delete")
+        XCTAssertEqual(deleted.timing?.restingUntil, recorded.timing?.restingUntil, "rest keeps running")
+        XCTAssertEqual(deleted.revision, recorded.revision + 1)
+
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context.history.accountStorageKey,
+            workoutStorageURL: context.history.storageURL
+        )
+        XCTAssertEqual(reopened.draft?.exercises.first?.sets.map(\.id), [sets[0].id, sets[2].id])
+        XCTAssertEqual(reopened.draft?.undoableSetID, sets[0].id)
+    }
+
+    func testDeleteSetRefusesRecordedLastFrozenStaleAndUnknownWithoutMutation() throws {
+        let context = try makeContext(account: "active-delete-set-guards")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sets = [
+            ActiveWorkoutSet(weight: 60, reps: 8),
+            ActiveWorkoutSet(weight: 60, reps: 9)
+        ]
+        let started = try startSets(context, sets: sets, now: now)
+        let recorded = try context.active.recordSet(
+            draftID: started.id, setID: sets[0].id, expectedRevision: started.revision,
+            now: now.addingTimeInterval(10)
+        )
+        let at = now.addingTimeInterval(20)
+
+        // Recorded set.
+        XCTAssertThrowsError(try context.active.deleteSet(
+            draftID: recorded.id, setID: sets[0].id, expectedRevision: recorded.revision,
+            isSolo: { true }, now: at
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .setAlreadyCompleted) }
+        // Live-frozen plan.
+        XCTAssertThrowsError(try context.active.deleteSet(
+            draftID: recorded.id, setID: sets[1].id, expectedRevision: recorded.revision,
+            isSolo: { false }, now: at
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        // Stale revision.
+        XCTAssertThrowsError(try context.active.deleteSet(
+            draftID: recorded.id, setID: sets[1].id, expectedRevision: recorded.revision - 1,
+            isSolo: { true }, now: at
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+        // Unknown set.
+        XCTAssertThrowsError(try context.active.deleteSet(
+            draftID: recorded.id, setID: UUID(), expectedRevision: recorded.revision,
+            isSolo: { true }, now: at
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .setUnavailable) }
+        XCTAssertEqual(context.active.draft, recorded)
+
+        // An exercise's only set can never be deleted, recorded or not.
+        let singleContext = try makeContext(account: "active-delete-last-set")
+        let single = [ActiveWorkoutSet(weight: 40, reps: 5)]
+        let singleStarted = try startSets(singleContext, sets: single, now: now)
+        XCTAssertThrowsError(try singleContext.active.deleteSet(
+            draftID: singleStarted.id, setID: single[0].id, expectedRevision: singleStarted.revision,
+            isSolo: { true }, now: at
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertEqual(singleContext.active.draft, singleStarted)
+    }
+
+    func testRemoveExerciseKeepsUndoAndRestUnlessOwnedAndRefusesLastOrFrozen() throws {
+        let context = try makeContext(account: "active-remove-exercise")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = [ActiveWorkoutSet(weight: 60, reps: 8), ActiveWorkoutSet(weight: 60, reps: 8)]
+        let b = [ActiveWorkoutSet(weight: 30, reps: 10)]
+        let started = try startTwoExercises(context, first: a, second: b, now: now)
+        let recorded = try context.active.recordSet(
+            draftID: started.draft.id, setID: a[0].id, expectedRevision: started.draft.revision,
+            restSeconds: 120, now: now.addingTimeInterval(10)
+        )
+        XCTAssertNotNil(recorded.timing?.restingUntil)
+
+        // Frozen and stale are refused before anything changes.
+        XCTAssertThrowsError(try context.active.removeExercise(
+            draftID: recorded.id, exerciseBlockID: started.secondBlock,
+            expectedRevision: recorded.revision, isSolo: { false }, now: now.addingTimeInterval(15)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertThrowsError(try context.active.removeExercise(
+            draftID: recorded.id, exerciseBlockID: started.secondBlock,
+            expectedRevision: recorded.revision - 1, isSolo: { true }, now: now.addingTimeInterval(15)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+        XCTAssertThrowsError(try context.active.removeExercise(
+            draftID: recorded.id, exerciseBlockID: UUID(),
+            expectedRevision: recorded.revision, isSolo: { true }, now: now.addingTimeInterval(15)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .exerciseUnavailable) }
+        XCTAssertEqual(context.active.draft, recorded)
+
+        // Removing an exercise that does not own the undo target keeps undo and rest.
+        let removedOther = try context.active.removeExercise(
+            draftID: recorded.id, exerciseBlockID: started.secondBlock,
+            expectedRevision: recorded.revision, isSolo: { true }, now: now.addingTimeInterval(20)
+        )
+        XCTAssertEqual(removedOther.exercises.map(\.id), [started.firstBlock])
+        XCTAssertEqual(removedOther.undoableSetID, a[0].id)
+        XCTAssertEqual(removedOther.timing?.restingUntil, recorded.timing?.restingUntil)
+
+        // The last remaining exercise can never be removed.
+        XCTAssertThrowsError(try context.active.removeExercise(
+            draftID: removedOther.id, exerciseBlockID: started.firstBlock,
+            expectedRevision: removedOther.revision, isSolo: { true }, now: now.addingTimeInterval(25)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertEqual(context.active.draft, removedOther)
+    }
+
+    func testRemoveExerciseWithRecordedSetsClearsOwnedUndoAndStopsItsRest() throws {
+        let context = try makeContext(account: "active-remove-owned-undo")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = [ActiveWorkoutSet(weight: 60, reps: 8), ActiveWorkoutSet(weight: 60, reps: 8)]
+        let b = [ActiveWorkoutSet(weight: 30, reps: 10)]
+        let started = try startTwoExercises(context, first: a, second: b, now: now)
+        let recordedA = try context.active.recordSet(
+            draftID: started.draft.id, setID: a[0].id, expectedRevision: started.draft.revision,
+            now: now.addingTimeInterval(10)
+        )
+        let recordedB = try context.active.recordSet(
+            draftID: recordedA.id, setID: b[0].id, expectedRevision: recordedA.revision,
+            restSeconds: 120, now: now.addingTimeInterval(20)
+        )
+        XCTAssertEqual(recordedB.undoableSetID, b[0].id)
+        XCTAssertNotNil(recordedB.timing?.restingUntil)
+
+        // Removing the exercise that owns the undo target clears it and its rest.
+        let removed = try context.active.removeExercise(
+            draftID: recordedB.id, exerciseBlockID: started.secondBlock,
+            expectedRevision: recordedB.revision, isSolo: { true }, now: now.addingTimeInterval(30)
+        )
+        XCTAssertNil(removed.undoableSetID)
+        XCTAssertNil(removed.timing?.restingUntil)
+        XCTAssertNotNil(removed.timing?.activeSince)
+        XCTAssertEqual(removed.completedSetCount, 1, "other exercises keep their recorded sets")
+
+        // A recorded exercise whose sets are not the undo target is removed with them
+        // while the undo target (in another block) survives.
+        let context2 = try makeContext(account: "active-remove-recorded-keeps-other-undo")
+        let started2 = try startTwoExercises(context2, first: a, second: b, now: now)
+        let r1 = try context2.active.recordSet(
+            draftID: started2.draft.id, setID: a[0].id, expectedRevision: started2.draft.revision,
+            now: now.addingTimeInterval(10)
+        )
+        let r2 = try context2.active.recordSet(
+            draftID: r1.id, setID: b[0].id, expectedRevision: r1.revision,
+            restSeconds: 120, now: now.addingTimeInterval(20)
+        )
+        let removedFirst = try context2.active.removeExercise(
+            draftID: r2.id, exerciseBlockID: started2.firstBlock,
+            expectedRevision: r2.revision, isSolo: { true }, now: now.addingTimeInterval(30)
+        )
+        XCTAssertEqual(removedFirst.undoableSetID, b[0].id)
+        XCTAssertEqual(removedFirst.timing?.restingUntil, r2.timing?.restingUntil)
+        XCTAssertEqual(removedFirst.completedSetCount, 1)
+        let reopened = ActiveWorkoutStore(
+            accountStorageKey: context2.history.accountStorageKey,
+            workoutStorageURL: context2.history.storageURL
+        )
+        XCTAssertEqual(reopened.draft, removedFirst)
+    }
+
     private func startSets(
         _ context: Context,
         sets: [ActiveWorkoutSet],

@@ -1032,7 +1032,7 @@ test("an active workout keeps Continue instead of exposing a second plan editor"
   assert.match(iosWorkouts, /activeWorkoutDraft != nil[\s\S]*activeFocusLens/);
   assert.match(iosWorkouts, /private var activeFocusLens[\s\S]*"Continue workout"/);
   assert.match(iosRoot, /if activeWorkoutStore\.draft != nil[\s\S]*showsActiveWorkout = true[\s\S]*return false/);
-  assert.doesNotMatch(iosActive, /applySmartCoach|showingExercisePicker|removeExercise/);
+  assert.doesNotMatch(iosActive, /applySmartCoach|showingExercisePicker/);
 });
 
 test("browser exposes the same editor contract and validated shared-plan handoff", () => {
