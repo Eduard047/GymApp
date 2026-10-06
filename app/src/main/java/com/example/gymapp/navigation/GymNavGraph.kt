@@ -3499,6 +3499,8 @@ internal fun GymAppRoot(
                                 value = loadFriendGhosts(authManager, session)
                             }
 
+                            val addExerciseCatalog by viewModel.addExerciseCatalog
+                                .collectAsStateWithLifecycle()
                             ActiveWorkoutScreen(
                                 uiState = uiState,
                                 exerciseMediaOwnerKey = checkNotNull(authState.session).databaseName(),
@@ -3509,6 +3511,8 @@ internal fun GymAppRoot(
                                 onSkipRemainingSets = viewModel::skipRemainingSets,
                                 onDeleteSet = viewModel::deleteSet,
                                 onRemoveExercise = viewModel::removeExercise,
+                                addExerciseCatalog = addExerciseCatalog,
+                                onAddExercise = viewModel::addExercise,
                                 onRecordSet = viewModel::recordSet,
                                 onRecordAllPendingSets = viewModel::recordAllPendingSets,
                                 onUndoLatestSet = viewModel::undoLatestSet,

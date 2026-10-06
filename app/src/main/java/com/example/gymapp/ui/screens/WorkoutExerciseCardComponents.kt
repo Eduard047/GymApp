@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -85,6 +86,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -104,13 +107,17 @@ import java.text.NumberFormat
 
 internal val PlainSetRowPadding = 10.dp
 
-/** The panel every exercise card sits in: 16dp padding, 12dp between header, body and footer. */
+/**
+ * The panel every exercise card sits in: 16dp padding, 12dp between header, body and footer.
+ * [highlighted] uses the primary-tinted panel (the plan editor's cards).
+ */
 @Composable
 internal fun WorkoutExerciseCardShell(
     modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    AppPanel(modifier = modifier.fillMaxWidth()) {
+    AppPanel(modifier = modifier.fillMaxWidth(), highlighted = highlighted) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -138,15 +145,17 @@ internal fun WorkoutExerciseMedia(
 }
 
 /**
- * Card header: optional [media], a tappable title block (title plus the [subtitle] lines) with an
- * expand/collapse chevron, and an optional [menu] slot (the overflow button) at the end.
+ * Card header: optional [media], a title block (title plus the [subtitle] lines) and an optional
+ * [menu] slot (the overflow button) at the end. With an [onToggleExpanded] the title block is
+ * tappable and shows an expand/collapse chevron; with null (the plan editor's cards) it is a plain,
+ * non-collapsible title block without a chevron.
  */
 @Composable
 internal fun WorkoutExerciseCardHeader(
     title: String,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit,
+    onToggleExpanded: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    expanded: Boolean = true,
     stateText: String? = null,
     media: (@Composable () -> Unit)? = null,
     menu: (@Composable () -> Unit)? = null,
@@ -166,18 +175,29 @@ internal fun WorkoutExerciseCardHeader(
             modifier = Modifier
                 .weight(1f)
                 .heightIn(min = 48.dp)
-                .clickable(
-                    onClickLabel = toggleLabel,
-                    role = Role.Button,
-                    onClick = onToggleExpanded
-                )
-                .semantics {
-                    contentDescription = title
-                    if (stateText != null) stateDescription = stateText
-                    if (accessibilityActions.isNotEmpty()) {
-                        this.customActions = accessibilityActions
+                .then(
+                    if (onToggleExpanded != null) {
+                        Modifier
+                            .clickable(
+                                onClickLabel = toggleLabel,
+                                role = Role.Button,
+                                onClick = onToggleExpanded
+                            )
+                            .semantics {
+                                contentDescription = title
+                                if (stateText != null) stateDescription = stateText
+                                if (accessibilityActions.isNotEmpty()) {
+                                    this.customActions = accessibilityActions
+                                }
+                            }
+                    } else {
+                        Modifier.semantics(mergeDescendants = true) {
+                            if (accessibilityActions.isNotEmpty()) {
+                                this.customActions = accessibilityActions
+                            }
+                        }
                     }
-                },
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -188,37 +208,54 @@ internal fun WorkoutExerciseCardHeader(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = if (onToggleExpanded == null) 2 else Int.MAX_VALUE,
+                    overflow = TextOverflow.Ellipsis
                 )
                 subtitle()
             }
-            Icon(
-                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (onToggleExpanded != null) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         menu?.invoke()
     }
 }
 
-/** Card header overflow: "Remove exercise" (only composed when the exercise may be removed). */
+/**
+ * Card header overflow: a destructive remove item (only composed when the exercise may be removed)
+ * after any [extraItems] (e.g. the plan editor's "Replace with similar"). The defaults read
+ * "Remove exercise"; the plan editor passes its own [removeLabel], [buttonDescription] and
+ * [modifier] (test tag for the overflow button).
+ */
 @Composable
-internal fun WorkoutExerciseMenu(enabled: Boolean, onRemove: () -> Unit) {
+internal fun WorkoutExerciseMenu(
+    enabled: Boolean,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+    removeLabel: String = stringResource(R.string.active_workout_remove_exercise),
+    buttonDescription: String = stringResource(R.string.active_workout_more_options),
+    extraItems: @Composable ColumnScope.(closeMenu: () -> Unit) -> Unit = {}
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { expanded = true }, enabled = enabled) {
+        IconButton(onClick = { expanded = true }, enabled = enabled, modifier = modifier) {
             Icon(
                 imageVector = Icons.Default.MoreVert,
-                contentDescription = stringResource(R.string.active_workout_more_options),
+                contentDescription = buttonDescription,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            extraItems { expanded = false }
             DropdownMenuItem(
                 text = {
                     Text(
-                        text = stringResource(R.string.active_workout_remove_exercise),
+                        text = removeLabel,
                         color = MaterialTheme.colorScheme.error
                     )
                 },
@@ -290,7 +327,60 @@ internal fun WorkoutRemoveExerciseDialog(
     )
 }
 
-/** Outlined footer action: dashed (primary 50%) for "+ Set", solid (primary 70%) for "Finish". */
+/**
+ * Confirms deleting a recorded set of the running workout. Same destructive pattern as
+ * [WorkoutRemoveExerciseDialog]: target lines, impact line in the error colour, outlined Cancel and a
+ * filled error-coloured confirm button.
+ */
+@Composable
+internal fun WorkoutDeleteRecordedSetDialog(
+    exerciseName: String,
+    setNumber: Int,
+    summary: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.dialog_delete_set_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(text = exerciseName, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = stringResource(
+                        R.string.active_workout_delete_recorded_set_target,
+                        setNumber,
+                        summary
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(R.string.active_workout_delete_recorded_set_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text(text = stringResource(R.string.action_delete))
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.action_cancel))
+            }
+        }
+    )
+}
+
+/** Outlined footer action, 48dp min, 12dp corners: dashed (primary 50%) for "+ Set" / "+ Add exercise", solid (primary 70%) for "Finish". */
 @Composable
 internal fun WorkoutFooterButton(
     label: String,
@@ -309,7 +399,7 @@ internal fun WorkoutFooterButton(
     val density = LocalDensity.current
     Box(
         modifier = modifier
-            .heightIn(min = 44.dp)
+            .heightIn(min = 48.dp)
             .clip(shape)
             .clickable(
                 enabled = enabled,
@@ -358,6 +448,28 @@ internal fun rememberSetSummary(weightInput: String, repsInput: String): String 
     weightInput.ifBlank { "0" },
     repsInput.ifBlank { "0" }
 )
+
+/** The 22dp outlined circle with the set number that leads every set row (plain and editable). */
+@Composable
+internal fun SetNumberBadge(number: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(SetNumberBadgeSize)
+            .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            .clearAndSetSemantics {},
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = number.toString(),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold
+            ).tabularDigits(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+internal val SetNumberBadgeSize = 22.dp
 
 /**
  * A set that can be edited in place: one plain line (number badge, "60 kg × 8", optional
@@ -438,21 +550,7 @@ internal fun EditableSetRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                            .clearAndSetSemantics {},
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = number.toString(),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold
-                            ).tabularDigits(),
-                            color = secondary
-                        )
-                    }
+                    SetNumberBadge(number)
                     Text(
                         text = summary,
                         style = MaterialTheme.typography.titleSmall,
@@ -487,111 +585,210 @@ internal fun EditableSetRow(
     }
 }
 
-/** Compact inline editor of a plain set row: weight field, "×" and a reps stepper on one line. */
+/** Height of every capsule in the set editor (the trash beside them is a 40dp button with a 48dp touch target). */
+internal val SetEditorCapsuleHeight = 44.dp
+private val SetEditorStepButtonWidth = 30.dp
+private val SetEditorTrashSize = 40.dp
+/** The weight capsule gets this share against 1 for reps so "102.5 kg" fits at 360dp. */
+private const val SetEditorWeightCapsuleShare = 1.4f
+private val SetEditorValueFontSize = 17.sp
+
+/**
+ * The one set editor: a `− 12 kg +` weight capsule and a `− 4 +` reps capsule, equal width, same
+ * height and style, side by side, with an optional trash button at the end (40dp, 48dp touch target,
+ * error tint). The weight value is tappable for keyboard entry; the step comes from [weightStepPlan]
+ * ([allowedWeights] empty means the default 2.5 kg). At large font scales the capsules stack and
+ * the trash button stays beside them. Used by the active workout's upcoming sets and the saved
+ * workout's set editor so both read the same.
+ */
 @Composable
-internal fun SetPendingEditor(
+internal fun SetEditorCapsules(
     number: Int,
     weightInput: String,
     repsInput: String,
+    allowedWeights: List<Double>,
     enabled: Boolean,
     onWeightChanged: (String) -> Unit,
-    onRepsChanged: (String) -> Unit
+    onRepsChanged: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    deleteDescription: String? = null,
+    onDelete: (() -> Unit)? = null
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .heightIn(min = 44.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+    val format = rememberDecimalFormat()
+    val plan = weightStepPlan(weightForStepping(weightInput), allowedWeights)
+    val minusDelta = format.format(plan.minus.delta)
+    val plusDelta = format.format(plan.plus.delta)
+    val reps = repsInput.trim().toIntOrNull()
+    val repsDescription = stringResource(R.string.active_workout_reps_field_cd, number)
+    val weightCapsule: @Composable (Modifier) -> Unit = { capsuleModifier ->
+        SetValueCapsule(
+            modifier = capsuleModifier,
+            minusEnabled = enabled && plan.minus.canMove,
+            onMinus = { onWeightChanged(VoiceWorkoutDraftParser.formatWeight(plan.minus.target)) },
+            minusDescription = stringResource(R.string.active_workout_decrease_weight, minusDelta),
+            plusEnabled = enabled && plan.plus.canMove,
+            onPlus = { onWeightChanged(VoiceWorkoutDraftParser.formatWeight(plan.plus.target)) },
+            plusDescription = stringResource(R.string.active_workout_increase_weight, plusDelta)
         ) {
             SetWeightField(
                 value = weightInput,
                 onValueChange = onWeightChanged,
                 enabled = enabled,
                 description = stringResource(R.string.active_workout_weight_field_cd, number),
-                fontSize = 17.sp
+                // Long values (100 kg and up with a decimal) shrink a little rather than clip the unit.
+                fontSize = if (weightInput.length > 4) 16.sp else SetEditorValueFontSize
             )
             Text(
                 text = stringResource(R.string.active_workout_unit_kg),
-                style = MaterialTheme.typography.bodySmall,
-                color = secondary
+                style = MaterialTheme.typography.labelMedium,
+                color = secondary,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.clearAndSetSemantics {}
             )
         }
-        Text(
-            text = "×",
-            style = MaterialTheme.typography.titleSmall,
-            color = secondary,
-            modifier = Modifier.clearAndSetSemantics {}
-        )
-        val reps = repsInput.trim().toIntOrNull()
-        val canDecrease = enabled && canStepReps(reps, -1)
-        val canIncrease = enabled && canStepReps(reps, 1)
-        val decreaseLabel = stringResource(R.string.active_workout_decrease_reps)
-        val increaseLabel = stringResource(R.string.active_workout_increase_reps)
-        val repsDescription = stringResource(R.string.active_workout_reps_field_cd, number)
-        Row(
-            modifier = Modifier
-                .heightIn(min = 44.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                .clearAndSetSemantics {
-                    contentDescription = repsDescription
-                    stateDescription = repsInput
-                    customActions = listOf(
-                        CustomAccessibilityAction(decreaseLabel) {
-                            if (canDecrease) {
-                                onRepsChanged(steppedReps(reps, -1).toString())
-                                true
-                            } else {
-                                false
-                            }
-                        },
-                        CustomAccessibilityAction(increaseLabel) {
-                            if (canIncrease) {
-                                onRepsChanged(steppedReps(reps, 1).toString())
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                    )
-                },
-            verticalAlignment = Alignment.CenterVertically
+    }
+    val repsCapsule: @Composable (Modifier) -> Unit = { capsuleModifier ->
+        SetValueCapsule(
+            modifier = capsuleModifier,
+            minusEnabled = enabled && canStepReps(reps, -1),
+            onMinus = { onRepsChanged(steppedReps(reps, -1).toString()) },
+            minusDescription = stringResource(R.string.active_workout_decrease_reps),
+            plusEnabled = enabled && canStepReps(reps, 1),
+            onPlus = { onRepsChanged(steppedReps(reps, 1).toString()) },
+            plusDescription = stringResource(R.string.active_workout_increase_reps)
         ) {
-            StepButton(
-                icon = Icons.Default.Remove,
-                text = null,
-                enabled = canDecrease,
-                onClick = { onRepsChanged(steppedReps(reps, -1).toString()) }
-            )
             Text(
                 text = repsInput.ifBlank { "0" },
-                style = MaterialTheme.typography.titleSmall.tabularDigits(),
+                style = setEditorValueStyle(),
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.widthIn(min = 20.dp),
-                textAlign = TextAlign.Center
+                maxLines = 1,
+                modifier = Modifier.semantics {
+                    contentDescription = repsDescription
+                    stateDescription = repsInput
+                }
             )
-            StepButton(
-                icon = Icons.Default.Add,
-                text = null,
-                enabled = canIncrease,
-                onClick = { onRepsChanged(steppedReps(reps, 1).toString()) }
+        }
+    }
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Weight is wider than reps; stacked at large font scales, like the current-set capsules.
+        if (LocalConfiguration.current.fontScale >= 1.3f) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                weightCapsule(Modifier.fillMaxWidth())
+                repsCapsule(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                weightCapsule(Modifier.weight(SetEditorWeightCapsuleShare))
+                repsCapsule(Modifier.weight(1f))
+            }
+        }
+        if (onDelete != null && deleteDescription != null) {
+            SetEditorDeleteButton(
+                description = deleteDescription,
+                enabled = enabled,
+                onClick = onDelete
             )
         }
     }
 }
 
+@Composable
+private fun setEditorValueStyle(): TextStyle = TextStyle(
+    fontSize = SetEditorValueFontSize,
+    fontWeight = FontWeight.SemiBold
+).tabularDigits()
+
+/** One capsule of the set editor: step button, centred [content], step button. */
+@Composable
+private fun SetValueCapsule(
+    modifier: Modifier,
+    minusEnabled: Boolean,
+    onMinus: () -> Unit,
+    minusDescription: String,
+    plusEnabled: Boolean,
+    onPlus: () -> Unit,
+    plusDescription: String,
+    content: @Composable RowScope.() -> Unit
+) {
+    Row(
+        modifier = modifier
+            .heightIn(min = SetEditorCapsuleHeight)
+            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        StepButton(
+            icon = Icons.Default.Remove,
+            text = null,
+            enabled = minusEnabled,
+            onClick = onMinus,
+            description = minusDescription,
+            minWidth = SetEditorStepButtonWidth,
+            minHeight = SetEditorCapsuleHeight
+        )
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
+            content = content
+        )
+        StepButton(
+            icon = Icons.Default.Add,
+            text = null,
+            enabled = plusEnabled,
+            onClick = onPlus,
+            description = plusDescription,
+            minWidth = SetEditorStepButtonWidth,
+            minHeight = SetEditorCapsuleHeight
+        )
+    }
+}
+
+/** Visible delete for a set: error-tinted trash in a 48dp target, named for TalkBack. */
+@Composable
+private fun SetEditorDeleteButton(
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val error = MaterialTheme.colorScheme.error
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        // 40dp in layout; IconButton still reserves its 48dp touch target around it.
+        modifier = Modifier.size(SetEditorTrashSize)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Delete,
+            contentDescription = description,
+            tint = if (enabled) error else error.copy(alpha = 0.38f)
+        )
+    }
+}
+
+/** One entry of a recorded set's long-press menu / TalkBack actions (Undo, Delete set). */
+internal data class SetRowAction(
+    val label: String,
+    val destructive: Boolean = false,
+    val onClick: () -> Unit
+)
+
 /**
  * A recorded set: one line — check, "60 kg × 8", optional record badge, and an optional [trailing]
  * block (the active workout's rest countdown) that wraps under the summary when it does not fit.
- * When [longPressActionLabel] is set, a long-press menu / accessibility action runs
- * [onLongPressAction] (Undo on the active workout). [modifier] is applied inside the row padding.
+ * When [actions] is not empty, a long-press menu / accessibility actions run them (Undo and
+ * Delete set on the active workout). [modifier] is applied inside the row padding.
  */
 @Composable
 internal fun RecordedSetRow(
@@ -599,11 +796,10 @@ internal fun RecordedSetRow(
     description: String,
     isPersonalRecord: Boolean,
     modifier: Modifier = Modifier,
-    longPressActionLabel: String? = null,
-    onLongPressAction: (() -> Unit)? = null,
+    actions: List<SetRowAction> = emptyList(),
     trailing: (@Composable () -> Unit)? = null
 ) {
-    val canAct = longPressActionLabel != null && onLongPressAction != null
+    val canAct = actions.isNotEmpty()
     val haptics = LocalHapticFeedback.current
     var menuOpen by remember { mutableStateOf(false) }
     Box(
@@ -624,18 +820,20 @@ internal fun RecordedSetRow(
             modifier = Modifier.fillMaxWidth(),
             leading = {
                 Row(
-                    modifier = Modifier.clearAndSetSemantics {
-                        contentDescription = description
-                        if (canAct) {
-                            customActions = listOf(
-                                CustomAccessibilityAction(checkNotNull(longPressActionLabel)) {
-                                    menuOpen = false
-                                    checkNotNull(onLongPressAction)()
-                                    true
+                    modifier = Modifier
+                        .heightIn(min = 44.dp)
+                        .clearAndSetSemantics {
+                            contentDescription = description
+                            if (canAct) {
+                                customActions = actions.map { action ->
+                                    CustomAccessibilityAction(action.label) {
+                                        menuOpen = false
+                                        action.onClick()
+                                        true
+                                    }
                                 }
-                            )
-                        }
-                    },
+                            }
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -667,13 +865,24 @@ internal fun RecordedSetRow(
         )
         if (canAct) {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(checkNotNull(longPressActionLabel)) },
-                    onClick = {
-                        menuOpen = false
-                        checkNotNull(onLongPressAction)()
-                    }
-                )
+                actions.forEach { action ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = action.label,
+                                color = if (action.destructive) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        },
+                        onClick = {
+                            menuOpen = false
+                            action.onClick()
+                        }
+                    )
+                }
             }
         }
     }
@@ -1005,13 +1214,23 @@ internal fun StepButton(
     icon: ImageVector?,
     text: String?,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    description: String? = null,
+    minWidth: Dp = 44.dp,
+    minHeight: Dp = 44.dp
 ) {
     val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.38f)
     Box(
         modifier = Modifier
-            .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+            .defaultMinSize(minWidth = minWidth, minHeight = minHeight)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .then(
+                if (description != null) {
+                    Modifier.semantics { contentDescription = description }
+                } else {
+                    Modifier
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (icon != null) {

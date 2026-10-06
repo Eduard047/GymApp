@@ -714,7 +714,8 @@ fun MetricStrip(
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val columnCount = when {
             metrics.size == 1 -> 1
-            maxWidth < 330.dp -> 2
+            // Four metrics as 3 + 1 would stretch the last tile across the row; keep a 2 x 2 grid.
+            maxWidth < 330.dp || metrics.size == 4 -> 2
             else -> minOf(3, metrics.size)
         }
         Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)) {

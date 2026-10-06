@@ -71,7 +71,7 @@ class ActiveWorkoutSetEditingTest {
     }
 
     @Test
-    fun deletingSetIsRejectedForStaleRecordedAndLastSet() = runBlocking {
+    fun deletingSetIsRejectedForStaleAndLastSet() = runBlocking {
         withDatabase("active-edit-delete-guards") { repository ->
             start(repository, listOf(2, 1))
             val initial = checkNotNull(repository.getActiveWorkoutSnapshot())
@@ -85,10 +85,115 @@ class ActiveWorkoutSetEditingTest {
                 DeleteActiveWorkoutSetResult.LastSet,
                 repository.deleteActiveWorkoutSet(lone.id, expectedRevision = 0L)
             )
+            assertEquals(0L, repository.getActiveWorkoutSnapshot()?.activeWorkout?.revision)
+        }
+    }
+
+    @Test
+    fun deletingRecordedUndoTargetClearsUndoAndRenumbers() = runBlocking {
+        withDatabase("active-edit-delete-recorded-target") { repository ->
+            start(repository, listOf(3))
+            val sets = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises[0].sets.sortedBy { it.orderIndex }
             repository.recordActiveWorkoutSet(sets[0].id, 0L, weight = 40.0, reps = 8)
             assertEquals(
-                DeleteActiveWorkoutSetResult.SetRecorded,
+                DeleteActiveWorkoutSetResult.Deleted(revision = 2L, clearedUndo = true),
                 repository.deleteActiveWorkoutSet(sets[0].id, expectedRevision = 1L)
+            )
+            val after = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertNull(after.activeWorkout.undoableSetId)
+            val remaining = after.exercises[0].sets.sortedBy { it.orderIndex }
+            assertEquals(listOf(sets[1].id, sets[2].id), remaining.map { it.id })
+            assertEquals(listOf(0, 1), remaining.map { it.orderIndex })
+        }
+    }
+
+    @Test
+    fun deletingRecordedSetThatIsNotTheUndoTargetKeepsUndo() = runBlocking {
+        withDatabase("active-edit-delete-recorded-other") { repository ->
+            start(repository, listOf(3))
+            val sets = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises[0].sets.sortedBy { it.orderIndex }
+            repository.recordActiveWorkoutSet(sets[0].id, 0L, weight = 40.0, reps = 8)
+            repository.recordActiveWorkoutSet(sets[1].id, 1L, weight = 40.0, reps = 8)
+            assertEquals(
+                DeleteActiveWorkoutSetResult.Deleted(revision = 3L, clearedUndo = false),
+                repository.deleteActiveWorkoutSet(sets[0].id, expectedRevision = 2L)
+            )
+            val after = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(sets[1].id, after.activeWorkout.undoableSetId)
+            assertEquals(
+                DeleteActiveWorkoutSetResult.Stale,
+                repository.deleteActiveWorkoutSet(sets[2].id, expectedRevision = 2L)
+            )
+        }
+    }
+
+    @Test
+    fun deletingTheLastRecordedSetOfAnExerciseIsRefused() = runBlocking {
+        withDatabase("active-edit-delete-last-recorded") { repository ->
+            start(repository, listOf(1, 1))
+            val lone = checkNotNull(repository.getActiveWorkoutSnapshot()).exercises[0].sets.single()
+            repository.recordActiveWorkoutSet(lone.id, 0L, weight = 40.0, reps = 8)
+            assertEquals(
+                DeleteActiveWorkoutSetResult.LastSet,
+                repository.deleteActiveWorkoutSet(lone.id, expectedRevision = 1L)
+            )
+            assertEquals(lone.id, repository.getActiveWorkoutSnapshot()?.activeWorkout?.undoableSetId)
+        }
+    }
+
+    @Test
+    fun addingExerciseAppendsThreePendingSetsAndKeepsUndo() = runBlocking {
+        withDatabase("active-edit-add-exercise") { repository ->
+            start(repository, listOf(1))
+            val first = checkNotNull(repository.getActiveWorkoutSnapshot()).exercises[0].sets.single()
+            repository.recordActiveWorkoutSet(first.id, 0L, weight = 40.0, reps = 8)
+            val added = repository.addExercise("Synthetic added")
+            val result = repository.addActiveWorkoutExercise(added, expectedRevision = 1L)
+            assertTrue(result is AddActiveWorkoutExerciseResult.Added)
+            val after = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(2L, after.activeWorkout.revision)
+            assertEquals(first.id, after.activeWorkout.undoableSetId)
+            val appended = after.exercises.last()
+            assertEquals("Synthetic added", appended.activeWorkoutExercise.exerciseName)
+            assertEquals(1, appended.activeWorkoutExercise.orderIndex)
+            val sets = appended.sets.sortedBy { it.orderIndex }
+            assertEquals(listOf(0, 1, 2), sets.map { it.orderIndex })
+            assertTrue(sets.all { it.completedAt == null && it.weight == 20.0 && it.reps == 10 })
+        }
+    }
+
+    @Test
+    fun addedExercisePrefillsFromLastLoggedSetAndRejectsStaleAndDuplicate() = runBlocking {
+        withDatabase("active-edit-add-exercise-prefill") { repository ->
+            start(repository, listOf(1))
+            val added = repository.addExercise("Synthetic history")
+            repository.createWorkoutSession(
+                date = NOW - 86_400_000L,
+                note = null,
+                workoutExercises = listOf(
+                    WorkoutExerciseDraft(
+                        exerciseId = added,
+                        sets = listOf(WorkoutSetDraft(weight = 52.5, reps = 7))
+                    )
+                )
+            )
+            assertEquals(
+                AddActiveWorkoutExerciseResult.Stale,
+                repository.addActiveWorkoutExercise(added, expectedRevision = 9L)
+            )
+            assertTrue(
+                repository.addActiveWorkoutExercise(added, expectedRevision = 0L)
+                    is AddActiveWorkoutExerciseResult.Added
+            )
+            val sets = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises.last().sets
+            assertEquals(3, sets.size)
+            assertTrue(sets.all { it.weight == 52.5 && it.reps == 7 })
+            assertEquals(
+                AddActiveWorkoutExerciseResult.AlreadyInWorkout,
+                repository.addActiveWorkoutExercise(added, expectedRevision = 1L)
             )
             assertEquals(1L, repository.getActiveWorkoutSnapshot()?.activeWorkout?.revision)
         }

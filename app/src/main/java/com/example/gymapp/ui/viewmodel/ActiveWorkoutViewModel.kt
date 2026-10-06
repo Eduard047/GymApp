@@ -17,7 +17,10 @@ import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.util.TrainingProfile
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.ActiveWorkoutSetUpdate
+import com.example.gymapp.data.repository.AddActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
+import com.example.gymapp.data.repository.defaultContributionsForExercise
+import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
 import com.example.gymapp.data.repository.DiscardActiveWorkoutResult
 import com.example.gymapp.data.repository.FinishActiveWorkoutResult
@@ -140,6 +143,48 @@ data class ActiveWorkoutUiState(
     val adaptation: ActiveWorkoutAdaptationUiState? = null
 )
 
+/** Catalog data for the active workout's "+ Add exercise" picker. */
+data class ActiveWorkoutAddExerciseCatalog(
+    val exercises: List<ExerciseEntity> = emptyList(),
+    val frequentExerciseIds: List<Long> = emptyList(),
+    val exerciseWorkoutCounts: Map<Long, Int> = emptyMap(),
+    val exerciseMuscleIds: Map<String, Set<String>> = emptyMap()
+)
+
+/** Catalog exercises that are not already part of the running workout (by name or catalog key). */
+internal fun activeWorkoutExercisesAvailableToAdd(
+    catalog: List<ExerciseEntity>,
+    details: ActiveWorkoutDetails?
+): List<ExerciseEntity> {
+    val present = details?.exercises.orEmpty().map { it.activeWorkoutExercise }
+    val names = present.mapTo(hashSetOf()) { it.exerciseName }
+    val keys = present.mapNotNullTo(hashSetOf()) { it.catalogKey }
+    return catalog.filterNot { exercise ->
+        exercise.name.trim() in names || BuiltInExerciseCatalog.inferKey(exercise.name)?.let { it in keys } == true
+    }
+}
+
+/** Why adding an exercise is not offered right now. */
+internal fun activeWorkoutExerciseAdditionBlock(
+    details: ActiveWorkoutDetails?,
+    inLiveRoom: Boolean,
+    operationInProgress: Boolean
+): ActiveWorkoutEditBlock = when {
+    inLiveRoom -> ActiveWorkoutEditBlock.LiveRoom
+    operationInProgress -> ActiveWorkoutEditBlock.Busy
+    details == null -> ActiveWorkoutEditBlock.Missing
+    else -> ActiveWorkoutEditBlock.Allowed
+}
+
+internal fun activeWorkoutAddExerciseOutcomeMessage(result: AddActiveWorkoutExerciseResult): Int? = when (result) {
+    is AddActiveWorkoutExerciseResult.Added -> null
+    AddActiveWorkoutExerciseResult.Missing -> R.string.active_workout_missing
+    AddActiveWorkoutExerciseResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    AddActiveWorkoutExerciseResult.LimitReached -> R.string.active_workout_exercise_limit_reached
+    AddActiveWorkoutExerciseResult.AlreadyInWorkout -> R.string.active_workout_exercise_already_added
+    else -> R.string.active_workout_changed
+}
+
 /** String shown after "Skip them": the frozen live plan, a stale/missing workout, or success. */
 internal fun activeWorkoutSkipOutcomeMessage(result: ApplyActiveWorkoutAdaptationResult): Int = when (result) {
     is ApplyActiveWorkoutAdaptationResult.Applied -> R.string.active_workout_remaining_sets_skipped
@@ -153,12 +198,11 @@ internal enum class ActiveWorkoutEditBlock {
     LiveRoom,
     Busy,
     Missing,
-    SetRecorded,
     LastSet,
     LastExercise
 }
 
-/** A pending set can be deleted unless a live room owns the plan, it is recorded, or it is the exercise's last set. */
+/** A set (pending or recorded) can be deleted unless a live room owns the plan or it is the exercise's last set. */
 internal fun activeWorkoutSetDeletionBlock(
     details: ActiveWorkoutDetails?,
     setId: String,
@@ -169,7 +213,6 @@ internal fun activeWorkoutSetDeletionBlock(
     if (operationInProgress) return ActiveWorkoutEditBlock.Busy
     val exercise = details?.exercises?.firstOrNull { block -> block.sets.any { it.id == setId } }
         ?: return ActiveWorkoutEditBlock.Missing
-    if (exercise.sets.first { it.id == setId }.completedAt != null) return ActiveWorkoutEditBlock.SetRecorded
     if (exercise.sets.size <= 1) return ActiveWorkoutEditBlock.LastSet
     return ActiveWorkoutEditBlock.Allowed
 }
@@ -195,6 +238,7 @@ internal fun activeWorkoutDeleteSetOutcomeMessage(result: DeleteActiveWorkoutSet
     is DeleteActiveWorkoutSetResult.Deleted -> null
     DeleteActiveWorkoutSetResult.Missing -> R.string.active_workout_missing
     DeleteActiveWorkoutSetResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    DeleteActiveWorkoutSetResult.LastSet -> R.string.active_workout_last_set_message
     else -> R.string.active_workout_changed
 }
 
@@ -558,6 +602,31 @@ class ActiveWorkoutViewModel(
 
     private val adaptationMappings = repository.observeExerciseMuscleMappings()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Picker data for "+ Add exercise"; computed only while the screen observes it. */
+    val addExerciseCatalog: StateFlow<ActiveWorkoutAddExerciseCatalog> = combine(
+        repository.observeExercises(),
+        repository.observeAllExerciseHistory(),
+        repository.observeExerciseMuscleMappings(),
+        details
+    ) { exercises, history, mappings, workout ->
+        val manualMappings = mappings.toManualContributionMap()
+        val frequencies = exerciseFrequencyByExercise(history)
+        ActiveWorkoutAddExerciseCatalog(
+            exercises = activeWorkoutExercisesAvailableToAdd(exercises, workout),
+            frequentExerciseIds = frequentExerciseIds(frequencies),
+            exerciseWorkoutCounts = frequencies.mapValues { (_, frequency) -> frequency.workoutCount },
+            exerciseMuscleIds = exercises.associate { exercise ->
+                val contributions = manualMappings[exercise.name.normalizedExerciseName()]
+                    ?: defaultContributionsForExercise(exercise.name)
+                exercise.name to contributions.mapTo(linkedSetOf()) { it.muscleId }
+            }
+        )
+    }.flowOn(Dispatchers.Default).stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = ActiveWorkoutAddExerciseCatalog()
+    )
 
     private val clockNow = flow {
         while (true) {
@@ -1165,12 +1234,78 @@ class ActiveWorkoutViewModel(
         }
     }
 
-    /** Deletes a not-yet-recorded set (long-press menu). Hidden in live rooms and for an exercise's last set. */
+    /** Deletes a set, pending or recorded (editor trash / long-press menu). Refused in live rooms and for an exercise's last set. */
     fun deleteSet(setId: String) {
         val snapshot = details.value
         val block = activeWorkoutSetDeletionBlock(
             details = snapshot,
             setId = setId,
+            inLiveRoom = isInLiveRoom(),
+            operationInProgress = activeWorkoutOperationInProgress()
+        )
+        if (block == ActiveWorkoutEditBlock.LiveRoom) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
+            }
+            return
+        }
+        if (block != ActiveWorkoutEditBlock.Allowed) {
+            if (block != ActiveWorkoutEditBlock.Busy) {
+                val messageId = if (block == ActiveWorkoutEditBlock.LastSet) {
+                    R.string.active_workout_last_set_message
+                } else {
+                    R.string.active_workout_changed
+                }
+                operationState.update {
+                    it.copy(message = LocalizedText(messageId), messageSetId = null)
+                }
+            }
+            return
+        }
+        val workout = checkNotNull(snapshot)
+        val revision = workout.activeWorkout.revision
+        val startedAt = workout.activeWorkout.startedAt
+        // The rest timer belongs to the undo target; it only stops when that set is deleted.
+        val ownsRest = workout.activeWorkout.undoableSetId == setId
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val outcome = runCatching {
+                persistActiveWorkoutMutationAndReconcileRest(
+                    persist = { repository.deleteActiveWorkoutSet(setId, revision) },
+                    isCommitted = { it is DeleteActiveWorkoutSetResult.Deleted },
+                    stopRest = {
+                        if (ownsRest) {
+                            restTimerController.stopActiveWorkoutRest(timerAccountKey, startedAt)
+                        } else {
+                            true
+                        }
+                    }
+                )
+            }.getOrNull()
+            operationState.update {
+                val restCleanupFailed = outcome?.restStatus == ActiveWorkoutRestReconciliationStatus.Failed
+                val message = when {
+                    outcome == null -> R.string.active_workout_changed
+                    restCleanupFailed -> R.string.active_workout_change_saved_rest_failed
+                    else -> activeWorkoutDeleteSetOutcomeMessage(outcome.repositoryResult)
+                }
+                it.copy(
+                    isRecordingAll = false,
+                    message = message?.let { id -> LocalizedText(id) },
+                    messageSetId = null
+                )
+            }
+        }
+    }
+
+    /**
+     * Appends a catalog exercise with three prefilled pending sets. Refused in live rooms; the UI
+     * hides the button there too. Undo and the rest timer are untouched.
+     */
+    fun addExercise(exerciseId: Long) {
+        val snapshot = details.value
+        val block = activeWorkoutExerciseAdditionBlock(
+            details = snapshot,
             inLiveRoom = isInLiveRoom(),
             operationInProgress = activeWorkoutOperationInProgress()
         )
@@ -1191,12 +1326,12 @@ class ActiveWorkoutViewModel(
         val revision = checkNotNull(snapshot).activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching { repository.deleteActiveWorkoutSet(setId, revision) }.getOrNull()
+            val result = runCatching { repository.addActiveWorkoutExercise(exerciseId, revision) }.getOrNull()
             operationState.update {
                 val message = if (result == null) {
                     R.string.active_workout_changed
                 } else {
-                    activeWorkoutDeleteSetOutcomeMessage(result)
+                    activeWorkoutAddExerciseOutcomeMessage(result)
                 }
                 it.copy(
                     isRecordingAll = false,

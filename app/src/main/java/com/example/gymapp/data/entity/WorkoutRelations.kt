@@ -35,6 +35,12 @@ data class WorkoutSessionDetails(
     val workoutExercises: List<WorkoutExerciseWithDetails>
 )
 
+/** The weight and reps of the most recent logged set of an exercise. */
+data class LastLoggedSet(
+    val weight: Double,
+    val reps: Int
+)
+
 data class ExerciseHistoryEntry(
     val setId: Long,
     val sessionId: Long,

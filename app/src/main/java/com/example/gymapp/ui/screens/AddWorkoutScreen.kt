@@ -5,14 +5,11 @@ import com.example.gymapp.ui.components.TrainingSettingsSheet
 import android.app.DatePickerDialog
 import android.content.Context
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import java.text.NumberFormat
 import com.example.gymapp.ui.viewmodel.SetInputState
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,7 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -44,7 +40,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -67,8 +62,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -93,7 +86,6 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -360,6 +352,9 @@ fun AddWorkoutScreen(
                 exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
                 exerciseMuscleIds = uiState.exerciseMuscleIds,
                 lastWeight = draft.exerciseId?.let { uiState.lastWeights[it] },
+                allowedWeights = draft.exerciseId
+                    ?.let { uiState.exerciseLoadProfiles[it]?.allowedWeightsKg }
+                    .orEmpty(),
                 recommendation = draft.exerciseId?.let { uiState.workoutRecommendations[it] },
                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                 onExerciseSelected = { selectedExerciseId ->
@@ -375,12 +370,27 @@ fun AddWorkoutScreen(
                 },
                 onApplyLastWeightToSet = { setIndex -> onApplyLastWeightToSet(draft.draftId, setIndex) },
                 onCopyPreviousSet = { setIndex -> onCopyPreviousSet(draft.draftId, setIndex) },
-                onAddWeightToSet = { setIndex -> onAddWeightToSet(draft.draftId, setIndex) },
                 onDuplicateSet = { setIndex -> onDuplicateSet(draft.draftId, setIndex) },
                 onApplyWorkoutRecommendation = { onApplyWorkoutRecommendation(draft.draftId) },
                 onOpenSmartAlternatives = { onOpenSmartAlternatives(draft.draftId) },
                 onRemoveExerciseDraft = { onRemoveExerciseDraft(draft.draftId) }
             )
+        }
+
+        if (uiState.exerciseDrafts.isNotEmpty()) {
+            item(key = "workout_plan_add_exercise_footer") {
+                val addExerciseDescription = stringResource(R.string.action_add_exercise)
+                WorkoutFooterButton(
+                    label = stringResource(R.string.workout_detail_add_exercise_short),
+                    accessibilityLabel = addExerciseDescription,
+                    dashed = true,
+                    enabled = true,
+                    onClick = onAddExerciseDraft,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("workout_plan_add_exercise_footer")
+                )
+            }
         }
 
         if (uiState.hasValidationError) {
@@ -1073,6 +1083,12 @@ private fun WorkoutTemplatePickerContent(
     }
 }
 
+/**
+ * One exercise of the plan, built from the same card pieces as the active and saved workout screens
+ * ([WorkoutExerciseCardShell], header, [SetEditorCapsules], dashed [WorkoutFooterButton]) so all
+ * three read alike. The plan's cards are highlighted and never collapse; the header menu holds
+ * "Replace with similar" and the immediate (draft-only) "Delete".
+ */
 @Composable
 private fun ExerciseDraftCard(
     index: Int,
@@ -1082,6 +1098,7 @@ private fun ExerciseDraftCard(
     exerciseWorkoutCounts: Map<Long, Int>,
     exerciseMuscleIds: Map<String, Set<String>>,
     lastWeight: Double?,
+    allowedWeights: List<Double>,
     recommendation: WorkoutRecommendation?,
     exerciseMediaOwnerKey: String,
     onExerciseSelected: (Long) -> Unit,
@@ -1091,7 +1108,6 @@ private fun ExerciseDraftCard(
     onRepsChanged: (Int, String) -> Unit,
     onApplyLastWeightToSet: (Int) -> Unit,
     onCopyPreviousSet: (Int) -> Unit,
-    onAddWeightToSet: (Int) -> Unit,
     onDuplicateSet: (Int) -> Unit,
     onApplyWorkoutRecommendation: () -> Unit,
     onOpenSmartAlternatives: () -> Unit,
@@ -1101,70 +1117,29 @@ private fun ExerciseDraftCard(
     val exerciseName = selectedExercise?.let { localizedExerciseName(it.name) }
         ?: stringResource(R.string.exercise_block_title, index + 1)
     val locale = Locale.forLanguageTag(currentAppLanguageTag())
-    var menuExpanded by remember { mutableStateOf(false) }
+    val addSetDescription = stringResource(R.string.action_add_planned_set)
 
-    AppPanel(
-        modifier = Modifier.fillMaxWidth(),
-        highlighted = true
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (selectedExercise != null) {
-                    ExerciseMediaPreview(
-                        exerciseId = selectedExercise.id,
-                        exerciseName = selectedExercise.name,
-                        ownerKey = exerciseMediaOwnerKey,
-                        width = 76.dp,
-                        height = 64.dp
+    WorkoutExerciseCardShell(highlighted = true) {
+        WorkoutExerciseCardHeader(
+            title = exerciseName,
+            onToggleExpanded = null,
+            media = selectedExercise?.let { exercise ->
+                {
+                    WorkoutExerciseMedia(
+                        exerciseId = exercise.id,
+                        exerciseName = exercise.name,
+                        ownerKey = exerciseMediaOwnerKey
                     )
                 }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Text(
-                        text = exerciseName,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (lastWeight != null) {
-                        val formattedLastWeight = remember(lastWeight, locale) {
-                            NumberFormat.getNumberInstance(locale).apply {
-                                minimumFractionDigits = 0
-                                maximumFractionDigits = 2
-                            }.format(lastWeight)
-                        }
-                        Text(
-                            text = stringResource(R.string.editor_last_logged, formattedLastWeight),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                Box {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.testTag("workout_plan_exercise_menu")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreHoriz,
-                            contentDescription = stringResource(R.string.cd_exercise_actions, exerciseName)
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
-                    ) {
+            },
+            menu = {
+                WorkoutExerciseMenu(
+                    enabled = true,
+                    onRemove = onRemoveExerciseDraft,
+                    modifier = Modifier.testTag("workout_plan_exercise_menu"),
+                    removeLabel = stringResource(R.string.action_delete),
+                    buttonDescription = stringResource(R.string.cd_exercise_actions, exerciseName),
+                    extraItems = { closeMenu ->
                         if (selectedExercise != null) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.editor_replace_with_similar)) },
@@ -1172,232 +1147,186 @@ private fun ExerciseDraftCard(
                                     Icon(imageVector = Icons.Default.Replay, contentDescription = null)
                                 },
                                 onClick = {
-                                    menuExpanded = false
+                                    closeMenu()
                                     onOpenSmartAlternatives()
                                 }
                             )
                         }
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.action_delete),
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onRemoveExerciseDraft()
-                            }
-                        )
                     }
+                )
+            }
+        ) {
+            if (lastWeight != null) {
+                val formattedLastWeight = remember(lastWeight, locale) {
+                    NumberFormat.getNumberInstance(locale).apply {
+                        minimumFractionDigits = 0
+                        maximumFractionDigits = 2
+                    }.format(lastWeight)
                 }
-            }
-
-            if (draft.exerciseId == null) {
-                ExerciseCatalogSelector(
-                    selectedExerciseId = draft.exerciseId,
-                    exercises = exercises,
-                    frequentExerciseIds = frequentExerciseIds,
-                    exerciseWorkoutCounts = exerciseWorkoutCounts,
-                    exerciseMuscleIds = exerciseMuscleIds,
-                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                    onExerciseSelected = onExerciseSelected,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            if (recommendation != null) {
-                SmartRecommendationPanel(
-                    recommendation = recommendation,
-                    onApplyWorkoutRecommendation = onApplyWorkoutRecommendation
-                )
-            }
-
-            draft.sets.forEachIndexed { setIndex, set ->
-                WorkoutSetDraftRow(
-                    position = setIndex,
-                    set = set,
-                    lastWeight = lastWeight,
-                    onWeightChanged = { onWeightChanged(setIndex, it) },
-                    onRepsChanged = { onRepsChanged(setIndex, it) },
-                    onApplyLastWeight = { onApplyLastWeightToSet(setIndex) },
-                    onCopyPrevious = { onCopyPreviousSet(setIndex) },
-                    onAddWeight = { onAddWeightToSet(setIndex) },
-                    onDuplicate = { onDuplicateSet(setIndex) },
-                    onDelete = { onRemoveSet(setIndex) }
-                )
-            }
-
-            val addSetDescription = stringResource(R.string.action_add_planned_set)
-            TextButton(
-                onClick = onAddSet,
-                modifier = Modifier
-                    .heightIn(min = 44.dp)
-                    .semantics { contentDescription = addSetDescription }
-            ) {
                 Text(
-                    text = stringResource(R.string.editor_add_set_short),
-                    style = MaterialTheme.typography.titleSmall
+                    text = stringResource(R.string.editor_last_logged, formattedLastWeight),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
+
+        if (draft.exerciseId == null) {
+            val selectExerciseLabel = stringResource(R.string.label_select_exercise)
+            ExerciseCatalogSelector(
+                selectedExerciseId = draft.exerciseId,
+                exercises = exercises,
+                frequentExerciseIds = frequentExerciseIds,
+                exerciseWorkoutCounts = exerciseWorkoutCounts,
+                exerciseMuscleIds = exerciseMuscleIds,
+                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                onExerciseSelected = onExerciseSelected,
+                modifier = Modifier.fillMaxWidth(),
+                trigger = { openPicker ->
+                    WorkoutFooterButton(
+                        label = selectExerciseLabel,
+                        accessibilityLabel = selectExerciseLabel,
+                        dashed = true,
+                        enabled = true,
+                        onClick = openPicker,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            )
+        }
+
+        if (recommendation != null) {
+            SmartRecommendationPanel(
+                recommendation = recommendation,
+                onApplyWorkoutRecommendation = onApplyWorkoutRecommendation
+            )
+        }
+
+        if (draft.sets.isNotEmpty()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                draft.sets.forEachIndexed { setIndex, set ->
+                    if (setIndex > 0) {
+                        HorizontalDivider(
+                            thickness = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                    WorkoutSetDraftRow(
+                        position = setIndex,
+                        isFirst = setIndex == 0,
+                        isLast = setIndex == draft.sets.lastIndex,
+                        set = set,
+                        exerciseName = exerciseName,
+                        lastWeight = lastWeight,
+                        allowedWeights = allowedWeights,
+                        onWeightChanged = { onWeightChanged(setIndex, it) },
+                        onRepsChanged = { onRepsChanged(setIndex, it) },
+                        onApplyLastWeight = { onApplyLastWeightToSet(setIndex) },
+                        onCopyPrevious = { onCopyPreviousSet(setIndex) },
+                        onDuplicate = { onDuplicateSet(setIndex) },
+                        onDelete = { onRemoveSet(setIndex) }
+                    )
+                }
+            }
+        }
+
+        WorkoutFooterButton(
+            label = stringResource(R.string.editor_add_set_short),
+            accessibilityLabel = addSetDescription,
+            dashed = true,
+            enabled = true,
+            onClick = onAddSet,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
-/** One compact set: badge, weight, reps stepper, delete, plus a scrolling row of quick chips. */
+/**
+ * One planned set: the number badge, the shared `− 12 kg +` / `− 4 +` capsules with the trash
+ * button (the editor is always open; the weight value is tappable for keyboard entry), and a row of
+ * compact tonal quick-fill pills (Last, Prev., Copy) aligned under the capsules.
+ */
 @Composable
 private fun WorkoutSetDraftRow(
     position: Int,
+    isFirst: Boolean,
+    isLast: Boolean,
     set: SetInputState,
+    exerciseName: String,
     lastWeight: Double?,
+    allowedWeights: List<Double>,
     onWeightChanged: (String) -> Unit,
     onRepsChanged: (String) -> Unit,
     onApplyLastWeight: () -> Unit,
     onCopyPrevious: () -> Unit,
-    onAddWeight: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit
 ) {
     val number = position + 1
-    val reps = set.reps.trim().toIntOrNull()
-    val weightLabel = stringResource(R.string.cd_weight_for_set, number)
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = GymControlShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            // The card's 12dp rhythm already separates the first and last set from their neighbours.
+            .padding(
+                top = if (isFirst) 0.dp else PlainSetRowPadding,
+                bottom = if (isLast) 0.dp else PlainSetRowPadding
+            ),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), CircleShape)
-                        .clearAndSetSemantics {},
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = number.toString(),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                BasicTextField(
-                    value = set.weight,
-                    onValueChange = onWeightChanged,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 44.dp)
-                        .semantics { contentDescription = weightLabel },
-                    textStyle = MaterialTheme.typography.titleSmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    decorationBox = { innerTextField ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 44.dp)
-                                .background(MaterialTheme.colorScheme.surface, GymControlShape)
-                                .padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                                if (set.weight.isEmpty()) {
-                                    Text(
-                                        text = "—",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
-                                    )
-                                }
-                                innerTextField()
-                            }
-                            Text(
-                                text = stringResource(R.string.active_workout_unit_kg),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                )
-                StepCapsule(
-                    modifier = Modifier.width(128.dp),
-                    minusText = null,
-                    minusIcon = Icons.Default.Remove,
-                    minusEnabled = canStepReps(reps, -1),
-                    onMinus = { onRepsChanged(steppedReps(reps, -1).toString()) },
-                    centerLabel = set.reps.ifBlank { "—" },
-                    plusText = null,
-                    plusIcon = Icons.Default.Add,
-                    plusEnabled = canStepReps(reps, 1),
-                    onPlus = { onRepsChanged(steppedReps(reps, 1).toString()) },
-                    label = stringResource(R.string.cd_reps_for_set, number),
-                    value = set.reps,
-                    decreaseActionLabel = stringResource(R.string.active_workout_decrease_reps),
-                    increaseActionLabel = stringResource(R.string.active_workout_increase_reps),
-                    emphasizeCenter = true
-                )
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.cd_delete_set, number),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val lastWeightLabel = stringResource(R.string.cd_chip_last_weight)
-                val previousLabel = stringResource(R.string.cd_chip_previous)
-                val copyLabel = stringResource(R.string.cd_chip_copy_set)
-                SetQuickChip(
-                    text = stringResource(R.string.editor_chip_last_weight),
-                    description = lastWeightLabel,
-                    enabled = lastWeight != null,
-                    onClick = onApplyLastWeight
-                )
-                SetQuickChip(
-                    text = stringResource(R.string.editor_chip_previous),
-                    description = previousLabel,
-                    enabled = position > 0,
-                    onClick = onCopyPrevious
-                )
-                SetQuickChip(
-                    text = stringResource(R.string.editor_chip_plus_step),
-                    description = null,
-                    enabled = true,
-                    onClick = onAddWeight
-                )
-                SetQuickChip(
-                    text = stringResource(R.string.editor_chip_copy),
-                    description = copyLabel,
-                    enabled = true,
-                    onClick = onDuplicate
-                )
-            }
+            SetNumberBadge(number)
+            SetEditorCapsules(
+                modifier = Modifier.weight(1f),
+                number = number,
+                weightInput = set.weight,
+                repsInput = set.reps,
+                allowedWeights = allowedWeights,
+                enabled = true,
+                onWeightChanged = onWeightChanged,
+                onRepsChanged = onRepsChanged,
+                deleteDescription = stringResource(R.string.cd_delete_set_named, number, exerciseName),
+                onDelete = onDelete
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = SetNumberBadgeSize + 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val lastWeightLabel = stringResource(R.string.cd_chip_last_weight)
+            val previousLabel = stringResource(R.string.cd_chip_previous)
+            val copyLabel = stringResource(R.string.cd_chip_copy_set)
+            SetQuickChip(
+                text = stringResource(R.string.editor_chip_last_weight),
+                description = lastWeightLabel,
+                enabled = lastWeight != null,
+                onClick = onApplyLastWeight
+            )
+            SetQuickChip(
+                text = stringResource(R.string.editor_chip_previous),
+                description = previousLabel,
+                enabled = position > 0,
+                onClick = onCopyPrevious
+            )
+            SetQuickChip(
+                text = stringResource(R.string.editor_chip_copy),
+                description = copyLabel,
+                enabled = true,
+                onClick = onDuplicate
+            )
         }
     }
 }
 
+/** Compact tonal pill (36dp, fully rounded like the capsules, primary text on primary 12%) inside a 44dp tap target. */
 @Composable
 private fun SetQuickChip(
     text: String,
@@ -1405,22 +1334,33 @@ private fun SetQuickChip(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    SuggestionChip(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = if (description != null) {
-            Modifier.semantics { contentDescription = description }
-        } else {
-            Modifier
-        },
-        label = {
+    val primary = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                if (description != null) contentDescription = description
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .height(36.dp)
+                .background(primary.copy(alpha = if (enabled) 0.12f else 0.06f), CircleShape)
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
             Text(
                 text = text,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1
+                style = MaterialTheme.typography.labelLarge,
+                color = if (enabled) primary else primary.copy(alpha = 0.38f),
+                maxLines = 1,
+                modifier = Modifier.clearAndSetSemantics {}
             )
         }
-    )
+    }
 }
 
 @Composable
@@ -1429,7 +1369,7 @@ private fun SmartRecommendationPanel(
     onApplyWorkoutRecommendation: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -1442,19 +1382,14 @@ private fun SmartRecommendationPanel(
             ),
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.labelLarge,
-            color = if (
-                recommendation.kind == WorkoutRecommendationKind.Deload ||
-                    recommendation.kind == WorkoutRecommendationKind.Comeback
-            ) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
+            // Informational for every kind (Deload and Comeback are advice, not errors).
+            color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
         TextButton(
             onClick = onApplyWorkoutRecommendation,
+            modifier = Modifier.height(40.dp),
             contentPadding = PaddingValues(horizontal = 8.dp)
         ) {
             Text(stringResource(R.string.action_apply_smart_plan))

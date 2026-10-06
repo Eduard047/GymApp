@@ -512,6 +512,11 @@
     <string name="active_workout_undo_failed">Не вдалося скасувати останній підхід. Збережені дані не змінено.</string>
     <string name="active_workout_undo_action">Скасувати підхід</string>
     <string name="active_workout_delete_set">Видалити підхід</string>
+    <string name="active_workout_delete_recorded_set_target">Підхід %1$d: %2$s</string>
+    <string name="active_workout_delete_recorded_set_message">Цей записаний підхід буде видалено з тренування.</string>
+    <string name="active_workout_last_set_message">У вправі має лишатися хоча б один підхід. Натомість видаліть вправу.</string>
+    <string name="active_workout_exercise_limit_reached">У цьому тренуванні досягнуто ліміту вправ.</string>
+    <string name="active_workout_exercise_already_added">Ця вправа вже є в тренуванні.</string>
     <string name="active_workout_log_set_cd">Записати підхід %1$d</string>
     <string name="active_workout_remove_exercise">Видалити вправу</string>
     <string name="active_workout_remove_exercise_title">Видалити вправу?</string>

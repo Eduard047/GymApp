@@ -160,6 +160,7 @@ import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
+import com.example.gymapp.ui.viewmodel.ActiveWorkoutAddExerciseCatalog
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
@@ -194,6 +195,8 @@ fun ActiveWorkoutScreen(
     onSkipRemainingSets: (String) -> Unit = {},
     onDeleteSet: (String) -> Unit = {},
     onRemoveExercise: (String) -> Unit = {},
+    addExerciseCatalog: ActiveWorkoutAddExerciseCatalog = ActiveWorkoutAddExerciseCatalog(),
+    onAddExercise: (Long) -> Unit = {},
     onRecordSet: (String) -> Unit,
     onRecordAllPendingSets: () -> Unit,
     onUndoLatestSet: (String) -> Unit,
@@ -500,6 +503,31 @@ fun ActiveWorkoutScreen(
                 onVoiceStarted = onVoiceStarted,
                 onVoiceCommandFeedback = onVoiceCommandFeedback
             )
+        }
+
+        if (uiState.liveConnectionMode == null) {
+            item(key = "add-exercise") {
+                // Same picker and dashed button as the saved workout screen; hidden in live rooms.
+                ExerciseCatalogSelector(
+                    selectedExerciseId = null,
+                    exercises = addExerciseCatalog.exercises,
+                    frequentExerciseIds = addExerciseCatalog.frequentExerciseIds,
+                    exerciseWorkoutCounts = addExerciseCatalog.exerciseWorkoutCounts,
+                    exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
+                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                    onExerciseSelected = onAddExercise,
+                    trigger = { openPicker ->
+                        WorkoutFooterButton(
+                            label = stringResource(R.string.workout_detail_add_exercise_short),
+                            accessibilityLabel = stringResource(R.string.action_add_exercise),
+                            dashed = true,
+                            enabled = !operationInProgress && addExerciseCatalog.exercises.isNotEmpty(),
+                            onClick = openPicker,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                )
+            }
         }
 
         item {
@@ -1010,6 +1038,7 @@ private fun ActiveWorkoutExerciseCard(
     }
     var showFinishDialog by remember(exercise.id) { mutableStateOf(false) }
     var showRemoveDialog by remember(exercise.id) { mutableStateOf(false) }
+    var recordedSetToDeleteId by remember(exercise.id) { mutableStateOf<String?>(null) }
     // Set when the finish dialog starts a save or skip; the card then collapses as soon as every
     // remaining set is done, even though the latest recorded set still belongs to it.
     var collapseAfterFinish by remember(exercise.id) { mutableStateOf(false) }
@@ -1182,9 +1211,14 @@ private fun ActiveWorkoutExerciseCard(
                     onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
                     onRecord = { onRecordSet(set.id) },
                     onUndo = { onUndoLatestSet(set.id) },
-                    canDelete = allowExerciseActions && !set.isCompleted &&
-                        exercise.sets.size > 1 && !operationInProgress,
-                    onDelete = { onDeleteSet(set.id) },
+                    exerciseName = exerciseName,
+                    // A pending set deletes at once; a recorded one asks first (see the dialog below).
+                    canDelete = allowExerciseActions && exercise.sets.size > 1 && !operationInProgress,
+                    onDelete = if (set.isCompleted) {
+                        { recordedSetToDeleteId = set.id }
+                    } else {
+                        { onDeleteSet(set.id) }
+                    },
                     onAdjustRestTimer = onAdjustRestTimer,
                     onStopRestTimer = onStopRestTimer,
                     onDismissMessage = onDismissMessage,
@@ -1200,7 +1234,7 @@ private fun ActiveWorkoutExerciseCard(
         if (isExpanded && allowExerciseActions) {
             // Two equal columns, no divider: dashed "+ Set" leading, solid "Finish" trailing.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 WorkoutFooterButton(
@@ -1235,6 +1269,23 @@ private fun ActiveWorkoutExerciseCard(
             },
             onDismiss = { showRemoveDialog = false }
         )
+    }
+    recordedSetToDeleteId?.let { targetId ->
+        val target = exercise.sets.firstOrNull { it.id == targetId && it.isCompleted }
+        if (target == null) {
+            recordedSetToDeleteId = null
+        } else {
+            WorkoutDeleteRecordedSetDialog(
+                exerciseName = exerciseName,
+                setNumber = target.orderIndex + 1,
+                summary = rememberSetSummary(target.weightInput, target.repsInput),
+                onConfirm = {
+                    recordedSetToDeleteId = null
+                    onDeleteSet(targetId)
+                },
+                onDismiss = { recordedSetToDeleteId = null }
+            )
+        }
     }
     if (showFinishDialog && unrecordedCount > 0) {
         ActiveWorkoutFinishExerciseDialog(
@@ -1323,6 +1374,7 @@ private fun ActiveWorkoutSetRow(
     onRepsChanged: (String) -> Unit,
     onRecord: () -> Unit,
     onUndo: () -> Unit,
+    exerciseName: String,
     canDelete: Boolean,
     onDelete: () -> Unit,
     onAdjustRestTimer: (Int) -> Unit,
@@ -1342,6 +1394,8 @@ private fun ActiveWorkoutSetRow(
                 isLatestCompleted = isLatestCompleted,
                 restSecondsRemaining = restSecondsRemaining,
                 onUndo = onUndo,
+                canDelete = canDelete,
+                onDelete = onDelete,
                 onAdjustRestTimer = onAdjustRestTimer,
                 onStopRestTimer = onStopRestTimer
             )
@@ -1361,11 +1415,13 @@ private fun ActiveWorkoutSetRow(
                 onVoiceStarted = onVoiceStarted,
                 onStopRestTimer = onStopRestTimer,
                 onVoiceCommandFeedback = onVoiceCommandFeedback,
+                exerciseName = exerciseName,
                 canDelete = canDelete,
                 onDelete = onDelete
             )
             else -> UpcomingSetRow(
                 set = set,
+                exerciseName = exerciseName,
                 editorsEnabled = editable && !operationInProgress,
                 canLog = validSetInput && !operationInProgress,
                 isRecording = isRecording,
@@ -1406,6 +1462,7 @@ private fun ActiveWorkoutSetRow(
 @Composable
 private fun UpcomingSetRow(
     set: ActiveWorkoutSetUiState,
+    exerciseName: String,
     editorsEnabled: Boolean,
     canLog: Boolean,
     isRecording: Boolean,
@@ -1418,12 +1475,14 @@ private fun UpcomingSetRow(
     var isExpanded by rememberSaveable(set.id) { mutableStateOf(false) }
     val number = set.orderIndex + 1
     val summary = rememberSetSummary(set.weightInput, set.repsInput)
+    val deleteDescription = stringResource(R.string.cd_delete_set_named, number, exerciseName)
     EditableSetRow(
         number = number,
         summary = summary,
         rowDescription = stringResource(R.string.active_workout_set_upcoming_cd, number, summary),
         editHint = stringResource(R.string.active_workout_set_upcoming_hint),
         deleteLabel = stringResource(R.string.active_workout_delete_set),
+        deleteActionLabel = deleteDescription,
         expanded = isExpanded,
         onExpandedChange = { isExpanded = it },
         canDelete = canDelete,
@@ -1437,13 +1496,16 @@ private fun UpcomingSetRow(
             )
         }
     ) {
-        SetPendingEditor(
+        SetEditorCapsules(
             number = number,
             weightInput = set.weightInput,
             repsInput = set.repsInput,
+            allowedWeights = set.allowedWeights,
             enabled = editorsEnabled,
             onWeightChanged = onWeightChanged,
-            onRepsChanged = onRepsChanged
+            onRepsChanged = onRepsChanged,
+            deleteDescription = deleteDescription.takeIf { canDelete },
+            onDelete = onDelete.takeIf { canDelete }
         )
     }
 }
@@ -1493,8 +1555,8 @@ internal fun activeWorkoutCompletedSetTag(setId: String): String = "active_worko
 /**
  * A recorded set: one line — check, "60 kg × 8", optional record badge, and (latest set, only
  * while its rest timer runs) a trailing compact countdown with −15 / +15 / stop pills that wraps
- * under the summary when it does not fit. Undo is a long-press menu / accessibility action, never
- * a standing button.
+ * under the summary when it does not fit. Undo (latest set only) and Delete set (confirmed in a
+ * dialog) are long-press menu / accessibility actions, never standing buttons.
  */
 @Composable
 private fun CompletedSetRow(
@@ -1503,11 +1565,15 @@ private fun CompletedSetRow(
     isLatestCompleted: Boolean,
     restSecondsRemaining: Int,
     onUndo: () -> Unit,
+    canDelete: Boolean,
+    onDelete: () -> Unit,
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit
 ) {
     val number = set.orderIndex + 1
     val summary = rememberSetSummary(set.weightInput, set.repsInput)
+    val undoLabel = stringResource(R.string.active_workout_undo_action)
+    val deleteLabel = stringResource(R.string.active_workout_delete_set)
     val description = stringResource(
         if (set.isPersonalRecord) {
             R.string.active_workout_set_recorded_record_cd
@@ -1524,8 +1590,10 @@ private fun CompletedSetRow(
         description = description,
         isPersonalRecord = set.isPersonalRecord,
         modifier = Modifier.testTag(activeWorkoutCompletedSetTag(set.id)),
-        longPressActionLabel = stringResource(R.string.active_workout_undo_action).takeIf { canUndo },
-        onLongPressAction = onUndo.takeIf { canUndo },
+        actions = listOfNotNull(
+            SetRowAction(label = undoLabel, onClick = onUndo).takeIf { canUndo },
+            SetRowAction(label = deleteLabel, destructive = true, onClick = onDelete).takeIf { canDelete }
+        ),
         trailing = if (showsRest) {
             {
                 CompactRestControls(
@@ -1706,12 +1774,18 @@ private fun CurrentSetCard(
     onVoiceStarted: () -> Unit,
     onStopRestTimer: () -> Unit,
     onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit,
+    exerciseName: String = "",
     canDelete: Boolean = false,
     onDelete: () -> Unit = {}
 ) {
     var deleteMenuOpen by remember { mutableStateOf(false) }
     val deleteHaptics = LocalHapticFeedback.current
     val deleteLabel = stringResource(R.string.active_workout_delete_set)
+    val deleteDescription = stringResource(
+        R.string.cd_delete_set_named,
+        set.orderIndex + 1,
+        exerciseName
+    )
     val voice = rememberSetVoiceCommand(
         set = set,
         enabled = !operationInProgress,
@@ -1823,6 +1897,22 @@ private fun CurrentSetCard(
                         .wrapContentHeight(Alignment.CenterVertically)
                         .clearAndSetSemantics { contentDescription = captionDescription }
                 )
+            }
+            if (canDelete) {
+                // Visible delete; the long-press menu on the card stays as the secondary path.
+                IconButton(
+                    onClick = onDelete,
+                    enabled = editorsEnabled,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = deleteDescription,
+                        tint = MaterialTheme.colorScheme.error.copy(
+                            alpha = if (editorsEnabled) 1f else 0.38f
+                        )
+                    )
+                }
             }
         }
         if (voice.phase == VoicePhase.Listening) {

@@ -2161,6 +2161,12 @@ private fun SavedWorkoutExerciseCard(
                                 initialWeight = weightText,
                                 initialReps = repsText,
                                 setKey = setEntry,
+                                deleteDescription = stringResource(
+                                    R.string.cd_delete_set_named,
+                                    number,
+                                    displayExerciseName
+                                ),
+                                onDelete = { onDeleteSet(setEntry) },
                                 onSave = { weight, reps ->
                                     onUpdateSet(setEntry, weight, reps)
                                     onExpandedSetChange(null)
@@ -2206,8 +2212,9 @@ private fun SavedWorkoutExerciseCard(
 }
 
 /**
- * Inline editor of one saved set, like the active workout's current-set editor: weight value,
- * step capsules and a primary Save. The draft restarts whenever the stored set changes.
+ * Inline editor of one saved set: the shared weight and reps capsules with a visible trash button
+ * (it runs the same delete-set confirmation as the long-press menu) and a primary Save. The draft
+ * restarts whenever the stored set changes.
  */
 @Composable
 private fun SavedSetEditor(
@@ -2215,6 +2222,8 @@ private fun SavedSetEditor(
     initialWeight: String,
     initialReps: String,
     setKey: SetEntryEntity,
+    deleteDescription: String,
+    onDelete: () -> Unit,
     onSave: (weight: String, reps: String) -> Unit
 ) {
     var weightText by rememberSaveable(setKey.id, setKey.weight, setKey.reps) {
@@ -2223,32 +2232,20 @@ private fun SavedSetEditor(
     var repsText by rememberSaveable(setKey.id, setKey.weight, setKey.reps) {
         mutableStateOf(initialReps)
     }
-    val format = rememberDecimalFormat()
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                RoundedCornerShape(16.dp)
-            )
-            .padding(10.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        SetValueLine(
+        SetEditorCapsules(
             number = number,
-            weightInput = weightText,
-            repsInput = repsText,
-            enabled = true,
-            onWeightChanged = { weightText = it }
-        )
-        SetStepCapsules(
             weightInput = weightText,
             repsInput = repsText,
             allowedWeights = emptyList(),
             enabled = true,
-            format = format,
             onWeightChanged = { weightText = it },
-            onRepsChanged = { repsText = it }
+            onRepsChanged = { repsText = it },
+            deleteDescription = deleteDescription,
+            onDelete = onDelete
         )
         Button(
             onClick = { onSave(weightText.ifBlank { "0" }, repsText) },

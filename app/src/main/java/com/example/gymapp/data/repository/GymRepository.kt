@@ -18,6 +18,7 @@ import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.ExerciseLoadProfileEntity
 import com.example.gymapp.data.entity.ExerciseWeightOptionEntity
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.entity.LastLoggedSet
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
 import com.example.gymapp.data.entity.GarminWorkoutReceiptEntity
 import com.example.gymapp.data.entity.GarminWorkoutProvenanceEntity
@@ -132,12 +133,11 @@ sealed interface UndoActiveWorkoutSetResult {
 }
 
 sealed interface DeleteActiveWorkoutSetResult {
-    data class Deleted(val revision: Long) : DeleteActiveWorkoutSetResult
+    /** [clearedUndo] when the deleted set was the undo target (its rest timer must stop too). */
+    data class Deleted(val revision: Long, val clearedUndo: Boolean = false) : DeleteActiveWorkoutSetResult
     data object Missing : DeleteActiveWorkoutSetResult
     data object Stale : DeleteActiveWorkoutSetResult
     data object TargetChanged : DeleteActiveWorkoutSetResult
-    /** Recorded sets are never deleted; the user undoes the latest one first. */
-    data object SetRecorded : DeleteActiveWorkoutSetResult
     data object LastSet : DeleteActiveWorkoutSetResult
     data object LivePlanFrozen : DeleteActiveWorkoutSetResult
 }
@@ -154,6 +154,36 @@ sealed interface RemoveActiveWorkoutExerciseResult {
     data object TargetChanged : RemoveActiveWorkoutExerciseResult
     data object LastExercise : RemoveActiveWorkoutExerciseResult
     data object LivePlanFrozen : RemoveActiveWorkoutExerciseResult
+}
+
+sealed interface AddActiveWorkoutExerciseResult {
+    data class Added(val revision: Long, val activeExerciseId: String) : AddActiveWorkoutExerciseResult
+    data object Missing : AddActiveWorkoutExerciseResult
+    data object Stale : AddActiveWorkoutExerciseResult
+    /** The catalog exercise no longer exists. */
+    data object TargetChanged : AddActiveWorkoutExerciseResult
+    data object AlreadyInWorkout : AddActiveWorkoutExerciseResult
+    data object LimitReached : AddActiveWorkoutExerciseResult
+    data object LivePlanFrozen : AddActiveWorkoutExerciseResult
+}
+
+/** Sets an exercise added mid-workout starts with. */
+internal const val ADDED_ACTIVE_EXERCISE_SET_COUNT = 3
+internal const val ADDED_ACTIVE_EXERCISE_DEFAULT_WEIGHT = 20.0
+internal const val ADDED_ACTIVE_EXERCISE_DEFAULT_REPS = 10
+
+/**
+ * Pending sets for an exercise added to a running workout: [ADDED_ACTIVE_EXERCISE_SET_COUNT] copies
+ * of the last logged weight and reps, or the same defaults the saved-workout "add exercise" uses
+ * (20 kg x 10) when there is no valid history.
+ */
+internal fun prefilledSetsForAddedActiveExercise(last: LastLoggedSet?): List<WorkoutSetDraft> {
+    val usable = last?.takeIf {
+        WorkoutDataLimits.isValidWeight(it.weight) && WorkoutDataLimits.isValidReps(it.reps)
+    }
+    val weight = usable?.weight ?: ADDED_ACTIVE_EXERCISE_DEFAULT_WEIGHT
+    val reps = usable?.reps ?: ADDED_ACTIVE_EXERCISE_DEFAULT_REPS
+    return List(ADDED_ACTIVE_EXERCISE_SET_COUNT) { WorkoutSetDraft(weight = weight, reps = reps) }
 }
 
 sealed interface ApplyActiveWorkoutAdaptationResult {
@@ -2439,10 +2469,90 @@ class GymRepository(
     }
 
     /**
-     * Deletes one not-yet-recorded set and renumbers the remaining sets of its exercise. The
-     * exercise must keep at least one set. The undo target and rest timer are untouched because a
-     * pending set can never own them.
+     * Deletes one set (pending or recorded) and renumbers the remaining sets of its exercise. The
+     * exercise must keep at least one set. Undo is kept unless the deleted set was the undo target,
+     * in which case it is cleared in the same transaction ([DeleteActiveWorkoutSetResult.Deleted.clearedUndo]
+     * tells the caller to stop that set's rest timer).
      */
+    /**
+     * Appends a catalog exercise at the end of the running workout with
+     * [ADDED_ACTIVE_EXERCISE_SET_COUNT] pending sets prefilled from the last logged weight and reps
+     * before this workout started. Atomic and revision-checked; refused while a live room owns the
+     * plan, when the exercise is already in the workout, or at the exercise limit. Undo and the
+     * rest timer are untouched because the new sets are all pending.
+     */
+    suspend fun addActiveWorkoutExercise(
+        exerciseId: Long,
+        expectedRevision: Long
+    ): AddActiveWorkoutExerciseResult = activeWorkoutMutationMutex.withLock {
+        require(exerciseId > 0) { "Exercise identifier is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction AddActiveWorkoutExerciseResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction AddActiveWorkoutExerciseResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction AddActiveWorkoutExerciseResult.LivePlanFrozen
+            }
+            val exercise = exerciseDao.getById(exerciseId)
+                ?: return@withTransaction AddActiveWorkoutExerciseResult.TargetChanged
+            require(WorkoutDataLimits.isValidExerciseName(exercise.name)) {
+                "Exercise name is outside the supported length."
+            }
+            val name = exercise.name.trim()
+            val catalogKey = BuiltInExerciseCatalog.inferKey(exercise.name)
+            if (details.exercises.any { block ->
+                    block.activeWorkoutExercise.exerciseName == name ||
+                        (catalogKey != null && block.activeWorkoutExercise.catalogKey == catalogKey)
+                }
+            ) {
+                return@withTransaction AddActiveWorkoutExerciseResult.AlreadyInWorkout
+            }
+            if (details.exercises.size >= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+                return@withTransaction AddActiveWorkoutExerciseResult.LimitReached
+            }
+            val seeds = prefilledSetsForAddedActiveExercise(
+                workoutDao.getLastLoggedSetBeforeDate(exerciseId, details.activeWorkout.startedAt)
+            )
+            val usedIds = details.exercises.flatMap { block ->
+                listOf(block.activeWorkoutExercise.id) + block.sets.map { it.id }
+            }.toMutableSet()
+            val activeExerciseId = nextStableActiveWorkoutId(usedIds)
+            val setRows = seeds.mapIndexed { index, seed ->
+                ActiveWorkoutSetEntity(
+                    id = nextStableActiveWorkoutId(usedIds),
+                    activeWorkoutExerciseId = activeExerciseId,
+                    weight = seed.weight,
+                    reps = seed.reps,
+                    orderIndex = index,
+                    completedAt = null
+                )
+            }
+            check(
+                activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision) == 1
+            ) { "Active workout changed while adding the exercise." }
+            activeWorkoutDao.insertExercises(
+                listOf(
+                    ActiveWorkoutExerciseEntity(
+                        id = activeExerciseId,
+                        activeWorkoutId = ACTIVE_WORKOUT_ID,
+                        exerciseName = name,
+                        catalogKey = catalogKey,
+                        orderIndex = details.exercises.size
+                    )
+                )
+            )
+            activeWorkoutDao.insertSets(setRows)
+            AddActiveWorkoutExerciseResult.Added(expectedRevision + 1L, activeExerciseId)
+        }
+    }
+
     suspend fun deleteActiveWorkoutSet(
         setId: String,
         expectedRevision: Long
@@ -2465,21 +2575,18 @@ class GymRepository(
             val exercise = details.exercises.firstOrNull { block ->
                 block.sets.any { set -> set.id == setId }
             } ?: return@withTransaction DeleteActiveWorkoutSetResult.TargetChanged
-            val target = exercise.sets.first { set -> set.id == setId }
-            if (target.completedAt != null) {
-                return@withTransaction DeleteActiveWorkoutSetResult.SetRecorded
-            }
             if (exercise.sets.size <= 1) {
                 return@withTransaction DeleteActiveWorkoutSetResult.LastSet
             }
             val exerciseId = exercise.activeWorkoutExercise.id
-            check(
-                activeWorkoutDao.advanceRevisionKeepingUndoable(
-                    ACTIVE_WORKOUT_ID,
-                    expectedRevision
-                ) == 1
-            ) { "Active workout changed while deleting the set." }
-            check(activeWorkoutDao.deletePendingSet(setId, exerciseId) == 1) {
+            val clearsUndo = details.activeWorkout.undoableSetId == setId
+            val advanced = if (clearsUndo) {
+                activeWorkoutDao.advanceRevisionForBulkRecord(ACTIVE_WORKOUT_ID, expectedRevision)
+            } else {
+                activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision)
+            }
+            check(advanced == 1) { "Active workout changed while deleting the set." }
+            check(activeWorkoutDao.deleteSetOfExercise(setId, exerciseId) == 1) {
                 "Active set changed while deleting it."
             }
             // Ascending one-by-one renumbering keeps the unique (exercise, orderIndex) index valid.
@@ -2488,7 +2595,7 @@ class GymRepository(
                     check(activeWorkoutDao.updateSetOrderIndex(set.id, exerciseId, index) == 1)
                 }
             }
-            DeleteActiveWorkoutSetResult.Deleted(expectedRevision + 1L)
+            DeleteActiveWorkoutSetResult.Deleted(expectedRevision + 1L, clearedUndo = clearsUndo)
         }
     }
 

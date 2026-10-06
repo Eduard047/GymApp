@@ -141,4 +141,5 @@ internal fun recordedConfirmationStep(
 /** Status messages that report success rather than a problem (shown in the info tone). */
 internal fun activeWorkoutMessageIsSuccess(messageResourceId: Int): Boolean =
     messageResourceId == com.example.gymapp.R.string.active_workout_exercise_saved ||
-        messageResourceId == com.example.gymapp.R.string.active_workout_remaining_sets_skipped
+        messageResourceId == com.example.gymapp.R.string.active_workout_remaining_sets_skipped ||
+        messageResourceId == com.example.gymapp.R.string.active_workout_all_sets_saved

@@ -6,6 +6,8 @@ import com.example.gymapp.data.entity.ActiveWorkoutEntity
 import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
 import com.example.gymapp.data.entity.ActiveWorkoutExerciseWithDetails
 import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
+import com.example.gymapp.data.entity.ExerciseEntity
+import com.example.gymapp.data.repository.AddActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
 import org.junit.Assert.assertEquals
@@ -35,11 +37,15 @@ class ActiveWorkoutEditPolicyTest {
     }
 
     @Test
-    fun recordedAndLastSetsAreNotDeletable() {
-        val details = workout(listOf(true, false), listOf(false))
+    fun recordedSetsAreDeletableButLastSetIsNot() {
+        val details = workout(listOf(true, false), listOf(false), listOf(true))
         assertEquals(
-            ActiveWorkoutEditBlock.SetRecorded,
+            ActiveWorkoutEditBlock.Allowed,
             activeWorkoutSetDeletionBlock(details, "e0-s0", false, false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.LastSet,
+            activeWorkoutSetDeletionBlock(details, "e2-s0", false, false)
         )
         assertEquals(
             ActiveWorkoutEditBlock.LastSet,
@@ -100,6 +106,11 @@ class ActiveWorkoutEditPolicyTest {
             R.string.training_adaptation_live_blocked,
             activeWorkoutDeleteSetOutcomeMessage(DeleteActiveWorkoutSetResult.LivePlanFrozen)
         )
+        assertEquals(
+            R.string.active_workout_last_set_message,
+            activeWorkoutDeleteSetOutcomeMessage(DeleteActiveWorkoutSetResult.LastSet)
+        )
+        assertNull(activeWorkoutDeleteSetOutcomeMessage(DeleteActiveWorkoutSetResult.Deleted(3L, true)))
         assertNull(
             activeWorkoutRemoveExerciseOutcomeMessage(
                 RemoveActiveWorkoutExerciseResult.Removed(2L, 0, false)
@@ -113,5 +124,62 @@ class ActiveWorkoutEditPolicyTest {
             R.string.training_adaptation_live_blocked,
             activeWorkoutRemoveExerciseOutcomeMessage(RemoveActiveWorkoutExerciseResult.LivePlanFrozen)
         )
+    }
+
+    @Test
+    fun addingAnExerciseIsBlockedInLiveRoomsBusyAndMissingWorkouts() {
+        val details = workout(listOf(false))
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutExerciseAdditionBlock(details, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.LiveRoom,
+            activeWorkoutExerciseAdditionBlock(details, inLiveRoom = true, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Busy,
+            activeWorkoutExerciseAdditionBlock(details, inLiveRoom = false, operationInProgress = true)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Missing,
+            activeWorkoutExerciseAdditionBlock(null, inLiveRoom = false, operationInProgress = false)
+        )
+    }
+
+    @Test
+    fun addExerciseOutcomesSurfaceTheRightMessage() {
+        assertNull(activeWorkoutAddExerciseOutcomeMessage(AddActiveWorkoutExerciseResult.Added(2L, "x")))
+        assertEquals(
+            R.string.active_workout_changed,
+            activeWorkoutAddExerciseOutcomeMessage(AddActiveWorkoutExerciseResult.Stale)
+        )
+        assertEquals(
+            R.string.training_adaptation_live_blocked,
+            activeWorkoutAddExerciseOutcomeMessage(AddActiveWorkoutExerciseResult.LivePlanFrozen)
+        )
+        assertEquals(
+            R.string.active_workout_exercise_limit_reached,
+            activeWorkoutAddExerciseOutcomeMessage(AddActiveWorkoutExerciseResult.LimitReached)
+        )
+        assertEquals(
+            R.string.active_workout_exercise_already_added,
+            activeWorkoutAddExerciseOutcomeMessage(AddActiveWorkoutExerciseResult.AlreadyInWorkout)
+        )
+    }
+
+    @Test
+    fun pickerOffersOnlyExercisesNotAlreadyInTheWorkout() {
+        val details = workout(listOf(false), listOf(false))
+        val catalog = listOf(
+            ExerciseEntity(id = 1L, name = "Exercise 0"),
+            ExerciseEntity(id = 2L, name = "Exercise 1"),
+            ExerciseEntity(id = 3L, name = "Exercise 9")
+        )
+        assertEquals(
+            listOf(3L),
+            activeWorkoutExercisesAvailableToAdd(catalog, details).map { it.id }
+        )
+        assertEquals(3, activeWorkoutExercisesAvailableToAdd(catalog, null).size)
     }
 }

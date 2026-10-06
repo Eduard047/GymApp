@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -63,7 +64,7 @@ class WorkoutPlanEditorUiTest {
         }
         composeRule.onNodeWithText(discardTitle()).assertDoesNotExist()
 
-        openDiscardAction()
+        openDiscardAction(hasDrafts = false)
         composeRule.onNodeWithText(discardTitle()).assertIsDisplayed()
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.workout_plan_keep_editing)
@@ -87,7 +88,7 @@ class WorkoutPlanEditorUiTest {
             onDiscard = { discardCount += 1 }
         )
 
-        openDiscardAction()
+        openDiscardAction(hasDrafts = true)
 
         composeRule.onNodeWithText(discardTitle()).assertIsDisplayed()
         composeRule.runOnIdle { assertEquals(0, discardCount) }
@@ -131,6 +132,41 @@ class WorkoutPlanEditorUiTest {
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.action_start_workout)
         ).assertIsNotEnabled()
+    }
+
+    @Test
+    fun draftCardUsesSharedSetEditorWithDashedFootersAndOneMenu() {
+        var addCount = 0
+        setEditorContent(
+            isDirty = true,
+            drafts = listOf(ExerciseInputState(draftId = 1L)),
+            onAddExercise = { addCount += 1 }
+        )
+
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(2)
+        // Header menu, the selector trigger and the "+ Set" footer sit on the card.
+        composeRule.onNodeWithTag("workout_plan_exercise_menu").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(
+            composeRule.activity.getString(R.string.label_select_exercise)
+        ).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(
+            composeRule.activity.getString(R.string.action_add_planned_set)
+        ).assertIsDisplayed()
+        // The set uses the shared capsules: a named trash button, with no "+2.5" chip.
+        composeRule.onNodeWithContentDescription(
+            composeRule.activity.getString(
+                R.string.cd_delete_set_named,
+                1,
+                composeRule.activity.getString(R.string.exercise_block_title, 1)
+            )
+        ).assertIsDisplayed()
+        composeRule.onAllNodesWithText(
+            composeRule.activity.getString(R.string.editor_chip_plus_step)
+        ).assertCountEquals(0)
+        // "+ Add exercise" closes the exercise list and reuses the header "+" flow.
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(3)
+        composeRule.onNodeWithTag("workout_plan_add_exercise_footer").performClick()
+        composeRule.runOnIdle { assertEquals(1, addCount) }
     }
 
     @Test
@@ -193,12 +229,14 @@ class WorkoutPlanEditorUiTest {
         composeRule.onNodeWithText(clearAction()).performClick()
     }
 
-    private fun openDiscardAction() {
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(4)
+    /** With drafts the list also holds the trailing "+ Add exercise" item, which shifts later rows by one. */
+    private fun openDiscardAction(hasDrafts: Boolean) {
+        val shift = if (hasDrafts) 1 else 0
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(4 + shift)
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.workout_plan_more_options)
         ).performClick()
-        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(8)
+        composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(8 + shift)
         composeRule.onNodeWithTag("workout_plan_discard_draft").performClick()
     }
 

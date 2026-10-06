@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.entity.LastLoggedSet
 import com.example.gymapp.data.entity.WorkoutExerciseEntity
 import com.example.gymapp.data.entity.WorkoutSessionDetails
 import com.example.gymapp.data.entity.WorkoutSessionEntity
@@ -317,6 +318,20 @@ interface WorkoutDao {
         """
     )
     suspend fun getLastWeightBeforeDate(exerciseId: Long, beforeDate: Long): Double?
+
+    @Query(
+        """
+        SELECT se.weight AS weight, se.reps AS reps
+        FROM set_entries se
+        INNER JOIN workout_exercises we ON we.id = se.workoutExerciseId
+        INNER JOIN workout_sessions ws ON ws.id = we.sessionId
+        WHERE we.exerciseId = :exerciseId
+            AND ws.date < :beforeDate
+        ORDER BY ws.date DESC, se.orderIndex DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getLastLoggedSetBeforeDate(exerciseId: Long, beforeDate: Long): LastLoggedSet?
 
     @Query(
         """

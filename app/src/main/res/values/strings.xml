@@ -506,6 +506,11 @@
     <string name="active_workout_undo_failed">The latest set could not be undone. Its saved data was not changed.</string>
     <string name="active_workout_undo_action">Undo set</string>
     <string name="active_workout_delete_set">Delete set</string>
+    <string name="active_workout_delete_recorded_set_target">Set %1$d: %2$s</string>
+    <string name="active_workout_delete_recorded_set_message">This recorded set will be removed from the workout.</string>
+    <string name="active_workout_last_set_message">An exercise keeps at least one set. Remove the exercise instead.</string>
+    <string name="active_workout_exercise_limit_reached">This workout has reached the exercise limit.</string>
+    <string name="active_workout_exercise_already_added">This exercise is already in the workout.</string>
     <string name="active_workout_log_set_cd">Log set %1$d</string>
     <string name="active_workout_remove_exercise">Remove exercise</string>
     <string name="active_workout_remove_exercise_title">Remove exercise?</string>

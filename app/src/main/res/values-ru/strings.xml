@@ -512,6 +512,11 @@
     <string name="active_workout_undo_failed">Не удалось отменить последний подход. Сохранённые данные не изменены.</string>
     <string name="active_workout_undo_action">Отменить подход</string>
     <string name="active_workout_delete_set">Удалить подход</string>
+    <string name="active_workout_delete_recorded_set_target">Подход %1$d: %2$s</string>
+    <string name="active_workout_delete_recorded_set_message">Этот записанный подход будет удалён из тренировки.</string>
+    <string name="active_workout_last_set_message">В упражнении должен остаться хотя бы один подход. Вместо этого удалите упражнение.</string>
+    <string name="active_workout_exercise_limit_reached">В этой тренировке достигнут лимит упражнений.</string>
+    <string name="active_workout_exercise_already_added">Это упражнение уже есть в тренировке.</string>
     <string name="active_workout_log_set_cd">Записать подход %1$d</string>
     <string name="active_workout_remove_exercise">Удалить упражнение</string>
     <string name="active_workout_remove_exercise_title">Удалить упражнение?</string>

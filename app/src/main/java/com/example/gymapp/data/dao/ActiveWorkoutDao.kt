@@ -180,6 +180,18 @@ interface ActiveWorkoutDao {
 
     @Query(
         """
+        DELETE FROM active_workout_sets
+        WHERE id = :setId
+            AND activeWorkoutExerciseId = :expectedActiveWorkoutExerciseId
+        """
+    )
+    suspend fun deleteSetOfExercise(
+        setId: String,
+        expectedActiveWorkoutExerciseId: String
+    ): Int
+
+    @Query(
+        """
         UPDATE active_workout_sets
         SET orderIndex = :orderIndex
         WHERE id = :setId
