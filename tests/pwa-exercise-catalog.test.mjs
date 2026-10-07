@@ -855,9 +855,57 @@ test("exercise search tolerates only bounded useful typos and transliteration", 
       `${query} should find ${catalogKey}`
     );
   }
-  assert.equal(vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises[0], "db", "en")`, context), false);
-  assert.equal(vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises[0], "db db", "en")`, context), false);
+  for (const query of ["db", "bb", "db db"]) {
+    assert.equal(vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises[0], ${JSON.stringify(query)}, "en")`, context), false,
+      `${query} should not match the first exercise through muscle or equipment vocabulary`);
+  }
   assert.equal(vm.runInContext(`exerciseMatchesSearch(defaultAppState().exercises[0], "zzzzzz", "en")`, context), false);
+});
+
+test("exercise search matches one- and two-letter queries only at the start of a name word", () => {
+  const context = loadPwaContext();
+  const matches = (query, language) => jsonFrom(
+    context,
+    `defaultAppState().exercises.map(exercise => ({ key: exercise.catalogKey, match: exerciseSearchMatch(exercise, ${JSON.stringify(query)}, ${JSON.stringify(language)}) })).filter(item => item.match.matched).map(item => ({ key: item.key, score: item.match.score, reason: item.match.reason, source: item.match.source }))`
+  );
+  const wordStartsWith = (label, prefix) => label.toLowerCase().split(/[^\p{L}\p{N}]+/u).some(word => word.startsWith(prefix));
+  for (const language of ["ru", "uk"]) {
+    const results = matches("ж", language);
+    const keys = results.map(item => item.key);
+    assert.ok(keys.includes("bench_press"), `ж should find bench press in ${language}`);
+    assert.ok(results.every(item => wordStartsWith(item.reason, "ж")), `ж results must start a name word in ${language}`);
+    assert.ok(!keys.includes("hip_adduction") && !keys.includes("deadlift"), "ж must not match mid-word or vocabulary-only exercises");
+  }
+  for (const [query, language] of [["db", "en"], ["bb", "en"], ["DB", "ru"], ["дб", "ru"], ["бб", "uk"]]) {
+    const results = matches(query, language);
+    assert.ok(results.length > 0, `${query} should find name aliases in ${language}`);
+    assert.ok(
+      results.every(item => (item.source === "alias" || item.source === "canonical" || item.source === "legacy")),
+      `${query} must not match muscle or equipment vocabulary in ${language}`
+    );
+    const latin = query === "дб" ? "db" : query === "бб" ? "bb" : query.toLowerCase();
+    assert.ok(results.every(item => wordStartsWith(item.reason, latin) || wordStartsWith(item.reason, query.toLowerCase())),
+      `${query} results must start a name word`);
+  }
+  const dbCurl = matches("DB curl", "en").map(item => item.key);
+  assert.ok(dbCurl.includes("biceps_curl"));
+  assert.ok(matches("BB row", "en").map(item => item.key).includes("barbell_row"));
+  // Connector-only queries fall back to their raw tokens instead of returning nothing.
+  assert.ok(matches("a", "en").length > 0);
+  assert.ok(matches("в", "ru").length > 0);
+  assert.equal(matches("", "en").length, jsonFrom(context, "defaultAppState().exercises.length"));
+});
+
+test("exercise search ranks a word-start match above a mid-word match of the same token", () => {
+  const context = loadPwaContext();
+  const scores = jsonFrom(
+    context,
+    `Object.fromEntries(defaultAppState().exercises.filter(exercise => ["lateral_raise", "plate_twist", "plate_loaded_row"].includes(exercise.catalogKey)).map(exercise => [exercise.catalogKey, exerciseSearchMatch(exercise, "late", "en")]))`
+  );
+  assert.equal(scores.lateral_raise.matched, true);
+  assert.equal(scores.plate_twist.matched, true);
+  assert.ok(scores.lateral_raise.score > scores.plate_twist.score);
+  assert.ok(scores.lateral_raise.score > scores.plate_loaded_row.score);
 });
 
 test("exercise search combines muscle and equipment vocabulary", () => {
