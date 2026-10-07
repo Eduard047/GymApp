@@ -135,6 +135,7 @@ fun AppPanel(
 @Composable
 fun HeroPanel(
     modifier: Modifier = Modifier,
+    contentPadding: Dp = 20.dp,
     content: @Composable () -> Unit
 ) {
     val shape = GymPanelShape
@@ -164,7 +165,7 @@ fun HeroPanel(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(contentPadding)
             ) {
                 content()
             }

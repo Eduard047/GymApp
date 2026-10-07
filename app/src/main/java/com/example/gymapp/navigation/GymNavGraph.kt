@@ -734,6 +734,7 @@ internal fun GymAppRoot(
     val navController = key(uiIsolationKey, selectedLanguage) { rememberNavController() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    var isSavedWorkoutEditing by remember { mutableStateOf(false) }
     // One-shot marker: the tab to reopen once the graph is rebuilt for a new language. Saved so it
     // also survives the activity recreation that the locale change triggers.
     var languageReturnRoute by rememberSaveable { mutableStateOf<String?>(null) }
@@ -2578,7 +2579,7 @@ internal fun GymAppRoot(
                     when {
                         currentRoute?.startsWith("workout_detail/") == true -> {
                             val sessionId = navBackStackEntry?.arguments?.getLong("sessionId")
-                            if (sessionId != null) {
+                            if (sessionId != null && !isSavedWorkoutEditing) {
                                 ExtendedFloatingActionButton(
                                     modifier = Modifier.navigationBarsPadding(),
                                     onClick = {
@@ -3694,6 +3695,7 @@ internal fun GymAppRoot(
                                 onRemoveExercise = viewModel::removeExercise,
                                 onUpdateSessionDetails = viewModel::updateSessionDetails,
                                 onShareWorkout = { workoutPlanToShare = it },
+                                onEditModeChanged = { isSavedWorkoutEditing = it },
                                 modifier = Modifier.fillMaxSize()
                             )
 

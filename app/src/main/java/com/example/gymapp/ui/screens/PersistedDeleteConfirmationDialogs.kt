@@ -61,7 +61,11 @@ internal fun SetDeleteConfirmationDialog(
     onConfirm: () -> Unit
 ) {
     val exerciseName = localizedExerciseName(snapshot.exerciseName)
-    val weight = String.format(Locale.getDefault(), "%.1f", snapshot.weight)
+    val weight = if (snapshot.weight.isFinite() && snapshot.weight % 1.0 == 0.0) {
+        String.format(Locale.getDefault(), "%.0f", snapshot.weight)
+    } else {
+        String.format(Locale.getDefault(), "%.1f", snapshot.weight)
+    }
     val impact = stringResource(
         if (snapshot.retainsRecordedActivity) R.string.dialog_delete_set_impact_watch_activity
         else setDeleteImpactTextResource(snapshot.impact)

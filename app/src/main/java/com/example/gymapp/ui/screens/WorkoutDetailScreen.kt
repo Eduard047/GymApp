@@ -1,6 +1,10 @@
 ﻿package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Verified
@@ -61,11 +65,13 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -106,7 +112,6 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
-import com.example.gymapp.ui.components.GymMetric
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricStrip
 import com.example.gymapp.ui.components.MetricTile
@@ -226,6 +231,7 @@ internal fun WorkoutDetailScreen(
     onRemoveExercise: (Long) -> Unit = {},
     onUpdateSessionDetails: (Long, String) -> Unit = { _, _ -> },
     onShareWorkout: ((SharedWorkoutPlan) -> Unit)? = null,
+    onEditModeChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -237,6 +243,10 @@ internal fun WorkoutDetailScreen(
     var expandedExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
     var expandedSetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var areWatchMetricsExpanded by rememberSaveable { mutableStateOf(false) }
+    val currentOnEditModeChanged by rememberUpdatedState(onEditModeChanged)
+    val isAnyWorkoutEditing = editingWorkoutSessionId != null
+    LaunchedEffect(isAnyWorkoutEditing) { currentOnEditModeChanged(isAnyWorkoutEditing) }
+    DisposableEffect(Unit) { onDispose { currentOnEditModeChanged(false) } }
 
     LaunchedEffect(events, context) {
         events.collect { event ->
@@ -395,14 +405,14 @@ internal fun WorkoutDetailScreen(
                     start = GymSpacing.ScreenHorizontal,
                     top = GymSpacing.ScreenTop,
                     end = GymSpacing.ScreenHorizontal,
-                    bottom = 112.dp
+                    bottom = 112.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                 ),
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
             ) {
                 item {
                     if (garminMetrics != null) {
                         GarminWorkoutHeaderCard(
-                            date = DateTimeUtils.formatLongDate(details.session.date),
+                            date = DateTimeUtils.formatDate(details.session.date),
                             metrics = garminMetrics,
                             hasVerifiedGarminOrigin =
                                 garminPresentation?.hasVerifiedGarminOrigin == true,
@@ -417,7 +427,7 @@ internal fun WorkoutDetailScreen(
                         )
                     } else {
                         WorkoutHeaderCard(
-                            date = DateTimeUtils.formatLongDate(details.session.date),
+                            date = DateTimeUtils.formatDate(details.session.date),
                             note = details.session.note,
                             exerciseCount = details.workoutExercises.size,
                             setCount = details.workoutExercises.sumOf { it.sets.size },
@@ -629,9 +639,37 @@ private fun WorkoutHeaderCard(
     onToggleEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    HeroPanel(modifier = Modifier.fillMaxWidth()) {
+    val summaryLine = if (isActivityOnly) {
+        stringResource(R.string.garmin_free_workout_summary)
+    } else {
+        buildList {
+            add(
+                pluralStringResource(
+                    R.plurals.saved_workout_exercise_count,
+                    exerciseCount,
+                    exerciseCount
+                )
+            )
+            add(
+                pluralStringResource(
+                    R.plurals.saved_workout_set_count,
+                    setCount,
+                    setCount
+                )
+            )
+            add(
+                stringResource(R.string.today_history_volume_kg, formatCompactWeight(volume))
+            )
+            durationSeconds?.let { add(formatWorkoutDuration(it)) }
+        }.joinToString(" · ")
+    }
+    val noteText = note?.takeIf { it.isNotBlank() && !isActivityOnly }
+    HeroPanel(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = 16.dp
+    ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -640,8 +678,10 @@ private fun WorkoutHeaderCard(
             ) {
                 Text(
                     text = date,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 if (!isActivityOnly) {
@@ -665,51 +705,19 @@ private fun WorkoutHeaderCard(
                 }
             }
             Text(
-                text = if (isActivityOnly) {
-                    stringResource(R.string.garmin_free_workout_summary)
-                } else {
-                    note
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { stringResource(R.string.details_note, it) }
-                        ?: stringResource(R.string.details_no_note)
-                },
+                text = summaryLine,
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.84f)
             )
-            MetricStrip(
-                metrics = buildList {
-                    if (!isActivityOnly) {
-                        add(
-                            GymMetric(
-                                stringResource(R.string.post_workout_metric_exercises),
-                                exerciseCount.toString()
-                            )
-                        )
-                        add(
-                            GymMetric(
-                                stringResource(R.string.post_workout_metric_sets),
-                                setCount.toString()
-                            )
-                        )
-                        add(
-                            GymMetric(
-                                stringResource(R.string.post_workout_metric_volume),
-                                formatCompactWeight(volume),
-                                emphasized = true
-                            )
-                        )
-                    }
-                    durationSeconds?.let { duration ->
-                        add(
-                            GymMetric(
-                                stringResource(R.string.post_workout_metric_duration),
-                                formatWorkoutDuration(duration)
-                            )
-                        )
-                    }
-                },
-                onHero = true
-            )
+            noteText?.let {
+                Text(
+                    text = stringResource(R.string.details_note, it),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.84f),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             WorkoutEditModeButton(
                 isEditing = isEditing,
                 isActivityOnly = isActivityOnly,
@@ -747,9 +755,12 @@ private fun GarminWorkoutHeaderCard(
     onToggleEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    HeroPanel(modifier = Modifier.fillMaxWidth()) {
+    HeroPanel(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = 16.dp
+    ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -767,8 +778,10 @@ private fun GarminWorkoutHeaderCard(
                                 R.string.garmin_workout_format_title
                             }
                         ),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = stringResource(
@@ -889,7 +902,8 @@ private fun WorkoutEditModeButton(
 ) {
     FilledTonalButton(
         onClick = onToggleEdit,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.height(40.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
         colors = ButtonDefaults.filledTonalButtonColors(
             containerColor = Color.White.copy(alpha = 0.16f),
             contentColor = Color.White
