@@ -60,4 +60,24 @@ class WorkoutPlanDraftIdentityTest {
         assertEquals(10L, nextDraftId)
         assertEquals(false, nextDraftId in ids)
     }
+
+    private fun Any.restoredDateExplicit(): Boolean {
+        val getter = javaClass.getDeclaredMethod("getWorkoutDateExplicit")
+        getter.isAccessible = true
+        return getter.invoke(this) as Boolean
+    }
+
+    @Test
+    fun draftSavedBeforeTheExplicitDateFlagRestoresAsDefaultDated() {
+        assertEquals(false, checkNotNull(parse(payload(exercise(1)))).restoredDateExplicit())
+    }
+
+    @Test
+    fun draftWithExplicitDateFlagRoundTrips() {
+        val explicit = payload(exercise(1)).replace(
+            "\"workoutDate\":1750000000000,", "\"workoutDate\":1750000000000,\"workoutDateExplicit\":true,"
+        )
+        assertEquals(true, checkNotNull(parse(explicit)).restoredDateExplicit())
+        assertNull(parse(explicit.replace("\"workoutDateExplicit\":true,", "\"workoutDateExplicit\":true,\"extra\":1,")))
+    }
 }

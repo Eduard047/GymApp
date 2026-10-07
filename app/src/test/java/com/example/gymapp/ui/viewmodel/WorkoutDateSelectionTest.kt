@@ -77,4 +77,30 @@ class WorkoutDateSelectionTest {
             )
         )
     }
+
+    @Test
+    fun `default dated draft created on an earlier day starts on the day it is performed`() {
+        val draftCreated = ZonedDateTime.of(2026, 10, 1, 9, 0, 0, 0, zoneId).toInstant().toEpochMilli()
+        val performed = ZonedDateTime.of(2026, 10, 6, 18, 15, 0, 0, zoneId).toInstant().toEpochMilli()
+
+        assertEquals(
+            performed,
+            effectiveWorkoutDate(plannedDate = draftCreated, isExplicit = false, nowMillis = performed)
+        )
+    }
+
+    @Test
+    fun `explicit back-logged date is kept`() {
+        val performed = ZonedDateTime.of(2026, 10, 6, 18, 15, 0, 0, zoneId).toInstant().toEpochMilli()
+        val picked = resolveWorkoutDateSelection(
+            currentTimestamp = performed,
+            selectedEpochDay = LocalDate.of(2026, 10, 1).toEpochDay(),
+            nowMillis = performed,
+            zoneId = zoneId
+        )!!
+
+        assertTrue(isBackLoggedWorkoutTimestamp(picked, performed, zoneId))
+        assertFalse(isBackLoggedWorkoutTimestamp(performed, performed, zoneId))
+        assertEquals(picked, effectiveWorkoutDate(picked, isExplicit = true, nowMillis = performed))
+    }
 }

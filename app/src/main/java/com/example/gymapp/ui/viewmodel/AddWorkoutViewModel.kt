@@ -294,6 +294,27 @@ internal fun isSelectableWorkoutTimestamp(
     return selectedDate <= today
 }
 
+/**
+ * A plan draft only keeps its own date when the user explicitly back-logged it to an earlier day.
+ * Otherwise the date is a creation-time default that goes stale (a draft restored or started on a
+ * later day), so the workout is dated by when it is actually started.
+ */
+internal fun effectiveWorkoutDate(
+    plannedDate: Long,
+    isExplicit: Boolean,
+    nowMillis: Long = System.currentTimeMillis()
+): Long = if (isExplicit) plannedDate else nowMillis
+
+internal fun isBackLoggedWorkoutTimestamp(
+    timestamp: Long,
+    nowMillis: Long = System.currentTimeMillis(),
+    zoneId: ZoneId = ZoneId.systemDefault()
+): Boolean {
+    val selectedDate = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    return selectedDate < today
+}
+
 data class SmartWorkoutAlternativePickerUiState(
     val draftId: Long,
     val expectedExerciseId: Long,
@@ -427,6 +448,7 @@ internal fun hasRetainedWorkoutDraft(state: AddWorkoutUiState): Boolean =
 
 private data class PersistedWorkoutPlanDraft(
     val workoutDate: Long,
+    val workoutDateExplicit: Boolean,
     val note: String,
     val exerciseDrafts: List<ExerciseInputState>,
     val smartWorkoutEffort: SmartWorkoutEffort,
@@ -438,6 +460,7 @@ private fun JSONObject.exactKeySet(): Set<String> = keys().asSequence().toSet()
 private fun PersistedWorkoutPlanDraft.toJson(): String = JSONObject()
     .put("schemaVersion", 1)
     .put("workoutDate", workoutDate)
+    .put("workoutDateExplicit", workoutDateExplicit)
     .put("note", note)
     .put("smartWorkoutEffort", smartWorkoutEffort.name)
     .put("isDirty", isDirty)
@@ -459,9 +482,12 @@ private fun parsePersistedWorkoutPlanDraft(payload: String): PersistedWorkoutPla
     runCatching {
         require(payload.toByteArray(Charsets.UTF_8).size <= 256 * 1_024)
         val root = JSONObject(payload)
-        require(root.exactKeySet() == setOf(
+        val requiredKeys = setOf(
             "schemaVersion", "workoutDate", "note", "smartWorkoutEffort", "isDirty", "exercises"
-        ))
+        )
+        // "workoutDateExplicit" was added later; drafts saved without it are treated as default-dated.
+        require(root.exactKeySet() == requiredKeys ||
+            root.exactKeySet() == requiredKeys + "workoutDateExplicit")
         require(root.getInt("schemaVersion") == 1)
         val date = root.getLong("workoutDate")
         require(WorkoutDataLimits.isValidTimestamp(date))
@@ -496,6 +522,8 @@ private fun parsePersistedWorkoutPlanDraft(payload: String): PersistedWorkoutPla
         }
         PersistedWorkoutPlanDraft(
             workoutDate = date,
+            workoutDateExplicit = root.has("workoutDateExplicit") &&
+                root.getBoolean("workoutDateExplicit"),
             note = note,
             exerciseDrafts = exercises,
             smartWorkoutEffort = effort,
@@ -625,6 +653,7 @@ class AddWorkoutViewModel internal constructor(
     private var lastRequestedLaunchToken: String? = null
 
     private val workoutDate = MutableStateFlow(System.currentTimeMillis())
+    private val workoutDateExplicit = MutableStateFlow(false)
     private val note = MutableStateFlow("")
     private val exerciseDrafts = MutableStateFlow(emptyList<ExerciseInputState>())
     private val isTemplatePickerOpen = MutableStateFlow(false)
@@ -704,7 +733,11 @@ class AddWorkoutViewModel internal constructor(
                     repository.getWorkoutPlanDraftPayload()?.let(::parsePersistedWorkoutPlanDraft)
                 }
                 if (restored != null && !hasRetainedDraft()) {
-                    workoutDate.value = restored.workoutDate
+                    workoutDate.value = effectiveWorkoutDate(
+                        plannedDate = restored.workoutDate,
+                        isExplicit = restored.workoutDateExplicit
+                    )
+                    workoutDateExplicit.value = restored.workoutDateExplicit
                     note.value = restored.note
                     exerciseDrafts.value = restored.exerciseDrafts
                     smartWorkoutEffort.value = restored.smartWorkoutEffort
@@ -724,12 +757,21 @@ class AddWorkoutViewModel internal constructor(
         viewModelScope.launch {
             combine(
                 workoutDate,
+                workoutDateExplicit,
                 note,
                 exerciseDrafts,
                 smartWorkoutEffort,
                 isDirty
-            ) { date, noteValue, drafts, effort, dirty ->
-                PersistedWorkoutPlanDraft(date, noteValue, drafts, effort, dirty)
+            ) { values ->
+                @Suppress("UNCHECKED_CAST")
+                PersistedWorkoutPlanDraft(
+                    workoutDate = values[0] as Long,
+                    workoutDateExplicit = values[1] as Boolean,
+                    note = values[2] as String,
+                    exerciseDrafts = values[3] as List<ExerciseInputState>,
+                    smartWorkoutEffort = values[4] as SmartWorkoutEffort,
+                    isDirty = values[5] as Boolean
+                )
             }
                 .debounce(250L)
                 .collect { draft ->
@@ -955,6 +997,7 @@ class AddWorkoutViewModel internal constructor(
             smartAlternativePicker.value = null
             smartWorkoutEffort.value = SmartWorkoutEffort.Auto
             workoutDate.value = System.currentTimeMillis()
+            workoutDateExplicit.value = false
             note.value = ""
             exerciseDrafts.value = normalizedPlan.exercises.zip(exerciseIds).map { (exercise, id) ->
                 ExerciseInputState(
@@ -1096,8 +1139,10 @@ class AddWorkoutViewModel internal constructor(
         }
         resetWatchPlanSyncResult()
         hasValidationError.value = false
-        if (workoutDate.value != resolved) markDraftDirty()
+        val explicit = isBackLoggedWorkoutTimestamp(resolved)
+        if (workoutDate.value != resolved || workoutDateExplicit.value != explicit) markDraftDirty()
         workoutDate.value = resolved
+        workoutDateExplicit.value = explicit
     }
 
     fun updateTrainingSplit(split: TrainingSplit) {
@@ -1550,7 +1595,10 @@ class AddWorkoutViewModel internal constructor(
     fun startWorkout() {
         viewModelScope.launch {
             val parsedExercises = parseDrafts(exerciseDrafts.value)
-            val selectedWorkoutDate = workoutDate.value
+            val selectedWorkoutDate = effectiveWorkoutDate(
+                plannedDate = workoutDate.value,
+                isExplicit = workoutDateExplicit.value
+            )
             if (parsedExercises.isEmpty() ||
                 !WorkoutDataLimits.isValidNote(note.value) ||
                 !isSelectableWorkoutTimestamp(selectedWorkoutDate)
@@ -1738,6 +1786,7 @@ class AddWorkoutViewModel internal constructor(
         launchHydrationGeneration += 1L
         watchPlanSyncGeneration += 1L
         workoutDate.value = System.currentTimeMillis()
+        workoutDateExplicit.value = false
         note.value = ""
         exerciseDrafts.value = emptyList()
         isTemplatePickerOpen.value = false
