@@ -787,7 +787,11 @@ private struct GymSetValueCapsule<Center: View>: View {
             )
         }
         .frame(maxWidth: .infinity, minHeight: gymSetEditorCapsuleHeight)
-        .background(Capsule().fill(GymTheme.surface))
+        .background(
+            Capsule()
+                .fill(GymTheme.surfaceVariant)
+                .overlay(Capsule().strokeBorder(GymTheme.outlineSoft, lineWidth: GymTheme.hairlineWidth))
+        )
     }
 
     private func stepButton(
