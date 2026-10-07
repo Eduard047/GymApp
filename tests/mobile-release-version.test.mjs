@@ -5,9 +5,8 @@ import test from "node:test";
 const expected = Object.freeze({
   marketingVersion: "4.0.3",
   androidVersionCode: "2000320913",
-  // iOS stays on 4.0.2 (build 51) until it ships through App Store review; it follows Android/Garmin afterwards.
-  iosMarketingVersion: "4.0.2",
-  iosBuildNumber: "51",
+  iosMarketingVersion: "4.0.3",
+  iosBuildNumber: "52",
   garminVersion: "4.0.3",
   pwaBundle: "app.v121.js",
   pwaStyleBundle: "styles.v93.css",
