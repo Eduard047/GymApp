@@ -87,6 +87,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -587,7 +588,9 @@ internal fun EditableSetRow(
 
 /** Height of every capsule in the set editor (the trash beside them is a 40dp button with a 48dp touch target). */
 internal val SetEditorCapsuleHeight = 44.dp
-private val SetEditorStepButtonWidth = 30.dp
+/** Step buttons are this wide whenever the value fits and give way down to the minimum when it does not. */
+private val SetEditorStepButtonWidth = 36.dp
+private val SetEditorStepButtonMinWidth = 28.dp
 private val SetEditorTrashSize = 40.dp
 /** The weight capsule gets this share against 1 for reps so "102.5 kg" fits at 360dp. */
 private const val SetEditorWeightCapsuleShare = 1.4f
@@ -661,9 +664,13 @@ internal fun SetEditorCapsules(
         ) {
             Text(
                 text = repsInput.ifBlank { "0" },
-                style = setEditorValueStyle(),
+                // 3-digit reps shrink a little (and the step buttons narrow) rather than clip.
+                style = setEditorValueStyle().let { style ->
+                    if (repsInput.length > 2) style.copy(fontSize = 16.sp) else style
+                },
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
+                softWrap = false,
                 modifier = Modifier.semantics {
                     contentDescription = repsDescription
                     stateDescription = repsInput
@@ -710,7 +717,11 @@ private fun setEditorValueStyle(): TextStyle = TextStyle(
     fontWeight = FontWeight.SemiBold
 ).tabularDigits()
 
-/** One capsule of the set editor: step button, centred [content], step button. */
+/**
+ * One capsule of the set editor: step button, centred [content], step button. The step buttons are
+ * [SetEditorStepButtonWidth] wide when the value fits and narrow to [SetEditorStepButtonMinWidth] on
+ * narrow capsules, so the value and its unit are never clipped.
+ */
 @Composable
 private fun SetValueCapsule(
     modifier: Modifier,
@@ -722,36 +733,55 @@ private fun SetValueCapsule(
     plusDescription: String,
     content: @Composable RowScope.() -> Unit
 ) {
-    Row(
-        modifier = modifier
-            .heightIn(min = SetEditorCapsuleHeight)
-            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        StepButton(
-            icon = Icons.Default.Remove,
-            text = null,
-            enabled = minusEnabled,
-            onClick = onMinus,
-            description = minusDescription,
-            minWidth = SetEditorStepButtonWidth,
-            minHeight = SetEditorCapsuleHeight
+    Layout(
+        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+        content = {
+            StepButton(
+                icon = Icons.Default.Remove,
+                text = null,
+                enabled = minusEnabled,
+                onClick = onMinus,
+                description = minusDescription,
+                minWidth = SetEditorStepButtonMinWidth,
+                minHeight = SetEditorCapsuleHeight
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
+                content = content
+            )
+            StepButton(
+                icon = Icons.Default.Add,
+                text = null,
+                enabled = plusEnabled,
+                onClick = onPlus,
+                description = plusDescription,
+                minWidth = SetEditorStepButtonMinWidth,
+                minHeight = SetEditorCapsuleHeight
+            )
+        }
+    ) { measurables, constraints ->
+        val minStep = SetEditorStepButtonMinWidth.roundToPx()
+        val maxStep = SetEditorStepButtonWidth.roundToPx()
+        val total = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE / 2
+        val value = measurables[1].measure(
+            Constraints(maxWidth = (total - 2 * minStep).coerceAtLeast(0))
         )
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
-            content = content
-        )
-        StepButton(
-            icon = Icons.Default.Add,
-            text = null,
-            enabled = plusEnabled,
-            onClick = onPlus,
-            description = plusDescription,
-            minWidth = SetEditorStepButtonWidth,
-            minHeight = SetEditorCapsuleHeight
-        )
+        val step = ((total - value.width) / 2).coerceIn(minStep, maxStep)
+        val height = maxOf(SetEditorCapsuleHeight.roundToPx(), value.height)
+            .coerceIn(constraints.minHeight, constraints.maxHeight.coerceAtLeast(constraints.minHeight))
+        val stepConstraints = Constraints.fixed(step, height)
+        val minus = measurables[0].measure(stepConstraints)
+        val plus = measurables[2].measure(stepConstraints)
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else 2 * step + value.width
+        layout(width, height) {
+            minus.placeRelative(0, 0)
+            value.placeRelative(
+                step + (width - 2 * step - value.width) / 2,
+                (height - value.height) / 2
+            )
+            plus.placeRelative(width - step, 0)
+        }
     }
 }
 
