@@ -4438,3 +4438,62 @@ test("+ Set stays available on an expanded fully completed block", async () => {
   assert.equal(await vm.runInContext(`addActiveWorkoutSet(${blockId})`, context), true);
   assert.equal(vm.runInContext("activeWorkout.blocks[0].sets.length", context), 4);
 });
+
+const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+
+test("a default-dated draft created on an earlier day starts and finishes on the day it is performed", async () => {
+  const { context } = loadContext();
+  const result = vm.runInContext(`
+    const staleDraft = {
+      startedAt: Date.now() - ${FIVE_DAYS_MS},
+      note: "",
+      blocks: [{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }] }]
+    };
+    const now = Date.now();
+    const workout = activeWorkoutFromDraft(staleDraft, now);
+    ({ startedAt: workout.startedAt, now, sameDay: localDateInputValue(workout.startedAt) === localDateInputValue(now) });
+  `, context);
+  assert.equal(result.startedAt, result.now);
+  assert.equal(result.sameDay, true);
+});
+
+test("an explicit back-logged draft date is kept when the workout starts", async () => {
+  const { context } = loadContext();
+  const result = vm.runInContext(`
+    const past = Date.now() - ${FIVE_DAYS_MS};
+    const draft = {
+      startedAt: past,
+      startedAtExplicit: true,
+      note: "",
+      blocks: [{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }] }]
+    };
+    ({ past, startedAt: activeWorkoutFromDraft(draft, Date.now()).startedAt });
+  `, context);
+  assert.equal(result.startedAt, result.past);
+});
+
+test("a default draft date shows today while an explicit date and old stored payloads stay readable", () => {
+  const { context, localStorage } = loadContext();
+  const key = vm.runInContext("workoutDraftAccountDescriptor().storageKey", context);
+  const owner = vm.runInContext("workoutDraftAccountDescriptor().owner", context);
+  const sessionId = vm.runInContext("workoutDraftAccountDescriptor().sessionId", context);
+  const past = Date.now() - FIVE_DAYS_MS;
+  const block = { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: "80", reps: "8" }] };
+  const store = draft => localStorage.setItem(key, JSON.stringify({
+    version: 1, owner, sessionId, updatedAt: Date.now(), draft, liveRecipient: null
+  }));
+
+  store({ startedAt: past, note: "", blocks: [block] });
+  const legacy = vm.runInContext("loadStoredWorkoutDraftRecord().draft", context);
+  assert.equal(legacy.startedAt, past);
+  assert.equal(Object.hasOwn(legacy, "startedAtExplicit"), false);
+  assert.ok(vm.runInContext("refreshedDefaultDraftDate(loadStoredWorkoutDraftRecord().draft).startedAt", context) >
+    past + FIVE_DAYS_MS / 2, "default date must show today");
+
+  store({ startedAt: past, startedAtExplicit: true, note: "", blocks: [block] });
+  assert.equal(vm.runInContext("refreshedDefaultDraftDate(loadStoredWorkoutDraftRecord().draft).startedAt", context), past);
+  assert.equal(vm.runInContext("loadStoredWorkoutDraftRecord().draft.startedAtExplicit", context), true);
+
+  store({ startedAt: past, startedAtExplicit: false, note: "", blocks: [block] });
+  assert.equal(vm.runInContext("loadStoredWorkoutDraftRecord()", context), null);
+});
