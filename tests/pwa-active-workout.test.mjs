@@ -2187,7 +2187,7 @@ test("undo without a standing button: latest-only long-press menu, context menu 
   const sheet = vm.runInContext("modalMarkup()", context);
   assert.match(sheet, /aria-labelledby="active-set-undo-title"/);
   assert.match(sheet, new RegExp(
-    `data-action="undo-active-set" data-id="${secondId}">Undo set</button>`
+    `class="button secondary full" type="button" data-action="undo-active-set" data-id="${secondId}">Undo set</button>`
   ));
   assert.equal((sheet.match(/data-action="undo-active-set"/g) || []).length, 1);
 

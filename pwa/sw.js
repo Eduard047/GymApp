@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v161";
-// v161 ships the canonical app.v118 and styles.v90 bundles; v160 let saved and active workouts be edited set by set.
+const CACHE_VERSION = "v163";
+// v163 ships app.v119 and styles.v92; v162 shipped app.v119 and styles.v91; v161 shipped app.v118 and styles.v90; v160 let saved and active workouts be edited set by set.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,7 +48,7 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v90.css",
+  "./styles.v92.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v73.js",
@@ -62,7 +62,7 @@ const SHELL_ASSETS = [
   "./russian-text.v90.js",
   "./exercise-search-vocabulary.v1.js",
   "./voice-workout.v2.js",
-  "./app.v118.js",
+  "./app.v119.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
