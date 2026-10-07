@@ -4,8 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,8 +29,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
@@ -117,8 +123,11 @@ internal fun ExerciseCatalogSelector(
             onDismissRequest = { expanded = false }
         ) {
             Column(
+                // Fixed height: the sheet never resizes or settles while the list is flung.
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .imePadding()
                     .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -164,8 +173,8 @@ internal fun ExerciseCatalogSelector(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .heightIn(max = 480.dp),
+                        .weight(1f)
+                        .nestedScroll(remember { ConsumeListOverscrollConnection }),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     if (visibleExercises.isEmpty()) {
@@ -240,4 +249,20 @@ internal fun ExerciseCatalogSelector(
             }
         }
     }
+}
+
+/**
+ * Keeps the exercise list's leftover scroll/fling out of the parent bottom sheet. Without it the
+ * sheet's nested-scroll connection swallows the fling remainder at a list edge and starts a
+ * settle animation that eats the next drag. The sheet still dismisses via its drag handle.
+ */
+private object ConsumeListOverscrollConnection : NestedScrollConnection {
+    override fun onPostScroll(
+        consumed: Offset,
+        available: Offset,
+        source: NestedScrollSource
+    ): Offset = Offset(0f, available.y)
+
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+        Velocity(0f, available.y)
 }
