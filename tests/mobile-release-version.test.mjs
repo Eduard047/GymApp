@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expected = Object.freeze({
-  marketingVersion: "4.0.2",
-  androidVersionCode: "2000320912",
+  marketingVersion: "4.0.3",
+  androidVersionCode: "2000320913",
+  // iOS stays on 4.0.2 (build 51) until it ships through App Store review; it follows Android/Garmin afterwards.
+  iosMarketingVersion: "4.0.2",
   iosBuildNumber: "51",
-  garminVersion: "4.0.2",
+  garminVersion: "4.0.3",
   pwaBundle: "app.v121.js",
   pwaStyleBundle: "styles.v93.css",
   pwaRussianBundle: "russian-text.v90.js",
@@ -52,7 +54,7 @@ function matches(source, pattern) {
   return [...source.matchAll(pattern)].map((match) => match[1]);
 }
 
-test("Android release metadata remains aligned with GymApp 4.0.2", () => {
+test("Android release metadata remains aligned with GymApp 4.0.3", () => {
   assert.match(
     gradleProperties,
     new RegExp(`^appVersionName=${expected.marketingVersion.replaceAll(".", "\\.")}$`, "m")
@@ -70,12 +72,12 @@ test("iOS app target and archive defaults agree on release version and build", (
   assert.deepEqual(
     matches(xcodeProject, /^\s*MARKETING_VERSION = ([^;]+);$/gm),
     [
-      expected.marketingVersion,
-      expected.marketingVersion,
-      expected.marketingVersion,
+      expected.iosMarketingVersion,
+      expected.iosMarketingVersion,
+      expected.iosMarketingVersion,
       "1.0",
       "1.0",
-      expected.marketingVersion,
+      expected.iosMarketingVersion,
     ]
   );
   assert.deepEqual(
@@ -91,7 +93,7 @@ test("iOS app target and archive defaults agree on release version and build", (
   );
   assert.match(
     archiveScript,
-    new RegExp(`MARKETING_VERSION="\\$\\{MARKETING_VERSION:-${expected.marketingVersion.replaceAll(".", "\\.")}\\}"`)
+    new RegExp(`MARKETING_VERSION="\\$\\{MARKETING_VERSION:-${expected.iosMarketingVersion.replaceAll(".", "\\.")}\\}"`)
   );
   assert.match(
     archiveScript,
@@ -123,7 +125,7 @@ test("GymAppLiveActivity extension matches the GymApp app target's version and b
   for (const block of extensionConfigBlocks) {
     assert.match(
       block,
-      new RegExp(`MARKETING_VERSION = ${expected.marketingVersion.replaceAll(".", "\\.")};`),
+      new RegExp(`MARKETING_VERSION = ${expected.iosMarketingVersion.replaceAll(".", "\\.")};`),
       "GymAppLiveActivity MARKETING_VERSION must match the GymApp app target"
     );
     assert.match(
@@ -145,7 +147,7 @@ test("GymAppLiveActivity extension matches the GymApp app target's version and b
   );
 });
 
-test("Garmin, iOS, Android, and PWA remain aligned for 4.0.2", () => {
+test("Garmin, iOS, Android, and PWA remain aligned for 4.0.3 (iOS 4.0.2)", () => {
   assert.match(
     garminManifest,
     new RegExp(`\\bversion="${expected.garminVersion.replaceAll(".", "\\.")}"`)
