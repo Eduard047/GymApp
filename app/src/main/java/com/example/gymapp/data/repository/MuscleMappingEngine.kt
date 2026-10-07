@@ -191,8 +191,10 @@ data class MuscleMappingRepair(
 /**
  * Finds stored mappings that were auto-seeded from the old name guess for built-in exercises and
  * now disagree with the catalog default. A mapping counts as untouched only when it equals the
- * old guess exactly. Rows the user saved always carry weight 1.0 for every muscle, so a stored
- * mapping whose weights are all 1.0 cannot be told apart from a user choice and is left alone.
+ * old guess exactly. Rows the user saved always carry weight 1.0 for every muscle, so an all-1.0
+ * stored mapping is ambiguous. It is repaired only when the old guess itself was all 1.0 (so it
+ * equals the guess exactly) and the catalog default has a different muscle set; a user choice that
+ * differs from the old guess, or that already has the catalog muscles, is left alone.
  * The plan is idempotent: once repaired, a mapping equals the catalog default and is not planned.
  */
 fun planAutoSeededMuscleMappingRepairs(
@@ -205,7 +207,6 @@ fun planAutoSeededMuscleMappingRepairs(
         val stored = storedByKey[key]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
         val catalogDefault = catalogContributionsForExercise(exerciseName) ?: return@mapNotNull null
         val storedWeights = stored.associate { it.muscleId to it.weight }
-        if (storedWeights.values.all { it == 1.0 }) return@mapNotNull null
         val legacyWeights = legacyNameGuessContributions(exerciseName)
             .associate { it.muscleId to it.weight }
         val matchesLegacy = storedWeights.size == legacyWeights.size &&
@@ -215,6 +216,10 @@ fun planAutoSeededMuscleMappingRepairs(
         if (!matchesLegacy) return@mapNotNull null
         val defaultWeights = catalogDefault.associate { it.muscleId to it.weight }
         if (defaultWeights == storedWeights) return@mapNotNull null
+        // All-1.0 rows match a manual save too: repair only when the muscle set itself is outdated.
+        if (storedWeights.values.all { it == 1.0 } && defaultWeights.keys == storedWeights.keys) {
+            return@mapNotNull null
+        }
         MuscleMappingRepair(
             exerciseNameKey = key,
             exerciseName = exerciseName,

@@ -94,14 +94,48 @@ class MuscleMappingCatalogTest {
         val custom = stored("Squat", "quads" to 1.0, "calves" to 0.4)
         assertTrue(planAutoSeededMuscleMappingRepairs(listOf("Squat"), custom).isEmpty())
 
-        // User-saved mappings (all weights 1.0) are never treated as auto-seeded.
+        // An all-1.0 set that differs from the old guess is a user choice and is untouched.
         val saved = stored("Squat", "quads" to 1.0, "glutes" to 1.0)
         assertTrue(planAutoSeededMuscleMappingRepairs(listOf("Squat"), saved).isEmpty())
+
+        // An all-1.0 set equal to the catalog set is untouched.
+        val catalogSet = stored("Face Pull", "shoulders" to 1.0, "upperBack" to 1.0)
+        assertTrue(planAutoSeededMuscleMappingRepairs(listOf("Face Pull"), catalogSet).isEmpty())
+
+        // All-1.0 legacy seeds with an outdated muscle set are repaired, idempotently.
+        listOf("Face Pull", "Rear Delt Fly", "Plank").forEach { name ->
+            val legacy = legacyNameGuessContributions(name)
+            assertTrue("$name legacy guess must be all 1.0", legacy.all { it.weight == 1.0 })
+            val seed = stored(name, *legacy.map { it.muscleId to it.weight }.toTypedArray())
+            val plan = planAutoSeededMuscleMappingRepairs(listOf(name), seed)
+            assertEquals("$name must be repaired", 1, plan.size)
+            val fixed = stored(name, *plan.single().contributions.map { it.muscleId to it.weight }.toTypedArray())
+            assertTrue(planAutoSeededMuscleMappingRepairs(listOf(name), fixed).isEmpty())
+        }
 
         // Custom (non-catalog) exercises are never repaired.
         val customName = "My Special Curl"
         val customGuess = legacyNameGuessContributions(customName)
         val customStored = stored(customName, *customGuess.map { it.muscleId to it.weight }.toTypedArray())
         assertTrue(planAutoSeededMuscleMappingRepairs(listOf(customName), customStored).isEmpty())
+    }
+
+    @Test
+    fun allOneWeightRepairAffectsOnlyKnownBuiltIns() {
+        val affected = BuiltInExerciseCatalog.definitions
+            .flatMap { listOf(it.nameEn, it.nameUk) }
+            .filter { name ->
+                val legacy = legacyNameGuessContributions(name)
+                val seed = legacy.map { it.muscleId to 1.0 }.toTypedArray()
+                legacy.all { it.weight == 1.0 } &&
+                    planAutoSeededMuscleMappingRepairs(listOf(name), stored(name, *seed)).isNotEmpty()
+            }
+        assertEquals(
+            setOf(
+                "Face Pull", "Rear Delt Fly", "Overhead Dumbbell Triceps Extension",
+                "Plank", "Планка", "Weighted Crunch"
+            ),
+            affected.toSet()
+        )
     }
 }
