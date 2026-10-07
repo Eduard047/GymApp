@@ -62,7 +62,13 @@ GymApp is a fitness log and planning tool, not a medical device. It does not dia
 
 ## What's New
 
-Removes the global rating and adds mutual friends, privacy controls, friends-only self-reported progress, two-person live workouts, and optional lifecycle alerts where available.
+• Edit workouts set by set: log sets in any order, and add or remove sets and exercises in active and saved workouts. The weight and reps +/- buttons are now equal, wider, and easier to tap.
+• Redesigned plan editor with Last, Previous, and Copy shortcuts; adding an exercise keeps the list at the top.
+• Exercise search works from the first letter: "DB" or "BB" finds dumbbell and barbell exercises.
+• Workouts started from an old plan draft now use today's training day instead of the day the draft was created.
+• Built-in exercises use muscle groups from the exercise catalog, so muscle load is counted correctly (for example, Rear Delt Fly no longer counts as chest).
+• Live Activity: the Lock Screen card disappears when you finish a workout, the expanded Dynamic Island no longer clips the exercise name or set progress, and its buttons follow the app language.
+• Garmin: you can start a workout while earlier ones wait to be sent, see the sending status, and clear the unsent queue from the watch settings.
 
 ## Suggested screenshot captions
 
