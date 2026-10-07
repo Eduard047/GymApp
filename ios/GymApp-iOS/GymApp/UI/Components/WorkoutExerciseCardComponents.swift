@@ -643,8 +643,7 @@ struct GymSetEditorCapsules: View {
                 "Збільшити вагу на \(plusText) \(kg)",
                 "Увеличить вес на \(plusText) \(kg)",
                 languageCode: gymCurrentLanguageCode()
-            ),
-            stepButtonWidth: 34
+            )
         ) {
             HStack(spacing: 3) {
                 TextField(
@@ -699,6 +698,9 @@ struct GymSetEditorCapsules: View {
                 .font(.system(size: 17, weight: .semibold).monospacedDigit())
                 .foregroundStyle(GymTheme.textPrimary)
                 .lineLimit(1)
+                // The capsule layout narrows the step buttons first; shrinking
+                // the digits is only the last resort.
+                .minimumScaleFactor(0.7)
                 .accessibilityLabel(
                     gymText(
                         "Repetitions for set \(position + 1)",
@@ -755,6 +757,57 @@ struct GymWeightedRow: Layout {
     }
 }
 
+/// Step-button width rule shared by the set-editor capsules (same as Android
+/// `SetValueCapsule`): buttons are 36pt and narrow down to 28pt only when the
+/// value content needs the room.
+enum GymSetValueCapsuleMetrics {
+    static let minStepWidth: CGFloat = 28
+    static let maxStepWidth: CGFloat = 36
+
+    /// Widest the value content may measure: capsule minus two minimum buttons.
+    static func maxContentWidth(capsuleWidth: CGFloat) -> CGFloat {
+        max(0, capsuleWidth - 2 * minStepWidth)
+    }
+
+    /// Width of each step button: half of the space the content leaves free,
+    /// clamped to 28...36.
+    static func stepWidth(capsuleWidth: CGFloat, contentWidth: CGFloat) -> CGFloat {
+        min(maxStepWidth, max(minStepWidth, (capsuleWidth - contentWidth) / 2))
+    }
+}
+
+/// Lays out minus button, value content and plus button. The content is
+/// measured first (up to capsule - 2x28), then the buttons take
+/// `GymSetValueCapsuleMetrics.stepWidth`; the content stays centered.
+private struct GymSetValueCapsuleLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 3 else { return .zero }
+        let total = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let value = subviews[1].sizeThatFits(
+            ProposedViewSize(width: total.map(GymSetValueCapsuleMetrics.maxContentWidth), height: nil)
+        )
+        let width = total ?? (2 * GymSetValueCapsuleMetrics.maxStepWidth + value.width)
+        return CGSize(width: width, height: max(gymSetEditorCapsuleHeight, value.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 3 else { return }
+        let width = bounds.width
+        let value = subviews[1].sizeThatFits(
+            ProposedViewSize(width: GymSetValueCapsuleMetrics.maxContentWidth(capsuleWidth: width), height: nil)
+        )
+        let step = GymSetValueCapsuleMetrics.stepWidth(capsuleWidth: width, contentWidth: value.width)
+        let stepProposal = ProposedViewSize(width: step, height: bounds.height)
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), anchor: .topLeading, proposal: stepProposal)
+        subviews[1].place(
+            at: CGPoint(x: bounds.minX + step + (width - 2 * step - value.width) / 2, y: bounds.midY),
+            anchor: .leading,
+            proposal: ProposedViewSize(width: value.width, height: nil)
+        )
+        subviews[2].place(at: CGPoint(x: bounds.maxX - step, y: bounds.minY), anchor: .topLeading, proposal: stepProposal)
+    }
+}
+
 /// One capsule of the set editor: step button, centered value content, step
 /// button. 44pt tall, fully rounded, shared fill.
 private struct GymSetValueCapsule<Center: View>: View {
@@ -766,11 +819,10 @@ private struct GymSetValueCapsule<Center: View>: View {
     let plusDisabled: Bool
     let plusAction: () -> Void
     let plusAccessibilityLabel: String
-    var stepButtonWidth: CGFloat = 38
     @ViewBuilder let center: () -> Center
 
     var body: some View {
-        HStack(spacing: 0) {
+        GymSetValueCapsuleLayout {
             stepButton(
                 systemImage: minusSystemImage,
                 disabled: minusDisabled,
@@ -778,7 +830,6 @@ private struct GymSetValueCapsule<Center: View>: View {
                 action: minusAction
             )
             center()
-                .frame(maxWidth: .infinity)
             stepButton(
                 systemImage: plusSystemImage,
                 disabled: plusDisabled,
@@ -804,7 +855,7 @@ private struct GymSetValueCapsule<Center: View>: View {
             Image(systemName: systemImage)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(GymTheme.primary.opacity(disabled ? 0.38 : 1))
-                .frame(width: stepButtonWidth, height: gymSetEditorCapsuleHeight)
+                .frame(maxWidth: .infinity, minHeight: gymSetEditorCapsuleHeight, maxHeight: .infinity)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

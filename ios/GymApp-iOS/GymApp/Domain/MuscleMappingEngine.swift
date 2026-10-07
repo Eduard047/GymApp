@@ -153,8 +153,38 @@ public enum MuscleMappingEngine {
         }
     }
 
+    /// Weight of a catalog muscle that has no name-guess weight: first is primary, the rest secondary.
+    public static let catalogPrimaryMuscleWeight = 1.0
+    public static let catalogSecondaryMuscleWeight = 0.6
+
+    /// Default muscles of a built-in exercise taken from the catalog definition, or nil when the
+    /// name is not a built-in exercise. The catalog decides WHICH muscles are involved; weights keep
+    /// the established name-guess weight for a muscle when there is one, so coaching and load stats
+    /// stay stable. Muscles the guess missed get a primary (first catalog muscle) or secondary weight.
+    public static func catalogContributions(for exerciseName: String) -> [MuscleContribution]? {
+        guard let key = BuiltInExerciseCatalog.canonicalKey(forName: exerciseName),
+              let definition = BuiltInExerciseCatalog.definition(forKey: key) else { return nil }
+        let guessedWeights = Dictionary(
+            legacyNameGuessContributions(for: exerciseName).map { ($0.muscleID, $0.weight) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        let validIDs = Set(muscleDefinitions.map(\.id))
+        let contributions = definition.muscleIDs
+            .filter { validIDs.contains($0) }
+            .enumerated()
+            .map { index, muscleID in
+                MuscleContribution(
+                    muscleID: muscleID,
+                    weight: guessedWeights[muscleID]
+                        ?? (index == 0 ? catalogPrimaryMuscleWeight : catalogSecondaryMuscleWeight)
+                )
+            }
+        return contributions.isEmpty ? nil : contributions
+    }
+
+    /// The single source of default muscles: catalog definition first, then name guessing.
     public static func defaultContributions(for exerciseName: String) -> [MuscleContribution] {
-        contributions(for: exerciseName, manualMappings: [:])
+        catalogContributions(for: exerciseName) ?? legacyNameGuessContributions(for: exerciseName)
     }
 
     public static func contributions(
@@ -163,6 +193,67 @@ public enum MuscleMappingEngine {
     ) -> [MuscleContribution] {
         let normalized = normalizeExerciseName(exerciseName)
         if let manual = manualMappings[normalized], !manual.isEmpty { return manual }
+        return defaultContributions(for: exerciseName)
+    }
+
+    /// A corrected mapping that replaces an untouched, auto-seeded one.
+    public struct MappingRepair: Equatable, Sendable {
+        public let exerciseNameKey: String
+        public let exerciseName: String
+        public let contributions: [MuscleContribution]
+    }
+
+    /// Finds stored mappings that were auto-seeded from the old name guess for built-in exercises
+    /// and now disagree with the catalog default. A mapping counts as untouched only when it
+    /// equals the old guess. Rows the user saved always carry weight 1.0 for every muscle, so an
+    /// all-1.0 stored mapping is ambiguous. It is repaired only when the old guess itself was
+    /// all 1.0 (so it equals the guess) and the catalog default has a different muscle set.
+    /// The plan is idempotent: once repaired, a mapping equals the catalog default.
+    public static func planAutoSeededMappingRepairs(
+        exerciseNames: [String],
+        storedMappings: [ExerciseMuscleMapping]
+    ) -> [MappingRepair] {
+        let storedByKey = Dictionary(grouping: storedMappings, by: \.exerciseNameKey)
+        var seenKeys = Set<String>()
+        return exerciseNames.compactMap { exerciseName in
+            let key = normalizeExerciseName(exerciseName)
+            guard seenKeys.insert(key).inserted,
+                  let stored = storedByKey[key], !stored.isEmpty,
+                  let catalogDefault = catalogContributions(for: exerciseName) else { return nil }
+            let storedWeights = Dictionary(
+                stored.map { ($0.muscleID, $0.weight) },
+                uniquingKeysWith: { _, latest in latest }
+            )
+            let legacyWeights = Dictionary(
+                legacyNameGuessContributions(for: exerciseName).map { ($0.muscleID, $0.weight) },
+                uniquingKeysWith: { _, latest in latest }
+            )
+            let matchesLegacy = storedWeights.count == legacyWeights.count &&
+                legacyWeights.allSatisfy { muscleID, weight in
+                    storedWeights[muscleID].map { abs($0 - weight) < 1e-6 } ?? false
+                }
+            guard matchesLegacy else { return nil }
+            let defaultWeights = Dictionary(
+                catalogDefault.map { ($0.muscleID, $0.weight) },
+                uniquingKeysWith: { _, latest in latest }
+            )
+            guard defaultWeights != storedWeights else { return nil }
+            // All-1.0 rows match a manual save too: repair only when the muscle set is outdated.
+            if storedWeights.values.allSatisfy({ $0 == 1 }),
+               Set(defaultWeights.keys) == Set(storedWeights.keys) {
+                return nil
+            }
+            return MappingRepair(
+                exerciseNameKey: key,
+                exerciseName: exerciseName,
+                contributions: catalogDefault
+            )
+        }
+    }
+
+    /// The pre-catalog name heuristics. Only used for custom exercises and to detect old auto-seeds.
+    public static func legacyNameGuessContributions(for exerciseName: String) -> [MuscleContribution] {
+        let normalized = normalizeExerciseName(exerciseName)
         if let exact = exactMuscleMap[normalized] { return exact }
         let legCurl = isLegCurlName(normalized)
         var inferred: [String: Double] = [:]

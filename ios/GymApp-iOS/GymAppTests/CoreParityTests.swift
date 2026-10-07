@@ -4814,6 +4814,169 @@ final class CoreParityTests: XCTestCase {
         }
     }
 
+    private func storedMappings(
+        _ name: String,
+        _ rows: [(String, Double)]
+    ) -> [ExerciseMuscleMapping] {
+        rows.map {
+            ExerciseMuscleMapping(
+                exerciseNameKey: MuscleMappingEngine.normalizeExerciseName(name),
+                exerciseName: name,
+                muscleID: $0.0,
+                weight: $0.1,
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+        }
+    }
+
+    private func legacyRows(_ name: String) -> [(String, Double)] {
+        MuscleMappingEngine.legacyNameGuessContributions(for: name).map { ($0.muscleID, $0.weight) }
+    }
+
+    func testEveryBuiltInExerciseDefaultsToItsCatalogMuscles() {
+        let known = Set(MuscleMappingEngine.muscleDefinitions.map(\.id))
+        for definition in BuiltInExerciseCatalog.definitions {
+            for name in [definition.englishName, definition.ukrainianName] {
+                let ids = Set(MuscleMappingEngine.defaultContributions(for: name).map(\.muscleID))
+                XCTAssertFalse(ids.isEmpty, "\(name) must have muscles")
+                XCTAssertEqual(ids, Set(definition.muscleIDs.filter { known.contains($0) }), "\(name) must follow the catalog")
+            }
+        }
+    }
+
+    func testCatalogMuscleDefaultsMatchExpectedGroupsAndWeights() {
+        func muscles(_ name: String) -> Set<String> {
+            Set(MuscleMappingEngine.contributions(for: name).map(\.muscleID))
+        }
+        XCTAssertEqual(muscles("Rear Delt Fly"), ["shoulders", "upperBack"])
+        XCTAssertFalse(muscles("Rear Delt Fly").contains("chest"))
+        XCTAssertTrue(muscles("Push Up").contains("chest"))
+        XCTAssertTrue(muscles("Dips").isSuperset(of: ["chest", "triceps"]))
+        XCTAssertTrue(muscles("Hip Adduction").contains("adductors"))
+        XCTAssertTrue(muscles("Upright Row").contains("shoulders"))
+        XCTAssertFalse(muscles("Shoulder Press").contains("chest"))
+        XCTAssertFalse(muscles("French Press").contains("chest"))
+        XCTAssertTrue(muscles("Face Pull").contains("upperBack"))
+        XCTAssertTrue(muscles("Squat").contains("adductors"))
+
+        let squat = Dictionary(
+            uniqueKeysWithValues: MuscleMappingEngine.defaultContributions(for: "Squat").map { ($0.muscleID, $0.weight) }
+        )
+        XCTAssertEqual(squat["quads"], 1)
+        XCTAssertEqual(squat["glutes"], 0.7)
+        XCTAssertEqual(squat["adductors"], MuscleMappingEngine.catalogSecondaryMuscleWeight)
+        let rearDelt = Dictionary(
+            uniqueKeysWithValues: MuscleMappingEngine.defaultContributions(for: "Rear Delt Fly").map { ($0.muscleID, $0.weight) }
+        )
+        XCTAssertEqual(rearDelt["shoulders"], MuscleMappingEngine.catalogPrimaryMuscleWeight)
+        XCTAssertEqual(rearDelt["upperBack"], MuscleMappingEngine.catalogSecondaryMuscleWeight)
+
+        // Custom exercises keep the name guess; an empty manual mapping falls back to the default.
+        XCTAssertTrue(muscles("My Special Curl").contains("biceps"))
+        XCTAssertTrue(
+            MuscleMappingEngine.contributions(for: "Push Up", manualMappings: ["push up": []])
+                .contains { $0.muscleID == "chest" }
+        )
+    }
+
+    func testAutoSeededMappingRepairReplacesOnlyLegacySeeds() {
+        // Old auto-seed for "Squat" (weighted name guess) misses adductors.
+        let untouched = storedMappings("Squat", legacyRows("Squat"))
+        let repairs = MuscleMappingEngine.planAutoSeededMappingRepairs(
+            exerciseNames: ["Squat"],
+            storedMappings: untouched
+        )
+        XCTAssertEqual(repairs.count, 1)
+        XCTAssertTrue(repairs[0].contributions.map(\.muscleID).contains("adductors"))
+
+        // Idempotent once repaired.
+        let repaired = storedMappings("Squat", repairs[0].contributions.map { ($0.muscleID, $0.weight) })
+        XCTAssertTrue(MuscleMappingEngine.planAutoSeededMappingRepairs(exerciseNames: ["Squat"], storedMappings: repaired).isEmpty)
+
+        // Customised weights, and all-1.0 sets that differ from the old guess, are user choices.
+        XCTAssertTrue(MuscleMappingEngine.planAutoSeededMappingRepairs(
+            exerciseNames: ["Squat"],
+            storedMappings: storedMappings("Squat", [("quads", 1), ("calves", 0.4)])
+        ).isEmpty)
+        XCTAssertTrue(MuscleMappingEngine.planAutoSeededMappingRepairs(
+            exerciseNames: ["Squat"],
+            storedMappings: storedMappings("Squat", [("quads", 1), ("glutes", 1)])
+        ).isEmpty)
+
+        // An all-1.0 set equal to the catalog muscle set is left alone.
+        XCTAssertTrue(MuscleMappingEngine.planAutoSeededMappingRepairs(
+            exerciseNames: ["Face Pull"],
+            storedMappings: storedMappings("Face Pull", [("shoulders", 1), ("upperBack", 1)])
+        ).isEmpty)
+
+        // All-1.0 legacy seeds with an outdated muscle set are repaired, idempotently.
+        for name in ["Face Pull", "Rear Delt Fly", "Plank"] {
+            let legacy = legacyRows(name)
+            XCTAssertTrue(legacy.allSatisfy { $0.1 == 1 }, "\(name) legacy guess must be all 1.0")
+            let plan = MuscleMappingEngine.planAutoSeededMappingRepairs(
+                exerciseNames: [name],
+                storedMappings: storedMappings(name, legacy)
+            )
+            XCTAssertEqual(plan.count, 1, "\(name) must be repaired")
+            let fixed = storedMappings(name, plan[0].contributions.map { ($0.muscleID, $0.weight) })
+            XCTAssertTrue(MuscleMappingEngine.planAutoSeededMappingRepairs(exerciseNames: [name], storedMappings: fixed).isEmpty)
+        }
+
+        // Custom (non-catalog) exercises are never repaired.
+        XCTAssertTrue(MuscleMappingEngine.planAutoSeededMappingRepairs(
+            exerciseNames: ["My Special Curl"],
+            storedMappings: storedMappings("My Special Curl", legacyRows("My Special Curl"))
+        ).isEmpty)
+    }
+
+    func testAllOneWeightRepairAffectsOnlyKnownBuiltIns() {
+        let affected = BuiltInExerciseCatalog.definitions
+            .flatMap { [$0.englishName, $0.ukrainianName] }
+            .filter { name in
+                let legacy = MuscleMappingEngine.legacyNameGuessContributions(for: name)
+                let seed = legacy.map { ($0.muscleID, 1.0) }
+                return legacy.allSatisfy { $0.weight == 1 } &&
+                    !MuscleMappingEngine.planAutoSeededMappingRepairs(
+                        exerciseNames: [name],
+                        storedMappings: storedMappings(name, seed)
+                    ).isEmpty
+            }
+        XCTAssertEqual(
+            Set(affected),
+            [
+                "Face Pull", "Rear Delt Fly", "Overhead Dumbbell Triceps Extension",
+                "Plank", "Планка", "Weighted Crunch"
+            ]
+        )
+    }
+
+    func testSeedDefaultMuscleMappingsRepairsLegacySeedAtomicallyAndIdempotently() throws {
+        let directory = try temporaryDirectory(named: "muscle-mapping-repair")
+        let store = try WorkoutStore(accountStorageKey: "muscle-repair", directoryURL: directory)
+        _ = try store.addExercise(name: "Face Pull")
+        _ = try store.addExercise(name: "My Special Curl")
+        // Legacy auto-seed (all 1.0, outdated muscle set) and a custom exercise's own seed.
+        try store.saveExerciseMuscleMapping(exerciseName: "Face Pull", muscleIDs: ["shoulders"])
+        try store.saveExerciseMuscleMapping(exerciseName: "My Special Curl", muscleIDs: ["biceps", "forearms"])
+
+        XCTAssertGreaterThan(try store.seedDefaultMuscleMappings(), 0)
+        func muscleIDs(_ key: String) -> Set<String> {
+            Set(store.muscleMappings.filter { $0.exerciseNameKey == key }.map(\.muscleID))
+        }
+        XCTAssertEqual(muscleIDs("face pull"), ["shoulders", "upperBack"])
+        XCTAssertEqual(muscleIDs("my special curl"), ["biceps", "forearms"])
+
+        let persisted = try Data(contentsOf: store.storageURL)
+        XCTAssertEqual(try store.seedDefaultMuscleMappings(), 0)
+        XCTAssertEqual(try Data(contentsOf: store.storageURL), persisted)
+
+        let reopened = try WorkoutStore(accountStorageKey: "muscle-repair", directoryURL: directory)
+        XCTAssertEqual(
+            Set(reopened.muscleMappings.filter { $0.exerciseNameKey == "face pull" }.map(\.muscleID)),
+            ["shoulders", "upperBack"]
+        )
+    }
+
     func testActivityHeatmapShowsEveryDayOfCurrentFiveWeekMonth() throws {
         let calendar = utcCalendar()
         let month = try utcDate(year: 2026, month: 7, day: 15, calendar: calendar)
@@ -16628,10 +16791,22 @@ final class CoreParityTests: XCTestCase {
         // Multiple equipment concepts must not be assembled into one semantic match.
         XCTAssertTrue(matchingKeys("гантели штанга").isEmpty)
 
-        // Two-letter equipment abbreviations are useful only with another exercise term.
-        XCTAssertTrue(matchingKeys("db").isEmpty)
-        XCTAssertTrue(matchingKeys("bb").isEmpty)
-        XCTAssertTrue(matchingKeys("db db").isEmpty)
+        // Short tokens search from the first letter: "db"/"bb" return exactly the
+        // exercises with a name or alias word that starts with the abbreviation.
+        let dbKeys = matchingKeys("db")
+        XCTAssertFalse(dbKeys.isEmpty)
+        XCTAssertTrue(dbKeys.contains("biceps_curl"))
+        XCTAssertTrue(dbKeys.contains("dumbbell_bench_press"))
+        XCTAssertFalse(dbKeys.contains("barbell_row"))
+        XCTAssertEqual(matchingKeys("db db"), dbKeys)
+        let bbKeys = matchingKeys("bb")
+        XCTAssertTrue(bbKeys.contains("barbell_row"))
+        XCTAssertTrue(bbKeys.contains("barbell_curl"))
+        XCTAssertFalse(bbKeys.contains("biceps_curl"))
+        // Cyrillic abbreviations have no alias word that starts with them; they must
+        // simply not crash or match mid-word.
+        _ = matchingKeys("дб")
+        _ = matchingKeys("бб")
         XCTAssertEqual(matchingKeys("DB curl").first, "biceps_curl")
         XCTAssertEqual(matchingKeys("BB row").first, "barbell_row")
 
@@ -16669,6 +16844,57 @@ final class CoreParityTests: XCTestCase {
                 query: String(repeating: "y", count: 129)
             ).isEmpty
         )
+    }
+
+    func testExerciseSearchMatchesShortQueriesByWordPrefixAndRanksPrefixAboveSubstring() {
+        let allBuiltIns = BuiltInExerciseCatalog.definitions.map { definition in
+            Exercise(name: definition.englishName, catalogKey: definition.key)
+        }
+
+        func matchingKeys(_ query: String) -> [String] {
+            ExerciseFilterEngine.filtered(
+                exercises: allBuiltIns,
+                query: query,
+                bodyFilter: .all,
+                muscleFilter: nil,
+                favoritesOnly: false,
+                sortMode: .name,
+                muscleMappings: [],
+                sessionCounts: [:]
+            ).compactMap(\.catalogKey)
+        }
+
+        // A single Cyrillic letter lists word-prefix hits ("Жим ...") and skips an
+        // exercise that only has the letter mid-word ("От-ж-имания").
+        let zhKeys = matchingKeys("ж")
+        XCTAssertTrue(zhKeys.contains("bench_press"))
+        XCTAssertTrue(zhKeys.contains("leg_press"))
+        XCTAssertTrue(zhKeys.contains("shoulder_press"))
+        XCTAssertFalse(zhKeys.contains("push_up"))
+        // Case is ignored.
+        XCTAssertEqual(matchingKeys("Ж"), zhKeys)
+
+        // Connector-only queries fall back to the raw tokens instead of returning nothing.
+        XCTAssertFalse(matchingKeys("в").isEmpty)
+        XCTAssertFalse(matchingKeys("a").isEmpty)
+
+        // Short tokens never match muscle vocabulary ("quads" trains squat, leg press, ...);
+        // only the "quad extension" alias word starts with "qu".
+        XCTAssertEqual(matchingKeys("qu"), ["leg_extension"])
+
+        // Three-letter query: the word-start hit (Lat Pulldown, Lateral Raise) must
+        // outrank the mid-word hit (Plate Loaded Row).
+        let latKeys = matchingKeys("lat")
+        let pulldownIndex = latKeys.firstIndex(of: "lat_pulldown")
+        let lateralIndex = latKeys.firstIndex(of: "lateral_raise")
+        let plateIndex = latKeys.firstIndex(of: "plate_loaded_row")
+        XCTAssertNotNil(pulldownIndex)
+        XCTAssertNotNil(lateralIndex)
+        XCTAssertNotNil(plateIndex)
+        if let pulldownIndex, let lateralIndex, let plateIndex {
+            XCTAssertLessThan(pulldownIndex, plateIndex)
+            XCTAssertLessThan(lateralIndex, plateIndex)
+        }
     }
 
     func testGarminWorkoutDetailCopyIdentifiesChronologicalWatchSetOrderInEveryLanguage() {
@@ -18864,6 +19090,20 @@ final class CoreParityTests: XCTestCase {
                 name: exercise.name
             ) == nil
         }.map(\.name)
+    }
+
+    func testSetValueCapsuleStepWidthClampsBetween28And36() {
+        typealias M = GymSetValueCapsuleMetrics
+        // Wide capsule, short value: buttons stay at 36.
+        XCTAssertEqual(M.stepWidth(capsuleWidth: 160, contentWidth: 40), 36)
+        // Tight: 100pt capsule with a 32pt value leaves 34pt per button.
+        XCTAssertEqual(M.stepWidth(capsuleWidth: 100, contentWidth: 32), 34)
+        // Very tight: value needs nearly everything -> 28.
+        XCTAssertEqual(M.stepWidth(capsuleWidth: 92, contentWidth: 60), 28)
+        XCTAssertEqual(M.stepWidth(capsuleWidth: 92, contentWidth: 200), 28)
+        // Content may use everything but two minimum buttons.
+        XCTAssertEqual(M.maxContentWidth(capsuleWidth: 92), 36)
+        XCTAssertEqual(M.maxContentWidth(capsuleWidth: 40), 0)
     }
 }
 

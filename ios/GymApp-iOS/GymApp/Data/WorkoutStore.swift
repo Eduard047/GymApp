@@ -1855,7 +1855,8 @@ public final class WorkoutStore: ObservableObject {
         }
     }
 
-    /// Explicitly fills only exercises that do not already have a manual mapping.
+    /// Fills exercises that do not already have a manual mapping, and replaces stored mappings that
+    /// were auto-seeded from the old name guess for built-in exercises with the catalog default.
     @discardableResult
     public func seedDefaultMuscleMappings() throws -> Int {
         let existingKeys = Set(muscleMappings.map(\.exerciseNameKey))
@@ -1864,12 +1865,34 @@ public final class WorkoutStore: ObservableObject {
             return !existingKeys.contains(key) &&
                 !MuscleMappingEngine.defaultContributions(for: exercise.name).isEmpty
         }
+        let hasRepairs = !MuscleMappingEngine.planAutoSeededMappingRepairs(
+            exerciseNames: exercises.map(\.name),
+            storedMappings: muscleMappings
+        ).isEmpty
         // Mapping seeding has no persisted version marker. Detect the real no-op before
         // entering the generic whole-snapshot mutation path.
-        guard hasMissingDefaults else { return 0 }
+        guard hasMissingDefaults || hasRepairs else { return 0 }
 
         var inserted = 0
         try mutate { state in
+            let repairs = MuscleMappingEngine.planAutoSeededMappingRepairs(
+                exerciseNames: state.exercises.map(\.name),
+                storedMappings: state.muscleMappings
+            )
+            for repair in repairs {
+                state.muscleMappings.removeAll { $0.exerciseNameKey == repair.exerciseNameKey }
+                let mappings = repair.contributions.map {
+                    ExerciseMuscleMapping(
+                        exerciseNameKey: repair.exerciseNameKey,
+                        exerciseName: repair.exerciseName,
+                        muscleID: $0.muscleID,
+                        weight: $0.weight,
+                        updatedAt: Date()
+                    )
+                }
+                state.muscleMappings.append(contentsOf: mappings)
+                inserted += mappings.count
+            }
             var existingKeys = Set(state.muscleMappings.map(\.exerciseNameKey))
             for exercise in state.exercises {
                 let key = MuscleMappingEngine.normalizeExerciseName(exercise.name)

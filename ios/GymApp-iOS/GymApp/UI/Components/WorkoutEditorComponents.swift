@@ -1087,10 +1087,23 @@ enum ExerciseFilterEngine {
         }
     }
 
+    /// Higher raw values rank higher. A word-prefix hit always outranks a mid-word
+    /// containment hit of the same kind (direct or transliterated).
     private enum SearchMatchQuality: Int {
         case fuzzy = 1
         case transliterated = 2
-        case direct = 3
+        case transliteratedPrefix = 3
+        case direct = 4
+        case directPrefix = 5
+
+        var isDirect: Bool {
+            self == .direct || self == .directPrefix
+        }
+    }
+
+    private enum DirectMatchKind {
+        case wordPrefix
+        case contained
     }
 
     private struct SearchTerm {
@@ -1344,7 +1357,7 @@ enum ExerciseFilterEngine {
             return SearchEvaluation(relevance: relevance, reason: .alias(aliasMatch.termText))
         }
         if let alternateMatch = tokenMatches.first(where: {
-            $0.source == .canonical && $0.quality != .direct
+            $0.source == .canonical && !$0.quality.isDirect
         }) {
             return SearchEvaluation(
                 relevance: relevance,
@@ -1463,7 +1476,11 @@ enum ExerciseFilterEngine {
         in terms: [SearchTerm]
     ) -> TokenMatch? {
         var best: TokenMatch?
+        // One- and two-letter tokens only match name sources (canonical names and
+        // aliases), never muscle or equipment vocabulary.
+        let nameSourcesOnly = queryToken.count < 3
         for term in terms {
+            if nameSourcesOnly && term.source.isCategory { continue }
             var bestQualityForTerm: SearchMatchQuality?
             for candidateToken in term.tokens {
                 if let quality = matchQuality(candidateToken: candidateToken, queryToken: queryToken),
@@ -1555,14 +1572,9 @@ enum ExerciseFilterEngine {
         guard let tokens = boundedSearchTokens(
             trimmed,
             maximumCharacters: maximumSearchQueryCharacters,
-            allowTransliteratedConnectors: true
+            allowTransliteratedConnectors: true,
+            fallbackToRawTokensWhenEmpty: true
         ), !tokens.isEmpty else { return .invalid }
-        // Standalone two-letter equipment abbreviations such as DB/BB are too broad.
-        // They remain useful when paired with an exercise term (for example "DB curl").
-        let distinctTokens = Set(tokens)
-        guard !(distinctTokens.count == 1 && distinctTokens.first!.count < 3) else {
-            return .invalid
-        }
         return .value(
             SearchQuery(
                 tokens: tokens,
@@ -1577,7 +1589,8 @@ enum ExerciseFilterEngine {
     private static func boundedSearchTokens(
         _ value: String,
         maximumCharacters: Int,
-        allowTransliteratedConnectors: Bool = false
+        allowTransliteratedConnectors: Bool = false,
+        fallbackToRawTokensWhenEmpty: Bool = false
     ) -> [String]? {
         let prefix = value.prefix(maximumCharacters + 1)
         guard prefix.count <= maximumCharacters else { return nil }
@@ -1605,10 +1618,14 @@ enum ExerciseFilterEngine {
             .map(String.init)
         let canDropTransliteratedConnectors =
             allowTransliteratedConnectors && rawTokens.count >= 3
-        let tokens = rawTokens.filter { token in
+        var tokens = rawTokens.filter { token in
             !ExerciseSearchVocabulary.connectorTokens.contains(token) &&
                 !(canDropTransliteratedConnectors &&
                     transliteratedConnectorTokens.contains(token))
+        }
+        // A query made only of connector words ("a", "в") still searches by prefix.
+        if tokens.isEmpty && fallbackToRawTokensWhenEmpty {
+            tokens = rawTokens
         }
         guard tokens.count <= maximumSearchQueryTokens else { return nil }
         return tokens
@@ -1618,15 +1635,15 @@ enum ExerciseFilterEngine {
         candidateToken: String,
         queryToken: String
     ) -> SearchMatchQuality? {
-        if directlyMatches(candidateToken, queryToken) {
-            return .direct
+        if let kind = directMatchKind(candidateToken, queryToken) {
+            return kind == .wordPrefix ? .directPrefix : .direct
         }
 
         let transliteratedCandidate = transliterated(candidateToken)
         let transliteratedQuery = transliterated(queryToken)
-        if (transliteratedCandidate != candidateToken || transliteratedQuery != queryToken) &&
-            directlyMatches(transliteratedCandidate, transliteratedQuery) {
-            return .transliterated
+        if transliteratedCandidate != candidateToken || transliteratedQuery != queryToken,
+           let kind = directMatchKind(transliteratedCandidate, transliteratedQuery) {
+            return kind == .wordPrefix ? .transliteratedPrefix : .transliterated
         }
 
         if isWithinOneDamerauEdit(candidateToken, queryToken) ||
@@ -1636,25 +1653,36 @@ enum ExerciseFilterEngine {
         return nil
     }
 
-    private static func directlyMatches(_ candidateToken: String, _ queryToken: String) -> Bool {
-        if candidateToken.contains(queryToken) {
-            return true
+    /// Classifies a direct token hit: `.wordPrefix` when the match starts at the beginning
+    /// of the candidate word, `.contained` for a mid-word hit.
+    private static func directMatchKind(
+        _ candidateToken: String,
+        _ queryToken: String
+    ) -> DirectMatchKind? {
+        // One- and two-letter query tokens only match as a word prefix.
+        if queryToken.count < 3 {
+            return candidateToken.hasPrefix(queryToken) ? .wordPrefix : nil
         }
+        if candidateToken.hasPrefix(queryToken) { return .wordPrefix }
+        if candidateToken.contains(queryToken) { return .contained }
         // Keep reverse substring matching useful for inflections without letting a compound
         // query such as "pecdek" match every multi-word alias containing the short token "pec".
-        if candidateToken.count >= 4 && queryToken.contains(candidateToken) { return true }
+        if candidateToken.count >= 4 && queryToken.contains(candidateToken) {
+            return queryToken.hasPrefix(candidateToken) ? .wordPrefix : .contained
+        }
 
         var commonPrefixLength = 0
         for (candidateCharacter, queryCharacter) in zip(candidateToken, queryToken) {
             guard candidateCharacter == queryCharacter else { break }
             commonPrefixLength += 1
-            if commonPrefixLength >= 5 { return true }
+            if commonPrefixLength >= 5 { return .wordPrefix }
         }
         let shortestLength = min(candidateToken.count, queryToken.count)
-        return commonPrefixLength >= 4 &&
+        let sharesInflectedStem = commonPrefixLength >= 4 &&
             shortestLength >= minimumFuzzyTokenCharacters &&
             candidateToken.count - commonPrefixLength <= 3 &&
             queryToken.count - commonPrefixLength <= 3
+        return sharesInflectedStem ? .wordPrefix : nil
     }
 
     /// Damerau-Levenshtein distance <= 1, restricted to long tokens to avoid broad short-query
