@@ -743,7 +743,7 @@ internal fun exerciseSearchMatch(
         rawQuery,
         EXERCISE_SEARCH_QUERY_MAX_CHARS
     ) ?: return null
-    val definition = BuiltInExerciseCatalog.definitionForName(exerciseName)
+    val definition = BuiltInExerciseCatalog.definitionForSearchName(exerciseName)
     val canonicalValues = if (definition == null) {
         listOf(exerciseName)
     } else {

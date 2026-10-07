@@ -189,6 +189,36 @@ object BuiltInExerciseCatalog {
         }
     }
 
+    /**
+     * Search-only recognition map: localized (Russian) catalog names. Generated vocabulary aliases
+     * are intentionally NOT registered: a custom row named like an alias (e.g. "Pec Deck") must
+     * stay a custom exercise and rank as one. Deliberately separate from [definitionsByName], which drives identity
+     * (history, backups, cloud) shared with iOS/PWA and must stay narrow.
+     */
+    private val searchRecognitionByName: Map<String, BuiltInExerciseDefinition> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        buildMap {
+            fun register(name: String, definition: BuiltInExerciseDefinition) {
+                val normalized = normalizeExerciseIdentityName(name)
+                if (normalized.isEmpty() || normalized in definitionsByName) return
+                putIfAbsent(normalized, definition)
+            }
+            definitions.forEach { definition ->
+                register(RussianText.translate(definition.nameEn), definition)
+            }
+        }
+    }
+
+    /**
+     * Resolves a stored exercise name to a built-in for SEARCH purposes only. Falls back from the
+     * identity names (English, Ukrainian, legacy aliases) to the Russian catalog name so that rows
+     * stored under any localized spelling still receive the built-in's search aliases.
+     */
+    fun definitionForSearchName(rawName: String?): BuiltInExerciseDefinition? {
+        definitionForName(rawName)?.let { return it }
+        val normalized = rawName?.let(::normalizeExerciseIdentityName).orEmpty()
+        return searchRecognitionByName[normalized]
+    }
+
     fun definitionForKey(key: String?): BuiltInExerciseDefinition? {
         return key
             ?.trim()
