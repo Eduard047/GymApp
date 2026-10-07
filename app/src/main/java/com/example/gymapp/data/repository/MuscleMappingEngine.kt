@@ -1,5 +1,6 @@
 package com.example.gymapp.data.repository
 
+import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.catalog.normalizeExerciseIdentityName
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.entity.ExerciseMuscleMappingEntity
@@ -133,10 +134,42 @@ fun List<ExerciseMuscleMappingEntity>.toManualContributionMap(): Map<String, Lis
                     )
                 }
         }
+        // An empty manual mapping carries no information; treat it as absent so the default
+        // (catalog, then name guess) applies instead of hiding the exercise from muscle filters.
+        .filterValues { it.isNotEmpty() }
 }
 
+/** Weight of a catalog muscle that has no name-guess weight: first is primary, the rest secondary. */
+const val CATALOG_PRIMARY_MUSCLE_WEIGHT: Double = 1.0
+const val CATALOG_SECONDARY_MUSCLE_WEIGHT: Double = 0.6
+
+/**
+ * Default muscles of a built-in exercise taken from the catalog definition, or null when the name
+ * is not a built-in exercise. The catalog decides WHICH muscles are involved (mirroring iOS/PWA,
+ * which use the catalog muscle ids before any name heuristics). Weights keep the established
+ * name-guess weight for a muscle when there is one, so coaching and load stats stay stable;
+ * muscles the guess missed get a primary (first catalog muscle) or secondary default weight.
+ */
+fun catalogContributionsForExercise(exerciseName: String): List<MuscleContribution>? {
+    val definition = BuiltInExerciseCatalog.definitionForName(exerciseName) ?: return null
+    val guessedWeights = legacyNameGuessContributions(exerciseName)
+        .associate { it.muscleId to it.weight }
+    return definition.muscleIds
+        .filter { muscleId -> MUSCLE_DEFINITIONS.any { it.id == muscleId } }
+        .mapIndexed { index, muscleId ->
+            MuscleContribution(
+                muscleId = muscleId,
+                weight = guessedWeights[muscleId]
+                    ?: if (index == 0) CATALOG_PRIMARY_MUSCLE_WEIGHT else CATALOG_SECONDARY_MUSCLE_WEIGHT
+            )
+        }
+        .takeIf { it.isNotEmpty() }
+}
+
+/** The single source of default muscles: catalog definition first, then name guessing. */
 fun defaultContributionsForExercise(exerciseName: String): List<MuscleContribution> {
-    return muscleContributionsForExercise(exerciseName, manualMappings = emptyMap())
+    return catalogContributionsForExercise(exerciseName)
+        ?: legacyNameGuessContributions(exerciseName)
 }
 
 fun muscleContributionsForExercise(
@@ -145,6 +178,54 @@ fun muscleContributionsForExercise(
 ): List<MuscleContribution> {
     val normalizedName = exerciseName.normalizedExerciseName()
     manualMappings[normalizedName]?.takeIf { it.isNotEmpty() }?.let { return it }
+    return defaultContributionsForExercise(exerciseName)
+}
+
+/** A corrected mapping that replaces an untouched, auto-seeded one. */
+data class MuscleMappingRepair(
+    val exerciseNameKey: String,
+    val exerciseName: String,
+    val contributions: List<MuscleContribution>
+)
+
+/**
+ * Finds stored mappings that were auto-seeded from the old name guess for built-in exercises and
+ * now disagree with the catalog default. A mapping counts as untouched only when it equals the
+ * old guess exactly. Rows the user saved always carry weight 1.0 for every muscle, so a stored
+ * mapping whose weights are all 1.0 cannot be told apart from a user choice and is left alone.
+ * The plan is idempotent: once repaired, a mapping equals the catalog default and is not planned.
+ */
+fun planAutoSeededMuscleMappingRepairs(
+    exerciseNames: List<String>,
+    storedMappings: List<ExerciseMuscleMappingEntity>
+): List<MuscleMappingRepair> {
+    val storedByKey = storedMappings.groupBy { it.exerciseNameKey }
+    return exerciseNames.mapNotNull { exerciseName ->
+        val key = exerciseName.normalizedExerciseName()
+        val stored = storedByKey[key]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        val catalogDefault = catalogContributionsForExercise(exerciseName) ?: return@mapNotNull null
+        val storedWeights = stored.associate { it.muscleId to it.weight }
+        if (storedWeights.values.all { it == 1.0 }) return@mapNotNull null
+        val legacyWeights = legacyNameGuessContributions(exerciseName)
+            .associate { it.muscleId to it.weight }
+        val matchesLegacy = storedWeights.size == legacyWeights.size &&
+            legacyWeights.all { (muscleId, weight) ->
+                storedWeights[muscleId]?.let { kotlin.math.abs(it - weight) < 1e-6 } == true
+            }
+        if (!matchesLegacy) return@mapNotNull null
+        val defaultWeights = catalogDefault.associate { it.muscleId to it.weight }
+        if (defaultWeights == storedWeights) return@mapNotNull null
+        MuscleMappingRepair(
+            exerciseNameKey = key,
+            exerciseName = exerciseName,
+            contributions = catalogDefault
+        )
+    }
+}
+
+/** The pre-catalog name heuristics. Only used for custom exercises and to detect old auto-seeds. */
+internal fun legacyNameGuessContributions(exerciseName: String): List<MuscleContribution> {
+    val normalizedName = exerciseName.normalizedExerciseName()
     EXACT_MUSCLE_MAP[normalizedName]?.let { return it }
     val isLegCurl = normalizedName.isLegCurlName()
 

@@ -1106,10 +1106,30 @@ class GymRepository(
     suspend fun seedDefaultExerciseMuscleMappings() {
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val existingKeys = muscleMappingDao.getMappingsSnapshot()
+            val exercises = exerciseDao.getExercisesSnapshot()
+            val storedMappings = muscleMappingDao.getMappingsSnapshot()
+            // Repair mappings auto-seeded from name guessing (before the catalog became the
+            // default source). User-customized mappings never match and stay untouched. The
+            // corrected rows are written (not deleted) so cloud sync carries them to other devices.
+            val repairs = planAutoSeededMuscleMappingRepairs(exercises.map { it.name }, storedMappings)
+            repairs.forEach { repair ->
+                muscleMappingDao.deleteForExercise(repair.exerciseNameKey)
+                muscleMappingDao.insertAll(
+                    repair.contributions.map { contribution ->
+                        ExerciseMuscleMappingEntity(
+                            exerciseNameKey = repair.exerciseNameKey,
+                            exerciseName = repair.exerciseName,
+                            muscleId = contribution.muscleId,
+                            weight = contribution.weight,
+                            updatedAt = now
+                        )
+                    }
+                )
+            }
+            val existingKeys = storedMappings
                 .map { it.exerciseNameKey }
                 .toSet()
-            val seedMappings = exerciseDao.getExercisesSnapshot()
+            val seedMappings = exercises
                 .filter { exercise -> exercise.name.toExerciseMappingKey() !in existingKeys }
                 .flatMap { exercise ->
                     val key = exercise.name.toExerciseMappingKey()

@@ -205,7 +205,8 @@ class WorkoutRecommendationEngineTest {
 
         val names = plan.exerciseNames()
         assertEquals(SmartWorkoutFocus.FullBody, plan.focus)
-        assertTrue(names.any { it.contains("Press") || it.contains("Lateral Raise") })
+        // Dips now carries catalog chest/triceps muscles, so it can fill the push slot.
+        assertTrue(names.any { it.contains("Press") || it.contains("Lateral Raise") || it == "Dips" })
         assertTrue(names.any { it.contains("Row") || it.contains("Pull Up") })
         assertTrue(names.any { it.contains("Leg") || it.contains("Romanian") || it.contains("Squat") })
     }
@@ -1698,7 +1699,8 @@ class WorkoutRecommendationEngineTest {
         )
 
         assertEquals(SmartWorkoutFocus.Upper, upper.focus)
-        assertTrue(upper.exerciseNames().any { it == "Bench Press" || it == "Dumbbell Bench Press" })
+        // Dips now carries catalog chest/triceps muscles, so it can be the chest press movement.
+        assertTrue(upper.exerciseNames().any { it == "Bench Press" || it == "Dumbbell Bench Press" || it == "Dips" })
         assertTrue(upper.exerciseNames().contains("Shoulder Press"))
         assertTrue(upper.exerciseNames().any { it == "Cable Row" || it == "Barbell Row" })
         assertTrue(upper.exerciseNames().any { it == "Pull Up" || it == "Lat Pulldown" || it == "Crane Pulldown" })
