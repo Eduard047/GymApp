@@ -159,6 +159,7 @@ struct AddWorkoutView: View {
     private let garminPhone: GarminPhoneSyncService?
 
     @State private var date = Date()
+    @State private var dateIsExplicit = false
     @State private var note = ""
     @State private var profile = TrainingProfile()
     @State private var showsWeeklyTargetEditor = false
@@ -318,7 +319,10 @@ struct AddWorkoutView: View {
         }
         let profile = restoredDraft?.profile ?? launchSeed?.profile ?? storedProfile
         let seededDrafts = launchSeed.map { _ in launchSeedDrafts ?? [] }
-        let initialDate = restoredDraft?.date ?? Date()
+        let initialDateIsExplicit = restoredDraft?.dateIsExplicit ?? false
+        // A default date goes stale when a retained draft is reopened later, so only a
+        // back-logged date the user chose on purpose survives a restore.
+        let initialDate = initialDateIsExplicit ? (restoredDraft?.date ?? Date()) : Date()
         let initialNote = restoredDraft?.note ?? ""
         let initialEffort = restoredDraft?.selectedEffort ?? launchSeed?.requestedEffort ?? .auto
         let initialEditorDrafts = restoredDraft?.drafts ?? seededDrafts ?? initialDrafts.map {
@@ -331,6 +335,7 @@ struct AddWorkoutView: View {
                 )
         }
         _date = State(initialValue: initialDate)
+        _dateIsExplicit = State(initialValue: initialDateIsExplicit)
         _note = State(initialValue: initialNote)
         _profile = State(initialValue: profile)
         _selectedEffort = State(initialValue: initialEffort)
@@ -603,7 +608,13 @@ struct AddWorkoutView: View {
 
                 DatePicker(
                     "Workout date",
-                    selection: $date,
+                    selection: Binding(
+                        get: { date },
+                        set: { picked in
+                            date = picked
+                            dateIsExplicit = isBackLoggedWorkoutDate(picked)
+                        }
+                    ),
                     in: ...Date(),
                     displayedComponents: [.date, .hourAndMinute]
                 )
@@ -1977,7 +1988,10 @@ struct AddWorkoutView: View {
         }
         do {
             let active = try activeWorkoutStore.start(
-                workoutDate: date,
+                workoutDate: effectiveStartWorkoutDate(
+                    plannedDate: date,
+                    isExplicit: dateIsExplicit
+                ),
                 note: note,
                 exercises: drafts.map { exercise in
                     // `exercise.id`/`set.id` may be seeded from the catalog exercise ID or a
@@ -2051,7 +2065,8 @@ struct AddWorkoutView: View {
             smartPlanIsStale: smartPlanIsStale,
             drafts: drafts,
             baselinePlanSnapshot: baselinePlanSnapshot,
-            liveInviteRecipient: liveInviteRecipient
+            liveInviteRecipient: liveInviteRecipient,
+            dateIsExplicit: dateIsExplicit
         )
     }
 
@@ -2206,6 +2221,9 @@ struct WorkoutPlanEditorDraftState: Codable, Equatable {
     let drafts: [WorkoutEditorExerciseDraft]
     let baselinePlanSnapshot: PlanEditorSnapshot
     let liveInviteRecipient: SocialFriendSummary?
+    /// True only when the user back-logged `date` to an earlier day. Drafts saved before this
+    /// field existed decode as false, so their stale default date refreshes to now.
+    var dateIsExplicit: Bool = false
 
     func belongs(to accountStorageKey: String) -> Bool {
         !accountStorageKey.isEmpty && self.accountStorageKey == accountStorageKey
@@ -2308,9 +2326,67 @@ struct WorkoutPlanEditorDraftState: Codable, Equatable {
             smartPlanIsStale: smartPlanIsStale,
             drafts: drafts,
             baselinePlanSnapshot: baselinePlanSnapshot,
-            liveInviteRecipient: nil
+            liveInviteRecipient: nil,
+            dateIsExplicit: dateIsExplicit
         )
     }
+}
+
+extension WorkoutPlanEditorDraftState {
+    private enum CodingKeys: String, CodingKey {
+        case accountStorageKey, date, note, profile, selectedEffort, latestSmartPlan
+        case smartGeneratedDraftIDs, smartPlanIsStale, drafts, baselinePlanSnapshot
+        case liveInviteRecipient, dateIsExplicit
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            accountStorageKey: try container.decode(String.self, forKey: .accountStorageKey),
+            date: try container.decode(Date.self, forKey: .date),
+            note: try container.decode(String.self, forKey: .note),
+            profile: try container.decode(TrainingProfile.self, forKey: .profile),
+            selectedEffort: try container.decode(SmartWorkoutEffort.self, forKey: .selectedEffort),
+            latestSmartPlan: try container.decodeIfPresent(
+                SmartWorkoutPlan.self,
+                forKey: .latestSmartPlan
+            ),
+            smartGeneratedDraftIDs: try container.decode(
+                Set<UUID>.self,
+                forKey: .smartGeneratedDraftIDs
+            ),
+            smartPlanIsStale: try container.decode(Bool.self, forKey: .smartPlanIsStale),
+            drafts: try container.decode([WorkoutEditorExerciseDraft].self, forKey: .drafts),
+            baselinePlanSnapshot: try container.decode(
+                PlanEditorSnapshot.self,
+                forKey: .baselinePlanSnapshot
+            ),
+            liveInviteRecipient: try container.decodeIfPresent(
+                SocialFriendSummary.self,
+                forKey: .liveInviteRecipient
+            ),
+            dateIsExplicit: try container.decodeIfPresent(Bool.self, forKey: .dateIsExplicit)
+                ?? false
+        )
+    }
+}
+
+/// A plan keeps its own date only when the user explicitly back-logged it to an earlier day;
+/// otherwise the workout is dated by when it is actually started.
+func effectiveStartWorkoutDate(
+    plannedDate: Date,
+    isExplicit: Bool,
+    now: Date = Date()
+) -> Date {
+    isExplicit ? plannedDate : now
+}
+
+func isBackLoggedWorkoutDate(
+    _ date: Date,
+    now: Date = Date(),
+    calendar: Calendar = .current
+) -> Bool {
+    date < calendar.startOfDay(for: now)
 }
 
 enum ConfirmedLiveWorkoutDraftResolution: Equatable {

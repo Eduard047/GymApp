@@ -266,4 +266,54 @@ final class PlanEditorSnapshotTests: XCTestCase {
             ))
         ))
     }
+
+    func testDefaultDatedPlanStartsNowWhileExplicitBackLoggedDateIsKept() {
+        let calendar = Calendar(identifier: .gregorian)
+        let created = Date(timeIntervalSince1970: 1_787_000_000)
+        let performed = created.addingTimeInterval(5 * 86_400)
+
+        XCTAssertEqual(
+            effectiveStartWorkoutDate(plannedDate: created, isExplicit: false, now: performed),
+            performed
+        )
+        XCTAssertEqual(
+            effectiveStartWorkoutDate(plannedDate: created, isExplicit: true, now: performed),
+            created
+        )
+        XCTAssertTrue(isBackLoggedWorkoutDate(created, now: performed, calendar: calendar))
+        XCTAssertFalse(isBackLoggedWorkoutDate(performed, now: performed, calendar: calendar))
+    }
+
+    func testDraftStateSavedBeforeExplicitDateFlagDecodesAsDefaultDated() throws {
+        let snapshot = PlanEditorSnapshot(
+            date: Date(timeIntervalSince1970: 1_787_000_000),
+            note: "",
+            effort: .auto,
+            drafts: []
+        )
+        let state = WorkoutPlanEditorDraftState(
+            accountStorageKey: "account-a",
+            date: snapshot.date,
+            note: "",
+            profile: TrainingProfile(),
+            selectedEffort: .auto,
+            latestSmartPlan: nil,
+            smartGeneratedDraftIDs: [],
+            smartPlanIsStale: false,
+            drafts: [],
+            baselinePlanSnapshot: snapshot,
+            liveInviteRecipient: nil,
+            dateIsExplicit: true
+        )
+        let encoded = try JSONEncoder().encode(state)
+        XCTAssertEqual(try JSONDecoder().decode(WorkoutPlanEditorDraftState.self, from: encoded), state)
+
+        var legacy = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        legacy.removeValue(forKey: "dateIsExplicit")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+        let decoded = try JSONDecoder().decode(WorkoutPlanEditorDraftState.self, from: legacyData)
+        XCTAssertFalse(decoded.dateIsExplicit)
+    }
 }
