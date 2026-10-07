@@ -44,7 +44,7 @@ class ExerciseSearchLocalizationTest {
             "Тяга верхніх блоків у тренажері",
             invisibleLegacyAliasMatch.reason!!.value
         )
-        assertFalse(exerciseNameMatchesLocalizedQuery("Straight Arm Pulldown", "жу"))
+        assertTrue(exerciseNameMatchesLocalizedQuery("Straight Arm Pulldown", "жу"))
         assertFalse(exerciseNameMatchesLocalizedQuery("Upright Row", "вертикал"))
         assertFalse(exerciseNameMatchesLocalizedQuery("Upright Row", "вертикальна тяга"))
     }
@@ -165,17 +165,112 @@ class ExerciseSearchLocalizationTest {
         )
     }
 
+    private val builtIns
+        get() = com.example.gymapp.data.catalog.BuiltInExerciseCatalog.definitions
+
+    private fun nameAndAliasTokens(
+        definition: com.example.gymapp.data.catalog.BuiltInExerciseDefinition
+    ): List<String> {
+        val terms = listOf(
+            definition.nameEn,
+            definition.nameUk,
+            com.example.gymapp.data.catalog.BuiltInExerciseCatalog.displayName(definition.nameEn, "ru")
+        ) + definition.legacyAliases +
+            com.example.gymapp.data.catalog.BuiltInExerciseCatalog.searchAliasesForDefinition(definition)
+        return terms.flatMap { term -> exerciseSearchTokens(term, keepConnectorsWhenOnlyConnectors = true) }
+    }
+
     @Test
-    fun ambiguousEquipmentAbbreviationsDoNotFanOutByThemselves() {
-        listOf("db", "bb", "DB DB", "BB BB", "дб").forEach { query ->
-            assertFalse(
-                com.example.gymapp.data.catalog.BuiltInExerciseCatalog.definitions.any { definition ->
-                    exerciseNameMatchesLocalizedQuery(definition.nameEn, query)
+    fun equipmentAbbreviationsSearchByNameAndAliasWordPrefix() {
+        listOf("db", "bb", "DB DB", "BB BB").forEach { query ->
+            val prefix = exerciseSearchTokens(query).first()
+            val matches = builtIns.filter { definition ->
+                exerciseNameMatchesLocalizedQuery(definition.nameEn, query)
+            }
+            assertTrue(query, matches.isNotEmpty())
+            matches.forEach { definition ->
+                assertTrue(
+                    "$query -> ${definition.nameEn}",
+                    nameAndAliasTokens(definition).any { token -> token.startsWith(prefix) }
+                )
+            }
+        }
+        // "дб" must not crash; any match must start a name/alias word (directly or transliterated).
+        builtIns.forEach { definition -> exerciseNameMatchesLocalizedQuery(definition.nameEn, "дб") }
+        assertTrue(exerciseNameMatchesLocalizedQuery("Dumbbell Bench Press", "DB bench press"))
+        assertTrue(exerciseNameMatchesLocalizedQuery("Barbell Row", "BB row"))
+    }
+
+    @Test
+    fun oneAndTwoLetterQueriesMatchOnlyWordPrefixesOfNames() {
+        assertTrue(exerciseNameMatchesLocalizedQuery("Bench Press", "ж"))
+        assertTrue(exerciseNameMatchesLocalizedQuery("Жим штанги лежачи", "ж"))
+        assertFalse(exerciseNameMatchesLocalizedQuery("Моё упражнение", "ж"))
+        assertTrue(exerciseNameMatchesLocalizedQuery("Моё упражнение", "уп"))
+        assertFalse(exerciseNameMatchesLocalizedQuery("Моё упражнение", "пр"))
+        assertTrue(exerciseNameMatchesLocalizedQuery("Squat", "s"))
+        assertFalse(exerciseNameMatchesLocalizedQuery("Squat", "q"))
+        assertFalse(exerciseNameMatchesLocalizedQuery("Squat", "qu"))
+        // Muscle and equipment vocabulary never answer a 1-2 letter token.
+        assertNull(exerciseSearchMatch("Lat Pulldown", "sp"))
+        builtIns.forEach { definition ->
+            exerciseSearchMatch(definition.nameEn, "ж")?.let { match ->
+                assertTrue(
+                    definition.nameEn,
+                    match.reason?.kind !in setOf(
+                        ExerciseSearchMatchReasonKind.Muscle,
+                        ExerciseSearchMatchReasonKind.Equipment,
+                        ExerciseSearchMatchReasonKind.MuscleAndEquipment
+                    )
+                )
+            }
+        }
+        val russianMatches = builtIns.filter { definition ->
+            exerciseNameMatchesLocalizedQuery(definition.nameEn, "ж")
+        }
+        assertTrue(russianMatches.any { definition -> definition.nameEn == "Bench Press" })
+        russianMatches.forEach { definition ->
+            assertTrue(
+                definition.nameEn,
+                nameAndAliasTokens(definition).any { token ->
+                    token.startsWith("ж") || token.startsWith("zh")
                 }
             )
         }
-        assertTrue(exerciseNameMatchesLocalizedQuery("Dumbbell Bench Press", "DB bench press"))
-        assertTrue(exerciseNameMatchesLocalizedQuery("Barbell Row", "BB row"))
+    }
+
+    @Test
+    fun connectorOnlyQueriesFallBackToTheirOwnWordPrefixes() {
+        assertTrue(exerciseNameMatchesLocalizedQuery("Squat", "s"))
+        assertTrue(exerciseNameMatchesLocalizedQuery("Arnold Press", "a"))
+        assertTrue(exerciseNameMatchesLocalizedQuery("Вперёд шаги", "в"))
+        assertFalse(exerciseNameMatchesLocalizedQuery("Squat", "в"))
+        assertTrue(builtIns.any { definition -> exerciseNameMatchesLocalizedQuery(definition.nameEn, "a") })
+    }
+
+    @Test
+    fun wordPrefixOutranksMidWordSubstring() {
+        val leg = ExerciseEntity(id = 1, name = "Leg Extension")
+        val hyper = ExerciseEntity(id = 2, name = "Side Hyperextension")
+        val prefixMatch = exerciseSearchMatch(leg.name, "exten")!!.relevance
+        val midMatch = exerciseSearchMatch(hyper.name, "exten")!!.relevance
+        assertTrue("$prefixMatch > $midMatch", prefixMatch > midMatch)
+        val ranked = filterAndSortExercises(
+            exercises = listOf(hyper, leg),
+            exerciseWorkoutCounts = mapOf(hyper.id to 100),
+            muscleIdsByExerciseName = emptyMap(),
+            query = "exten",
+            bodyFilter = ExerciseBodyFilter.All,
+            muscleFilter = null,
+            sortMode = ExerciseSortMode.MostFrequent,
+            favoritesOnly = false,
+            languageTag = "en"
+        )
+        assertEquals(listOf(leg, hyper), ranked)
+        // Exact name tiers stay on top of a prefix match.
+        assertTrue(
+            exerciseSearchMatch("Leg Extension", "leg extension")!!.relevance > prefixMatch
+        )
     }
 
     @Test

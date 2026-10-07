@@ -143,7 +143,8 @@ private const val EXERCISE_SEARCH_TERM_MAX_CHARS = 128
 private const val EXERCISE_SEARCH_TERMS_PER_SOURCE_MAX = 96
 private const val EXERCISE_SEARCH_TYPO_TOKEN_MIN_CHARS = 5
 private const val EXERCISE_SEARCH_TYPO_TOKEN_MAX_CHARS = 48
-private val EXERCISE_SEARCH_AMBIGUOUS_TOKENS = setOf("bb", "db")
+/** Query tokens shorter than this match only as a word prefix of a name or alias token. */
+private const val EXERCISE_SEARCH_SHORT_TOKEN_MAX_CHARS = 2
 private val EXERCISE_SEARCH_TRANSLITERATED_CONNECTOR_TOKENS by lazy(
     LazyThreadSafetyMode.PUBLICATION
 ) {
@@ -246,6 +247,7 @@ private enum class ExerciseSearchSource(val priority: Int) {
 
 private enum class ExerciseSearchTokenMatchMode(val points: Int) {
     Exact(50),
+    Prefix(45),
     Partial(40),
     Stem(35),
     Transliteration(30),
@@ -275,18 +277,23 @@ private data class ExerciseSearchTokenEvidence(
     val mode: ExerciseSearchTokenMatchMode
 )
 
-internal fun exerciseSearchTokens(value: String): List<String> {
+internal fun exerciseSearchTokens(
+    value: String,
+    keepConnectorsWhenOnlyConnectors: Boolean = false
+): List<String> {
     val normalized = Normalizer.normalize(value, Normalizer.Form.NFC)
         .lowercase(Locale.ROOT)
         .replace('ё', 'е')
     val connectors = BuiltInExerciseCatalog.searchConnectorTokens()
     val tokens = mutableListOf<String>()
+    val rawTokens = mutableListOf<String>()
     val token = StringBuilder()
 
     fun finishToken() {
         if (token.isEmpty()) return
         val valueToken = token.toString()
         token.setLength(0)
+        rawTokens += valueToken
         if (
             valueToken !in connectors &&
             transliterateExerciseSearchToken(valueToken) !in
@@ -307,12 +314,17 @@ internal fun exerciseSearchTokens(value: String): List<String> {
         index += Character.charCount(codePoint)
     }
     finishToken()
-    return tokens
+    // A query made only of connectors ("a", "в", "on") searches by those words as prefixes.
+    return if (tokens.isEmpty() && keepConnectorsWhenOnlyConnectors) rawTokens else tokens
 }
 
-private fun exerciseSearchPhrase(value: String, maxChars: Int): ExerciseSearchPhrase? {
+private fun exerciseSearchPhrase(
+    value: String,
+    maxChars: Int,
+    keepConnectorsWhenOnlyConnectors: Boolean = false
+): ExerciseSearchPhrase? {
     if (value.isBlank() || value.length > maxChars) return null
-    val tokens = exerciseSearchTokens(value)
+    val tokens = exerciseSearchTokens(value, keepConnectorsWhenOnlyConnectors)
     if (
         tokens.isEmpty() ||
         tokens.size > EXERCISE_SEARCH_QUERY_MAX_TOKENS
@@ -429,6 +441,21 @@ private fun exerciseSearchTokenMatchMode(
     queryToken: String
 ): ExerciseSearchTokenMatchMode? {
     if (candidateToken == queryToken) return ExerciseSearchTokenMatchMode.Exact
+    if (queryToken.length <= EXERCISE_SEARCH_SHORT_TOKEN_MAX_CHARS) {
+        // 1-2 letter tokens match only the start of a word, also through transliteration.
+        if (candidateToken.startsWith(queryToken)) return ExerciseSearchTokenMatchMode.Prefix
+        return if (
+            transliterateExerciseSearchToken(candidateToken)
+                .startsWith(transliterateExerciseSearchToken(queryToken))
+        ) {
+            ExerciseSearchTokenMatchMode.Transliteration
+        } else {
+            null
+        }
+    }
+    if (candidateToken.length >= queryToken.length && candidateToken.startsWith(queryToken)) {
+        return ExerciseSearchTokenMatchMode.Prefix
+    }
     if (
         minOf(candidateToken.length, queryToken.length) >= 3 &&
         (candidateToken.contains(queryToken) || queryToken.contains(candidateToken))
@@ -497,6 +524,13 @@ private fun bestExerciseSearchEvidence(
     return candidates.asSequence()
         .flatMap { candidate ->
             candidate.phrase.tokens.asSequence().mapNotNull { candidateToken ->
+                if (
+                    queryToken.length <= EXERCISE_SEARCH_SHORT_TOKEN_MAX_CHARS &&
+                    (candidate.source == ExerciseSearchSource.Muscle ||
+                        candidate.source == ExerciseSearchSource.Equipment)
+                ) {
+                    return@mapNotNull null
+                }
                 exerciseSearchTokenMatchMode(candidateToken, queryToken)?.let { mode ->
                     ExerciseSearchTokenEvidence(candidate = candidate, mode = mode)
                 }
@@ -741,7 +775,8 @@ internal fun exerciseSearchMatch(
     if (rawQuery.isEmpty()) return ExerciseSearchMatch(relevance = 0, reason = null)
     val queryPhrase = exerciseSearchPhrase(
         rawQuery,
-        EXERCISE_SEARCH_QUERY_MAX_CHARS
+        EXERCISE_SEARCH_QUERY_MAX_CHARS,
+        keepConnectorsWhenOnlyConnectors = true
     ) ?: return null
     val definition = BuiltInExerciseCatalog.definitionForSearchName(exerciseName)
     val canonicalValues = if (definition == null) {
@@ -790,14 +825,6 @@ internal fun exerciseSearchMatch(
         ExerciseSearchSource.Alias,
         relevance = 30_000
     )?.let { return it }
-    if (
-        queryPhrase.tokens.all { queryToken ->
-            transliterateExerciseSearchToken(queryToken) in
-                EXERCISE_SEARCH_AMBIGUOUS_TOKENS
-        }
-    ) {
-        return null
-    }
     compactExerciseSearchMatch(
         queryPhrase,
         canonicalCandidates + aliasCandidates
