@@ -379,11 +379,12 @@ class ActiveWorkoutLifecycleTest {
     }
 
     @Test
-    fun exerciseAddedToSavedWorkoutMovesToTopWithoutChangingExistingHistory() = runBlocking {
-        withDatabase("workout-add-exercise-top") { database, repository ->
+    fun exerciseAddedToSavedWorkoutIsAppendedAtTheEndWithoutChangingExistingHistory() = runBlocking {
+        withDatabase("workout-add-exercise-end") { database, repository ->
             val firstExerciseId = repository.addExercise("Existing first exercise")
             val secondExerciseId = repository.addExercise("Existing second exercise")
-            val newExerciseId = repository.addExercise("New top exercise")
+            val newExerciseId = repository.addExercise("New last exercise")
+            val thirdNewExerciseId = repository.addExercise("Newest last exercise")
             val sessionId = repository.createWorkoutSession(
                 date = NOW,
                 note = "preserve rows",
@@ -402,9 +403,22 @@ class ActiveWorkoutLifecycleTest {
                 initialReps = 6
             )
 
+            repository.addExerciseToSession(
+                sessionId = sessionId,
+                exerciseId = thirdNewExerciseId,
+                initialWeight = 40.0,
+                initialReps = 5
+            )
+
             val after = checkNotNull(database.workoutDao().getSessionDetailsSnapshot(sessionId))
-            assertEquals(newExerciseId, after.workoutExercises.first().exercise.id)
-            assertEquals(listOf(0, 1, 2), after.workoutExercises.map { it.workoutExercise.orderIndex })
+            assertEquals(
+                listOf(firstExerciseId, secondExerciseId, newExerciseId, thirdNewExerciseId),
+                after.workoutExercises.map { it.exercise.id }
+            )
+            assertEquals(
+                listOf(0, 1, 2, 3),
+                after.workoutExercises.map { it.workoutExercise.orderIndex }
+            )
             assertTrue(after.workoutExercises.flatMap { it.sets }.map { it.id }.containsAll(existingSetIds))
             assertEquals("preserve rows", after.session.note)
         }

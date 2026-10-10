@@ -916,12 +916,17 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   assert.doesNotMatch(androidEmpty, /R\.string\.action_generate_smart_workout/);
   assert.match(
     androidEditor,
-    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,1500}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*FilledIconButton\(\s*onClick = onAddExerciseDraft/
+    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,1500}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*FilledIconButton\(\s*onClick = addExerciseDraftAndReveal/
+  );
+  // Add buttons go through a wrapper that reveals the appended (last) card, then delegates to the add flow.
+  assert.match(
+    androidEditor,
+    /val addExerciseDraftAndReveal: \(\) -> Unit = \{[\s\S]{0,200}onAddExerciseDraft\(\)\s*\}/
   );
   // DESIGN.md "Workout plan editor": Clear lives in the "⋯" menu after mic and "+".
   assert.match(
     androidEditor,
-    /FilledIconButton\(\s*onClick = onAddExerciseDraft[\s\S]{0,1600}Icons\.Default\.MoreHoriz[\s\S]{0,600}DropdownMenu\([\s\S]{0,1500}showClearConfirmation = true/
+    /FilledIconButton\(\s*onClick = addExerciseDraftAndReveal[\s\S]{0,1600}Icons\.Default\.MoreHoriz[\s\S]{0,600}DropdownMenu\([\s\S]{0,1500}showClearConfirmation = true/
   );
   assert.match(
     androidEditor,
@@ -1079,7 +1084,7 @@ test("Android exercise card matches the iOS compact set rows and single actions 
   // "+ Set" is a dashed footer button that keeps the "Add planned set" accessibility label.
   assert.match(card, /R\.string\.action_add_planned_set[\s\S]*WorkoutFooterButton\([\s\S]{0,200}R\.string\.editor_add_set_short[\s\S]{0,200}accessibilityLabel = addSetDescription[\s\S]{0,100}dashed = true/);
   // "+ Add exercise" is a dashed footer after the exercise list and reuses the existing add flow.
-  assert.match(androidEditor, /itemsIndexed\([\s\S]*if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*item\(key = "workout_plan_add_exercise_footer"\)[\s\S]{0,700}WorkoutFooterButton\([\s\S]{0,500}onClick = onAddExerciseDraft[\s\S]*if \(uiState\.hasValidationError\)/);
+  assert.match(androidEditor, /itemsIndexed\([\s\S]*if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*item\(key = "workout_plan_add_exercise_footer"\)[\s\S]{0,700}WorkoutFooterButton\([\s\S]{0,500}onClick = addExerciseDraftAndReveal[\s\S]*if \(uiState\.hasValidationError\)/);
   for (const [key, en, uk, ru] of [
     ["editor_chip_last_weight", "Last", "Ост. вага", "Посл. вес"],
     ["editor_chip_previous", "Prev.", "Попер.", "Пред."],

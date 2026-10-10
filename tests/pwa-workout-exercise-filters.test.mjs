@@ -60,7 +60,8 @@ test("workout picker uses filtered results while legacy option helper retains cu
   assert.match(filter, /exerciseMuscleFilter/);
   assert.match(filter, /exerciseSortMode === "most"/);
   assert.match(filter, /exerciseWorkoutCount/);
-  assert.match(selection, /workoutDraft\.blocks\.unshift\(nextBlock\)/);
-  assert.match(quickAdd, /session\.sets\.unshift\(set\)/);
-  assert.doesNotMatch(quickAdd, /session\.sets\.push/);
+  assert.match(selection, /workoutDraft\.blocks\.push\(nextBlock\)/);
+  assert.doesNotMatch(selection, /workoutDraft\.blocks\.unshift/);
+  assert.match(quickAdd, /session\.sets\.push\(set\)/);
+  assert.doesNotMatch(quickAdd, /session\.sets\.(?:unshift|shift)/);
 });

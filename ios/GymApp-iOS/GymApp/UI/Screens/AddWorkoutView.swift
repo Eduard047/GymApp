@@ -170,9 +170,9 @@ struct AddWorkoutView: View {
     @State private var drafts: [WorkoutEditorExerciseDraft] = []
     @State private var garminDraftSubmission: GarminDraftSubmission?
     @State private var showingExercisePicker = false
-    /// Bumped each time an exercise is inserted at the top of the plan, so the
-    /// editor can keep the Exercises header and the new card in view.
-    @State private var exerciseInsertionCount = 0
+    /// Id of the draft most recently appended to the end of the plan, so the
+    /// editor can scroll the new card into view.
+    @State private var lastInsertedDraftID: UUID?
     @State private var showingPreviousPicker = false
     @State private var replacementRequest: SmartReplacementRequest?
     @State private var statusMessage: String?
@@ -401,10 +401,11 @@ struct AddWorkoutView: View {
                     .padding(.bottom, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of: exerciseInsertionCount) { _, _ in
+                .onChange(of: lastInsertedDraftID) { _, newID in
+                    guard let newID else { return }
                     DispatchQueue.main.async {
                         withAnimation(.easeOut(duration: 0.2)) {
-                            scrollProxy.scrollTo("workout-plan-exercises-header", anchor: .top)
+                            scrollProxy.scrollTo(newID, anchor: .center)
                         }
                     }
                 }
@@ -958,6 +959,7 @@ struct AddWorkoutView: View {
                             drafts.removeAll { $0.id == item.id }
                         }
                     )
+                    .id(item.id)
                 }
             }
 
@@ -1687,19 +1689,18 @@ struct AddWorkoutView: View {
         guard !drafts.contains(where: { $0.exerciseID == exercise.id }) else { return }
         latestSmartPlan = nil
         smartPlanIsStale = !smartGeneratedDraftIDs.isEmpty
-        drafts.insert(
-            WorkoutEditorExerciseDraft(
-                exerciseID: exercise.id,
-                sets: [
-                    WorkoutEditorSetDraft(
-                        weight: store.lastWeight(exerciseID: exercise.id) ?? 0,
-                        reps: 10
-                    )
-                ]
-            ),
-            at: 0
+        // New exercises go to the end so the first added stays first.
+        let newDraft = WorkoutEditorExerciseDraft(
+            exerciseID: exercise.id,
+            sets: [
+                WorkoutEditorSetDraft(
+                    weight: store.lastWeight(exerciseID: exercise.id) ?? 0,
+                    reps: 10
+                )
+            ]
         )
-        exerciseInsertionCount += 1
+        drafts.append(newDraft)
+        lastInsertedDraftID = newDraft.id
     }
 
     private func applyPreviousWorkout(_ workout: WorkoutSession) {

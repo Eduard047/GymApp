@@ -1723,9 +1723,9 @@ public final class WorkoutStore: ObservableObject {
                 exerciseID: exerciseID,
                 sets: [WorkoutSet(weight: initialSet.weight, reps: initialSet.reps)]
             )
-            // Match new-workout creation: a manually added exercise is immediately
-            // visible at the top without deleting or rewriting any existing block.
-            state.workouts[workoutIndex].exercises.insert(block, at: 0)
+            // A manually added exercise goes to the end of the workout, so the
+            // first added stays first and no existing block is rewritten.
+            state.workouts[workoutIndex].exercises.append(block)
             created = block
         }
         return created!

@@ -93,18 +93,6 @@ interface WorkoutDao {
     )
     suspend fun getWorkoutExerciseCountForExercise(sessionId: Long, exerciseId: Long): Int
 
-    @Query(
-        "UPDATE workout_exercises SET orderIndex = -(orderIndex + 1) " +
-            "WHERE sessionId = :sessionId"
-    )
-    suspend fun moveWorkoutExerciseOrderIndexesToTemporaryRange(sessionId: Long): Int
-
-    @Query(
-        "UPDATE workout_exercises SET orderIndex = -orderIndex " +
-            "WHERE sessionId = :sessionId AND orderIndex < 0"
-    )
-    suspend fun moveWorkoutExerciseOrderIndexesDownFromTop(sessionId: Long): Int
-
     @Query("SELECT MAX(orderIndex) FROM workout_exercises WHERE sessionId = :sessionId")
     suspend fun getMaxWorkoutExerciseOrderIndex(sessionId: Long): Int?
 

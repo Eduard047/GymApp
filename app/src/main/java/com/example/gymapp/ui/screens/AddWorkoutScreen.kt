@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -68,6 +69,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -123,6 +125,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
+
+/** Lazy items (coach panel, exercises header) that precede the exercise cards in the plan editor. */
+private const val PLAN_EDITOR_LEADING_ITEM_COUNT = 2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -200,12 +205,30 @@ fun AddWorkoutScreen(
             onDismiss = { showTrainingSettings = false }
         )
     }
+    val listState = rememberLazyListState()
+    // New exercises are appended at the end, so bring the freshly added card into view.
+    var revealAppendedDraft by remember { mutableStateOf(false) }
+    var lastDraftCount by remember { mutableIntStateOf(uiState.exerciseDrafts.size) }
+    val draftCount = uiState.exerciseDrafts.size
+    LaunchedEffect(draftCount) {
+        val shouldReveal = revealAppendedDraft && draftCount > lastDraftCount
+        revealAppendedDraft = false
+        lastDraftCount = draftCount
+        if (shouldReveal) {
+            listState.animateScrollToItem(PLAN_EDITOR_LEADING_ITEM_COUNT + draftCount - 1)
+        }
+    }
+    val addExerciseDraftAndReveal: () -> Unit = {
+        revealAppendedDraft = true
+        onAddExerciseDraft()
+    }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     var showVoiceWorkoutSheet by rememberSaveable { mutableStateOf(false) }
     val requestClose = onNavigateToHistory
     Box(modifier = modifier.fillMaxSize()) {
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .testTag("workout_plan_editor_list")
@@ -265,7 +288,7 @@ fun AddWorkoutScreen(
                 }
                 if (uiState.exerciseDrafts.isNotEmpty()) {
                     FilledIconButton(
-                        onClick = onAddExerciseDraft,
+                        onClick = addExerciseDraftAndReveal,
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
@@ -329,7 +352,7 @@ fun AddWorkoutScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
-                        onClick = onAddExerciseDraft,
+                        onClick = addExerciseDraftAndReveal,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = null)
@@ -385,7 +408,7 @@ fun AddWorkoutScreen(
                     accessibilityLabel = addExerciseDescription,
                     dashed = true,
                     enabled = true,
-                    onClick = onAddExerciseDraft,
+                    onClick = addExerciseDraftAndReveal,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("workout_plan_add_exercise_footer")

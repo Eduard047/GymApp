@@ -572,3 +572,90 @@ test("free workout enrichment preserves watch metrics through save and sync repl
   vm.runInContext("workoutDetailEditSessionId = null", context);
   assert.equal(vm.runInContext("quickAddExercise(101, 201)", context), false);
 });
+
+test("newly added exercises append to the end of a saved workout and roll back exactly", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDetailEditSessionId = 201;
+    render = () => {};
+    saveState = () => {};
+    showToast = () => {};
+  `, context);
+  assert.equal(vm.runInContext("quickAddExercise(103, 201)", context), true);
+  assert.deepEqual(
+    JSON.parse(vm.runInContext("JSON.stringify(state.sessions[0].sets.map(set => set.exerciseName))", context)),
+    ["Bench Press", "Bench Press", "Squat", "Lat Pulldown"]
+  );
+  assert.equal(vm.runInContext("state.sessions[0].sets.at(-1).orderIndex", context), 0);
+  assert.deepEqual(
+    JSON.parse(vm.runInContext("JSON.stringify(exerciseReferencesForSession(state.sessions[0]).map(item => item.name))", context)),
+    ["Bench Press", "Squat", "Lat Pulldown"]
+  );
+
+  vm.runInContext(`
+    state.exercises.push({ id: 104, name: "Deadlift" });
+    saveState = () => { throw new Error("quota"); };
+  `, context);
+  assert.equal(vm.runInContext("quickAddExercise(104, 201)", context) === true, false);
+  assert.deepEqual(
+    JSON.parse(vm.runInContext("JSON.stringify(state.sessions[0].sets.map(set => set.id))", context)).slice(0, 3),
+    [301, 302, 303]
+  );
+  assert.equal(vm.runInContext("state.sessions[0].sets.length", context), 4);
+});
+
+test("plan editor appends new exercises and only replaces a lone empty placeholder", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    render = () => {};
+    saveState = () => {};
+    persistWorkoutDraft = () => {};
+    showToast = () => {};
+    workoutDraft = { blocks: [{ exerciseName: "", sets: [{ weight: "", reps: "" }] }] };
+    modal = { type: "workout-exercise-picker", target: "draft-new" };
+  `, context);
+  assert.equal(vm.runInContext("selectWorkoutExercise(101)", context), true);
+  vm.runInContext('modal = { type: "workout-exercise-picker", target: "draft-new" }', context);
+  assert.equal(vm.runInContext("selectWorkoutExercise(102)", context), true);
+  vm.runInContext('modal = { type: "workout-exercise-picker", target: "draft-new" }', context);
+  assert.equal(vm.runInContext("selectWorkoutExercise(103)", context), true);
+  assert.deepEqual(
+    JSON.parse(vm.runInContext("JSON.stringify(workoutDraft.blocks.map(block => block.exerciseName))", context)),
+    ["Bench Press", "Squat", "Lat Pulldown"]
+  );
+
+  const addBlock = appSource.slice(appSource.indexOf('if (action === "add-block")'), appSource.indexOf('if (action === "remove-block")'));
+  assert.match(addBlock, /workoutDraft\.blocks\.push\(\{ exerciseName: ""/);
+  assert.doesNotMatch(addBlock, /unshift/);
+});
+
+test("appending a plan-editor exercise scrolls the new last card into view, but replacing the placeholder does not", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    render = () => {};
+    saveState = () => {};
+    persistWorkoutDraft = () => {};
+    showToast = () => {};
+    globalThis.scrolls = [];
+    const card = name => ({ scrollIntoView(options) { globalThis.scrolls.push({ name, ...options }); } });
+    app.querySelectorAll = selector => selector === ".draft-list > .draft-exercise" ? [card("first"), card("last")] : [];
+    workoutDraft = { blocks: [{ exerciseName: "", sets: [{ weight: "", reps: "" }] }] };
+    modal = { type: "workout-exercise-picker", target: "draft-new" };
+    selectWorkoutExercise(101);
+  `, context);
+  assert.equal(vm.runInContext("scrolls.length", context), 0, "placeholder replacement does not scroll");
+  vm.runInContext(`
+    modal = { type: "workout-exercise-picker", target: "draft-new" };
+    selectWorkoutExercise(102);
+  `, context);
+  assert.deepEqual(
+    JSON.parse(vm.runInContext("JSON.stringify(scrolls)", context)),
+    [{ name: "last", block: "center", behavior: "smooth" }]
+  );
+  assert.match(appSource, /function scrollLastDraftBlockIntoView\(\)[\s\S]*prefers-reduced-motion: reduce[\s\S]*block: "center"/);
+  const addBlock = appSource.slice(appSource.indexOf('if (action === "add-block")'), appSource.indexOf('if (action === "remove-block")'));
+  assert.match(addBlock, /scrollLastDraftBlockIntoView\(\)/);
+});

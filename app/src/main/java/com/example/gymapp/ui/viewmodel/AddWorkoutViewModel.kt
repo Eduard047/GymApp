@@ -443,6 +443,12 @@ private class WorkoutDraftDigestWriter(
     }
 }
 
+/** New exercise cards are appended, so the first added stays first (insertion order). */
+internal fun appendExerciseDraft(
+    current: List<ExerciseInputState>,
+    draftId: Long
+): List<ExerciseInputState> = current + ExerciseInputState(draftId = draftId)
+
 internal fun hasRetainedWorkoutDraft(state: AddWorkoutUiState): Boolean =
     state.isDirty || state.exerciseDrafts.isNotEmpty() || state.note.isNotBlank()
 
@@ -1378,7 +1384,7 @@ class AddWorkoutViewModel internal constructor(
                 current
             } else {
                 markDraftDirty()
-                listOf(ExerciseInputState(draftId = nextDraftId++)) + current
+                appendExerciseDraft(current, nextDraftId++)
             }
         }
     }

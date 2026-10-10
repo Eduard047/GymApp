@@ -3162,21 +3162,12 @@ class GymRepository(
             require(existingCount < WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
                 "Workout exceeds the exercise limit."
             }
-            if (existingCount > 0) {
-                check(
-                    workoutDao.moveWorkoutExerciseOrderIndexesToTemporaryRange(sessionId) ==
-                        existingCount
-                ) { "Workout exercise order changed while inserting at the top." }
-                check(
-                    workoutDao.moveWorkoutExerciseOrderIndexesDownFromTop(sessionId) ==
-                        existingCount
-                ) { "Workout exercise order changed while inserting at the top." }
-            }
+            val nextOrderIndex = (workoutDao.getMaxWorkoutExerciseOrderIndex(sessionId) ?: -1) + 1
             val workoutExerciseId = workoutDao.insertWorkoutExercise(
                 WorkoutExerciseEntity(
                     sessionId = sessionId,
                     exerciseId = exerciseId,
-                    orderIndex = 0
+                    orderIndex = nextOrderIndex
                 )
             )
             setDao.insert(

@@ -232,10 +232,10 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         )
     }
 
-    func testAddingExerciseToExistingWorkoutInsertsAtTopWithoutRemovingHistory() throws {
-        let store = try makeStore(account: "add-exercise-at-top")
+    func testAddingExerciseToExistingWorkoutAppendsAtEndWithoutRemovingHistory() throws {
+        let store = try makeStore(account: "add-exercise-at-end")
         let existing = try store.addExercise(name: "Existing Row")
-        let added = try store.addExercise(name: "New Top Row")
+        let added = try store.addExercise(name: "New Last Row")
         let workout = try store.createWorkout(
             date: Date(timeIntervalSince1970: 1_700_000_000),
             exercises: [
@@ -253,9 +253,36 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         )
 
         let refreshed = try XCTUnwrap(store.workout(id: workout.id))
-        XCTAssertEqual(refreshed.exercises.map(\.exerciseID), [added.id, existing.id])
-        XCTAssertEqual(refreshed.exercises[1].sets.first?.weight, 40)
+        XCTAssertEqual(refreshed.exercises.map(\.exerciseID), [existing.id, added.id])
+        XCTAssertEqual(refreshed.exercises[0].sets.first?.weight, 40)
         XCTAssertEqual(store.exercises.map(\.id).contains(existing.id), true)
+    }
+
+    func testAddingSeveralExercisesToSavedWorkoutKeepsInsertionOrder() throws {
+        let store = try makeStore(account: "add-exercises-insertion-order")
+        let a = try store.addExercise(name: "Order A")
+        let b = try store.addExercise(name: "Order B")
+        let c = try store.addExercise(name: "Order C")
+        let workout = try store.createWorkout(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            exercises: [
+                WorkoutExerciseDraft(
+                    exerciseID: a.id,
+                    sets: [WorkoutSetDraft(weight: 30, reps: 10)]
+                )
+            ]
+        )
+
+        for exercise in [b, c] {
+            _ = try store.addExercise(
+                toWorkout: workout.id,
+                exerciseID: exercise.id,
+                initialSet: WorkoutSetDraft(weight: 20, reps: 12)
+            )
+        }
+
+        let refreshed = try XCTUnwrap(store.workout(id: workout.id))
+        XCTAssertEqual(refreshed.exercises.map(\.exerciseID), [a.id, b.id, c.id])
     }
 
     private func historyEntry(
