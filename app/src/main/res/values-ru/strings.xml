@@ -1352,11 +1352,11 @@
     <string name="workout_share_live_friend_supporting">Когда друг примет приглашение, одна синхронная тренировка начнётся для вас обоих.</string>
     <string name="workout_share_sheet_title">Поделиться</string>
     <string name="workout_share_hero_title">Поделиться тренировкой</string>
-    <string name="workout_share_hero_supporting">Поделись ссылкой, отправь редактируемую копию или пригласи друга тренироваться вживую.</string>
+    <string name="workout_share_hero_supporting">Отправь ссылку, копию или приглашение вживую.</string>
     <string name="workout_share_other_app_title">Отправить через другое приложение</string>
-    <string name="workout_share_other_app_supporting">Обычная ссылка GymApp работает без добавления получателя в друзья.</string>
+    <string name="workout_share_other_app_supporting">Работает без добавления в друзья.</string>
     <string name="workout_share_copy_or_live_title">Копия или вживую</string>
-    <string name="workout_share_copy_or_live_supporting">Копия остаётся независимой. Живой режим фиксирует план для двоих и показывает прогресс подходов каждого.</string>
+    <string name="workout_share_copy_or_live_supporting">Копия независима. Вживую — общий план и прогресс подходов.</string>
     <string name="workout_share_send_copy_action">Отправить копию</string>
     <string name="workout_share_invite_live_action">Пригласить вживую</string>
     <string name="workout_share_privacy_footer">До принятия отправляется только план. В живом режиме значения выполненных подходов и прогресс видят только двое участников. Заметки, данные Health и секреты аккаунта остаются приватными.</string>

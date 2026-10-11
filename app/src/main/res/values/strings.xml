@@ -1320,11 +1320,11 @@
     <string name="workout_share_live_friend_supporting">When your friend accepts, one synchronized workout starts for both of you.</string>
     <string name="workout_share_sheet_title">Share workout</string>
     <string name="workout_share_hero_title">Share workout</string>
-    <string name="workout_share_hero_supporting">Share a link, send an editable copy, or invite a friend to train live.</string>
+    <string name="workout_share_hero_supporting">Send a link, a copy, or a live invite.</string>
     <string name="workout_share_other_app_title">Use another app</string>
-    <string name="workout_share_other_app_supporting">The existing GymApp link works without adding the recipient as a friend.</string>
+    <string name="workout_share_other_app_supporting">Works without adding a friend.</string>
     <string name="workout_share_copy_or_live_title">Copy or live</string>
-    <string name="workout_share_copy_or_live_supporting">A copy stays independent. Live freezes the plan for two people and shows each person\'s set progress.</string>
+    <string name="workout_share_copy_or_live_supporting">A copy is independent. Live shares one plan and set progress.</string>
     <string name="workout_share_send_copy_action">Send copy</string>
     <string name="workout_share_invite_live_action">Invite live</string>
     <string name="workout_share_privacy_footer">Only the plan is sent before acceptance. In live mode, completed set values and live progress are visible only to the two participants. Notes, Health data and account secrets stay private.</string>
