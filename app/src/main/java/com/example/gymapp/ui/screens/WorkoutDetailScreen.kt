@@ -611,7 +611,14 @@ internal fun WorkoutDetailScreen(
                     onClick = {
                         confirmDeleteSession = false
                         onDeleteSession()
-                    }
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Text(text = stringResource(R.string.action_delete))
                 }

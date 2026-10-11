@@ -1218,7 +1218,7 @@
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>
     <string name="dialog_delete_workout_title">Видалити тренування?</string>
-    <string name="dialog_delete_workout_message">Буде видалено тренування за %1$s з усіма вправами й підходами.</string>
+    <string name="dialog_delete_workout_message">Буде видалено тренування за %1$s з усіма вправами й підходами. Цю дію не можна скасувати.</string>
     <string name="dialog_delete_exercise_title">Видалити вправу?</string>
     <string name="dialog_delete_exercise_message">Видалити «%1$s» із бібліотеки вправ?</string>
     <string name="dialog_delete_exercise_impact">Зачеплено тренувань: %1$d. Буде видалено блоків вправи: %2$d. Підходів: %3$d. Цю дію не можна скасувати.</string>

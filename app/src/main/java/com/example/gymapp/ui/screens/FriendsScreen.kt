@@ -498,7 +498,10 @@ internal fun FriendsScreen(
                         onBlockProfile(incomingFriendRequestBlockTarget(request))
                     }
                 ) {
-                    Text(stringResource(R.string.friend_block_action))
+                    Text(
+                        text = stringResource(R.string.friend_block_action),
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             },
             dismissButton = {

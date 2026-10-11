@@ -362,10 +362,11 @@ internal fun FriendDetailScreen(
                     }
                 ) {
                     Text(
-                        stringResource(
+                        text = stringResource(
                             if (action == FriendSafetyAction.Remove) R.string.friend_remove_action
                             else R.string.friend_block_action
-                        )
+                        ),
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             },

@@ -1186,7 +1186,7 @@
 
     <string name="dialog_edit_set_title">Edit Set</string>
     <string name="dialog_delete_workout_title">Delete workout?</string>
-    <string name="dialog_delete_workout_message">This will delete the workout from %1$s with all exercises and sets.</string>
+    <string name="dialog_delete_workout_message">This will delete the workout from %1$s with all exercises and sets. This action cannot be undone.</string>
     <string name="dialog_delete_exercise_title">Delete exercise?</string>
     <string name="dialog_delete_exercise_message">Delete “%1$s” from the exercise library?</string>
     <string name="dialog_delete_exercise_impact">Workouts affected: %1$d. Exercise blocks removed: %2$d. Sets deleted: %3$d. This cannot be undone.</string>

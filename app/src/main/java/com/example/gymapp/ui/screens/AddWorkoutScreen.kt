@@ -794,7 +794,10 @@ fun AddWorkoutScreen(
             text = { Text(stringResource(R.string.workout_plan_discard_message)) },
             confirmButton = {
                 TextButton(onClick = onDiscardPlan) {
-                    Text(stringResource(R.string.workout_plan_discard_changes))
+                    Text(
+                        text = stringResource(R.string.workout_plan_discard_changes),
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             },
             dismissButton = {

@@ -393,7 +393,10 @@ fun WorkoutListScreen(
                     onClick = {
                         showRetainedPlanCancelConfirmation = false
                         onCancelRetainedPlan()
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Text(stringResource(R.string.today_cancel_plan_confirm))
                 }

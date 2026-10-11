@@ -27,6 +27,10 @@ private val DarkColorScheme = darkColorScheme(
     background = Night,
     surface = NightSurface,
     surfaceVariant = NightSurfaceAlt,
+    // Dialogs, menus and date pickers read these roles; keep them on the GymApp inner-tile
+    // colour instead of the stock Material violet-grey container.
+    surfaceContainer = HeroTileNight,
+    surfaceContainerHigh = HeroTileNight,
     onSurfaceVariant = FrostMuted,
     onSurface = Frost,
     onBackground = Frost,
@@ -50,6 +54,10 @@ private val LightColorScheme = lightColorScheme(
     background = Canvas,
     surface = Paper,
     surfaceVariant = Mist,
+    // Dialogs, menus and date pickers read these roles; keep them on the GymApp inner-tile
+    // colour instead of the stock Material violet-grey container.
+    surfaceContainer = HeroTile,
+    surfaceContainerHigh = HeroTile,
     onSurfaceVariant = InkMuted,
     onSurface = Ink,
     onBackground = Ink,
