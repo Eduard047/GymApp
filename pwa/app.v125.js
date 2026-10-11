@@ -11924,7 +11924,7 @@ function render() {
         <h1>${titleForRoute(current)}</h1>
         ${current.name === "active" ? activeWorkoutMoreButtonMarkup() : `<span class="topbar-slot" aria-hidden="true"></span>`}
       </header>
-      <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}"${current.name === "add" && workoutDraftLiveSendInProgress ? ` inert aria-busy="true"` : ""}>${liveWorkoutBanner()}${socialWorkoutInviteBanner()}${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
+      <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}"${current.name === "add" && workoutDraftLiveSendInProgress ? ` inert aria-busy="true"` : ""}>${continueWorkoutBar(current)}${liveWorkoutBanner()}${socialWorkoutInviteBanner()}${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
       ${isRootRoute(current.name) ? bottomNav() : ""}
       ${modal ? modalMarkup() : ""}
       ${onboardingTour ? onboardingTourMarkup() : ""}
@@ -24522,6 +24522,14 @@ function socialWorkoutInviteBanner() {
   const invite = socialState.inbox?.incoming.find(row => row.status === "pending");
   if (!invite) return "";
   return `<section class="panel highlighted social-invite-banner"><span class="eyebrow">${tx("Workout invitation", "Запрошення на тренування")}</span><h2>${escapeHtml(invite.displayName)}</h2><p>${countNoun(invite.summary.exerciseCount, "exercises")} · ${countNoun(invite.summary.setCount, "sets")}</p><div class="actions"><button class="button" data-action="respond-workout-invite" data-decision="accept" data-invite-id="${escapeAttr(invite.inviteId)}" data-revision="${invite.inviteRevision}">${tx("Open plan", "Відкрити план")}</button><button class="button ghost" data-action="respond-workout-invite" data-decision="decline" data-invite-id="${escapeAttr(invite.inviteId)}" data-revision="${invite.inviteRevision}">${tx("Decline", "Відхилити")}</button></div></section>`;
+}
+
+function continueWorkoutBar(current) {
+  if (!activeWorkout || !current || ["active", "workouts", "add"].includes(current.name)) return "";
+  const counts = activeWorkoutSetCounts(activeWorkout);
+  const liveAttached = liveWorkoutBinding?.localWorkoutId === activeWorkout.id;
+  const discard = liveAttached ? "" : `<button type="button" class="continue-workout-bar-discard" data-action="discard-active-workout" aria-label="${tx3("Discard active workout", "Відкинути активне тренування", "Удалить активную тренировку")}">${svg("close")}</button>`;
+  return `<section class="continue-workout-bar" aria-label="${tx3("Continue workout", "Продовжити тренування", "Продолжить тренировку")}"><button type="button" class="continue-workout-bar-main" data-action="continue-active-workout"><svg class="continue-workout-bar-play" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12"></circle><path d="M9.5 7.5v9l7-4.5z"></path></svg><span class="continue-workout-bar-copy"><strong>${tx3("Continue workout", "Продовжити тренування", "Продолжить тренировку")}</strong><span>${counts.completed} / ${counts.total}</span></span></button>${discard}</section>`;
 }
 
 function liveWorkoutBanner() {

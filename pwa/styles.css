@@ -7651,3 +7651,96 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.continue-workout-bar {
+  position: sticky;
+  top: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 58px;
+  margin: 6px 4px 0;
+  border: 1px solid var(--hero-outline);
+  border-radius: 20px;
+  background: var(--hero-surface);
+  box-shadow: none;
+}
+
+.continue-workout-bar-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 6px 4px 6px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.continue-workout-bar-play {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  fill: var(--hero-action);
+}
+
+.continue-workout-bar-play path { fill: var(--hero-on-action); }
+
+.continue-workout-bar-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.continue-workout-bar-copy strong {
+  overflow: hidden;
+  color: var(--hero-action);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.continue-workout-bar-copy span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.continue-workout-bar-discard {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-inline-end: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.continue-workout-bar-discard svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.continue-workout-bar-main:focus-visible,
+.continue-workout-bar-discard:focus-visible {
+  outline: 2px solid var(--hero-action);
+  outline-offset: -2px;
+}
