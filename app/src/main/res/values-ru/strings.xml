@@ -165,7 +165,7 @@
     <string name="workout_invites_independent_copy">Приглашение копирует план. После старта каждый ведёт независимую тренировку; это не живая синхронизация подходов.</string>
     <string name="workout_invites_pending_count">Ждут %1$d приглашений на тренировку</string>
     <string name="workout_invites_load_failed">Не удалось загрузить приглашения на тренировки.</string>
-    <string name="workout_invite_summary">%1$d упражнений · %2$d подходов</string>
+    <string name="workout_invite_summary">%1$s · %2$s</string>
     <string name="workout_invite_status_pending">Ждёт ответа</string>
     <string name="workout_invite_status_accepted">Принято</string>
     <string name="workout_invite_status_declined">Отклонено</string>
@@ -633,7 +633,6 @@
     <string name="timer_channel_finished_description">Звук и всплывающее уведомление после завершения таймера.</string>
 
     <string name="exercise_block_title">Упражнение %1$d</string>
-    <string name="exercise_set_count_compact">%1$d подходов</string>
     <plurals name="saved_workout_set_count">
         <item quantity="one">%1$d подход</item>
         <item quantity="few">%1$d подхода</item>
@@ -691,7 +690,7 @@
     <string name="message_shared_workout_import_failed">Не удалось безопасно добавить эту общую тренировку.</string>
     <string name="action_discard_shared_link">Удалить ссылку</string>
     <string name="shared_workout_preview_title">Тренировка от друга</string>
-    <string name="shared_workout_preview_summary">%1$d упражнений · %2$d подходов. Ничего не сохранится, пока ты не начнёшь или не сохранишь тренировку.</string>
+    <string name="shared_workout_preview_summary">%1$s · %2$s. Ничего не сохранится, пока ты не начнёшь или не сохранишь тренировку.</string>
     <string name="shared_workout_more_exercises">Ещё упражнений: %1$d</string>
     <string name="action_open_shared_workout_in_app">Открыть как черновик</string>
     <string name="action_open_shared_workout_on_web">Открыть на сайте</string>
@@ -720,8 +719,6 @@
     <string name="workout_section_header_title">Список тренировок</string>
     <string name="workout_section_header_empty">Новые сессии появятся здесь, как только ты их запишешь.</string>
     <string name="workout_section_header_hint">Быстрый переход к записанным сессиям без прокрутки всего обзора.</string>
-    <string name="workout_section_header_count_one">1 сессия</string>
-    <string name="workout_section_header_count_many">%1$d сессий</string>
     <string name="missions_daily_title">Ежедневные миссии</string>
     <string name="missions_daily_short">День</string>
     <string name="missions_daily_supporting">Небольшие победы на сегодня.</string>
@@ -1211,7 +1208,13 @@
     <string name="garmin_set_hr_end">Конец</string>
     <string name="garmin_set_interval_gym_calories">Gym %1$s ккал</string>
     <string name="workout_comparison_title">Сравнение тренировок</string>
-    <string name="workout_comparison_supporting">%1$d совпадающих упражнений • предыдущая тренировка %2$s</string>
+    <plurals name="workout_comparison_matching_exercises">
+        <item quantity="one">%1$d совпадающее упражнение</item>
+        <item quantity="few">%1$d совпадающих упражнения</item>
+        <item quantity="many">%1$d совпадающих упражнений</item>
+        <item quantity="other">%1$d совпадающего упражнения</item>
+    </plurals>
+    <string name="workout_comparison_supporting">%1$s · %2$s</string>
     <string name="workout_comparison_previous_delta">Раньше %1$s · %2$s</string>
     <string name="workout_comparison_no_change">без изменений</string>
 

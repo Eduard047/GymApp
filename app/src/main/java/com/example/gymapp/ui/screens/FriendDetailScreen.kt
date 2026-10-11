@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -452,7 +453,11 @@ private fun FriendActivityRow(
         ) {
             Text(localizedFriendActivityDay(day), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.workout_invite_summary, exerciseCount, setCount),
+                stringResource(
+                    R.string.workout_invite_summary,
+                    pluralStringResource(R.plurals.saved_workout_exercise_count, exerciseCount, exerciseCount),
+                    pluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -499,8 +504,8 @@ private fun FriendWorkoutCard(
             Text(
                 stringResource(
                     R.string.workout_invite_summary,
-                    workout.exerciseCount,
-                    workout.setCount
+                    pluralStringResource(R.plurals.saved_workout_exercise_count, workout.exerciseCount, workout.exerciseCount),
+                    pluralStringResource(R.plurals.saved_workout_set_count, workout.setCount, workout.setCount)
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -537,8 +542,8 @@ private fun FriendWorkoutSummaryCard(workout: SocialRecentWorkout) {
             Text(
                 stringResource(
                     R.string.workout_invite_summary,
-                    workout.exerciseCount,
-                    workout.setCount
+                    pluralStringResource(R.plurals.saved_workout_exercise_count, workout.exerciseCount, workout.exerciseCount),
+                    pluralStringResource(R.plurals.saved_workout_set_count, workout.setCount, workout.setCount)
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

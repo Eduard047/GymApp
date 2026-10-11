@@ -518,11 +518,7 @@ private fun WorkoutSectionHeader(
                 )
             }
             InfoPill(
-                text = if (sessionCount == 1) {
-                    stringResource(R.string.workout_section_header_count_one)
-                } else {
-                    stringResource(R.string.workout_section_header_count_many, sessionCount)
-                }
+                text = pluralStringResource(R.plurals.progress_sessions_count, sessionCount, sessionCount)
             )
         }
     }

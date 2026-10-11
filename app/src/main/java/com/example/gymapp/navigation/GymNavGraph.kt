@@ -67,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.onClick
@@ -4879,8 +4880,8 @@ private fun SharedWorkoutPreviewDialog(
             Text(
                 text = stringResource(
                     R.string.shared_workout_preview_summary,
-                    exerciseCount,
-                    setCount
+                    pluralStringResource(R.plurals.saved_workout_exercise_count, exerciseCount, exerciseCount),
+                    pluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
                 ) + "\n\n" + visibleNames + extra
             )
         },

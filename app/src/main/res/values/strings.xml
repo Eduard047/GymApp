@@ -165,7 +165,7 @@
     <string name="workout_invites_independent_copy">An invite copies this plan. After either person starts, both workouts stay independent; this is not live set sync.</string>
     <string name="workout_invites_pending_count">%1$d workout invites waiting</string>
     <string name="workout_invites_load_failed">Could not load workout invites.</string>
-    <string name="workout_invite_summary">%1$d exercises · %2$d sets</string>
+    <string name="workout_invite_summary">%1$s · %2$s</string>
     <string name="workout_invite_status_pending">Waiting for a response</string>
     <string name="workout_invite_status_accepted">Accepted</string>
     <string name="workout_invite_status_declined">Declined</string>
@@ -621,7 +621,6 @@
     <string name="timer_channel_finished_description">Sound and popup when rest timer completes.</string>
 
     <string name="exercise_block_title">Exercise %1$d</string>
-    <string name="exercise_set_count_compact">%1$d sets</string>
     <plurals name="saved_workout_set_count">
         <item quantity="one">%1$d set</item>
         <item quantity="other">%1$d sets</item>
@@ -673,7 +672,7 @@
     <string name="message_shared_workout_import_failed">This shared workout could not be added safely.</string>
     <string name="action_discard_shared_link">Discard link</string>
     <string name="shared_workout_preview_title">Workout from a friend</string>
-    <string name="shared_workout_preview_summary">%1$d exercises · %2$d sets. Nothing will be saved until you start or save it.</string>
+    <string name="shared_workout_preview_summary">%1$s · %2$s. Nothing will be saved until you start or save it.</string>
     <string name="shared_workout_more_exercises">+%1$d more exercises</string>
     <string name="action_open_shared_workout_in_app">Open as draft</string>
     <string name="action_open_shared_workout_on_web">Open on website</string>
@@ -702,8 +701,6 @@
     <string name="workout_section_header_title">Workout list</string>
     <string name="workout_section_header_empty">New sessions will appear here as soon as you log them.</string>
     <string name="workout_section_header_hint">Jump straight into your logged sessions without scrolling past the full overview.</string>
-    <string name="workout_section_header_count_one">1 session</string>
-    <string name="workout_section_header_count_many">%1$d sessions</string>
     <string name="missions_daily_title">Daily Missions</string>
     <string name="missions_daily_short">Day</string>
     <string name="missions_daily_supporting">Small wins for today.</string>
@@ -1179,7 +1176,11 @@
     <string name="garmin_set_hr_end">End</string>
     <string name="garmin_set_interval_gym_calories">Gym %1$s kcal</string>
     <string name="workout_comparison_title">Workout comparison</string>
-    <string name="workout_comparison_supporting">%1$d matching exercises • previous workout %2$s</string>
+    <plurals name="workout_comparison_matching_exercises">
+        <item quantity="one">%1$d matching exercise</item>
+        <item quantity="other">%1$d matching exercises</item>
+    </plurals>
+    <string name="workout_comparison_supporting">%1$s · %2$s</string>
     <string name="workout_comparison_previous_delta">Previous %1$s · %2$s</string>
     <string name="workout_comparison_no_change">no change</string>
 

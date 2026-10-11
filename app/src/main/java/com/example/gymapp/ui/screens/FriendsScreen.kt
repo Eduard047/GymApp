@@ -46,6 +46,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -1270,8 +1271,8 @@ private fun IncomingWorkoutInviteCard(
             Text(
                 stringResource(
                     R.string.workout_invite_summary,
-                    invite.summary.exerciseCount,
-                    invite.summary.setCount
+                    pluralStringResource(R.plurals.saved_workout_exercise_count, invite.summary.exerciseCount, invite.summary.exerciseCount),
+                    pluralStringResource(R.plurals.saved_workout_set_count, invite.summary.setCount, invite.summary.setCount)
                 ),
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -1325,8 +1326,8 @@ private fun OutgoingWorkoutInviteCard(
             Text(
                 stringResource(
                     R.string.workout_invite_summary,
-                    invite.summary.exerciseCount,
-                    invite.summary.setCount
+                    pluralStringResource(R.plurals.saved_workout_exercise_count, invite.summary.exerciseCount, invite.summary.exerciseCount),
+                    pluralStringResource(R.plurals.saved_workout_set_count, invite.summary.setCount, invite.summary.setCount)
                 ),
                 style = MaterialTheme.typography.bodyMedium
             )

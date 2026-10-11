@@ -118,7 +118,11 @@ fun WorkoutComparisonCard(
                 title = androidx.compose.ui.res.stringResource(R.string.workout_comparison_title),
                 supporting = androidx.compose.ui.res.stringResource(
                     R.string.workout_comparison_supporting,
-                    comparison.matchedExerciseCount,
+                    androidx.compose.ui.res.pluralStringResource(
+                        R.plurals.workout_comparison_matching_exercises,
+                        comparison.matchedExerciseCount,
+                        comparison.matchedExerciseCount
+                    ),
                     DateTimeUtils.formatDate(comparison.previousSessionDate)
                 )
             )
