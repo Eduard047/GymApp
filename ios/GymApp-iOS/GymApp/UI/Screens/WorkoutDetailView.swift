@@ -1416,6 +1416,14 @@ struct WorkoutDetailView: View {
                             watchMetricsSection(summary, activityOnly: activityOnly)
                         }
 
+                        if let comparison = WorkoutComparisonEngine.comparison(
+                            for: workoutID,
+                            workouts: store.workouts,
+                            exercises: store.exercises
+                        ) {
+                            WorkoutComparisonCard(comparison: comparison)
+                        }
+
                         if let statusMessage {
                             GymStatusBanner(message: statusMessage, isError: true)
                         }
