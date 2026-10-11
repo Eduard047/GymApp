@@ -587,11 +587,11 @@ private fun FocusLens(
     val lensBrush = remember(darkTheme) {
         if (darkTheme) {
             Brush.linearGradient(
-                listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B))
+                listOf(Color(0xFF124A96), Color(0xFF1569BB), Color(0xFF164F9B))
             )
         } else {
             Brush.linearGradient(
-                listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD))
+                listOf(Color(0xFF1A62CB), Color(0xFF1E66D0), Color(0xFF1A57B6))
             )
         }
     }
@@ -649,7 +649,7 @@ private fun FocusLens(
                     activeWorkoutFocus.totalSets
                 ),
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.88f)
+                color = Color.White
             )
         } else if (hasCompletedToday) {
             Text(
@@ -1698,11 +1698,11 @@ private fun FirstWorkoutActivationCard(
     val heroBrush = remember(darkTheme) {
         if (darkTheme) {
             Brush.linearGradient(
-                listOf(Color(0xFF124A96), Color(0xFF176FC5), Color(0xFF164F9B))
+                listOf(Color(0xFF124A96), Color(0xFF1569BB), Color(0xFF164F9B))
             )
         } else {
             Brush.linearGradient(
-                listOf(Color(0xFF1B71D8), Color(0xFF3295F1), Color(0xFF2467CD))
+                listOf(Color(0xFF1A62CB), Color(0xFF1E66D0), Color(0xFF1A57B6))
             )
         }
     }
@@ -2110,7 +2110,7 @@ private fun FocusLensMetric(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.72f)
+            color = Color.White
         )
     }
 }

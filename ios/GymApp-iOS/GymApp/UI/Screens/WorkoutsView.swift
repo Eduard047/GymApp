@@ -1052,7 +1052,7 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.86))
+                    .foregroundStyle(Color.white)
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1129,7 +1129,7 @@ public struct WorkoutsView: View {
                 if let guidance {
                     Text(todayPlanExplanation(guidance))
                         .font(.caption)
-                        .foregroundStyle(Color.white.opacity(0.86))
+                        .foregroundStyle(Color.white)
                 }
                 todayHeroMetricsRow(projection.heroMetrics)
                 if includeManualAction {
@@ -1185,7 +1185,7 @@ public struct WorkoutsView: View {
                     languageCode: languageCode
                 ))
                 .font(.subheadline.monospacedDigit())
-                .foregroundStyle(Color.white.opacity(0.88))
+                .foregroundStyle(Color.white)
             }
 
             DisclosureGroup(

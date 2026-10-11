@@ -56,8 +56,9 @@ public enum GymTheme {
     public static let outlineSoft = adaptive(light: 0xDCE5F2, dark: 0x263E59)
     public static let error = adaptive(light: 0xB42318, dark: 0xFFB4AC)
 
-    public static let heroLeading = adaptive(light: 0x1A71D8, dark: 0x124A96)
-    public static let heroTrailing = adaptive(light: 0x2F91EF, dark: 0x176FC5)
+    public static let heroLeading = adaptive(light: 0x1A62CB, dark: 0x124A96)
+    public static let heroMiddle = adaptive(light: 0x1E66D0, dark: 0x1569BB)
+    public static let heroTrailing = adaptive(light: 0x1A57B6, dark: 0x164F9B)
     public static let onHero = Color.white
 
     public static let panelCornerRadius: CGFloat = 26
@@ -79,7 +80,7 @@ public enum GymTheme {
 
     public static var heroGradient: LinearGradient {
         LinearGradient(
-            colors: [heroLeading, heroTrailing],
+            colors: [heroLeading, heroMiddle, heroTrailing],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )

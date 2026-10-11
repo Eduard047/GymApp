@@ -3249,7 +3249,7 @@ button.leaderboard-row {
   overflow: hidden;
   color: #ffffff;
   border-radius: 28px;
-  background: linear-gradient(145deg, #1b71d8 0%, #3295f1 52%, #2467cd 100%);
+  background: linear-gradient(145deg, #1a62cb 0%, #1e66d0 52%, #1a57b6 100%);
   box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
 }
 
@@ -3266,7 +3266,7 @@ button.leaderboard-row {
 .focus-lens-copy p {
   max-width: 44ch;
   margin: 0;
-  color: rgba(255, 255, 255, 0.84);
+  color: #ffffff;
   font-size: 15px;
   line-height: 22px;
 }
@@ -3278,7 +3278,7 @@ button.leaderboard-row {
   letter-spacing: -0.2px;
 }
 .focus-lens.active .focus-lens-copy p {
-  color: rgba(255, 255, 255, 0.88);
+  color: #ffffff;
   font-size: 14px;
   line-height: 20px;
   font-variant-numeric: tabular-nums;
@@ -3299,7 +3299,7 @@ button.leaderboard-row {
   font-variant-numeric: tabular-nums;
 }
 .focus-lens-metrics span {
-  color: rgba(255, 255, 255, 0.72);
+  color: #ffffff;
   font-size: 12px;
   line-height: 16px;
 }
@@ -3385,7 +3385,7 @@ button.leaderboard-row {
 .focus-lens-plan-metrics span {
   display: -webkit-box;
   margin-top: 2px;
-  color: rgba(255, 255, 255, 0.72);
+  color: #ffffff;
   font-size: 12px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -3810,7 +3810,7 @@ button.leaderboard-row {
 }
 .activation-actions .button.ghost { color: #ffffff; border-color: transparent; background: transparent; }
 .activation-card-retained {
-  background: linear-gradient(145deg, #1b71d8 0%, #3295f1 52%, #2467cd 100%);
+  background: linear-gradient(145deg, #1a62cb 0%, #1e66d0 52%, #1a57b6 100%);
   box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
 }
 .activation-card-retained .activation-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -4023,7 +4023,7 @@ button.leaderboard-row {
 }
 .activation-actions .button.ghost { color: #ffffff; border-color: transparent; background: transparent; }
 .activation-card-retained {
-  background: linear-gradient(145deg, #1b71d8 0%, #3295f1 52%, #2467cd 100%);
+  background: linear-gradient(145deg, #1a62cb 0%, #1e66d0 52%, #1a57b6 100%);
   box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
 }
 .activation-card-retained .activation-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
