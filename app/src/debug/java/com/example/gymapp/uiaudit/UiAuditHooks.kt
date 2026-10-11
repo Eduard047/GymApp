@@ -72,6 +72,9 @@ object UiAuditHooks {
     private val request = MutableStateFlow<RouteRequest?>(null)
     private var activityRef: WeakReference<Activity>? = null
 
+    /** Routes shown on the signed-out Auth screen: no nav graph to wait for, and the seed (which opens a profile) is ignored. */
+    private val signedOutRoutes = setOf("sign-in", "offline-profile-sheet")
+
     private class RouteRequest(val screenId: String, val seedReady: Job?)
 
     /** Small router keyed by screen_id; step 2 adds sheet/dialog entries here. */
@@ -296,6 +299,71 @@ object UiAuditHooks {
                 openTab(nav, AppDestination.Profile)
                 step("training-settings", "settings row", string(nav, R.string.training_settings_title), scroll = true)
             }
+        },
+        // Batch B2 (Exercises + Profile + onboarding). Presented only: nothing is saved, deleted, confirmed or signed in.
+        // Not routed (unsupported, see HOOKS.md): language-menu, backup-tools.
+        "exercise-filters" to { nav, app ->
+            if (openExercises(nav, app, "exercise-filters")) {
+                step("exercise-filters", "filters button", string(nav, R.string.exercise_filters_label))
+            }
+        },
+        // The header "+" (topmost match) opens the add-exercise sheet; the sheet's own save button is never touched.
+        "exercise-editor" to { nav, app ->
+            if (openExercises(nav, app, "exercise-editor")) {
+                step("exercise-editor", "add button", string(nav, R.string.action_add_exercise), topmost = true)
+            }
+        },
+        // Overflow menu of the first catalog row (topmost "More actions" button).
+        "exercise-actions" to { nav, app ->
+            if (openExercises(nav, app, "exercise-actions")) openExerciseMenu("exercise-actions")
+        },
+        "exercise-history" to { nav, app ->
+            if (openExercises(nav, app, "exercise-history") && openExerciseMenu("exercise-history")) {
+                step("exercise-history", "history item", string(nav, R.string.exercise_card_history))
+            }
+        },
+        "exercise-muscle-mapping" to { nav, app ->
+            if (openExercises(nav, app, "exercise-muscle-mapping") && openExerciseMenu("exercise-muscle-mapping")) {
+                step("exercise-muscle-mapping", "muscle groups item", string(nav, R.string.exercise_card_muscle_groups))
+            }
+        },
+        // The menu's Delete item only asks for confirmation; the dialog's confirm button is never clicked.
+        "exercise-delete-dialog" to { nav, app ->
+            if (openExercises(nav, app, "exercise-delete-dialog") && openExerciseMenu("exercise-delete-dialog")) {
+                step("exercise-delete-dialog", "delete item", string(nav, R.string.action_delete))
+            }
+        },
+        "account-settings" to { nav, app ->
+            if (auditRepository(app, "account-settings") != null) {
+                openTab(nav, AppDestination.Profile)
+                step("account-settings", "account row", string(nav, R.string.account_sheet_title), scroll = true)
+            }
+        },
+        // Local-profile delete dialog only (the row in the account sheet just opens it); never confirmed.
+        // The cloud variant needs a signed-in cloud account and is not routable.
+        "account-delete-dialog" to { nav, app ->
+            if (auditRepository(app, "account-delete-dialog") != null) {
+                openTab(nav, AppDestination.Profile)
+                if (step("account-delete-dialog", "account row", string(nav, R.string.account_sheet_title), scroll = true)) {
+                    step("account-delete-dialog", "delete profile row", string(nav, R.string.local_profile_delete_action))
+                }
+            }
+        },
+        // Replays the first-run tour from Profile > Settings > Help (it only needs no active workout). The nav graph
+        // treats an active audit launch as "do not show the tutorial", so the flag is dropped for this route.
+        "tutorial" to { nav, app ->
+            if (auditRepository(app, "tutorial") != null) {
+                openTab(nav, AppDestination.Profile)
+                isActive = false
+                step("tutorial", "help row", string(nav, R.string.profile_help_title), scroll = true)
+            }
+        },
+        // Signed-out routes: run without the nav graph (it does not exist while signed out) on a fresh profile.
+        "sign-in" to { _, app -> requireSignedOut(app, "sign-in") },
+        "offline-profile-sheet" to { nav, app ->
+            if (requireSignedOut(app, "offline-profile-sheet")) {
+                step("offline-profile-sheet", "continue offline button", string(nav, R.string.auth_continue_offline), scroll = true)
+            }
         }
     )
 
@@ -315,7 +383,7 @@ object UiAuditHooks {
         val app = activity.application as GymApplication
 
         language?.let { applyLanguage(app, it) }
-        val seedJob = seed?.let { startSeed(app, it) }
+        val seedJob = seed?.takeIf { route !in signedOutRoutes }?.let { startSeed(app, it) }
         route?.let { screenId ->
             if (screenId in routes) {
                 request.value = RouteRequest(screenId, seedJob)
@@ -333,7 +401,7 @@ object UiAuditHooks {
             try {
                 current.seedReady?.join()
                 // Wait until the NavHost graph exists (it is absent while signed out).
-                navController.currentBackStackEntryFlow.first()
+                if (current.screenId !in signedOutRoutes) navController.currentBackStackEntryFlow.first()
                 val app = navController.context.applicationContext as GymApplication
                 requireNotNull(routes[current.screenId]).invoke(navController, app)
                 request.compareAndSet(current, null)
@@ -376,6 +444,29 @@ object UiAuditHooks {
             RegexOption.DOT_MATCHES_ALL
         )
         return { regex.matches(it) }
+    }
+
+    private fun openExercises(nav: NavHostController, app: GymApplication, route: String): Boolean {
+        if (auditRepository(app, route) == null) return false
+        openTab(nav, AppDestination.Exercises)
+        return true
+    }
+
+    /** Opens the overflow menu of the topmost catalog row (all rows share the "More actions" description). */
+    private suspend fun openExerciseMenu(route: String): Boolean {
+        val label = activityRef?.get()?.getString(R.string.cd_more_actions)
+        if (label == null) {
+            Log.w(TAG, "$route: no activity")
+            return false
+        }
+        return step(route, "row menu", { it == label }, topmost = true)
+    }
+
+    /** The signed-out Auth screen is only reachable with no session at all (fresh profile). */
+    private fun requireSignedOut(app: GymApplication, route: String): Boolean {
+        if (app.cloudAuthManager.authState.value.session == null) return true
+        Log.w(TAG, "$route: needs a signed-out app (pm clear first)")
+        return false
     }
 
     private fun openProgress(nav: NavHostController, app: GymApplication, route: String): Boolean {
