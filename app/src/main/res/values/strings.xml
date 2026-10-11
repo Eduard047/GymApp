@@ -930,7 +930,6 @@
     <string name="today_edit_plan">Edit plan</string>
     <string name="today_start_plan">Start plan</string>
     <string name="workout_plan_more_options">More options</string>
-    <string name="workout_plan_more_options_supporting">Date, notes, templates, sharing &amp; Garmin</string>
     <string name="workout_plan_discard_title">Discard plan changes?</string>
     <string name="workout_plan_discard_message">Your edits will be lost.</string>
     <string name="workout_plan_keep_editing">Keep editing</string>

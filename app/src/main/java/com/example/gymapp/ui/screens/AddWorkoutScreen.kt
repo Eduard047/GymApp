@@ -542,11 +542,6 @@ fun AddWorkoutScreen(
                             text = stringResource(R.string.workout_plan_more_options),
                             style = MaterialTheme.typography.titleMedium
                         )
-                        Text(
-                            text = stringResource(R.string.workout_plan_more_options_supporting),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                     Icon(
                         imageVector = if (secondaryOptionsExpanded) {

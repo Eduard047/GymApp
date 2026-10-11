@@ -962,7 +962,6 @@
     <string name="today_edit_plan">Редагувати план</string>
     <string name="today_start_plan">Почати план</string>
     <string name="workout_plan_more_options">Додаткові параметри</string>
-    <string name="workout_plan_more_options_supporting">Дата, нотатки, шаблони, поширення та Garmin</string>
     <string name="workout_plan_discard_title">Відкинути зміни плану?</string>
     <string name="workout_plan_discard_message">Зміни буде втрачено.</string>
     <string name="workout_plan_keep_editing">Продовжити редагування</string>
