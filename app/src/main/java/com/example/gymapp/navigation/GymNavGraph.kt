@@ -119,6 +119,7 @@ import com.example.gymapp.push.matchesSession
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_STEPS
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_VERSION
 import com.example.gymapp.ui.components.FirstRunTutorialOverlay
+import com.example.gymapp.uiaudit.UiAuditHooks
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
@@ -733,6 +734,7 @@ internal fun GymAppRoot(
     // Language is part of the identity too: retained ViewModels can contain already-formatted
     // labels, so keeping them across a locale switch produces a mixed-language screen.
     val navController = key(uiIsolationKey, selectedLanguage) { rememberNavController() }
+    UiAuditHooks.RouteEffect(navController)
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     var isSavedWorkoutEditing by remember { mutableStateOf(false) }
@@ -826,7 +828,7 @@ internal fun GymAppRoot(
         // namespace: the current remote row is fetched and its CAS revision is rebound first.
         remember { mutableStateOf<JSONObject?>(null) }
     }
-    var showIntro by rememberSaveable { mutableStateOf(true) }
+    var showIntro by rememberSaveable { mutableStateOf(!UiAuditHooks.isActive) }
     var accountDeletionInProgress by remember { mutableStateOf(false) }
     var passwordReauthenticationRequired by key(uiIsolationKey) {
         remember { mutableStateOf(false) }
@@ -1192,7 +1194,7 @@ internal fun GymAppRoot(
     val tutorialHasBlockingDialog = showCloudSyncConflictDialog ||
         cloudConflictResolutionInProgress || accountDeletionInProgress
     val tutorialRootIsSafe = canPresentAutomaticTutorial(
-        shouldRunForAccount = true,
+        shouldRunForAccount = !UiAuditHooks.isActive,
         hasSession = authState.session != null,
         isStableWorkoutsRoot = currentRoute == AppDestination.Workouts.route,
         authenticationInProgress = authState.isLoading || authState.needsPasswordUpdate,

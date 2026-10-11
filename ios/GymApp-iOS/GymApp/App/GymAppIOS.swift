@@ -46,7 +46,15 @@ struct GymAppIOS: App {
     @UIApplicationDelegateAdaptor(NativePushAppDelegate.self) private var appDelegate
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @StateObject private var bootstrap = AppBootstrap()
+#if DEBUG
+    @State private var showsIntro = !UIAuditLaunch.isActive
+
+    init() {
+        UIAuditLaunch.applyEarlyOverrides()
+    }
+#else
     @State private var showsIntro = true
+#endif
 
     var body: some Scene {
         WindowGroup {

@@ -98,6 +98,7 @@ struct AppRootView: View {
         .task {
 #if DEBUG
             await appState.bootstrapDemoIfRequested()
+            await appState.bootstrapUIAuditIfRequested()
 #endif
             if appState.isAccountReady, auth.session?.cloud != nil {
                 await nativePush.activateIfNeeded()
@@ -1040,7 +1041,45 @@ private struct MainTabShell: View {
         }
         .onReceive(activeWorkoutStore.objectWillChange) { _ in scheduleAutomaticTutorial() }
         .onReceive(liveWorkoutCoordinator.objectWillChange) { _ in scheduleAutomaticTutorial() }
+#if DEBUG
+        .onReceive(UIAuditRouter.shared.$route.compactMap { $0 }) { route in
+            applyUIAuditRoute(route)
+        }
+#endif
     }
+
+#if DEBUG
+    /// Opens the screen named by `-uiAuditRoute`. Extend the switch (and
+    /// `UIAuditRoute`) to expose more sheets, pushed screens, and dialogs.
+    private func applyUIAuditRoute(_ route: UIAuditRoute) {
+        UIAuditRouter.shared.route = nil
+        workoutPath.removeAll()
+        switch route {
+        case .today:
+            selectedTab = .workouts
+        case .exercises:
+            selectedTab = .exercises
+        case .progressOverview:
+            selectedTab = .progress
+        case .profile, .settings:
+            selectedTab = .profile
+        case .workoutDetail:
+            selectedTab = .workouts
+            if let newest = store.workouts.max(by: { $0.date < $1.date }) {
+                workoutPath = [.detail(newest.id)]
+            } else {
+                UIAuditLaunch.log("workout-detail: no workouts in the active profile")
+            }
+        case .workoutPlan:
+            selectedTab = .workouts
+            guard activeWorkoutStore.draft == nil else {
+                UIAuditLaunch.log("workout-plan: an active workout exists; plan editor not opened")
+                return
+            }
+            showsAddWorkout = true
+        }
+    }
+#endif
 
     private func reconcileConfirmedLiveDraftConsumption() {
         guard let consumption = liveWorkoutCoordinator.confirmedDraftConsumption,
@@ -1118,6 +1157,9 @@ private struct MainTabShell: View {
 
     private func scheduleAutomaticTutorial() {
         tutorialTask?.cancel()
+#if DEBUG
+        if UIAuditLaunch.isActive { return }
+#endif
         guard tutorialStepIndex == nil,
               !tutorialAutomaticPresentationSuppressedForSession,
               AppTutorialStore().needsAutomaticPresentation(

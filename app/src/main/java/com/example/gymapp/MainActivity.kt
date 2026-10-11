@@ -15,6 +15,7 @@ import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.data.repository.IncomingSharedWorkoutUrl
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.navigation.GymAppRoot
+import com.example.gymapp.uiaudit.UiAuditHooks
 import com.example.gymapp.ui.theme.GymAppTheme
 import kotlinx.coroutines.launch
 
@@ -37,6 +38,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         handleIncomingIntent(intent)
+        UiAuditHooks.handleIntent(this, intent)
 
         configureEdgeToEdge()
         setContent {
@@ -69,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
+        UiAuditHooks.handleIntent(this, intent)
     }
 
     override fun onResume() {
