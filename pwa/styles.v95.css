@@ -252,7 +252,7 @@ a:focus-visible,
 
 .app-shell.topbar-collapsed .screen { height: 100%; }
 
-/* Today shows its own large title in the body; the top bar title stays in the DOM for the document and screen readers only. */
+/* Today and Exercises show their own large title in the body; the top bar title stays in the DOM for the document and screen readers only. */
 .topbar.topbar-title-hidden {
   height: 0;
   padding: 0;

@@ -11919,7 +11919,7 @@ function render() {
     if (current.name !== "active") activeSetConfirmation = null;
     app.classList?.toggle("root-route-shell", isRootRoute(current.name));
     app.innerHTML = `
-      <header class="topbar${current.name === "workouts" ? " topbar-title-hidden" : ""}">
+      <header class="topbar${routeHasBodyTitle(current.name) ? " topbar-title-hidden" : ""}">
         ${current.name === "active" ? activeWorkoutMinimizeMarkup() : nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="${current.name === "add" ? tx3("Close", "Закрити", "Закрыть") : txAttr("Go back", "Назад")}">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
         <h1>${titleForRoute(current)}</h1>
         ${current.name === "active" ? activeWorkoutMoreButtonMarkup() : `<span class="topbar-slot" aria-hidden="true"></span>`}
@@ -11995,6 +11995,11 @@ function cloudRecoveryScreen() {
 
 function isRootRoute(name) {
   return ["workouts", "missions", "exercises", "progress", "leaderboard"].includes(name);
+}
+
+// Tab roots that render their own large heading in the body hide the top bar title (kept in the DOM for screen readers).
+function routeHasBodyTitle(name) {
+  return name === "workouts" || name === "exercises";
 }
 
 function titleForRoute(current) {
