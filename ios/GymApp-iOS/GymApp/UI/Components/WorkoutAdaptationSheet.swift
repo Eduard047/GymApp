@@ -44,8 +44,12 @@ struct WorkoutAdaptationSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let candidate {
-                        Text(t("Remaining sets", "Залишилось підходів", "Осталось подходов") + ": \(request.source.plannedSetCount - request.source.completedSetCount) → \(candidate.plannedSetCount - candidate.completedSetCount)")
-                            .font(.headline)
+                        let remainingBefore = request.source.plannedSetCount - request.source.completedSetCount
+                        let remainingAfter = candidate.plannedSetCount - candidate.completedSetCount
+                        if remainingBefore != remainingAfter {
+                            Text(t("Remaining sets", "Залишилось підходів", "Осталось подходов") + ": \(remainingBefore) → \(remainingAfter)")
+                                .font(.headline)
+                        }
                         if request.reason == "timeCut" {
                             Text(t("Duration is an estimate, including rest between sets.", "Тривалість приблизна, з відпочинком між підходами.", "Длительность приблизительная, с отдыхом между подходами."))
                                 .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
@@ -62,8 +66,10 @@ struct WorkoutAdaptationSheet: View {
                                     VStack(alignment: .leading, spacing: 8) {
                                         if replaced { Text(gymExerciseName(old.exerciseName ?? "") + " →").font(.subheadline) }
                                         Text(gymExerciseName(block?.exerciseName ?? old.exerciseName ?? "")).font(.headline)
-                                        Text(t("Remaining sets", "Залишилось підходів", "Осталось подходов") + ": \(pending.count) → \(remaining.count)")
-                                            .font(.subheadline)
+                                        if pending.count != remaining.count {
+                                            Text(t("Remaining sets", "Залишилось підходів", "Осталось подходов") + ": \(pending.count) → \(remaining.count)")
+                                                .font(.subheadline)
+                                        }
                                         ForEach(uniqueChanges(changes, before: pending, replaced: replaced), id: \.self) { value in
                                             Text(value).font(.body.monospacedDigit())
                                         }
