@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -144,18 +143,18 @@ internal fun ExerciseCatalogSelector(
                     style = androidx.compose.material3.MaterialTheme.typography.headlineSmall
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
+                    ExerciseMuscleChip(
                         selected = !frequentOnly,
                         onClick = { frequentOnly = false },
-                        label = { Text(stringResource(R.string.exercise_picker_all)) }
+                        label = stringResource(R.string.exercise_picker_all)
                     )
-                    FilterChip(
+                    ExerciseMuscleChip(
                         selected = frequentOnly,
                         onClick = {
                             frequentOnly = true
                             sortMode = ExerciseSortMode.MostFrequent
                         },
-                        label = { Text(stringResource(R.string.exercise_picker_frequent)) },
+                        label = stringResource(R.string.exercise_picker_frequent),
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Star,

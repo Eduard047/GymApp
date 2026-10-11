@@ -1798,10 +1798,11 @@ private fun ExerciseFilterMenuChoice(
 }
 
 @Composable
-private fun ExerciseMuscleChip(
+internal fun ExerciseMuscleChip(
     selected: Boolean,
     onClick: () -> Unit,
-    label: String
+    label: String,
+    leadingIcon: (@Composable () -> Unit)? = null
 ) {
     FilterChip(
         selected = selected,
@@ -1813,12 +1814,15 @@ private fun ExerciseMuscleChip(
                 maxLines = 1
             )
         },
+        leadingIcon = leadingIcon,
         shape = CircleShape,
         colors = FilterChipDefaults.filterChipColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             labelColor = MaterialTheme.colorScheme.onSurface,
             selectedContainerColor = brandFillColor(),
-            selectedLabelColor = Color.White
+            selectedLabelColor = Color.White,
+            iconColor = MaterialTheme.colorScheme.onSurface,
+            selectedLeadingIconColor = Color.White
         ),
         border = null
     )
