@@ -12058,7 +12058,7 @@ function workoutsScreen() {
   }
   const sessions = [...selectedMonthSessions()].sort((a, b) => b.startedAt - a.startedAt);
   return `
-    <section class="screen-copy workouts-screen-copy"><div><h2>${tx3("Today", "Сьогодні", "Сегодня")}</h2><p>${tx3("Your next step first. History stays one tap away.", "Спочатку — наступний крок. Історія завжди поруч.", "Сначала — следующий шаг. История всегда рядом.")}</p></div><button class="button ghost mini history-shortcut" data-action="scroll-workout-history">${svg("list", "small-icon")}${tx3("History", "Історія", "История")}</button></section>
+    <section class="screen-copy workouts-screen-copy"><div><h2>${tx3("Today", "Сьогодні", "Сегодня")}</h2></div><button class="button ghost mini history-shortcut" data-action="scroll-workout-history">${svg("list", "small-icon")}${tx3("History", "Історія", "История")}</button></section>
     <div class="workouts-scroll">
       ${focusOverview(sessions)}
       ${trainingHistoryMarkup()}
