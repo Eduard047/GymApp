@@ -939,7 +939,7 @@ private fun SmartCoachPanel(
     val context = LocalContext.current
     AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = if (expanded) 16.dp else 4.dp),
+            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
