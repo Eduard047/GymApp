@@ -29,13 +29,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -224,8 +222,6 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
-import com.example.gymapp.ui.theme.primaryActionContainerColor
-import com.example.gymapp.ui.theme.primaryActionContentColor
 
 private class ActivityOnlyWorkoutRpcUnavailableException : IllegalStateException(
     "Activity-only workout RPC is unavailable."
@@ -739,7 +735,6 @@ internal fun GymAppRoot(
     UiAuditHooks.RouteEffect(navController)
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    var isSavedWorkoutEditing by remember { mutableStateOf(false) }
     // One-shot marker: the tab to reopen once the graph is rebuilt for a new language. Saved so it
     // also survives the activity recreation that the locale change triggers.
     var languageReturnRoute by rememberSaveable { mutableStateOf<String?>(null) }
@@ -2579,33 +2574,6 @@ internal fun GymAppRoot(
                             }
                         }
                     }
-                },
-                floatingActionButton = {
-                    when {
-                        currentRoute?.startsWith("workout_detail/") == true -> {
-                            val sessionId = navBackStackEntry?.arguments?.getLong("sessionId")
-                            if (sessionId != null && !isSavedWorkoutEditing) {
-                                ExtendedFloatingActionButton(
-                                    modifier = Modifier.navigationBarsPadding(),
-                                    onClick = {
-                                        navController.navigate(AppDestination.postWorkoutSummaryRoute(sessionId)) {
-                                            launchSingleTop = true
-                                        }
-                                    },
-                                    containerColor = primaryActionContainerColor(),
-                                    contentColor = primaryActionContentColor(),
-                                    expanded = true,
-                                    text = { Text(text = stringResource(R.string.title_post_workout_summary)) },
-                                    icon = {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = stringResource(R.string.title_post_workout_summary)
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                    }
                 }
             ) { innerPadding ->
                 Box(
@@ -3703,7 +3671,6 @@ internal fun GymAppRoot(
                                 onRemoveExercise = viewModel::removeExercise,
                                 onUpdateSessionDetails = viewModel::updateSessionDetails,
                                 onShareWorkout = { workoutPlanToShare = it },
-                                onEditModeChanged = { isSavedWorkoutEditing = it },
                                 modifier = Modifier.fillMaxSize()
                             )
 

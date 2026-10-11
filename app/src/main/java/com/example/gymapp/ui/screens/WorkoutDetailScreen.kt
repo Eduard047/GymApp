@@ -406,7 +406,7 @@ internal fun WorkoutDetailScreen(
                     start = GymSpacing.ScreenHorizontal,
                     top = GymSpacing.ScreenTop,
                     end = GymSpacing.ScreenHorizontal,
-                    bottom = 112.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    bottom = GymSpacing.ScreenBottom + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                 ),
                 verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
             ) {
