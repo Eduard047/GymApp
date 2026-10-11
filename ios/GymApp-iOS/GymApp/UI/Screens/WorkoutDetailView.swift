@@ -1484,29 +1484,40 @@ struct WorkoutDetailView: View {
                     Button(gymLocalized("Done"), action: finishEditing)
                         .disabled(pendingDeletion != nil)
                 } else if let workout = store.workout(id: workoutID) {
-                    Button {
-                        beginEditing()
+                    Menu {
+                        Button {
+                            beginEditing()
+                        } label: {
+                            Label(
+                                gymText(
+                                    "Edit", "Змінити", "Изменить",
+                                    languageCode: gymCurrentLanguageCode()
+                                ),
+                                systemImage: "pencil"
+                            )
+                        }
+
+                        if sharedWorkoutURL(workout) != nil {
+                            Button {
+                                openWorkoutShareChooser(workout)
+                            } label: {
+                                Label(
+                                    gymText(
+                                        "Share workout", "Поділитися тренуванням", "Поделиться тренировкой",
+                                        languageCode: gymCurrentLanguageCode()
+                                    ),
+                                    systemImage: "square.and.arrow.up"
+                                )
+                            }
+                        }
                     } label: {
-                        Image(systemName: "pencil")
+                        Image(systemName: "ellipsis.circle")
                             .frame(minWidth: 44, minHeight: 44)
                     }
                     .accessibilityLabel(gymText(
-                        "Edit", "Змінити", "Изменить",
+                        "More", "Ще", "Ещё",
                         languageCode: gymCurrentLanguageCode()
                     ))
-
-                    if sharedWorkoutURL(workout) != nil {
-                        Button {
-                            openWorkoutShareChooser(workout)
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                        .accessibilityLabel(gymText(
-                            "Share workout", "Поділитися тренуванням", "Поделиться тренировкой",
-                            languageCode: gymCurrentLanguageCode()
-                        ))
-                    }
                 }
             }
         }
