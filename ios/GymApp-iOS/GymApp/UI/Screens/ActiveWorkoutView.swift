@@ -562,51 +562,6 @@ struct ActiveWorkoutView: View {
             )
             .presentationDetents([.large])
         }
-        .confirmationDialog(
-            finishExerciseDialogTitle(unrecordedCount: pendingFinishExerciseUnrecordedCount),
-            isPresented: Binding(
-                get: { pendingFinishExerciseID != nil },
-                set: { isPresented in if !isPresented { pendingFinishExerciseID = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let pair = pendingFinishExercisePair {
-                Button(
-                    gymText(
-                        "Log as planned", "Записати як у плані", "Записать как в плане",
-                        languageCode: gymCurrentLanguageCode()
-                    )
-                ) {
-                    saveExercise(pair.exercise, draft: pair.draft)
-                    pendingFinishExerciseID = nil
-                }
-                // Hidden (not just disabled) whenever it would not be
-                // possible: skipping replaces the shared plan's set list,
-                // which `ActiveWorkoutStore.applyAdaptation` itself refuses
-                // once a live room is attached, and `buildSkipCandidate`
-                // returns nil when this is the workout's only exercise and
-                // nothing in it has been recorded yet (skipping would leave
-                // the draft with zero exercises, which is invalid).
-                if !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
-                   WorkoutAdaptation.buildSkipCandidate(pair.draft, exerciseBlockID: pair.exercise.id) != nil {
-                    Button(
-                        gymText(
-                            "Skip them", "Пропустити їх", "Пропустить их",
-                            languageCode: gymCurrentLanguageCode()
-                        )
-                    ) {
-                        skipRemainingSets(pair.exercise, draft: pair.draft)
-                        pendingFinishExerciseID = nil
-                    }
-                }
-            }
-            Button(
-                gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()),
-                role: .cancel
-            ) {
-                pendingFinishExerciseID = nil
-            }
-        }
         .alert(
             gymText(
                 "Finish workout?", "Завершити тренування?", "Завершить тренировку?",
@@ -1445,6 +1400,15 @@ struct ActiveWorkoutView: View {
                                 isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
                             )
                         )
+                        // Attached here (not at the screen root) so iOS anchors
+                        // the confirmation to this Finish button.
+                        .confirmationDialog(
+                            finishExerciseDialogTitle(unrecordedCount: pendingFinishExerciseUnrecordedCount),
+                            isPresented: finishExerciseConfirmationBinding(for: exercise),
+                            titleVisibility: .visible
+                        ) {
+                            finishExerciseDialogActions
+                        }
                     }
                 }
             }
@@ -2955,6 +2919,58 @@ struct ActiveWorkoutView: View {
             )
         }
         return nil
+    }
+
+    /// Actions of the "N sets left" confirmation. The dialog itself is attached
+    /// to the exercise card's Finish button (see `finishExerciseConfirmation`)
+    /// so iOS anchors it to that button instead of the screen root.
+    @ViewBuilder
+    private var finishExerciseDialogActions: some View {
+        if let pair = pendingFinishExercisePair {
+            Button(
+                gymText(
+                    "Log as planned", "Записати як у плані", "Записать как в плане",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            ) {
+                saveExercise(pair.exercise, draft: pair.draft)
+                pendingFinishExerciseID = nil
+            }
+            // Hidden (not just disabled) whenever it would not be
+            // possible: skipping replaces the shared plan's set list,
+            // which `ActiveWorkoutStore.applyAdaptation` itself refuses
+            // once a live room is attached, and `buildSkipCandidate`
+            // returns nil when this is the workout's only exercise and
+            // nothing in it has been recorded yet (skipping would leave
+            // the draft with zero exercises, which is invalid).
+            if !liveWorkoutCoordinator.planIsFrozenForCurrentDraft,
+               WorkoutAdaptation.buildSkipCandidate(pair.draft, exerciseBlockID: pair.exercise.id) != nil {
+                Button(
+                    gymText(
+                        "Skip them", "Пропустити їх", "Пропустить их",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                ) {
+                    skipRemainingSets(pair.exercise, draft: pair.draft)
+                    pendingFinishExerciseID = nil
+                }
+            }
+        }
+        Button(
+            gymText("Cancel", "Скасувати", "Отмена", languageCode: gymCurrentLanguageCode()),
+            role: .cancel
+        ) {
+            pendingFinishExerciseID = nil
+        }
+    }
+
+    private func finishExerciseConfirmationBinding(for exercise: ActiveWorkoutExercise) -> Binding<Bool> {
+        Binding(
+            get: { pendingFinishExerciseID == exercise.id },
+            set: { isPresented in
+                if !isPresented, pendingFinishExerciseID == exercise.id { pendingFinishExerciseID = nil }
+            }
+        )
     }
 
     /// Re-derives the live exercise/draft for `pendingFinishExerciseID` on
