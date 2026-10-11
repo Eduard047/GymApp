@@ -22,6 +22,9 @@ enum UIAuditRoute: String, CaseIterable {
     case settings
     case workoutDetail = "workout-detail"
     case workoutPlan = "workout-plan"
+    case exercisePicker = "exercise-picker"
+    case workoutActive = "workout-active"
+    case workoutSummary = "workout-summary"
 }
 
 /// Hands the requested route from the launch bootstrap (which runs after the
@@ -31,6 +34,9 @@ enum UIAuditRoute: String, CaseIterable {
 final class UIAuditRouter: ObservableObject {
     static let shared = UIAuditRouter()
     @Published var route: UIAuditRoute?
+    /// Set by the `exercise-picker` route; consumed once by the plan editor
+    /// (`AddWorkoutView`) when it appears, which then opens its picker sheet.
+    var opensExercisePicker = false
     private init() {}
 }
 

@@ -15,8 +15,8 @@ import com.example.gymapp.auth.authErrorText
 import com.example.gymapp.data.repository.IncomingSharedWorkoutUrl
 import com.example.gymapp.data.repository.SharedWorkoutLink
 import com.example.gymapp.navigation.GymAppRoot
-import com.example.gymapp.uiaudit.UiAuditHooks
 import com.example.gymapp.ui.theme.GymAppTheme
+import com.example.gymapp.uiaudit.UiAuditHooks
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {

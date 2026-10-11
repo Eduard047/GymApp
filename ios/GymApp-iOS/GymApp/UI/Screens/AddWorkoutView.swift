@@ -593,6 +593,16 @@ struct AddWorkoutView: View {
         }
         .onAppear {
             onDraftChange(currentEditorDraftState)
+#if DEBUG
+            // `-uiAuditRoute exercise-picker`: open the picker once, after the editor sheet settles.
+            if UIAuditRouter.shared.opensExercisePicker {
+                UIAuditRouter.shared.opensExercisePicker = false
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(700))
+                    showingExercisePicker = true
+                }
+            }
+#endif
         }
         .task {
             guard !rejectsInitialState else {

@@ -1077,7 +1077,63 @@ private struct MainTabShell: View {
                 return
             }
             showsAddWorkout = true
+        case .exercisePicker:
+            selectedTab = .workouts
+            guard activeWorkoutStore.draft == nil else {
+                UIAuditLaunch.log("exercise-picker: an active workout exists; plan editor not opened")
+                return
+            }
+            guard isUIAuditLocalProfile else {
+                UIAuditLaunch.log("exercise-picker: active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+                return
+            }
+            UIAuditRouter.shared.opensExercisePicker = true
+            showsAddWorkout = true
+        case .workoutActive:
+            selectedTab = .workouts
+            guard isUIAuditLocalProfile else {
+                UIAuditLaunch.log("workout-active: active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+                return
+            }
+            // Idempotent: an existing draft (audit data) is reused as-is.
+            if activeWorkoutStore.draft == nil {
+                guard let newest = store.workouts.max(by: { $0.date < $1.date }) else {
+                    UIAuditLaunch.log("workout-active: no seeded workouts to base a draft on")
+                    return
+                }
+                let exercises = newest.exercises.map { block in
+                    ActiveWorkoutExercise(
+                        exerciseID: block.exerciseID,
+                        sets: block.sets.map { ActiveWorkoutSet(weight: $0.weight, reps: $0.reps) }
+                    )
+                }
+                do {
+                    try activeWorkoutStore.start(
+                        workoutDate: Date(),
+                        note: nil,
+                        exercises: exercises,
+                        workoutStore: store
+                    )
+                } catch {
+                    UIAuditLaunch.log("workout-active: could not start a draft: \(gymErrorMessage(error))")
+                    return
+                }
+            }
+            showsAddWorkout = false
+            showsActiveWorkout = true
+        case .workoutSummary:
+            selectedTab = .workouts
+            if let newest = store.workouts.max(by: { $0.date < $1.date }) {
+                workoutPath = [.summary(newest.id)]
+            } else {
+                UIAuditLaunch.log("workout-summary: no workouts in the active profile")
+            }
         }
+    }
+
+    private var isUIAuditLocalProfile: Bool {
+        if case .local(_, let name)? = auth.session { return name == UIAuditLaunch.profileName }
+        return false
     }
 #endif
 

@@ -1,5 +1,6 @@
 package com.example.gymapp.uiaudit
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -8,13 +9,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.navigation.NavHostController
+import android.view.View
+import android.view.ViewGroup
 import com.example.gymapp.GymApplication
+import com.example.gymapp.R
 import com.example.gymapp.auth.AccountSession
+import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.data.repository.WorkoutExerciseDraft
+import com.example.gymapp.data.repository.WorkoutSetDraft
 import com.example.gymapp.navigation.AppDestination
 import com.example.gymapp.util.AppLanguage
 import java.io.File
+import java.lang.ref.WeakReference
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -22,8 +36,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -53,6 +69,7 @@ object UiAuditHooks {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val seedMutex = Mutex()
     private val request = MutableStateFlow<RouteRequest?>(null)
+    private var activityRef: WeakReference<Activity>? = null
 
     private class RouteRequest(val screenId: String, val seedReady: Job?)
 
@@ -76,6 +93,37 @@ object UiAuditHooks {
         "workout-plan" to { nav, _ ->
             openTab(nav, AppDestination.Workouts)
             nav.navigate(AppDestination.AddWorkout.route) { launchSingleTop = true }
+        },
+        // Plan editor + the exercise catalog sheet, opened through the editor's own button.
+        "exercise-picker" to { nav, app ->
+            if (auditRepository(app, "exercise-picker") != null) {
+                openTab(nav, AppDestination.Workouts)
+                nav.navigate(AppDestination.AddWorkout.route) { launchSingleTop = true }
+                val label = nav.context.getString(R.string.action_add_exercise)
+                if (!clickLabelled(label)) Log.w(TAG, "exercise-picker: add button not found")
+            }
+        },
+        // Starts the audit profile's active draft once (a second request just reopens it).
+        "workout-active" to { nav, app ->
+            val repository = auditRepository(app, "workout-active")
+            if (repository != null && ensureActiveWorkout(repository)) {
+                openTab(nav, AppDestination.Workouts)
+                nav.navigate(AppDestination.ActiveWorkout.route) { launchSingleTop = true }
+            }
+        },
+        // Read-only: the summary of the newest seeded workout; nothing is finished or created.
+        "workout-summary" to { nav, app ->
+            val sessionId = if (auditRepository(app, "workout-summary") != null) {
+                latestSessionId(app)
+            } else {
+                null
+            }
+            if (sessionId == null) {
+                Log.w(TAG, "workout-summary: no workout available")
+            } else {
+                openTab(nav, AppDestination.Workouts)
+                nav.navigate(AppDestination.postWorkoutSummaryRoute(sessionId))
+            }
         }
     )
 
@@ -88,6 +136,7 @@ object UiAuditHooks {
         }.getOrDefault(false)
         isActive = present
         if (!present || intent == null) return
+        activityRef = WeakReference(activity)
         val seed = runCatching { intent.getStringExtra(EXTRA_SEED) }.getOrNull()
         val route = runCatching { intent.getStringExtra(EXTRA_ROUTE) }.getOrNull()
         val language = runCatching { intent.getStringExtra(EXTRA_LANGUAGE) }.getOrNull()
@@ -131,6 +180,77 @@ object UiAuditHooks {
             launchSingleTop = true
             restoreState = false
         }
+    }
+
+    /** The repository of the "UI Audit" local profile, or null (logged) for any other session. */
+    private fun auditRepository(app: GymApplication, route: String): GymRepository? {
+        val session = app.cloudAuthManager.authState.value.session
+        if (session is AccountSession.Local && session.displayName == AUDIT_PROFILE_NAME) {
+            return app.repositoryFor(session)
+        }
+        Log.w(TAG, "$route: only available in the \"$AUDIT_PROFILE_NAME\" local profile")
+        return null
+    }
+
+    /** True when an active draft exists afterwards; starts one only if none exists. */
+    private suspend fun ensureActiveWorkout(repository: GymRepository): Boolean {
+        if (repository.getActiveWorkoutSnapshot() != null) return true
+        val catalog = repository.observeExercises().first()
+        val preferred = listOf("Bench Press", "Barbell Row", "Dips")
+            .mapNotNull { name -> catalog.firstOrNull { it.name == name } }
+        val picked = preferred.ifEmpty { catalog.take(3) }
+        if (picked.isEmpty()) {
+            Log.w(TAG, "workout-active: no exercises available")
+            return false
+        }
+        val drafts = picked.mapIndexed { index, exercise ->
+            WorkoutExerciseDraft(
+                exerciseId = exercise.id,
+                sets = List(3) { WorkoutSetDraft(weight = 60.0 + 10.0 * index, reps = 10 - index) }
+            )
+        }
+        repository.startActiveWorkout(
+            date = System.currentTimeMillis(),
+            note = null,
+            workoutExercises = drafts
+        )
+        return repository.getActiveWorkoutSnapshot() != null
+    }
+
+    /** Clicks the first clickable semantics node whose text/description equals [label]. */
+    @OptIn(InternalComposeUiApi::class)
+    private suspend fun clickLabelled(label: String): Boolean {
+        repeat(30) {
+            val clicked = withContext(Dispatchers.Main) {
+                val activity = activityRef?.get() ?: return@withContext false
+                val root = findComposeRoot(activity.window.decorView) ?: return@withContext false
+                val node = findClickable(root.semanticsOwner.rootSemanticsNode, label)
+                val action = node?.config?.getOrNull(SemanticsActions.OnClick)?.action
+                action != null && action()
+            }
+            if (clicked) return true
+            delay(200)
+        }
+        return false
+    }
+
+    @OptIn(InternalComposeUiApi::class)
+    private fun findComposeRoot(view: View): ViewRootForTest? {
+        if (view is ViewRootForTest) return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findComposeRoot(view.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun findClickable(node: SemanticsNode, label: String): SemanticsNode? {
+        val texts = node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+        val descriptions = node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+        val matches = label in texts || label in descriptions
+        if (matches && node.config.getOrNull(SemanticsActions.OnClick) != null) return node
+        return node.children.firstNotNullOfOrNull { findClickable(it, label) }
     }
 
     private suspend fun latestSessionId(app: GymApplication): Long? {

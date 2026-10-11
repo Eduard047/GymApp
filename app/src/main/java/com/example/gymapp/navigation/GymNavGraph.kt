@@ -119,7 +119,6 @@ import com.example.gymapp.push.matchesSession
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_STEPS
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_VERSION
 import com.example.gymapp.ui.components.FirstRunTutorialOverlay
-import com.example.gymapp.uiaudit.UiAuditHooks
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
@@ -196,6 +195,7 @@ import com.example.gymapp.sync.WorkoutMergeCore
 import com.example.gymapp.sync.WorkoutMergeException
 import com.example.gymapp.sync.workoutMergeCoreFromCloudState
 import com.example.gymapp.sync.workoutMergeExerciseIdentity
+import com.example.gymapp.uiaudit.UiAuditHooks
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.LanguageManager
 import com.example.gymapp.util.LocalizedText
