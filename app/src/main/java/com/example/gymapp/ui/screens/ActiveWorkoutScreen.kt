@@ -1390,7 +1390,8 @@ private fun ActiveWorkoutFinishExerciseDialog(
                 )
             )
         },
-        text = {
+        // The three actions live in the confirm slot so the dialog has no empty button row below them.
+        confirmButton = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1416,8 +1417,7 @@ private fun ActiveWorkoutFinishExerciseDialog(
                     Text(stringResource(R.string.action_cancel))
                 }
             }
-        },
-        confirmButton = {}
+        }
     )
 }
 
