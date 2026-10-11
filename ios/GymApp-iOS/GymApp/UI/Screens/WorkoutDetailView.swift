@@ -1540,6 +1540,18 @@ struct WorkoutDetailView: View {
                 undoBar(pendingDeletion)
             }
         }
+#if DEBUG
+        .onAppear {
+            // `-uiAuditRoute delete-workout-dialog`: present the alert once; it is never confirmed.
+            guard UIAuditRouter.shared.consume(.deleteWorkoutDialog) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(700))
+                if let workout = store.workout(id: workoutID) {
+                    activeAlert = .deleteWorkout(WorkoutDetailWorkoutDeletionTarget(store: store, workout: workout))
+                }
+            }
+        }
+#endif
         .onDisappear {
             commitPendingDeletion()
         }

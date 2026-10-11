@@ -25,6 +25,23 @@ enum UIAuditRoute: String, CaseIterable {
     case exercisePicker = "exercise-picker"
     case workoutActive = "workout-active"
     case workoutSummary = "workout-summary"
+    // Sheets, popovers, and dialogs: the router opens the host screen, which then
+    // presents its own route once (see `UIAuditRouter.pendingPresentation`).
+    case workoutTemplates = "workout-templates"
+    case exerciseReplace = "exercise-replace"
+    case workoutShare = "workout-share"
+    case workoutActiveMenu = "workout-active-menu"
+    case workoutAdaptation = "workout-adaptation"
+    case plateCalculator = "plate-calculator"
+    case finishExerciseDialog = "finish-exercise-dialog"
+    case finishWorkoutDialog = "finish-workout-dialog"
+    case discardActiveWorkoutDialog = "discard-active-workout-dialog"
+    case removeExerciseDialog = "remove-exercise-dialog"
+    case deleteSetDialog = "delete-set-dialog"
+    case discardPlanDialog = "discard-plan-dialog"
+    case clearPlanDialog = "clear-plan-dialog"
+    case deleteWorkoutDialog = "delete-workout-dialog"
+    case continueWorkoutBar = "continue-workout-bar"
 }
 
 /// Hands the requested route from the launch bootstrap (which runs after the
@@ -34,9 +51,25 @@ enum UIAuditRoute: String, CaseIterable {
 final class UIAuditRouter: ObservableObject {
     static let shared = UIAuditRouter()
     @Published var route: UIAuditRoute?
-    /// Set by the `exercise-picker` route; consumed once by the plan editor
-    /// (`AddWorkoutView`) when it appears, which then opens its picker sheet.
-    var opensExercisePicker = false
+    /// Sheet/dialog route to present once its host screen (plan editor, active
+    /// workout, workout detail, plate button) appears. The host calls `consume`
+    /// from a `#if DEBUG` block, waits for the screen to settle, then flips its
+    /// own presentation state. Dialogs are only presented, never confirmed.
+    var pendingPresentation: UIAuditRoute?
+
+    /// Returns true (and clears the pending route) when it is `route`.
+    func consume(_ route: UIAuditRoute) -> Bool {
+        guard pendingPresentation == route else { return false }
+        pendingPresentation = nil
+        return true
+    }
+
+    /// Like `consume`, for hosts that serve several routes.
+    func consume(anyOf routes: [UIAuditRoute]) -> UIAuditRoute? {
+        guard let pending = pendingPresentation, routes.contains(pending) else { return nil }
+        pendingPresentation = nil
+        return pending
+    }
     private init() {}
 }
 

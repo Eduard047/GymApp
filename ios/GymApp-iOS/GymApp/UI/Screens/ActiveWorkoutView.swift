@@ -633,6 +633,9 @@ struct ActiveWorkoutView: View {
             liveParticipantSelection = .current
             collapseCompletedExercises()
             reconcileRestProjection()
+#if DEBUG
+            presentUIAuditRouteIfRequested()
+#endif
         }
         .onChange(of: liveWorkoutCoordinator.attachedRoomID) { _, roomID in
             if roomID == nil { liveParticipantSelection = .current }
@@ -644,6 +647,40 @@ struct ActiveWorkoutView: View {
             if phase != .active { cancelVoiceCommand() }
         }
     }
+
+#if DEBUG
+    /// UI-audit: presents the sheet/dialog requested by `-uiAuditRoute` once, after
+    /// the screen settles. Dialogs target the first exercise/set; nothing is confirmed.
+    private func presentUIAuditRouteIfRequested() {
+        let routes: [UIAuditRoute] = [
+            .workoutAdaptation, .finishExerciseDialog, .finishWorkoutDialog,
+            .discardActiveWorkoutDialog, .removeExerciseDialog, .deleteSetDialog
+        ]
+        guard let route = UIAuditRouter.shared.consume(anyOf: routes) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard let draft = currentDraft else { return }
+            switch route {
+            case .workoutAdaptation:
+                adaptationRequest = WorkoutAdaptationRequest(
+                    source: draft, reason: "timeCut", store: workoutStore
+                )
+            case .finishExerciseDialog:
+                pendingFinishExerciseID = draft.exercises.first { $0.sets.contains { !$0.isCompleted } }?.id
+            case .finishWorkoutDialog:
+                showingFinishConfirmation = true
+            case .discardActiveWorkoutDialog:
+                showingDiscardConfirmation = true
+            case .removeExerciseDialog:
+                pendingRemoveExerciseID = draft.exercises.first?.id
+            case .deleteSetDialog:
+                pendingDeleteRecordedSetID = draft.exercises.first?.sets.first?.id
+            default:
+                break
+            }
+        }
+    }
+#endif
 
     private var currentDraft: ActiveWorkoutDraft? {
         guard let draft = activeWorkoutStore.draft, draft.id == draftID else { return nil }

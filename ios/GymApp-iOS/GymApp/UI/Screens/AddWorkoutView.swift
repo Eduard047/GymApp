@@ -594,14 +594,7 @@ struct AddWorkoutView: View {
         .onAppear {
             onDraftChange(currentEditorDraftState)
 #if DEBUG
-            // `-uiAuditRoute exercise-picker`: open the picker once, after the editor sheet settles.
-            if UIAuditRouter.shared.opensExercisePicker {
-                UIAuditRouter.shared.opensExercisePicker = false
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(700))
-                    showingExercisePicker = true
-                }
-            }
+            presentUIAuditRouteIfRequested()
 #endif
         }
         .task {
@@ -1915,6 +1908,62 @@ struct AddWorkoutView: View {
             error: false
         )
     }
+
+#if DEBUG
+    /// UI-audit: presents the sheet/dialog requested by `-uiAuditRoute` once, after
+    /// the editor sheet settles. Nothing is edited or confirmed.
+    private func presentUIAuditRouteIfRequested() {
+        let routes: [UIAuditRoute] = [
+            .exercisePicker, .workoutTemplates, .exerciseReplace, .workoutShare,
+            .discardPlanDialog, .clearPlanDialog
+        ]
+        guard let route = UIAuditRouter.shared.consume(anyOf: routes) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            switch route {
+            case .exercisePicker:
+                showingExercisePicker = true
+            case .workoutTemplates:
+                showingPreviousPicker = true
+            case .exerciseReplace:
+                // First seeded exercise (newest workout first) that has alternatives; the plan itself stays empty.
+                let usedIDs = store.workouts.sorted { $0.date > $1.date }.flatMap { $0.exercises.map(\.exerciseID) }
+                let usedSet = Set(usedIDs)
+                let candidates = usedIDs.compactMap { store.exercise(id: $0) }
+                    + store.exercises.filter { !usedSet.contains($0.id) }
+                let history = store.allExerciseHistory()
+                for current in candidates {
+                    let alternatives = RecommendationEngine.findAlternatives(
+                        currentExercise: current,
+                        selectedExerciseIDs: [],
+                        exercises: store.exercises,
+                        history: history,
+                        muscleMappings: store.muscleMappings,
+                        trainingProfile: profile,
+                        effort: .standard,
+                        allowsHardSetBoost: false
+                    )
+                    guard !alternatives.isEmpty else { continue }
+                    replacementRequest = SmartReplacementRequest(
+                        draftID: UUID(),
+                        expectedExerciseID: current.id,
+                        alternatives: alternatives
+                    )
+                    return
+                }
+                UIAuditLaunch.log("exercise-replace: no seeded exercise has alternatives")
+            case .workoutShare:
+                showingShareChooser = true
+            case .discardPlanDialog:
+                showingDiscardConfirmation = true
+            case .clearPlanDialog:
+                showingClearPlanConfirmation = true
+            default:
+                break
+            }
+        }
+    }
+#endif
 
     private func showAlternatives(for draftID: UUID) {
         guard let draft = drafts.first(where: { $0.id == draftID }),

@@ -1077,50 +1077,46 @@ private struct MainTabShell: View {
                 return
             }
             showsAddWorkout = true
-        case .exercisePicker:
+        case .exercisePicker, .workoutTemplates, .exerciseReplace, .workoutShare,
+             .discardPlanDialog, .clearPlanDialog:
             selectedTab = .workouts
             guard activeWorkoutStore.draft == nil else {
-                UIAuditLaunch.log("exercise-picker: an active workout exists; plan editor not opened")
+                UIAuditLaunch.log("\(route.rawValue): an active workout exists; plan editor not opened")
                 return
             }
             guard isUIAuditLocalProfile else {
-                UIAuditLaunch.log("exercise-picker: active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+                UIAuditLaunch.log("\(route.rawValue): active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
                 return
             }
-            UIAuditRouter.shared.opensExercisePicker = true
+            UIAuditRouter.shared.pendingPresentation = route
             showsAddWorkout = true
-        case .workoutActive:
+        case .workoutActive, .workoutAdaptation, .plateCalculator, .finishExerciseDialog,
+             .finishWorkoutDialog, .discardActiveWorkoutDialog, .removeExerciseDialog, .deleteSetDialog:
             selectedTab = .workouts
-            guard isUIAuditLocalProfile else {
-                UIAuditLaunch.log("workout-active: active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
-                return
-            }
-            // Idempotent: an existing draft (audit data) is reused as-is.
-            if activeWorkoutStore.draft == nil {
-                guard let newest = store.workouts.max(by: { $0.date < $1.date }) else {
-                    UIAuditLaunch.log("workout-active: no seeded workouts to base a draft on")
-                    return
-                }
-                let exercises = newest.exercises.map { block in
-                    ActiveWorkoutExercise(
-                        exerciseID: block.exerciseID,
-                        sets: block.sets.map { ActiveWorkoutSet(weight: $0.weight, reps: $0.reps) }
-                    )
-                }
-                do {
-                    try activeWorkoutStore.start(
-                        workoutDate: Date(),
-                        note: nil,
-                        exercises: exercises,
-                        workoutStore: store
-                    )
-                } catch {
-                    UIAuditLaunch.log("workout-active: could not start a draft: \(gymErrorMessage(error))")
-                    return
-                }
-            }
+            guard startUIAuditDraftIfNeeded(route) else { return }
+            if route != .workoutActive { UIAuditRouter.shared.pendingPresentation = route }
             showsAddWorkout = false
             showsActiveWorkout = true
+        case .continueWorkoutBar:
+            guard startUIAuditDraftIfNeeded(route) else { return }
+            showsAddWorkout = false
+            showsActiveWorkout = false
+            selectedTab = .exercises
+        case .deleteWorkoutDialog:
+            selectedTab = .workouts
+            guard isUIAuditLocalProfile else {
+                UIAuditLaunch.log("delete-workout-dialog: active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+                return
+            }
+            if let newest = store.workouts.max(by: { $0.date < $1.date }) {
+                UIAuditRouter.shared.pendingPresentation = route
+                workoutPath = [.detail(newest.id)]
+            } else {
+                UIAuditLaunch.log("delete-workout-dialog: no workouts in the active profile")
+            }
+        case .workoutActiveMenu:
+            // SwiftUI `Menu` has no programmatic presentation API; not routable without a UI-driving tap.
+            UIAuditLaunch.log("workout-active-menu: not routable (SwiftUI Menu cannot be presented from code)")
         case .workoutSummary:
             selectedTab = .workouts
             if let newest = store.workouts.max(by: { $0.date < $1.date }) {
@@ -1128,6 +1124,39 @@ private struct MainTabShell: View {
             } else {
                 UIAuditLaunch.log("workout-summary: no workouts in the active profile")
             }
+        }
+    }
+
+    /// Idempotent: an existing draft (audit data) is reused as-is; otherwise a draft
+    /// (copy of the newest seeded workout, nothing completed) is started. Local
+    /// "UI Audit" profile only.
+    private func startUIAuditDraftIfNeeded(_ route: UIAuditRoute) -> Bool {
+        guard isUIAuditLocalProfile else {
+            UIAuditLaunch.log("\(route.rawValue): active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+            return false
+        }
+        guard activeWorkoutStore.draft == nil else { return true }
+        guard let newest = store.workouts.max(by: { $0.date < $1.date }) else {
+            UIAuditLaunch.log("\(route.rawValue): no seeded workouts to base a draft on")
+            return false
+        }
+        let exercises = newest.exercises.map { block in
+            ActiveWorkoutExercise(
+                exerciseID: block.exerciseID,
+                sets: block.sets.map { ActiveWorkoutSet(weight: $0.weight, reps: $0.reps) }
+            )
+        }
+        do {
+            try activeWorkoutStore.start(
+                workoutDate: Date(),
+                note: nil,
+                exercises: exercises,
+                workoutStore: store
+            )
+            return true
+        } catch {
+            UIAuditLaunch.log("\(route.rawValue): could not start a draft: \(gymErrorMessage(error))")
+            return false
         }
     }
 

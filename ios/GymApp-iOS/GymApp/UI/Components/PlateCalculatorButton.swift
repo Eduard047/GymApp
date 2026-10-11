@@ -21,6 +21,16 @@ struct PlateCalculatorButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+#if DEBUG
+        .onAppear {
+            // `-uiAuditRoute plate-calculator`: the first visible button opens its popover once.
+            guard UIAuditRouter.shared.consume(.plateCalculator) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(700))
+                showsPlates = true
+            }
+        }
+#endif
         .accessibilityLabel(
             gymText("Plates per side", "Диски на сторону", "Блины на сторону", languageCode: gymCurrentLanguageCode())
         )
