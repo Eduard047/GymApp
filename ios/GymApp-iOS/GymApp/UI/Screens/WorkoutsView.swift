@@ -184,6 +184,15 @@ enum TrainingHistoryPeriod: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Plain button look that keeps its label at full contrast when the button is
+/// disabled; SwiftUI's built-in plain style dims disabled labels.
+private struct HistoryRangeButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
 struct MonthlyTrainingSummary: Equatable {
     let monthStart: Date
     let completedSessionCount: Int
@@ -1490,7 +1499,7 @@ public struct WorkoutsView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HistoryRangeButtonStyle())
                     .disabled(selectedHistoryOffset == 0)
                     weekNavigationButton(
                         systemImage: "chevron.right",
@@ -1895,7 +1904,7 @@ public struct WorkoutsView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HistoryRangeButtonStyle())
                 .disabled(weekOffset == 0)
 
                 weekNavigationButton(
