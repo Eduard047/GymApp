@@ -64,7 +64,7 @@ final class WorkoutComparisonTests: XCTestCase {
         let lowerResult = try XCTUnwrap(compare(lower, in: [previous, lower]))
         XCTAssertEqual(lowerResult.volume.delta, -50)
 
-        let same = workout(1, [(squat, [(100.01, 5)])])
+        let same = workout(1, [(squat, [(100.005, 5)])])
         let sameResult = try XCTUnwrap(compare(same, in: [previous, same]))
         XCTAssertTrue(sameResult.volume.isUnchanged)
     }
