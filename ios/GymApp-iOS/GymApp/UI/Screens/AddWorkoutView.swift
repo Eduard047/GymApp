@@ -2608,18 +2608,26 @@ private struct PreviousWorkoutPicker: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(gymShortDateTime(workout.date))
                             .font(.headline)
+                            .foregroundStyle(GymTheme.textPrimary)
                         Text(workout.exercises.map { exerciseName($0.exerciseID) }.joined(separator: " · "))
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(GymTheme.textSecondary)
                             .lineLimit(2)
                         Text(workoutCounts(workout))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(GymTheme.textSecondary)
                     }
                     .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityHint("Copies this workout into the editor")
+                .listRowBackground(GymTheme.heroSurface)
+                .listRowSeparatorTint(GymTheme.heroOutline)
             }
+            .scrollContentBackground(.hidden)
+            .background(GymTheme.background.ignoresSafeArea())
             .navigationTitle("Copy workout")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
