@@ -1064,7 +1064,7 @@ test("active-workout hero is one brand panel with a combined label, ring and cur
     assert.match(markup, /class="active-hero-ring" aria-hidden="true"/);
     assert.doesNotMatch(markup, /role="progressbar"|active-workout-started|active-workout-metrics|<div class="metric-grid/);
     assert.doesNotMatch(markup, /\sstyle=/);
-    assert.match(markup, /active-workout-screen-note/);
+    assert.doesNotMatch(markup, /active-workout-screen-note|screen stays on|Екран не гасне|Экран не гаснет/);
   }
   const label = language => vm.runInContext(
     `state.language = ${JSON.stringify(language)}; activeWorkoutHeroLabel("14:40", { completed: 3, total: 15 }, "Squat")`,
@@ -3003,11 +3003,16 @@ test("the active workout screen keeps the screen on and releases it when left", 
   await new Promise(resolve => setTimeout(resolve, 0));
   vm.runInContext("syncActiveWorkoutWakeLock();", context);
   assert.deepEqual(events, ["request:screen"]);
-  assert.match(vm.runInContext("activeWorkoutScreen()", context), /The screen stays on during the workout/);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /The screen stays on during the workout/);
+  assert.equal(vm.runInContext("activeWorkoutWakeLockUnsupportedNote()", context), "");
 
   vm.runInContext(`nav = [{ name: "workouts" }]; syncActiveWorkoutWakeLock();`, context);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(events, ["request:screen", "release"]);
+  assert.doesNotMatch(vm.runInContext('state.language = "en"; activeWorkoutMoreSheetMarkup()', context), /keep this page open/);
+  context.navigator.wakeLock = undefined;
+  assert.match(vm.runInContext('state.language = "en"; activeWorkoutMoreSheetMarkup()', context), /<p class="muted active-more-note">Browsers can(?:'|&#39;|&#039;)t show workout controls on the lock screen, so keep this page open between sets\.<\/p>/);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /keep this page open/);
 });
 
 test("the train-with-a-friend pill follows the shared rules", () => {

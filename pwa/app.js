@@ -12838,7 +12838,7 @@ function exerciseBuilderHeadingMarkup(draft, selectedCount, setCount) {
 
 function addWorkoutSecondaryControls(draft, liveRecipient = null) {
   return `<details class="panel add-secondary-controls">
-    <summary class="detail-summary add-secondary-summary"><div><span class="eyebrow">${svg("list", "small-icon")}${tx("Optional", "Необов’язково")}</span><h2>${tx("More options", "Більше опцій")}</h2><p class="muted">${tx("Date, notes, templates, sharing & Garmin", "Дата, нотатки, шаблони, поширення й Garmin")}</p></div></summary>
+    <summary class="detail-summary add-secondary-summary"><div><h2 class="add-secondary-title">${svg("list", "small-icon")}${tx("More options", "Більше опцій")}</h2></div></summary>
     <div class="add-secondary-content">
       <section class="subpanel note-panel"><h3>${tx("Workout details", "Деталі тренування")}</h3><label><span class="field-caption">${tx("Workout date", "Дата тренування")}</span><div class="actions workout-date-actions"><input type="date" data-workout-date value="${escapeAttr(localDateInputValue(draft.startedAt))}" max="${escapeAttr(localDateInputValue())}" aria-label="${txAttr("Workout date", "Дата тренування")}"><span class="chip workout-date-weekday">${escapeHtml(fmtDate(draft.startedAt, { weekday: "long" }))}</span><button type="button" class="button ghost" data-action="workout-date-today">${tx("Today", "Сьогодні")}</button></div></label><textarea data-draft="note" maxlength="2000" aria-label="${tAttr("note")}" placeholder="${txAttr("Note", "Нотатка")}">${escapeHtml(draft.note)}</textarea><span class="field-caption">${tx("Plan templates", "Шаблони плану")}</span><div class="chip-row">${noteTemplates().map(note => `<button class="chip buttonlike" data-action="note-template" data-note="${escapeAttr(note.value)}">${escapeHtml(note.label)}</button>`).join("")}</div><div class="actions vertical"><button class="button ghost full" data-action="repeat-latest" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("repeatLast")}</button><button class="button ghost full" data-action="template-picker" ${state.sessions.length ? "" : "disabled"}>${svg("copy", "small-icon")}${t("copyWorkout")}</button></div></section>
       ${liveRecipient ? `<section class="subpanel"><h3>LIVE</h3><p class="muted">${tx3("This draft stays assigned to the selected friend until the room is created or you cancel live setup.", "Ця чернетка прив’язана до обраного друга, доки кімнату не створено або ти не скасуєш live-налаштування.", "Этот черновик привязан к выбранному другу, пока комната не создана или ты не отменишь live-настройку.")}</p><button class="button ghost full" data-action="cancel-draft-live-recipient">${tx3("Cancel live setup", "Скасувати live-налаштування", "Отменить live-настройку")}</button></section>` : `<section class="subpanel"><h3>${tx("Share with a friend", "Поділитися з другом")}</h3><p class="muted">${tx("Only exercises, weights, and reps are shared.", "Передаються лише вправи, вага й повтори.")}</p><button class="button ghost full" data-action="share-draft">${svg("share", "small-icon")}${tx("Share workout plan", "Поділитися планом тренування")}</button></section>`}
@@ -13465,7 +13465,6 @@ function activeWorkoutScreen() {
   const statusMessage = activeWorkoutStatusText();
   return `${liveTabs}<div class="active-live-participant-panel" ${selfPanelAttributes}><section class="hero-panel active-workout-hero">
       ${activeWorkoutHeroMarkup(workout, counts)}
-      <p class="active-workout-screen-note">${escapeHtml(activeWorkoutScreenOnNote())}</p>
       ${workout.note ? `<p class="active-workout-note"><strong>${t("note")}:</strong> ${escapeHtml(workout.note)}</p>` : ""}
     </section>
     ${statusMessage ? `<div class="inline-status ${escapeAttr(activeWorkoutUi.status)}" role="${activeWorkoutUi.status === "error" ? "alert" : "status"}" aria-live="polite">${escapeHtml(statusMessage)}</div>` : ""}
@@ -13763,18 +13762,13 @@ if (typeof document !== "undefined" && typeof document.addEventListener === "fun
   document.addEventListener("visibilitychange", () => syncActiveWorkoutWakeLock());
 }
 
-function activeWorkoutScreenOnNote() {
-  return activeWorkoutWakeLockSupported()
-    ? tx3(
-      "The screen stays on during the workout. Browsers can't show workout controls on the lock screen.",
-      "Екран не гасне під час тренування. Браузер не може показувати керування тренуванням на екрані блокування.",
-      "Экран не гаснет во время тренировки. Браузер не может показывать управление тренировкой на экране блокировки."
-    )
-    : tx3(
-      "Browsers can't show workout controls on the lock screen, so keep this page open between sets.",
-      "Браузер не може показувати керування тренуванням на екрані блокування, тож тримай цю сторінку відкритою між підходами.",
-      "Браузер не может показывать управление тренировкой на экране блокировки, поэтому держите эту страницу открытой между подходами."
-    );
+function activeWorkoutWakeLockUnsupportedNote() {
+  if (activeWorkoutWakeLockSupported()) return "";
+  return tx3(
+    "Browsers can't show workout controls on the lock screen, so keep this page open between sets.",
+    "Браузер не може показувати керування тренуванням на екрані блокування, тож тримай цю сторінку відкритою між підходами.",
+    "Браузер не может показывать управление тренировкой на экране блокировки, поэтому держите эту страницу открытой между подходами."
+  );
 }
 
 // Called from bindEvents() after every render: leaving the active workout
@@ -14086,7 +14080,8 @@ function activeWorkoutMoreSheetMarkup() {
   const adapt = canAdapt
     ? `<section class="active-more-group" aria-labelledby="active-more-adapt"><h3 class="eyebrow" id="active-more-adapt">${tx3("Adapt workout", "Адаптувати тренування", "Адаптировать тренировку")}</h3><div class="exercise-more-actions">${Object.entries(trainingAdaptationLabels()).map(([reason, label]) => `<button class="button secondary full" data-action="training-adapt" data-reason="${reason}">${escapeHtml(label)}</button>`).join("")}</div></section>`
     : "";
-  return `<div class="exercise-more-sheet active-more-sheet"><h2 id="active-more-title">${tx3("More workout options", "Інші дії", "Другие действия")}</h2>${adapt}<div class="exercise-more-actions"><button class="button danger full" data-action="discard-active-workout">${tx3("Discard", "Відкинути", "Удалить")}</button></div></div>`;
+  const wakeLockNote = activeWorkoutWakeLockUnsupportedNote();
+  return `<div class="exercise-more-sheet active-more-sheet"><h2 id="active-more-title">${tx3("More workout options", "Інші дії", "Другие действия")}</h2>${adapt}${wakeLockNote ? `<p class="muted active-more-note">${escapeHtml(wakeLockNote)}</p>` : ""}<div class="exercise-more-actions"><button class="button danger full" data-action="discard-active-workout">${tx3("Discard", "Відкинути", "Удалить")}</button></div></div>`;
 }
 
 function trainingAdaptationSnapshot() {
@@ -16405,7 +16400,6 @@ function detailScreen(id) {
   }
   return `${garmin ? garminWorkoutHeader(session, garmin, grouped, editing) : workoutHeader(session, editing)}
     ${editing ? savedWorkoutDetailsPanel(session, Boolean(garmin)) : ""}
-    <section class="panel highlighted"><div class="row-head"><div><h2>${tx("Train together", "Тренуйтеся разом")}</h2><p class="muted">${tx("Share a link or send a private invitation with an editable copy. Account, notes, heart rate, calories, and Garmin data stay private.", "Поділися посиланням або надішли особисте запрошення з редагованою копією. Акаунт, нотатки, пульс, калорії й дані Garmin залишаються приватними.")}</p></div><button class="button ghost" data-action="share-session" data-id="${escapeAttr(session.id)}">${svg("share", "small-icon")}${tx("Share", "Поділитися")}</button></div></section>
     ${garmin ? garminWorkoutMetricsCard(garmin, session.sets.length) : ""}
     ${workoutComparisonCard(session)}
     ${!session.sets.length && grouped.length ? `<section class="panel warning"><h2>${tx("No set data", "Немає даних підходів")}</h2><p>${tx("This imported workout contains exercise names, but no weights or reps. Export a full Backup JSON from the Android app and import it again.", "У цьому імпортованому тренуванні є назви вправ, але немає ваги й повторів. Експортуй повну резервну копію JSON з Android-застосунку й імпортуй її ще раз.")}</p></section>` : ""}
@@ -16863,9 +16857,13 @@ function savedWorkoutDetailsPanel(session, garmin) {
 
 // Hero actions: delete icon (editing only) beside the title, and a compact Edit / Done pill below.
 function savedWorkoutHeroDelete(session, editing) {
-  if (!editing) return "";
   const id = escapeAttr(String(session.id));
-  return `<div class="hero-actions"><button class="icon-button hero-icon-button" data-action="delete-session" data-id="${id}" aria-label="${txAttr("Delete workout", "Видалити тренування")}">${svg("delete")}</button></div>`;
+  const shareLabel = escapeAttr(tx3("Share workout", "Поділитися тренуванням", "Поделиться тренировкой"));
+  const share = `<button class="icon-button hero-icon-button" data-action="share-session" data-id="${id}" aria-label="${shareLabel}">${svg("share")}</button>`;
+  const remove = editing
+    ? `<button class="icon-button hero-icon-button" data-action="delete-session" data-id="${id}" aria-label="${txAttr("Delete workout", "Видалити тренування")}">${svg("delete")}</button>`
+    : "";
+  return `<div class="hero-actions">${share}${remove}</div>`;
 }
 
 function savedWorkoutHeroToggle(session, editing) {
@@ -24690,7 +24688,7 @@ function workoutExercisePickerMarkup(picker = modal) {
     : picker?.target === "draft-replace"
     ? tx("Change exercise", "Змінити вправу")
     : tx("Add exercise to plan", "Додати вправу до плану");
-  return `<div class="workout-exercise-picker"><span class="eyebrow">${tx("Exercise catalog", "Каталог вправ")}</span><h2>${targetLabel}</h2>${exerciseFilterControls()}<div class="workout-exercise-picker-list">${rows.length ? rows.map(exercise => `<article class="workout-exercise-picker-row">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong>${exerciseSearchReasonMarkup(exercise)}<small>${escapeHtml(mappingFor(exercise).slice(0, 3).map(item => muscleLabel(typeof item === "string" ? item : item.muscleId)).join(" · "))}</small></div><button class="button ghost mini" data-action="select-workout-exercise" data-exercise-id="${escapeAttr(String(exercise.id))}">${tx("Choose", "Обрати")}</button></article>`).join("") : `<div class="empty">${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</div>`}</div></div>`;
+  return `<div class="workout-exercise-picker"><h2>${targetLabel}</h2>${exerciseFilterControls()}<div class="workout-exercise-picker-list">${rows.length ? rows.map(exercise => `<article class="workout-exercise-picker-row">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong>${exerciseSearchReasonMarkup(exercise)}<small>${escapeHtml(mappingFor(exercise).slice(0, 3).map(item => muscleLabel(typeof item === "string" ? item : item.muscleId)).join(" · "))}</small></div><button class="button ghost mini" data-action="select-workout-exercise" data-exercise-id="${escapeAttr(String(exercise.id))}">${tx("Choose", "Обрати")}</button></article>`).join("") : `<div class="empty">${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</div>`}</div></div>`;
 }
 
 function toggleExerciseFavorite(id) {
@@ -26017,7 +26015,7 @@ function modalMarkup() {
         .filter(Boolean)
       : [];
     if (!current || !alternatives.length) return "";
-    return bottomSheet(`<div class="smart-alternatives-sheet"><span class="eyebrow">${t("smartCoach")}</span><h2>${tx("Replace with a similar exercise", "Замінити схожою вправою")}</h2><p class="muted">${tx("Options prioritize the same movement pattern and primary muscles, then role, equipment, and your history. The old weight is never copied.", "Варіанти передусім враховують той самий руховий патерн і головні м’язи, а потім роль, обладнання та твою історію. Стара вага ніколи не копіюється.")}</p><p><strong>${escapeHtml(exerciseDisplayName(current))}</strong></p><div class="smart-alternative-list">${alternatives.map(exercise => {
+    return bottomSheet(`<div class="smart-alternatives-sheet"><h2>${tx("Replace with a similar exercise", "Замінити схожою вправою")}</h2><p><strong>${escapeHtml(exerciseDisplayName(current))}</strong></p><div class="smart-alternative-list">${alternatives.map(exercise => {
       const analysis = analyzeSmartExercise(exercise);
       return `<article class="smart-alternative-card">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(smartMovementLabel(analysis))} · ${escapeHtml(smartRoleLabel(analysis.role))}</small></div><button class="button ghost mini" data-action="apply-smart-alternative" data-block="${modal.blockIndex}" data-replacement-id="${Number(exercise.id)}">${tx("Choose", "Обрати")}</button></article>`;
     }).join("")}</div></div>`);

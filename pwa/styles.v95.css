@@ -844,6 +844,8 @@ a:focus-visible,
   padding-bottom: calc(88px + env(safe-area-inset-bottom));
 }
 
+.active-more-note { margin: 0; font-size: 13px; line-height: 18px; }
+
 .screen-active {
   padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
@@ -1268,7 +1270,8 @@ svg.filled-icon.small-icon {
 
 .add-secondary-controls { padding: 0; }
 .add-secondary-summary { padding: 14px 16px; }
-.add-secondary-summary span,
+.add-secondary-title { display: flex; align-items: center; gap: 8px; margin: 0; }
+.add-secondary-title svg { flex: none; }
 .training-profile-panel .detail-summary span {
   color: var(--muted);
   font-size: 12px;
@@ -6434,6 +6437,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .saved-workout-details textarea { min-height: 88px; resize: vertical; }
 
 .hero-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.hero-actions .icon-button { width: 44px; height: 44px; }
 
 .hero-text-button {
   display: inline-flex;
@@ -6996,8 +7000,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .friend-ghost svg { width: 14px; height: 14px; flex: none; }
 
-.active-workout-screen-note { margin: 4px 0 0; font-size: 12px; line-height: 16px; }
-
 .today-friend-pill {
   display: inline-flex;
   align-items: center;
@@ -7485,7 +7487,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   font-size: 10px;
   line-height: 12px;
 }
-.active-workout-hero .active-workout-screen-note { margin: 0; color: var(--hero-muted); }
 .active-workout-hero .active-workout-note {
   color: var(--hero-text);
   background: var(--hero-tile);
