@@ -7669,12 +7669,12 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .summary-hero-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
   margin: 0;
 }
 .summary-hero-stats > div {
   min-width: 0;
-  padding: 10px;
+  padding: 10px 8px 10px 10px;
   border: 1px solid var(--hero-outline);
   border-radius: var(--radius-lg);
   background: var(--hero-tile);
