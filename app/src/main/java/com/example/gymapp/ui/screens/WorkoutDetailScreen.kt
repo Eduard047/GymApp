@@ -1996,7 +1996,7 @@ private fun GarminMetricCell(
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Text(
-            text = label.uppercase(Locale.getDefault()),
+            text = label,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

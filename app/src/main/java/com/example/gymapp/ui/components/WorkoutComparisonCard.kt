@@ -179,7 +179,7 @@ private fun ComparisonMetricCell(
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
-            text = metric.label.uppercase(Locale.getDefault()),
+            text = metric.label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

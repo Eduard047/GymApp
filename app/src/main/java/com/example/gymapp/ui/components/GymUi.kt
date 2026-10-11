@@ -266,9 +266,9 @@ fun SectionTitle(
     ) {
         if (sectionTitleShowsEyebrow(eyebrow)) {
             Text(
-                text = eyebrow.uppercase(),
+                text = eyebrow,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.secondary
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Text(

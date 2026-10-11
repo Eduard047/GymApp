@@ -181,7 +181,7 @@ h3 { text-wrap: balance; }
   font-size: 11px;
   font-weight: 500;
   line-height: 16px;
-  letter-spacing: 0.6px;
+  letter-spacing: 0;
 }
 
 body::before {
@@ -333,7 +333,6 @@ a:focus-visible,
 }
 .profile-screen-copy .eyebrow {
   color: var(--sage);
-  text-transform: uppercase;
 }
 .workouts-screen-copy {
   display: flex;
@@ -1602,7 +1601,6 @@ svg.filled-icon.small-icon {
 
 .summary-rewards-heading .eyebrow {
   color: var(--blue);
-  text-transform: uppercase;
 }
 
 .summary-rewards-heading h2,
@@ -2965,7 +2963,7 @@ button.leaderboard-row {
   background: color-mix(in srgb, var(--primary-container) 54%, var(--surface));
   box-shadow: inset 4px 0 0 var(--sage);
 }
-.social-share-friend-card .eyebrow { display: block; margin-bottom: 2px; color: var(--sage); }
+.social-share-friend-card .eyebrow { display: block; margin-bottom: 2px; }
 
 .social-share-friends {
   max-height: min(42vh, 420px);
