@@ -12,8 +12,8 @@
     <string name="title_missions">Missions</string>
     <string name="title_add_workout">Workout plan</string>
     <string name="title_workout_plan">Workout plan</string>
-    <string name="title_workout_detail">Workout Details</string>
-    <string name="title_post_workout_summary">Workout Summary</string>
+    <string name="title_workout_detail">Workout details</string>
+    <string name="title_post_workout_summary">Workout summary</string>
     <string name="title_ranks">Rank Titles</string>
     <string name="title_exercises">Exercises</string>
     <string name="exercises_screen_subtitle">Manage your library, favorites, history, and muscle groups.</string>
@@ -1178,8 +1178,7 @@
     <string name="garmin_set_hr_peak">Peak</string>
     <string name="garmin_set_hr_end">End</string>
     <string name="garmin_set_interval_gym_calories">Gym %1$s kcal</string>
-    <string name="workout_comparison_eyebrow">Like for like</string>
-    <string name="workout_comparison_title">Versus the previous matching workout</string>
+    <string name="workout_comparison_title">Workout comparison</string>
     <string name="workout_comparison_supporting">%1$d matching exercises • previous workout %2$s</string>
     <string name="workout_comparison_previous_delta">Previous %1$s · %2$s</string>
     <string name="workout_comparison_no_change">no change</string>

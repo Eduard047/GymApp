@@ -139,7 +139,7 @@ internal fun ExerciseCatalogSelector(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.label_select_exercise),
+                    text = stringResource(R.string.action_add_exercise),
                     style = androidx.compose.material3.MaterialTheme.typography.headlineSmall
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

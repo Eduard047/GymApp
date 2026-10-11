@@ -114,7 +114,7 @@ fun WorkoutComparisonCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             SectionTitle(
-                eyebrow = androidx.compose.ui.res.stringResource(R.string.workout_comparison_eyebrow),
+                eyebrow = "",
                 title = androidx.compose.ui.res.stringResource(R.string.workout_comparison_title),
                 supporting = androidx.compose.ui.res.stringResource(
                     R.string.workout_comparison_supporting,

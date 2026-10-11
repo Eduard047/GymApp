@@ -1210,10 +1210,9 @@
     <string name="garmin_set_hr_peak">Пік</string>
     <string name="garmin_set_hr_end">Кінець</string>
     <string name="garmin_set_interval_gym_calories">Gym %1$s ккал</string>
-    <string name="workout_comparison_eyebrow">Точне порівняння</string>
-    <string name="workout_comparison_title">Проти попереднього схожого тренування</string>
+    <string name="workout_comparison_title">Порівняння тренувань</string>
     <string name="workout_comparison_supporting">%1$d однакових вправ • попереднє тренування %2$s</string>
-    <string name="workout_comparison_previous_delta">Було %1$s · %2$s</string>
+    <string name="workout_comparison_previous_delta">Раніше %1$s · %2$s</string>
     <string name="workout_comparison_no_change">без змін</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>

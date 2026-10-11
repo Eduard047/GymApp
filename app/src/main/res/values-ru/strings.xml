@@ -1132,7 +1132,7 @@
     <string name="garmin_workout_format_title">Силовая тренировка в формате Garmin</string>
     <string name="garmin_workout_synced_from">%1$s · синхронизировано с Garmin</string>
     <string name="garmin_workout_note_derived_from">%1$s · показатели прочитаны из сохранённой заметки</string>
-    <string name="garmin_metric_duration">Продолжительность</string>
+    <string name="garmin_metric_duration">Длительность</string>
     <string name="garmin_metric_watch_session">сессия с часов</string>
     <string name="garmin_metric_logged">Записано</string>
     <string name="garmin_metric_sets_value">%1$d подходов</string>
@@ -1210,10 +1210,9 @@
     <string name="garmin_set_hr_peak">Пик</string>
     <string name="garmin_set_hr_end">Конец</string>
     <string name="garmin_set_interval_gym_calories">Gym %1$s ккал</string>
-    <string name="workout_comparison_eyebrow">Точное сравнение</string>
-    <string name="workout_comparison_title">С предыдущей похожей тренировкой</string>
+    <string name="workout_comparison_title">Сравнение тренировок</string>
     <string name="workout_comparison_supporting">%1$d совпадающих упражнений • предыдущая тренировка %2$s</string>
-    <string name="workout_comparison_previous_delta">Было %1$s · %2$s</string>
+    <string name="workout_comparison_previous_delta">Раньше %1$s · %2$s</string>
     <string name="workout_comparison_no_change">без изменений</string>
 
     <string name="dialog_edit_set_title">Редактировать подход</string>
@@ -1457,7 +1456,7 @@
     <string name="account_sign_out_cloud_hint">Аккаунт и данные сохранятся</string>
     <string name="action_show_details">Показать</string>
     <string name="action_hide_details">Скрыть</string>
-    <string name="post_workout_metric_duration">Время</string>
+    <string name="post_workout_metric_duration">Длительность</string>
     <string name="duration_minutes_compact">%1$d мин</string>
     <string name="duration_hours_compact">%1$d ч</string>
     <string name="duration_hours_minutes_compact">%1$d ч %2$d мин</string>
