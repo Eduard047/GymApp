@@ -321,7 +321,7 @@ struct PostWorkoutSummaryView: View {
                 label: gymText("Sets", "Підходи", "Подходы", languageCode: languageCode)
             )
             heroStat(
-                value: gymVolumeText(workout.totalVolume, languageCode: languageCode),
+                value: heroVolumeText(workout.totalVolume),
                 label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
             )
             heroStat(
@@ -330,6 +330,17 @@ struct PostWorkoutSummaryView: View {
             )
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Full grouped integer with the unit ("10,570 kg", "10 570 кг") so the hero
+    /// matches Android and the web app. The shared `gymVolumeText` keeps its
+    /// one-decimal format for the other screens.
+    private func heroVolumeText(_ volume: Double) -> String {
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        let safe = volume.isFinite && volume >= 0 ? volume : 0
+        let number = safe.formatted(.number.locale(locale).precision(.fractionLength(0)))
+        // No-break space keeps the number and its unit on one line.
+        return "\(number)\u{00A0}\(gymLocalized("kg", languageCode: languageCode))"
     }
 
     private func heroStat(value: String, label: String) -> some View {
@@ -436,11 +447,6 @@ struct PostWorkoutSummaryView: View {
                 )
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 10)], spacing: 10) {
                     GymMetricTile(label: "Exercises", value: workout.exercises.count.formatted(.number.locale(gymAppLocale())))
-                    GymMetricTile(label: "Sets", value: workout.setCount.formatted(.number.locale(gymAppLocale())))
-                    GymMetricTile(
-                        label: "Volume",
-                        value: gymVolumeText(workout.totalVolume, languageCode: languageCode)
-                    )
                     GymMetricTile(
                         label: "Top muscle",
                         value: trainedMuscles.first.map(muscleTitle) ?? "—"
