@@ -1484,40 +1484,18 @@ struct WorkoutDetailView: View {
                     Button(gymLocalized("Done"), action: finishEditing)
                         .disabled(pendingDeletion != nil)
                 } else if let workout = store.workout(id: workoutID) {
-                    Menu {
+                    if sharedWorkoutURL(workout) != nil {
                         Button {
-                            beginEditing()
+                            openWorkoutShareChooser(workout)
                         } label: {
-                            Label(
-                                gymText(
-                                    "Edit", "Змінити", "Изменить",
-                                    languageCode: gymCurrentLanguageCode()
-                                ),
-                                systemImage: "pencil"
-                            )
+                            Image(systemName: "square.and.arrow.up")
+                                .frame(minWidth: 44, minHeight: 44)
                         }
-
-                        if sharedWorkoutURL(workout) != nil {
-                            Button {
-                                openWorkoutShareChooser(workout)
-                            } label: {
-                                Label(
-                                    gymText(
-                                        "Share workout", "Поділитися тренуванням", "Поделиться тренировкой",
-                                        languageCode: gymCurrentLanguageCode()
-                                    ),
-                                    systemImage: "square.and.arrow.up"
-                                )
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel(gymText(
+                            "Share workout", "Поділитися тренуванням", "Поделиться тренировкой",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
                     }
-                    .accessibilityLabel(gymText(
-                        "More", "Ще", "Ещё",
-                        languageCode: gymCurrentLanguageCode()
-                    ))
                 }
             }
         }
@@ -1660,6 +1638,31 @@ struct WorkoutDetailView: View {
                     ))
                     .font(.caption)
                     .foregroundStyle(GymTheme.onHeroSecondary)
+                }
+
+                if !isEditing {
+                    Button {
+                        beginEditing()
+                    } label: {
+                        Label(
+                            gymText(
+                                "Edit workout", "Редагувати тренування", "Редактировать тренировку",
+                                languageCode: languageCode
+                            ),
+                            systemImage: "pencil"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.onHero)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 44)
+                        .background(
+                            Capsule().fill(GymTheme.onHero.opacity(0.14))
+                        )
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
