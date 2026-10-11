@@ -970,7 +970,11 @@ private fun TrainingHistoryPanel(
     modifier: Modifier = Modifier
 ) {
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-    val rangeFormatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM", locale) }
+    val rangeFormatter = remember(locale) {
+        // English reads month-day ("Oct 5"), matching formatShortDate, iOS and the PWA.
+        val pattern = if (locale.language.equals("en", ignoreCase = true)) "MMM d" else "d MMM"
+        DateTimeFormatter.ofPattern(pattern, locale)
+    }
     val weekRange = remember(weeklySummary.days, rangeFormatter) {
         val first = weeklySummary.days.firstOrNull()?.date
         val last = weeklySummary.days.lastOrNull()?.date
