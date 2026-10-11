@@ -495,9 +495,10 @@
     <string name="active_workout_finish_supporting">В историю попадут только записанные подходы. Запланированные строки не повлияют на статистику.</string>
     <string name="active_workout_discard_action">Удалить тренировку</string>
     <string name="active_workout_more_options">Другие действия</string>
-    <string name="active_workout_discard_title">Отменить эту тренировку?</string>
+    <string name="active_workout_discard_title">Удалить активную тренировку?</string>
     <string name="active_workout_discard_message">Активный план и записанные в нём подходы будут удалены с этого устройства. В историю ничего не добавится.</string>
-    <string name="active_workout_discard_confirm">Отменить тренировку</string>
+    <string name="active_workout_discard_confirm">Удалить тренировку</string>
+    <string name="active_workout_discard_keep">Оставить тренировку</string>
     <string name="active_workout_back_hint">Можно безопасно вернуться назад. Тренировка останется на устройстве, пока ты её не завершишь или не отменишь.</string>
     <string name="active_workout_exercise_completed_collapsed">Все подходы записаны. Разверни блок, чтобы проверить их или отменить последний подход.</string>
     <string name="active_workout_missing_title">Нет активной тренировки</string>
@@ -506,7 +507,7 @@
     <string name="active_workout_finish_requires_set">Перед завершением запиши хотя бы один подход.</string>
     <string name="active_workout_record_failed">Не удалось записать подход. Отдых не запущен.</string>
     <string name="active_workout_finish_failed">Не удалось завершить тренировку. Активный черновик остался сохранённым.</string>
-    <string name="active_workout_discard_failed">Не удалось отменить тренировку. Активный черновик остался сохранённым.</string>
+    <string name="active_workout_discard_failed">Не удалось удалить тренировку. Активный черновик остался сохранённым.</string>
     <string name="active_workout_undo_changed">Отменить можно только последний записанный подход. Показана актуальная сохранённая тренировка.</string>
     <string name="active_workout_undo_failed">Не удалось отменить последний подход. Сохранённые данные не изменены.</string>
     <string name="active_workout_undo_action">Отменить подход</string>

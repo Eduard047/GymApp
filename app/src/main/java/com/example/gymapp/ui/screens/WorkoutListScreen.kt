@@ -329,14 +329,17 @@ fun WorkoutListScreen(
                     onClick = {
                         showActiveWorkoutDiscardConfirmation = false
                         onDiscardActiveWorkout()
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Text(stringResource(R.string.active_workout_discard_confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showActiveWorkoutDiscardConfirmation = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(R.string.active_workout_discard_keep))
                 }
             }
         )

@@ -495,9 +495,10 @@
     <string name="active_workout_finish_supporting">До історії потраплять лише записані підходи. Заплановані рядки не вплинуть на статистику.</string>
     <string name="active_workout_discard_action">Відкинути тренування</string>
     <string name="active_workout_more_options">Інші дії</string>
-    <string name="active_workout_discard_title">Скасувати це тренування?</string>
+    <string name="active_workout_discard_title">Відкинути активне тренування?</string>
     <string name="active_workout_discard_message">Активний план і записані в ньому підходи буде видалено з цього пристрою. До історії нічого не додасться.</string>
-    <string name="active_workout_discard_confirm">Скасувати тренування</string>
+    <string name="active_workout_discard_confirm">Відкинути тренування</string>
+    <string name="active_workout_discard_keep">Залишити тренування</string>
     <string name="active_workout_back_hint">Можна безпечно повернутися назад. Тренування залишиться на пристрої, доки ти його не завершиш або не скасуєш.</string>
     <string name="active_workout_exercise_completed_collapsed">Усі підходи записано. Розгорни блок, щоб перевірити їх або скасувати останній підхід.</string>
     <string name="active_workout_missing_title">Немає активного тренування</string>
@@ -506,7 +507,7 @@
     <string name="active_workout_finish_requires_set">Перед завершенням запиши хоча б один підхід.</string>
     <string name="active_workout_record_failed">Не вдалося записати підхід. Відпочинок не запущено.</string>
     <string name="active_workout_finish_failed">Не вдалося завершити тренування. Активна чернетка залишилася збереженою.</string>
-    <string name="active_workout_discard_failed">Не вдалося скасувати тренування. Активна чернетка залишилася збереженою.</string>
+    <string name="active_workout_discard_failed">Не вдалося відкинути тренування. Активна чернетка залишилася збереженою.</string>
     <string name="active_workout_undo_changed">Скасувати можна лише останній записаний підхід. Показано актуальне збережене тренування.</string>
     <string name="active_workout_undo_failed">Не вдалося скасувати останній підхід. Збережені дані не змінено.</string>
     <string name="active_workout_undo_action">Скасувати підхід</string>

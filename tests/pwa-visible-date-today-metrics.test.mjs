@@ -943,3 +943,29 @@ test("active workout Today card leads with the current exercise and set progress
   assert.match(result.done, /<h2 id="focus-lens-title">Следующее упражнение<\/h2>/);
   assert.match(result.done, /Подход 1 · выполнено 1 \/ 1/);
 });
+
+test("discard active workout sheet uses exact EN, UK and RU copy", () => {
+  const sandbox = context();
+  const result = plain(vm.runInContext(`(() => {
+    activeWorkout = { id: "w1", blocks: [{ exerciseName: "Squat", sets: [{ completed: true }] }] };
+    liveWorkoutBinding = null;
+    modal = { type: "confirm-discard-active" };
+    const out = {};
+    for (const language of ["en", "uk", "ru"]) {
+      state.language = language;
+      out[language] = modalMarkup();
+    }
+    return out;
+  })()`, sandbox));
+  const copy = {
+    en: ["Discard active workout\\?", "Keep workout", "Discard workout"],
+    uk: ["Відкинути активне тренування\\?", "Залишити тренування", "Відкинути тренування"],
+    ru: ["Удалить активную тренировку\\?", "Оставить тренировку", "Удалить тренировку"]
+  };
+  for (const [language, [title, keep, confirm]] of Object.entries(copy)) {
+    const markup = result[language];
+    assert.match(markup, new RegExp(`<h2 id="discard-active-confirm-title">${title}</h2>`));
+    assert.match(markup, new RegExp(`data-modal-initial-focus>${keep}</button>`));
+    assert.match(markup, new RegExp(`data-action="confirm-discard-active">${confirm}</button>`));
+  }
+});

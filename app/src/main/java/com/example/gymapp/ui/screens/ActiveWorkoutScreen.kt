@@ -78,6 +78,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -702,7 +703,10 @@ fun ActiveWorkoutScreen(
                         showDiscardConfirmation = false
                         onDiscardWorkout()
                     },
-                    enabled = !uiState.isDiscarding
+                    enabled = !uiState.isDiscarding,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Text(text = stringResource(R.string.active_workout_discard_confirm))
                 }
@@ -712,7 +716,7 @@ fun ActiveWorkoutScreen(
                     onClick = { showDiscardConfirmation = false },
                     enabled = !uiState.isDiscarding
                 ) {
-                    Text(text = stringResource(R.string.action_cancel))
+                    Text(text = stringResource(R.string.active_workout_discard_keep))
                 }
             }
         )

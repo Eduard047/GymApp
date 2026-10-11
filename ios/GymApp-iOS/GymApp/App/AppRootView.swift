@@ -928,12 +928,12 @@ private struct MainTabShell: View {
             isPresented: $showingActiveDraftDiscardConfirmation
         ) {
             Button(
-                gymText("Discard", "Відкинути", "Удалить", languageCode: languageCode),
+                gymText("Discard workout", "Відкинути тренування", "Удалить тренировку", languageCode: languageCode),
                 role: .destructive,
                 action: discardActiveDraft
             )
             Button(
-                gymText("Cancel", "Скасувати", "Отмена", languageCode: languageCode),
+                gymText("Keep workout", "Залишити тренування", "Оставить тренировку", languageCode: languageCode),
                 role: .cancel
             ) {}
         } message: {

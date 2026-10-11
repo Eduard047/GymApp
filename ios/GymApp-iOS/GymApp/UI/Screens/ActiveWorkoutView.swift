@@ -465,9 +465,9 @@ struct ActiveWorkoutView: View {
         ) {
             Button(
                 gymText(
-                    "Discard",
-                    "Відкинути",
-                    "Удалить",
+                    "Discard workout",
+                    "Відкинути тренування",
+                    "Удалить тренировку",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 role: .destructive,
@@ -475,9 +475,9 @@ struct ActiveWorkoutView: View {
             )
             Button(
                 gymText(
-                    "Cancel",
-                    "Скасувати",
-                    "Отмена",
+                    "Keep workout",
+                    "Залишити тренування",
+                    "Оставить тренировку",
                     languageCode: gymCurrentLanguageCode()
                 ),
                 role: .cancel
