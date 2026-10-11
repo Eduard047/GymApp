@@ -77,7 +77,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
@@ -182,6 +182,7 @@ import java.util.Locale
 import java.text.NumberFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.material3.LocalContentColor
 
 internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
 internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
@@ -581,7 +582,7 @@ fun ActiveWorkoutScreen(
                                     .padding(end = 8.dp)
                                     .size(18.dp),
                                 strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                color = LocalContentColor.current
                             )
                         } else {
                             Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null)
@@ -2048,10 +2049,11 @@ private fun SetLogButton(
     } else {
         label
     }
+    // The suffix keeps the button's own content color (white on the solid primary fill, >= 4.5:1 in
+    // both appearances) and is set apart by its lighter weight and size, not by transparency.
     val suffixStyle = SpanStyle(
         fontSize = MaterialTheme.typography.bodyMedium.fontSize,
-        fontWeight = FontWeight.Normal,
-        color = Color.White.copy(alpha = 0.75f)
+        fontWeight = FontWeight.Normal
     )
     Button(
         onClick = onClick,
@@ -2062,7 +2064,7 @@ private fun SetLogButton(
             CircularProgressIndicator(
                 modifier = Modifier.padding(end = 8.dp).size(18.dp),
                 strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onPrimary
+                color = LocalContentColor.current
             )
         }
         Text(

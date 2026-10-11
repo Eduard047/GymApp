@@ -224,6 +224,8 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import com.example.gymapp.ui.theme.primaryActionContainerColor
+import com.example.gymapp.ui.theme.primaryActionContentColor
 
 private class ActivityOnlyWorkoutRpcUnavailableException : IllegalStateException(
     "Activity-only workout RPC is unavailable."
@@ -2590,8 +2592,8 @@ internal fun GymAppRoot(
                                             launchSingleTop = true
                                         }
                                     },
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    containerColor = primaryActionContainerColor(),
+                                    contentColor = primaryActionContentColor(),
                                     expanded = true,
                                     text = { Text(text = stringResource(R.string.title_post_workout_summary)) },
                                     icon = {

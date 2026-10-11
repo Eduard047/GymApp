@@ -107,7 +107,7 @@ html.frame-blocked body {
   --danger: #ffb4ab;
   --on-danger: #690005;
   --on-primary: #ffffff;
-  --on-accent: #071321;
+  --on-accent: #ffffff;
   --primary-container: #173d70;
   --secondary-container: #203753;
   --tertiary-container: #163f3a;
@@ -2419,7 +2419,7 @@ svg.filled-icon.small-icon {
   place-items: center;
   margin-bottom: 14px;
   color: var(--on-accent);
-  background: var(--sage);
+  background: var(--brand-fill);
   border-radius: 999px;
 }
 
@@ -2505,7 +2505,7 @@ svg.filled-icon.small-icon {
   padding: 0 24px;
   border-radius: var(--radius-sm);
   color: var(--on-accent);
-  background: var(--sage);
+  background: var(--brand-fill);
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
@@ -3137,7 +3137,7 @@ button.leaderboard-row {
   padding: 0 16px;
   border-radius: var(--radius-sm);
   color: var(--on-accent);
-  background: var(--sage);
+  background: var(--brand-fill);
   font-size: 14px;
   font-weight: 500;
   box-shadow: var(--shadow);
@@ -3203,8 +3203,8 @@ button.leaderboard-row {
 
 .chip.selected {
   color: var(--on-accent);
-  background: var(--sage);
-  border-color: var(--sage);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--sage) 20%, transparent);
 }
 
@@ -3618,8 +3618,8 @@ button.leaderboard-row {
 }
 .training-history-period button.selected {
   color: var(--on-accent);
-  border-color: var(--sage);
-  background: var(--sage);
+  border-color: var(--brand-fill);
+  background: var(--brand-fill);
 }
 .training-history-switcher {
   display: grid;
@@ -3944,8 +3944,8 @@ button.leaderboard-row {
 
 .segmented.workout-feedback-options button.selected {
   color: var(--on-accent);
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
 }
 
 @media (max-width: 340px) {
@@ -5206,7 +5206,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   font-weight: 600;
 }
 
-.active-set-log-rest { font-size: 14px; font-weight: 400; color: color-mix(in srgb, var(--on-primary) 75%, transparent); }
+.active-set-log-rest { font-size: 14px; font-weight: 400; color: inherit; }
 
 /* Out-of-order logging and delete for unrecorded rows; the exercise overflow menu sits outside the summary. */
 .active-set-row.upcoming { grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 8px; }
@@ -5414,9 +5414,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 .smart-effort-chips .chip.selected {
-  border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+  border-color: color-mix(in srgb, var(--brand-fill) 58%, transparent);
   color: var(--on-accent);
-  background: var(--primary);
+  background: var(--brand-fill);
 }
 
 .smart-plan-status {

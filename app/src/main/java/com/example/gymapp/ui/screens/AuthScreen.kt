@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.BackHand
-import androidx.compose.material3.Button
+import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -104,6 +104,7 @@ import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.appLanguageOptions
 import com.example.gymapp.util.AppLanguage
 import com.example.gymapp.util.asString
+import androidx.compose.material3.LocalContentColor
 
 private const val MAX_AUTH_EMAIL_DRAFT_CHARS = 254
 internal const val MAX_AUTH_PASSWORD_DRAFT_UTF8_BYTES = MAX_LOGIN_PASSWORD_UTF8_BYTES
@@ -1040,7 +1041,7 @@ fun PasswordUpdateScreen(
                             if (uiState.isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    color = LocalContentColor.current,
                                     strokeWidth = 2.dp
                                 )
                             }

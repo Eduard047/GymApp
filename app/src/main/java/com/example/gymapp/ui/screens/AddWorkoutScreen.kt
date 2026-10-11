@@ -50,7 +50,7 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -133,6 +133,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
+import androidx.compose.material3.LocalContentColor
+import com.example.gymapp.ui.theme.primaryFilledIconButtonColors
 
 /** Lazy items (coach panel, exercises header) that precede the exercise cards in the plan editor. */
 private const val PLAN_EDITOR_LEADING_ITEM_COUNT = 2
@@ -323,6 +325,7 @@ fun AddWorkoutScreen(
                 if (uiState.exerciseDrafts.isNotEmpty()) {
                     FilledIconButton(
                         onClick = openAddExercisePicker,
+                        colors = primaryFilledIconButtonColors(),
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
@@ -488,7 +491,7 @@ fun AddWorkoutScreen(
                     CircularProgressIndicator(
                         modifier = Modifier.padding(end = 8.dp).size(18.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = LocalContentColor.current
                     )
                 }
                 Text(

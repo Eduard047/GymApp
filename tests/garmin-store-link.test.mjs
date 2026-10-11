@@ -128,6 +128,6 @@ test("PWA exposes official Android and Garmin store links on the login and accou
   assert.match(app, /settingsRowMarkup\(\{[^\n]*href: garminStoreAppLink\(\), trailing: external \}\)/);
   assert.match(app, /<a class="\$\{classes\}" href="\$\{escapeAttr\(href\)\}" target="_blank" rel="noopener noreferrer"/);
   assert.match(styles, /\.auth-actions\s*\{[^}]*gap: 12px;[^}]*margin-top: 16px;/s);
-  assert.match(styles, /:root\[data-theme="dark"\][\s\S]*?--on-accent: #071321;/);
-  assert.match(styles, /\.button\s*\{[^}]*color: var\(--on-accent\);[^}]*background: var\(--sage\);/s);
+  assert.match(styles, /:root\[data-theme="dark"\][\s\S]*?--on-accent: #ffffff;/);
+  assert.match(styles, /\.button\s*\{[^}]*color: var\(--on-accent\);[^}]*background: var\(--brand-fill\);/s);
 });
