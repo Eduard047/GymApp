@@ -66,6 +66,17 @@ public struct AuthView: View {
             }
         }
         .onDisappear(perform: clearSensitiveDrafts)
+#if DEBUG
+        .onReceive(UIAuditRouter.shared.$pendingPresentation.compactMap { $0 }) { _ in
+            // UI-audit: opens the Continue offline sheet once; nothing is created.
+            guard UIAuditRouter.shared.consume(.offlineProfileSheet) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(700))
+                offlineMessage = nil
+                showOfflineSheet = true
+            }
+        }
+#endif
     }
 
     private var brandHeader: some View {

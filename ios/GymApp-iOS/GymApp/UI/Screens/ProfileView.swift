@@ -148,6 +148,11 @@ struct ProfileView: View {
             .onChange(of: liveWorkoutCoordinator.inbox) { _, _ in
                 retryPendingNativePushScroll(using: proxy, allowFallback: false)
             }
+#if DEBUG
+            .onReceive(UIAuditRouter.shared.$pendingPresentation.compactMap { $0 }) { _ in
+                presentUIAuditRouteIfRequested(proxy)
+            }
+#endif
         }
         .sheet(isPresented: $showsAccountSettings) {
             NavigationStack {
@@ -181,6 +186,36 @@ struct ProfileView: View {
             trainingProfile = TrainingProfileStore().load(accountStorageKey: key)
         }
     }
+
+#if DEBUG
+    /// UI-audit: opens the Account sheet (`account-settings`), the same sheet with its
+    /// first deletion alert (`account-delete-dialog`; `AccountSettingsView` consumes that
+    /// route), or expands Backup & diagnostics (`backup-tools`). Nothing is confirmed.
+    private func presentUIAuditRouteIfRequested(_ proxy: ScrollViewProxy) {
+        switch UIAuditRouter.shared.pendingPresentation {
+        case .accountDeleteDialog?:
+            guard !showsAccountSettings else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(700))
+                showsAccountSettings = true
+            }
+        case .accountSettings?, .backupTools?:
+            guard let route = UIAuditRouter.shared.consume(anyOf: [.accountSettings, .backupTools]) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(700))
+                if route == .accountSettings {
+                    showsAccountSettings = true
+                } else {
+                    backupExpanded = true
+                    try? await Task.sleep(for: .milliseconds(400))
+                    proxy.scrollTo("ui-audit-backup", anchor: .top)
+                }
+            }
+        default:
+            break
+        }
+    }
+#endif
 
     private func retryPendingNativePushScroll(
         using proxy: ScrollViewProxy,
@@ -400,6 +435,9 @@ struct ProfileView: View {
                 trainingSettingsRow
                 settingsRowDivider
                 backupRow
+#if DEBUG
+                    .id("ui-audit-backup")
+#endif
                 settingsRowDivider
                 helpRow
             }

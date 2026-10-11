@@ -224,7 +224,53 @@ struct ExercisesView: View {
         }
         .sheet(item: $presentedSheet, content: presentedContent)
         .alert(item: $activeAlert, content: makeAlert)
+#if DEBUG
+        .onReceive(UIAuditRouter.shared.$pendingPresentation.compactMap { $0 }) { _ in
+            presentUIAuditRouteIfRequested()
+        }
+#endif
     }
+
+#if DEBUG
+    /// UI-audit: presents the add-exercise sheet, history, muscle mapping, or delete
+    /// confirmation once for the matching `-uiAuditRoute`. History/mapping/delete use
+    /// the first listed exercise that has logged sessions. Nothing is saved or confirmed.
+    private func presentUIAuditRouteIfRequested() {
+        guard let route = UIAuditRouter.shared.consume(
+            anyOf: [.exerciseEditor, .exerciseHistory, .exerciseMuscleMapping, .exerciseDeleteDialog]
+        ) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            if route == .exerciseEditor {
+                presentedSheet = .addExercise
+                return
+            }
+            let exercises = filteredExercises
+            guard let exercise = exercises.first(where: {
+                store.progressStats(exerciseID: $0.id).sessionCount > 0
+            }) ?? exercises.first else {
+                UIAuditLaunch.log("\(route.rawValue): no exercises in the active profile")
+                return
+            }
+            switch route {
+            case .exerciseHistory:
+                presentedSheet = .history(exercise)
+            case .exerciseMuscleMapping:
+                presentedSheet = .muscles(exercise)
+            case .exerciseDeleteDialog:
+                activeAlert = .delete(
+                    ExerciseLibraryDeletionTarget(
+                        store: store,
+                        exercise: exercise,
+                        displayName: gymExerciseName(exercise)
+                    )
+                )
+            default:
+                break
+            }
+        }
+    }
+#endif
 
     private var header: some View {
         GymScreenHeader(

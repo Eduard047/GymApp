@@ -94,6 +94,15 @@ struct AccountSettingsView: View {
             }
         }
         .alert(item: $prompt, content: makePrompt)
+#if DEBUG
+        .task {
+            // UI-audit: presents the first deletion alert once; "Continue" is never tapped.
+            guard UIAuditRouter.shared.consume(.accountDeleteDialog) else { return }
+            try? await Task.sleep(for: .milliseconds(900))
+            guard let session = auth.session else { return }
+            prompt = .beginDeletion(AccountDeletionConfirmationTarget(session: session))
+        }
+#endif
         .sheet(isPresented: $showsPasswordChange) {
             PasswordUpdateView(auth: auth, mode: .signedIn) {
                 showsPasswordChange = false

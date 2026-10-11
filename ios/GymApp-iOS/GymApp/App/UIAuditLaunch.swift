@@ -56,6 +56,23 @@ enum UIAuditRoute: String, CaseIterable {
     case progressExerciseSelector = "progress-exercise-selector"
     case progressGoals = "progress-goals"
     case achievementDetail = "achievement-detail"
+    // Batch B2: Exercises, Profile, and the signed-out Auth screen. Hosts:
+    // `ExercisesView`, `ProfileView`, `AccountSettingsView`, `AuthView`. The three
+    // SwiftUI `Menu` screens (exercise-filters, exercise-actions, language-menu)
+    // and the first-run tutorial (`--screenshot-tutorial-step=N`) have no route here.
+    case exerciseEditor = "exercise-editor"
+    case exerciseHistory = "exercise-history"
+    case exerciseMuscleMapping = "exercise-muscle-mapping"
+    case exerciseDeleteDialog = "exercise-delete-dialog"
+    case accountSettings = "account-settings"
+    case accountDeleteDialog = "account-delete-dialog"
+    case backupTools = "backup-tools"
+    case signIn = "sign-in"
+    case offlineProfileSheet = "offline-profile-sheet"
+
+    /// Routes captured on the signed-out Auth screen: the bootstrap seeds the local
+    /// "UI Audit" profile (so it appears in the saved-profiles list), then leaves it.
+    var requiresSignedOut: Bool { self == .signIn || self == .offlineProfileSheet }
 }
 
 /// Hands the requested route from the launch bootstrap (which runs after the
@@ -175,7 +192,30 @@ extension AppState {
             await seedUIAuditProfile()
         }
         if let route = UIAuditLaunch.requestedRoute() {
-            UIAuditRouter.shared.route = route
+            if route.requiresSignedOut {
+                await leaveUIAuditProfileForAuthRoute(route)
+            } else {
+                UIAuditRouter.shared.route = route
+            }
+        }
+    }
+
+    /// `sign-in` / `offline-profile-sheet`: signs out of the local "UI Audit" profile
+    /// only (its data stays on the device, like Account > Leave profile) so the Auth
+    /// screen shows. Never touches a cloud session or another local profile.
+    private func leaveUIAuditProfileForAuthRoute(_ route: UIAuditRoute) async {
+        if let session = auth.session {
+            guard case .local(_, let name) = session, name == UIAuditLaunch.profileName else {
+                UIAuditLaunch.log("\(route.rawValue): active session is not the local \"\(UIAuditLaunch.profileName)\" profile; not signed out")
+                return
+            }
+            guard await signOut() else {
+                UIAuditLaunch.log("\(route.rawValue): could not leave the local profile")
+                return
+            }
+        }
+        if route == .offlineProfileSheet {
+            UIAuditRouter.shared.pendingPresentation = route
         }
     }
 

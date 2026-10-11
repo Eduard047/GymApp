@@ -1136,6 +1136,23 @@ private struct MainTabShell: View {
         case .ranks:
             selectedTab = .progress
             missionPath = [.ranks]
+        case .exerciseEditor, .exerciseHistory, .exerciseMuscleMapping, .exerciseDeleteDialog:
+            selectedTab = .exercises
+            guard isUIAuditLocalProfile else {
+                UIAuditLaunch.log("\(route.rawValue): active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+                return
+            }
+            UIAuditRouter.shared.pendingPresentation = route
+        case .accountSettings, .accountDeleteDialog, .backupTools:
+            selectedTab = .profile
+            guard isUIAuditLocalProfile else {
+                UIAuditLaunch.log("\(route.rawValue): active session is not the local \"\(UIAuditLaunch.profileName)\" profile (cloud accounts are never used)")
+                return
+            }
+            UIAuditRouter.shared.pendingPresentation = route
+        case .signIn, .offlineProfileSheet:
+            // Published by the bootstrap only after signing out; the Auth screen has no tab shell.
+            break
         case .workoutActiveMenu:
             // SwiftUI `Menu` has no programmatic presentation API; not routable without a UI-driving tap.
             UIAuditLaunch.log("workout-active-menu: not routable (SwiftUI Menu cannot be presented from code)")
