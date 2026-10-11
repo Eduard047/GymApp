@@ -17,7 +17,7 @@ fun GymBackground(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val darkTheme = isSystemInDarkTheme()
-    val backgroundRaised = if (darkTheme) Color(0xFF0B1422) else Color(0xFFF8F5EE)
+    val backgroundRaised = if (darkTheme) Color(0xFF0B1422) else Color(0xFFFAFCFF)
 
     Box(
         modifier = modifier
