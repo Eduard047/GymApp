@@ -822,15 +822,16 @@ test("a newly added plan exercise starts with its last logged weight", () => {
   assert.equal(vm.runInContext("workoutDraft.blocks[2].sets[0].weight", context), "");
 });
 
-test("workout complete summary shows a compact sets, volume and duration row", () => {
+test("workout complete summary shows sets, volume and duration tiles inside the hero", () => {
   const context = loadPwaContext();
   installWorkoutFixture(context);
   const html = vm.runInContext("summaryStatsRowMarkup({ ...state.sessions[0], durationSeconds: 2700 })", context);
-  assert.match(html, /summary-stats-row/);
-  assert.match(html, /<span>Sets done<\/span><strong>3<\/strong>/);
+  assert.match(html, /summary-hero-stats/);
+  assert.match(html, /<span>Sets<\/span><strong>3<\/strong>/);
   assert.match(html, /<span>Volume<\/span><strong>[^<]*kg<\/strong>/);
   assert.match(html, /<span>Duration<\/span><strong>45 min<\/strong>/);
-  assert.match(appSource, /\$\{summaryHeroMarkup\(session, xpGain, xpTotal\)\}\s*\$\{summaryStatsRowMarkup\(session\)\}/);
+  assert.match(appSource, /function summaryHeroMarkup[\s\S]{0,800}summary-hero-title[\s\S]{0,600}\$\{summaryStatsRowMarkup\(session\)\}<div class="summary-hero-xp">/);
+  assert.doesNotMatch(appSource, /\$\{summaryHeroMarkup\(session, xpGain, xpTotal\)\}\s*\$\{summaryStatsRowMarkup/);
 });
 
 test("Smart Coach card is collapsed by default and expands with accessible state", () => {

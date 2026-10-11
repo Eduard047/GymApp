@@ -7666,21 +7666,30 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .smart-coach-panel.collapsed { gap: 6px; padding-block: 6px; }
 @media (prefers-reduced-motion: reduce) { .smart-coach-chevron { transition: none; } }
 
-.summary-stats-row {
+.summary-hero-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
-.summary-stats-row > div {
+.summary-hero-stats > div {
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--outline-variant);
+  padding: 10px;
+  border: 1px solid var(--hero-outline);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--hero-tile);
+  color: var(--hero-text);
 }
-.summary-stats-row span { display: block; color: var(--muted); font-size: 13px; line-height: 18px; }
-.summary-stats-row strong {
+.summary-hero-stats span {
+  display: block;
+  overflow: hidden;
+  color: var(--hero-muted);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summary-hero-stats strong {
   display: block;
   margin-top: 4px;
   overflow: hidden;

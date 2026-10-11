@@ -16983,15 +16983,15 @@ function summaryHeroMarkup(session, xpGain, xpTotal) {
   const duration = Number(session.durationSeconds) > 0 ? savedWorkoutDurationLabel(session.durationSeconds) : "";
   const dateLine = `${fmtShortDate(session.startedAt)}${duration ? ` · ${duration}` : ""}`;
   const toNext = Math.max(0, progress.xpForNextLevel - progress.currentLevelXp);
-  return `<section class="hero-panel summary-hero"><div class="summary-hero-title">${svg("checkCircle")}<div><h2>${tx3("Workout complete", "Тренування завершено", "Тренировка завершена")}</h2><p>${escapeHtml(dateLine)}</p></div></div><div class="summary-hero-xp"><strong>+${xpGain} XP</strong><span>${tx3("Session XP", "XP сесії", "XP сессии")}</span></div><div class="summary-hero-level"><strong>${tx3(`Level ${level} · ${rankTitle(xpTotal)}`, `Рівень ${level} · ${rankTitle(xpTotal)}`, `Уровень ${level} · ${rankTitle(xpTotal)}`)}</strong><div class="progress" aria-hidden="true"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div><span>${tx3(`${toNext} XP to level ${level + 1}`, `${toNext} XP до рівня ${level + 1}`, `${toNext} XP до уровня ${level + 1}`)}</span></div></section>`;
+  return `<section class="hero-panel summary-hero"><div class="summary-hero-title">${svg("checkCircle")}<div><h2>${tx3("Workout complete", "Тренування завершено", "Тренировка завершена")}</h2><p>${escapeHtml(dateLine)}</p></div></div>${summaryStatsRowMarkup(session)}<div class="summary-hero-xp"><strong>+${xpGain} XP</strong><span>${tx3("Session XP", "XP сесії", "XP сессии")}</span></div><div class="summary-hero-level"><strong>${tx3(`Level ${level} · ${rankTitle(xpTotal)}`, `Рівень ${level} · ${rankTitle(xpTotal)}`, `Уровень ${level} · ${rankTitle(xpTotal)}`)}</strong><div class="progress" aria-hidden="true"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div><span>${tx3(`${toNext} XP to level ${level + 1}`, `${toNext} XP до рівня ${level + 1}`, `${toNext} XP до уровня ${level + 1}`)}</span></div></section>`;
 }
 
-// Compact completed-sets / volume / duration row under the summary hero.
+// Completed-sets / volume / duration tiles, rendered inside the summary hero under the title block.
 function summaryStatsRowMarkup(session) {
   const summary = sessionSummary(session);
   const duration = Number(session.durationSeconds) > 0 ? savedWorkoutDurationLabel(session.durationSeconds) : "—";
   const tile = (label, value) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
-  return `<section class="summary-stats-row" aria-label="${escapeAttr(tx3("Workout totals", "Підсумок тренування", "Итог тренировки"))}">${tile(tx3("Sets done", "Підходів", "Подходов"), String(summary.sets))}${tile(tx3("Volume", "Обсяг", "Объём"), formatLocalizedSetWeight(Math.round(summary.volume)))}${tile(tx3("Duration", "Тривалість", "Длительность"), duration)}</section>`;
+  return `<div class="summary-hero-stats" role="group" aria-label="${escapeAttr(tx3("Workout totals", "Підсумок тренування", "Итог тренировки"))}">${tile(tx3("Sets", "Підходи", "Подходы"), String(summary.sets))}${tile(tx3("Volume", "Обсяг", "Объём"), formatLocalizedSetWeight(Math.round(summary.volume)))}${tile(tx3("Duration", "Тривалість", "Длительность"), duration)}</div>`;
 }
 
 function summaryScreen(id) {
@@ -17001,7 +17001,6 @@ function summaryScreen(id) {
   const xpTotal = xpForSessions(sessionsThroughCurrent(session));
   const rewards = summaryRewards(session);
   return `${summaryHeroMarkup(session, xpGain, xpTotal)}
-    ${summaryStatsRowMarkup(session)}
     ${workoutFeedbackPanel(session)}
     ${summaryRecordsSection(summaryPersonalRecords(session))}
     ${summaryRewardsSection(rewards)}
