@@ -12832,7 +12832,7 @@ function exerciseBuilderHeadingMarkup(draft, selectedCount, setCount) {
   }
   items.push({ action: "discard-plan", icon: "close", danger: true, label: tx3("Discard plan", "Відкинути план", "Удалить план") });
   const menuLabel = tx3("Plan actions", "Дії з планом", "Действия с планом");
-  return `<section class="exercise-builder-heading"><div><h2>${tx("Exercises", "Вправи")}</h2><span class="pill">${selectedCount} · ${n(setCount, "set", "sets", "підхід", "підходи", "підходів")}</span></div><button class="button secondary exercise-builder-voice" type="button" data-action="open-voice-workout" aria-label="${escapeAttr(tx3("Create workout plan by voice", "Створити план тренування голосом", "Создать план тренировки голосом"))}">${svg("mic", "small-icon")}</button><button class="button exercise-builder-add" data-action="open-workout-exercise-picker" data-picker-target="draft-new" aria-label="${tAttr("addExercise")}">${svg("add", "small-icon")}</button><div class="plan-menu-wrap">${planMenuTriggerMarkup("header", menuLabel, "button secondary exercise-builder-more")}${planMenuMarkup("header", menuLabel, items)}</div></section>`;
+  return `<section class="exercise-builder-heading"><div><h2>${tx("Exercises", "Вправи")}</h2><span class="pill">${countNoun(selectedCount, "exercises")} · ${n(setCount, "set", "sets", "підхід", "підходи", "підходів")}</span></div><button class="button secondary exercise-builder-voice" type="button" data-action="open-voice-workout" aria-label="${escapeAttr(tx3("Create workout plan by voice", "Створити план тренування голосом", "Создать план тренировки голосом"))}">${svg("mic", "small-icon")}</button><button class="button exercise-builder-add" data-action="open-workout-exercise-picker" data-picker-target="draft-new" aria-label="${tAttr("addExercise")}">${svg("add", "small-icon")}</button><div class="plan-menu-wrap">${planMenuTriggerMarkup("header", menuLabel, "button secondary exercise-builder-more")}${planMenuMarkup("header", menuLabel, items)}</div></section>`;
 }
 
 function addWorkoutSecondaryControls(draft, liveRecipient = null) {
@@ -12859,10 +12859,12 @@ function activeWorkoutSetCounts(workout = activeWorkout) {
 
 function activeWorkoutProgressLabel(completed, total) {
   const setCount = n(total, "set", "sets", "підхід", "підходи", "підходів");
+  // After "из / із" the noun takes the genitive: "из 1 подхода", "із 21 підходу", but "из 2 подходов".
+  const genitiveOne = total % 10 === 1 && total % 100 !== 11;
   return tx3(
     `Completed ${completed} of ${setCount}`,
-    `Виконано ${completed} із ${setCount}`,
-    `Выполнено ${completed} из ${setCount}`
+    `Виконано ${completed} із ${total} ${genitiveOne ? "підходу" : "підходів"}`,
+    `Выполнено ${completed} из ${total} ${genitiveOne ? "подхода" : "подходов"}`
   );
 }
 
@@ -25305,6 +25307,35 @@ function missionUnitLabel(template) {
   return counted.replace(/^\d+\s+/, "");
 }
 
+// Mission titles that put a counted noun next to the number. The ru/uk plural form has to follow the
+// count (1 / 2-4 / 5+, 21, 22), so these are built with countNoun here instead of the single-form
+// russian-text.js patterns. Returns null for English and for titles that are already correct labels.
+function missionCountedTitle(template, cadence) {
+  const language = state.language;
+  if (language !== "ru" && language !== "uk") return null;
+  const goal = template.goal;
+  const ru = language === "ru";
+  const sets = countNoun(goal, "sets");
+  const exercises = countNoun(goal, "exercises");
+  const workouts = countNoun(goal, "workouts");
+  const key = `${cadence}/${template.family}`;
+  switch (key) {
+    case "daily/exercises": return ru ? `${exercises} сегодня` : null;
+    case "daily/sets": return ru ? `Цель: ${sets}` : `Ціль: ${sets}`;
+    case "weekly/workouts": return ru ? `${workouts} за неделю` : null;
+    case "monthly/workouts": return ru ? `${workouts} за месяц` : null;
+    case "weekly/active-days":
+    case "monthly/active-days": return ru ? n(goal, "active day", "active days", "", "", "") : null;
+    case "weekly/sets": return ru ? `${sets} за неделю` : `Тиждень на ${sets}`;
+    case "monthly/sets": return ru ? `${sets} за месяц` : `Місяць на ${sets}`;
+    case "weekly/exercises": return `${exercises} ${ru ? "за неделю" : "за тиждень"}`;
+    case "monthly/exercises": return `${exercises} ${ru ? "за месяц" : "за місяць"}`;
+    case "monthly/max-session-sets": return ru ? `Лучшая сессия: ${sets}` : null;
+    case "monthly/max-session-exercises": return ru ? `Лучшая сессия: ${exercises}` : null;
+    default: return null;
+  }
+}
+
 function mission(template, cadence, stats, history) {
   const progress = template.progress(stats);
   const cadenceLabel = cadence === "daily" ? t("daily") : cadence === "weekly" ? t("weekly") : t("monthly");
@@ -25312,7 +25343,7 @@ function mission(template, cadence, stats, history) {
     id: template.id,
     cadence,
     cadenceLabel,
-    title: tx(template.titleEn, template.titleUk),
+    title: missionCountedTitle(template, cadence) || tx(template.titleEn, template.titleUk),
     summary: missionSummary(template, cadence),
     progressLabel: `${Math.round(progress)} / ${template.goal} ${missionUnitLabel(template)}`,
     progress,
