@@ -111,6 +111,99 @@ object UiAuditHooks {
                 nav.navigate(AppDestination.ActiveWorkout.route) { launchSingleTop = true }
             }
         },
+        // Plan editor sheets and dialogs. The two list-backed ones need a drafted plan, built by the editor's own
+        // "Repeat last workout" button (the only local-profile data they touch is the in-memory/retained draft).
+        "workout-templates" to { nav, app ->
+            if (auditRepository(app, "workout-templates") != null) {
+                openPlanEditor(nav)
+                if (openPlanOptions(nav, "workout-templates")) {
+                    step("workout-templates", "copy-previous button", string(nav, R.string.action_copy_workout_day))
+                }
+            }
+        },
+        "workout-smart-alternatives" to { nav, app ->
+            if (auditRepository(app, "workout-smart-alternatives") != null && draftPlan(nav, "workout-smart-alternatives")) {
+                if (step("workout-smart-alternatives", "exercise actions", formatMatcher(nav, R.string.cd_exercise_actions))) {
+                    step("workout-smart-alternatives", "replace with similar", string(nav, R.string.editor_replace_with_similar))
+                }
+            }
+        },
+        "discard-plan-dialog" to { nav, app ->
+            if (auditRepository(app, "discard-plan-dialog") != null && draftPlan(nav, "discard-plan-dialog")) {
+                step("discard-plan-dialog", "discard draft", string(nav, R.string.workout_plan_discard_draft), scroll = true)
+            }
+        },
+        "clear-plan-dialog" to { nav, app ->
+            if (auditRepository(app, "clear-plan-dialog") != null && draftPlan(nav, "clear-plan-dialog")) {
+                // "More options" is also the label of the collapsed card; wait until the drafted exercise exists so the
+                // list-header menu button (not the card) is the topmost match.
+                awaitNode(formatMatcher(nav, R.string.cd_exercise_actions))
+                if (step("clear-plan-dialog", "plan menu", string(nav, R.string.workout_plan_exercises_more_options), topmost = true)) {
+                    step("clear-plan-dialog", "clear plan", string(nav, R.string.workout_plan_clear_action))
+                }
+            }
+        },
+        // Workout detail: share sheet, and the two delete dialogs (edit mode first). Presented only, never confirmed.
+        "workout-share" to { nav, app ->
+            if (openLatestDetail(nav, app, "workout-share")) {
+                step("workout-share", "share action", string(nav, R.string.action_share_workout))
+            }
+        },
+        "delete-workout-dialog" to { nav, app ->
+            if (openLatestDetail(nav, app, "delete-workout-dialog") &&
+                step("delete-workout-dialog", "edit workout", string(nav, R.string.action_edit_workout))
+            ) {
+                step("delete-workout-dialog", "delete workout", formatMatcher(nav, R.string.cd_delete_workout_on))
+            }
+        },
+        "delete-set-dialog" to { nav, app ->
+            if (openLatestDetail(nav, app, "delete-set-dialog") &&
+                step("delete-set-dialog", "edit workout", string(nav, R.string.action_edit_workout)) &&
+                // Set rows are only composed inside an expanded exercise card; the seed's newest workout starts with Squat.
+                step("delete-set-dialog", "expand exercise", { it == "Squat" })
+            ) {
+                // The set row's accessibility "Delete set N for X" action runs the same confirmation as long-press.
+                if (!invokeCustomAction(formatMatcher(nav, R.string.cd_delete_set_named), scroll = true)) {
+                    Log.w(TAG, "delete-set-dialog: delete-set action not found")
+                    dumpClickables("delete-set-dialog")
+                }
+            }
+        },
+        // Active-workout overlays; all reuse the audit profile's active draft (idempotent, leaves it behind).
+        "workout-active-menu" to { nav, app ->
+            if (openActive(nav, app, "workout-active-menu")) {
+                step("workout-active-menu", "overflow button", string(nav, R.string.active_workout_more_options), toolbar = true)
+            }
+        },
+        "workout-adaptation" to { nav, app ->
+            if (openActive(nav, app, "workout-adaptation") &&
+                step("workout-adaptation", "overflow button", string(nav, R.string.active_workout_more_options), toolbar = true) &&
+                step("workout-adaptation", "adapt item", string(nav, R.string.training_adapt_workout))
+            ) {
+                // "Too hard today" previews the change directly (rest chooser variants need extra taps).
+                step("workout-adaptation", "too-hard item", string(nav, R.string.training_too_hard))
+            }
+        },
+        "plate-calculator" to { nav, app ->
+            if (openActive(nav, app, "plate-calculator")) {
+                step("plate-calculator", "plates capsule", string(nav, R.string.plate_calculator_content_description))
+            }
+        },
+        "finish-exercise-dialog" to { nav, app ->
+            if (openActive(nav, app, "finish-exercise-dialog")) {
+                step("finish-exercise-dialog", "save exercise", string(nav, R.string.active_workout_save_exercise))
+            }
+        },
+        // Today's discard dialog (not the toolbar one): Today > "More workout options" > "Discard workout".
+        "discard-active-workout-dialog" to { nav, app ->
+            val repository = auditRepository(app, "discard-active-workout-dialog")
+            if (repository != null && ensureActiveWorkout(repository)) {
+                openTab(nav, AppDestination.Workouts)
+                if (step("discard-active-workout-dialog", "more options", string(nav, R.string.active_workout_more_options))) {
+                    step("discard-active-workout-dialog", "discard action", string(nav, R.string.active_workout_discard_action))
+                }
+            }
+        },
         // Read-only: the summary of the newest seeded workout; nothing is finished or created.
         "workout-summary" to { nav, app ->
             val sessionId = if (auditRepository(app, "workout-summary") != null) {
@@ -192,22 +285,103 @@ object UiAuditHooks {
         return null
     }
 
-    /** True when an active draft exists afterwards; starts one only if none exists. */
-    private suspend fun ensureActiveWorkout(repository: GymRepository): Boolean {
-        if (repository.getActiveWorkoutSnapshot() != null) return true
-        val catalog = repository.observeExercises().first()
-        val preferred = listOf("Bench Press", "Barbell Row", "Dips")
-            .mapNotNull { name -> catalog.firstOrNull { it.name == name } }
-        val picked = preferred.ifEmpty { catalog.take(3) }
-        if (picked.isEmpty()) {
-            Log.w(TAG, "workout-active: no exercises available")
+    private fun string(nav: NavHostController, id: Int): (String) -> Boolean {
+        val label = nav.context.getString(id)
+        return { it == label }
+    }
+
+    /** Matches a localized format string (e.g. "Delete set %1$d for %2$s") against any argument values. */
+    private fun formatMatcher(nav: NavHostController, id: Int): (String) -> Boolean {
+        val regex = Regex(
+            nav.context.getString(id).split(Regex("%\\d*\\$?[sd]")).joinToString(".*") { Regex.escape(it) },
+            RegexOption.DOT_MATCHES_ALL
+        )
+        return { regex.matches(it) }
+    }
+
+    private suspend fun step(
+        route: String,
+        what: String,
+        matcher: (String) -> Boolean,
+        topmost: Boolean = false,
+        scroll: Boolean = false,
+        toolbar: Boolean = false
+    ): Boolean {
+        val ok = clickMatching(matcher, topmost, scroll, toolbar)
+        if (!ok) {
+            Log.w(TAG, "$route: $what not found")
+            dumpClickables(route)
+        }
+        return ok
+    }
+
+    private fun openPlanEditor(nav: NavHostController) {
+        openTab(nav, AppDestination.Workouts)
+        nav.navigate(AppDestination.AddWorkout.route) { launchSingleTop = true }
+    }
+
+    /** Plan editor with a drafted plan, filled by the editor's own "Repeat last workout" button. */
+    private suspend fun draftPlan(nav: NavHostController, route: String): Boolean {
+        openPlanEditor(nav)
+        return openPlanOptions(nav, route) &&
+            step(route, "repeat-last button", string(nav, R.string.action_repeat_last_workout))
+    }
+
+    /** The template/repeat buttons live inside the collapsed "More options" card. */
+    private suspend fun openPlanOptions(nav: NavHostController, route: String): Boolean =
+        step(route, "more options card", string(nav, R.string.workout_plan_more_options))
+
+    private suspend fun openLatestDetail(nav: NavHostController, app: GymApplication, route: String): Boolean {
+        if (auditRepository(app, route) == null) return false
+        val sessionId = latestSessionId(app)
+        if (sessionId == null) {
+            Log.w(TAG, "$route: no workout available")
             return false
         }
-        val drafts = picked.mapIndexed { index, exercise ->
-            WorkoutExerciseDraft(
-                exerciseId = exercise.id,
-                sets = List(3) { WorkoutSetDraft(weight = 60.0 + 10.0 * index, reps = 10 - index) }
-            )
+        openTab(nav, AppDestination.Workouts)
+        nav.navigate(AppDestination.workoutDetailRoute(sessionId))
+        return true
+    }
+
+    private suspend fun openActive(nav: NavHostController, app: GymApplication, route: String): Boolean {
+        val repository = auditRepository(app, route)
+        if (repository == null || !ensureActiveWorkout(repository)) return false
+        openTab(nav, AppDestination.Workouts)
+        nav.navigate(AppDestination.ActiveWorkout.route) { launchSingleTop = true }
+        return true
+    }
+
+    /**
+     * True when an active draft exists afterwards; starts one only if none exists. Like iOS, the draft is a
+     * copy of the newest seeded workout's exercises and sets (nothing completed).
+     */
+    private suspend fun ensureActiveWorkout(repository: GymRepository): Boolean {
+        if (repository.getActiveWorkoutSnapshot() != null) return true
+        val template = repository.getLatestWorkoutTemplate()
+        var drafts = template?.workoutExercises
+            ?.filter { it.sets.isNotEmpty() }
+            ?.map { item ->
+                WorkoutExerciseDraft(
+                    exerciseId = item.workoutExercise.exerciseId,
+                    sets = item.sets.sortedBy { it.orderIndex }.map { WorkoutSetDraft(weight = it.weight, reps = it.reps) }
+                )
+            }
+            .orEmpty()
+        if (drafts.isEmpty()) {
+            val catalog = repository.observeExercises().first()
+            val preferred = listOf("Bench Press", "Barbell Row", "Dips")
+                .mapNotNull { name -> catalog.firstOrNull { it.name == name } }
+            val picked = preferred.ifEmpty { catalog.take(3) }
+            if (picked.isEmpty()) {
+                Log.w(TAG, "workout-active: no exercises available")
+                return false
+            }
+            drafts = picked.mapIndexed { index, exercise ->
+                WorkoutExerciseDraft(
+                    exerciseId = exercise.id,
+                    sets = List(3) { WorkoutSetDraft(weight = 60.0 + 10.0 * index, reps = 10 - index) }
+                )
+            }
         }
         repository.startActiveWorkout(
             date = System.currentTimeMillis(),
@@ -218,21 +392,136 @@ object UiAuditHooks {
     }
 
     /** Clicks the first clickable semantics node whose text/description equals [label]. */
+    private suspend fun clickLabelled(label: String): Boolean = clickMatching({ it == label })
+
+    /**
+     * Clicks the first clickable node (popups and dialogs first) whose text/description satisfies [matches].
+     * [topmost] picks the match highest on screen (e.g. the toolbar button over a same-named card button);
+     * [scroll] scrolls the first scrollable list down between retries for controls that are not composed yet.
+     */
     @OptIn(InternalComposeUiApi::class)
-    private suspend fun clickLabelled(label: String): Boolean {
-        repeat(30) {
+    private suspend fun clickMatching(
+        matches: (String) -> Boolean,
+        topmost: Boolean = false,
+        scroll: Boolean = false,
+        toolbar: Boolean = false
+    ): Boolean {
+        repeat(30) { attempt ->
             val clicked = withContext(Dispatchers.Main) {
-                val activity = activityRef?.get() ?: return@withContext false
-                val root = findComposeRoot(activity.window.decorView) ?: return@withContext false
-                val node = findClickable(root.semanticsOwner.rootSemanticsNode, label)
-                val action = node?.config?.getOrNull(SemanticsActions.OnClick)?.action
-                action != null && action()
+                composeRoots().any { root ->
+                    val rootHeight = (root as View).height
+                    val nodes = findNodes(root.semanticsOwner.rootSemanticsNode) { candidate ->
+                        candidate.config.getOrNull(SemanticsActions.OnClick) != null &&
+                            labelsOf(candidate).any(matches) &&
+                            // The toolbar overflow is the only visible same-named button in the top band (off-screen lazy
+                            // items report a clamped bounds top of 0, so use the unclamped position).
+                            (!toolbar || candidate.positionInRoot.y.let { it > 0f && it < rootHeight * 0.12f })
+                    }
+                    val node = if (topmost) nodes.minByOrNull { it.boundsInRoot.top } else nodes.firstOrNull()
+                    val action = node?.config?.getOrNull(SemanticsActions.OnClick)?.action
+                    action != null && action()
+                }
             }
             if (clicked) return true
+            if (scroll && attempt >= 4 && attempt % 2 == 0) scrollDown()
             delay(200)
         }
         return false
     }
+
+    /** Diagnostics for a failed lookup: labels of clickable nodes and custom actions per window (no user data). */
+    @OptIn(InternalComposeUiApi::class)
+    private suspend fun dumpClickables(route: String) = withContext(Dispatchers.Main) {
+        composeRoots().forEachIndexed { index, root ->
+            val rows = findNodes(root.semanticsOwner.rootSemanticsNode) {
+                it.config.getOrNull(SemanticsActions.OnClick) != null ||
+                    it.config.getOrNull(SemanticsActions.CustomActions) != null
+            }.take(40).joinToString(" | ") { node ->
+                val actions = node.config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label }
+                "${labelsOf(node).firstOrNull()?.take(24)}@${node.boundsInRoot.top.toInt()}" +
+                    (if (actions.isEmpty()) "" else "+$actions")
+            }
+            Log.w(TAG, "$route: window#$index $rows")
+        }
+    }
+
+    /** Waits (max ~6s) until any semantics node in any window has a label satisfying [matches]. */
+    @OptIn(InternalComposeUiApi::class)
+    private suspend fun awaitNode(matches: (String) -> Boolean): Boolean {
+        repeat(30) {
+            val found = withContext(Dispatchers.Main) {
+                composeRoots().any { root ->
+                    findNodes(root.semanticsOwner.rootSemanticsNode) { labelsOf(it).any(matches) }.isNotEmpty()
+                }
+            }
+            if (found) return true
+            delay(200)
+        }
+        return false
+    }
+
+    /** Runs the first accessibility custom action whose label satisfies [matches]. */
+    @OptIn(InternalComposeUiApi::class)
+    private suspend fun invokeCustomAction(matches: (String) -> Boolean, scroll: Boolean = false): Boolean {
+        repeat(30) { attempt ->
+            val done = withContext(Dispatchers.Main) {
+                composeRoots().any { root ->
+                    val action = findNodes(root.semanticsOwner.rootSemanticsNode) { candidate ->
+                        candidate.config.getOrNull(SemanticsActions.CustomActions)
+                            .orEmpty().any { matches(it.label) }
+                    }.firstOrNull()?.config?.getOrNull(SemanticsActions.CustomActions)
+                        .orEmpty().firstOrNull { matches(it.label) }
+                    action != null && action.action()
+                }
+            }
+            if (done) return true
+            if (scroll && attempt >= 4 && attempt % 2 == 0) scrollDown()
+            delay(200)
+        }
+        return false
+    }
+
+    @OptIn(InternalComposeUiApi::class)
+    private suspend fun scrollDown() {
+        withContext(Dispatchers.Main) {
+            val activity = activityRef?.get() ?: return@withContext
+            val root = findComposeRoot(activity.window.decorView) ?: return@withContext
+            val list = findNodes(root.semanticsOwner.rootSemanticsNode) {
+                it.config.getOrNull(SemanticsActions.ScrollBy) != null
+            }.firstOrNull()
+            list?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, 700f)
+        }
+    }
+
+    private fun labelsOf(node: SemanticsNode): List<String> =
+        node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+
+    private fun findNodes(node: SemanticsNode, predicate: (SemanticsNode) -> Boolean): List<SemanticsNode> =
+        (if (predicate(node)) listOf(node) else emptyList()) +
+            node.children.flatMap { findNodes(it, predicate) }
+
+    /**
+     * Compose roots of every window of this process, topmost first: dropdown menus and dialogs live in their own
+     * windows, outside the activity's decor view. Falls back to the activity window if the window list is unreadable.
+     */
+    @OptIn(InternalComposeUiApi::class)
+    private fun composeRoots(): List<ViewRootForTest> {
+        val activity = activityRef?.get() ?: return emptyList()
+        val views = LinkedHashSet<View>()
+        views.addAll(windowRootViews())
+        views.add(activity.window.decorView)
+        return views.mapNotNull { findComposeRoot(it) }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun windowRootViews(): List<View> = runCatching {
+        val global = Class.forName("android.view.WindowManagerGlobal")
+        val instance = global.getMethod("getInstance").invoke(null)
+        val field = global.getDeclaredField("mViews").apply { isAccessible = true }
+        (field.get(instance) as List<View>).toList().asReversed()
+    }.onFailure { Log.w(TAG, "window list unavailable: ${it.javaClass.simpleName}") }
+        .getOrDefault(emptyList())
 
     @OptIn(InternalComposeUiApi::class)
     private fun findComposeRoot(view: View): ViewRootForTest? {
@@ -243,14 +532,6 @@ object UiAuditHooks {
             }
         }
         return null
-    }
-
-    private fun findClickable(node: SemanticsNode, label: String): SemanticsNode? {
-        val texts = node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
-        val descriptions = node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
-        val matches = label in texts || label in descriptions
-        if (matches && node.config.getOrNull(SemanticsActions.OnClick) != null) return node
-        return node.children.firstNotNullOfOrNull { findClickable(it, label) }
     }
 
     private suspend fun latestSessionId(app: GymApplication): Long? {
