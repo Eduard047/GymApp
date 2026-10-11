@@ -3,6 +3,7 @@ package com.example.gymapp.ui.screens
 import com.example.gymapp.data.repository.TrainingTools
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.util.parseWeightInputOrNull
+import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 
@@ -59,6 +60,13 @@ internal data class WeightStepPlan(val minus: WeightStepSide, val plus: WeightSt
 /** Blank input steps from 0 like the record path treats it; unparseable input cannot step. */
 internal fun weightForStepping(weightInput: String): Double? =
     if (weightInput.isBlank()) 0.0 else parseWeightInputOrNull(weightInput)
+
+/**
+ * A typed weight shown with the app language's decimal separator ("92.5" -> "92,5" in ru/uk).
+ * Display only: unparseable text is returned unchanged and the stored input is never rewritten.
+ */
+internal fun displayWeightInput(weightInput: String, format: NumberFormat): String =
+    if (weightInput.isBlank()) weightInput else weightForStepping(weightInput)?.let(format::format) ?: weightInput
 
 /**
  * Real delta when the direction can move, the nominal step otherwise (blocked at 0 kg or at a

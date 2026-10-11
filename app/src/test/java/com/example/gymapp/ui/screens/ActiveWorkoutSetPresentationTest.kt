@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.text.NumberFormat
+import java.util.Locale
 
 class ActiveWorkoutSetPresentationTest {
     @Test
@@ -175,5 +177,17 @@ class ActiveWorkoutSetPresentationTest {
             RecordedConfirmationStep.Clear,
             recordedConfirmationStep("a", null, emptySet(), wasShowing = false, hasFailureForSet = true)
         )
+    }
+
+    @Test
+    fun displayedWeightUsesTheLanguageDecimalSeparator() {
+        fun format(locale: Locale) = NumberFormat.getNumberInstance(locale).apply { maximumFractionDigits = 3 }
+
+        assertEquals("92,5", displayWeightInput("92.5", format(Locale("ru"))))
+        assertEquals("92,5", displayWeightInput("92,5", format(Locale("uk"))))
+        assertEquals("92.5", displayWeightInput("92,5", format(Locale.US)))
+        assertEquals("60", displayWeightInput("60", format(Locale("ru"))))
+        assertEquals("", displayWeightInput("", format(Locale("ru"))))
+        assertEquals("9x", displayWeightInput("9x", format(Locale("ru"))))
     }
 }

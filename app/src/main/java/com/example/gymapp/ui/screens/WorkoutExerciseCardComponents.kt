@@ -80,10 +80,14 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -97,6 +101,7 @@ import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.tabularDigits
+import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 
 /*
@@ -444,11 +449,14 @@ internal fun WorkoutFooterButton(
 
 /** "60 kg × 8" for a set's weight and reps inputs (blank counts as 0). */
 @Composable
-internal fun rememberSetSummary(weightInput: String, repsInput: String): String = stringResource(
-    R.string.active_workout_set_summary,
-    weightInput.ifBlank { "0" },
-    repsInput.ifBlank { "0" }
-)
+internal fun rememberSetSummary(weightInput: String, repsInput: String): String {
+    val format = rememberDecimalFormat()
+    return stringResource(
+        R.string.active_workout_set_summary,
+        displayWeightInput(weightInput.ifBlank { "0" }, format),
+        repsInput.ifBlank { "0" }
+    )
+}
 
 /** The 22dp outlined circle with the set number that leads every set row (plain and editable). */
 @Composable
@@ -1030,6 +1038,16 @@ internal fun SetValueLine(
     }
 }
 
+/** Shows '.' and ',' as the locale's decimal separator; one-to-one, so cursor offsets are unchanged. */
+internal class DecimalSeparatorTransformation(locale: java.util.Locale) : VisualTransformation {
+    private val separator = DecimalFormatSymbols.getInstance(locale).decimalSeparator
+
+    override fun filter(text: AnnotatedString): TransformedText = TransformedText(
+        AnnotatedString(text.text.replace('.', separator).replace(',', separator)),
+        OffsetMapping.Identity
+    )
+}
+
 @Composable
 internal fun SetWeightField(
     value: String,
@@ -1049,6 +1067,9 @@ internal fun SetWeightField(
         textAlign = TextAlign.End
     ).tabularDigits()
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    // Typed '.' or ',' both show as the app language's separator; the stored text is untouched.
+    val locale = LocalConfiguration.current.locales[0]
+    val decimalSeparatorTransformation = remember(locale) { DecimalSeparatorTransformation(locale) }
     // Fit the width to the measured text: at least one digit, at most six, plus room for the caret.
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -1071,6 +1092,7 @@ internal fun SetWeightField(
             imeAction = ImeAction.Done
         ),
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+        visualTransformation = decimalSeparatorTransformation,
         interactionSource = interaction,
         modifier = Modifier
             .width(fieldWidth)

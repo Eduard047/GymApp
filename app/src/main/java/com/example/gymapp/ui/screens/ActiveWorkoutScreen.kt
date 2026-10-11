@@ -277,7 +277,13 @@ fun ActiveWorkoutScreen(
         }
     }
     val onSetRecorded: (String, String, String, Int) -> Unit = { setId, weightText, repsText, restSeconds ->
-        val summary = bannerContext.getString(R.string.active_workout_set_summary, weightText, repsText)
+        val weightFormat = NumberFormat.getNumberInstance(bannerContext.resources.configuration.locales[0])
+            .apply { maximumFractionDigits = 3 }
+        val summary = bannerContext.getString(
+            R.string.active_workout_set_summary,
+            displayWeightInput(weightText, weightFormat),
+            repsText
+        )
         val message = bannerContext.getString(R.string.active_workout_recorded_banner, summary)
         val announcement = recordedSetAnnouncement(message, restSeconds) { text, clock ->
             bannerContext.getString(R.string.active_workout_recorded_announcement, text, clock)

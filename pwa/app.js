@@ -13992,7 +13992,7 @@ function applyActiveSetVoiceLogSet(setId, result) {
   if (!inputs) return false;
   const { weightInput, repsInput } = inputs;
   if (Object.prototype.hasOwnProperty.call(result, "weightKg")) {
-    weightInput.value = window.GymVoiceWorkout.formatWeight(result.weightKg);
+    weightInput.value = activeWeightFieldText(window.GymVoiceWorkout.formatWeight(result.weightKg));
     rememberActiveLiveDraftInput(weightInput);
   }
   if (Object.prototype.hasOwnProperty.call(result, "reps")) {
@@ -14015,7 +14015,7 @@ function applyActiveSetVoiceRepeatPrevious(setId) {
   const inputs = activeSetVoiceInputs(setId);
   if (!inputs) return false;
   const { weightInput, repsInput } = inputs;
-  weightInput.value = window.GymVoiceWorkout.formatWeight(values.weight);
+  weightInput.value = activeWeightFieldText(window.GymVoiceWorkout.formatWeight(values.weight));
   repsInput.value = String(values.reps);
   rememberActiveLiveDraftInput(weightInput);
   rememberActiveLiveDraftInput(repsInput);
@@ -14409,6 +14409,15 @@ function activeStepNumber(value) {
   return plateNumber(value);
 }
 
+// Display-only: shows a plain decimal weight with the app language's separator (ru/uk comma,
+// en dot). Parsing everywhere already accepts both '.' and ',', and odd or partial text is untouched.
+function activeWeightFieldText(text) {
+  const raw = String(text ?? "");
+  if (!/^\d+\.\d+$/.test(raw)) return raw;
+  const separator = new Intl.NumberFormat(displayLocale()).formatToParts(1.1).find(part => part.type === "decimal")?.value || ".";
+  return raw.replace(".", separator);
+}
+
 function activeStepWeightValue(text) {
   const trimmed = String(text ?? "").replace(",", ".").trim();
   if (trimmed === "") return 0;
@@ -14614,7 +14623,7 @@ function applyActiveStep(setId, field, direction) {
     const allowed = smartExerciseLoadProfile(location.block)?.allowedWeightsKg || [];
     const target = activeWeightStepInfo(weight, allowed)[direction > 0 ? "plus" : "minus"];
     if (!target.canMove) return false;
-    input.value = String(target.weight);
+    input.value = activeWeightFieldText(String(target.weight));
   } else {
     const reps = activeStepReps(input.value, direction);
     if (reps == null) return false;
@@ -14696,7 +14705,7 @@ function applyActiveRepeatPrevious(setId) {
   const repsInput = app.querySelector(`[data-active-set-id="${setId}"][data-active-field="reps"]`);
   const values = activePreviousValues(setId).repeat;
   if (!weightInput || !repsInput || !values) return false;
-  weightInput.value = String(values.weight);
+  weightInput.value = activeWeightFieldText(String(values.weight));
   repsInput.value = String(values.reps);
   const remembered = rememberActiveLiveDraftInput(weightInput) && rememberActiveLiveDraftInput(repsInput);
   syncActiveSetSteppers(setId);
@@ -14706,7 +14715,7 @@ function applyActiveRepeatPrevious(setId) {
 function activeSetInputMarkup(set, field, className, label, extra = "") {
   const setId = escapeAttr(String(set.id));
   const numeric = field === "reps";
-  return `<input class="${className}" data-active-set-id="${setId}" data-active-field="${field}" inputmode="${numeric ? "numeric" : "decimal"}" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(activeLiveDraftInputValue(set, field))}" aria-label="${escapeAttr(label)}" autocomplete="off"${extra}${set.completed ? " disabled" : ""}>`;
+  return `<input class="${className}" data-active-set-id="${setId}" data-active-field="${field}" inputmode="${numeric ? "numeric" : "decimal"}" maxlength="${MAX_ACTIVE_WORKOUT_INPUT_FIELD_CHARACTERS}" value="${escapeAttr(numeric ? activeLiveDraftInputValue(set, field) : activeWeightFieldText(activeLiveDraftInputValue(set, field)))}" aria-label="${escapeAttr(label)}" autocomplete="off"${extra}${set.completed ? " disabled" : ""}>`;
 }
 
 function activeSetWeightLabel(number) {

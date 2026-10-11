@@ -130,6 +130,28 @@ enum ActiveWorkoutRestReconciler {
     }
 }
 
+/// The editable weight text in the app language's decimal separator (ru/uk comma, en dot), the same
+/// number format as `gymWeightText`. Typing accepts both '.' and ','.
+private struct GymWeightFieldFormat: ParseableFormatStyle {
+    var languageCode: String
+
+    func format(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0 ... 2)).locale(gymAppLocale(languageCode: languageCode)))
+    }
+
+    var parseStrategy: Strategy { Strategy() }
+
+    struct Strategy: ParseStrategy {
+        func parse(_ value: String) throws -> Double {
+            let normalized = value.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+            guard let number = Double(normalized), number.isFinite else {
+                throw CocoaError(.formatting)
+            }
+            return number
+        }
+    }
+}
+
 private enum LiveParticipantSelection: String {
     case current
     case peer
@@ -1548,7 +1570,7 @@ struct ActiveWorkoutView: View {
                 TextField(
                     "0",
                     value: weightBinding(setID: set.id),
-                    format: .number.precision(.fractionLength(0 ... 2))
+                    format: GymWeightFieldFormat(languageCode: gymCurrentLanguageCode())
                 )
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
