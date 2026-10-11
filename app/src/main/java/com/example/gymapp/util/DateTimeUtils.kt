@@ -78,14 +78,16 @@ object DateTimeUtils {
             .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
     }
 
+    /**
+     * The one workout-date format used on every screen: abbreviated weekday, day and month, with the
+     * year only when it is not the current year. See [formatShortDate].
+     */
     fun formatDate(
         timestamp: Long,
         locale: Locale = Locale.getDefault(),
-        zoneId: ZoneId = ZoneId.systemDefault()
-    ): String {
-        val formatter = formatter("EEE, d MMM yyyy", locale)
-        return Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate().format(formatter)
-    }
+        zoneId: ZoneId = ZoneId.systemDefault(),
+        now: Long = System.currentTimeMillis()
+    ): String = formatShortDate(timestamp, locale, zoneId, now)
 
     fun formatLongDate(
         timestamp: Long,
@@ -143,9 +145,9 @@ object DateTimeUtils {
     }
 
     /**
-     * Abbreviated hour/minute duration such as "4h 31m", "4 г 31 хв" or "4 ч 31 мин" (at most two
+     * Abbreviated hour/minute duration such as "4 h 31 min", "4 год 31 хв" or "4 ч 31 мин" (at most two
      * units, seconds dropped). Reproduces the iOS `DateComponentsFormatter` output with the
-     * abbreviated style, including Ukrainian's narrow no-break space between number and unit.
+     * abbreviated style.
      * Returns an empty string when [seconds] is not positive.
      */
     fun formatCompactDuration(
@@ -154,11 +156,12 @@ object DateTimeUtils {
     ): String {
         if (seconds <= 0L) return ""
         val hours = seconds / 3600
-        val minutes = seconds % 3600 / 60
+        // A positive duration shorter than a minute still reads "1 min" (matches iOS and PWA).
+        val minutes = if (seconds < 60L) 1L else seconds % 3600 / 60
         val (hourUnit, minuteUnit) = when (locale.language.lowercase(Locale.ROOT)) {
-            "uk" -> "\u202F\u0433" to "\u202F\u0445\u0432"
+            "uk" -> " \u0433\u043e\u0434" to " \u0445\u0432"
             "ru" -> " \u0447" to " \u043c\u0438\u043d"
-            else -> "h" to "m"
+            else -> " h" to " min"
         }
         return when {
             hours == 0L -> "$minutes$minuteUnit"

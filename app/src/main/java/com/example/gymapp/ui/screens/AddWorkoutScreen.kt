@@ -1,6 +1,7 @@
 ﻿package com.example.gymapp.ui.screens
 
 import com.example.gymapp.ui.components.TrainingSettingsSummaryRow
+import com.example.gymapp.ui.components.trainingSettingsSummary
 import com.example.gymapp.ui.components.TrainingSettingsSheet
 import android.app.DatePickerDialog
 import android.content.Context
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -87,7 +89,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -111,6 +115,10 @@ import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
+import com.example.gymapp.ui.viewmodel.SetFieldKey
+import com.example.gymapp.ui.viewmodel.SetInputField
+import com.example.gymapp.ui.viewmodel.isValidRepsInput
+import com.example.gymapp.ui.viewmodel.isValidWeightInput
 import com.example.gymapp.ui.viewmodel.SmartWorkoutPlanSummaryUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreviewUiModel
 import com.example.gymapp.ui.theme.GymControlShape
@@ -145,7 +153,7 @@ fun AddWorkoutScreen(
     onOpenSmartAlternatives: (Long) -> Unit,
     onCloseSmartAlternatives: () -> Unit,
     onApplySmartAlternative: (Long, Long, Long) -> Unit,
-    onAddExerciseDraft: () -> Unit,
+    onAddExerciseWithSelection: (Long) -> Unit,
     onClearPlan: () -> Unit,
     onRemoveExerciseDraft: (Long) -> Unit,
     onExerciseSelected: (Long, Long) -> Unit,
@@ -218,15 +226,41 @@ fun AddWorkoutScreen(
             listState.animateScrollToItem(PLAN_EDITOR_LEADING_ITEM_COUNT + draftCount - 1)
         }
     }
-    val addExerciseDraftAndReveal: () -> Unit = {
-        revealAppendedDraft = true
-        onAddExerciseDraft()
+    // "Add exercise" opens the picker first; a card is only created once an exercise is chosen.
+    var showAddExercisePicker by rememberSaveable { mutableStateOf(false) }
+    val openAddExercisePicker: () -> Unit = { showAddExercisePicker = true }
+    // A failed Start brings the first invalid card into view (its bad fields are marked in red).
+    val startFeedback = uiState.startValidation
+    var handledValidationVersion by remember { mutableIntStateOf(startFeedback.version) }
+    LaunchedEffect(startFeedback.version) {
+        if (startFeedback.version != handledValidationVersion) {
+            handledValidationVersion = startFeedback.version
+            val index = uiState.exerciseDrafts.indexOfFirst { it.draftId == startFeedback.firstInvalidDraftId }
+            if (index >= 0) {
+                listState.animateScrollToItem(PLAN_EDITOR_LEADING_ITEM_COUNT + index)
+            }
+        }
     }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     var showVoiceWorkoutSheet by rememberSaveable { mutableStateOf(false) }
     val requestClose = onNavigateToHistory
     Box(modifier = modifier.fillMaxSize()) {
+    ExerciseCatalogSelector(
+        selectedExerciseId = null,
+        exercises = uiState.exercises,
+        frequentExerciseIds = uiState.frequentExerciseIds,
+        exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
+        exerciseMuscleIds = uiState.exerciseMuscleIds,
+        exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+        onExerciseSelected = { exerciseId ->
+            revealAppendedDraft = true
+            onAddExerciseWithSelection(exerciseId)
+        },
+        trigger = {},
+        externalOpen = showAddExercisePicker && !editorInteractionsLocked,
+        onExternalDismiss = { showAddExercisePicker = false }
+    )
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -288,7 +322,7 @@ fun AddWorkoutScreen(
                 }
                 if (uiState.exerciseDrafts.isNotEmpty()) {
                     FilledIconButton(
-                        onClick = addExerciseDraftAndReveal,
+                        onClick = openAddExercisePicker,
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
@@ -352,7 +386,7 @@ fun AddWorkoutScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
-                        onClick = addExerciseDraftAndReveal,
+                        onClick = openAddExercisePicker,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = null)
@@ -375,6 +409,7 @@ fun AddWorkoutScreen(
                 exerciseWorkoutCounts = uiState.exerciseWorkoutCounts,
                 exerciseMuscleIds = uiState.exerciseMuscleIds,
                 lastWeight = draft.exerciseId?.let { uiState.lastWeights[it] },
+                invalidFields = startFeedback.invalidFields,
                 allowedWeights = draft.exerciseId
                     ?.let { uiState.exerciseLoadProfiles[it]?.allowedWeightsKg }
                     .orEmpty(),
@@ -408,7 +443,7 @@ fun AddWorkoutScreen(
                     accessibilityLabel = addExerciseDescription,
                     dashed = true,
                     enabled = true,
-                    onClick = addExerciseDraftAndReveal,
+                    onClick = openAddExercisePicker,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("workout_plan_add_exercise_footer")
@@ -892,93 +927,163 @@ private fun SmartCoachPanel(
     onEffortSelected: (SmartWorkoutEffort) -> Unit,
     onGenerateSmartWorkout: () -> Unit
 ) {
+    // Collapsed by default: title, settings summary, edit link and chevron. Expanding reveals the
+    // settings row, effort chips, plan info and Build.
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = if (expanded) 16.dp else 4.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SectionTitle(
-                eyebrow = "",
-                title = stringResource(R.string.smart_coach_title)
-            )
-            // The coach settings summary sits at the top of this card; the full editor is shared.
-            TrainingSettingsSummaryRow(profile = trainingProfile, onEdit = onEditTrainingSettings)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmartWorkoutEffort.entries.chunked(2).forEach { rowEfforts ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .semantics {
+                            stateDescription = if (expanded) {
+                                context.getString(R.string.state_expanded)
+                            } else {
+                                context.getString(R.string.state_collapsed)
+                            }
+                        }
+                        .clickable(role = Role.Button) { expanded = !expanded },
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.smart_coach_title),
+                        modifier = Modifier.semantics { heading() },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (!expanded) {
+                        Text(
+                            text = trainingProfile.trainingSettingsSummary(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (!expanded) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .clickable(
+                                onClickLabel = stringResource(R.string.training_settings_edit_description),
+                                role = Role.Button,
+                                onClick = onEditTrainingSettings
+                            )
+                            .padding(horizontal = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        rowEfforts.forEach { effort ->
-                            FilterChip(
-                                selected = selectedEffort == effort,
-                                onClick = { onEffortSelected(effort) },
-                                label = { Text(effort.smartCoachLabel()) },
-                                modifier = Modifier.weight(1f)
+                        Text(
+                            text = stringResource(R.string.training_settings_edit),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable { expanded = !expanded }
+                        .clearAndSetSemantics { },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null
+                    )
+                }
+            }
+            if (expanded) {
+                // The coach settings summary sits at the top of the expanded card; the full editor is shared.
+                TrainingSettingsSummaryRow(profile = trainingProfile, onEdit = onEditTrainingSettings)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SmartWorkoutEffort.entries.chunked(2).forEach { rowEfforts ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowEfforts.forEach { effort ->
+                                FilterChip(
+                                    selected = selectedEffort == effort,
+                                    onClick = { onEffortSelected(effort) },
+                                    label = { Text(effort.smartCoachLabel()) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+                generatedPlan?.let { plan ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (generatedPlanNeedsRefresh) {
+                            Text(
+                                text = stringResource(R.string.smart_coach_plan_needs_refresh),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TrackChanges,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.smart_coach_focus_rir,
+                                    plan.focus.smartCoachLabel(),
+                                    plan.rirSummary
+                                ),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                        }
+                        if (plan.requestedEffort != plan.appliedEffort) {
+                            Text(
+                                text = stringResource(
+                                    R.string.smart_coach_effort_override,
+                                    plan.requestedEffort.smartCoachLabel(),
+                                    plan.appliedEffort.smartCoachLabel()
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        plan.effortAdjustment?.let { adjustment ->
+                            Text(
+                                text = adjustment.smartCoachLabel(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
-            }
-            generatedPlan?.let { plan ->
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (generatedPlanNeedsRefresh) {
-                        Text(
-                            text = stringResource(R.string.smart_coach_plan_needs_refresh),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.TrackChanges,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.smart_coach_focus_rir,
-                                plan.focus.smartCoachLabel(),
-                                plan.rirSummary
-                            ),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                    }
-                    if (plan.requestedEffort != plan.appliedEffort) {
-                        Text(
-                            text = stringResource(
-                                R.string.smart_coach_effort_override,
-                                plan.requestedEffort.smartCoachLabel(),
-                                plan.appliedEffort.smartCoachLabel()
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    plan.effortAdjustment?.let { adjustment ->
-                        Text(
-                            text = adjustment.smartCoachLabel(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                Button(
+                    onClick = onGenerateSmartWorkout,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.action_generate_smart_workout),
+                        modifier = Modifier.padding(start = 8.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-            }
-            Button(
-                onClick = onGenerateSmartWorkout,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
-                Text(
-                    text = stringResource(R.string.action_generate_smart_workout),
-                    modifier = Modifier.padding(start = 8.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
         }
     }
@@ -1121,6 +1226,7 @@ private fun ExerciseDraftCard(
     exerciseWorkoutCounts: Map<Long, Int>,
     exerciseMuscleIds: Map<String, Set<String>>,
     lastWeight: Double?,
+    invalidFields: Set<SetFieldKey>,
     allowedWeights: List<Double>,
     recommendation: WorkoutRecommendation?,
     exerciseMediaOwnerKey: String,
@@ -1243,6 +1349,10 @@ private fun ExerciseDraftCard(
                         set = set,
                         exerciseName = exerciseName,
                         lastWeight = lastWeight,
+                        weightError = SetFieldKey(draft.draftId, setIndex, SetInputField.Weight) in invalidFields &&
+                            !isValidWeightInput(set.weight),
+                        repsError = SetFieldKey(draft.draftId, setIndex, SetInputField.Reps) in invalidFields &&
+                            !isValidRepsInput(set.reps),
                         allowedWeights = allowedWeights,
                         onWeightChanged = { onWeightChanged(setIndex, it) },
                         onRepsChanged = { onRepsChanged(setIndex, it) },
@@ -1279,6 +1389,8 @@ private fun WorkoutSetDraftRow(
     set: SetInputState,
     exerciseName: String,
     lastWeight: Double?,
+    weightError: Boolean,
+    repsError: Boolean,
     allowedWeights: List<Double>,
     onWeightChanged: (String) -> Unit,
     onRepsChanged: (String) -> Unit,
@@ -1314,7 +1426,9 @@ private fun WorkoutSetDraftRow(
                 onWeightChanged = onWeightChanged,
                 onRepsChanged = onRepsChanged,
                 deleteDescription = stringResource(R.string.cd_delete_set_named, number, exerciseName),
-                onDelete = onDelete
+                onDelete = onDelete,
+                weightError = weightError,
+                repsError = repsError
             )
         }
         Row(

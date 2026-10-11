@@ -172,10 +172,10 @@ struct TrainingSettingsSummaryRow: View {
     let profile: TrainingProfile
     let languageCode: String
     var textColor: Color = GymTheme.textSecondary
-    var linkColor: Color = GymTheme.brandFill
+    var linkColor: Color = GymTheme.primary
     let action: () -> Void
 
-    private var summaryText: String {
+    var summaryText: String {
         [
             profile.goal.gymDisplayName,
             profile.calorieMode.gymDisplayName,

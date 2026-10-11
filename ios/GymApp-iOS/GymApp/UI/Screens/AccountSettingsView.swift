@@ -919,7 +919,7 @@ private struct GarminSettingsCard: View {
                         Label("Revoke selected watch", systemImage: "applewatch")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(GymSecondaryButtonStyle())
+                    .buttonStyle(GymSecondaryButtonStyle(destructive: true))
                     .disabled(garminCloud.isWorking)
                 }
 

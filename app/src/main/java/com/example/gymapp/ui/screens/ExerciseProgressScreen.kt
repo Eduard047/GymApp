@@ -378,8 +378,9 @@ private fun ExerciseSelectorCard(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = stringResource(
-                                            R.string.progress_logged_sessions,
+                                        text = pluralStringResource(
+                                            R.plurals.progress_logged_sessions_count,
+                                            sessionCount,
                                             sessionCount
                                         ),
                                         style = MaterialTheme.typography.bodySmall,
@@ -447,7 +448,10 @@ private fun ProgressSummaryCard(
         ),
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_total_volume),
-            value = String.format(Locale.getDefault(), "%.0f", totalVolume)
+            value = stringResource(
+                R.string.today_history_volume_kg,
+                String.format(Locale.getDefault(), "%.0f", totalVolume)
+            )
         )
     )
 

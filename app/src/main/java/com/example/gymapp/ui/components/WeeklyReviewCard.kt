@@ -70,7 +70,7 @@ fun WeeklyReviewCard(
             Text(
                 text = stringResource(R.string.training_settings_title) + " · " + stringResource(R.string.training_settings_edit),
                 style = MaterialTheme.typography.bodySmall,
-                color = brandFillColor(),
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .heightIn(min = 48.dp)
                     .clickable(

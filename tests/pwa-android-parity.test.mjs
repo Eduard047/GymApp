@@ -148,7 +148,7 @@ test("PWA distinguishes planned rows from durable active and history sets", () =
   assert.match(appSources[0].source, /data-action="save-active-exercise"/);
   assert.match(appSources[0].source, /data-action="finish-active-workout"/);
   assert.match(appSources[0].source, /data-action="save-workout"[^>]*>[\s\S]*?t\("saveCompletedWorkout"\)/);
-  assert.match(appSources[0].source, /data-action="record-all-active-sets"[^>]*>[\s\S]*?tx3\("Save all"/);
+  assert.match(appSources[0].source, /data-action="record-all-active-sets"[^>]*>[\s\S]*?tx3\("Log all remaining sets"/);
 });
 
 for (const { filename, source } of appSources) {
@@ -293,7 +293,7 @@ for (const { filename, source } of appSources) {
     assert.deepEqual(result.metrics, [
       { label: "Sets", current: 3, previous: 2 },
       { label: "Reps", current: 21, previous: 12 },
-      { label: "Volume", current: 1695, previous: 840 }
+      { label: "Volume", current: 1695, previous: 840, unit: "kg" }
     ]);
   });
 

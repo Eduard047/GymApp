@@ -1416,12 +1416,14 @@ private fun copyFriendCode(context: Context, value: String): Boolean {
 internal fun localizedSocialRequestDate(
     requestedAt: String,
     locale: Locale,
-    zoneId: ZoneId = ZoneId.systemDefault()
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    now: Long = System.currentTimeMillis()
 ): String = runCatching {
     DateTimeUtils.formatDate(
         timestamp = Instant.parse(requestedAt).toEpochMilli(),
         locale = locale,
-        zoneId = zoneId
+        zoneId = zoneId,
+        now = now
     )
 }.getOrElse { requestedAt }
 

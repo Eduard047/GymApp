@@ -148,7 +148,7 @@ struct TrainingProgramView: View {
                                 HStack(spacing: 10) {
                                     Image(systemName: icon(for: slot))
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(gymFormattedDate(slot.date, date: .abbreviated, time: .omitted))
+                                        Text(gymShortDate(slot.date))
                                         Text(status(for: slot))
                                             .font(.subheadline)
                                             .foregroundStyle(GymTheme.textSecondary)
@@ -233,7 +233,7 @@ private struct ProgramScheduleEditor: View {
                         showsWeeklyTargetEditor = true
                     } label: {
                         Text(t("change target", "змінити ціль", "изменить цель"))
-                            .foregroundStyle(GymTheme.brandFill)
+                            .foregroundStyle(GymTheme.primary)
                             .frame(minHeight: 44, alignment: .leading)
                     }
                     .buttonStyle(.plain)
@@ -298,7 +298,7 @@ private struct ProgramSlotDetailView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text(gymFormattedDate(slot.date, date: .long, time: .omitted))
+                Text(gymShortDate(slot.date))
                     .font(GymTheme.TypeScale.sectionTitle)
                 if slot.workoutID != nil {
                     Label(t("Workout completed", "Тренування виконано", "Тренировка выполнена"), systemImage: "checkmark.circle.fill")

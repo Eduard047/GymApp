@@ -140,6 +140,7 @@ import com.example.gymapp.ui.screens.ProfileScreen
 import com.example.gymapp.ui.screens.FinishedLiveWorkoutDialog
 import com.example.gymapp.ui.screens.ProgressHubScreen
 import com.example.gymapp.ui.screens.RanksScreen
+import com.example.gymapp.ui.screens.retainedDraftSummary
 import com.example.gymapp.ui.screens.PostWorkoutSummaryScreen
 import com.example.gymapp.ui.screens.PasswordUpdateScreen
 import com.example.gymapp.ui.screens.WorkoutDetailScreen
@@ -2587,8 +2588,8 @@ internal fun GymAppRoot(
                                             launchSingleTop = true
                                         }
                                     },
-                                    containerColor = MaterialTheme.colorScheme.tertiary,
-                                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
                                     expanded = true,
                                     text = { Text(text = stringResource(R.string.title_post_workout_summary)) },
                                     icon = {
@@ -2796,6 +2797,9 @@ internal fun GymAppRoot(
                                     )
                                 },
                                 hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
+                                retainedDraftSummary = retainedDraftSummary(
+                                    addWorkoutDraftUiState.exerciseDrafts
+                                ),
                                 activeWorkoutFocus = focusForToday,
                                 friendEntryState = TodayFriendEntryState.from(
                                     isCloudAccount = cloudSession != null,
@@ -3210,7 +3214,7 @@ internal fun GymAppRoot(
                                 onOpenSmartAlternatives = viewModel::openSmartWorkoutAlternatives,
                                 onCloseSmartAlternatives = viewModel::closeSmartWorkoutAlternatives,
                                 onApplySmartAlternative = viewModel::applySmartWorkoutAlternative,
-                                onAddExerciseDraft = viewModel::addExerciseDraft,
+                                onAddExerciseWithSelection = viewModel::addExerciseDraftWithExercise,
                                 onClearPlan = { viewModel.clearWorkoutPlan() },
                                 onRemoveExerciseDraft = viewModel::removeExerciseDraft,
                                 onExerciseSelected = viewModel::updateExerciseSelection,

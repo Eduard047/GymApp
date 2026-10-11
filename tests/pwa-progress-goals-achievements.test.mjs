@@ -138,11 +138,11 @@ test("X4 session subtitles use the pluralised noun in every language", () => {
 
 test("Exercise picker card holds thumbnail, name, logged sessions and the picker trigger", () => {
   const panel = progressPanel("en", true);
-  assert.match(panel, /<section class="panel progress-exercise-picker"><h2 class="progress-picker-title">Choose an exercise<\/h2><div class="progress-picker-selected">[\s\S]*<button type="button" class="progress-picker-change" data-action="open-progress-exercise-picker"[^>]*aria-label="Change exercise: Bench Press\. 1 logged sessions"[\s\S]*<strong>Bench Press<\/strong><small>1 logged sessions<\/small>/);
+  assert.match(panel, /<section class="panel progress-exercise-picker"><h2 class="progress-picker-title">Choose an exercise<\/h2><div class="progress-picker-selected">[\s\S]*<button type="button" class="progress-picker-change" data-action="open-progress-exercise-picker"[^>]*aria-label="Change exercise: Bench Press\. 1 logged session"[\s\S]*<strong>Bench Press<\/strong><small>1 logged session<\/small>/);
   assert.equal((panel.match(/data-action="open-progress-exercise-picker"/g) || []).length, 1);
   assert.doesNotMatch(panel, /SELECTED EXERCISE|ОБРАНА ВПРАВА/);
-  assert.match(progressPanel("ru", true), /Записано сессий: 1/);
-  assert.match(progressPanel("uk", true), /Записано сесій: 1/);
+  assert.match(progressPanel("ru", true), /1 записанная сессия/);
+  assert.match(progressPanel("uk", true), /1 записана сесія/);
 });
 
 test("G1 the missions hero is one compact tappable row that opens ranks", () => {

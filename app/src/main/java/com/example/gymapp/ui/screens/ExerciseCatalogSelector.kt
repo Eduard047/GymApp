@@ -60,9 +60,17 @@ internal fun ExerciseCatalogSelector(
     exerciseMediaOwnerKey: String,
     onExerciseSelected: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    trigger: (@Composable (openPicker: () -> Unit) -> Unit)? = null
+    trigger: (@Composable (openPicker: () -> Unit) -> Unit)? = null,
+    /** Lets a caller with several "add" buttons open the picker itself; [onExternalDismiss] resets its flag. */
+    externalOpen: Boolean = false,
+    onExternalDismiss: () -> Unit = {}
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var internalExpanded by rememberSaveable { mutableStateOf(false) }
+    val expanded = internalExpanded || externalOpen
+    val closePicker = {
+        internalExpanded = false
+        onExternalDismiss()
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var frequentOnly by rememberSaveable { mutableStateOf(false) }
     var bodyFilter by rememberSaveable { mutableStateOf(ExerciseBodyFilter.All) }
@@ -101,10 +109,10 @@ internal fun ExerciseCatalogSelector(
     }
 
     if (trigger != null) {
-        trigger { expanded = true }
+        trigger { internalExpanded = true }
     } else {
         OutlinedButton(
-            onClick = { expanded = true },
+            onClick = { internalExpanded = true },
             modifier = modifier.fillMaxWidth()
         ) {
             Icon(imageVector = Icons.Default.Search, contentDescription = null)
@@ -120,7 +128,7 @@ internal fun ExerciseCatalogSelector(
     if (expanded) {
         ModalBottomSheet(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            onDismissRequest = { expanded = false }
+            onDismissRequest = closePicker
         ) {
             Column(
                 // Fixed height: the sheet never resizes or settles while the list is flung.
@@ -196,7 +204,7 @@ internal fun ExerciseCatalogSelector(
                             OutlinedButton(
                                 onClick = {
                                     onExerciseSelected(exercise.id)
-                                    expanded = false
+                                    closePicker()
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {

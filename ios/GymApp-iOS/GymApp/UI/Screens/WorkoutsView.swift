@@ -412,6 +412,9 @@ public struct WorkoutsView: View {
     private let onStartPlan: (WorkoutLaunchSeed) -> Bool
     private let onAddWorkout: (WorkoutLaunchSeed?) -> Bool
     private let hasRetainedWorkoutDraft: Bool
+    /// Exercise/set counts of the saved plan draft, so the Today card shows the
+    /// edited plan instead of the generated one it started from.
+    private let retainedPlanCounts: (exercises: Int, sets: Int)?
     private let activeWorkoutDraft: ActiveWorkoutDraft?
     private let onContinueWorkout: () -> Void
     private let onDiscardWorkout: () -> Void
@@ -434,6 +437,7 @@ public struct WorkoutsView: View {
         store: WorkoutStore,
         activeWorkoutDraft: ActiveWorkoutDraft? = nil,
         hasRetainedWorkoutDraft: Bool = false,
+        retainedPlanCounts: (exercises: Int, sets: Int)? = nil,
         isCloudAccount: Bool = false,
         friends: [SocialFriendSummary] = [],
         pendingInvitationCount: Int = 0,
@@ -456,6 +460,7 @@ public struct WorkoutsView: View {
         self.store = store
         self.activeWorkoutDraft = activeWorkoutDraft
         self.hasRetainedWorkoutDraft = hasRetainedWorkoutDraft
+        self.retainedPlanCounts = retainedPlanCounts
         self.isCloudAccount = isCloudAccount
         self.friends = friends
         self.pendingInvitationCount = pendingInvitationCount
@@ -1041,8 +1046,13 @@ public struct WorkoutsView: View {
             if completedToday {
                 completedTodayAction
             } else if guidance.decision == .train {
-                if let plan = launchSeed?.plan {
-                    todayPlanMetrics(plan)
+                if hasRetainedWorkoutDraft, let counts = retainedPlanCounts, counts.exercises > 0 {
+                    todayPlanMetrics(exerciseCount: counts.exercises, setCount: counts.sets)
+                } else if let plan = launchSeed?.plan {
+                    todayPlanMetrics(
+                        exerciseCount: plan.exercises.count,
+                        setCount: plan.exercises.reduce(0) { $0 + $1.recommendation.sets.count }
+                    )
                 }
                 focusDetailsDisclosure(
                     projection,
@@ -1283,9 +1293,7 @@ public struct WorkoutsView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private func todayPlanMetrics(_ plan: SmartWorkoutPlan) -> some View {
-        let exerciseCount = plan.exercises.count
-        let setCount = plan.exercises.reduce(0) { $0 + $1.recommendation.sets.count }
+    private func todayPlanMetrics(exerciseCount: Int, setCount: Int) -> some View {
         let minutes = TodayFocusPlanMetrics.estimatedMinutes(
             exerciseCount: exerciseCount,
             setCount: setCount
@@ -1357,9 +1365,9 @@ public struct WorkoutsView: View {
             HStack(spacing: 8) {
                 Image(systemName: "calendar.badge.clock")
                 Text(gymText(
-                    "Next recommended day: \(gymFormattedDate(nextDay, date: .abbreviated, time: .omitted))",
-                    "Наступний рекомендований день: \(gymFormattedDate(nextDay, date: .abbreviated, time: .omitted))",
-                    "Следующий рекомендуемый день: \(gymFormattedDate(nextDay, date: .abbreviated, time: .omitted))",
+                    "Next recommended day: \(gymShortDate(nextDay))",
+                    "Наступний рекомендований день: \(gymShortDate(nextDay))",
+                    "Следующий рекомендуемый день: \(gymShortDate(nextDay))",
                     languageCode: languageCode
                 ))
             }
@@ -1522,7 +1530,7 @@ public struct WorkoutsView: View {
                         )
                     )
                     weeklyTrainingMetric(
-                        value: formattedTodayHeroVolume(totalVolume),
+                        value: formattedTodayHeroVolumeWithUnit(totalVolume),
                         label: gymText(
                             "Volume", "Обсяг", "Объём",
                             languageCode: languageCode
@@ -1960,7 +1968,7 @@ public struct WorkoutsView: View {
                     label: gymText("Minutes", "Хвилини", "Минуты", languageCode: languageCode)
                 )
                 weeklyTrainingMetric(
-                    value: formattedTodayHeroVolume(summary.totalVolume),
+                    value: formattedTodayHeroVolumeWithUnit(summary.totalVolume),
                     label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
                 )
             }
@@ -2033,12 +2041,7 @@ public struct WorkoutsView: View {
                             Image(systemName: "dumbbell.fill")
                                 .foregroundStyle(GymTheme.primary)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(gymFormattedDate(
-                                    workout.date,
-                                    date: .abbreviated,
-                                    time: .omitted,
-                                    languageCode: languageCode
-                                ))
+                                Text(gymShortDate(workout.date, calendar: calendar, languageCode: languageCode))
                                 .font(.subheadline.bold())
                                 Text(gymCount(
                                     workout.exerciseCount,
@@ -2191,7 +2194,7 @@ public struct WorkoutsView: View {
                 )
             )
             todayHeroMetric(
-                value: formattedTodayHeroVolume(metrics.totalVolume),
+                value: formattedTodayHeroVolumeWithUnit(metrics.totalVolume),
                 label: gymText(
                     "Total volume",
                     "Загальний обсяг",
@@ -2232,6 +2235,10 @@ public struct WorkoutsView: View {
                 .notation(.compactName)
                 .precision(.fractionLength(0 ... 1))
         )
+    }
+
+    private func formattedTodayHeroVolumeWithUnit(_ value: Double) -> String {
+        "\(formattedTodayHeroVolume(value)) \(gymLocalized("kg", languageCode: languageCode))"
     }
 
     private func formattedTodayHeroVolume(_ value: Double) -> String {
@@ -2656,7 +2663,7 @@ public struct WorkoutsView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(gymFormattedDate(workout.date, date: .abbreviated, time: .omitted))
+                            Text(gymShortDate(workout.date, calendar: calendar, languageCode: languageCode))
                                 .font(.headline)
                                 .foregroundStyle(GymTheme.textPrimary)
                             Spacer(minLength: 4)
@@ -2704,7 +2711,7 @@ public struct WorkoutsView: View {
                                     workoutStat(label: "Sets", value: workout.setCount.formatted(.number.locale(gymAppLocale())))
                                     workoutStat(
                                         label: "Volume",
-                                        value: formattedMetric(workout.totalVolume)
+                                        value: gymVolumeText(workout.totalVolume, compact: true, languageCode: languageCode)
                                     )
                                 }
                                 VStack(alignment: .leading, spacing: 6) {
@@ -2715,7 +2722,7 @@ public struct WorkoutsView: View {
                                     workoutStat(label: "Sets", value: workout.setCount.formatted(.number.locale(gymAppLocale())))
                                     workoutStat(
                                         label: "Volume",
-                                        value: formattedMetric(workout.totalVolume)
+                                        value: gymVolumeText(workout.totalVolume, compact: true, languageCode: languageCode)
                                     )
                                 }
                             }
@@ -2808,9 +2815,9 @@ public struct WorkoutsView: View {
             ukrainianMany: "підходів"
         )
         return gymText(
-            "\(exercises), \(sets), \(formattedMetric(workout.totalVolume)) volume",
-            "\(exercises), \(sets), обсяг \(formattedMetric(workout.totalVolume))",
-            "\(exercises), \(sets), объём \(formattedMetric(workout.totalVolume))",
+            "\(exercises), \(sets), \(gymVolumeText(workout.totalVolume, compact: true, languageCode: languageCode)) volume",
+            "\(exercises), \(sets), обсяг \(gymVolumeText(workout.totalVolume, compact: true, languageCode: languageCode))",
+            "\(exercises), \(sets), объём \(gymVolumeText(workout.totalVolume, compact: true, languageCode: languageCode))",
             languageCode: languageCode
         )
     }
@@ -2821,27 +2828,7 @@ public struct WorkoutsView: View {
     }
 
     private func compactHistoryDuration(_ seconds: Int) -> String {
-        let minutes = max(1, max(0, seconds) / 60)
-        let hours = minutes / 60
-        let remaining = minutes % 60
-        if hours == 0 {
-            return gymText(
-                "\(minutes) min", "\(minutes) хв", "\(minutes) мин",
-                languageCode: languageCode
-            )
-        }
-        if remaining == 0 {
-            return gymText(
-                "\(hours)h", "\(hours) год", "\(hours) ч",
-                languageCode: languageCode
-            )
-        }
-        return gymText(
-            "\(hours)h \(remaining)m",
-            "\(hours) год \(remaining) хв",
-            "\(hours) ч \(remaining) мин",
-            languageCode: languageCode
-        )
+        gymCompactDuration(max(1, seconds), languageCode: languageCode)
     }
 }
 

@@ -480,12 +480,15 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init() {}
+    /// Error-toned variant for destructive secondary actions (revoke, reset).
+    public let isDestructive: Bool
+
+    public init(destructive: Bool = false) { isDestructive = destructive }
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(GymTheme.primary)
+            .foregroundStyle(isDestructive ? GymTheme.error : GymTheme.primary)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 48)
@@ -495,7 +498,7 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                    .strokeBorder(GymTheme.primary.opacity(0.4), lineWidth: 1)
+                    .strokeBorder((isDestructive ? GymTheme.error : GymTheme.primary).opacity(0.4), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.48)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)

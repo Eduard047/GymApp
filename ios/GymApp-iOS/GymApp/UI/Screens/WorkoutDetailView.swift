@@ -253,7 +253,7 @@ enum GarminWorkoutDetailCopy {
     static func timelineValue(setCount: Int, duration: Int64, languageCode: String) -> String {
         localized(
             languageCode,
-            en: "\(setCount) recorded sets across \(garminDuration(duration))",
+            en: "\(setCount) recorded \(setCount == 1 ? "set" : "sets") across \(garminDuration(duration))",
             uk: "Записано підходів: \(setCount), тривалість \(garminDuration(duration))",
             ru: "Записано подходов: \(setCount), длительность \(garminDuration(duration))"
         )
@@ -1673,36 +1673,13 @@ struct WorkoutDetailView: View {
         }
         var line = parts.joined(separator: " · ")
         if workout.totalVolume > 0 {
-            let volume = workout.totalVolume.formatted(
-                .number.locale(locale).precision(.fractionLength(0 ... 1))
-            )
-            line += " · \(volume) \(gymLocalized("kg", languageCode: languageCode))"
+            line += " · \(gymVolumeText(workout.totalVolume, languageCode: languageCode))"
         }
         return line
     }
 
     private func compactWorkoutDuration(_ seconds: Int, languageCode: String) -> String {
-        let minutes = max(1, max(0, seconds) / 60)
-        let hours = minutes / 60
-        let remaining = minutes % 60
-        if hours == 0 {
-            return gymText(
-                "\(minutes) min", "\(minutes) хв", "\(minutes) мин",
-                languageCode: languageCode
-            )
-        }
-        if remaining == 0 {
-            return gymText(
-                "\(hours)h", "\(hours) год", "\(hours) ч",
-                languageCode: languageCode
-            )
-        }
-        return gymText(
-            "\(hours)h \(remaining)m",
-            "\(hours) год \(remaining) хв",
-            "\(hours) ч \(remaining) мин",
-            languageCode: languageCode
-        )
+        gymCompactDuration(max(1, seconds), languageCode: languageCode)
     }
 
     private func sharedWorkoutURL(_ workout: WorkoutSession) -> URL? {

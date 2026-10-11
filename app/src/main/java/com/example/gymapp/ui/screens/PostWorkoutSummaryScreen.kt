@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -169,7 +170,7 @@ fun PostWorkoutSummaryScreen(
     }
 }
 
-/** "Sat, Sep 26 · 4h 31m": short date, then the duration when it is known. */
+/** "Sat, Sep 26 · 4 h 31 min": short date, then the duration when it is known. */
 internal fun postWorkoutSubtitle(
     sessionDate: Long,
     durationSeconds: Long?,
@@ -349,6 +350,37 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                 }
             }
 
+            // Sets, volume and duration of the workout that was just finished.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                HeroStat(
+                    value = NumberFormat.getIntegerInstance(locale).format(uiState.setCount),
+                    label = stringResource(R.string.post_workout_metric_sets),
+                    color = onHero,
+                    modifier = Modifier.weight(1f)
+                )
+                HeroStat(
+                    value = stringResource(
+                        R.string.today_history_volume_kg,
+                        NumberFormat.getIntegerInstance(locale).format(uiState.volume)
+                    ),
+                    label = stringResource(R.string.post_workout_metric_volume),
+                    color = onHero,
+                    modifier = Modifier.weight(1f)
+                )
+                HeroStat(
+                    value = uiState.durationSeconds
+                        ?.takeIf { it > 0L }
+                        ?.let { DateTimeUtils.formatCompactDuration(it, locale) }
+                        ?: "--",
+                    label = stringResource(R.string.post_workout_metric_duration),
+                    color = onHero,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = stringResource(R.string.post_workout_xp_gain, uiState.xpGained),
@@ -407,6 +439,35 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun HeroStat(
+    value: String,
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.semantics(mergeDescendants = true) { },
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium.tabularDigits(),
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = color.copy(alpha = 0.72f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

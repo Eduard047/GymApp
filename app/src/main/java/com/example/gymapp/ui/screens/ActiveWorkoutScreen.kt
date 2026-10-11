@@ -283,6 +283,7 @@ fun ActiveWorkoutScreen(
     }
     val onVoiceStarted: () -> Unit = { recordedConfirmation = null }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showFinishWorkoutConfirmation by rememberSaveable { mutableStateOf(false) }
     var liveParticipantTab by rememberSaveable(uiState.livePeerName) {
         mutableStateOf(LiveParticipantTab.Self)
     }
@@ -537,7 +538,7 @@ fun ActiveWorkoutScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     SectionTitle(
-                        eyebrow = stringResource(R.string.active_workout_finish_eyebrow),
+                        eyebrow = "",
                         title = stringResource(R.string.action_finish_workout)
                     )
                     if (uiState.completedSetCount < uiState.totalSetCount) {
@@ -558,7 +559,17 @@ fun ActiveWorkoutScreen(
                         }
                     }
                     Button(
-                        onClick = onFinishWorkout,
+                        onClick = {
+                            if (activeWorkoutFinishNeedsConfirmation(
+                                    uiState.completedSetCount,
+                                    uiState.totalSetCount
+                                )
+                            ) {
+                                showFinishWorkoutConfirmation = true
+                            } else {
+                                onFinishWorkout()
+                            }
+                        },
                         enabled = uiState.completedSetCount > 0 && !operationInProgress,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     ) {
@@ -641,6 +652,45 @@ fun ActiveWorkoutScreen(
             dismissButton = { TextButton(onClick = onDismissAdaptation, enabled = !adaptation.isApplying) { Text(stringResource(R.string.action_cancel)) } })
     }
 
+    if (showFinishWorkoutConfirmation &&
+        activeWorkoutFinishNeedsConfirmation(uiState.completedSetCount, uiState.totalSetCount)
+    ) {
+        AlertDialog(
+            onDismissRequest = { showFinishWorkoutConfirmation = false },
+            title = { Text(text = stringResource(R.string.active_workout_finish_confirm_title)) },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.active_workout_finish_confirm_message,
+                        uiState.completedSetCount,
+                        uiState.totalSetCount
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showFinishWorkoutConfirmation = false
+                        onFinishWorkout()
+                    },
+                    enabled = !operationInProgress
+                ) {
+                    Text(text = stringResource(R.string.active_workout_finish_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFinishWorkoutConfirmation = false }) {
+                    Text(text = stringResource(R.string.active_workout_finish_confirm_keep))
+                }
+            }
+        )
+    }
+    val finishNeedsConfirmation =
+        activeWorkoutFinishNeedsConfirmation(uiState.completedSetCount, uiState.totalSetCount)
+    LaunchedEffect(finishNeedsConfirmation) {
+        if (!finishNeedsConfirmation) showFinishWorkoutConfirmation = false
+    }
+
     if (showDiscardConfirmation) {
         AlertDialog(
             onDismissRequest = { if (!uiState.isDiscarding) showDiscardConfirmation = false },
@@ -668,6 +718,10 @@ fun ActiveWorkoutScreen(
         )
     }
 }
+
+/** Finishing drops every planned set that was not recorded, so ask first when any remain. */
+internal fun activeWorkoutFinishNeedsConfirmation(completedSetCount: Int, totalSetCount: Int): Boolean =
+    totalSetCount > completedSetCount
 
 /**
  * What the navigation bar needs from the active workout screen: whether to show the overflow menu,

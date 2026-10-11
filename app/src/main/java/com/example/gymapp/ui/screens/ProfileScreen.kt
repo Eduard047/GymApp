@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -358,7 +359,10 @@ internal fun ProfileScreen(
                     onClick = {
                         showGarminResetConfirmation = false
                         onResetGarminPairing()
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Text(stringResource(R.string.garmin_reset_pairing_confirm))
                 }
@@ -753,17 +757,24 @@ private fun GarminDeviceCard(
                     }
                 }
             }
-            OutlinedButton(
-                onClick = onOpenGarminApp,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(stringResource(R.string.garmin_open_app))
+            // Without the Garmin SDK there is nothing to open, so the card only states that.
+            if (state.sdkReady) {
+                OutlinedButton(
+                    onClick = onOpenGarminApp,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(stringResource(R.string.garmin_open_app))
+                }
             }
             OutlinedButton(
                 onClick = onResetGarminPairing,
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
             ) {
                 Text(stringResource(R.string.garmin_reset_pairing_action))
             }

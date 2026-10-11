@@ -26,6 +26,8 @@ struct WorkoutEditorSetDraft: Identifiable, Hashable, Codable {
         weight.isFinite && (0 ... 1_000_000).contains(weight)
     }
 
+    var hasValidReps: Bool { (1 ... 10_000).contains(reps) }
+
     var storeDraft: WorkoutSetDraft {
         WorkoutSetDraft(weight: weight, reps: reps)
     }
@@ -140,6 +142,9 @@ struct WorkoutSetDraftRow: View {
     let onCopyPrevious: () -> Void
     let onDuplicate: () -> Void
     let onDelete: () -> Void
+    /// True after a failed start/save: invalid values then get an error border
+    /// (and lose it as soon as they are corrected).
+    var highlightsInvalid = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -156,7 +161,9 @@ struct WorkoutSetDraftRow: View {
                         "Удалить подход \(position + 1) для \(exerciseName)",
                         languageCode: gymCurrentLanguageCode()
                     ),
-                    onDelete: onDelete
+                    onDelete: onDelete,
+                    weightInvalid: highlightsInvalid && !set.isReadyForSave,
+                    repsInvalid: highlightsInvalid && !set.hasValidReps
                 )
             }
 
@@ -258,6 +265,7 @@ struct WorkoutDraftExerciseCard: View {
     var allowedWeights: [Double] = []
     let onShowSimilar: (() -> Void)?
     let onDeleteExercise: () -> Void
+    var highlightsInvalid = false
     @State private var showingMedia = false
     @State private var mediaReloadToken = 0
 
@@ -284,9 +292,9 @@ struct WorkoutDraftExerciseCard: View {
                 if let lastWeight {
                     Text(
                         gymText(
-                            "Last logged: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))))",
-                            "Остання вага: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))))",
-                            "Последний вес: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2))))",
+                            "Last logged: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2)))) kg",
+                            "Остання вага: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2)))) кг",
+                            "Последний вес: \(lastWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 2)))) кг",
                             languageCode: gymCurrentLanguageCode()
                         )
                     )
@@ -357,7 +365,8 @@ struct WorkoutDraftExerciseCard: View {
                                     canCopyPrevious: index > 0,
                                     onCopyPrevious: { copyPrevious(into: item.id) },
                                     onDuplicate: { duplicate(item.id) },
-                                    onDelete: { delete(item.id) }
+                                    onDelete: { delete(item.id) },
+                                    highlightsInvalid: highlightsInvalid
                                 )
                                 .padding(.top, index > 0 ? 10 : 0)
                                 .padding(.bottom, 10)

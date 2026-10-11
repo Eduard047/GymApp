@@ -1535,6 +1535,11 @@ private struct MainTabShell: View {
                 hasRetainedWorkoutDraft:
                     workoutEditorDraft?.belongs(to: store.accountStorageKey) == true
                     || workoutEditorLiveRecipient != nil,
+                retainedPlanCounts: workoutEditorDraft.flatMap { draft in
+                    draft.belongs(to: store.accountStorageKey)
+                        ? (draft.drafts.count, draft.drafts.reduce(0) { $0 + $1.sets.count })
+                        : nil
+                },
                 isCloudAccount: auth.session?.cloud != nil,
                 friends: appState.socialDashboard?.friends ?? [],
                 pendingInvitationCount: liveWorkoutCoordinator.pendingInvitationCount,

@@ -729,16 +729,10 @@ private fun WorkoutHeaderCard(
 
 @Composable
 internal fun formatWorkoutDuration(totalSeconds: Long): String {
-    val minutes = (totalSeconds.coerceAtLeast(0L) / 60L).coerceAtLeast(1L)
-    val hours = minutes / 60L
-    val remainingMinutes = minutes % 60L
-    return if (hours == 0L) {
-        stringResource(R.string.duration_minutes_compact, minutes)
-    } else if (remainingMinutes == 0L) {
-        stringResource(R.string.duration_hours_compact, hours)
-    } else {
-        stringResource(R.string.duration_hours_minutes_compact, hours, remainingMinutes)
-    }
+    // One duration format app-wide ("12 min", "1 h 5 min"); never shorter than a minute.
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+        ?: java.util.Locale.getDefault()
+    return DateTimeUtils.formatCompactDuration(totalSeconds.coerceAtLeast(60L), locale)
 }
 
 @Composable

@@ -9,19 +9,19 @@ class CompactDurationTest {
     private val ru = Locale("ru")
 
     @Test
-    fun englishUsesAbbreviatedUnitsWithoutSpaceBeforeUnit() {
-        assertEquals("4h 31m", DateTimeUtils.formatCompactDuration(16271, Locale.ENGLISH))
-        assertEquals("1h", DateTimeUtils.formatCompactDuration(3600, Locale.ENGLISH))
-        assertEquals("45m", DateTimeUtils.formatCompactDuration(2700, Locale.ENGLISH))
-        assertEquals("2h 1m", DateTimeUtils.formatCompactDuration(7260, Locale.ENGLISH))
+    fun englishUsesHourAndMinuteWords() {
+        assertEquals("4 h 31 min", DateTimeUtils.formatCompactDuration(16271, Locale.ENGLISH))
+        assertEquals("1 h", DateTimeUtils.formatCompactDuration(3600, Locale.ENGLISH))
+        assertEquals("45 min", DateTimeUtils.formatCompactDuration(2700, Locale.ENGLISH))
+        assertEquals("2 h 1 min", DateTimeUtils.formatCompactDuration(7260, Locale.ENGLISH))
     }
 
     @Test
-    fun ukrainianSeparatesNumberAndUnitWithNarrowNoBreakSpace() {
-        assertEquals("4 г 31 хв", DateTimeUtils.formatCompactDuration(16271, uk))
-        assertEquals("1 г", DateTimeUtils.formatCompactDuration(3600, uk))
-        assertEquals("45 хв", DateTimeUtils.formatCompactDuration(2700, uk))
-        assertEquals("2 г 1 хв", DateTimeUtils.formatCompactDuration(7260, uk))
+    fun ukrainianUsesHourAndMinuteWords() {
+        assertEquals("4 год 31 хв", DateTimeUtils.formatCompactDuration(16271, uk))
+        assertEquals("1 год", DateTimeUtils.formatCompactDuration(3600, uk))
+        assertEquals("45 хв", DateTimeUtils.formatCompactDuration(2700, uk))
+        assertEquals("2 год 1 хв", DateTimeUtils.formatCompactDuration(7260, uk))
     }
 
     @Test
@@ -30,6 +30,14 @@ class CompactDurationTest {
         assertEquals("1 ч", DateTimeUtils.formatCompactDuration(3600, ru))
         assertEquals("45 мин", DateTimeUtils.formatCompactDuration(2700, ru))
         assertEquals("2 ч 1 мин", DateTimeUtils.formatCompactDuration(7260, ru))
+    }
+
+    @Test
+    fun positiveSubMinuteDurationFloorsToOneMinute() {
+        assertEquals("1 min", DateTimeUtils.formatCompactDuration(30, Locale.ENGLISH))
+        assertEquals("1 хв", DateTimeUtils.formatCompactDuration(1, uk))
+        assertEquals("1 мин", DateTimeUtils.formatCompactDuration(59, ru))
+        assertEquals("1 h", DateTimeUtils.formatCompactDuration(3630, Locale.ENGLISH))
     }
 
     @Test

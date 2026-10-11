@@ -284,23 +284,63 @@ func gymShortDate(
     return formatter.string(from: value)
 }
 
-/// "3 ч 52 мин" — locale-aware, abbreviated hour/minute duration built from
-/// a `DateComponentsFormatter`. Returns "" when the duration is zero or the
-/// formatter has nothing to show.
+/// `gymShortDate` followed by the localized short time, for rows that also
+/// need the time of day ("Сб, 26 вер., 18:30").
+func gymShortDateTime(
+    _ value: Date,
+    calendar: Calendar = .current,
+    now: Date = Date(),
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+    let time = value.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale))
+    return "\(gymShortDate(value, calendar: calendar, now: now, languageCode: languageCode)), \(time)"
+}
+
+/// The one workout-duration format: "45 min", "1 h", "1 h 5 min" (UK: "45 хв",
+/// "1 год 5 хв"; RU: "45 мин", "1 ч 5 мин"). Any positive duration shows at
+/// least one minute. Returns "" when the duration is not positive.
 func gymCompactDuration(
     _ seconds: Int,
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
     guard seconds > 0 else { return "" }
+    let minutes = max(1, seconds / 60)
+    let hours = minutes / 60
+    let remaining = minutes % 60
+    if hours == 0 {
+        return gymText(
+            "\(minutes) min", "\(minutes) хв", "\(minutes) мин",
+            languageCode: languageCode
+        )
+    }
+    if remaining == 0 {
+        return gymText(
+            "\(hours) h", "\(hours) год", "\(hours) ч",
+            languageCode: languageCode
+        )
+    }
+    return gymText(
+        "\(hours) h \(remaining) min",
+        "\(hours) год \(remaining) хв",
+        "\(hours) ч \(remaining) мин",
+        languageCode: languageCode
+    )
+}
+
+/// "12.4K kg" / "1 240 kg" — a training volume with the weight unit. `compact`
+/// uses the short "12.4K" notation for tight stat tiles.
+func gymVolumeText(
+    _ volume: Double,
+    compact: Bool = false,
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
     let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
-    let formatter = DateComponentsFormatter()
-    formatter.unitsStyle = .abbreviated
-    formatter.allowedUnits = [.hour, .minute]
-    formatter.maximumUnitCount = 2
-    var durationCalendar = Calendar(identifier: .gregorian)
-    durationCalendar.locale = locale
-    formatter.calendar = durationCalendar
-    return formatter.string(from: TimeInterval(seconds)) ?? ""
+    let safe = volume.isFinite && volume >= 0 ? volume : 0
+    let number = compact
+        ? safe.formatted(.number.locale(locale).notation(.compactName).precision(.fractionLength(0 ... 1)))
+        : safe.formatted(.number.locale(locale).precision(.fractionLength(0 ... 1)))
+    return "\(number) \(gymLocalized("kg", languageCode: languageCode))"
 }
 
 func gymErrorMessage(

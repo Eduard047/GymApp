@@ -115,9 +115,9 @@ test("PWA calendar date helpers render localized weekdays in EN, UK, and RU", ()
 });
 
 test("all PWA workout, friend, template, record, and progress calendar surfaces use weekday formatters", () => {
-  assert.match(appSource, /workout-title[^\n]+fmtDate\(session\.startedAt\)/);
-  assert.match(appSource, /workout-detail-hero[^\n]+fmtLongDate\(session\.startedAt\)/);
-  assert.match(appSource, /garmin-header[^\n]+fmtLongDate\(session\.startedAt\)/);
+  assert.match(appSource, /workout-title[^\n]+fmtShortDate\(session\.startedAt\)/);
+  assert.match(appSource, /workout-detail-hero[^\n]+fmtShortDate\(session\.startedAt\)/);
+  assert.match(appSource, /garmin-header[^\n]+fmtShortDate\(session\.startedAt\)/);
   assert.match(appSource, /function summaryHeroMarkup[\s\S]{0,400}fmtShortDate\(session\.startedAt\)/);
   assert.match(appSource, /modal\.type === "template"[^\n]+fmtDate\(session\.startedAt\)/);
   assert.match(appSource, /friend-workout-history-row[^\n]+socialDayLabel\(workout\.workoutDay\)/);
@@ -197,7 +197,8 @@ test("Today plan metrics are history-only, finite, bounded, zero-safe, and order
       assert.ok(next > cursor, `${label} is visible in canonical order`);
       cursor = next;
     }
-    assert.equal((markup.match(/<strong>0<\/strong>/g) || []).length, 3);
+    assert.equal((markup.match(/<strong>0<\/strong>/g) || []).length, 2);
+    assert.match(markup, /<strong>0 (?:kg|кг)<\/strong>/);
   }
 });
 
@@ -704,9 +705,9 @@ test("fmtShortDate matches the iOS short date in EN, UK, and RU", () => {
 test("fmtCompactDuration reproduces the iOS abbreviated hour/minute duration", () => {
   const sandbox = context();
   const cases = [
-    ["en", 16271, "4h 31m"], ["en", 3600, "1h"], ["en", 2700, "45m"], ["en", 7260, "2h 1m"],
-    ["en", 30, "0m"], ["en", 86400, "24h"], ["en", 3660, "1h 1m"],
-    ["uk", 16271, "4\u202fг 31\u202fхв"], ["uk", 3600, "1\u202fг"], ["uk", 2700, "45\u202fхв"], ["uk", 7260, "2\u202fг 1\u202fхв"],
+    ["en", 16271, "4 h 31 min"], ["en", 3600, "1 h"], ["en", 2700, "45 min"], ["en", 7260, "2 h 1 min"],
+    ["en", 30, "0 min"], ["en", 86400, "24 h"], ["en", 3660, "1 h 1 min"],
+    ["uk", 16271, "4 год 31 хв"], ["uk", 3600, "1 год"], ["uk", 2700, "45 хв"], ["uk", 7260, "2 год 1 хв"],
     ["ru", 16271, "4 ч 31 мин"], ["ru", 3600, "1 ч"], ["ru", 2700, "45 мин"], ["ru", 7260, "2 ч 1 мин"],
     ["en", 0, ""], ["en", null, ""], ["ru", undefined, ""], ["uk", -5, ""]
   ];
@@ -739,7 +740,7 @@ test("post-workout summary shows the iOS hero, records, badges, and actions", ()
   })())`, sandbox));
   const { screen } = out;
   assert.match(screen, /Workout complete/);
-  assert.match(screen, /Tue, Jan 6 · 4h 31m/);
+  assert.match(screen, /Tue, Jan 6 · 4 h 31 min/);
   assert.match(screen, /\+\d+ XP<\/strong><span>Session XP/);
   assert.match(screen, /Level \d+ · [^<]+<\/strong><div class="progress"/);
   assert.match(screen, /\d+ XP to level \d+/);

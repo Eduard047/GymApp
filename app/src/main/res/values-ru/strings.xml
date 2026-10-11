@@ -461,7 +461,7 @@
     <string name="calorie_mode_surplus">Профицит</string>
     <string name="template_picker_title">Скопировать прошлую тренировку</string>
     <string name="template_picker_empty">Предыдущих тренировок еще нет.</string>
-    <string name="template_picker_summary">%1$s • %2$s • объём %3$s</string>
+    <string name="template_picker_summary">%1$s • %2$s • объём %3$s кг</string>
     <string name="add_workout_save_hint">Проверь подходы и сохрани, чтобы сразу перейти в детали тренировки.</string>
     <string name="add_workout_plan_mode_hint">Режим плана: эти строки отправляются на Garmin как цели и не записываются как выполненные при синхронизации.</string>
     <string name="add_workout_completed_mode_hint">Режим выполненной тренировки: сохранение сразу добавляет все запланированные строки в историю и сводку.</string>
@@ -492,7 +492,6 @@
     <string name="active_workout_loading">Загружаем активную тренировку…</string>
     <string name="active_workout_supporting">Записывай каждый выполненный подход. Он сохраняется до запуска умного таймера отдыха.</string>
     <string name="active_workout_total_time">Общее время тренировки: %1$s</string>
-    <string name="active_workout_finish_eyebrow">КОГДА ЗАКОНЧИШЬ</string>
     <string name="active_workout_finish_supporting">В историю попадут только записанные подходы. Запланированные строки не повлияют на статистику.</string>
     <string name="active_workout_discard_action">Удалить тренировку</string>
     <string name="active_workout_more_options">Другие действия</string>
@@ -580,7 +579,7 @@
     <string name="active_workout_rest_subtract">Уменьшить отдых на 15 секунд</string>
     <string name="active_workout_rest_add">Увеличить отдых на 15 секунд</string>
     <string name="active_workout_rest_stop">Остановить отдых</string>
-    <string name="action_save_all_pending_sets">Сохранить всё</string>
+    <string name="action_save_all_pending_sets">Записать оставшиеся подходы</string>
     <string name="active_workout_add_set">Добавить подход</string>
     <string name="active_workout_save_exercise">Сохранить упражнение</string>
     <string name="active_workout_exercise_saved">Упражнение сохранено.</string>
@@ -593,6 +592,10 @@
         <item quantity="other">Осталось %1$d подхода</item>
     </plurals>
     <string name="active_workout_finish_log_as_planned">Записать как в плане</string>
+    <string name="active_workout_finish_confirm_title">Завершить тренировку?</string>
+    <string name="active_workout_finish_confirm_message">Выполнено %1$d из %2$d подходов. Невыполненные подходы не будут сохранены.</string>
+    <string name="active_workout_finish_confirm_action">Завершить</string>
+    <string name="active_workout_finish_confirm_keep">Продолжить тренировку</string>
     <string name="active_workout_finish_skip_them">Пропустить их</string>
     <string name="active_workout_remaining_sets_skipped">Упражнение сохранено. Остальные подходы пропущены.</string>
     <string name="active_workout_set_limit_reached">Достигнут лимит подходов для упражнения.</string>
@@ -698,7 +701,7 @@
 
     <string name="stats_exercises">Упражнений: %1$d</string>
     <string name="stats_sets">Подходов: %1$d</string>
-    <string name="stats_volume">Объем: %1$.0f</string>
+    <string name="stats_volume">Объем: %1$.0f кг</string>
 
     <string name="dashboard_title">Итог месяца</string>
     <string name="dashboard_subtitle">Отслежи регулярность, объем и интенсивность одним взглядом.</string>
@@ -707,7 +710,7 @@
     <string name="kpi_streak_value">%1$d дн</string>
     <string name="kpi_streak_weekly_value">%1$d нед</string>
     <string name="kpi_total_volume">Общий объем</string>
-    <string name="kpi_volume_value">%1$.0f</string>
+    <string name="kpi_volume_value">%1$.0f кг</string>
     <string name="kpi_avg_intensity">Среднее / подход</string>
     <string name="kpi_avg_intensity_value">%1$.1f</string>
     <string name="workout_switch_overview_title">Обзор</string>
@@ -780,7 +783,7 @@
     <string name="activity_heatmap_legend">Цвет показывает дневной объём тренировок за этот месяц: вес × повторения. Чем темнее, тем меньше объём; чем ярче оранжевый, тем больше.</string>
     <string name="activity_heatmap_less">Меньше</string>
     <string name="activity_heatmap_more">Больше</string>
-    <string name="activity_heatmap_day_a11y">%1$s. Сессий: %2$d. Объем: %3$d.</string>
+    <string name="activity_heatmap_day_a11y">%1$s. Сессий: %2$d. Объем: %3$d кг.</string>
     <string-array name="activity_heatmap_weekdays">
         <item>П</item>
         <item>В</item>
@@ -811,7 +814,12 @@
         <item quantity="many">%1$d сессий</item>
         <item quantity="other">%1$d сессии</item>
     </plurals>
-    <string name="progress_logged_sessions">Записано сессий: %1$d</string>
+    <plurals name="progress_logged_sessions_count">
+        <item quantity="one">%1$d записанная сессия</item>
+        <item quantity="few">%1$d записанные сессии</item>
+        <item quantity="many">%1$d записанных сессий</item>
+        <item quantity="other">%1$d записанной сессии</item>
+    </plurals>
     <plurals name="progress_sets_count">
         <item quantity="one">%1$d подход</item>
         <item quantity="few">%1$d подхода</item>
@@ -1034,7 +1042,7 @@
     <string name="progress_weight_value">%1$.1f кг</string>
     <string name="progress_reps_value">%1$d повт</string>
     <string name="progress_session_max_weight_inline">Макс %1$.1f кг</string>
-    <string name="progress_session_volume_inline">Объем %1$s</string>
+    <string name="progress_session_volume_inline">Объем %1$s кг</string>
     <string name="chart_no_data">Добавь подходы, чтобы увидеть график.</string>
     <string name="splash_tagline">Развивай силу с фокусом и системностью.</string>
     <string name="splash_wordmark">GymApp</string>
@@ -1045,7 +1053,7 @@
     <string name="exercise_history_volume">Объём</string>
     <string name="exercise_history_empty">Для этого упражнения еще нет истории.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>
-    <string name="exercise_history_volume_inline">Объем: %1$s</string>
+    <string name="exercise_history_volume_inline">Объем: %1$s кг</string>
     <string name="exercise_library_eyebrow">Твои тренировки</string>
     <string name="exercise_library_title">Библиотека упражнений</string>
     <string name="exercise_library_supporting">Добавь собственное движение или открой сохраненное упражнение для просмотра истории.</string>
@@ -1234,7 +1242,7 @@
     <string name="post_workout_details">Детали тренировки</string>
     <string name="post_workout_xp_gain">+%1$d XP</string>
     <string name="post_workout_level">Уровень %1$d</string>
-    <string name="post_workout_level_up">Новый уровень! %1$d -&gt; %2$d</string>
+    <string name="post_workout_level_up">Новый уровень! %1$d → %2$d</string>
     <string name="post_workout_metric_exercises">Упражнения</string>
     <string name="post_workout_metric_sets">Подходы</string>
     <string name="post_workout_metric_volume">Объём</string>
@@ -1314,7 +1322,7 @@
     <string name="garmin_profile_paired">Привязано</string>
     <string name="garmin_lite_free_only_notice">Эти часы поддерживают только свободные тренировки. Планы остаются на телефоне.</string>
     <string name="garmin_profile_no_devices">В Garmin Connect нет сопряжённых часов.</string>
-    <string name="garmin_profile_unavailable">Garmin Connect недоступен. Откройте его и попробуйте снова.</string>
+    <string name="garmin_profile_unavailable">Garmin Connect недоступен на этом устройстве.</string>
     <string name="exercise_media_title">Демонстрация упражнения</string>
     <string name="exercise_media_add">Добавить фото</string>
     <string name="exercise_media_no_preview">Нет демонстрации</string>
@@ -1600,7 +1608,7 @@
     <string name="today_friend_picker_title">Тренироваться с другом</string>
     <string name="today_friend_picker_empty">Пока нет друзей</string>
     <string name="today_friend_picker_row_hint">Начинает живую тренировку с этим другом</string>
-    <string name="editor_last_logged">Последний вес: %1$s</string>
+    <string name="editor_last_logged">Последний вес: %1$s кг</string>
     <string name="editor_replace_with_similar">Заменить похожим</string>
     <string name="editor_add_set_short">+ Подход</string>
     <string name="editor_chip_last_weight">Посл. вес</string>

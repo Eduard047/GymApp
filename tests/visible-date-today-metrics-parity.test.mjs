@@ -24,8 +24,8 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/live-workout.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v122.js", "utf8"),
-    readFile("pwa/styles.v93.css", "utf8"),
+    readFile("pwa/app.v123.js", "utf8"),
+    readFile("pwa/styles.v94.css", "utf8"),
     readFile("pwa/russian-text.v90.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
   ]);
@@ -72,7 +72,8 @@ test("visible date contract requires weekday without changing relative or timest
 });
 
 test("native date helpers expose compact and expanded weekday styles", () => {
-  assert.match(androidDates, /formatter\("EEE, d MMM yyyy", locale\)/);
+  // formatDate is the one visible workout date and delegates to the short weekday formatter (year only when not current).
+  assert.match(androidDates, /\): String = formatShortDate\(timestamp, locale, zoneId, now\)/);
   assert.match(androidDates, /formatter\("EEEE, d MMMM yyyy", locale\)/);
   assert.match(iosDates, /weekday\(date == \.long \? \.wide : \.abbreviated\)/);
   assert.match(iosDates, /func gymFormattedTimestamp\(/);
@@ -257,7 +258,7 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   }
 
   const rhythm = pwaApp.indexOf("function focusLensCard(sessions)");
-  const metrics = pwaApp.indexOf("${launch ? smartPlanMetricsMarkup(launch.plan) : \"\"}", rhythm);
+  const metrics = pwaApp.indexOf("${hasRetainedDraft ? retainedDraftMetricsMarkup(workoutDraft) : launch ? smartPlanMetricsMarkup(launch.plan) : \"\"}", rhythm);
   const actions = pwaApp.indexOf("focus-lens-actions plan-actions", metrics);
   assert.ok(rhythm >= 0 && rhythm < metrics && metrics < actions);
   assert.match(pwaStyles, /\.focus-lens-plan-metrics \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
@@ -265,19 +266,19 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v122.js",
-    styleBundle: "styles.v93.css",
+    appBundle: "app.v123.js",
+    styleBundle: "styles.v94.css",
     russianBundle: "russian-text.v90.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v166"
+    serviceWorkerCache: "gym-pwa-v167"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v122\.js"/);
-  assert.match(pwaIndex, /href="\.\/styles\.v93\.css"/);
+  assert.match(pwaIndex, /src="\.\/app\.v123\.js"/);
+  assert.match(pwaIndex, /href="\.\/styles\.v94\.css"/);
   assert.match(pwaIndex, /src="\.\/russian-text\.v90\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v166"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v122\.js"/);
-  assert.match(pwaServiceWorker, /"\.\/styles\.v93\.css"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v167"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v123\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/styles\.v94\.css"/);
   assert.match(pwaServiceWorker, /"\.\/russian-text\.v90\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
   assert.equal(pwaAppBundle, pwaApp);

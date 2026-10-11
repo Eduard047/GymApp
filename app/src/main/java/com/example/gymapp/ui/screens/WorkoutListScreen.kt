@@ -128,7 +128,9 @@ import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.MonthlyTrainingSummaryUiModel
 import com.example.gymapp.ui.viewmodel.TrainingHistoryPeriod
 import com.example.gymapp.ui.viewmodel.TrainingRecommendationUiModel
+import com.example.gymapp.ui.viewmodel.ExerciseInputState
 import com.example.gymapp.ui.viewmodel.TodayPlanUiModel
+import com.example.gymapp.ui.viewmodel.estimateWorkoutMinutes
 import com.example.gymapp.ui.viewmodel.TodayHeroMetricsUiModel
 import com.example.gymapp.ui.viewmodel.WeeklyTrainingSummaryUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
@@ -162,6 +164,7 @@ fun WorkoutListScreen(
     onEditFirstWorkout: (TrainingGoal, Int, FirstWorkoutEffort) -> Unit,
     onSkipFirstWorkout: () -> Unit,
     hasRetainedWorkoutDraft: Boolean = false,
+    retainedDraftSummary: RetainedDraftSummary? = null,
     activeWorkoutFocus: ActiveWorkoutFocus? = null,
     onDiscardActiveWorkout: () -> Unit = {},
     onCancelRetainedPlan: () -> Unit = {},
@@ -276,6 +279,7 @@ fun WorkoutListScreen(
                         hasCompletedWorkoutToday = uiState.hasCompletedWorkoutToday,
                         todayHeroMetrics = uiState.todayHeroMetrics,
                         hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,
+                        retainedDraftSummary = retainedDraftSummary,
                         activeWorkoutFocus = activeWorkoutFocus,
                         onStartWorkout = onAddWorkout,
                         onStartPlan = onStartPlan,
@@ -494,12 +498,32 @@ private fun WorkoutSectionHeader(
     }
 }
 
+/** Size of the saved plan draft, shown on the Today card in place of the recommendation's size. */
+data class RetainedDraftSummary(
+    val exerciseCount: Int,
+    val setCount: Int,
+    val estimatedDurationMinutes: Int
+)
+
+/** Counts only cards with a chosen exercise; null when the draft holds no exercise yet. */
+internal fun retainedDraftSummary(drafts: List<ExerciseInputState>): RetainedDraftSummary? {
+    val selected = drafts.filter { it.exerciseId != null }
+    if (selected.isEmpty()) return null
+    val setCount = selected.sumOf { it.sets.size }
+    return RetainedDraftSummary(
+        exerciseCount = selected.size,
+        setCount = setCount,
+        estimatedDurationMinutes = estimateWorkoutMinutes(selected.size, setCount)
+    )
+}
+
 @Composable
 private fun FocusLens(
     todayPlan: TodayPlanUiModel?,
     hasCompletedWorkoutToday: Boolean,
     todayHeroMetrics: TodayHeroMetricsUiModel,
     hasRetainedWorkoutDraft: Boolean,
+    retainedDraftSummary: RetainedDraftSummary?,
     activeWorkoutFocus: ActiveWorkoutFocus?,
     onStartWorkout: () -> Unit,
     onStartPlan: (String) -> Unit,
@@ -626,30 +650,34 @@ private fun FocusLens(
                 )
             }
         } else if (todayPlan != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                FocusLensMetric(
-                    label = stringResource(
-                        R.string.today_plan_duration,
-                        todayPlan.estimatedDurationMinutes
-                    ),
-                    value = stringResource(
-                        R.string.today_plan_size,
-                        pluralStringResource(
-                            R.plurals.saved_workout_exercise_count,
-                            todayPlan.exerciseCount,
-                            todayPlan.exerciseCount
+            // With a saved plan the card shows that plan's current size, not the recommendation's.
+            val summary = retainedDraftSummary.takeIf { shouldContinueRetainedPlan }
+            val shownExerciseCount = summary?.exerciseCount ?: todayPlan.exerciseCount
+            val shownSetCount = summary?.setCount ?: todayPlan.setCount
+            val shownMinutes = summary?.estimatedDurationMinutes ?: todayPlan.estimatedDurationMinutes
+            if (!shouldContinueRetainedPlan || summary != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    FocusLensMetric(
+                        label = stringResource(R.string.today_plan_duration, shownMinutes),
+                        value = stringResource(
+                            R.string.today_plan_size,
+                            pluralStringResource(
+                                R.plurals.saved_workout_exercise_count,
+                                shownExerciseCount,
+                                shownExerciseCount
+                            ),
+                            pluralStringResource(
+                                R.plurals.saved_workout_set_count,
+                                shownSetCount,
+                                shownSetCount
+                            )
                         ),
-                        pluralStringResource(
-                            R.plurals.saved_workout_set_count,
-                            todayPlan.setCount,
-                            todayPlan.setCount
-                        )
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 
@@ -1142,7 +1170,7 @@ private fun TrainingHistoryPanel(
                     modifier = Modifier.weight(1f)
                 )
                 WeeklyTrainingMetric(
-                    value = volume,
+                    value = stringResource(R.string.today_history_volume_kg, volume),
                     label = stringResource(R.string.weekly_training_volume_label),
                     modifier = Modifier.weight(1f)
                 )
@@ -1509,9 +1537,9 @@ private fun TodayHeroMetricsRow(
             modifier = Modifier.weight(1f)
         )
         TodayHeroMetric(
-            value = volume,
+            value = stringResource(R.string.today_history_volume_kg, volume),
             label = stringResource(R.string.focus_lens_total_volume),
-            accessibilityValue = volumeAccessibilityValue,
+            accessibilityValue = stringResource(R.string.today_history_volume_kg, volumeAccessibilityValue),
             modifier = Modifier.weight(1f)
         )
     }

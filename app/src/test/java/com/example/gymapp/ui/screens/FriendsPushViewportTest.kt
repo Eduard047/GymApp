@@ -14,6 +14,7 @@ import com.example.gymapp.ui.viewmodel.LiveWorkoutUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Locale
 
@@ -21,11 +22,21 @@ class FriendsPushViewportTest {
     @Test
     fun friendRequestDateUsesTheSelectedLocaleAndDeviceZone() {
         assertEquals(
-            "Sun, 9 Aug 2026",
+            "Sun, Aug 9, 2026",
             localizedSocialRequestDate(
                 requestedAt = "2026-08-09T10:00:00Z",
                 locale = Locale.ENGLISH,
-                zoneId = ZoneOffset.UTC
+                zoneId = ZoneOffset.UTC,
+                now = Instant.parse("2027-01-05T00:00:00Z").toEpochMilli()
+            )
+        )
+        assertEquals(
+            "Sun, Aug 9",
+            localizedSocialRequestDate(
+                requestedAt = "2026-08-09T10:00:00Z",
+                locale = Locale.ENGLISH,
+                zoneId = ZoneOffset.UTC,
+                now = Instant.parse("2026-10-01T00:00:00Z").toEpochMilli()
             )
         )
     }

@@ -420,11 +420,11 @@ test("Garmin free activity stays metrics-only in history and detail", () => {
 
   assert.match(history, /GARMIN · FREE/);
   assert.match(history, /Free workout/);
-  assert.match(history, /12:34/);
+  assert.match(history, /12 min/);
   assert.doesNotMatch(history, /Exercises|Sets|Volume|Note:/);
 
   assert.match(detail, /Activity only/);
-  assert.match(detail, /12:34/);
+  assert.match(detail, /12 min/);
   assert.match(detail, /40 kcal/);
   assert.match(detail, /130 bpm/);
   assert.match(detail, /data-action="delete-session"/);
@@ -658,4 +658,234 @@ test("appending a plan-editor exercise scrolls the new last card into view, but 
   assert.match(appSource, /function scrollLastDraftBlockIntoView\(\)[\s\S]*prefers-reduced-motion: reduce[\s\S]*block: "center"/);
   const addBlock = appSource.slice(appSource.indexOf('if (action === "add-block")'), appSource.indexOf('if (action === "remove-block")'));
   assert.match(addBlock, /scrollLastDraftBlockIntoView\(\)/);
+});
+
+test("every plan editor Add exercise button opens the picker and no empty-card add is exposed", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`workoutDraft = { blocks: [{ exerciseName: "Squat", sets: [{ weight: "60", reps: "5" }] }] };`, context);
+  const html = vm.runInContext("addWorkoutScreen ? addWorkoutScreen() : ''", context);
+  assert.doesNotMatch(html, /data-action="add-block"/);
+  const adds = html.match(/<button[^>]*data-picker-target="draft-new"[^>]*>/g) || [];
+  assert.equal(adds.length, 2, "header add + dashed add");
+  for (const button of adds) assert.match(button, /data-action="open-workout-exercise-picker"/);
+  assert.doesNotMatch(appSource, /data-action="add-block"/);
+});
+
+test("finishing an active workout with undone sets asks first, and skips the dialog when all sets are done", async () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    render = () => {};
+    window.finishCalls = 0;
+    finishActiveWorkout = async () => { window.finishCalls += 1; return true; };
+    nav = [{ name: "workouts" }, { name: "active" }];
+    modal = null;
+    activeWorkout = { id: 1, blocks: [{ id: 1, exerciseName: "Squat", sets: [
+      { id: 1, completed: true }, { id: 2, completed: false }, { id: 3, completed: false }
+    ] }] };
+  `, context);
+  assert.equal(vm.runInContext("beginFinishActiveWorkout()", context), true);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-finish-active-workout");
+  assert.equal(vm.runInContext("window.finishCalls", context), 0);
+  const html = vm.runInContext("finishActiveWorkoutConfirmMarkup()", context);
+  assert.match(html, /Finish workout\?/);
+  assert.match(html, /1 of 3 sets are done\. Unfinished sets won(?:&#039;|')t be saved\./);
+  assert.match(html, /Keep training/);
+  assert.match(html, /data-action="confirm-finish-active-workout"[^>]*>[^<]*Finish</);
+  assert.equal(await vm.runInContext("confirmFinishActiveWorkout()", context), true);
+  assert.equal(vm.runInContext("window.finishCalls", context), 1);
+  assert.equal(vm.runInContext("modal", context), null);
+
+  vm.runInContext(`activeWorkout.blocks[0].sets.forEach(set => { set.completed = true; });`, context);
+  await vm.runInContext("beginFinishActiveWorkout()", context);
+  assert.equal(vm.runInContext("modal", context), null);
+  assert.equal(vm.runInContext("window.finishCalls", context), 2);
+});
+
+test("plan start validation marks, scrolls to and clears the invalid set inputs", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDraft = { blocks: [
+      { exerciseName: "Squat", sets: [{ weight: "60", reps: "5" }] },
+      { exerciseName: "Bench Press", sets: [{ weight: "60", reps: "5" }, { weight: "abc", reps: "" }] },
+      { exerciseName: "", sets: [{ weight: "", reps: "" }] }
+    ] };
+  `, context);
+  assert.deepEqual(
+    JSON.parse(vm.runInContext("JSON.stringify(invalidDraftSetFields())", context)),
+    [{ blockIndex: 1, setIndex: 1, field: "weight" }, { blockIndex: 1, setIndex: 1, field: "reps" }]
+  );
+  const attrs = new Map();
+  const classes = new Set();
+  const events = [];
+  const makeInput = key => ({
+    hasAttribute: name => attrs.has(`${key}:${name}`),
+    setAttribute: (name, value) => attrs.set(`${key}:${name}`, value),
+    removeAttribute: name => attrs.delete(`${key}:${name}`),
+    classList: { add: name => classes.add(`${key}:${name}`), remove: name => classes.delete(`${key}:${name}`) },
+    closest: () => ({ scrollIntoView: options => events.push(["scroll", key, options.block]) }),
+    focus: () => events.push(["focus", key])
+  });
+  const inputs = { "1-1-weight": makeInput("w"), "1-1-reps": makeInput("r") };
+  const app = context.document.querySelector("#app");
+  app.querySelector = selector => {
+    const match = selector.match(/data-block="(\d+)"\]\[data-set="(\d+)"\]\[data-field="(\w+)"/);
+    return match ? inputs[`${match[1]}-${match[2]}-${match[3]}`] || null : null;
+  };
+  assert.equal(vm.runInContext("markInvalidDraftSetInputs()", context), true);
+  assert.equal(attrs.get("w:aria-invalid"), "true");
+  assert.equal(attrs.get("r:aria-invalid"), "true");
+  assert.ok(classes.has("w:set-editor-input-invalid"));
+  assert.deepEqual(events[0], ["scroll", "w", "center"]);
+  assert.equal(events.some(event => event[0] === "focus"), false, "no focus, so no mobile keyboard");
+  vm.runInContext("persistWorkoutDraft = () => {}", context);
+  inputs["1-1-weight"].dataset = { block: "1", set: "1", field: "weight" };
+  inputs["1-1-weight"].value = "70";
+  vm.runInContext("updateDraftInput", context)(inputs["1-1-weight"]);
+  assert.equal(attrs.has("w:aria-invalid"), false);
+  assert.equal(classes.has("w:set-editor-input-invalid"), false);
+  assert.equal(attrs.get("r:aria-invalid"), "true");
+  assert.match(appSource, /markInvalidDraftSetInputs\(\);\s*showToast\(tx\(\s*"Fill every planned set/);
+});
+
+test("Today card summarises the current retained draft and Cancel plan asks for confirmation", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    workoutDraft = { blocks: [
+      { exerciseName: "Squat", sets: [{ weight: "60", reps: "5" }, { weight: "60", reps: "5" }] },
+      { exerciseName: "Bench Press", sets: [{ weight: "40", reps: "8" }] },
+      { exerciseName: "", sets: [{ weight: "", reps: "" }] }
+    ] };
+  `, context);
+  let html = vm.runInContext("retainedDraftMetricsMarkup()", context);
+  assert.match(html, /<strong>2 \/ 3<\/strong><span>Exercises \/ sets<\/span>/);
+  assert.match(html, /~12 min/);
+  vm.runInContext(`workoutDraft.blocks.push({ exerciseName: "Squat", sets: [{ weight: "1", reps: "1" }] });`, context);
+  html = vm.runInContext("retainedDraftMetricsMarkup()", context);
+  assert.match(html, /<strong>3 \/ 4<\/strong>/);
+  assert.match(vm.runInContext("activationCard()", context), /retained-plan-metrics[\s\S]*cancel-retained-plan/);
+  assert.match(appSource, /if \(action === "cancel-retained-plan"\) \{\s*return requestDiscardWorkoutDraft\(/);
+});
+
+test("saved workout detail keeps a back control in the top bar", () => {
+  assert.match(appSource, /nav\.length > 1 \? `<button class="icon-button topbar-action" data-action="back"/);
+});
+
+test("volume values carry the weight unit and durations use one X min / X h Y min format", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  assert.equal(vm.runInContext("formatVolumeWithUnit(0)", context), "0 kg");
+  assert.match(vm.runInContext("formatVolumeWithUnit(1200)", context), /^1\.2K kg$/);
+  assert.match(appSource, /\[tx\("Total volume", "Загальний обсяг"\), metrics\.totalVolume, volumeUnitLabel\(\)\]/);
+  assert.match(appSource, /tx\("Volume", "Обсяг"\)\}: \$\{escapeHtml\(formatVolumeWithUnit\(/);
+  assert.match(vm.runInContext("trainingHistoryWorkoutRow(state.sessions[0])", context), /<b>[\d.,]+K? kg<\/b>/);
+  assert.equal(vm.runInContext("savedWorkoutDurationLabel(2700)", context), "45 min");
+  assert.equal(vm.runInContext("savedWorkoutDurationLabel(5400)", context), "1 h 30 min");
+  assert.doesNotMatch(appSource, /formatActiveWorkoutElapsed\(session\.durationSeconds/);
+});
+
+test("active workout finish block has no eyebrow and the bulk button says what it does", () => {
+  const block = appSource.match(/<section class="panel active-workout-finish">[\s\S]*?<\/section>/)[0];
+  assert.doesNotMatch(block, /eyebrow/);
+  assert.match(block, /data-action="record-all-active-sets"[\s\S]*tx3\("Log all remaining sets", "Записати решту підходів", "Записать оставшиеся подходы"\)/);
+});
+
+test("logged session counts use proper plural forms in every language", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  const count = (language, number) => vm.runInContext(`state.language = "${language}"; countNoun(${number}, "logged sessions")`, context);
+  assert.equal(count("en", 1), "1 logged session");
+  assert.equal(count("en", 2), "2 logged sessions");
+  assert.equal(count("uk", 1), "1 записана сесія");
+  assert.equal(count("uk", 3), "3 записані сесії");
+  assert.equal(count("uk", 5), "5 записаних сесій");
+  assert.equal(count("ru", 21), "21 записанная сессия");
+  assert.equal(count("ru", 12), "12 записанных сессий");
+  assert.doesNotMatch(appSource, /\$\{sessionCount\} logged sessions/);
+});
+
+test("a newly added plan exercise starts with its last logged weight", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  vm.runInContext(`
+    render = () => {}; persistWorkoutDraft = () => {}; showToast = () => {};
+    workoutDraft = { blocks: [{ exerciseName: "Bench Press", sets: [{ weight: "60", reps: "5" }] }] };
+    modal = { type: "workout-exercise-picker", target: "draft-new" };
+  `, context);
+  assert.equal(vm.runInContext("selectWorkoutExercise(102)", context), true);
+  assert.equal(vm.runInContext("workoutDraft.blocks[1].sets[0].weight", context), "90");
+  vm.runInContext(`state.exercises.push({ id: 104, name: "Deadlift" }); modal = { type: "workout-exercise-picker", target: "draft-new" };`, context);
+  assert.equal(vm.runInContext("selectWorkoutExercise(104)", context), true);
+  assert.equal(vm.runInContext("workoutDraft.blocks[2].sets[0].weight", context), "");
+});
+
+test("workout complete summary shows a compact sets, volume and duration row", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  const html = vm.runInContext("summaryStatsRowMarkup({ ...state.sessions[0], durationSeconds: 2700 })", context);
+  assert.match(html, /summary-stats-row/);
+  assert.match(html, /<span>Sets done<\/span><strong>3<\/strong>/);
+  assert.match(html, /<span>Volume<\/span><strong>[^<]*kg<\/strong>/);
+  assert.match(html, /<span>Duration<\/span><strong>45 min<\/strong>/);
+  assert.match(appSource, /\$\{summaryHeroMarkup\(session, xpGain, xpTotal\)\}\s*\$\{summaryStatsRowMarkup\(session\)\}/);
+});
+
+test("Smart Coach card is collapsed by default and expands with accessible state", () => {
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  const collapsed = vm.runInContext("smartCoachPanel()", context);
+  assert.match(collapsed, /<button type="button" class="smart-coach-toggle" data-action="toggle-smart-coach" aria-expanded="false" aria-controls="smart-coach-body"/);
+  assert.match(collapsed, /data-action="open-training-settings"/);
+  assert.doesNotMatch(collapsed, /data-action="generate-smart"|data-action="smart-effort"/);
+  vm.runInContext("render = () => {}; handleAction", context);
+  vm.runInContext("smartCoachExpanded = true", context);
+  const expanded = vm.runInContext("smartCoachPanel()", context);
+  assert.match(expanded, /aria-expanded="true"/);
+  assert.match(expanded, /id="smart-coach-body"/);
+  assert.match(expanded, /data-action="smart-effort"/);
+  assert.match(expanded, /data-action="generate-smart"/);
+});
+
+test("dark-theme link and muted text tokens keep at least 4.5:1 on the dark surfaces", async () => {
+  const css = await readFile(new URL("../pwa/styles.css", import.meta.url), "utf8");
+  const dark = css.slice(css.indexOf(':root[data-theme="dark"]'));
+  const darkBlock = dark.slice(0, dark.indexOf("\n}"));
+  const token = name => darkBlock.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`))[1];
+  const luminance = hex => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(value => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a, b) => {
+    const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (high + 0.05) / (low + 0.05);
+  };
+  for (const foreground of ["sage", "muted", "danger"]) {
+    for (const surface of ["surface", "surface-highlight", "surface-2", "surface-3"]) {
+      assert.ok(contrast(token(foreground), token(surface)) >= 4.5, `${foreground} on ${surface}`);
+    }
+  }
+});
+
+test("Garmin profile card never shows a primary button; unpairing is destructive and confirmed", () => {
+  const panel = appSource.slice(appSource.indexOf("function garminProfilePanel()"), appSource.indexOf("function garminProfileDeviceRow("));
+  const buttons = panel.match(/<button class="button[^"]*"/g) || [];
+  assert.ok(buttons.length > 0);
+  for (const button of buttons) assert.match(button, /button (?:ghost|danger) /, button);
+  assert.match(panel, /button danger full garmin-unpair" data-action="unpair-garmin"/);
+  const unpair = appSource.slice(appSource.indexOf("async function unpairGarmin()"));
+  assert.match(unpair.slice(0, 2500), /window\.confirm\(warning\)/);
+});
+
+test("count nouns pick plural forms through Intl.PluralRules", () => {
+  assert.match(appSource, /new Intl\.PluralRules\(/);
+  const context = loadPwaContext();
+  installWorkoutFixture(context);
+  const forms = language => [1, 2, 5, 11, 12, 21, 22, 25].map(number =>
+    vm.runInContext(`state.language = "${language}"; countNoun(${number}, "logged sessions")`, context));
+  assert.deepEqual(forms("uk"), ["1 записана сесія", "2 записані сесії", "5 записаних сесій", "11 записаних сесій", "12 записаних сесій", "21 записана сесія", "22 записані сесії", "25 записаних сесій"]);
+  assert.deepEqual(forms("ru"), ["1 записанная сессия", "2 записанные сессии", "5 записанных сессий", "11 записанных сессий", "12 записанных сессий", "21 записанная сессия", "22 записанные сессии", "25 записанных сессий"]);
 });

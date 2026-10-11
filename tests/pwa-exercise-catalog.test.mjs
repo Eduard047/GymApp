@@ -6726,7 +6726,7 @@ test("plan editor header menu holds Clear plan and Discard plan and each exercis
 
 test("Smart Coach focus line shows focus and RIR, and the effort note only when requested differs from applied", () => {
   const context = planEditorContext([{ exerciseName: "Bench Press", catalogKey: "bench_press", sets: planEditorSets }]);
-  const panel = plan => vm.runInContext(`smartGeneratedPlan = ${JSON.stringify(plan)}; smartCoachPanel()`, context);
+  const panel = plan => vm.runInContext(`smartCoachExpanded = true; smartGeneratedPlan = ${JSON.stringify(plan)}; smartCoachPanel()`, context);
   const same = panel({
     focus: "FullBody", requestedEffort: "Standard", appliedEffort: "Standard",
     exercises: [{ recommendation: { targetRir: [2, 3] } }, { recommendation: { targetRir: [2, 3] } }]

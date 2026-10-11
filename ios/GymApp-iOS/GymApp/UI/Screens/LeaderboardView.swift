@@ -847,10 +847,19 @@ struct FriendsView: View {
                                     "Додай першого підтвердженого друга.",
                                     "Добавь первого подтверждённого друга."
                                 )
-                                : t(
-                                    "\(dashboard.friends.count) confirmed friends",
-                                    "\(dashboard.friends.count) підтверджених друзів",
-                                    "\(dashboard.friends.count) подтверждённых друзей"
+                                : gymPlural(
+                                    dashboard.friends.count,
+                                    en: ("\(dashboard.friends.count) confirmed friend", "\(dashboard.friends.count) confirmed friends"),
+                                    uk: (
+                                        "\(dashboard.friends.count) підтверджений друг",
+                                        "\(dashboard.friends.count) підтверджені друзі",
+                                        "\(dashboard.friends.count) підтверджених друзів"
+                                    ),
+                                    ru: (
+                                        "\(dashboard.friends.count) подтверждённый друг",
+                                        "\(dashboard.friends.count) подтверждённых друга",
+                                        "\(dashboard.friends.count) подтверждённых друзей"
+                                    )
                                 )
                         )
                         .font(.caption)
@@ -2480,7 +2489,7 @@ private struct FriendWorkoutPickerSheet: View {
                                         Image(systemName: mode == .live ? "wave.3.right.circle.fill" : "doc.on.doc.fill")
                                             .foregroundStyle(GymTheme.primary)
                                         VStack(alignment: .leading, spacing: 3) {
-                                            Text(gymFormattedDate(workout.date, date: .abbreviated, time: .shortened))
+                                            Text(gymShortDateTime(workout.date))
                                                 .font(.headline)
                                                 .foregroundStyle(GymTheme.textPrimary)
                                             Text("\(workout.exercises.count) \(t("exercises", "вправ", "упражнений"))")

@@ -959,7 +959,7 @@ private struct ExerciseHistorySheet: View {
                             GymPanel {
                                 HStack(alignment: .top, spacing: 12) {
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted))
+                                        Text(gymShortDate(entry.sessionDate))
                                             .font(.headline)
                                         Text(
                                             gymText(

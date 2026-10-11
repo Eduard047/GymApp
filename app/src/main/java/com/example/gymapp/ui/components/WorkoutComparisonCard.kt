@@ -38,8 +38,9 @@ fun WorkoutComparisonCard(
     val wholeNumber: (Double) -> String = { value ->
         String.format(Locale.getDefault(), "%.0f", value)
     }
+    val kilogramFormat = androidx.compose.ui.res.stringResource(R.string.today_history_volume_kg, "%s")
     val volume: (Double) -> String = { value ->
-        String.format(Locale.getDefault(), "%.0f", value)
+        String.format(kilogramFormat, String.format(Locale.getDefault(), "%.0f", value))
     }
     val duration: (Double) -> String = { value -> formatDuration(value.toLong()) }
     val bpmUnit = androidx.compose.ui.res.stringResource(R.string.garmin_metric_bpm_unit)

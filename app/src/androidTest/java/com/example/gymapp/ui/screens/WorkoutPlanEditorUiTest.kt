@@ -121,6 +121,10 @@ class WorkoutPlanEditorUiTest {
     fun emptyPlanOffersOneAddAndKeepsCoachAsTheOnlyBuildAction() {
         setEditorContent(isDirty = true, drafts = emptyList())
 
+        // The Smart Coach card starts collapsed; expanding it reveals the Build action.
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.smart_coach_title)
+        ).performClick()
         composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(2)
         composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.action_add_exercise)
@@ -163,10 +167,10 @@ class WorkoutPlanEditorUiTest {
         composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.editor_chip_plus_step)
         ).assertCountEquals(0)
-        // "+ Add exercise" closes the exercise list and reuses the header "+" flow.
+        // "+ Add exercise" opens the picker; no card is added until an exercise is chosen.
         composeRule.onNodeWithTag("workout_plan_editor_list").performScrollToIndex(3)
         composeRule.onNodeWithTag("workout_plan_add_exercise_footer").performClick()
-        composeRule.runOnIdle { assertEquals(1, addCount) }
+        composeRule.runOnIdle { assertEquals(0, addCount) }
     }
 
     @Test
@@ -180,12 +184,22 @@ class WorkoutPlanEditorUiTest {
         composeRule.onAllNodesWithText(
             composeRule.activity.getString(R.string.training_profile_title)
         ).assertCountEquals(0)
+        composeRule.onAllNodesWithText(
+            composeRule.activity.getString(R.string.smart_coach_title)
+        ).assertCountEquals(1)
+        // Collapsed by default: title, settings subtitle and edit link, with no effort chips or Build.
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.training_settings_edit)
         ).assertIsDisplayed()
         composeRule.onAllNodesWithText(
+            composeRule.activity.getString(R.string.action_generate_smart_workout)
+        ).assertCountEquals(0)
+        composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.smart_coach_title)
-        ).assertCountEquals(1)
+        ).performClick()
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.training_settings_edit)
+        ).assertIsDisplayed()
         composeRule.onNodeWithText(
             composeRule.activity.getString(R.string.smart_coach_effort_title)
         ).assertDoesNotExist()
@@ -272,7 +286,7 @@ class WorkoutPlanEditorUiTest {
                     onOpenSmartAlternatives = {},
                     onCloseSmartAlternatives = {},
                     onApplySmartAlternative = { _, _, _ -> },
-                    onAddExerciseDraft = onAddExercise,
+                    onAddExerciseWithSelection = { onAddExercise() },
                     onClearPlan = onClear,
                     onRemoveExerciseDraft = {},
                     onExerciseSelected = { _, _ -> },

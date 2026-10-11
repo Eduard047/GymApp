@@ -615,7 +615,9 @@ internal fun SetEditorCapsules(
     onRepsChanged: (String) -> Unit,
     modifier: Modifier = Modifier,
     deleteDescription: String? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    weightError: Boolean = false,
+    repsError: Boolean = false
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     val format = rememberDecimalFormat()
@@ -627,6 +629,7 @@ internal fun SetEditorCapsules(
     val weightCapsule: @Composable (Modifier) -> Unit = { capsuleModifier ->
         SetValueCapsule(
             modifier = capsuleModifier,
+            isError = weightError,
             minusEnabled = enabled && plan.minus.canMove,
             onMinus = { onWeightChanged(VoiceWorkoutDraftParser.formatWeight(plan.minus.target)) },
             minusDescription = stringResource(R.string.active_workout_decrease_weight, minusDelta),
@@ -655,6 +658,7 @@ internal fun SetEditorCapsules(
     val repsCapsule: @Composable (Modifier) -> Unit = { capsuleModifier ->
         SetValueCapsule(
             modifier = capsuleModifier,
+            isError = repsError,
             minusEnabled = enabled && canStepReps(reps, -1),
             onMinus = { onRepsChanged(steppedReps(reps, -1).toString()) },
             minusDescription = stringResource(R.string.active_workout_decrease_reps),
@@ -725,6 +729,7 @@ private fun setEditorValueStyle(): TextStyle = TextStyle(
 @Composable
 private fun SetValueCapsule(
     modifier: Modifier,
+    isError: Boolean = false,
     minusEnabled: Boolean,
     onMinus: () -> Unit,
     minusDescription: String,
@@ -734,7 +739,15 @@ private fun SetValueCapsule(
     content: @Composable RowScope.() -> Unit
 ) {
     Layout(
-        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+            .then(
+                if (isError) {
+                    Modifier.border(2.dp, MaterialTheme.colorScheme.error, CircleShape)
+                } else {
+                    Modifier
+                }
+            ),
         content = {
             StepButton(
                 icon = Icons.Default.Remove,

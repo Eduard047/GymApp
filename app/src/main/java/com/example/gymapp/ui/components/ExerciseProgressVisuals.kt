@@ -59,7 +59,10 @@ fun ExerciseSpotlightCard(
                 )
                 MetricTile(
                     label = spotlight.latestVolumeCaption,
-                    value = spotlight.latestVolumeLabel,
+                    value = spotlight.latestVolumeLabel
+                        .takeIf { label -> label.any(Char::isDigit) }
+                        ?.let { label -> stringResource(R.string.today_history_volume_kg, label) }
+                        ?: spotlight.latestVolumeLabel,
                     modifier = Modifier.weight(1f),
                     onHero = true
                 )
@@ -163,7 +166,10 @@ fun ExerciseTrendChartsCard(
                     )
                     MetricTile(
                         label = stringResource(R.string.progress_average_volume),
-                        value = chart.averageVolumeLabel,
+                        value = chart.averageVolumeLabel
+                            .takeIf { label -> label.any(Char::isDigit) }
+                            ?.let { label -> stringResource(R.string.today_history_volume_kg, label) }
+                            ?: chart.averageVolumeLabel,
                         modifier = Modifier.weight(1f)
                     )
                 }

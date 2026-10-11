@@ -348,7 +348,8 @@ data class AddWorkoutUiState(
     val isSaving: Boolean = false,
     val hasValidationError: Boolean = false,
     val isDirty: Boolean = false,
-    val activeWorkoutStarted: Boolean = false
+    val activeWorkoutStarted: Boolean = false,
+    val startValidation: StartValidationFeedback = StartValidationFeedback()
 )
 
 internal data class RetainedWorkoutDraftFingerprint(
@@ -443,11 +444,80 @@ private class WorkoutDraftDigestWriter(
     }
 }
 
+enum class SetInputField { Weight, Reps }
+
+/** One editable field of one planned set, addressed by the stable draft id and the set position. */
+data class SetFieldKey(val draftId: Long, val setIndex: Int, val field: SetInputField)
+
+/**
+ * What the last failed "Start workout" found: the fields to mark as errors and the card to scroll
+ * to. [version] changes on every failed attempt so the screen scrolls again for a repeated tap.
+ */
+data class StartValidationFeedback(
+    val version: Int = 0,
+    val invalidFields: Set<SetFieldKey> = emptySet(),
+    val firstInvalidDraftId: Long? = null
+)
+
+internal fun isValidWeightInput(input: String): Boolean =
+    parseWeightInputOrNull(input)?.let(WorkoutDataLimits::isValidWeight) == true
+
+internal fun isValidRepsInput(input: String): Boolean {
+    val trimmed = input.trim()
+    return trimmed.length <= AddWorkoutViewModel.MAX_REPS_INPUT_LENGTH &&
+        trimmed.toIntOrNull()?.let(WorkoutDataLimits::isValidReps) == true
+}
+
+/** Fields of selected exercises that [AddWorkoutViewModel.startWorkout] would reject. */
+internal fun invalidStartFields(drafts: List<ExerciseInputState>): Set<SetFieldKey> {
+    val result = linkedSetOf<SetFieldKey>()
+    drafts.forEach { draft ->
+        if (draft.exerciseId == null) return@forEach
+        draft.sets.forEachIndexed { index, set ->
+            if (!isValidWeightInput(set.weight)) {
+                result += SetFieldKey(draft.draftId, index, SetInputField.Weight)
+            }
+            if (!isValidRepsInput(set.reps)) {
+                result += SetFieldKey(draft.draftId, index, SetInputField.Reps)
+            }
+        }
+    }
+    return result
+}
+
+/** The card to bring into view after a failed start: first invalid field, else the first unselected card. */
+internal fun firstInvalidStartDraftId(
+    drafts: List<ExerciseInputState>,
+    invalidFields: Set<SetFieldKey>
+): Long? {
+    val invalidDraftIds = invalidFields.map { it.draftId }.toSet()
+    return drafts.firstOrNull { it.draftId in invalidDraftIds }?.draftId
+        ?: drafts.takeIf { list -> list.none { it.exerciseId != null } }?.firstOrNull()?.draftId
+}
+
 /** New exercise cards are appended, so the first added stays first (insertion order). */
 internal fun appendExerciseDraft(
     current: List<ExerciseInputState>,
-    draftId: Long
-): List<ExerciseInputState> = current + ExerciseInputState(draftId = draftId)
+    draftId: Long,
+    exerciseId: Long? = null
+): List<ExerciseInputState> = current + ExerciseInputState(draftId = draftId, exerciseId = exerciseId)
+
+/** Seeds the weight of a freshly added card's only set, never overwriting anything the user typed. */
+internal fun withInitialWeightIfBlank(
+    current: List<ExerciseInputState>,
+    draftId: Long,
+    lastWeight: Double
+): List<ExerciseInputState> = current.map { draft ->
+    val onlySet = draft.sets.singleOrNull()
+    if (draft.draftId == draftId && onlySet != null && onlySet.weight.isBlank() && onlySet.reps.isBlank()) {
+        draft.copy(sets = listOf(onlySet.copy(weight = formatPlannedWeight(lastWeight))))
+    } else {
+        draft
+    }
+}
+
+internal fun formatPlannedWeight(weight: Double): String =
+    if (weight % 1.0 == 0.0) weight.toInt().toString() else String.format(java.util.Locale.US, "%.1f", weight)
 
 internal fun hasRetainedWorkoutDraft(state: AddWorkoutUiState): Boolean =
     state.isDirty || state.exerciseDrafts.isNotEmpty() || state.note.isNotBlank()
@@ -617,7 +687,8 @@ class AddWorkoutViewModel internal constructor(
         val isSaving: Boolean,
         val hasValidationError: Boolean,
         val isDirty: Boolean,
-        val activeWorkoutStarted: Boolean
+        val activeWorkoutStarted: Boolean,
+        val startValidation: StartValidationFeedback
     )
 
     private data class EditorState(
@@ -672,6 +743,7 @@ class AddWorkoutViewModel internal constructor(
     private val watchPlanSyncError = MutableStateFlow<LocalizedText?>(null)
     private val isSaving = MutableStateFlow(false)
     private val hasValidationError = MutableStateFlow(false)
+    private val startValidation = MutableStateFlow(StartValidationFeedback())
     private val isDirty = MutableStateFlow(false)
     private val activeWorkoutStarted = MutableStateFlow(false)
     private val durableDraftLoaded = MutableStateFlow(false)
@@ -919,8 +991,9 @@ class AddWorkoutViewModel internal constructor(
     private val localState = combine(
         editorState,
         transientState,
-        trainingProfileManager.profile
-    ) { editor, transient, profile ->
+        trainingProfileManager.profile,
+        startValidation
+    ) { editor, transient, profile, startFeedback ->
         LocalState(
             workoutDate = editor.workoutDate,
             note = editor.note,
@@ -937,7 +1010,8 @@ class AddWorkoutViewModel internal constructor(
             isSaving = transient.isSaving,
             hasValidationError = transient.hasValidationError,
             isDirty = transient.isDirty,
-            activeWorkoutStarted = transient.activeWorkoutStarted
+            activeWorkoutStarted = transient.activeWorkoutStarted,
+            startValidation = startFeedback
         )
     }
 
@@ -978,7 +1052,8 @@ class AddWorkoutViewModel internal constructor(
             isSaving = local.isSaving,
             hasValidationError = local.hasValidationError,
             isDirty = local.isDirty,
-            activeWorkoutStarted = local.activeWorkoutStarted
+            activeWorkoutStarted = local.activeWorkoutStarted,
+            startValidation = local.startValidation
         )
     }.stateIn(
         scope = viewModelScope,
@@ -1374,18 +1449,46 @@ class AddWorkoutViewModel internal constructor(
         }
     }
 
-    fun addExerciseDraft() {
+    /**
+     * Appends a new card for an exercise picked from the "Add exercise" picker. Nothing is added when
+     * the exercise is unknown or the per-workout exercise limit is reached. The first set starts with
+     * the last logged weight for that exercise when one exists; reps stay empty like any new set.
+     */
+    fun addExerciseDraftWithExercise(exerciseId: Long) {
+        if (exerciseId <= 0L || exerciseCatalogState.value.exercises.none { it.id == exerciseId }) {
+            hasValidationError.value = true
+            return
+        }
         resetWatchPlanSyncResult()
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
+        var addedDraftId: Long? = null
         exerciseDrafts.update { current ->
             if (current.size >= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION) {
+                addedDraftId = null
                 hasValidationError.value = true
                 current
             } else {
+                val draftId = nextDraftId++
+                addedDraftId = draftId
                 markDraftDirty()
-                appendExerciseDraft(current, nextDraftId++)
+                appendExerciseDraft(current, draftId, exerciseId)
             }
+        }
+        val draftId = addedDraftId ?: return
+        hasValidationError.value = false
+        val knownWeight = uiState.value.lastWeights[exerciseId]
+        if (knownWeight != null) {
+            exerciseDrafts.update { current ->
+                withInitialWeightIfBlank(current, draftId, knownWeight)
+            }
+            return
+        }
+        viewModelScope.launch {
+            val lastWeight = runCatching {
+                repository.observeLastWeights(listOf(exerciseId)).first()[exerciseId]
+            }.getOrNull() ?: return@launch
+            exerciseDrafts.update { current -> withInitialWeightIfBlank(current, draftId, lastWeight) }
         }
     }
 
@@ -1393,6 +1496,7 @@ class AddWorkoutViewModel internal constructor(
         resetWatchPlanSyncResult()
         generatedSmartPlan.value = null
         smartAlternativePicker.value = null
+        clearStartFieldErrors()
         exerciseDrafts.update { current ->
             if (current.none { it.draftId == draftId }) return@update current
             markDraftDirty()
@@ -1408,6 +1512,7 @@ class AddWorkoutViewModel internal constructor(
         smartAlternativePicker.value = null
         exerciseDrafts.value = emptyList()
         hasValidationError.value = false
+        clearStartFieldErrors()
         markDraftDirty()
         return true
     }
@@ -1538,7 +1643,28 @@ class AddWorkoutViewModel internal constructor(
         }
     }
 
+    private fun clearStartFieldError(key: SetFieldKey) {
+        startValidation.update { feedback ->
+            if (key in feedback.invalidFields) {
+                feedback.copy(invalidFields = feedback.invalidFields - key)
+            } else {
+                feedback
+            }
+        }
+    }
+
+    private fun clearStartFieldErrors() {
+        startValidation.update { feedback ->
+            if (feedback.invalidFields.isEmpty() && feedback.firstInvalidDraftId == null) {
+                feedback
+            } else {
+                feedback.copy(invalidFields = emptySet(), firstInvalidDraftId = null)
+            }
+        }
+    }
+
     fun removeSet(draftId: Long, setIndex: Int) {
+        clearStartFieldErrors()
         resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
@@ -1560,6 +1686,7 @@ class AddWorkoutViewModel internal constructor(
             return
         }
         hasValidationError.value = false
+        clearStartFieldError(SetFieldKey(draftId, setIndex, SetInputField.Weight))
         resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
@@ -1582,6 +1709,7 @@ class AddWorkoutViewModel internal constructor(
             return
         }
         hasValidationError.value = false
+        clearStartFieldError(SetFieldKey(draftId, setIndex, SetInputField.Reps))
         resetWatchPlanSyncResult()
         exerciseDrafts.update { current ->
             current.map { draft ->
@@ -1610,6 +1738,17 @@ class AddWorkoutViewModel internal constructor(
                 !isSelectableWorkoutTimestamp(selectedWorkoutDate)
             ) {
                 hasValidationError.value = true
+                val invalidFields = invalidStartFields(exerciseDrafts.value)
+                startValidation.update { previous ->
+                    StartValidationFeedback(
+                        version = previous.version + 1,
+                        invalidFields = invalidFields,
+                        firstInvalidDraftId = firstInvalidStartDraftId(
+                            exerciseDrafts.value,
+                            invalidFields
+                        )
+                    )
+                }
                 return@launch
             }
 
@@ -1795,6 +1934,7 @@ class AddWorkoutViewModel internal constructor(
         workoutDateExplicit.value = false
         note.value = ""
         exerciseDrafts.value = emptyList()
+        clearStartFieldErrors()
         isTemplatePickerOpen.value = false
         isTemplateLoading.value = false
         smartWorkoutEffort.value = SmartWorkoutEffort.Auto
@@ -1924,17 +2064,11 @@ class AddWorkoutViewModel internal constructor(
         return result
     }
 
-    private fun formatWeight(weight: Double): String {
-        return if (weight % 1.0 == 0.0) {
-            weight.toInt().toString()
-        } else {
-            String.format(java.util.Locale.US, "%.1f", weight)
-        }
-    }
+    private fun formatWeight(weight: Double): String = formatPlannedWeight(weight)
 
     companion object {
         private const val MAX_WEIGHT_INPUT_LENGTH = 64
-        private const val MAX_REPS_INPUT_LENGTH = 10
+        internal const val MAX_REPS_INPUT_LENGTH = 10
         private const val MAX_SMART_ALTERNATIVES = 6
 
         internal fun factory(

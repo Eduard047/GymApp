@@ -158,6 +158,9 @@ struct ActiveWorkoutView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var showingDiscardConfirmation = false
+    /// "Finish workout?" confirmation, shown only when planned sets remain
+    /// unrecorded (they are not saved to history). Re-derives the live draft.
+    @State private var showingFinishConfirmation = false
     /// The exercise block a "Finish" tap is asking to confirm, when it has
     /// unrecorded sets. Stores only the id; `pendingFinishExercisePair`
     /// re-derives the live exercise/draft so the dialog's buttons never act
@@ -603,6 +606,28 @@ struct ActiveWorkoutView: View {
             ) {
                 pendingFinishExerciseID = nil
             }
+        }
+        .alert(
+            gymText(
+                "Finish workout?", "Завершити тренування?", "Завершить тренировку?",
+                languageCode: gymCurrentLanguageCode()
+            ),
+            isPresented: $showingFinishConfirmation
+        ) {
+            Button(
+                gymText("Finish", "Завершити", "Завершить", languageCode: gymCurrentLanguageCode())
+            ) {
+                if let draft = currentDraft { finish(draft) }
+            }
+            Button(
+                gymText(
+                    "Keep training", "Продовжити тренування", "Продолжить тренировку",
+                    languageCode: gymCurrentLanguageCode()
+                ),
+                role: .cancel
+            ) {}
+        } message: {
+            Text(finishConfirmationMessage)
         }
         .onAppear {
             liveParticipantSelection = .current
@@ -2390,9 +2415,9 @@ struct ActiveWorkoutView: View {
                 } label: {
                     Label(
                         gymText(
-                            "Save all",
-                            "Зберегти все",
-                            "Сохранить всё",
+                            "Log all remaining sets",
+                            "Записати решту підходів",
+                            "Записать оставшиеся подходы",
                             languageCode: gymCurrentLanguageCode()
                         ),
                         systemImage: "checkmark.circle"
@@ -2404,7 +2429,7 @@ struct ActiveWorkoutView: View {
                         draft.commitIntent != nil
                 )
                 Button {
-                    finish(draft)
+                    requestFinish(draft)
                 } label: {
                     Label(
                         draft.commitIntent == nil
@@ -3286,6 +3311,29 @@ struct ActiveWorkoutView: View {
         if let confirmation = recordedSetConfirmation, ids.contains(confirmation.setID) {
             recordedSetConfirmation = nil
         }
+    }
+
+    /// Routes the primary "Finish" tap through a confirmation when any planned
+    /// set is not completed (unfinished sets are dropped from the saved
+    /// workout). A locked commit intent (retry) and fully completed workouts
+    /// finish immediately.
+    private func requestFinish(_ draft: ActiveWorkoutDraft) {
+        if draft.commitIntent == nil, draft.completedSetCount < draft.plannedSetCount {
+            showingFinishConfirmation = true
+        } else {
+            finish(draft)
+        }
+    }
+
+    private var finishConfirmationMessage: String {
+        let done = currentDraft?.completedSetCount ?? 0
+        let planned = currentDraft?.plannedSetCount ?? 0
+        return gymText(
+            "\(done) of \(planned) \(planned == 1 ? "set is" : "sets are") done. Unfinished sets won't be saved.",
+            "Виконано \(done) з \(planned) підходів. Невиконані підходи не буде збережено.",
+            "Выполнено \(done) из \(planned) подходов. Невыполненные подходы не будут сохранены.",
+            languageCode: gymCurrentLanguageCode()
+        )
     }
 
     private func finish(_ draft: ActiveWorkoutDraft) {

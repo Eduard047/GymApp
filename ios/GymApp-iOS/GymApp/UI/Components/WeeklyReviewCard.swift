@@ -49,7 +49,7 @@ struct WeeklyReviewCard: View {
                 } label: {
                     Text(t("Training settings", "Налаштування тренувань", "Настройки тренировок") + " · " + t("edit", "змінити", "изменить"))
                         .font(.caption)
-                        .foregroundStyle(GymTheme.brandFill)
+                        .foregroundStyle(GymTheme.primary)
                         .frame(minHeight: 44, alignment: .leading)
                 }
                 .buttonStyle(.plain)
@@ -79,7 +79,7 @@ struct WeeklyReviewCard: View {
                 DisclosureGroup(t("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")) {
                     ForEach(review.sessions, id: \.workoutID) { entry in
                         NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID) } label: {
-                            Text(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .shortened)).frame(minHeight: 44)
+                            Text(gymShortDateTime(entry.sessionDate)).frame(minHeight: 44)
                         }
                     }
                 }
@@ -93,7 +93,7 @@ struct WeeklyReviewCard: View {
                 List([insight.previous, insight.current], id: \.setID) { entry in
                     NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID) } label: {
                         VStack(alignment: .leading) {
-                            Text(gymFormattedDate(entry.sessionDate, date: .abbreviated, time: .omitted))
+                            Text(gymShortDate(entry.sessionDate))
                             Text("\(entry.weight.formatted(.number.locale(gymAppLocale()))) \(t("kg", "кг", "кг")) × \(entry.reps)")
                         }
                     }

@@ -195,9 +195,7 @@ struct ProgressHubView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode),
-                        value: metrics.totalVolume.formatted(
-                            .number.locale(gymAppLocale()).notation(.compactName).precision(.fractionLength(0 ... 1))
-                        ),
+                        value: gymVolumeText(metrics.totalVolume, compact: true, languageCode: languageCode),
                         emphasized: true
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -312,6 +310,17 @@ struct ExerciseProgressView: View {
         self.showsHeader = showsHeader
     }
 
+    private func loggedSessionsText(_ count: Int) -> String {
+        let number = count.formatted(.number.locale(gymAppLocale()))
+        return "\(number) " + gymPlural(
+            count,
+            en: ("logged session", "logged sessions"),
+            uk: ("записана сесія", "записані сесії", "записаних сесій"),
+            ru: ("записанная сессия", "записанные сессии", "записанных сессий"),
+            languageCode: languageCode
+        )
+    }
+
     var body: some View {
         GymBackground {
             ScrollView {
@@ -408,14 +417,7 @@ struct ExerciseProgressView: View {
                                         .font(.headline)
                                         .foregroundStyle(GymTheme.textPrimary)
                                         .fixedSize(horizontal: false, vertical: true)
-                                    Text(
-                                        gymText(
-                                            "\(store.progressStats(exerciseID: selectedExercise.id).sessionCount) logged sessions",
-                                            "Записано сесій: \(store.progressStats(exerciseID: selectedExercise.id).sessionCount)",
-                                            "Записано сессий: \(store.progressStats(exerciseID: selectedExercise.id).sessionCount)",
-                                            languageCode: languageCode
-                                        )
-                                    )
+                                    Text(loggedSessionsText(store.progressStats(exerciseID: selectedExercise.id).sessionCount))
                                     .font(.caption)
                                     .foregroundStyle(GymTheme.textSecondary)
                                 }
@@ -560,7 +562,7 @@ struct ExerciseProgressView: View {
                     )
                     GymMetricTile(
                         label: t("Total Volume", "Загальний обсяг", "Общий объем"),
-                        value: formatNumber(totalVolume)
+                        value: gymVolumeText(totalVolume, compact: true)
                     )
                 }
             }
@@ -589,7 +591,7 @@ struct ExerciseProgressView: View {
                     )
                     GymMetricTile(
                         label: t("Month volume", "Обсяг за місяць", "Объём за месяц"),
-                        value: formatNumber(totalVolume),
+                        value: gymVolumeText(totalVolume, compact: true),
                         onHero: true
                     )
                 }
@@ -662,7 +664,7 @@ struct ExerciseProgressView: View {
         GymPanel {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(gymFormattedDate(group.date, date: .long, time: .omitted))
+                    Text(gymShortDate(group.date))
                         .font(.headline)
                     Spacer(minLength: 8)
                     GymInfoPill(
@@ -681,9 +683,9 @@ struct ExerciseProgressView: View {
 
                 Text(
                     t(
-                        "\(group.totalReps) \(group.totalReps == 1 ? "rep" : "reps") • \(formatNumber(group.totalVolume)) volume",
-                        "\(group.totalReps) повт. • обсяг \(formatNumber(group.totalVolume))",
-                        "\(group.totalReps) повт. • объём \(formatNumber(group.totalVolume))"
+                        "\(group.totalReps) \(group.totalReps == 1 ? "rep" : "reps") • \(gymVolumeText(group.totalVolume, compact: true)) volume",
+                        "\(group.totalReps) повт. • обсяг \(gymVolumeText(group.totalVolume, compact: true))",
+                        "\(group.totalReps) повт. • объём \(gymVolumeText(group.totalVolume, compact: true))"
                     )
                 )
                 .font(.caption)
@@ -1269,9 +1271,9 @@ private struct ExerciseProgressChartsCard: View {
                 .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))
                 .accessibilityValue(
                     t(
-                        "\(formatNumber(point.totalVolume)) volume, \(point.totalReps) \(point.totalReps == 1 ? "rep" : "reps")",
-                        "обсяг \(formatNumber(point.totalVolume)), \(point.totalReps) повт.",
-                        "объём \(formatNumber(point.totalVolume)), \(point.totalReps) повт."
+                        "\(gymVolumeText(point.totalVolume, compact: true)) volume, \(point.totalReps) \(point.totalReps == 1 ? "rep" : "reps")",
+                        "обсяг \(gymVolumeText(point.totalVolume, compact: true)), \(point.totalReps) повт.",
+                        "объём \(gymVolumeText(point.totalVolume, compact: true)), \(point.totalReps) повт."
                     )
                 )
             }

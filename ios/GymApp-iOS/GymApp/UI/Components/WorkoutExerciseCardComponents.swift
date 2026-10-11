@@ -581,6 +581,9 @@ struct GymSetEditorCapsules: View {
     var onWeightFocusChange: ((Bool) -> Void)?
     var deleteAccessibilityLabel: String?
     var onDelete: (() -> Void)?
+    /// Error border on the weight / reps capsule (plan-editor start validation).
+    var weightInvalid = false
+    var repsInvalid = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -643,7 +646,8 @@ struct GymSetEditorCapsules: View {
                 "Збільшити вагу на \(plusText) \(kg)",
                 "Увеличить вес на \(plusText) \(kg)",
                 languageCode: gymCurrentLanguageCode()
-            )
+            ),
+            isInvalid: weightInvalid
         ) {
             HStack(spacing: 3) {
                 TextField(
@@ -692,7 +696,8 @@ struct GymSetEditorCapsules: View {
             plusAccessibilityLabel: gymText(
                 "Increase reps", "Збільшити повторення", "Увеличить повторения",
                 languageCode: gymCurrentLanguageCode()
-            )
+            ),
+            isInvalid: repsInvalid
         ) {
             Text(reps.formatted(.number.locale(gymAppLocale())))
                 .font(.system(size: 17, weight: .semibold).monospacedDigit())
@@ -819,6 +824,8 @@ private struct GymSetValueCapsule<Center: View>: View {
     let plusDisabled: Bool
     let plusAction: () -> Void
     let plusAccessibilityLabel: String
+    /// Draws the error border (start validation points at this value).
+    var isInvalid = false
     @ViewBuilder let center: () -> Center
 
     var body: some View {
@@ -841,7 +848,12 @@ private struct GymSetValueCapsule<Center: View>: View {
         .background(
             Capsule()
                 .fill(GymTheme.surfaceVariant)
-                .overlay(Capsule().strokeBorder(GymTheme.outlineSoft, lineWidth: GymTheme.hairlineWidth))
+                .overlay(
+                    Capsule().strokeBorder(
+                        isInvalid ? GymTheme.error : GymTheme.outlineSoft,
+                        lineWidth: isInvalid ? 2 : GymTheme.hairlineWidth
+                    )
+                )
         )
     }
 

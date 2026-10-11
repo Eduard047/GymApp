@@ -15,9 +15,11 @@ class VisibleDateFormatterTest {
 
     @Test
     fun compactDateIncludesLocalizedWeekday() {
-        assertEquals("Thu, 13 Aug 2026", DateTimeUtils.formatDate(timestamp, Locale.ENGLISH, zoneId))
-        assertEquals("чт, 13 авг. 2026", DateTimeUtils.formatDate(timestamp, Locale("ru"), zoneId))
-        assertEquals("чт, 13 серп. 2026", DateTimeUtils.formatDate(timestamp, Locale("uk"), zoneId))
+        val otherYear = LocalDate.of(2027, 1, 5).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        assertEquals("Thu, Aug 13, 2026", DateTimeUtils.formatDate(timestamp, Locale.ENGLISH, zoneId, otherYear))
+        assertEquals("Чт, 13 авг. 2026 г.", DateTimeUtils.formatDate(timestamp, Locale("ru"), zoneId, otherYear))
+        assertEquals("чт, 13 серп. 2026 р.", DateTimeUtils.formatDate(timestamp, Locale("uk"), zoneId, otherYear))
+        assertEquals("Thu, Aug 13", DateTimeUtils.formatDate(timestamp, Locale.ENGLISH, zoneId, timestamp))
     }
 
     @Test

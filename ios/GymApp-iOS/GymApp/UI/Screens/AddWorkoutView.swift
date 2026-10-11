@@ -188,6 +188,13 @@ struct AddWorkoutView: View {
     @State private var secondaryOptionsExpanded = false
     @State private var showingDiscardConfirmation = false
     @State private var showingClearPlanConfirmation = false
+    /// Smart Coach card is a single row until opened; view-lifetime only.
+    @State private var smartCoachExpanded = false
+    /// Set after a failed start/save so invalid set values get an error border;
+    /// each border disappears as soon as its value is valid again.
+    @State private var highlightsInvalidSets = false
+    @State private var invalidScrollTargetID: UUID?
+    @State private var invalidScrollToken = 0
     @State private var showingVoiceWorkoutDraft = false
     @State private var voiceTranscriptionService: any VoiceTranscriptionService
 
@@ -406,6 +413,20 @@ struct AddWorkoutView: View {
                     DispatchQueue.main.async {
                         withAnimation(.easeOut(duration: 0.2)) {
                             scrollProxy.scrollTo(newID, anchor: .center)
+                        }
+                    }
+                }
+                .onChange(of: drafts) { _, newDrafts in
+                    guard highlightsInvalidSets,
+                          !newDrafts.contains(where: { $0.sets.contains { !$0.isReadyForSave || !$0.hasValidReps } })
+                    else { return }
+                    highlightsInvalidSets = false
+                }
+                .onChange(of: invalidScrollToken) { _, _ in
+                    guard let target = invalidScrollTargetID else { return }
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            scrollProxy.scrollTo(target, anchor: .center)
                         }
                     }
                 }
@@ -703,18 +724,9 @@ struct AddWorkoutView: View {
     private var smartCoachPanel: some View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 12) {
-                GymSectionTitle(
-                    title: "Smart Coach",
-                    supporting: nil
-                )
+                smartCoachHeader
 
-                TrainingSettingsSummaryRow(
-                    profile: profile,
-                    languageCode: gymCurrentLanguageCode()
-                ) {
-                    showsWeeklyTargetEditor = true
-                }
-
+                if smartCoachExpanded {
                 LazyVGrid(
                     columns: [
                         GridItem(.flexible(), spacing: 8),
@@ -833,10 +845,68 @@ struct AddWorkoutView: View {
                             languageCode: gymCurrentLanguageCode()
                         )
                 )
+                }
             }
         }
         .sheet(isPresented: $showsWeeklyTargetEditor) {
             TrainingSettingsSheet(profile: $profile)
+        }
+    }
+
+    /// One collapsed row: "Smart Coach" + the training-goal summary, an "edit"
+    /// link for the settings sheet and a chevron that expands the effort chips and
+    /// the build button.
+    private var smartCoachHeader: some View {
+        let languageCode = gymCurrentLanguageCode()
+        let toggle = {
+            withAnimation(.easeInOut(duration: 0.2)) { smartCoachExpanded.toggle() }
+        }
+        return HStack(spacing: 6) {
+            Button(action: toggle) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Smart Coach")
+                        .font(.headline)
+                        .foregroundStyle(GymTheme.textPrimary)
+                    Text(TrainingSettingsSummaryRow(profile: profile, languageCode: languageCode, action: {}).summaryText)
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Smart Coach")
+            .accessibilityValue(smartCoachExpanded
+                ? gymText("Expanded", "Розгорнуто", "Развёрнуто", languageCode: languageCode)
+                : gymText("Collapsed", "Згорнуто", "Свёрнуто", languageCode: languageCode))
+            .accessibilityHint(gymText(
+                "Shows or hides effort choices and the workout builder",
+                "Показує або ховає вибір навантаження та створення тренування",
+                "Показывает или скрывает выбор нагрузки и создание тренировки",
+                languageCode: languageCode
+            ))
+
+            Button {
+                showsWeeklyTargetEditor = true
+            } label: {
+                Text(gymText("edit", "змінити", "изменить", languageCode: languageCode))
+                    .font(.subheadline)
+                    .foregroundStyle(GymTheme.primary)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: toggle) {
+                Image(systemName: smartCoachExpanded ? "chevron.up" : "chevron.down")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
         }
     }
 
@@ -957,7 +1027,8 @@ struct AddWorkoutView: View {
                             smartGeneratedDraftIDs.remove(item.id)
                             latestSmartPlan = nil
                             drafts.removeAll { $0.id == item.id }
-                        }
+                        },
+                        highlightsInvalid: highlightsInvalidSets
                     )
                     .id(item.id)
                 }
@@ -1982,9 +2053,21 @@ struct AddWorkoutView: View {
         return nil
     }
 
+    /// Reveals which exercise card holds the first invalid set: scrolls to it and
+    /// turns on the error borders (see `highlightsInvalidSets`).
+    private func revealFirstInvalidSet() {
+        guard let target = drafts.first(where: { exercise in
+            exercise.sets.contains { !$0.isReadyForSave || !$0.hasValidReps }
+        }) else { return }
+        highlightsInvalidSets = true
+        invalidScrollTargetID = target.id
+        invalidScrollToken &+= 1
+    }
+
     private func startWorkout() {
         if let message = validationMessage() {
             show(message, error: true)
+            revealFirstInvalidSet()
             return
         }
         do {
@@ -2023,6 +2106,7 @@ struct AddWorkoutView: View {
     private func saveCompletedWorkout() {
         if let message = validationMessage() {
             show(message, error: true)
+            revealFirstInvalidSet()
             return
         }
         isSaving = true
@@ -2463,7 +2547,7 @@ private struct PreviousWorkoutPicker: View {
                     dismiss()
                 } label: {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(gymFormattedDate(workout.date, date: .abbreviated, time: .shortened))
+                        Text(gymShortDateTime(workout.date))
                             .font(.headline)
                         Text(workout.exercises.map { exerciseName($0.exerciseID) }.joined(separator: " · "))
                             .font(.subheadline)

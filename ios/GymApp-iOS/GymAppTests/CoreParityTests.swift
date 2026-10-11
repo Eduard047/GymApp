@@ -13026,7 +13026,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(editorSource.contains("scrollProxy.scrollTo(newID, anchor: .center)"))
         XCTAssertTrue(editorSource.contains(".id(item.id)"))
         XCTAssertTrue(editorSource.contains(".id(\"workout-plan-exercises-header\")"))
-        XCTAssertTrue(editorSource.contains("title: \"Smart Coach\""))
+        XCTAssertTrue(editorSource.contains("Text(\"Smart Coach\")"))
         XCTAssertTrue(editorSource.contains("title: \"Exercises\""))
         XCTAssertTrue(editorSource.contains(
             "latestSmartPlan.requestedEffort != latestSmartPlan.appliedEffort"

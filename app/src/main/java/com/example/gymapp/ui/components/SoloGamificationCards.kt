@@ -325,7 +325,10 @@ fun LifetimeProgressCard(
                 )
                 MetricTile(
                     label = stringResource(R.string.focus_lens_volume),
-                    value = formatTodayHeroVolume(metrics.totalVolume, locale),
+                    value = stringResource(
+                        R.string.today_history_volume_kg,
+                        formatTodayHeroVolume(metrics.totalVolume, locale)
+                    ),
                     modifier = Modifier.weight(1f),
                     emphasized = true
                 )

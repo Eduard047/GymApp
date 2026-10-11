@@ -312,6 +312,40 @@ struct PostWorkoutSummaryView: View {
         value.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 1)))
     }
 
+    /// Compact "sets · volume · duration" row at the top of the hero.
+    private func heroStatsRow(_ workout: WorkoutSession) -> some View {
+        let duration = gymCompactDuration(workout.durationSeconds ?? 0, languageCode: languageCode)
+        return HStack(alignment: .top, spacing: 8) {
+            heroStat(
+                value: workout.setCount.formatted(.number.locale(gymAppLocale())),
+                label: gymText("Sets", "Підходи", "Подходы", languageCode: languageCode)
+            )
+            heroStat(
+                value: gymVolumeText(workout.totalVolume, compact: true, languageCode: languageCode),
+                label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
+            )
+            heroStat(
+                value: duration.isEmpty ? "—" : duration,
+                label: gymText("Duration", "Тривалість", "Длительность", languageCode: languageCode)
+            )
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func heroStat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(Color.white)
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.72))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private func rewardHero(_ workout: WorkoutSession) -> some View {
         let xp = sessionSummary.map(GamificationEngine.xpForSession) ?? 0
         let progression = gamification.progression
@@ -336,6 +370,8 @@ struct PostWorkoutSummaryView: View {
                             .foregroundStyle(Color.white.opacity(0.82))
                     }
                 }
+
+                heroStatsRow(workout)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("+\(xp) XP")
@@ -405,7 +441,7 @@ struct PostWorkoutSummaryView: View {
                     GymMetricTile(label: "Sets", value: workout.setCount.formatted(.number.locale(gymAppLocale())))
                     GymMetricTile(
                         label: "Volume",
-                        value: workout.totalVolume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0 ... 1)))
+                        value: gymVolumeText(workout.totalVolume, languageCode: languageCode)
                     )
                     GymMetricTile(
                         label: "Top muscle",

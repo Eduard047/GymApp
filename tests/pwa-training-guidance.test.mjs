@@ -593,6 +593,7 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
     const session = state.sessions[1];
     const feedback = workoutFeedbackPanel(session);
     smartPlanStale = false;
+    smartCoachExpanded = true;
     smartGeneratedPlan = {
       focus: "Upper", requestedEffort: "Auto", appliedEffort: "Standard",
       adjustment: "This redundant explanation must stay hidden."

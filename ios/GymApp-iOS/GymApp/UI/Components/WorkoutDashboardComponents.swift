@@ -648,7 +648,7 @@ struct WorkoutKPICard: View {
                     )
                     GymMetricTile(
                         label: "Total volume",
-                        value: compactNumber(stats.totalVolume),
+                        value: gymVolumeText(stats.totalVolume, compact: true),
                         onHero: true
                     )
                     GymMetricTile(
@@ -1565,10 +1565,8 @@ struct AchievementGallery: View {
     }
 
     private func unlockDate(_ epochDay: Int64) -> String {
-        gymFormattedDate(
+        gymShortDate(
             Calendar.current.gymDate(forEpochDay: epochDay),
-            date: .abbreviated,
-            time: .omitted,
             languageCode: languageCode
         )
     }

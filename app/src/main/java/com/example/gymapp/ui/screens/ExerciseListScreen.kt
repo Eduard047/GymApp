@@ -2791,7 +2791,10 @@ private fun ExerciseHistoryBottomSheetContent(
                     )
                     HistoryStat(
                         label = stringResource(R.string.exercise_history_volume),
-                        value = String.format(locale, "%.0f", totalVolume),
+                        value = stringResource(
+                            R.string.today_history_volume_kg,
+                            String.format(locale, "%.0f", totalVolume)
+                        ),
                         modifier = Modifier.weight(1f)
                     )
                 }
