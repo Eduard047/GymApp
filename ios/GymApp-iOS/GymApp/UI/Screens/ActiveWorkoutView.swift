@@ -1540,6 +1540,8 @@ struct ActiveWorkoutView: View {
                 )
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(GymTheme.primary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
                 if usesPlateCalculator(exercise) {
                     PlateCalculatorButton(weight: set.weight)
@@ -1547,7 +1549,9 @@ struct ActiveWorkoutView: View {
 
                 Spacer(minLength: 8)
 
-                if showsPrevious, let last, let repeatWeight, let repeatReps {
+                // At accessibility text sizes the caption moves to its own line
+                // below so it never has to share the row with the chip and trash.
+                if !dynamicTypeSize.isAccessibilitySize, showsPrevious, let last, let repeatWeight, let repeatReps {
                     previousPerformanceButton(
                         last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
                         isBodyweight: isBodyweightExercise, set: set, draft: draft
@@ -1563,6 +1567,13 @@ struct ActiveWorkoutView: View {
                         deleteSet(set, draft: draft)
                     }
                 }
+            }
+
+            if dynamicTypeSize.isAccessibilitySize, showsPrevious, let last, let repeatWeight, let repeatReps {
+                previousPerformanceButton(
+                    last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
+                    isBodyweight: isBodyweightExercise, set: set, draft: draft
+                )
             }
 
             if isListeningHere {
@@ -1706,8 +1717,11 @@ struct ActiveWorkoutView: View {
                         languageCode: gymCurrentLanguageCode()
                     )
             )
-            .font(.caption.weight(.semibold))
+            .font(.caption.weight(.semibold).monospacedDigit())
             .foregroundStyle(GymTheme.primary)
+            // Metric stays on one line: shrink instead of wrapping "92,5 / × 6".
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
         }
         .buttonStyle(.plain)
         .disabled(draft.commitIntent != nil)
