@@ -5300,7 +5300,10 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   user-select: none;
 }
 .active-workout-exercise { position: relative; }
-.active-exercise-menu { position: absolute; top: 6px; right: 6px; width: 44px; height: 44px; }
+.active-exercise-menu { position: absolute; top: 20px; right: 6px; width: 44px; height: 44px; }
+/* Keep the overflow button on the header row's centre line (thumbnail and chevron): 16px inset inside the card border + half the row height. */
+.active-workout-exercise:is(.completed, .upcoming):has(> details:not([open])) > .active-exercise-menu { top: 24.5px; }
+.saved-workout-exercise-card > .active-exercise-menu { top: 20.5px; }
 .active-workout-exercise:has(> .active-exercise-menu) .active-workout-exercise-summary { padding-right: 48px; }
 
 .active-set-voice-transcript { display: grid; gap: 4px; text-align: center; }
