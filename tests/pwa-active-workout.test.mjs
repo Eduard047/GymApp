@@ -4052,10 +4052,10 @@ test("a recorded set is deleted from the undo sheet after a destructive confirma
   vm.runInContext("modal = null", context);
 
   // Confirmation names the exercise and the set; it opens as a destructive alertdialog.
-  for (const [language, title, cancel, body] of [
-    ["en", "Delete set?", "Cancel", "Set 1: 40 kg × 10"],
-    ["uk", "Видалити підхід?", "Скасувати", "Підхід 1: 40 кг × 10"],
-    ["ru", "Удалить подход?", "Отмена", "Подход 1: 40 кг × 10"]
+  for (const [language, title, cancel, body, consequence] of [
+    ["en", "Delete set?", "Cancel", "Set 1: 40 kg × 10", "This set will be removed from the workout."],
+    ["uk", "Видалити підхід?", "Скасувати", "Підхід 1: 40 кг × 10", "Підхід буде видалено з тренування."],
+    ["ru", "Удалить подход?", "Отмена", "Подход 1: 40 кг × 10", "Подход будет удалён из тренировки."]
   ]) {
     vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
     assert.equal(vm.runInContext(`requestDeleteActiveSet(${first})`, context), true);
@@ -4066,6 +4066,7 @@ test("a recorded set is deleted from the undo sheet after a destructive confirma
     assert.ok(sheet.includes(`>${title}</h2>`), `${language} title`);
     assert.ok(sheet.includes(`>${cancel}</button>`), `${language} cancel`);
     assert.ok(sheet.includes(body), `${language} body: ${body}`);
+    assert.ok(sheet.includes(`>${consequence}</p>`), `${language} consequence`);
     assert.match(sheet, /data-action="confirm-delete-active-set"/);
     vm.runInContext("modal = null", context);
   }

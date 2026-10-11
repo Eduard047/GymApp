@@ -13045,8 +13045,7 @@ const COUNT_NOUN_FORMS = Object.freeze({
   "matching exercises": Object.freeze({ en: ["matching exercise", "matching exercises"], uk: ["спільна вправа", "спільні вправи", "спільних вправ"], ru: ["совпадающее упражнение", "совпадающих упражнения", "совпадающих упражнений"] }),
   "new bests": Object.freeze({ en: ["new best", "new bests"], uk: ["новий рекорд", "нові рекорди", "нових рекордів"], ru: ["новый рекорд", "новых рекорда", "новых рекордов"] }),
   "logged sessions": Object.freeze({ en: ["logged session", "logged sessions"], uk: ["записана сесія", "записані сесії", "записаних сесій"], ru: ["записанная сессия", "записанные сессии", "записанных сессий"] }),
-  "recorded sets": Object.freeze({ en: ["recorded set", "recorded sets"], uk: ["записаний підхід", "записані підходи", "записаних підходів"], ru: ["записанный подход", "записанных подхода", "записанных подходов"] }),
-  "sets recorded": Object.freeze({ en: ["set recorded", "sets recorded"], uk: ["підхід записано", "підходи записано", "підходів записано"], ru: ["подход записан", "подхода записано", "подходов записано"] })
+  "recorded sets": Object.freeze({ en: ["recorded set", "recorded sets"], uk: ["записаний підхід", "записані підходи", "записаних підходів"], ru: ["записанный подход", "записанных подхода", "записанных подходов"] })
 });
 
 function countNoun(count, noun) {
@@ -13297,7 +13296,7 @@ function activeLastSetToastText() {
 function confirmDeleteActiveSetMarkup(intent) {
   const location = activeWorkout && activeWorkout.id === intent?.workoutId ? activeSetLocation(intent.setId) : null;
   if (!location) return "";
-  return bottomSheet(`<h2 id="delete-active-set-title">${tx3("Delete set?", "Видалити підхід?", "Удалить подход?")}</h2><p id="delete-active-set-target"><strong>${escapeHtml(exerciseDisplayName(location.block))}</strong></p><p class="muted" id="delete-active-set-description">${escapeHtml(activeDeleteSetBodyText(location))}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Cancel", "Скасувати", "Отмена")}</button><button class="button danger full" data-action="confirm-delete-active-set">${tx3("Delete", "Видалити", "Удалить")}</button></div>`, "delete-active-set-title", "alertdialog", "delete-active-set-target delete-active-set-description");
+  return bottomSheet(`<h2 id="delete-active-set-title">${tx3("Delete set?", "Видалити підхід?", "Удалить подход?")}</h2><p id="delete-active-set-target"><strong>${escapeHtml(exerciseDisplayName(location.block))}</strong></p><p class="muted" id="delete-active-set-description">${escapeHtml(activeDeleteSetBodyText(location))}</p><p class="muted" id="delete-active-set-consequence">${tx3("This set will be removed from the workout.", "Підхід буде видалено з тренування.", "Подход будет удалён из тренировки.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Cancel", "Скасувати", "Отмена")}</button><button class="button danger full" data-action="confirm-delete-active-set">${tx3("Delete", "Видалити", "Удалить")}</button></div>`, "delete-active-set-title", "alertdialog", "delete-active-set-target delete-active-set-description delete-active-set-consequence");
 }
 
 function requestDeleteActiveSet(setId, returnFocus = null) {
@@ -25992,7 +25991,7 @@ function modalMarkup() {
   if (modal.type === "friend-detail") return bottomSheet(friendDetailMarkup());
   if (modal.type === "voice-workout") return voiceWorkout ? voiceWorkoutSheetMarkup() : "";
   if (modal.type === "confirm-clear-plan") {
-    return bottomSheet(`<h2 id="clear-plan-confirm-title">${tx("Clear workout plan?", "Очистити план тренування?")}</h2><p id="clear-plan-confirm-description" class="muted">${tx("All exercises and sets will be removed. Your profile, history, and active workout stay unchanged.", "Усі вправи й підходи буде видалено. Профіль, історія та активне тренування залишаться без змін.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Keep plan", "Залишити план")}</button><button class="button danger full" data-action="confirm-clear-plan">${tx("Clear plan", "Очистити план")}</button></div>`, "clear-plan-confirm-title", "alertdialog", "clear-plan-confirm-description");
+    return bottomSheet(`<h2 id="clear-plan-confirm-title">${tx("Clear workout plan?", "Очистити план тренування?")}</h2><p id="clear-plan-confirm-description" class="muted">${tx3("All exercises and sets will be removed.", "Усі вправи й підходи буде видалено.", "Все упражнения и подходы будут удалены.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Keep plan", "Залишити план", "Оставить план")}</button><button class="button danger full" data-action="confirm-clear-plan">${tx3("Clear plan", "Очистити план", "Очистить план")}</button></div>`, "clear-plan-confirm-title", "alertdialog", "clear-plan-confirm-description");
   }
   if (modal.type === "confirm-discard-plan") {
     const todayCopy = modal.copyMode === "today";
@@ -26043,12 +26042,11 @@ function modalMarkup() {
     return bottomSheet(`<h2 id="social-workout-replace-title">${tx("Replace the waiting shared plan?", "Замінити спільний план, що очікує?")}</h2><p class="muted" id="social-workout-replace-description">${tx("The plan already waiting on this device will be replaced by the accepted friend copy. Your workout draft, history, and active workout will stay unchanged.", "План, що вже очікує на цьому пристрої, буде замінено прийнятою копією від друга. Чернетка, історія й активне тренування не зміняться.")}</p>${sharedWorkoutPreviewMarkup(modal.workout)}<div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Keep waiting plan", "Залишити план, що очікує")}</button><button class="button danger full" data-action="confirm-social-workout-replace">${tx("Open accepted copy", "Відкрити прийняту копію")}</button></div>`, "social-workout-replace-title", "alertdialog", "social-workout-replace-description");
   }
   if (modal.type === "confirm-discard-active") {
-    const counts = activeWorkoutSetCounts(activeWorkout);
     const isLive = liveWorkoutBinding?.localWorkoutId === activeWorkout?.id;
     const description = isLive
       ? tx("The local active draft will be removed and the shared live room will end for both participants. Saved workout history stays unchanged.", "Локальну активну чернетку буде видалено, а спільну live-кімнату завершено для обох учасників. Збережена історія тренувань не зміниться.")
-      : tx("The local active draft and its recorded progress will be removed. Workout history and cloud data will not be changed.", "Локальну активну чернетку та записаний у ній прогрес буде видалено. Історія тренувань і хмарні дані не зміняться.");
-    return bottomSheet(`<h2 id="discard-active-confirm-title">${tx3("Discard active workout?", "Відкинути активне тренування?", "Удалить активную тренировку?")}</h2><p id="discard-active-confirm-target"><strong>${counts.completed} / ${countNoun(counts.total, "sets recorded")}</strong></p><p class="muted" id="discard-active-confirm-description">${description}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Keep workout", "Залишити тренування", "Оставить тренировку")}</button><button class="button danger full" data-action="confirm-discard-active">${isLive ? tx("End live workout", "Завершити live-тренування") : tx3("Discard workout", "Відкинути тренування", "Удалить тренировку")}</button></div>`, "discard-active-confirm-title", "alertdialog", "discard-active-confirm-target discard-active-confirm-description");
+      : tx3("The recorded and planned sets will be removed; saved workout history is not affected.", "Записані й заплановані підходи буде видалено; збережена історія не зміниться.", "Записанные и запланированные подходы будут удалены; сохранённая история не изменится.");
+    return bottomSheet(`<h2 id="discard-active-confirm-title">${tx3("Discard active workout?", "Відкинути активне тренування?", "Удалить активную тренировку?")}</h2><p class="muted" id="discard-active-confirm-description">${description}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Keep workout", "Залишити тренування", "Оставить тренировку")}</button><button class="button danger full" data-action="confirm-discard-active">${isLive ? tx("End live workout", "Завершити live-тренування") : tx3("Discard workout", "Відкинути тренування", "Удалить тренировку")}</button></div>`, "discard-active-confirm-title", "alertdialog", "discard-active-confirm-description");
   }
   if (modal.type === "confirm-delete-exercise") {
     const preview = modal.intent?.preview || {};
@@ -26056,7 +26054,7 @@ function modalMarkup() {
   }
   if (modal.type === "confirm-delete-set") {
     const preview = modal.intent?.preview || {};
-    return bottomSheet(`<h2 id="delete-set-confirm-title">${tx("Delete set", "Видалити підхід")}</h2><p id="delete-set-confirm-target"><strong>${escapeHtml(preview.exerciseName || "")}</strong></p><p class="muted" id="delete-set-confirm-detail">${escapeHtml(preview.detail || "")}</p><p class="muted" id="delete-set-confirm-description">${tx("Delete this saved set? Workout totals, progress, and recommendations will be updated. This cannot be undone in GymApp.", "Видалити цей збережений підхід? Підсумки тренування, прогрес і рекомендації буде оновлено. У GymApp це неможливо скасувати.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-delete-set">${tx("Delete set", "Видалити підхід")}</button></div>`, "delete-set-confirm-title", "alertdialog", "delete-set-confirm-target delete-set-confirm-detail delete-set-confirm-description");
+    return bottomSheet(`<h2 id="delete-set-confirm-title">${tx3("Delete set?", "Видалити підхід?", "Удалить подход?")}</h2><p id="delete-set-confirm-target"><strong>${escapeHtml(preview.exerciseName || "")}</strong></p><p class="muted" id="delete-set-confirm-detail">${escapeHtml(preview.detail || "")}</p><p class="muted" id="delete-set-confirm-description">${tx3("This set will be removed from the workout.", "Підхід буде видалено з тренування.", "Подход будет удалён из тренировки.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Cancel", "Скасувати", "Отмена")}</button><button class="button danger full" data-action="confirm-delete-set">${tx3("Delete", "Видалити", "Удалить")}</button></div>`, "delete-set-confirm-title", "alertdialog", "delete-set-confirm-target delete-set-confirm-detail delete-set-confirm-description");
   }
   if (modal.type === "confirm-import") {
     const preview = modal.intent?.preview || {};
@@ -32027,7 +32025,7 @@ async function deleteSession(id) {
     "Це підтвердження вже неактуальне. Нічого не змінено."
   ));
   const session = matches[0];
-  if (!window.confirm(tx(`Delete workout from ${fmtShortDate(session.startedAt)}?`, `Видалити тренування від ${fmtShortDate(session.startedAt)}?`))) return;
+  if (!window.confirm(`${tx3("Delete workout?", "Видалити тренування?", "Удалить тренировку?")}\n${tx3("This removes the workout and every set. This action cannot be undone.", "Тренування й усі його підходи буде видалено. Цю дію не можна скасувати.", "Тренировка и все её подходы будут удалены. Это действие нельзя отменить.")}`)) return;
   const mutationContext = activeWorkoutMutationContext();
   if (!mutationContext) return showDestructiveSaveFailure();
   const result = await withActiveWorkoutDeletionLock(mutationContext.descriptor, () => {

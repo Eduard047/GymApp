@@ -969,4 +969,13 @@ test("discard active workout sheet uses exact EN, UK and RU copy", () => {
     assert.match(markup, new RegExp(`data-modal-initial-focus>${keep}</button>`));
     assert.match(markup, new RegExp(`data-action="confirm-discard-active">${confirm}</button>`));
   }
+  const message = {
+    en: "The recorded and planned sets will be removed; saved workout history is not affected.",
+    uk: "Записані й заплановані підходи буде видалено; збережена історія не зміниться.",
+    ru: "Записанные и запланированные подходы будут удалены; сохранённая история не изменится."
+  };
+  for (const [language, text] of Object.entries(message)) {
+    assert.ok(result[language].includes(`>${text}</p>`), `${language} discard consequence`);
+    assert.doesNotMatch(result[language], /discard-active-confirm-target/, `${language} has no recorded-count line`);
+  }
 });
