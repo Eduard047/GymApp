@@ -9635,25 +9635,25 @@
         }
       }
     },
-    "Only this set will be deleted. Undo is available briefly while you stay on this screen." : {
+    "This set will be removed from the workout. Undo is available briefly while you stay on this screen." : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Only this set will be deleted. Undo is available briefly while you stay on this screen."
+            "value" : "This set will be removed from the workout. Undo is available briefly while you stay on this screen."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Будет удалён только этот подход. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+            "value" : "Подход будет удалён из тренировки. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Буде видалено лише цей підхід. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+            "value" : "Підхід буде видалено з тренування. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
           }
         }
       }
@@ -13810,7 +13810,7 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Тренування та всі його підходи буде видалено. Цю дію не можна скасувати."
+            "value" : "Тренування й усі його підходи буде видалено. Цю дію не можна скасувати."
           }
         }
       }

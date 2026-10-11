@@ -508,9 +508,9 @@ struct ActiveWorkoutView: View {
         } message: {
             Text(
                 gymText(
-                    "Recorded and planned sets in this active draft will be removed. Saved workout history is not affected.",
-                    "Записані й заплановані підходи цього чернеткового тренування буде видалено. Збережена історія не зміниться.",
-                    "Записанные и запланированные подходы этого черновика будут удалены. Сохранённая история не изменится.",
+                    "The recorded and planned sets will be removed; saved workout history is not affected.",
+                    "Записані й заплановані підходи буде видалено; збережена історія не зміниться.",
+                    "Записанные и запланированные подходы будут удалены; сохранённая история не изменится.",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
@@ -3225,9 +3225,9 @@ struct ActiveWorkoutView: View {
             languageCode: gymCurrentLanguageCode()
         )
         let impact = gymText(
-            "This recorded set will be removed from the workout.",
-            "Цей записаний підхід буде видалено з тренування.",
-            "Этот записанный подход будет удалён из тренировки.",
+            "This set will be removed from the workout.",
+            "Підхід буде видалено з тренування.",
+            "Подход будет удалён из тренировки.",
             languageCode: gymCurrentLanguageCode()
         )
         return [name, target, impact].joined(separator: "\n")

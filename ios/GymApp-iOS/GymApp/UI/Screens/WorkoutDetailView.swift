@@ -1147,7 +1147,7 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
         let key: String
         switch impact {
         case .setOnly:
-            key = "Only this set will be deleted. Undo is available briefly while you stay on this screen."
+            key = "This set will be removed from the workout. Undo is available briefly while you stay on this screen."
         case .setAndExercise:
             key = "This is the final set for the exercise, so the exercise will also be deleted from the workout. Undo is available briefly while you stay on this screen."
         case .setExerciseAndWorkout:

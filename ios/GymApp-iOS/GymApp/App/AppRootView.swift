@@ -955,9 +955,9 @@ private struct MainTabShell: View {
         } message: {
             Text(
                 gymText(
-                    "Recorded and planned sets in this active draft will be removed.",
-                    "Записані й заплановані підходи цієї чернетки буде видалено.",
-                    "Записанные и запланированные подходы этого черновика будут удалены.",
+                    "The recorded and planned sets will be removed; saved workout history is not affected.",
+                    "Записані й заплановані підходи буде видалено; збережена історія не зміниться.",
+                    "Записанные и запланированные подходы будут удалены; сохранённая история не изменится.",
                     languageCode: languageCode
                 )
             )
