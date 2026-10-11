@@ -14168,7 +14168,8 @@ function trainingAdaptationSheet() {
     return title + (alternatives.length ? alternatives.map(item => `<button class="button secondary full" data-action="training-adapt-preview" data-id="${item.exercise.id}">${escapeHtml(exerciseDisplayName(item.exercise))}</button>`).join("") : `<p>${tx3("No similar exercise available.", "Схожої вправи немає.", "Нет доступного похожего упражнения.")}</p>`);
   }
   const pending = workout => workout.blocks.reduce((n,b) => n + b.sets.filter(s => !s.completed).length, 0);
-  return title + `<p>${tx3("Remaining sets", "Залишилось підходів", "Осталось подходов")}: ${pending(request.workout)} → ${pending(request.candidate)}</p>` +
+  const pendingBefore = pending(request.workout), pendingAfter = pending(request.candidate);
+  return title + (pendingBefore !== pendingAfter ? `<p>${tx3("Remaining sets", "Залишилось підходів", "Осталось подходов")}: ${pendingBefore} → ${pendingAfter}</p>` : "") +
     (request.reason === "timeCut" ? `<p>${tx3("Duration is an estimate, including rest between sets.", "Тривалість приблизна, з відпочинком між підходами.", "Длительность приблизительная, с отдыхом между подходами.")}</p>` : "") +
     request.workout.blocks.map(oldBlock => {
       const oldSets = oldBlock.sets.filter(set => !set.completed);
@@ -14187,7 +14188,7 @@ function trainingAdaptationSheet() {
         const old = oldSets.find(s => s.id === set.id);
         return `${!replaced ? `${formatSetWeight(old.weight)} ${kg} × ${old.reps} → ` : ""}${formatSetWeight(set.weight)} ${kg} × ${set.reps}`;
       }))];
-      return `<div class="training-adapt-row"><strong>${escapeHtml(exerciseDisplayName(oldBlock))}${replaced ? ` → ${escapeHtml(exerciseDisplayName(block))}` : ""}</strong><p>${tx3("Remaining sets", "Залишилось підходів", "Осталось подходов")}: ${oldSets.length} → ${sets.length}</p>${values.map(value => `<p>${escapeHtml(value)}</p>`).join("")}</div>`;
+      return `<div class="training-adapt-row"><strong>${escapeHtml(exerciseDisplayName(oldBlock))}${replaced ? ` → ${escapeHtml(exerciseDisplayName(block))}` : ""}</strong>${oldSets.length !== sets.length ? `<p>${tx3("Remaining sets", "Залишилось підходів", "Осталось подходов")}: ${oldSets.length} → ${sets.length}</p>` : ""}${values.map(value => `<p>${escapeHtml(value)}</p>`).join("")}</div>`;
     }).join("") + `<div class="actions vertical"><button class="button full" data-action="training-adapt-apply">${tx3("Apply changes", "Застосувати зміни", "Применить изменения")}</button><button class="button ghost full" data-action="close-modal">${tx3("Cancel", "Скасувати", "Отмена")}</button></div>`;
 }
 
