@@ -884,7 +884,7 @@ private struct MainTabShell: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                     Text("\(activeDraft.completedSetCount) / \(activeDraft.plannedSetCount)")
                                         .font(.subheadline.monospacedDigit())
-                                        .foregroundStyle(GymTheme.textSecondary)
+                                        .foregroundStyle(GymTheme.onHeroSecondary)
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -892,15 +892,18 @@ private struct MainTabShell: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(GymTheme.primary)
+                        .foregroundStyle(GymTheme.heroAccent)
                         if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
                             Button(role: .destructive) {
                                 showingActiveDraftDiscardConfirmation = true
                             } label: {
                                 Image(systemName: "xmark")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(GymTheme.error)
                                     .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.plain)
                             .accessibilityLabel(
                                 gymText(
                                     "Discard active workout",
@@ -911,11 +914,23 @@ private struct MainTabShell: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.leading, 16)
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, minHeight: 58)
-                    .background(.regularMaterial)
-                    .overlay(alignment: .bottom) { Divider() }
+                    .background(
+                        GymTheme.heroSurface,
+                        in: RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: GymTheme.compactCornerRadius, style: .continuous)
+                            .stroke(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth)
+                    )
+                    // Inset tonal panel: lives in the top safe-area inset so the screen
+                    // content below is laid out under it instead of scrolling beneath it.
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
+                    .padding(.top, 6)
+                    .padding(.bottom, 6)
                 }
             }
         }
