@@ -6103,7 +6103,20 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .sheet-close {
   position: absolute;
   top: 10px;
-  right: 10px;
+  inset-inline-end: 10px;
+}
+
+/* The close button hangs 10px from the sheet edge; titles wrap before it instead of running under it. */
+.modal-panel {
+  --sheet-close-clearance: 52px;
+}
+
+.modal-panel > h2,
+.modal-panel > * > h2,
+.modal-panel > * > div:first-child > h2,
+.modal-panel > * > .section-title:first-child,
+.modal-panel > .exercise-history-heading {
+  padding-inline-end: var(--sheet-close-clearance);
 }
 
 .toast {
