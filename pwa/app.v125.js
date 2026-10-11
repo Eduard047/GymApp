@@ -12000,7 +12000,7 @@ function isRootRoute(name) {
 function titleForRoute(current) {
   const title = {
     workouts: tx3("Today", "Сьогодні", "Сегодня"), missions: t("missions"), exercises: t("exercises"), progress: t("progress"), leaderboard: tx("Profile", "Профіль"),
-    add: t("addWorkout"), active: tx3("Workout", "Тренування", "Тренировка"), detail: tx("Workout Details", "Деталі тренування"), summary: tx("Workout Summary", "Підсумок тренування"), ranks: t("ranks")
+    add: tx3("Workout plan", "План тренування", "План тренировки"), active: tx3("Workout", "Тренування", "Тренировка"), detail: tx3("Workout details", "Деталі тренування", "Детали тренировки"), summary: tx3("Workout summary", "Підсумок тренування", "Итог тренировки"), ranks: t("ranks")
   }[current.name];
   return title ?? "GymApp";
 }
@@ -12817,8 +12817,7 @@ function addWorkoutScreen() {
       ? `${tx3("Create live room with", "Створити live-кімнату з", "Создать live-комнату с")} ${liveFriend.displayName}`
       : tx3("Create live room", "Створити live-кімнату", "Создать live-комнату")
     : tx("Start workout", "Почати тренування");
-  return `<section class="screen-copy add-workout-copy"><div><h2>${tx("Plan", "План")}</h2></div></section>
-    ${liveRecipient ? `<section class="panel highlighted live-draft-recipient"><span class="eyebrow">${tx3("Live workout", "Спільне тренування", "Совместная тренировка")}</span><h3>${escapeHtml(liveFriend?.displayName || tx3("Selected friend", "Обраний друг", "Выбранный друг"))}</h3><p class="muted">${tx3("The primary action creates a room only for this selected friend.", "Основна дія створить кімнату лише для цього обраного друга.", "Основное действие создаст комнату только для этого выбранного друга.")}</p></section>` : ""}
+  return `${liveRecipient ? `<section class="panel highlighted live-draft-recipient"><span class="eyebrow">${tx3("Live workout", "Спільне тренування", "Совместная тренировка")}</span><h3>${escapeHtml(liveFriend?.displayName || tx3("Selected friend", "Обраний друг", "Выбранный друг"))}</h3><p class="muted">${tx3("The primary action creates a room only for this selected friend.", "Основна дія створить кімнату лише для цього обраного друга.", "Основное действие создаст комнату только для этого выбранного друга.")}</p></section>` : ""}
     ${smartCoachPanel()}
     ${exerciseBuilderHeadingMarkup(draft, selectedCount, setCount)}
     <section class="draft-list">${draft.blocks.map((block, index) => draftBlock(block, index)).join("")}${draft.blocks.length ? `<button type="button" class="draft-dashed-button draft-add-exercise" data-action="open-workout-exercise-picker" data-picker-target="draft-new">${svg("add", "small-icon")}${tx3("Add exercise", "Додати вправу", "Добавить упражнение")}</button>` : ""}</section>
@@ -16545,7 +16544,7 @@ function comparableWorkoutSnapshot(session) {
 function workoutComparisonCard(session) {
   const comparison = workoutComparisonForSession(session);
   if (!comparison) return "";
-  return `<section class="panel workout-comparison-card"><div class="section-title"><div><span class="eyebrow">${tx("Previous session", "Попереднє тренування")}</span><h2>${tx("Workout comparison", "Порівняння тренувань")}</h2><p>${countNoun(comparison.matchedExerciseCount, "matching exercises")} · ${escapeHtml(fmtShortDate(comparison.previousStartedAt))}</p></div></div><div class="metric-grid">${comparison.metrics.map(metric => {
+  return `<section class="panel workout-comparison-card"><div class="section-title"><div><h2>${tx3("Workout comparison", "Порівняння тренувань", "Сравнение тренировок")}</h2><p>${countNoun(comparison.matchedExerciseCount, "matching exercises")} · ${escapeHtml(fmtShortDate(comparison.previousStartedAt))}</p></div></div><div class="metric-grid">${comparison.metrics.map(metric => {
     const current = Math.round(metric.current);
     const previous = Math.round(metric.previous);
     const difference = current - previous;
@@ -16554,7 +16553,7 @@ function workoutComparisonCard(session) {
     const delta = difference === 0
       ? tx3("no change", "без змін", "без изменений")
       : `${difference > 0 ? "+" : "−"}${amount(Math.abs(difference))}`;
-    return `<div><span>${escapeHtml(metric.label)}</span><strong>${amount(current)}${unitSuffix}</strong><small>${tx("Previous", "Раніше")} ${amount(previous)}${unitSuffix} · <span class="nowrap">${escapeHtml(delta)}${difference !== 0 ? unitSuffix : ""}</span></small></div>`;
+    return `<div><span>${escapeHtml(metric.label)}</span><strong>${amount(current)}${unitSuffix}</strong><small>${tx3("Previous", "Раніше", "Раньше")} ${amount(previous)}${unitSuffix} · <span class="nowrap">${escapeHtml(delta)}${difference !== 0 ? unitSuffix : ""}</span></small></div>`;
   }).join("")}</div></section>`;
 }
 
@@ -24687,7 +24686,7 @@ function workoutExercisePickerMarkup(picker = modal) {
     ? tx("Add exercise to workout", "Додати вправу до тренування")
     : picker?.target === "draft-replace"
     ? tx("Change exercise", "Змінити вправу")
-    : tx("Add exercise to plan", "Додати вправу до плану");
+    : tx3("Add exercise", "Додати вправу", "Добавить упражнение");
   return `<div class="workout-exercise-picker"><h2>${targetLabel}</h2>${exerciseFilterControls()}<div class="workout-exercise-picker-list">${rows.length ? rows.map(exercise => `<article class="workout-exercise-picker-row">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong>${exerciseSearchReasonMarkup(exercise)}<small>${escapeHtml(mappingFor(exercise).slice(0, 3).map(item => muscleLabel(typeof item === "string" ? item : item.muscleId)).join(" · "))}</small></div><button class="button ghost mini" data-action="select-workout-exercise" data-exercise-id="${escapeAttr(String(exercise.id))}">${tx("Choose", "Обрати")}</button></article>`).join("") : `<div class="empty">${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</div>`}</div></div>`;
 }
 
@@ -26017,7 +26016,7 @@ function modalMarkup() {
     if (!current || !alternatives.length) return "";
     return bottomSheet(`<div class="smart-alternatives-sheet"><h2>${tx("Replace with a similar exercise", "Замінити схожою вправою")}</h2><p><strong>${escapeHtml(exerciseDisplayName(current))}</strong></p><div class="smart-alternative-list">${alternatives.map(exercise => {
       const analysis = analyzeSmartExercise(exercise);
-      return `<article class="smart-alternative-card">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(smartMovementLabel(analysis))} · ${escapeHtml(smartRoleLabel(analysis.role))}</small></div><button class="button ghost mini" data-action="apply-smart-alternative" data-block="${modal.blockIndex}" data-replacement-id="${Number(exercise.id)}">${tx("Choose", "Обрати")}</button></article>`;
+      return `<article class="smart-alternative-card">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(smartMovementLabel(analysis))} · ${escapeHtml(smartRoleLabel(analysis.role))}</small></div><button class="button mini" data-action="apply-smart-alternative" data-block="${modal.blockIndex}" data-replacement-id="${Number(exercise.id)}">${tx3("Use this exercise", "Використати цю вправу", "Использовать это упражнение")}</button></article>`;
     }).join("")}</div></div>`);
   }
   if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "Резервна копія JSON готова")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
