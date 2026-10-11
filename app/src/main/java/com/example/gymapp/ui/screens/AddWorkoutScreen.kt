@@ -112,6 +112,7 @@ import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.util.currentAppLanguageTag
+import com.example.gymapp.ui.theme.GymPanelShape
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.viewmodel.AddWorkoutUiState
 import com.example.gymapp.ui.viewmodel.ExerciseInputState
@@ -1162,18 +1163,40 @@ private fun WorkoutTemplatePickerContent(
                 items = templates,
                 key = { it.sessionId }
             ) { template ->
+                val copyLabel = stringResource(R.string.action_copy_workout_day)
+                val exerciseNames = template.exerciseNames
+                    .map { localizedExerciseName(it) }
+                    .joinToString(" \u00B7 ")
                 AppPanel(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(GymPanelShape)
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = copyLabel
+                        ) { onCopyWorkoutTemplate(template.sessionId) },
                     highlighted = true
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = DateTimeUtils.formatDate(template.date),
                             style = MaterialTheme.typography.titleSmall
                         )
+                        if (exerciseNames.isNotEmpty()) {
+                            Text(
+                                text = exerciseNames,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Text(
                             text = stringResource(
                                 R.string.template_picker_summary,
@@ -1186,18 +1209,11 @@ private fun WorkoutTemplatePickerContent(
                                     R.plurals.saved_workout_set_count,
                                     template.setCount,
                                     template.setCount
-                                ),
-                                NumberFormat.getIntegerInstance(Locale.getDefault()).format(template.totalVolume)
+                                )
                             ),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Button(
-                            onClick = { onCopyWorkoutTemplate(template.sessionId) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(stringResource(R.string.action_copy_workout_day))
-                        }
                     }
                 }
             }

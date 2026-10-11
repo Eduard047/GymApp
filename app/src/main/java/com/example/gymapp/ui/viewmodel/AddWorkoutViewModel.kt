@@ -157,7 +157,9 @@ data class WorkoutTemplatePreviewUiModel(
     val date: Long,
     val exerciseCount: Int,
     val setCount: Int,
-    val totalVolume: Double
+    val totalVolume: Double,
+    /** Raw exercise names in workout order, without duplicates; localized at display time. */
+    val exerciseNames: List<String> = emptyList()
 )
 
 data class SmartWorkoutPlanSummaryUiModel(
@@ -880,7 +882,13 @@ class AddWorkoutViewModel internal constructor(
                     date = summary.session.date,
                     exerciseCount = summary.exerciseCount,
                     setCount = summary.setCount,
-                    totalVolume = summary.totalVolume
+                    totalVolume = summary.totalVolume,
+                    exerciseNames = runCatching { repository.getWorkoutTemplate(summary.session.id) }
+                        .getOrNull()
+                        ?.workoutExercises
+                        .orEmpty()
+                        .map { it.exercise.name }
+                        .distinct()
                 )
             }
     }

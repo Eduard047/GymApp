@@ -217,7 +217,7 @@
     <string name="action_current_month">Current month</string>
     <string name="action_return_to_current_month">Return to current month</string>
     <string name="action_repeat_last_workout">Repeat Last Workout</string>
-    <string name="action_copy_workout_day">Copy Previous Workout</string>
+    <string name="action_copy_workout_day">Copy previous workout</string>
     <string name="action_sync_plan_to_watch">Sync plan to Garmin</string>
     <string name="action_sync_plan_to_garmin">Sync plan to Garmin</string>
     <string name="action_sync_plan_to_watch_in_progress">Syncing…</string>
@@ -460,7 +460,7 @@
     <string name="calorie_mode_surplus">Surplus</string>
     <string name="template_picker_title">Copy a previous workout</string>
     <string name="template_picker_empty">No previous workouts yet.</string>
-    <string name="template_picker_summary">%1$s • %2$s • volume %3$s kg</string>
+    <string name="template_picker_summary">%1$s · %2$s</string>
     <string name="add_workout_save_hint">Check your sets, then save to move straight into workout details.</string>
     <string name="add_workout_plan_mode_hint">Plan mode: these rows are targets sent to Garmin and are not logged as completed by syncing.</string>
     <string name="add_workout_completed_mode_hint">Completed mode: saving writes every planned row immediately to workout history and summary.</string>

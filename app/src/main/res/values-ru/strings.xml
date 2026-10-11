@@ -217,7 +217,7 @@
     <string name="action_current_month">Текущий месяц</string>
     <string name="action_return_to_current_month">Вернуться к текущему месяцу</string>
     <string name="action_repeat_last_workout">Повторить предыдущую тренировку</string>
-    <string name="action_copy_workout_day">Скопировать прошлую тренировку</string>
+    <string name="action_copy_workout_day">Скопировать предыдущую тренировку</string>
     <string name="action_sync_plan_to_watch">Синхронизировать план с Garmin</string>
     <string name="action_sync_plan_to_garmin">Синхронизировать план с Garmin</string>
     <string name="action_sync_plan_to_watch_in_progress">Синхронизация…</string>
@@ -462,7 +462,7 @@
     <string name="calorie_mode_surplus">Профицит</string>
     <string name="template_picker_title">Скопировать прошлую тренировку</string>
     <string name="template_picker_empty">Предыдущих тренировок еще нет.</string>
-    <string name="template_picker_summary">%1$s • %2$s • объём %3$s кг</string>
+    <string name="template_picker_summary">%1$s · %2$s</string>
     <string name="add_workout_save_hint">Проверь подходы и сохрани, чтобы сразу перейти в детали тренировки.</string>
     <string name="add_workout_plan_mode_hint">Режим плана: эти строки отправляются на Garmin как цели и не записываются как выполненные при синхронизации.</string>
     <string name="add_workout_completed_mode_hint">Режим выполненной тренировки: сохранение сразу добавляет все запланированные строки в историю и сводку.</string>
