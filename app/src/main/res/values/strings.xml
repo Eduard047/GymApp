@@ -874,6 +874,7 @@
     <string name="smart_focus_legs">Legs</string>
     <string name="smart_focus_full_body">Full body</string>
     <string name="today_title">Today</string>
+    <string name="today_history_shortcut">History</string>
     <string name="today_workout_completed">Workout complete</string>
     <string name="today_workout_completed_supporting">Today\'s work is saved in your history.</string>
     <string name="today_add_another_workout">Add another workout</string>

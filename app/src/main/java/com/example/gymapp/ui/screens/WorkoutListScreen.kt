@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material3.AlertDialog
@@ -209,6 +211,16 @@ fun WorkoutListScreen(
         TrainingHistoryPeriod.Week -> uiState.weeklyTrainingSummary.workouts
         TrainingHistoryPeriod.Month -> uiState.monthlyTrainingSummary.workouts
     }
+    val listState = rememberLazyListState()
+    val listScope = rememberCoroutineScope()
+    val showsFirstWorkoutActivation =
+        uiState.showFirstWorkoutActivation && activeWorkoutFocus == null
+    // Items before the history panel: header, then either the activation card (+ hint) or the focus lens.
+    val historyItemIndex = if (showsFirstWorkoutActivation) {
+        if (hasRetainedWorkoutDraft) 2 else 3
+    } else {
+        2
+    }
 
     if (uiState.isLoading) {
         Box(
@@ -235,6 +247,7 @@ fun WorkoutListScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(
             start = screenHorizontalPadding,
             top = GymSpacing.Small,
@@ -244,9 +257,31 @@ fun WorkoutListScreen(
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
     ) {
             item {
-                ScreenHeader(title = stringResource(R.string.today_title))
+                ScreenHeader(
+                    title = stringResource(R.string.today_title),
+                    trailing = if (uiState.hasAnyWorkout) {
+                        {
+                            OutlinedButton(
+                                onClick = {
+                                    listScope.launch { listState.animateScrollToItem(historyItemIndex) }
+                                },
+                                modifier = Modifier.heightIn(min = GymSpacing.MinimumTouch)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.List,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.today_history_shortcut))
+                            }
+                        }
+                    } else {
+                        null
+                    }
+                )
             }
-            if (uiState.showFirstWorkoutActivation && activeWorkoutFocus == null) {
+            if (showsFirstWorkoutActivation) {
                 item {
                     FirstWorkoutActivationCard(
                         hasRetainedWorkoutDraft = hasRetainedWorkoutDraft,

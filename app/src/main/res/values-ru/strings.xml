@@ -904,6 +904,7 @@
     <string name="smart_focus_legs">Ноги</string>
     <string name="smart_focus_full_body">Всё тело</string>
     <string name="today_title">Сегодня</string>
+    <string name="today_history_shortcut">История</string>
     <string name="today_workout_completed">Тренировка завершена</string>
     <string name="today_workout_completed_supporting">Сегодняшняя тренировка сохранена в истории.</string>
     <string name="today_add_another_workout">Добавить ещё одну тренировку</string>
