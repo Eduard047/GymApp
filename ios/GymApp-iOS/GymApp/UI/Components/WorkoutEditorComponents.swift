@@ -673,17 +673,23 @@ struct ExerciseMediaThumbnail: View {
                             .resizable()
                             .scaledToFill()
                     } else {
-                        VStack(spacing: 3) {
+                        let emptyLabel = ExerciseMediaPresentation.emptyPreviewLabel(
+                            editable: editable,
+                            languageCode: languageCode
+                        )
+                        if width < 72 {
                             Image(systemName: editable ? "photo.badge.plus" : "photo")
-                            Text(
-                                ExerciseMediaPresentation.emptyPreviewLabel(
-                                    editable: editable,
-                                    languageCode: languageCode
-                                )
-                            )
-                                .font(.caption2)
+                                .font(.system(size: 22))
+                                .foregroundStyle(GymTheme.textSecondary)
+                                .accessibilityLabel(emptyLabel)
+                        } else {
+                            VStack(spacing: 3) {
+                                Image(systemName: editable ? "photo.badge.plus" : "photo")
+                                Text(emptyLabel)
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(GymTheme.textSecondary)
                         }
-                        .foregroundStyle(GymTheme.textSecondary)
                     }
                 }
                 .frame(
