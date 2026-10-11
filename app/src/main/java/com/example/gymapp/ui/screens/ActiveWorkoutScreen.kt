@@ -638,14 +638,14 @@ fun ActiveWorkoutScreen(
                 }
                 if (!adaptation.hasPreview && adaptation.choices.isEmpty() && adaptation.reason == "equipmentUnavailable") Text(stringResource(R.string.training_no_alternative))
                 if (adaptation.hasPreview) {
-                    Text(stringResource(R.string.training_remaining_sets, adaptation.beforePending, adaptation.afterPending))
+                    if (adaptation.beforePending != adaptation.afterPending) Text(stringResource(R.string.training_remaining_sets, adaptation.beforePending, adaptation.afterPending))
                     if (adaptation.reason == "timeCut") Text(stringResource(R.string.training_time_estimate))
                     adaptation.previewLines.forEach { line ->
                         val name = localizedExerciseName(line.name)
                         val before = if (line.previousName.isNotEmpty() && line.previousName != line.name) localizedExerciseName(line.previousName) + " → " else ""
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("$before$name", style = MaterialTheme.typography.titleSmall)
-                            Text(stringResource(R.string.training_remaining_sets, line.before, line.after))
+                            if (line.before != line.after) Text(stringResource(R.string.training_remaining_sets, line.before, line.after))
                             val number = java.text.NumberFormat.getNumberInstance()
                             line.values.forEach { value ->
                                 val old = if (value.previousWeight != null) stringResource(R.string.set_weight_reps_value,
