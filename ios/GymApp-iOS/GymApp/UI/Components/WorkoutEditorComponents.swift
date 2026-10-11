@@ -1888,24 +1888,6 @@ struct ExercisePickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Create exercise") {
-                    TextField("Exercise name", text: $newExerciseName)
-                        .textInputAutocapitalization(.words)
-                        .accessibilityLabel("New exercise name")
-                    Button {
-                        do {
-                            let exercise = try onCreate(newExerciseName)
-                            onSelect(exercise)
-                            dismiss()
-                        } catch {
-                            errorMessage = gymErrorMessage(error)
-                        }
-                    } label: {
-                        Label("Create and add", systemImage: "plus.circle")
-                    }
-                    .disabled(newExerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-
                 Section("Exercises") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -2033,6 +2015,24 @@ struct ExercisePickerSheet: View {
                             }
                         }
                     }
+                }
+
+                Section("Create exercise") {
+                    TextField("Exercise name", text: $newExerciseName)
+                        .textInputAutocapitalization(.words)
+                        .accessibilityLabel("New exercise name")
+                    Button {
+                        do {
+                            let exercise = try onCreate(newExerciseName)
+                            onSelect(exercise)
+                            dismiss()
+                        } catch {
+                            errorMessage = gymErrorMessage(error)
+                        }
+                    } label: {
+                        Label("Create and add", systemImage: "plus.circle")
+                    }
+                    .disabled(newExerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .searchable(text: $search, prompt: "Search exercises")

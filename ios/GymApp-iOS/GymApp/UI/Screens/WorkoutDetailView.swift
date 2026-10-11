@@ -1467,7 +1467,7 @@ struct WorkoutDetailView: View {
             }
         }
         .navigationTitle(gymText(
-            "Workout", "Тренування", "Тренировка",
+            "Workout details", "Деталі тренування", "Детали тренировки",
             languageCode: gymCurrentLanguageCode()
         ))
         .navigationBarTitleDisplayMode(.inline)

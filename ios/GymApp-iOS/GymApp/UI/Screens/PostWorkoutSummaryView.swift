@@ -196,7 +196,10 @@ struct PostWorkoutSummaryView: View {
                 )
             }
         }
-        .navigationTitle("Workout complete")
+        .navigationTitle(gymText(
+            "Workout summary", "Підсумок тренування", "Итог тренировки",
+            languageCode: languageCode
+        ))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -682,7 +685,7 @@ struct PostWorkoutSummaryView: View {
                 onOpenDetail(workoutID)
             } label: {
                 Text(gymText(
-                    "Workout detail",
+                    "Workout details",
                     "Деталі тренування",
                     "Детали тренировки",
                     languageCode: languageCode
