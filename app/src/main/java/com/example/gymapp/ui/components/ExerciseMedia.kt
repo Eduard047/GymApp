@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
 import com.example.gymapp.ui.theme.Button
@@ -151,24 +152,27 @@ fun ExerciseMediaPreview(
                     }
                 }
             } else if (!preview.hasMedia) {
-                val showCaption = height >= 48.dp
+                // Captions need room for two whole-word lines; narrower or shorter tiles
+                // (for example 60dp list rows) show an icon only.
+                val showCaption = height >= 48.dp && width >= 72.dp
+                val captionText = stringResource(
+                    if (editable) R.string.exercise_media_add
+                    else R.string.exercise_media_no_preview
+                )
                 Column(
                     modifier = Modifier.padding(horizontal = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        Icons.Default.Image,
-                        contentDescription = null,
+                        if (editable) Icons.Default.AddPhotoAlternate else Icons.Default.Image,
+                        // The caption already names the tile; icon-only tiles keep it as the label.
+                        contentDescription = if (showCaption) null else captionText,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = if (showCaption) Modifier.size(20.dp) else Modifier
+                        modifier = Modifier.size(if (showCaption) 20.dp else 22.dp)
                     )
-                    // Compact thumbnails (for example list rows) have no room for the caption.
                     if (showCaption) {
                         Text(
-                            stringResource(
-                                if (editable) R.string.exercise_media_add
-                                else R.string.exercise_media_no_preview
-                            ),
+                            captionText,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
