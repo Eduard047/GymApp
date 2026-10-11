@@ -44,6 +44,7 @@ import com.example.gymapp.util.TrainingProfileManager
 import com.example.gymapp.util.TrainingSplit
 import com.example.gymapp.util.parseWeightInputOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -151,6 +152,7 @@ internal fun smartWorkoutWeightInput(weight: Double?): String {
 }
 
 private const val SHARED_WORKOUT_REPS_INPUT_MAX_LENGTH = 10
+private const val WORKOUT_TEMPLATE_LIMIT = 60
 
 data class WorkoutTemplatePreviewUiModel(
     val sessionId: Long,
@@ -873,9 +875,16 @@ class AddWorkoutViewModel internal constructor(
             openLaunchPlan(token, launchPlanHandoff)
         }
     }
-    private val workoutTemplates = repository.observeSessions().map { sessions ->
+    /** Raw exercise names per session, loaded once each time the template picker opens. */
+    private val templateExerciseNames = MutableStateFlow<Map<Long, List<String>>>(emptyMap())
+    private var templateNamesJob: Job? = null
+
+    private val workoutTemplates = combine(
+        repository.observeSessions(),
+        templateExerciseNames
+    ) { sessions, namesBySession ->
         sessions
-            .take(60)
+            .take(WORKOUT_TEMPLATE_LIMIT)
             .map { summary ->
                 WorkoutTemplatePreviewUiModel(
                     sessionId = summary.session.id,
@@ -883,14 +892,30 @@ class AddWorkoutViewModel internal constructor(
                     exerciseCount = summary.exerciseCount,
                     setCount = summary.setCount,
                     totalVolume = summary.totalVolume,
-                    exerciseNames = runCatching { repository.getWorkoutTemplate(summary.session.id) }
-                        .getOrNull()
+                    exerciseNames = namesBySession[summary.session.id].orEmpty()
+                )
+            }
+    }
+
+    private fun loadTemplateExerciseNames() {
+        templateNamesJob?.cancel()
+        templateNamesJob = viewModelScope.launch {
+            val loaded = mutableMapOf<Long, List<String>>()
+            try {
+                repository.observeSessions().first().take(WORKOUT_TEMPLATE_LIMIT).forEach { summary ->
+                    loaded[summary.session.id] = repository.getWorkoutTemplate(summary.session.id)
                         ?.workoutExercises
                         .orEmpty()
                         .map { it.exercise.name }
                         .distinct()
-                )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Names are decoration: rows without a loaded entry simply omit the names line.
             }
+            templateExerciseNames.value = loaded
+        }
     }
 
     private val selectedExerciseIds = exerciseDrafts.map { drafts ->
@@ -1851,6 +1876,7 @@ class AddWorkoutViewModel internal constructor(
 
     fun openWorkoutTemplatePicker() {
         isTemplatePickerOpen.value = true
+        loadTemplateExerciseNames()
     }
 
     fun closeWorkoutTemplatePicker() {
