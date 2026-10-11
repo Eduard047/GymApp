@@ -380,6 +380,7 @@ struct ActiveWorkoutView: View {
         .sheet(item: $adaptationRequest) { request in
             WorkoutAdaptationSheet(request: request, workoutStore: workoutStore, activeStore: activeWorkoutStore,
                 coordinator: liveWorkoutCoordinator)
+                .presentationDetents([.medium, .large])
         }
         .navigationTitle(
             gymText(
