@@ -594,38 +594,26 @@ internal fun WorkoutDetailScreen(
             details.session.durationSeconds?.let { it > 0L } == true
     } == true
     if (confirmDeleteSession && (isEditingWorkout || isActivityOnlyWorkout)) {
-        val details = uiState.sessionDetails
         AlertDialog(
             onDismissRequest = { confirmDeleteSession = false },
             title = { Text(text = stringResource(R.string.dialog_delete_workout_title)) },
-            text = {
-                Text(
-                    text = stringResource(
-                        R.string.dialog_delete_workout_message,
-                        details?.session?.date?.let(DateTimeUtils::formatLongDate).orEmpty()
-                    )
-                )
-            },
+            text = { Text(text = stringResource(R.string.dialog_delete_workout_message)) },
             confirmButton = {
-                OutlinedButton(
+                TextButton(
                     onClick = {
                         confirmDeleteSession = false
                         onDeleteSession()
                     },
-                    colors = ButtonDefaults.outlinedButtonColors(
+                    colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.error
                     )
                 ) {
                     Text(text = stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { confirmDeleteSession = false }) {
-                    Text(text = stringResource(R.string.action_cancel))
+                TextButton(onClick = { confirmDeleteSession = false }) {
+                    Text(text = stringResource(R.string.dialog_cancel))
                 }
             }
         )

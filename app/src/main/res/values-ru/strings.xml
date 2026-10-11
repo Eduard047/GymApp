@@ -497,7 +497,7 @@
     <string name="active_workout_discard_action">Удалить тренировку</string>
     <string name="active_workout_more_options">Другие действия</string>
     <string name="active_workout_discard_title">Удалить активную тренировку?</string>
-    <string name="active_workout_discard_message">Активный план и записанные в нём подходы будут удалены с этого устройства. В историю ничего не добавится.</string>
+    <string name="active_workout_discard_message">Записанные и запланированные подходы будут удалены; сохранённая история не изменится.</string>
     <string name="active_workout_discard_confirm">Удалить тренировку</string>
     <string name="active_workout_discard_keep">Оставить тренировку</string>
     <string name="active_workout_back_hint">Можно безопасно вернуться назад. Тренировка останется на устройстве, пока ты её не завершишь или не отменишь.</string>
@@ -514,7 +514,7 @@
     <string name="active_workout_undo_action">Отменить подход</string>
     <string name="active_workout_delete_set">Удалить подход</string>
     <string name="active_workout_delete_recorded_set_target">Подход %1$d: %2$s</string>
-    <string name="active_workout_delete_recorded_set_message">Этот записанный подход будет удалён из тренировки.</string>
+    <string name="active_workout_delete_recorded_set_message">Подход будет удалён из тренировки.</string>
     <string name="active_workout_last_set_message">В упражнении должен остаться хотя бы один подход. Вместо этого удалите упражнение.</string>
     <string name="active_workout_exercise_limit_reached">В этой тренировке достигнут лимит упражнений.</string>
     <string name="active_workout_exercise_already_added">Это упражнение уже есть в тренировке.</string>
@@ -1216,14 +1216,15 @@
     <string name="workout_comparison_no_change">без изменений</string>
 
     <string name="dialog_edit_set_title">Редактировать подход</string>
+    <string name="dialog_cancel">Отмена</string>
     <string name="dialog_delete_workout_title">Удалить тренировку?</string>
-    <string name="dialog_delete_workout_message">Будет удалена тренировка за %1$s со всеми упражнениями и подходами. Это действие нельзя отменить.</string>
+    <string name="dialog_delete_workout_message">Тренировка и все её подходы будут удалены. Это действие нельзя отменить.</string>
     <string name="dialog_delete_exercise_title">Удалить упражнение?</string>
     <string name="dialog_delete_exercise_message">Удалить «%1$s» из библиотеки упражнений?</string>
     <string name="dialog_delete_exercise_impact">Затронуто тренировок: %1$d. Будет удалено блоков упражнения: %2$d. Подходов: %3$d. Это действие нельзя отменить.</string>
     <string name="dialog_delete_set_title">Удалить подход?</string>
     <string name="dialog_delete_set_message">Удалить подход %1$d для упражнения «%2$s» из тренировки за %3$s? Записано: %4$s кг × %5$d.</string>
-    <string name="dialog_delete_set_impact_set_only">Будет удалён только этот подход.</string>
+    <string name="dialog_delete_set_impact_set_only">Подход будет удалён из тренировки.</string>
     <string name="dialog_delete_set_impact_exercise">Это последний подход в данном блоке упражнения. Блок упражнения также будет удалён из тренировки.</string>
     <string name="dialog_delete_set_impact_workout">Это последний подход в тренировке. Вся тренировка также будет удалена.</string>
     <string name="dialog_delete_set_impact_watch_activity">Упражнения будут удалены. Показатели часов и время тренировки останутся в истории.</string>

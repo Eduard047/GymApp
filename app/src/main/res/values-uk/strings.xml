@@ -497,7 +497,7 @@
     <string name="active_workout_discard_action">Відкинути тренування</string>
     <string name="active_workout_more_options">Інші дії</string>
     <string name="active_workout_discard_title">Відкинути активне тренування?</string>
-    <string name="active_workout_discard_message">Активний план і записані в ньому підходи буде видалено з цього пристрою. До історії нічого не додасться.</string>
+    <string name="active_workout_discard_message">Записані й заплановані підходи буде видалено; збережена історія не зміниться.</string>
     <string name="active_workout_discard_confirm">Відкинути тренування</string>
     <string name="active_workout_discard_keep">Залишити тренування</string>
     <string name="active_workout_back_hint">Можна безпечно повернутися назад. Тренування залишиться на пристрої, доки ти його не завершиш або не скасуєш.</string>
@@ -514,7 +514,7 @@
     <string name="active_workout_undo_action">Скасувати підхід</string>
     <string name="active_workout_delete_set">Видалити підхід</string>
     <string name="active_workout_delete_recorded_set_target">Підхід %1$d: %2$s</string>
-    <string name="active_workout_delete_recorded_set_message">Цей записаний підхід буде видалено з тренування.</string>
+    <string name="active_workout_delete_recorded_set_message">Підхід буде видалено з тренування.</string>
     <string name="active_workout_last_set_message">У вправі має лишатися хоча б один підхід. Натомість видаліть вправу.</string>
     <string name="active_workout_exercise_limit_reached">У цьому тренуванні досягнуто ліміту вправ.</string>
     <string name="active_workout_exercise_already_added">Ця вправа вже є в тренуванні.</string>
@@ -1216,14 +1216,15 @@
     <string name="workout_comparison_no_change">без змін</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>
+    <string name="dialog_cancel">Скасувати</string>
     <string name="dialog_delete_workout_title">Видалити тренування?</string>
-    <string name="dialog_delete_workout_message">Буде видалено тренування за %1$s з усіма вправами й підходами. Цю дію не можна скасувати.</string>
+    <string name="dialog_delete_workout_message">Тренування й усі його підходи буде видалено. Цю дію не можна скасувати.</string>
     <string name="dialog_delete_exercise_title">Видалити вправу?</string>
     <string name="dialog_delete_exercise_message">Видалити «%1$s» із бібліотеки вправ?</string>
     <string name="dialog_delete_exercise_impact">Зачеплено тренувань: %1$d. Буде видалено блоків вправи: %2$d. Підходів: %3$d. Цю дію не можна скасувати.</string>
     <string name="dialog_delete_set_title">Видалити підхід?</string>
     <string name="dialog_delete_set_message">Видалити підхід %1$d для вправи «%2$s» із тренування за %3$s? Записано: %4$s кг × %5$d.</string>
-    <string name="dialog_delete_set_impact_set_only">Буде видалено лише цей підхід.</string>
+    <string name="dialog_delete_set_impact_set_only">Підхід буде видалено з тренування.</string>
     <string name="dialog_delete_set_impact_exercise">Це останній підхід у цьому блоці вправи. Блок вправи також буде видалено з тренування.</string>
     <string name="dialog_delete_set_impact_workout">Це останній підхід у тренуванні. Усе тренування також буде видалено.</string>
     <string name="dialog_delete_set_impact_watch_activity">Вправи буде видалено. Показники годинника й час тренування залишаться в історії.</string>

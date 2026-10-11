@@ -491,7 +491,7 @@
     <string name="active_workout_discard_action">Discard workout</string>
     <string name="active_workout_more_options">More workout options</string>
     <string name="active_workout_discard_title">Discard active workout?</string>
-    <string name="active_workout_discard_message">The active plan and its recorded sets will be removed from this device. Nothing will be added to workout history.</string>
+    <string name="active_workout_discard_message">The recorded and planned sets will be removed; saved workout history is not affected.</string>
     <string name="active_workout_discard_confirm">Discard workout</string>
     <string name="active_workout_discard_keep">Keep workout</string>
     <string name="active_workout_back_hint">You can go back safely. This active workout will remain on this device until you finish or discard it.</string>
@@ -508,7 +508,7 @@
     <string name="active_workout_undo_action">Undo set</string>
     <string name="active_workout_delete_set">Delete set</string>
     <string name="active_workout_delete_recorded_set_target">Set %1$d: %2$s</string>
-    <string name="active_workout_delete_recorded_set_message">This recorded set will be removed from the workout.</string>
+    <string name="active_workout_delete_recorded_set_message">This set will be removed from the workout.</string>
     <string name="active_workout_last_set_message">An exercise keeps at least one set. Remove the exercise instead.</string>
     <string name="active_workout_exercise_limit_reached">This workout has reached the exercise limit.</string>
     <string name="active_workout_exercise_already_added">This exercise is already in the workout.</string>
@@ -1184,14 +1184,15 @@
     <string name="workout_comparison_no_change">no change</string>
 
     <string name="dialog_edit_set_title">Edit Set</string>
+    <string name="dialog_cancel">Cancel</string>
     <string name="dialog_delete_workout_title">Delete workout?</string>
-    <string name="dialog_delete_workout_message">This will delete the workout from %1$s with all exercises and sets. This action cannot be undone.</string>
+    <string name="dialog_delete_workout_message">This removes the workout and every set. This action cannot be undone.</string>
     <string name="dialog_delete_exercise_title">Delete exercise?</string>
     <string name="dialog_delete_exercise_message">Delete “%1$s” from the exercise library?</string>
     <string name="dialog_delete_exercise_impact">Workouts affected: %1$d. Exercise blocks removed: %2$d. Sets deleted: %3$d. This cannot be undone.</string>
     <string name="dialog_delete_set_title">Delete set?</string>
     <string name="dialog_delete_set_message">Delete set %1$d for “%2$s” from the workout on %3$s? Recorded load: %4$s kg × %5$d.</string>
-    <string name="dialog_delete_set_impact_set_only">Only this set will be deleted.</string>
+    <string name="dialog_delete_set_impact_set_only">This set will be removed from the workout.</string>
     <string name="dialog_delete_set_impact_exercise">This is the last set in this exercise block. The exercise block will also be removed from the workout.</string>
     <string name="dialog_delete_set_impact_workout">This is the last set in the workout. The entire workout will also be deleted.</string>
     <string name="dialog_delete_set_impact_watch_activity">The exercises will be removed. Your watch metrics and workout time will stay in history.</string>

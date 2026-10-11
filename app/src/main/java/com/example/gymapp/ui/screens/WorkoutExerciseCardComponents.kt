@@ -35,9 +35,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -45,6 +43,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -283,8 +282,8 @@ internal fun WorkoutExerciseMenu(
 
 /**
  * Confirms removing an exercise; states how many recorded sets go with it. Same destructive dialog
- * pattern as the persisted-delete dialogs: impact line in the error colour, outlined Cancel and a
- * filled error-coloured confirm button.
+ * pattern as the persisted-delete dialogs: impact line in the error colour, plain Cancel and an
+ * error-coloured text confirm button.
  */
 @Composable
 internal fun WorkoutRemoveExerciseDialog(
@@ -315,19 +314,18 @@ internal fun WorkoutRemoveExerciseDialog(
             }
         },
         confirmButton = {
-            Button(
+            TextButton(
                 onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
                 Text(text = stringResource(R.string.active_workout_remove_exercise_confirm))
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.action_cancel))
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.dialog_cancel))
             }
         }
     )
@@ -335,8 +333,8 @@ internal fun WorkoutRemoveExerciseDialog(
 
 /**
  * Confirms deleting a recorded set of the running workout. Same destructive pattern as
- * [WorkoutRemoveExerciseDialog]: target lines, impact line in the error colour, outlined Cancel and a
- * filled error-coloured confirm button.
+ * [WorkoutRemoveExerciseDialog]: target lines, impact line in the error colour, plain Cancel and an
+ * error-coloured text confirm button.
  */
 @Composable
 internal fun WorkoutDeleteRecordedSetDialog(
@@ -368,19 +366,18 @@ internal fun WorkoutDeleteRecordedSetDialog(
             }
         },
         confirmButton = {
-            Button(
+            TextButton(
                 onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
                 Text(text = stringResource(R.string.action_delete))
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.action_cancel))
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.dialog_cancel))
             }
         }
     )
