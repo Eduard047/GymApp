@@ -4971,7 +4971,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-set-row .active-set-weight-input {
   width: auto;
   min-width: 1.2ch;
-  min-height: 0;
   padding: 0;
   border: 0;
   border-bottom: 1.5px solid transparent;
@@ -4985,6 +4984,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   font-variant-numeric: tabular-nums;
   text-align: right;
   field-sizing: content;
+  /* 44px hit area; the negative margin keeps the value line at its previous height. */
+  min-height: 44px;
+  margin-block: -3.5px;
 }
 
 .active-set-row .active-set-weight-input:focus,
@@ -6832,17 +6834,29 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .plate-calculator { position: relative; justify-self: start; }
 
 .plate-calculator-toggle {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
+  /* 44px hit area; the visible 28px pill is drawn by ::before and the negative margin keeps the row height. */
+  min-height: 44px;
+  margin: -8px 0;
   padding: 0 10px;
   border-radius: 999px;
   color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   list-style: none;
+}
+
+.plate-calculator-toggle::before {
+  content: "";
+  position: absolute;
+  inset: 8px 0;
+  z-index: -1;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
 .plate-calculator-toggle::-webkit-details-marker { display: none; }
