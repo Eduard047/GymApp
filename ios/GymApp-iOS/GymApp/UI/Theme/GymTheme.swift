@@ -28,7 +28,7 @@ public enum GymTheme {
     }
 
     public static let primary = adaptive(light: 0x216BD7, dark: 0x8BB9FF)
-    public static let primaryAction = adaptive(light: 0x175BBE, dark: 0x2E72D2)
+    public static let primaryAction = adaptive(light: 0x216BD7, dark: 0x2E72D2)
     /// Brand blue (`active-current` in DESIGN.md) tuned as a *fill* that carries
     /// `onPrimary` (white) text/icons directly on top of it, e.g. a solid button
     /// or hero card background. Unlike `primary` (a light-mode-only accent that
