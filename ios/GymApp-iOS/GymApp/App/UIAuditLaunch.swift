@@ -42,6 +42,20 @@ enum UIAuditRoute: String, CaseIterable {
     case clearPlanDialog = "clear-plan-dialog"
     case deleteWorkoutDialog = "delete-workout-dialog"
     case continueWorkoutBar = "continue-workout-bar"
+    // Batch B1: Today + Progress. Hosts: `WorkoutsView`, `ProgressHubView` (and the
+    // children it embeds), `WeeklyReviewCard`, `ExerciseProgressView`, `AchievementGallery`.
+    case todayHistory = "today-history"
+    case trainingSettings = "training-settings"
+    case weeklyReview = "weekly-review"
+    case weeklyTargetEditor = "weekly-target-editor"
+    case weeklyEvidence = "weekly-evidence"
+    case activityHeatmap = "activity-heatmap"
+    case muscleMap = "muscle-map"
+    case ranks
+    case progressExercises = "progress-exercises"
+    case progressExerciseSelector = "progress-exercise-selector"
+    case progressGoals = "progress-goals"
+    case achievementDetail = "achievement-detail"
 }
 
 /// Hands the requested route from the launch bootstrap (which runs after the
@@ -55,7 +69,9 @@ final class UIAuditRouter: ObservableObject {
     /// workout, workout detail, plate button) appears. The host calls `consume`
     /// from a `#if DEBUG` block, waits for the screen to settle, then flips its
     /// own presentation state. Dialogs are only presented, never confirmed.
-    var pendingPresentation: UIAuditRoute?
+    /// `@Published` so a host that is already on screen (Today) can react to a
+    /// route set after it appeared; subscribers replay the current value.
+    @Published var pendingPresentation: UIAuditRoute?
 
     /// Returns true (and clears the pending route) when it is `route`.
     func consume(_ route: UIAuditRoute) -> Bool {

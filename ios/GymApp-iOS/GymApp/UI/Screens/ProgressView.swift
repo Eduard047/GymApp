@@ -68,11 +68,43 @@ struct ProgressHubView: View {
         }
         .environment(\.locale, appLocale)
         .onAppear { referenceDate = Date() }
+#if DEBUG
+        .onAppear { applyUIAuditSectionIfRequested() }
+#endif
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { referenceDate = Date() }
         }
     }
+
+#if DEBUG
+    /// UI-audit: switches the segmented section for the Progress routes. The nested
+    /// hosts (`ExerciseProgressView`, `AchievementGallery`, `WeeklyReviewCard`) consume
+    /// their own sheet routes; overview scrolling is handled in `overview`.
+    private func applyUIAuditSectionIfRequested() {
+        switch UIAuditRouter.shared.pendingPresentation {
+        case .progressExerciseSelector?:
+            section = .exercises
+        case .achievementDetail?:
+            section = .goals
+        case .progressExercises?, .progressGoals?:
+            guard let route = UIAuditRouter.shared.consume(anyOf: [.progressExercises, .progressGoals]) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(700))
+                section = route == .progressExercises ? .exercises : .goals
+            }
+        default:
+            break
+        }
+    }
+
+    /// UI-audit: scrolls the overview to the heatmap or muscle map card.
+    private func scrollToUIAuditCardIfRequested(_ proxy: ScrollViewProxy) async {
+        guard let route = UIAuditRouter.shared.consume(anyOf: [.activityHeatmap, .muscleMap]) else { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        proxy.scrollTo(route == .activityHeatmap ? "ui-audit-activity-heatmap" : "ui-audit-muscle-map", anchor: .top)
+    }
+#endif
 
     @ViewBuilder
     private var progressSectionControl: some View {
@@ -122,6 +154,7 @@ struct ProgressHubView: View {
     }
 
     private var overview: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(spacing: GymTheme.contentSpacing) {
                 WeeklyReviewCard(store: store)
@@ -146,18 +179,28 @@ struct ProgressHubView: View {
                     onCurrentMonth: { monthOffset = 0 },
                     onNextMonth: { monthOffset = min(0, monthOffset + 1) }
                 )
+#if DEBUG
+                .id("ui-audit-activity-heatmap")
+#endif
 
                 WorkoutMuscleLoadCard(
                     period: $musclePeriod,
                     selectedMuscleID: $selectedMuscleID,
                     data: muscleDashboardData
                 )
+#if DEBUG
+                .id("ui-audit-muscle-map")
+#endif
             }
             .padding(.horizontal, GymTheme.screenHorizontalInset)
             .padding(.top, GymTheme.contentSpacing)
             .padding(.bottom, GymTheme.screenBottomInset)
         }
         .scrollIndicators(.hidden)
+#if DEBUG
+        .task { await scrollToUIAuditCardIfRequested(proxy) }
+#endif
+        }
     }
 
     private var lifetimeMetricsCard: some View {
@@ -366,6 +409,14 @@ struct ExerciseProgressView: View {
         }
         .environment(\.locale, appLocale)
         .onAppear(perform: selectDefaultExerciseIfNeeded)
+#if DEBUG
+        .task {
+            // UI-audit: opens the exercise selector sheet for `progress-exercise-selector`.
+            guard UIAuditRouter.shared.consume(.progressExerciseSelector) else { return }
+            try? await Task.sleep(for: .milliseconds(700))
+            showingExerciseSelector = true
+        }
+#endif
         .onChange(of: store.exercises) { _, _ in selectDefaultExerciseIfNeeded() }
         .onChange(of: store.workouts) { _, _ in selectDefaultExerciseIfNeeded() }
         .sheet(isPresented: $showingExerciseSelector) {

@@ -30,6 +30,7 @@ struct MissionsView: View {
 
     var body: some View {
         GymBackground {
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 14) {
                     hero
@@ -41,9 +42,21 @@ struct MissionsView: View {
                     }
 
                     AchievementGallery(achievements: snapshot.achievements)
+#if DEBUG
+                        .id("ui-audit-achievement-gallery")
+#endif
                 }
                 .padding(16)
                 .padding(.bottom, 20)
+            }
+#if DEBUG
+            .task {
+                // UI-audit: the gallery is lazy; scroll to it so it can present its own sheet.
+                guard UIAuditRouter.shared.pendingPresentation == .achievementDetail else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                proxy.scrollTo("ui-audit-achievement-gallery", anchor: .bottom)
+            }
+#endif
             }
         }
         .navigationTitle(

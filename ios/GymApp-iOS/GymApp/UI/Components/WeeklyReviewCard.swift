@@ -85,6 +85,31 @@ struct WeeklyReviewCard: View {
                 }
             }
         }
+#if DEBUG
+        .task {
+            // UI-audit: presents the target editor / first evidence sheet. Nothing is saved.
+            guard let route = UIAuditRouter.shared.consume(anyOf: [.weeklyTargetEditor, .weeklyEvidence]) else { return }
+            try? await Task.sleep(for: .milliseconds(700))
+            switch route {
+            case .weeklyTargetEditor:
+                showsWeeklyTargetEditor = true
+            case .weeklyEvidence:
+                // Newest week (looking back up to 12 weeks) that has a comparison to show.
+                let history = store.allExerciseHistory()
+                for candidate in 0...12 {
+                    let week = WeeklyReview.build(history, offset: -candidate)
+                    if let first = week.insights.first {
+                        offset = -candidate
+                        evidence = first
+                        return
+                    }
+                }
+                UIAuditLaunch.log("weekly-evidence: no week in the last 12 has comparison insights")
+            default:
+                break
+            }
+        }
+#endif
         .sheet(isPresented: $showsWeeklyTargetEditor) {
             TrainingSettingsSheet(profile: trainingProfileBinding(current: trainingProfile))
         }

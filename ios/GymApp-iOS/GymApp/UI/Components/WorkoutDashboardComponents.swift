@@ -1399,6 +1399,14 @@ struct AchievementGallery: View {
                 }
             }
         }
+#if DEBUG
+        .task {
+            // UI-audit: opens the detail sheet of the first unlocked (else first) achievement.
+            guard UIAuditRouter.shared.consume(.achievementDetail) else { return }
+            try? await Task.sleep(for: .milliseconds(700))
+            selectedAchievement = achievements.first(where: \.unlocked) ?? achievements.first
+        }
+#endif
         .sheet(item: $selectedAchievement) { achievement in
             achievementDetailSheet(achievement)
                 .presentationDetents([.medium])

@@ -541,6 +541,11 @@ public struct WorkoutsView: View {
                     proxy.scrollTo(anchor, anchor: .top)
 #endif
                 }
+#if DEBUG
+                .onReceive(UIAuditRouter.shared.$pendingPresentation.compactMap { $0 }) { _ in
+                    presentUIAuditRouteIfRequested(proxy)
+                }
+#endif
             }
         }
         .sheet(isPresented: $showsTrainingSettings) {
@@ -2577,6 +2582,27 @@ public struct WorkoutsView: View {
     }
 
 #if DEBUG
+    /// UI-audit: scrolls to the history panel / opens Training settings once for
+    /// `-uiAuditRoute today-history|training-settings`. Nothing is edited or saved.
+    private func presentUIAuditRouteIfRequested(_ proxy: ScrollViewProxy) {
+        guard let route = UIAuditRouter.shared.consume(anyOf: [.todayHistory, .trainingSettings]) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            switch route {
+            case .todayHistory:
+                if store.workoutSummaries.isEmpty {
+                    UIAuditLaunch.log("today-history: no workouts, the history panel is not shown")
+                } else {
+                    proxy.scrollTo("workout-history", anchor: .top)
+                }
+            case .trainingSettings:
+                showsTrainingSettings = true
+            default:
+                break
+            }
+        }
+    }
+
     private var screenshotSectionAnchor: String? {
         let requested = ProcessInfo.processInfo.arguments
             .first(where: { $0.hasPrefix("--screenshot-section=") })?

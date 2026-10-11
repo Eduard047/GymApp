@@ -1054,6 +1054,7 @@ private struct MainTabShell: View {
     private func applyUIAuditRoute(_ route: UIAuditRoute) {
         UIAuditRouter.shared.route = nil
         workoutPath.removeAll()
+        missionPath.removeAll()
         switch route {
         case .today:
             selectedTab = .workouts
@@ -1114,6 +1115,27 @@ private struct MainTabShell: View {
             } else {
                 UIAuditLaunch.log("delete-workout-dialog: no workouts in the active profile")
             }
+        case .todayHistory, .trainingSettings:
+            selectedTab = .workouts
+            guard isUIAuditLocalProfile else {
+                UIAuditLaunch.log("\(route.rawValue): active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+                return
+            }
+            UIAuditRouter.shared.pendingPresentation = route
+        case .weeklyReview:
+            // The weekly review card is the first card of Progress > Overview on iOS.
+            selectedTab = .progress
+        case .weeklyTargetEditor, .weeklyEvidence, .activityHeatmap, .muscleMap, .progressExercises,
+             .progressExerciseSelector, .progressGoals, .achievementDetail:
+            selectedTab = .progress
+            guard isUIAuditLocalProfile else {
+                UIAuditLaunch.log("\(route.rawValue): active session is not the local \"\(UIAuditLaunch.profileName)\" profile")
+                return
+            }
+            UIAuditRouter.shared.pendingPresentation = route
+        case .ranks:
+            selectedTab = .progress
+            missionPath = [.ranks]
         case .workoutActiveMenu:
             // SwiftUI `Menu` has no programmatic presentation API; not routable without a UI-driving tap.
             UIAuditLaunch.log("workout-active-menu: not routable (SwiftUI Menu cannot be presented from code)")
