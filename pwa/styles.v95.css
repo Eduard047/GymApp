@@ -359,6 +359,10 @@ a:focus-visible,
 
 .exercises-header h2 { min-width: 0; }
 
+/* Header rhythm on the spacing scale: 8px between the title row and the search row, 12px between the chip row and the list. */
+.exercises-header { margin-bottom: 8px; }
+.screen-exercises .exercise-list { margin-top: 12px; }
+
 .exercise-add-button {
   flex: 0 0 44px;
   display: inline-grid;
