@@ -289,7 +289,8 @@ test("completed Today takes precedence and offers one follow-up action", () => {
     }];
     return focusLensCard(state.sessions);
   })()`, sandbox);
-  assert.match(markup, /TODAY COMPLETE/);
+  assert.doesNotMatch(markup, /TODAY COMPLETE|focus-lens-eyebrow/);
+  assert.match(markup, /Workout complete/);
   assert.match(markup, /data-action="open-blank-add"/);
   // The "With a friend" pill is a separate entry point, not a new-plan action.
   assert.match(markup, /data-action="today-friend"/);

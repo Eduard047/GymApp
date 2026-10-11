@@ -12114,7 +12114,6 @@ function focusLensCard(sessions) {
   if (completedToday.length) {
     return `<section class="focus-lens completed compact" data-coach-target="today-focus" aria-labelledby="focus-lens-title">
       <div class="focus-lens-copy">
-        <span class="focus-lens-eyebrow">${tx3("TODAY COMPLETE", "СЬОГОДНІ ВИКОНАНО", "СЕГОДНЯ ВЫПОЛНЕНО")}</span>
         <h2 id="focus-lens-title">${tx3("Workout complete", "Тренування завершено", "Тренировка завершена")}</h2>
         <p>${tx3("Today's work is saved in your history.", "Сьогоднішнє тренування збережено в історії.", "Сегодняшняя тренировка сохранена в истории.")}</p>
       </div>
