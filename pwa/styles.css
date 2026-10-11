@@ -5160,12 +5160,26 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .set-delete-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .active-set-stepper-row .set-delete-icon { flex: 0 0 44px; }
 
+/* Expanded set rows (live workout and saved-workout edit): two capsules on their own row so every stepper and
+   input reaches the 44px tap minimum, with the trash icon on a trailing row. */
+.active-set-editor .set-editor-capsules { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 8px; }
+.active-set-editor .set-editor-capsule { width: auto; }
+.active-set-editor .set-editor-step { width: 44px; }
+.active-set-editor .set-editor-input { min-width: 44px; min-height: 44px; padding: 10px 0; border-bottom: 0; }
+.active-set-editor .set-editor-capsules .set-delete-icon { grid-column: 1 / -1; justify-self: end; }
+.active-set-editor .set-editor-capsule:has(.set-editor-input:focus-visible) { box-shadow: inset 0 0 0 1.5px var(--primary); }
+.active-set-editor .set-editor-capsule:has(.set-editor-input[aria-invalid="true"]),
+.active-set-editor .set-editor-capsule:has(.set-editor-input-invalid) { box-shadow: inset 0 0 0 1.5px var(--danger); }
+/* Narrow phones: stack the capsules so the 44px steppers keep room for the value. */
+@media (max-width: 359px) { .active-set-editor .set-editor-capsules { grid-template-columns: minmax(0, 1fr); } }
+
 /* Only very large text sizes stack the capsules; phones keep weight, reps and trash on one row down to 320px. */
 @media (max-width: 280px) {
   .set-editor-capsules { flex-direction: column; align-items: stretch; }
   .set-editor-capsule,
   .set-editor-capsule[data-step-field] { flex: 0 0 44px; }
   .set-editor-capsules .set-delete-icon { align-self: flex-end; }
+  .active-set-editor .set-editor-capsules { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* The voice container is layout-transparent: its transcript and action row are rows of the current card. */
