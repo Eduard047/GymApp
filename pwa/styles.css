@@ -2980,18 +2980,16 @@ button.leaderboard-row {
   gap: 14px;
 }
 
+.share-panel .social-share-friend-card {
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
 .social-share-friend-card.preferred {
   border-color: color-mix(in srgb, var(--sage) 52%, var(--outline-variant));
   background: color-mix(in srgb, var(--primary-container) 54%, var(--surface));
-  box-shadow: inset 4px 0 0 var(--sage);
 }
 .social-share-friend-card .eyebrow { display: block; margin-bottom: 2px; }
-
-.social-share-friends {
-  max-height: min(42vh, 420px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
 
 .friend-detail-sheet .leaderboard-row strong {
   max-width: 16ch;
@@ -5380,23 +5378,60 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-exercise-actions .active-exercise-add { border: 1px dashed color-mix(in srgb, var(--brand-fill) 50%, transparent); }
 .active-exercise-actions .active-exercise-finish { border: 1px solid color-mix(in srgb, var(--brand-fill) 70%, transparent); }
 
-.share-link-panel {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
+.workout-share-sheet > h2 { margin: 0; }
+
+.share-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: none;
 }
+
+.share-hero > div { min-width: 0; }
+
+.share-hero-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--sage);
+  background: var(--hero-tile);
+}
+
+.share-hero-icon svg { width: 22px; height: 22px; }
+
+.share-panel {
+  display: grid;
+  gap: 12px;
+  box-shadow: none;
+}
+
+.share-panel h3,
+.share-hero h3,
+.share-panel p,
+.share-hero p { margin: 0; }
+
+.share-panel p,
+.share-hero p { margin-top: 4px; overflow-wrap: anywhere; }
+
+.share-panel > .button,
+.share-refresh { min-height: 44px; }
+
+.share-state-note { margin: 0; }
 
 .share-privacy-note {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin: 0;
+  font-size: 12px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
 }
 
-.share-privacy-note svg { flex: 0 0 auto; }
+.share-privacy-note svg { flex: 0 0 auto; margin-top: 1px; }
 
 .friend-profile-scorecard,
 .friend-activity-panel {

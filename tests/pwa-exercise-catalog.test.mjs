@@ -3328,7 +3328,16 @@ test("workout share chooser keeps link fallback and targets confirmed friends on
   assert.match(markup, /data-action="send-workout-invite"/);
   assert.match(markup, /data-action="send-live-workout-invite"/);
   assert.match(markup, /p_22222222222222222222222222222222/);
-  assert.match(markup, /Only exercises and planned sets are shared\./);
+  assert.match(markup, /Use another app/);
+  assert.match(markup, /Share link/);
+  assert.match(markup, /Copy or live/);
+  assert.match(markup, /Send copy/);
+  assert.match(markup, /Invite live/);
+  assert.match(markup, /Refresh friends/);
+  assert.match(markup, /Only the plan is sent before acceptance\./);
+  assert.ok(markup.indexOf("share-workout-link") < markup.indexOf("send-workout-invite"));
+  assert.ok(markup.indexOf("send-workout-invite") < markup.indexOf("share-privacy-note"));
+  assert.doesNotMatch(markup, /Train together|Choose a friend|Start LIVE|Copy or share link/);
   assert.doesNotMatch(markup, /Live starts for both people as soon as the friend joins and keeps set progress synchronized/);
   assert.doesNotMatch(markup, /accountId|userId|private note|must-not-leak/);
 });
