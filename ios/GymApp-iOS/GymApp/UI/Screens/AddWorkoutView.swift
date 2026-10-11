@@ -1287,9 +1287,9 @@ struct AddWorkoutView: View {
                                 .font(.title2.bold())
                                 Text(
                                     t(
-                                        "Share a link, send an editable copy, or invite a friend to train live.",
-                                        "Поділися посиланням, надішли редаговану копію або запроси друга тренуватися наживо.",
-                                        "Поделись ссылкой, отправь редактируемую копию или пригласи друга тренироваться вживую."
+                                        "Send a link, a copy, or a live invite.",
+                                        "Надішли посилання, копію або запрошення наживо.",
+                                        "Отправь ссылку, копию или приглашение вживую."
                                     )
                                 )
                                 .font(.subheadline)
@@ -1309,9 +1309,9 @@ struct AddWorkoutView: View {
                                 GymSectionTitle(
                                     title: t("Use another app", "Надіслати через інший застосунок", "Отправить через другое приложение"),
                                     supporting: t(
-                                        "The existing GymApp link works without adding the recipient as a friend.",
-                                        "Звичайне посилання GymApp працює без додавання отримувача в друзі.",
-                                        "Обычная ссылка GymApp работает без добавления получателя в друзья."
+                                        "Works without adding a friend.",
+                                        "Працює без додавання в друзі.",
+                                        "Работает без добавления в друзья."
                                     )
                                 )
                                 if let shareURL = sharingPlanURL {
@@ -1340,9 +1340,9 @@ struct AddWorkoutView: View {
                                 GymSectionTitle(
                                     title: t("Copy or live", "Копія або наживо", "Копия или вживую"),
                                     supporting: t(
-                                        "A copy stays independent. Live freezes the plan for two people and shows each person's set progress.",
-                                        "Копія залишається незалежною. Наживо фіксує план для двох і показує прогрес підходів кожного.",
-                                        "Копия остаётся независимой. Живой режим фиксирует план для двоих и показывает прогресс подходов каждого."
+                                        "A copy is independent. Live shares one plan and set progress.",
+                                        "Копія незалежна. Наживо — спільний план і прогрес підходів.",
+                                        "Копия независима. Вживую — общий план и прогресс подходов."
                                     )
                                 )
 
