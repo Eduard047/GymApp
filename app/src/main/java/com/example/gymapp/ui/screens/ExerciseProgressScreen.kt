@@ -518,7 +518,10 @@ private fun ProgressSessionHistoryCard(
 
             Text(
                 text = "${stringResource(R.string.progress_reps_value, totalReps)} • " +
-                    stringResource(R.string.stats_volume, totalVolume),
+                    stringResource(
+                        R.string.stats_volume,
+                        java.text.NumberFormat.getIntegerInstance(Locale.getDefault()).format(totalVolume)
+                    ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

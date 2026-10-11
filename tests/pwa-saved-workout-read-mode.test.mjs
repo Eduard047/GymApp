@@ -116,8 +116,8 @@ test("saved workout read mode uses the live card with completed-style set rows",
   assert.match(html, /<section class="hero-panel workout-detail-hero">[\s\S]*data-action="edit-workout"[\s\S]*<\/section>/);
   assert.equal((html.match(/data-saved-workout-exercise/g) || []).length, 2);
   assert.doesNotMatch(html, /<details[^>]*data-saved-workout-exercise[^>]*\sopen(?:\s|>)/);
-  assert.match(html, /2 sets · 18 reps · 1,120 kg volume/);
-  assert.match(html, /1 set · 5 reps · 450 kg volume/);
+  assert.match(html, /2 sets · 18 reps · volume\u00A01,120\u00A0kg/);
+  assert.match(html, /1 set · 5 reps · volume\u00A0450\u00A0kg/);
   assert.equal((html.match(/class="active-set-row completed saved-set-row"/g) || []).length, 3);
   assert.match(html, /<span class="active-set-summary-text">60 kg × 10<\/span>/);
   assert.match(html, /exercise-media-thumb/);

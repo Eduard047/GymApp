@@ -1187,7 +1187,7 @@ private fun WorkoutTemplatePickerContent(
                                     template.setCount,
                                     template.setCount
                                 ),
-                                String.format(Locale.getDefault(), "%.0f", template.totalVolume)
+                                NumberFormat.getIntegerInstance(Locale.getDefault()).format(template.totalVolume)
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

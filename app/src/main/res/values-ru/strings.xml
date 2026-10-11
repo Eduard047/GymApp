@@ -702,7 +702,7 @@
 
     <string name="stats_exercises">Упражнений: %1$d</string>
     <string name="stats_sets">Подходов: %1$d</string>
-    <string name="stats_volume">Объем: %1$.0f кг</string>
+    <string name="stats_volume">Объем: %1$s кг</string>
 
     <string name="dashboard_title">Итог месяца</string>
     <string name="dashboard_subtitle">Отслежи регулярность, объем и интенсивность одним взглядом.</string>

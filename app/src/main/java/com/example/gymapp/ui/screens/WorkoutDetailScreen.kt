@@ -666,7 +666,10 @@ private fun WorkoutHeaderCard(
                 )
             )
             add(
-                stringResource(R.string.today_history_volume_kg, formatCompactWeight(volume))
+                stringResource(
+                    R.string.today_history_volume_kg,
+                    NumberFormat.getIntegerInstance(Locale.getDefault()).format(volume)
+                )
             )
             durationSeconds?.let { add(formatWorkoutDuration(it)) }
         }.joinToString(" · ")
@@ -2047,7 +2050,10 @@ private fun SavedWorkoutExerciseCard(
     val repCount = sets.sumOf { it.reps }
     val setCountLabel = pluralStringResource(R.plurals.saved_workout_set_count, setCount, setCount)
     val repsLabel = pluralStringResource(R.plurals.saved_workout_rep_count, repCount, repCount)
-    val volumeLabel = stringResource(R.string.stats_volume, sets.sumOf { it.weight * it.reps })
+    val volumeLabel = stringResource(
+        R.string.stats_volume,
+        NumberFormat.getIntegerInstance(Locale.getDefault()).format(sets.sumOf { it.weight * it.reps })
+    )
     val removeLabel = stringResource(R.string.active_workout_remove_exercise)
     val removeAction = canRemoveExercise && controls.showRemoveExercise
     val deleteSetLabel = stringResource(R.string.active_workout_delete_set)
@@ -2375,15 +2381,6 @@ private fun WorkoutDetailsEditPanel(
         ) {
             DatePicker(state = pickerState)
         }
-    }
-}
-
-private fun formatCompactWeight(weight: Double): String {
-    if (!weight.isFinite()) return "—"
-    return if (weight % 1.0 == 0.0) {
-        String.format(Locale.getDefault(), "%.0f", weight)
-    } else {
-        String.format(Locale.getDefault(), "%.1f", weight)
     }
 }
 

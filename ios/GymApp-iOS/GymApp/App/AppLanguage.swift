@@ -340,7 +340,8 @@ func gymVolumeText(
     let number = compact
         ? safe.formatted(.number.locale(locale).notation(.compactName).precision(.fractionLength(0 ... 1)))
         : safe.formatted(.number.locale(locale).precision(.fractionLength(0 ... 1)))
-    return "\(number) \(gymLocalized("kg", languageCode: languageCode))"
+    // No-break space keeps the number and its unit on one line.
+    return "\(number)\u{00A0}\(gymLocalized("kg", languageCode: languageCode))"
 }
 
 func gymErrorMessage(

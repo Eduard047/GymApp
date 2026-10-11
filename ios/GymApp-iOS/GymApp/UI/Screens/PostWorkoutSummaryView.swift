@@ -321,7 +321,7 @@ struct PostWorkoutSummaryView: View {
                 label: gymText("Sets", "Підходи", "Подходы", languageCode: languageCode)
             )
             heroStat(
-                value: gymVolumeText(workout.totalVolume, compact: true, languageCode: languageCode),
+                value: gymVolumeText(workout.totalVolume, languageCode: languageCode),
                 label: gymText("Volume", "Обсяг", "Объём", languageCode: languageCode)
             )
             heroStat(

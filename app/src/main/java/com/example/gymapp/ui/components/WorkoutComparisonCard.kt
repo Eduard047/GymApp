@@ -38,9 +38,11 @@ fun WorkoutComparisonCard(
     val wholeNumber: (Double) -> String = { value ->
         String.format(Locale.getDefault(), "%.0f", value)
     }
+    // Grouped whole number plus unit; no-break space keeps "+850 kg" on one line.
     val kilogramFormat = androidx.compose.ui.res.stringResource(R.string.today_history_volume_kg, "%s")
+        .replace(' ', '\u00A0')
     val volume: (Double) -> String = { value ->
-        String.format(kilogramFormat, String.format(Locale.getDefault(), "%.0f", value))
+        String.format(kilogramFormat, java.text.NumberFormat.getIntegerInstance(Locale.getDefault()).format(value))
     }
     val duration: (Double) -> String = { value -> formatDuration(value.toLong()) }
     val bpmUnit = androidx.compose.ui.res.stringResource(R.string.garmin_metric_bpm_unit)

@@ -2368,16 +2368,11 @@ struct WorkoutDetailView: View {
         guard summary.volume > 0 else {
             return "\(sets) · \(reps)"
         }
-        let volume = summary.volume.formatted(
-            .number
-                .locale(AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale)
-                .notation(.compactName)
-                .precision(.fractionLength(0 ... 1))
-        )
+        let volume = gymVolumeText(summary.volume, languageCode: languageCode)
         return gymText(
-            "\(sets) · \(reps) · \(volume) volume",
-            "\(sets) · \(reps) · обсяг \(volume)",
-            "\(sets) · \(reps) · объём \(volume)",
+            "\(sets) · \(reps) · volume\u{00A0}\(volume)",
+            "\(sets) · \(reps) · обсяг\u{00A0}\(volume)",
+            "\(sets) · \(reps) · объём\u{00A0}\(volume)",
             languageCode: languageCode
         )
     }

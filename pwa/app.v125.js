@@ -10910,6 +10910,12 @@ function formatVolumeWithUnit(value, compact = true) {
   return `${formatTodayMetric(value, compact)} ${volumeUnitLabel()}`;
 }
 
+// Full grouped volume with its unit ("10,570 kg", "10 570 кг"); the no-break space keeps
+// the number and unit together. Compact notation stays on the Today cards only.
+function formatWorkoutVolume(value) {
+  return formatVolumeWithUnit(Math.round(Number(value) || 0), false).replace(" ", "\u00A0");
+}
+
 function todayPlanMetricsMarkup() {
   const metrics = todayPlanDashboardMetrics();
   const rows = [
@@ -16446,7 +16452,7 @@ function workoutHeader(session, editing = false) {
     : [
       n(summary.exercises, "exercise", "exercises", "вправа", "вправи", "вправ"),
       n(summary.sets, "set", "sets", "підхід", "підходи", "підходів"),
-      formatVolumeWithUnit(summary.volume)
+      formatWorkoutVolume(summary.volume)
     ];
   if (duration) parts.push(duration);
   const note = String(session.note || "").trim();
@@ -16548,11 +16554,12 @@ function workoutComparisonCard(session) {
     const current = Math.round(metric.current);
     const previous = Math.round(metric.previous);
     const difference = current - previous;
-    const unitSuffix = metric.unit ? ` ${escapeHtml(metric.unit)}` : "";
+    const unitSuffix = metric.unit ? `\u00A0${escapeHtml(metric.unit)}` : "";
+    const amount = value => new Intl.NumberFormat(displayLocale(), { maximumFractionDigits: 0 }).format(value);
     const delta = difference === 0
-      ? tx("No change", "Без змін")
-      : `${difference > 0 ? "+" : "−"}${Math.abs(difference)}`;
-    return `<div><span>${escapeHtml(metric.label)}</span><strong>${current}${unitSuffix}</strong><small>${tx("Previous", "Раніше")} ${previous}${unitSuffix} · ${escapeHtml(delta)}${unitSuffix && difference !== 0 ? unitSuffix : ""}</small></div>`;
+      ? tx3("no change", "без змін", "без изменений")
+      : `${difference > 0 ? "+" : "−"}${amount(Math.abs(difference))}`;
+    return `<div><span>${escapeHtml(metric.label)}</span><strong>${amount(current)}${unitSuffix}</strong><small>${tx("Previous", "Раніше")} ${amount(previous)}${unitSuffix} · <span class="nowrap">${escapeHtml(delta)}${difference !== 0 ? unitSuffix : ""}</span></small></div>`;
   }).join("")}</div></section>`;
 }
 
@@ -16759,9 +16766,9 @@ function savedExerciseSetSummary(group) {
   const reps = group.sets.reduce((sum, set) => sum + safeChartValue(set.reps), 0);
   const volume = group.sets.reduce((sum, set) =>
     sum + safeChartValue(set.weight) * safeChartValue(set.reps), 0);
-  const formattedVolume = new Intl.NumberFormat(displayLocale(), { maximumFractionDigits: 0 }).format(volume);
+  const formattedVolume = formatWorkoutVolume(volume);
   return group.sets.length
-    ? `${n(group.sets.length, "set", "sets", "підхід", "підходи", "підходів")} · ${n(reps, "rep", "reps", "повторення", "повторення", "повторень")} · ${formattedVolume} ${tx("kg volume", "кг обсягу")}`
+    ? `${n(group.sets.length, "set", "sets", "підхід", "підходи", "підходів")} · ${n(reps, "rep", "reps", "повторення", "повторення", "повторень")} · ${tx3("volume", "обсяг", "объём")}\u00A0${formattedVolume}`
     : tx("No sets", "Немає підходів");
 }
 
@@ -25924,7 +25931,7 @@ function modalMarkup() {
   if (modal.type === "training-adapt") return bottomSheet(trainingAdaptationSheet());
   if (modal.type === "offline-account") return bottomSheet(offlineAccountSheetMarkup());
   if (modal.type === "change-password") return bottomSheet(`<h2>${tx("Change password", "Змінити пароль")}</h2>${modal.reauthRequired ? `<p class="muted">${tx("A verification code was sent to your email. Enter it together with the new password.", "Код підтвердження надіслано на твою електронну пошту. Введи його разом із новим паролем.")}</p>` : ""}<div class="field-stack"><label>${tx("Current password", "Поточний пароль")}<input id="change-current-password" type="password" autocomplete="current-password" maxlength="1024"></label>${modal.reauthRequired ? `<label>${tx("Verification code", "Код підтвердження")}<input id="change-password-nonce" autocomplete="one-time-code" inputmode="numeric" maxlength="8"></label>` : ""}<label>${tx("New password", "Новий пароль")}<input id="change-new-password" type="password" autocomplete="new-password" minlength="6" maxlength="72"></label><label>${tx("Repeat new password", "Повтори новий пароль")}<input id="change-repeat-password" type="password" autocomplete="new-password" minlength="6" maxlength="72"></label></div><p class="muted">${tx("Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8).")}</p><button class="button full" data-action="submit-password-change" ${authRequestInProgress ? "disabled" : ""}>${tx("Change password", "Змінити пароль")}</button>`);
-  if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${Math.round(sessionSummary(session).volume)} ${tx("volume", "обсяг")}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
+  if (modal.type === "template") return bottomSheet(`<h2>${t("templatePicker")}</h2>${state.sessions.length ? [...state.sessions].sort((a, b) => b.startedAt - a.startedAt).map(session => `<article class="workout-item"><h3>${fmtDate(session.startedAt)}</h3><p>${sessionSummary(session).exercises} ${tx("exercises", "вправ")} - ${sessionSummary(session).sets} ${tx("sets", "підходів")} - ${tx3("volume", "обсяг", "объём")} ${escapeHtml(formatWorkoutVolume(sessionSummary(session).volume))}</p><button class="button full" data-action="copy-template" data-id="${session.id}">${t("copyWorkout")}</button></article>`).join("") : `<p>${tx("No previous workouts yet.", "Попередніх тренувань ще немає.")}</p>`}`);
   if (modal.type === "training-program-confirm") return trainingProgramConfirmationMarkup();
   if (modal.type === "import") return bottomSheet(`<h2>${tx("Import backup", "Імпорт резервної копії")}</h2><textarea id="import-json" placeholder="${txAttr("Paste exported GymApp JSON here", "Встав сюди експортований JSON GymApp")}"></textarea><button class="button full" data-action="apply-import">${tx("Import", "Імпорт")}</button>`);
   if (modal.type === "add-exercise") return bottomSheet(`<h2>${tx("Add exercise", "Додати вправу")}</h2><input id="new-exercise-name" maxlength="320" aria-label="${txAttr("Exercise name", "Назва вправи")}" placeholder="${txAttr("Exercise name", "Назва вправи")}"><button class="button full" data-action="save-exercise">${tx("Add exercise", "Додати вправу")}</button>`);

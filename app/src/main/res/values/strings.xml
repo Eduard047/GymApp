@@ -459,7 +459,7 @@
     <string name="calorie_mode_surplus">Surplus</string>
     <string name="template_picker_title">Copy a previous workout</string>
     <string name="template_picker_empty">No previous workouts yet.</string>
-    <string name="template_picker_summary">%1$s • %2$s • %3$s kg volume</string>
+    <string name="template_picker_summary">%1$s • %2$s • volume %3$s kg</string>
     <string name="add_workout_save_hint">Check your sets, then save to move straight into workout details.</string>
     <string name="add_workout_plan_mode_hint">Plan mode: these rows are targets sent to Garmin and are not logged as completed by syncing.</string>
     <string name="add_workout_completed_mode_hint">Completed mode: saving writes every planned row immediately to workout history and summary.</string>
@@ -684,7 +684,7 @@
 
     <string name="stats_exercises">Exercises: %1$d</string>
     <string name="stats_sets">Sets: %1$d</string>
-    <string name="stats_volume">Volume: %1$.0f kg</string>
+    <string name="stats_volume">Volume: %1$s kg</string>
 
     <string name="dashboard_title">Monthly Snapshot</string>
     <string name="dashboard_subtitle">Track consistency, output and intensity at a glance.</string>

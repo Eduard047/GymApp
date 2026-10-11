@@ -461,7 +461,7 @@
     <string name="calorie_mode_surplus">Профіцит</string>
     <string name="template_picker_title">Скопіювати минуле тренування</string>
     <string name="template_picker_empty">Попередніх тренувань ще немає.</string>
-    <string name="template_picker_summary">%1$s • %2$s • %3$s кг обсяг</string>
+    <string name="template_picker_summary">%1$s • %2$s • обсяг %3$s кг</string>
     <string name="add_workout_save_hint">Перевір підходи та збережи, щоб одразу перейти в деталі тренування.</string>
     <string name="add_workout_plan_mode_hint">Режим плану: ці рядки надсилаються на Garmin як цілі й не записуються як виконані під час синхронізації.</string>
     <string name="add_workout_completed_mode_hint">Режим виконаного тренування: збереження одразу додає всі заплановані рядки до історії та підсумку.</string>
@@ -702,7 +702,7 @@
 
     <string name="stats_exercises">Вправ: %1$d</string>
     <string name="stats_sets">Підходів: %1$d</string>
-    <string name="stats_volume">Обсяг: %1$.0f кг</string>
+    <string name="stats_volume">Обсяг: %1$s кг</string>
 
     <string name="dashboard_title">Підсумок місяця</string>
     <string name="dashboard_subtitle">Відстежуй регулярність, обсяг і інтенсивність одним поглядом.</string>

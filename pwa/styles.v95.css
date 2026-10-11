@@ -6525,6 +6525,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.workout-comparison-card small .nowrap { white-space: nowrap; }
+
 .workout-comparison-card small {
   display: block;
   margin-top: 3px;
