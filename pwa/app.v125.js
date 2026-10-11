@@ -11068,7 +11068,7 @@ function trainingHistoryWorkoutRow(session) {
   const activityOnly = isActivityOnlySession(session);
   const detail = activityOnly
     ? tx3("Free workout", "Вільне тренування", "Свободная тренировка")
-    : `${tx3("Exercises", "Вправи", "Упражнения")}: ${summary.exercises} · ${tx3("Sets", "Підходи", "Подходы")}: ${summary.sets}`;
+    : `${n(summary.exercises, "exercise", "exercises", "вправа", "вправи", "вправ")} · ${n(summary.sets, "set", "sets", "підхід", "підходи", "підходів")}`;
   const value = activityOnly
     ? savedWorkoutDurationLabel(session.durationSeconds)
     : formatVolumeWithUnit(summary.volume);

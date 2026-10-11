@@ -1463,8 +1463,16 @@ private fun TrainingHistoryRow(
                     stringResource(R.string.garmin_free_workout_title)
                 } else {
                     listOf(
-                        stringResource(R.string.stats_exercises, session.exerciseCount),
-                        stringResource(R.string.stats_sets, session.setCount)
+                        pluralStringResource(
+                            R.plurals.saved_workout_exercise_count,
+                            session.exerciseCount,
+                            session.exerciseCount
+                        ),
+                        pluralStringResource(
+                            R.plurals.saved_workout_set_count,
+                            session.setCount,
+                            session.setCount
+                        )
                     ).joinToString(" · ")
                 },
                 style = MaterialTheme.typography.bodySmall,
