@@ -4727,9 +4727,8 @@ textarea:focus {
 }
 
 .active-workout-exercise.completed {
-  border-color: color-mix(in srgb, var(--sage) 68%, var(--outline-variant));
+  border-color: var(--outline-variant);
   background: color-mix(in srgb, var(--sage) 15%, var(--surface));
-  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--sage) 86%, transparent);
 }
 
 .active-workout-exercise.current {
