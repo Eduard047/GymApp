@@ -41,6 +41,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -149,16 +151,29 @@ fun ExerciseMediaPreview(
                     }
                 }
             } else if (!preview.hasMedia) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Image, contentDescription = null)
+                val showCaption = height >= 48.dp
+                Column(
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Default.Image,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = if (showCaption) Modifier.size(20.dp) else Modifier
+                    )
                     // Compact thumbnails (for example list rows) have no room for the caption.
-                    if (height >= 48.dp) {
+                    if (showCaption) {
                         Text(
                             stringResource(
                                 if (editable) R.string.exercise_media_add
                                 else R.string.exercise_media_no_preview
                             ),
-                            style = MaterialTheme.typography.labelSmall
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

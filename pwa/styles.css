@@ -594,13 +594,35 @@ a:focus-visible,
 .exercise-media-thumb.empty {
   display: grid;
   place-content: center;
+  justify-items: center;
   gap: 2px;
+  padding: 0 4px;
   font: inherit;
   font-size: 0.68rem;
   font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
 }
 
-.exercise-media-placeholder-icon { width: 24px; height: 24px; margin: 0 auto; }
+.exercise-media-thumb.empty > span {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.exercise-media-placeholder-icon {
+  width: 22px;
+  height: 22px;
+  margin: 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .exercise-media-play {
   position: absolute;
