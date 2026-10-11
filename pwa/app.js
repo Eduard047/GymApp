@@ -165,6 +165,7 @@ const app = document.querySelector("#app");
 const icons = {
   calendar: "M5 4h14v17H5zM8 2v4M16 2v4M5 9h14M8 13h2M14 13h2M8 17h2M14 17h2",
   calendarCheck: "M5 4h14v17H5zM8 2v4M16 2v4M5 9h14M9.5 15l2 2 3.5-4",
+  calendarFilled: "M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z",
   add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
   auto: "M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
   back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
@@ -226,7 +227,7 @@ const icons = {
 };
 
 const filledIcons = new Set([
-  "add", "back", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "moon", "more", "person", "remove", "showChart", "sun"
+  "add", "back", "calendarFilled", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "moon", "more", "person", "remove", "showChart", "sun"
 ]);
 
 function boundedLocationParameters(rawValue, maximumLength, maximumPairs = 32) {
@@ -11998,7 +11999,7 @@ function titleForRoute(current) {
 }
 
 function bottomNav() {
-  const tabs = [["workouts", "fitness", tx("Today", "Сьогодні")], ["exercises", "listFilled", t("exercises")], ["progress", "showChart", t("progress")], ["leaderboard", "person", tx("Profile", "Профіль")]];
+  const tabs = [["workouts", "calendarFilled", tx("Today", "Сьогодні")], ["exercises", "fitness", t("exercises")], ["progress", "showChart", t("progress")], ["leaderboard", "person", tx("Profile", "Профіль")]];
   return `<nav class="bottom-nav" aria-label="${txAttr("Main navigation", "Головна навігація")}">${tabs.map(([id, icon, label]) => `
     <button class="tab-button ${route().name === id ? "active" : ""}" data-route="${id}" data-coach-target="${id === "leaderboard" ? "profile" : id}-tab" ${route().name === id ? `aria-current="page"` : ""}><span class="tab-icon">${svg(icon)}</span><span>${label}</span></button>`).join("")}</nav>`;
 }

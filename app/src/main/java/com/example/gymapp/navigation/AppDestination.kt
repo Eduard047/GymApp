@@ -2,8 +2,8 @@
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.TrackChanges
@@ -18,7 +18,7 @@ sealed class AppDestination(
     data object Workouts : AppDestination(
         route = "workouts",
         labelRes = R.string.tab_workouts,
-        icon = Icons.Default.FitnessCenter
+        icon = Icons.Default.CalendarToday
     )
 
     data object Missions : AppDestination(
@@ -30,7 +30,7 @@ sealed class AppDestination(
     data object Exercises : AppDestination(
         route = "exercises",
         labelRes = R.string.tab_exercises,
-        icon = Icons.AutoMirrored.Filled.FormatListBulleted
+        icon = Icons.Default.FitnessCenter
     )
 
     data object Progress : AppDestination(
