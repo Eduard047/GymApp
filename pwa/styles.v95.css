@@ -613,6 +613,18 @@ a:focus-visible,
   overflow-wrap: anywhere;
 }
 
+/* Tiles narrower than 72px (compact 58px and the 60px catalog rows) show the icon only; the caption stays for assistive tech. */
+.exercise-media-thumb.empty.compact > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .exercise-media-placeholder-icon {
   width: 22px;
   height: 22px;

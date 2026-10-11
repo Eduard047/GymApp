@@ -165,6 +165,8 @@ test("exercise rows are one compact line with thumbnail, name, heart and More on
   assert.match(stylesSource, /\.exercise-list-thumb \.exercise-media-play\s*\{[\s\S]*?width:\s*20px;[\s\S]*?height:\s*20px;/);
   assert.match(stylesSource, /\.exercise-row \.exercise-name\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
   assert.match(stylesSource, /\.exercise-row-actions\s*\{[\s\S]*?gap:\s*0;/);
+  // Tiles narrower than 72px keep the caption for assistive tech only (icon-only placeholder).
+  assert.match(stylesSource, /\.exercise-media-thumb\.empty\.compact > span\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?clip-path:\s*inset\(50%\);/);
 });
 
 test("More sheet holds History, Muscle groups, Machine weights, Rename for custom exercises only, and Delete", () => {
