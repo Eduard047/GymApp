@@ -44,12 +44,12 @@ struct RanksView: View {
                     "Уровень \(level) · \(totalXP.formatted(.number.locale(gymAppLocale()))) XP",
                     languageCode: languageCode
                 ))
-                .foregroundStyle(Color.white.opacity(0.82))
+                .foregroundStyle(GymTheme.onHeroSecondary)
 
                 if let next {
                     let remaining = max(0, next.requiredXP - totalXP)
 
-                    RankProgressTrack(progress: nextRankProgress, trackColor: Color.white.opacity(0.25), fillColor: .white)
+                    RankProgressTrack(progress: nextRankProgress, trackColor: GymTheme.heroOutline, fillColor: GymTheme.heroAccent)
                         .frame(height: 6)
                         .accessibilityHidden(true)
 
@@ -60,7 +60,7 @@ struct RanksView: View {
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.78))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                 }
             }
         }

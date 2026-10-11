@@ -53,6 +53,7 @@ import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.GymProgressBar
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.achievementGridColumns
 import com.example.gymapp.ui.components.achievementRarityLabel
@@ -345,7 +346,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = onHero.copy(alpha = 0.82f)
+                        color = HeroTone.supporting
                     )
                 }
             }
@@ -388,13 +389,13 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     fontSize = 34.sp,
                     fontFamily = FontFamily.SansSerif,
                     fontWeight = FontWeight.SemiBold,
-                    color = onHero
+                    color = HeroTone.accent
                 )
                 Text(
                     text = stringResource(R.string.post_workout_session_xp),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = onHero.copy(alpha = 0.72f)
+                    color = HeroTone.supporting
                 )
             }
 
@@ -414,8 +415,8 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .clearAndSetSemantics { },
-                    color = onHero,
-                    trackColor = onHero.copy(alpha = 0.24f)
+                    color = HeroTone.accent,
+                    trackColor = HeroTone.track
                 )
                 Text(
                     text = stringResource(
@@ -424,7 +425,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                         uiState.currentLevel + 1
                     ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = onHero.copy(alpha = 0.72f)
+                    color = HeroTone.supporting
                 )
             }
 
@@ -435,7 +436,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                         uiState.previousLevel,
                         uiState.currentLevel
                     ),
-                    accent = onHero
+                    onHero = true
                 )
             }
         }
@@ -464,7 +465,7 @@ private fun HeroStat(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = color.copy(alpha = 0.72f),
+            color = HeroTone.supporting,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )

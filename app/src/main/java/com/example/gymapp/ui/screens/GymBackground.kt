@@ -1,35 +1,22 @@
-﻿package com.example.gymapp.ui.screens
+package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 
+/** Flat screen background: Air Canvas in light, Deep Water in dark (the theme background). */
 @Composable
 fun GymBackground(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = MaterialTheme.colorScheme
-    val darkTheme = isSystemInDarkTheme()
-    val backgroundRaised = if (darkTheme) Color(0xFF0B1422) else Color(0xFFFAFCFF)
-
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        backgroundRaised,
-                        colorScheme.background
-                    )
-                )
-            )
+            .background(MaterialTheme.colorScheme.background)
     ) {
         content()
     }

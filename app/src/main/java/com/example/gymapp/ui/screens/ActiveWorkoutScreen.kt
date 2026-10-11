@@ -156,6 +156,7 @@ import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.components.LoadingStatePanel
@@ -841,7 +842,11 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
         stringResource(R.string.active_workout_hero_summary, elapsed, setsDone)
     }
     val fraction = (completed.toFloat() / total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
-    val softWhite = Color.White.copy(alpha = 0.85f)
+    val titleColor = HeroTone.title
+    val softColor = HeroTone.supporting
+    val ringTrack = HeroTone.track
+    val ringFill = HeroTone.accent
+    val statusDot = MaterialTheme.colorScheme.secondary
     BrandHeroPanel(
         modifier = Modifier
             .fillMaxWidth()
@@ -865,12 +870,12 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                     Box(
                         modifier = Modifier
                             .size(7.dp)
-                            .background(Color.White, CircleShape)
+                            .background(statusDot, CircleShape)
                     )
                     Text(
                         text = stringResource(R.string.active_workout_status_in_progress),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = softWhite
+                        color = softColor
                     )
                 }
                 Text(
@@ -880,14 +885,14 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 36.sp
                     ).tabularDigits(),
-                    color = Color.White,
+                    color = titleColor,
                     maxLines = 1
                 )
                 if (currentExerciseName != null) {
                     Text(
                         text = stringResource(R.string.active_workout_now, currentExerciseName),
                         style = MaterialTheme.typography.labelMedium,
-                        color = softWhite,
+                        color = softColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -904,7 +909,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                     val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
                     val topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f)
                     drawArc(
-                        color = Color.White.copy(alpha = 0.28f),
+                        color = ringTrack,
                         startAngle = 0f,
                         sweepAngle = 360f,
                         useCenter = false,
@@ -914,7 +919,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                     )
                     if (fraction > 0f) {
                         drawArc(
-                            color = Color.White,
+                            color = ringFill,
                             startAngle = -90f,
                             sweepAngle = 360f * fraction,
                             useCenter = false,
@@ -930,13 +935,13 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ).tabularDigits(),
-                        color = Color.White,
+                        color = ringFill,
                         maxLines = 1
                     )
                     Text(
                         text = stringResource(R.string.active_workout_sets_caption),
                         style = TextStyle(fontSize = 10.sp),
-                        color = softWhite,
+                        color = softColor,
                         maxLines = 1
                     )
                 }
@@ -955,7 +960,7 @@ private fun LivePeerWorkoutHero(
             Text(
                 text = peerName,
                 style = MaterialTheme.typography.headlineSmall,
-                color = Color.White
+                color = HeroTone.title
             )
             val progressDescription = if (uiState.livePeerFinished) {
                 stringResource(R.string.live_workout_peer_finished)
@@ -966,11 +971,11 @@ private fun LivePeerWorkoutHero(
                     uiState.livePeerTotalSetCount
                 )
             }
-            InfoPill(text = progressDescription)
+            InfoPill(text = progressDescription, onHero = true)
             Text(
                 text = stringResource(R.string.live_workout_peer_read_only),
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.84f)
+                color = HeroTone.supporting
             )
         }
     }

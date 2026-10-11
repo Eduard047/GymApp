@@ -8,7 +8,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -69,8 +68,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -101,6 +98,8 @@ import com.example.gymapp.ui.components.AppBrandMark
 import com.example.gymapp.ui.components.BrandHeroPanel
 import com.example.gymapp.ui.components.brandButtonColors
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.HeroTone
+import com.example.gymapp.ui.components.brandFillColor
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.appLanguageOptions
 import com.example.gymapp.util.AppLanguage
@@ -712,12 +711,12 @@ private fun AuthLanguageSelector(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = modifier) {
-        // Capsule on the brand hero: white 12% fill, globe + language code, at least 44dp tall.
+        // Capsule on the brand hero: tonal tile fill, globe + language code, at least 44dp tall.
         Row(
             modifier = Modifier
                 .heightIn(min = 44.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.12f))
+                .background(HeroTone.tile)
                 .clickable(role = Role.Button) { expanded = true }
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -725,12 +724,14 @@ private fun AuthLanguageSelector(
             Icon(
                 Icons.Default.Language,
                 contentDescription = stringResource(R.string.cd_language),
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(18.dp),
+                tint = HeroTone.actionLabel
             )
             Text(
                 text = selectedLanguage.visibleCode(),
                 modifier = Modifier.padding(start = 6.dp),
-                style = MaterialTheme.typography.labelLarge
+                style = MaterialTheme.typography.labelLarge,
+                color = HeroTone.actionLabel
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -831,8 +832,8 @@ private fun EmailConfirmationCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f))
-            .border(BorderStroke(1.dp, accent.copy(alpha = 0.3f)), shape)
+            .background(HeroTone.surface)
+            .border(BorderStroke(1.dp, HeroTone.outline), shape)
             .semantics { liveRegion = LiveRegionMode.Polite }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -961,7 +962,7 @@ fun PasswordUpdateScreen(
                         Text(
                             text = stringResource(R.string.auth_recovery_verified),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.84f)
+                            color = HeroTone.supporting
                         )
                     }
                 }
@@ -1075,34 +1076,14 @@ private fun AuthHeroMark(
     imageVector: ImageVector,
     modifier: Modifier = Modifier
 ) {
-    val darkTheme = isSystemInDarkTheme()
-    val leading = if (darkTheme) Color(0xFF132636) else Color(0xFF102A42)
-    val trailing = if (darkTheme) Color(0xFF214C40) else Color(0xFF35627E)
     val shape = RoundedCornerShape(22.dp)
 
+    // Flat brand-blue badge: a solid fill with a white glyph, no gradient or shadow.
     Box(
         modifier = modifier
             .size(72.dp)
-            .shadow(
-                elevation = 16.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
-                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
-            )
             .clip(shape)
-            .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(leading, trailing),
-                    start = Offset.Zero,
-                    end = Offset.Infinite
-                ),
-                shape = shape
-            )
-            .border(
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-                shape = shape
-            ),
+            .background(brandFillColor(), shape),
         contentAlignment = Alignment.Center
     ) {
         Icon(

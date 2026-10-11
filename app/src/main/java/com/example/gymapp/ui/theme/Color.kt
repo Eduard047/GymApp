@@ -23,8 +23,23 @@ val FrostMuted = Color(0xFFAABBD1)
 val CobaltNight = Color(0xFF8BB9FF)
 val AmberNight = Color(0xFFFFC56B)
 
-// Brand fill pair shared with iOS: card base and its bright end, per appearance.
+// Brand fill shared with iOS: the solid primary-action blue per appearance.
 val BrandFill = Color(0xFF216BD7)
-val BrandFillBright = Color(0xFF3A8DFF)
 val BrandFillNight = Color(0xFF2E72D2)
-val BrandFillBrightNight = Color(0xFF3F84E5)
+
+// Flat tonal hero surface shared with iOS (`GymTheme.heroSurface`) and the PWA (`--hero-surface`).
+// Every hero or brand card is one solid fill with a hairline outline and dark text; the primary
+// action inside is a solid brand-blue capsule. All text pairs below stay >= 4.5:1.
+val HeroSurface = Color(0xFFEEF4FF)
+val HeroSurfaceNight = Color(0xFF10233A)
+val HeroOutline = Color(0xFFDCE5F2)
+val HeroOutlineNight = Color(0xFF22395A)
+val HeroTitle = Ink
+val HeroTitleNight = Color(0xFFF2F6FC)
+val HeroSupporting = InkMuted
+val HeroSupportingNight = Color(0xFFA7B6CB)
+val HeroTile = Paper
+val HeroTileNight = Color(0xFF172C47)
+val HeroAccent = Cobalt
+val HeroAccentNight = Color(0xFF7FB2FF)
+val HeroActionLabelNight = Color(0xFF8AB8FF)

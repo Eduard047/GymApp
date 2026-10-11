@@ -843,7 +843,7 @@ test("Progress overview uses the shared inline navigator, compact hero, and life
   assert.match(hero, /data-action="open-ranks"/);
   assert.doesNotMatch(hero, /TOTAL XP|hero-split|Week streak/);
   assert.match(run("uk", "return soloProgressHero();"), /Наступний титул[\s\S]*Переглянути ранги/);
-  assert.match(stylesSource, /\.solo-progress-hero \{[^}]*linear-gradient\(145deg, var\(--brand-fill\)/);
+  assert.match(stylesSource, /\.solo-progress-hero \{[^}]*background:\s*var\(--hero-surface\)/);
 
   const lifetime = run("ru", "return lifetimeProgressCard();");
   assert.match(lifetime, /Прогресс за всё время[\s\S]*Тренировки[\s\S]*Серия недель[\s\S]*Объём/);

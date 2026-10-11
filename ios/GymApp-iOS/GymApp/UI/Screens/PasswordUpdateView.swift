@@ -110,7 +110,7 @@ struct PasswordUpdateView: View {
                                     .font(.title2.bold())
                                 Text(supportingText)
                                     .font(.subheadline)
-                                    .foregroundStyle(Color.white.opacity(0.84))
+                                    .foregroundStyle(GymTheme.onHeroSecondary)
                             }
                         }
 

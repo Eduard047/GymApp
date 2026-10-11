@@ -639,7 +639,7 @@ public struct WorkoutsView: View {
                     ))
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
-                    .foregroundStyle(Color.white.opacity(0.76))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                     Text(gymText(
                         "Continue your plan",
                         "Продовж свій план",
@@ -647,7 +647,7 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(.title2.bold())
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(GymTheme.onHero)
                 }
                 continueRetainedPlanAction
                     .appTutorialPrimaryActionTarget()
@@ -665,7 +665,7 @@ public struct WorkoutsView: View {
                             languageCode: languageCode
                         ))
                         .font(.title2.bold())
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(GymTheme.onHero)
 
                         Spacer(minLength: 8)
 
@@ -678,14 +678,20 @@ public struct WorkoutsView: View {
                                 .font(.headline)
                                 .foregroundStyle(
                                     showsActivationOptions
-                                        ? GymTheme.brandFill
-                                        : Color.white
+                                        ? GymTheme.onPrimary
+                                        : GymTheme.heroActionLabel
                                 )
                                 .frame(width: 44, height: 44)
                                 .background(
-                                    showsActivationOptions ? Color.white : Color.white.opacity(0.16),
+                                    showsActivationOptions ? GymTheme.brandFill : GymTheme.heroTile,
                                     in: Circle()
                                 )
+                                .overlay {
+                                    Circle().strokeBorder(
+                                        showsActivationOptions ? Color.clear : GymTheme.heroOutline,
+                                        lineWidth: GymTheme.hairlineWidth
+                                    )
+                                }
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(gymText(
@@ -707,7 +713,7 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.86))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                     if showsActivationOptions {
@@ -715,8 +721,8 @@ public struct WorkoutsView: View {
                             TrainingSettingsSummaryRow(
                                 profile: activationProfile,
                                 languageCode: languageCode,
-                                textColor: Color.white.opacity(0.86),
-                                linkColor: Color.white
+                                textColor: GymTheme.onHeroSecondary,
+                                linkColor: GymTheme.heroActionLabel
                             ) {
                                 showsTrainingSettings = true
                             }
@@ -737,14 +743,14 @@ public struct WorkoutsView: View {
                                     systemImage: "pencil"
                                 )
                                 .font(.headline)
-                                .foregroundStyle(Color.white)
+                                .foregroundStyle(GymTheme.heroActionLabel)
                                 .frame(maxWidth: .infinity, minHeight: 48)
                             }
                             .buttonStyle(.plain)
                         }
                         .padding(.top, 8)
-                        .tint(.white)
-                        .foregroundStyle(Color.white)
+                        .tint(GymTheme.heroActionLabel)
+                        .foregroundStyle(GymTheme.onHero)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
@@ -757,10 +763,10 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.07, green: 0.21, blue: 0.38))
+                    .foregroundStyle(GymTheme.onPrimary)
                     .frame(maxWidth: .infinity, minHeight: 54)
                     .background(
-                        Color.white,
+                        GymTheme.brandFill,
                         in: RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius)
                     )
                 }
@@ -779,7 +785,7 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(GymTheme.heroActionLabel)
                     .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.plain)
@@ -789,22 +795,12 @@ public struct WorkoutsView: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            activationLensShape.fill(
-                hasRetainedWorkoutDraft
-                    ? GymTheme.heroGradient
-                    : LinearGradient(
-                        colors: [GymTheme.brandFill, GymTheme.brandFillBright],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-            )
-        }
+        .background { activationLensShape.fill(GymTheme.heroSurface) }
         .overlay {
-            activationLensShape.strokeBorder(Color.white.opacity(0.34), lineWidth: 1)
+            activationLensShape.strokeBorder(GymTheme.heroOutline, lineWidth: 1)
         }
         .clipShape(activationLensShape)
-        .shadow(color: GymTheme.primary.opacity(0.18), radius: 11, x: 0, y: 8)
+        .shadow(color: Color.black.opacity(0.055), radius: 8, x: 0, y: 4)
         .appTutorialTarget(.todayFocus)
     }
 
@@ -855,7 +851,7 @@ public struct WorkoutsView: View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.86))
+                .foregroundStyle(GymTheme.onHeroSecondary)
 
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
@@ -890,7 +886,7 @@ public struct WorkoutsView: View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.86))
+                .foregroundStyle(GymTheme.onHeroSecondary)
 
             HStack(spacing: 8) {
                 ForEach(options, id: \.self) { option in
@@ -1041,7 +1037,7 @@ public struct WorkoutsView: View {
                     weight: .bold
                 ))
                 .tracking(-0.8)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(GymTheme.onHero)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 if completedToday {
@@ -1052,7 +1048,7 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1088,26 +1084,10 @@ public struct WorkoutsView: View {
         }
         .padding(completedToday ? 18 : 22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 28,
-                bottomLeadingRadius: 28,
-                bottomTrailingRadius: 28,
-                topTrailingRadius: 28,
-                style: .continuous
-            )
-            .fill(GymTheme.heroGradient)
-        }
-        .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: 28,
-                bottomLeadingRadius: 28,
-                bottomTrailingRadius: 28,
-                topTrailingRadius: 28,
-                style: .continuous
-            )
-        )
-        .shadow(color: GymTheme.primary.opacity(0.24), radius: 24, x: 0, y: 14)
+        .background { activationLensShape.fill(GymTheme.heroSurface) }
+        .overlay { activationLensShape.strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
+        .clipShape(activationLensShape)
+        .shadow(color: Color.black.opacity(0.055), radius: 8, x: 0, y: 4)
         .appTutorialTarget(.todayFocus)
     }
 
@@ -1129,7 +1109,7 @@ public struct WorkoutsView: View {
                 if let guidance {
                     Text(todayPlanExplanation(guidance))
                         .font(.caption)
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(GymTheme.onHeroSecondary)
                 }
                 todayHeroMetricsRow(projection.heroMetrics)
                 if includeManualAction {
@@ -1144,6 +1124,7 @@ public struct WorkoutsView: View {
                             ),
                             systemImage: "plus"
                         )
+                        .foregroundStyle(GymTheme.heroActionLabel)
                         .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.plain)
@@ -1151,8 +1132,8 @@ public struct WorkoutsView: View {
             }
             .padding(.top, 8)
         }
-        .tint(.white)
-        .foregroundStyle(Color.white)
+        .tint(GymTheme.heroActionLabel)
+        .foregroundStyle(GymTheme.onHero)
     }
 
     private var activeFocusLens: some View {
@@ -1173,7 +1154,7 @@ public struct WorkoutsView: View {
                     )
             )
             .font(.title2.bold())
-            .foregroundStyle(Color.white)
+            .foregroundStyle(GymTheme.onHero)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
 
@@ -1185,7 +1166,7 @@ public struct WorkoutsView: View {
                     languageCode: languageCode
                 ))
                 .font(.subheadline.monospacedDigit())
-                .foregroundStyle(Color.white)
+                .foregroundStyle(GymTheme.onHeroSecondary)
             }
 
             DisclosureGroup(
@@ -1202,8 +1183,8 @@ public struct WorkoutsView: View {
                 }
                 .padding(.top, 8)
             }
-            .tint(.white)
-            .foregroundStyle(Color.white)
+            .tint(GymTheme.heroActionLabel)
+            .foregroundStyle(GymTheme.onHero)
 
             Button(action: onContinueWorkout) {
                 Label(
@@ -1216,11 +1197,11 @@ public struct WorkoutsView: View {
                     systemImage: "play.fill"
                 )
                 .font(.subheadline.bold())
-                .foregroundStyle(Color(red: 0.07, green: 0.21, blue: 0.38))
+                .foregroundStyle(GymTheme.onPrimary)
                 .frame(maxWidth: .infinity, minHeight: 54)
             }
             .buttonStyle(.plain)
-            .background(Color.white, in: Capsule())
+            .background(GymTheme.brandFill, in: Capsule())
             .appTutorialPrimaryActionTarget()
             .appTutorialPrimaryActionFrame(
                 isEnabled: tracksTutorialPrimaryActionFrame,
@@ -1247,20 +1228,21 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(.subheadline.bold())
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(GymTheme.error)
                     .frame(maxWidth: .infinity, minHeight: 48)
                 }
                 .buttonStyle(.plain)
-                .background(Color.white.opacity(0.08), in: Capsule())
-                .overlay { Capsule().strokeBorder(Color.white.opacity(0.36), lineWidth: 1) }
+                .background(GymTheme.heroTile, in: Capsule())
+                .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background { activationLensShape.fill(GymTheme.heroGradient) }
+        .background { activationLensShape.fill(GymTheme.heroSurface) }
+        .overlay { activationLensShape.strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         .clipShape(activationLensShape)
-        .shadow(color: GymTheme.primary.opacity(0.24), radius: 24, x: 0, y: 14)
+        .shadow(color: Color.black.opacity(0.055), radius: 8, x: 0, y: 4)
         .appTutorialTarget(.todayFocus)
     }
 
@@ -1287,13 +1269,13 @@ public struct WorkoutsView: View {
                     .rotationEffect(.degrees(showsActiveMoreActions ? 180 : 0))
             }
             .font(.subheadline.bold())
-            .foregroundStyle(Color.white)
+            .foregroundStyle(GymTheme.heroActionLabel)
             .padding(.horizontal, 18)
             .frame(maxWidth: .infinity, minHeight: 48)
         }
         .buttonStyle(.plain)
-        .background(Color.white.opacity(0.08), in: Capsule())
-        .overlay { Capsule().strokeBorder(Color.white.opacity(0.36), lineWidth: 1) }
+        .background(GymTheme.heroTile, in: Capsule())
+        .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         .accessibilityLabel(gymText(
             "More workout options",
             "Інші дії",
@@ -1338,7 +1320,7 @@ public struct WorkoutsView: View {
             Text(value).font(.headline.bold().monospacedDigit())
             Text(label).font(.caption2)
         }
-        .foregroundStyle(Color.white.opacity(0.9))
+        .foregroundStyle(GymTheme.onHeroSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
@@ -1375,7 +1357,7 @@ public struct WorkoutsView: View {
         return VStack(alignment: .leading, spacing: 10) {
             Text(todayPlanExplanation(guidance))
                 .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.9))
+                .foregroundStyle(GymTheme.onHeroSecondary)
             HStack(spacing: 8) {
                 Image(systemName: "calendar.badge.clock")
                 Text(gymText(
@@ -1386,7 +1368,7 @@ public struct WorkoutsView: View {
                 ))
             }
             .font(.subheadline.bold())
-            .foregroundStyle(Color.white)
+            .foregroundStyle(GymTheme.onHero)
         }
     }
 
@@ -2235,7 +2217,7 @@ public struct WorkoutsView: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(Color.white.opacity(0.9))
+        .foregroundStyle(GymTheme.onHeroSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
@@ -2375,7 +2357,7 @@ public struct WorkoutsView: View {
             Label(title, systemImage: systemImage)
                 .font(.subheadline.bold())
                 .foregroundStyle(
-                    primary ? Color(red: 0.07, green: 0.21, blue: 0.38) : Color.white
+                    primary ? GymTheme.onPrimary : GymTheme.heroActionLabel
                 )
                 .padding(.horizontal, 18)
                 .frame(maxWidth: .infinity, minHeight: primary ? 54 : 48)
@@ -2385,11 +2367,11 @@ public struct WorkoutsView: View {
 
         if !primary {
             button
-                .background(Color.white.opacity(0.08), in: Capsule())
-                .overlay { Capsule().strokeBorder(Color.white.opacity(0.36), lineWidth: 1) }
+                .background(GymTheme.heroTile, in: Capsule())
+                .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         } else {
             button
-                .background(Color.white, in: Capsule())
+                .background(GymTheme.brandFill, in: Capsule())
         }
     }
 
@@ -2429,25 +2411,22 @@ public struct WorkoutsView: View {
                     if let badgeCount {
                         Text("\(badgeCount)")
                             .font(.caption2.bold())
-                            .foregroundStyle(Color(red: 0.07, green: 0.21, blue: 0.38))
+                            .foregroundStyle(GymTheme.onPrimary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.white, in: Capsule())
+                            .background(GymTheme.brandFill, in: Capsule())
                     }
                 }
                 .font(.subheadline.bold())
-                .foregroundStyle(Color.white)
+                .foregroundStyle(GymTheme.heroActionLabel)
                 .padding(.horizontal, 18)
                 .frame(maxWidth: .infinity, minHeight: 48)
             }
             .buttonStyle(.plain)
-            .background(
-                badgeCount != nil ? Color.white.opacity(0.22) : Color.white.opacity(0.08),
-                in: Capsule()
-            )
+            .background(GymTheme.heroTile, in: Capsule())
             .overlay {
                 Capsule().strokeBorder(
-                    Color.white.opacity(badgeCount != nil ? 0.7 : 0.36),
+                    badgeCount != nil ? GymTheme.heroAccent : GymTheme.heroOutline,
                     lineWidth: 1
                 )
             }
@@ -2874,16 +2853,16 @@ private struct ActivationChipButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(isSelected ? Color(red: 0.04, green: 0.15, blue: 0.29) : Color.white)
+            .foregroundStyle(isSelected ? GymTheme.onPrimary : GymTheme.onHero)
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
             .background(
-                isSelected ? Color(red: 0.88, green: 0.98, blue: 0.96) : Color.clear,
+                isSelected ? GymTheme.brandFill : GymTheme.heroTile,
                 in: Capsule()
             )
             .overlay {
                 Capsule().strokeBorder(
-                    isSelected ? Color(red: 0.88, green: 0.98, blue: 0.96) : Color.white.opacity(0.58),
+                    isSelected ? GymTheme.brandFill : GymTheme.heroOutline,
                     lineWidth: 1
                 )
             }

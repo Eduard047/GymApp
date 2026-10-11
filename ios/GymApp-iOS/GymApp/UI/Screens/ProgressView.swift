@@ -628,7 +628,7 @@ struct ExerciseProgressView: View {
                     .accessibilityAddTraits(.isHeader)
                 Text(spotlightSubtitle)
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.86))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
 
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 130), spacing: 8)],
@@ -674,11 +674,11 @@ struct ExerciseProgressView: View {
     private func spotlightPill(_ text: String) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(Color.white)
+            .foregroundStyle(GymTheme.onHero)
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
-            .background(Color.white.opacity(0.12), in: Capsule())
-            .overlay { Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1) }
+            .background(GymTheme.heroTile, in: Capsule())
+            .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -1255,13 +1255,7 @@ private struct ExerciseProgressChartsCard: View {
                     yStart: .value(t("Baseline", "Основа", "Базовый уровень"), 0),
                     yEnd: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [GymTheme.primary.opacity(0.28), GymTheme.primary.opacity(0.02)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .foregroundStyle(GymTheme.primary.opacity(0.1))
 
                 LineMark(
                     x: .value(t("Session", "Сесія", "Сессия"), point.date),
@@ -1315,8 +1309,8 @@ private struct ExerciseProgressChartsCard: View {
                 )
                 .foregroundStyle(
                     point.id == latestPointID
-                        ? GymTheme.tertiary.gradient
-                        : GymTheme.secondary.gradient
+                        ? GymTheme.tertiary
+                        : GymTheme.secondary
                 )
                 .cornerRadius(7)
                 .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))

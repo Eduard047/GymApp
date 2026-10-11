@@ -45,7 +45,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
@@ -68,9 +67,20 @@ import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import com.example.gymapp.R
 import com.example.gymapp.ui.theme.BrandFill
-import com.example.gymapp.ui.theme.BrandFillBright
-import com.example.gymapp.ui.theme.BrandFillBrightNight
 import com.example.gymapp.ui.theme.BrandFillNight
+import com.example.gymapp.ui.theme.HeroAccent
+import com.example.gymapp.ui.theme.HeroAccentNight
+import com.example.gymapp.ui.theme.HeroActionLabelNight
+import com.example.gymapp.ui.theme.HeroOutline
+import com.example.gymapp.ui.theme.HeroOutlineNight
+import com.example.gymapp.ui.theme.HeroSupporting
+import com.example.gymapp.ui.theme.HeroSupportingNight
+import com.example.gymapp.ui.theme.HeroSurface
+import com.example.gymapp.ui.theme.HeroSurfaceNight
+import com.example.gymapp.ui.theme.HeroTile
+import com.example.gymapp.ui.theme.HeroTileNight
+import com.example.gymapp.ui.theme.HeroTitle
+import com.example.gymapp.ui.theme.HeroTitleNight
 import com.example.gymapp.ui.theme.GymCompactShape
 import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymDataTypography
@@ -106,13 +116,10 @@ fun AppPanel(
     content: @Composable () -> Unit
 ) {
     val shape = GymPanelShape
-    val panelColor = if (highlighted) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        containerColor
-    }
+    // A highlighted panel is the flat tonal hero surface with dark text, never a solid-blue fill.
+    val panelColor = if (highlighted) HeroTone.surface else containerColor
     val strokeColor = if (highlighted) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        HeroTone.outline
     } else {
         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
     }
@@ -132,6 +139,52 @@ fun AppPanel(
     }
 }
 
+/**
+ * Flat tonal hero palette (iOS `GymTheme.heroSurface`, PWA `--hero-surface`): one solid fill, a
+ * hairline outline, dark text, solid white / navy inner tiles and a solid blue primary capsule.
+ */
+object HeroTone {
+    val surface: Color @Composable get() = if (isSystemInDarkTheme()) HeroSurfaceNight else HeroSurface
+    val outline: Color @Composable get() = if (isSystemInDarkTheme()) HeroOutlineNight else HeroOutline
+    val title: Color @Composable get() = if (isSystemInDarkTheme()) HeroTitleNight else HeroTitle
+    val supporting: Color @Composable get() = if (isSystemInDarkTheme()) HeroSupportingNight else HeroSupporting
+    val tile: Color @Composable get() = if (isSystemInDarkTheme()) HeroTileNight else HeroTile
+    /** Progress fill and the one emphasized value per card. */
+    val accent: Color @Composable get() = if (isSystemInDarkTheme()) HeroAccentNight else HeroAccent
+    /** Progress track (same as the outline). */
+    val track: Color @Composable get() = outline
+    /** Label colour of secondary (tonal or text) actions. */
+    val actionLabel: Color @Composable get() = if (isSystemInDarkTheme()) HeroActionLabelNight else HeroAccent
+}
+
+/** Solid primary capsule inside a hero card: brand fill with a white label. */
+@Composable
+fun heroPrimaryButtonColors(): ButtonColors = brandButtonColors()
+
+/** Tonal secondary action inside a hero card: white / navy fill with an Active Current label. */
+@Composable
+fun heroSecondaryButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
+    containerColor = HeroTone.tile,
+    contentColor = HeroTone.actionLabel
+)
+
+/** Secondary outlined action inside a hero card: tonal white / navy fill, hairline, blue label. */
+@Composable
+fun heroSecondaryOutlinedColors(): ButtonColors = ButtonDefaults.outlinedButtonColors(
+    containerColor = HeroTone.tile,
+    contentColor = HeroTone.actionLabel
+)
+
+@Composable
+fun heroSecondaryBorder(): BorderStroke = BorderStroke(1.dp, HeroTone.outline)
+
+/** Text-style secondary action inside a hero card (no fill). */
+@Composable
+fun heroTextButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
+    containerColor = Color.Transparent,
+    contentColor = HeroTone.actionLabel
+)
+
 @Composable
 fun HeroPanel(
     modifier: Modifier = Modifier,
@@ -139,29 +192,18 @@ fun HeroPanel(
     content: @Composable () -> Unit
 ) {
     val shape = GymPanelShape
-    // Hero panels represent the current focus, so they use the primary blue role.
-    // The darker container role keeps the same hierarchy in dark appearance.
-    val darkTheme = isSystemInDarkTheme()
-    val container = if (darkTheme) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
-    val heroContentColor = if (darkTheme) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onPrimary
-    }
+    // Hero panels represent the current focus: a flat tonal surface with dark text.
+    val title = HeroTone.title
     Surface(
         modifier = modifier,
         shape = shape,
-        color = container,
-        contentColor = heroContentColor,
-        border = BorderStroke(1.dp, heroContentColor.copy(alpha = 0.18f)),
+        color = HeroTone.surface,
+        contentColor = title,
+        border = BorderStroke(1.dp, HeroTone.outline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
-        CompositionLocalProvider(LocalContentColor provides heroContentColor) {
+        CompositionLocalProvider(LocalContentColor provides title) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -174,8 +216,8 @@ fun HeroPanel(
 }
 
 /**
- * Brand-blue gradient container shared with iOS (`GymHeroPanel` with the brand gradient): the
- * compact hero surface used where the generic hero blue would dominate the screen.
+ * Compact tonal hero container (iOS `GymHeroPanel`) used where a full [HeroPanel] would dominate
+ * the screen.
  */
 @Composable
 fun BrandHeroPanel(
@@ -197,16 +239,13 @@ fun BrandHeroPanel(
     contentPadding: PaddingValues,
     content: @Composable () -> Unit
 ) {
-    val brush = if (isSystemInDarkTheme()) {
-        Brush.linearGradient(listOf(BrandFillNight, BrandFillBrightNight))
-    } else {
-        Brush.linearGradient(listOf(BrandFill, BrandFillBright))
-    }
-    CompositionLocalProvider(LocalContentColor provides Color.White) {
+    val title = HeroTone.title
+    CompositionLocalProvider(LocalContentColor provides title) {
         Box(
             modifier = modifier
                 .clip(GymPanelShape)
-                .background(brush)
+                .background(HeroTone.surface)
+                .border(BorderStroke(1.dp, HeroTone.outline), GymPanelShape)
                 .padding(contentPadding)
         ) {
             content()
@@ -357,22 +396,22 @@ fun MetricTile(
 ) {
     val shape = GymCompactShape
     val tileContainerColor = if (onHero) {
-        Color.White.copy(alpha = 0.11f)
+        HeroTone.tile
     } else {
         MaterialTheme.colorScheme.surfaceVariant
     }
     val tileContentColor = if (onHero) {
-        Color.White
+        HeroTone.title
     } else {
         MaterialTheme.colorScheme.onSurface
     }
     val labelColor = if (onHero) {
-        Color.White.copy(alpha = 0.76f)
+        HeroTone.supporting
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     val borderColor = if (onHero) {
-        Color.White.copy(alpha = 0.14f)
+        HeroTone.outline
     } else {
         MaterialTheme.colorScheme.outlineVariant
     }
@@ -450,14 +489,17 @@ fun InfoPill(
     text: String,
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.primary,
-    leadingIcon: ImageVector? = null
+    leadingIcon: ImageVector? = null,
+    onHero: Boolean = false
 ) {
+    // On a hero card the pill is a solid white / navy chip with the title colour; otherwise it is
+    // a 12% tint of the accent.
     Surface(
         modifier = modifier,
-        color = accent.copy(alpha = 0.12f),
-        contentColor = accent,
+        color = if (onHero) HeroTone.tile else accent.copy(alpha = 0.12f),
+        contentColor = if (onHero) HeroTone.title else accent,
         shape = RoundedCornerShape(999.dp),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f))
+        border = BorderStroke(1.dp, if (onHero) HeroTone.outline else accent.copy(alpha = 0.22f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),

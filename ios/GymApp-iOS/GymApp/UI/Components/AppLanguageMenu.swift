@@ -33,18 +33,18 @@ struct AppLanguageMenu: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(minWidth: 44, minHeight: 44)
                     .padding(.horizontal, 7)
-                    .foregroundStyle(onHero ? Color.white : GymTheme.primary)
+                    .foregroundStyle(onHero ? GymTheme.heroActionLabel : GymTheme.primary)
                     .background(
                         Capsule().fill(
                             onHero
-                                ? Color.white.opacity(0.12)
+                                ? GymTheme.heroTile
                                 : GymTheme.surfaceVariant.opacity(0.72)
                         )
                     )
                     .overlay {
                         Capsule().strokeBorder(
                             onHero
-                                ? Color.white.opacity(0.26)
+                                ? GymTheme.heroOutline
                                 : GymTheme.outlineSoft.opacity(0.72),
                             lineWidth: 1
                         )

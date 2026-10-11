@@ -36,17 +36,11 @@ public enum GymTheme {
     /// dark enough in both appearances for white-on-fill contrast: light
     /// #216BD7 keeps ~5.1:1, dark #2E72D2 keeps ~4.7:1 against white.
     public static let brandFill = adaptive(light: 0x216BD7, dark: 0x2E72D2)
-    /// Bright field of the brand blue (`active-current-bright` in DESIGN.md),
-    /// for the far end of a subtle `brandFill` → `brandFillBright` gradient.
-    /// Dark value #3F84E5 keeps ~3.7:1 against white, meeting the ≥3:1 large-text
-    /// bar for the bright end of a gradient (most text sits nearer `brandFill`).
-    public static let brandFillBright = adaptive(light: 0x3A8DFF, dark: 0x3F84E5)
     public static let onPrimary = Color.white
     public static let secondary = adaptive(light: 0x23815E, dark: 0x77DDB7)
     public static let tertiary = adaptive(light: 0x6753D6, dark: 0xB4A6FF)
 
     public static let background = adaptive(light: 0xF7FAFF, dark: 0x071321)
-    public static let backgroundRaised = adaptive(light: 0xFBFDFF, dark: 0x0A1829)
     public static let surface = adaptive(light: 0xFFFFFF, dark: 0x0D1D30)
     public static let surfaceVariant = adaptive(light: 0xEAF2FF, dark: 0x142A43)
 
@@ -56,10 +50,20 @@ public enum GymTheme {
     public static let outlineSoft = adaptive(light: 0xDCE5F2, dark: 0x263E59)
     public static let error = adaptive(light: 0xB42318, dark: 0xFFB4AC)
 
-    public static let heroLeading = adaptive(light: 0x1A62CB, dark: 0x124A96)
-    public static let heroMiddle = adaptive(light: 0x1E66D0, dark: 0x1569BB)
-    public static let heroTrailing = adaptive(light: 0x1A57B6, dark: 0x164F9B)
-    public static let onHero = Color.white
+    /// Flat tonal hero/brand surface (no gradient): light #EEF4FF, dark #10233A.
+    public static let heroSurface = adaptive(light: 0xEEF4FF, dark: 0x10233A)
+    /// Hairline border of the tonal hero surface; also the progress track on it.
+    public static let heroOutline = adaptive(light: 0xDCE5F2, dark: 0x22395A)
+    /// Title and key numbers on `heroSurface` (Clear Label).
+    public static let onHero = adaptive(light: 0x10233F, dark: 0xF2F6FC)
+    /// Supporting text on `heroSurface` (Muted Label), >= 4.5:1 in both modes.
+    public static let onHeroSecondary = adaptive(light: 0x60708A, dark: 0xA7B6CB)
+    /// Inner tiles, pills and chips sitting on `heroSurface`.
+    public static let heroTile = adaptive(light: 0xFFFFFF, dark: 0x172C47)
+    /// The single emphasised value, progress fill and link-like label on `heroSurface`.
+    public static let heroAccent = adaptive(light: 0x216BD7, dark: 0x7FB2FF)
+    /// Secondary action label on `heroSurface` / `heroTile`.
+    public static let heroActionLabel = adaptive(light: 0x216BD7, dark: 0x8AB8FF)
 
     public static let panelCornerRadius: CGFloat = 26
     public static let compactCornerRadius: CGFloat = 20
@@ -69,22 +73,6 @@ public enum GymTheme {
     public static let screenBottomInset: CGFloat = 28
     public static let contentSpacing: CGFloat = 14
     public static let hairlineWidth: CGFloat = 0.75
-
-    public static var backgroundGradient: LinearGradient {
-        LinearGradient(
-            colors: [backgroundRaised, background],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    public static var heroGradient: LinearGradient {
-        LinearGradient(
-            colors: [heroLeading, heroMiddle, heroTrailing],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
 
     private static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(
@@ -97,8 +85,6 @@ public enum GymTheme {
 
 /// Quiet full-screen canvas shared by GymApp screens.
 public struct GymBackground<Content: View>: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
     private let content: Content
 
     public init(@ViewBuilder content: () -> Content) {
@@ -107,14 +93,9 @@ public struct GymBackground<Content: View>: View {
 
     public var body: some View {
         ZStack {
-            Group {
-                if reduceTransparency {
-                    Rectangle().fill(GymTheme.background)
-                } else {
-                    Rectangle().fill(GymTheme.backgroundGradient)
-                }
-            }
-            .ignoresSafeArea()
+            Rectangle()
+                .fill(GymTheme.background)
+                .ignoresSafeArea()
 
             content
         }

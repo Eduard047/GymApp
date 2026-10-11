@@ -81,13 +81,7 @@ public struct AuthView: View {
 
     private var brandHeader: some View {
         GymHeroPanel(
-            contentPadding: EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16),
-            gradient: LinearGradient(
-                colors: [GymTheme.brandFill, GymTheme.brandFillBright],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            solidFill: GymTheme.brandFill
+            contentPadding: EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
         ) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 12) {

@@ -41,6 +41,7 @@ import com.example.gymapp.R
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.viewmodel.RankProgressUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutListUiState
@@ -113,14 +114,14 @@ fun RanksScreen(
                             imageVector = Icons.Default.EmojiEvents,
                             contentDescription = null,
                             modifier = Modifier.size(30.dp),
-                            tint = Color.White
+                            tint = HeroTone.accent
                         )
                         Text(
                             text = currentTitle,
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = HeroTone.title,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -130,14 +131,14 @@ fun RanksScreen(
                         text = "${stringResource(R.string.post_workout_level, uiState.soloProgress.level)} · " +
                             stringResource(R.string.ranks_xp_value, formatXp(totalXp, locale)),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.82f)
+                        color = HeroTone.supporting
                     )
 
                     if (nextRank != null) {
                         RankProgressTrack(
                             progress = heroProgress,
-                            trackColor = Color.White.copy(alpha = 0.25f),
-                            fillColor = Color.White,
+                            trackColor = HeroTone.track,
+                            fillColor = HeroTone.accent,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(6.dp)
@@ -151,7 +152,7 @@ fun RanksScreen(
                                 nextRank.title
                             ),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.78f),
+                            color = HeroTone.supporting,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )

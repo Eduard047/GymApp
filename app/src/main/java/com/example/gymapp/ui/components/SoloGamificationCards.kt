@@ -105,7 +105,7 @@ fun SoloProgressHero(
                 text = stringResource(R.string.solo_progress_eyebrow),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White.copy(alpha = 0.8f)
+                color = HeroTone.supporting
             )
 
             SoloHeroIdentity(progress = progress, locale = locale)
@@ -117,8 +117,8 @@ fun SoloProgressHero(
                     .height(8.dp)
                     .clip(RoundedCornerShape(4.dp))
                     .semantics { contentDescription = xpToNext },
-                color = Color.White,
-                trackColor = Color.White.copy(alpha = 0.2f)
+                color = HeroTone.accent,
+                trackColor = HeroTone.track
             )
 
             Row(
@@ -154,7 +154,7 @@ fun SoloProgressHero(
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.13f))
+                    .background(HeroTone.tile)
                     .clickable(role = Role.Button, onClick = onOpenRanks)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -164,13 +164,13 @@ fun SoloProgressHero(
                     imageVector = Icons.Default.EmojiEvents,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
-                    tint = Color.White
+                    tint = HeroTone.actionLabel
                 )
                 Text(
                     text = stringResource(R.string.action_view_ranks),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = HeroTone.actionLabel
                 )
             }
         }
@@ -225,14 +225,14 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
                     Text(
                         text = progress.title,
                         style = titleStyle,
-                        color = Color.White,
+                        color = HeroTone.title,
                         maxLines = 1,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
                         text = compactXp,
                         style = xpStyle,
-                        color = Color.White,
+                        color = HeroTone.accent,
                         maxLines = 1
                     )
                 }
@@ -246,7 +246,7 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
                         Text(
                             text = progress.title,
                             style = titleStyle,
-                            color = Color.White,
+                            color = HeroTone.title,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -254,7 +254,7 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
                         text = earnedXp,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White.copy(alpha = 0.9f)
+                        color = HeroTone.accent
                     )
                 }
             }
@@ -262,7 +262,7 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
         Text(
             text = progress.summary,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.86f)
+            color = HeroTone.supporting
         )
     }
 }
@@ -272,12 +272,12 @@ private fun SoloLevelPill(text: String, style: TextStyle) {
     Text(
         text = text,
         style = style,
-        color = Color.White,
+        color = HeroTone.title,
         maxLines = 1,
         softWrap = false,
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
-            .background(Color.White.copy(alpha = 0.13f))
+            .background(HeroTone.tile)
             .padding(horizontal = 11.dp, vertical = 7.dp)
     )
 }

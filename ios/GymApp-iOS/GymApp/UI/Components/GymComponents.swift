@@ -47,39 +47,30 @@ public struct GymPanel<Content: View>: View {
     @ViewBuilder
     private var panelBackground: some View {
         let shape = RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous)
-        shape.fill(highlighted && reduceTransparency ? GymTheme.surfaceVariant : GymTheme.surface)
-        if highlighted && !reduceTransparency {
-            shape.fill(GymTheme.primary.opacity(0.035))
-        }
+        shape.fill(highlighted ? GymTheme.heroSurface : GymTheme.surface)
     }
 
     private var borderColor: Color {
         if highlighted {
-            return GymTheme.primary.opacity(colorSchemeContrast == .increased ? 0.9 : 0.22)
+            return colorSchemeContrast == .increased ? GymTheme.primary : GymTheme.heroOutline
         }
         return GymTheme.outlineSoft.opacity(colorSchemeContrast == .increased ? 1 : 0.68)
     }
 }
 
-/// High-emphasis ink-and-cobalt card for the single focal message on a screen.
+/// High-emphasis flat tonal card for the single focal message on a screen.
 public struct GymHeroPanel<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     private let contentPadding: EdgeInsets
-    private let gradient: LinearGradient
-    private let solidFill: Color
     private let content: Content
 
     public init(
         contentPadding: EdgeInsets = EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20),
-        gradient: LinearGradient = GymTheme.heroGradient,
-        solidFill: Color = GymTheme.heroLeading,
         @ViewBuilder content: () -> Content
     ) {
         self.contentPadding = contentPadding
-        self.gradient = gradient
-        self.solidFill = solidFill
         self.content = content()
     }
 
@@ -88,21 +79,20 @@ public struct GymHeroPanel<Content: View>: View {
             .padding(contentPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(GymTheme.onHero)
-            .background {
-                if reduceTransparency {
-                    lensShape.fill(solidFill)
-                } else {
-                    lensShape.fill(gradient)
-                }
-            }
+            .background { lensShape.fill(GymTheme.heroSurface) }
             .overlay {
                 lensShape.strokeBorder(
-                    Color.white.opacity(colorSchemeContrast == .increased ? 0.42 : 0.16),
+                    GymTheme.heroOutline,
                     lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
                 )
             }
             .clipShape(lensShape)
-            .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+            .shadow(
+                color: Color.black.opacity(reduceTransparency ? 0.025 : 0.055),
+                radius: 8,
+                x: 0,
+                y: 4
+            )
     }
 
     private var lensShape: UnevenRoundedRectangle {
@@ -113,6 +103,25 @@ public struct GymHeroPanel<Content: View>: View {
             topTrailingRadius: 48,
             style: .continuous
         )
+    }
+}
+
+/// Flat tonal progress bar for `GymTheme.heroSurface`: Hero Outline track,
+/// Hero Accent fill, no gradient.
+public struct GymHeroProgressStyle: ProgressViewStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        let fraction = min(1, max(0, configuration.fractionCompleted ?? 0))
+        return GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(GymTheme.heroOutline)
+                Capsule()
+                    .fill(GymTheme.heroAccent)
+                    .frame(width: proxy.size.width * fraction)
+            }
+        }
+        .frame(height: 6)
     }
 }
 
@@ -276,7 +285,7 @@ public struct GymMetricTile: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(gymLocalized(label, locale: locale))
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(onHero ? Color.white.opacity(0.76) : GymTheme.textSecondary)
+                .foregroundStyle(onHero ? GymTheme.onHeroSecondary : GymTheme.textSecondary)
                 .textCase(labelUppercase ? .uppercase : nil)
                 .tracking(labelUppercase ? 0.35 : 0)
                 .lineLimit(2)
@@ -284,7 +293,7 @@ public struct GymMetricTile: View {
 
             Text(gymLocalized(value, locale: locale))
                 .font(compactValue ? .headline.bold() : (emphasized ? .title2.bold() : GymTheme.TypeScale.metric))
-                .foregroundStyle(onHero ? Color.white : GymTheme.textPrimary)
+                .foregroundStyle(onHero ? GymTheme.onHero : GymTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .fixedSize(horizontal: false, vertical: !compactValue)
@@ -293,12 +302,12 @@ public struct GymMetricTile: View {
         .frame(maxWidth: .infinity, minHeight: 74, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .fill(onHero ? Color.white.opacity(0.085) : GymTheme.surfaceVariant.opacity(0.58))
+                .fill(onHero ? GymTheme.heroTile : GymTheme.surfaceVariant.opacity(0.58))
         )
         .overlay {
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
                 .strokeBorder(
-                    onHero ? Color.white.opacity(0.14) : GymTheme.outlineSoft.opacity(0.62),
+                    onHero ? GymTheme.heroOutline : GymTheme.outlineSoft.opacity(0.62),
                     lineWidth: GymTheme.hairlineWidth
                 )
         }

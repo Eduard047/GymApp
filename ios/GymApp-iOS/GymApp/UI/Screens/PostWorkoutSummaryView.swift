@@ -338,10 +338,10 @@ struct PostWorkoutSummaryView: View {
                 .font(.headline.monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(GymTheme.onHero)
             Text(label)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.72))
+                .foregroundStyle(GymTheme.onHeroSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -354,7 +354,7 @@ struct PostWorkoutSummaryView: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 30, weight: .bold))
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(GymTheme.heroAccent)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(gymText(
@@ -367,7 +367,7 @@ struct PostWorkoutSummaryView: View {
                         .accessibilityAddTraits(.isHeader)
                         Text(summaryDateLine(workout))
                             .font(.subheadline)
-                            .foregroundStyle(Color.white.opacity(0.82))
+                            .foregroundStyle(GymTheme.onHeroSecondary)
                     }
                 }
 
@@ -377,7 +377,7 @@ struct PostWorkoutSummaryView: View {
                     Text("+\(xp) XP")
                         .font(.system(size: 34, weight: .semibold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(GymTheme.heroAccent)
                     Text(gymText(
                         "Session XP",
                         "XP сесії",
@@ -385,7 +385,7 @@ struct PostWorkoutSummaryView: View {
                         languageCode: languageCode
                     ))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.white.opacity(0.72))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -398,9 +398,7 @@ struct PostWorkoutSummaryView: View {
                     .font(.subheadline.weight(.semibold))
 
                     ProgressView(value: progression.levelProgress)
-                        .tint(Color.white)
-                        .frame(height: 4)
-                        .clipShape(Capsule())
+                        .progressViewStyle(GymHeroProgressStyle())
                         .accessibilityHidden(true)
 
                     Text(gymText(
@@ -410,7 +408,7 @@ struct PostWorkoutSummaryView: View {
                         languageCode: languageCode
                     ))
                     .font(.caption)
-                    .foregroundStyle(Color.white.opacity(0.72))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                 }
             }
             .accessibilityElement(children: .combine)

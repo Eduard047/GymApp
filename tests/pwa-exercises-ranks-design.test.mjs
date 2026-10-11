@@ -200,7 +200,7 @@ test("Ranks hero states the XP still needed with the next rank name and hides th
   run(maxed, "totalXp = () => 100000000");
   const screen = run(maxed, "ranksScreen()");
   assert.doesNotMatch(screen, /rank-hero-caption|rank-hero-track|rank-row-track/);
-  assert.match(stylesSource, /\.rank-hero \.rank-hero-track\s*\{[\s\S]*?rgba\(255, 255, 255, 0\.25\)/);
+  assert.match(stylesSource, /\.rank-hero \.rank-hero-track\s*\{[\s\S]*?var\(--hero-track\)/);
 });
 
 test("Ranks ladder is one list with one progress bar on the next rank and a current row without a pill", () => {

@@ -1822,7 +1822,7 @@ private struct FriendDetailView: View {
                 } else {
                     Text(t("Accepted friend", "Прийнятий друг", "Принятый друг"))
                         .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.82))
+                        .foregroundStyle(GymTheme.onHeroSecondary)
                 }
             }
         }
@@ -2062,10 +2062,12 @@ private struct FriendDetailView: View {
 
     private func heroMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(GymTheme.onHeroSecondary)
             Text(value).font(.headline.monospacedDigit())
         }
-        .foregroundStyle(Color.white)
+        .foregroundStyle(GymTheme.onHero)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

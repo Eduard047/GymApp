@@ -33,8 +33,17 @@
   --outline-variant: #dce5f2;
   --topbar-outline: rgba(183, 196, 215, 0.58);
   --nav-outline: rgba(183, 196, 215, 0.58);
-  --hero-fill: #165fc8;
-  --hero-tile: rgba(255, 255, 255, 0.12);
+  /* Flat tonal hero family: one solid surface for every hero/brand card, dark text, solid blue capsule, flat fills only. */
+  --hero-surface: #eef4ff;
+  --hero-outline: #dce5f2;
+  --hero-text: #10233f;
+  --hero-muted: #60708a;
+  --hero-tile: #ffffff;
+  --hero-action: #216bd7;
+  --hero-on-action: #ffffff;
+  --hero-action-label: #216bd7;
+  --hero-track: #dce5f2;
+  --hero-accent: #216bd7;
   /* Brand fill family for first-plan style cards: white text stays >=4.5:1 at the base, >=3:1 at the bright end. */
   --brand-fill: #216bd7;
   --brand-fill-bright: #3a8dff;
@@ -107,8 +116,16 @@ html.frame-blocked body {
   --outline-variant: #263e59;
   --topbar-outline: rgba(73, 97, 125, 0.58);
   --nav-outline: rgba(73, 97, 125, 0.62);
-  --hero-fill: #134f9f;
-  --hero-tile: rgba(255, 255, 255, 0.11);
+  --hero-surface: #10233a;
+  --hero-outline: #22395a;
+  --hero-text: #f2f6fc;
+  --hero-muted: #a7b6cb;
+  --hero-tile: #172c47;
+  --hero-action: #2e72d2;
+  --hero-on-action: #ffffff;
+  --hero-action-label: #8ab8ff;
+  --hero-track: #22395a;
+  --hero-accent: #7fb2ff;
   --brand-fill: #2e72d2;
   --brand-fill-bright: #3f84e5;
   --shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
@@ -930,8 +947,8 @@ svg.filled-icon.small-icon {
 
 .panel.compact { padding: 6px; }
 .highlighted {
-  background: var(--surface-highlight);
-  border-color: color-mix(in srgb, var(--sage) 46%, var(--outline-variant));
+  background: var(--hero-surface);
+  border-color: var(--hero-outline);
 }
 
 .material-card {
@@ -1505,7 +1522,7 @@ svg.filled-icon.small-icon {
 .summary-hero-level > span {
   font-size: 12px;
   line-height: 16px;
-  color: color-mix(in srgb, var(--on-primary) 72%, transparent);
+  color: var(--hero-muted);
 }
 
 .summary-hero-xp span { font-weight: 600; }
@@ -1513,7 +1530,7 @@ svg.filled-icon.small-icon {
 .summary-hero-level { gap: 8px; }
 .summary-hero-level strong { font-size: 15px; font-weight: 600; line-height: 20px; }
 .summary-hero .progress { height: 4px; margin: 0; }
-.summary-hero .progress > span { background: var(--on-primary); }
+.summary-hero .progress > span { background: var(--hero-accent); }
 
 .summary-records h2,
 .summary-badges h2 { margin: 0 0 12px; font-size: 18px; }
@@ -1605,9 +1622,9 @@ svg.filled-icon.small-icon {
   margin: 0;
   padding: 20px;
   border-radius: var(--radius-xl);
-  color: var(--on-primary);
-  background: var(--hero-fill);
-  border-color: color-mix(in srgb, var(--on-primary) 18%, var(--hero-fill));
+  color: var(--hero-text);
+  background: var(--hero-surface);
+  border-color: var(--hero-outline);
 }
 
 .hero-panel h2 {
@@ -1626,22 +1643,22 @@ svg.filled-icon.small-icon {
 
 .hero-panel p,
 .hero-panel .muted {
-  color: color-mix(in srgb, var(--on-primary) 88%, transparent);
+  color: var(--hero-muted);
 }
 
 .hero-panel .metric-grid > div {
   background: var(--hero-tile);
-  border-color: color-mix(in srgb, var(--on-primary) 15%, var(--hero-fill));
-  color: var(--on-primary);
+  border-color: var(--hero-outline);
+  color: var(--hero-text);
 }
 
 .hero-stat,
 .hero-pill,
 .solo-progress-hero .metric-grid > div,
 .hero-info-pill {
-  background: color-mix(in srgb, var(--on-primary) 12%, transparent);
-  border-color: color-mix(in srgb, var(--on-primary) 14%, transparent);
-  color: var(--on-primary);
+  background: var(--hero-tile);
+  border-color: var(--hero-outline);
+  color: var(--hero-text);
 }
 
 .hero-split {
@@ -1654,7 +1671,7 @@ svg.filled-icon.small-icon {
 .hero-stat {
   min-width: 112px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--on-primary) 14%, transparent);
+  border: 1px solid var(--hero-outline);
   border-radius: var(--radius-lg);
   text-align: right;
 }
@@ -1668,15 +1685,15 @@ svg.filled-icon.small-icon {
 .hero-panel .hero-stat span,
 .hero-panel .metric-grid span,
 .hero-panel .eyebrow {
-  color: color-mix(in srgb, var(--on-primary) 78%, transparent);
+  color: var(--hero-muted);
 }
 
 .solo-progress-hero {
   display: grid;
   gap: 10px;
   padding: 16px;
-  border-color: rgba(255, 255, 255, 0.28);
-  background: linear-gradient(145deg, var(--brand-fill) 0%, var(--brand-fill-bright) 100%);
+  border-color: var(--hero-outline);
+  background: var(--hero-surface);
 }
 
 .solo-progress-hero .metric-grid,
@@ -1690,7 +1707,7 @@ svg.filled-icon.small-icon {
 }
 
 .solo-identity { display: grid; gap: 6px; min-width: 0; }
-.solo-identity p { margin: 0; font-size: 14px; line-height: 20px; color: rgba(255, 255, 255, 0.86); }
+.solo-identity p { margin: 0; font-size: 14px; line-height: 20px; color: var(--hero-muted); }
 
 .solo-identity-row {
   display: flex;
@@ -1706,8 +1723,8 @@ svg.filled-icon.small-icon {
   padding: 7px 11px;
   border-color: transparent;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.13);
-  color: #ffffff;
+  background: var(--hero-tile);
+  color: var(--hero-action-label);
   font-size: 12px;
   font-weight: 700;
   line-height: 16px;
@@ -1718,7 +1735,7 @@ svg.filled-icon.small-icon {
 
 .solo-xp {
   margin-left: auto;
-  color: #ffffff;
+  color: var(--hero-accent);
   font-size: 17px;
   font-weight: 700;
   line-height: 24px;
@@ -1731,7 +1748,7 @@ svg.filled-icon.small-icon {
 .solo-identity-row.xp-wrapped .solo-xp {
   flex: 1 0 100%;
   margin-left: 0;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--hero-accent);
   font-size: 15px;
   font-weight: 600;
 }
@@ -1740,12 +1757,12 @@ svg.filled-icon.small-icon {
 .solo-identity-row.xp-wrapped .solo-xp-earned { display: inline; }
 
 .solo-progress-hero .metric-grid > div {
-  background: rgba(255, 255, 255, 0.085);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--hero-tile);
+  border-color: var(--hero-outline);
 }
 
 .solo-progress-hero .metric-grid span {
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--hero-muted);
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
@@ -1760,8 +1777,8 @@ svg.filled-icon.small-icon {
   min-height: 44px;
   padding: 10px 14px;
   border-radius: 14px;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.13);
+  color: var(--hero-action-label);
+  background: var(--hero-tile);
   font-size: 15px;
   font-weight: 600;
   line-height: 20px;
@@ -1860,7 +1877,7 @@ svg.filled-icon.small-icon {
 .hero-info-pill {
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--on-primary) 16%, transparent);
+  border: 1px solid var(--hero-outline);
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 500;
@@ -1904,11 +1921,11 @@ svg.filled-icon.small-icon {
   margin-top: 8px;
 }
 
-.hero-icon-button { color: var(--on-primary); }
+.hero-icon-button { color: var(--hero-action-label); }
 
 .hero-icon-button:hover,
 .hero-icon-button:active {
-  background: color-mix(in srgb, var(--on-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--hero-action) 12%, transparent);
 }
 
 .section-title,
@@ -2002,8 +2019,8 @@ svg.filled-icon.small-icon {
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
-  border-color: rgba(255, 255, 255, 0.28);
-  background: linear-gradient(135deg, var(--brand-fill) 0%, var(--brand-fill-bright) 100%);
+  border-color: var(--hero-outline);
+  background: var(--hero-surface);
 }
 
 .auth-header-actions {
@@ -2509,9 +2526,9 @@ svg.filled-icon.small-icon {
 }
 
 .button.hero-outline {
-  color: var(--on-primary);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--on-primary) 64%, transparent);
+  color: var(--hero-action-label);
+  background: var(--hero-tile);
+  border: 1px solid var(--hero-outline);
 }
 
 .button.danger {
@@ -2643,8 +2660,8 @@ button:disabled {
 }
 
 .leaderboard-row.highlighted {
-  background: var(--surface-highlight);
-  border-color: color-mix(in srgb, var(--sage) 46%, var(--outline-variant));
+  background: var(--hero-surface);
+  border-color: var(--hero-outline);
 }
 
 .leaderboard-row h3,
@@ -2681,9 +2698,9 @@ button.leaderboard-row {
   padding: 13px 14px;
   overflow: hidden;
   border-radius: var(--radius-lg);
-  color: var(--on-primary);
-  background: var(--hero-fill);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--hero-fill) 24%, transparent);
+  color: var(--hero-text);
+  background: var(--hero-surface);
+  border: 1px solid var(--hero-outline);
 }
 
 .profile-hub-avatar {
@@ -2691,12 +2708,13 @@ button.leaderboard-row {
   height: 46px;
   display: grid;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--on-primary) 22%, transparent);
+  border: 1px solid var(--hero-outline);
   border-radius: 17px;
+  color: var(--hero-accent);
   background: var(--hero-tile);
 }
 
-.profile-hub-avatar svg { width: 25px; height: 25px; }
+.profile-hub-avatar svg { width: 25px; height: 25px; fill: currentColor; }
 .profile-hub-identity { min-width: 0; }
 .profile-hub-identity h2,
 .profile-hub-identity p { margin: 0; }
@@ -2707,7 +2725,7 @@ button.leaderboard-row {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.profile-hub-identity p { color: color-mix(in srgb, var(--on-primary) 78%, transparent); }
+.profile-hub-identity p { color: var(--hero-muted); }
 
 /* Unread pill: only rendered when something needs attention; nothing fills the slot otherwise. */
 .profile-unread-pill {
@@ -2775,7 +2793,7 @@ button.leaderboard-row {
 
 .progress-empty-state p {
   max-width: 48ch;
-  color: color-mix(in srgb, var(--on-primary) 82%, transparent);
+  color: var(--hero-muted);
 }
 
 .progress-empty-state .button { min-width: min(100%, 220px); }
@@ -3247,17 +3265,17 @@ button.leaderboard-row {
   min-height: 0;
   padding: 22px;
   overflow: hidden;
-  color: #ffffff;
+  color: var(--hero-text);
+  border: 1px solid var(--hero-outline);
   border-radius: 28px;
-  background: linear-gradient(145deg, #1a62cb 0%, #1e66d0 52%, #1a57b6 100%);
-  box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
+  background: var(--hero-surface);
 }
 
 .focus-lens-copy { max-width: 650px; }
 .focus-lens-copy h2 {
   max-width: 18ch;
   margin: 8px 0 6px;
-  color: #ffffff;
+  color: var(--hero-text);
   font-size: clamp(30px, 4vw, 38px);
   font-weight: 700;
   line-height: 1.08;
@@ -3266,7 +3284,7 @@ button.leaderboard-row {
 .focus-lens-copy p {
   max-width: 44ch;
   margin: 0;
-  color: #ffffff;
+  color: var(--hero-muted);
   font-size: 15px;
   line-height: 22px;
 }
@@ -3278,7 +3296,7 @@ button.leaderboard-row {
   letter-spacing: -0.2px;
 }
 .focus-lens.active .focus-lens-copy p {
-  color: #ffffff;
+  color: var(--hero-muted);
   font-size: 14px;
   line-height: 20px;
   font-variant-numeric: tabular-nums;
@@ -3299,7 +3317,7 @@ button.leaderboard-row {
   font-variant-numeric: tabular-nums;
 }
 .focus-lens-metrics span {
-  color: #ffffff;
+  color: var(--hero-muted);
   font-size: 12px;
   line-height: 16px;
 }
@@ -3313,9 +3331,9 @@ button.leaderboard-row {
 .focus-lens-plan-metrics > div {
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid var(--hero-outline);
   border-radius: 14px;
-  background: rgba(8, 32, 65, 0.12);
+  background: var(--hero-tile);
 }
 .focus-lens-plan-metrics strong,
 .focus-lens-plan-metrics span {
@@ -3356,15 +3374,15 @@ button.leaderboard-row {
 .focus-lens-more[open] > summary::after { content: "−"; }
 .focus-lens-details > summary,
 .focus-lens-more > summary {
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(8, 32, 65, 0.13);
+  color: var(--hero-action-label);
+  border-color: var(--hero-outline);
+  background: var(--hero-tile);
 }
 .focus-lens-more .focus-lens-discard { width: 100%; }
 .focus-lens-manual {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(8, 32, 65, 0.14);
+  color: var(--hero-action-label);
+  border-color: var(--hero-outline);
+  background: var(--hero-tile);
 }
 .focus-lens-details-content,
 .activation-options-content {
@@ -3374,7 +3392,7 @@ button.leaderboard-row {
   padding-top: 2px;
 }
 .focus-lens-plan-metrics strong {
-  color: #ffffff;
+  color: var(--hero-text);
   font-size: 18px;
   font-weight: 720;
   font-variant-numeric: tabular-nums;
@@ -3385,7 +3403,7 @@ button.leaderboard-row {
 .focus-lens-plan-metrics span {
   display: -webkit-box;
   margin-top: 2px;
-  color: #ffffff;
+  color: var(--hero-muted);
   font-size: 12px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -3742,21 +3760,19 @@ button.leaderboard-row {
   min-height: 54px;
   margin-top: auto;
   padding: 0 22px;
-  color: #123560;
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  color: var(--hero-on-action);
+  border: 1px solid var(--hero-action);
   border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(8, 54, 119, 0.2);
-  -webkit-backdrop-filter: saturate(150%) blur(16px);
-  backdrop-filter: saturate(150%) blur(16px);
+  background: var(--hero-action);
   font-weight: 700;
   cursor: pointer;
 }
-.focus-lens-action:hover { background: #f1f7ff; }
+.focus-lens-action:hover { background: color-mix(in srgb, var(--hero-action) 88%, var(--hero-text)); }
 .focus-lens-action:active { transform: scale(0.98); }
 .focus-lens-action.secondary {
-  color: #ffffff;
-  background: rgba(8, 32, 65, 0.22);
+  color: var(--hero-action-label);
+  border-color: var(--hero-outline);
+  background: var(--hero-tile);
   box-shadow: none;
 }
 
@@ -3765,53 +3781,51 @@ button.leaderboard-row {
   display: grid;
   gap: 12px;
   padding: 20px;
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.34);
+  color: var(--hero-text);
+  border-color: var(--hero-outline);
   border-radius: 28px;
-  background: linear-gradient(145deg, var(--brand-fill) 0%, var(--brand-fill-bright) 100%);
-  box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
+  background: var(--hero-surface);
 }
-.activation-card .field-caption { color: rgba(255, 255, 255, 0.86); }
+.activation-card .field-caption { color: var(--hero-muted); }
 .activation-card .chip-row { margin: -4px 0 0; }
 .activation-card .chip {
-  color: #ffffff;
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.58);
+  color: var(--hero-text);
+  background: var(--hero-tile);
+  border-color: var(--hero-outline);
   box-shadow: none;
 }
 .activation-card .chip.selected {
-  color: #0b274e;
-  background: #dff8f4;
-  border-color: #dff8f4;
+  color: var(--hero-on-action);
+  background: var(--hero-action);
+  border-color: var(--hero-action);
 }
 .activation-card .activation-goals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .activation-card .activation-goals .chip { justify-content: center; min-width: 0; }
 .activation-plan-heading h2,
 .activation-plan-heading .eyebrow { margin: 0; }
-.activation-plan-heading h2 { margin-top: 3px; color: #ffffff; }
+.activation-plan-heading h2 { margin-top: 3px; color: var(--hero-text); }
 .activation-plan-heading p {
   max-width: 48ch;
   margin: 7px 0 0;
-  color: rgba(255, 255, 255, 0.84);
+  color: var(--hero-muted);
   line-height: 22px;
 }
-.activation-plan-heading .eyebrow { color: rgba(255, 255, 255, 0.74); }
-.activation-plan-unavailable { color: rgba(255, 255, 255, 0.78); }
+.activation-plan-heading .eyebrow { color: var(--hero-muted); }
+.activation-plan-unavailable { color: var(--hero-muted); }
 .activation-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 2px; }
 .activation-actions .button {
-  color: #123560;
-  background: #ffffff;
-  border: 1px solid #ffffff;
+  color: var(--hero-on-action);
+  background: var(--hero-action);
+  border: 1px solid var(--hero-action);
 }
 .activation-actions .button.secondary {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.46);
-  background: rgba(8, 32, 65, 0.2);
+  color: var(--hero-action-label);
+  border-color: var(--hero-outline);
+  background: var(--hero-tile);
 }
-.activation-actions .button.ghost { color: #ffffff; border-color: transparent; background: transparent; }
+.activation-actions .button.ghost { color: var(--hero-action-label); border-color: transparent; background: transparent; }
 .activation-card-retained {
-  background: linear-gradient(145deg, #1a62cb 0%, #1e66d0 52%, #1a57b6 100%);
-  box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
+  background: var(--hero-surface);
 }
 .activation-card-retained .activation-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .activation-title-row {
@@ -3835,8 +3849,8 @@ button.leaderboard-row {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.16);
+  color: var(--hero-action-label);
+  background: var(--hero-tile);
   cursor: pointer;
 }
 .activation-options-toggle svg {
@@ -3849,16 +3863,16 @@ button.leaderboard-row {
   stroke-linejoin: round;
 }
 .activation-options-toggle.open {
-  color: var(--brand-fill);
-  background: #ffffff;
+  color: var(--hero-on-action);
+  background: var(--hero-action);
 }
 .activation-options-toggle:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--hero-action);
   outline-offset: 2px;
 }
 .activation-options-content .button.ghost {
   min-height: 48px;
-  color: #ffffff;
+  color: var(--hero-action-label);
   border-color: transparent;
   background: transparent;
 }
@@ -3867,7 +3881,7 @@ button.leaderboard-row {
   min-height: 44px;
   padding: 0 12px;
   border: 0;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--hero-action-label);
   background: transparent;
   font: inherit;
   font-size: 14px;
@@ -3875,7 +3889,7 @@ button.leaderboard-row {
   cursor: pointer;
 }
 .activation-actions .activation-manual:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--hero-action);
   outline-offset: -2px;
   border-radius: 12px;
 }
@@ -3955,21 +3969,19 @@ button.leaderboard-row {
   min-height: 54px;
   margin-top: auto;
   padding: 0 22px;
-  color: #123560;
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  color: var(--hero-on-action);
+  border: 1px solid var(--hero-action);
   border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(8, 54, 119, 0.2);
-  -webkit-backdrop-filter: saturate(150%) blur(16px);
-  backdrop-filter: saturate(150%) blur(16px);
+  background: var(--hero-action);
   font-weight: 700;
   cursor: pointer;
 }
-.focus-lens-action:hover { background: #f1f7ff; }
+.focus-lens-action:hover { background: color-mix(in srgb, var(--hero-action) 88%, var(--hero-text)); }
 .focus-lens-action:active { transform: scale(0.98); }
 .focus-lens-action.secondary {
-  color: #ffffff;
-  background: rgba(8, 32, 65, 0.22);
+  color: var(--hero-action-label);
+  border-color: var(--hero-outline);
+  background: var(--hero-tile);
   box-shadow: none;
 }
 
@@ -3978,53 +3990,51 @@ button.leaderboard-row {
   display: grid;
   gap: 12px;
   padding: 20px;
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.34);
+  color: var(--hero-text);
+  border-color: var(--hero-outline);
   border-radius: 28px;
-  background: linear-gradient(145deg, var(--brand-fill) 0%, var(--brand-fill-bright) 100%);
-  box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
+  background: var(--hero-surface);
 }
-.activation-card .field-caption { color: rgba(255, 255, 255, 0.86); }
+.activation-card .field-caption { color: var(--hero-muted); }
 .activation-card .chip-row { margin: -4px 0 0; }
 .activation-card .chip {
-  color: #ffffff;
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.58);
+  color: var(--hero-text);
+  background: var(--hero-tile);
+  border-color: var(--hero-outline);
   box-shadow: none;
 }
 .activation-card .chip.selected {
-  color: #0b274e;
-  background: #dff8f4;
-  border-color: #dff8f4;
+  color: var(--hero-on-action);
+  background: var(--hero-action);
+  border-color: var(--hero-action);
 }
 .activation-card .activation-goals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .activation-card .activation-goals .chip { justify-content: center; min-width: 0; }
 .activation-plan-heading h2,
 .activation-plan-heading .eyebrow { margin: 0; }
-.activation-plan-heading h2 { margin-top: 3px; color: #ffffff; }
+.activation-plan-heading h2 { margin-top: 3px; color: var(--hero-text); }
 .activation-plan-heading p {
   max-width: 48ch;
   margin: 7px 0 0;
-  color: rgba(255, 255, 255, 0.84);
+  color: var(--hero-muted);
   line-height: 22px;
 }
-.activation-plan-heading .eyebrow { color: rgba(255, 255, 255, 0.74); }
-.activation-plan-unavailable { color: rgba(255, 255, 255, 0.78); }
+.activation-plan-heading .eyebrow { color: var(--hero-muted); }
+.activation-plan-unavailable { color: var(--hero-muted); }
 .activation-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 2px; }
 .activation-actions .button {
-  color: #123560;
-  background: #ffffff;
-  border: 1px solid #ffffff;
+  color: var(--hero-on-action);
+  background: var(--hero-action);
+  border: 1px solid var(--hero-action);
 }
 .activation-actions .button.secondary {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.46);
-  background: rgba(8, 32, 65, 0.2);
+  color: var(--hero-action-label);
+  border-color: var(--hero-outline);
+  background: var(--hero-tile);
 }
-.activation-actions .button.ghost { color: #ffffff; border-color: transparent; background: transparent; }
+.activation-actions .button.ghost { color: var(--hero-action-label); border-color: transparent; background: transparent; }
 .activation-card-retained {
-  background: linear-gradient(145deg, #1a62cb 0%, #1e66d0 52%, #1a57b6 100%);
-  box-shadow: 0 8px 22px rgba(31, 105, 199, 0.18);
+  background: var(--hero-surface);
 }
 .activation-card-retained .activation-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .activation-title-row {
@@ -4048,8 +4058,8 @@ button.leaderboard-row {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.16);
+  color: var(--hero-action-label);
+  background: var(--hero-tile);
   cursor: pointer;
 }
 .activation-options-toggle svg {
@@ -4062,16 +4072,16 @@ button.leaderboard-row {
   stroke-linejoin: round;
 }
 .activation-options-toggle.open {
-  color: var(--brand-fill);
-  background: #ffffff;
+  color: var(--hero-on-action);
+  background: var(--hero-action);
 }
 .activation-options-toggle:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--hero-action);
   outline-offset: 2px;
 }
 .activation-options-content .button.ghost {
   min-height: 48px;
-  color: #ffffff;
+  color: var(--hero-action-label);
   border-color: transparent;
   background: transparent;
 }
@@ -4080,7 +4090,7 @@ button.leaderboard-row {
   min-height: 44px;
   padding: 0 12px;
   border: 0;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--hero-action-label);
   background: transparent;
   font: inherit;
   font-size: 14px;
@@ -4088,7 +4098,7 @@ button.leaderboard-row {
   cursor: pointer;
 }
 .activation-actions .activation-manual:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--hero-action);
   outline-offset: -2px;
   border-radius: 12px;
 }
@@ -4147,26 +4157,26 @@ button.leaderboard-row {
   min-width: 112px;
   min-height: 54px;
   padding: 0 18px;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  color: var(--hero-action-label);
+  border: 1px solid var(--hero-outline);
   border-radius: 999px;
-  background: rgba(8, 32, 65, 0.24);
+  background: var(--hero-tile);
   font-weight: 700;
   cursor: pointer;
 }
 
 .focus-lens-edit:hover,
-.focus-lens-edit:focus-visible { background: rgba(8, 32, 65, 0.34); }
+.focus-lens-edit:focus-visible { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
 
 
 .focus-lens-discard {
   min-width: 92px;
   min-height: 54px;
   padding: 0 18px;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  color: var(--hero-action-label);
+  border: 1px solid var(--hero-outline);
   border-radius: 999px;
-  background: rgba(8, 32, 65, 0.24);
+  background: var(--hero-tile);
   font-weight: 700;
   cursor: pointer;
 }
@@ -5487,7 +5497,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   background: var(--surface-2);
 }
 
-.hero-panel .progress { background: color-mix(in srgb, var(--on-primary) 20%, transparent); }
+.hero-panel .progress { background: var(--hero-track); }
 .mission-row .progress { height: 8px; }
 .achievement .progress { height: 6px; }
 
@@ -6317,8 +6327,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
-  color: var(--on-primary);
-  background: rgba(255, 255, 255, 0.16);
+  color: var(--hero-action-label);
+  background: var(--hero-tile);
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
@@ -6750,15 +6760,13 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 @media (prefers-reduced-transparency: reduce) {
   .topbar,
-  .bottom-nav,
-  .focus-lens-action {
+  .bottom-nav {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 
   .topbar { background: var(--background); }
   .bottom-nav { background: var(--surface); }
-  .focus-lens-action { background: #ffffff; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -6869,28 +6877,31 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   width: 100%;
   min-height: 48px;
   padding: 0 18px;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.36);
+  color: var(--hero-action-label);
+  border: 1px solid var(--hero-outline);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hero-tile);
   font-weight: 700;
   cursor: pointer;
 }
 
+/* Invite state is the louder pill: tonal fill, Active Current label and a solid count badge. */
 .today-friend-pill.invite {
-  border-color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.22);
+  border-color: var(--hero-action);
+  background: color-mix(in srgb, var(--hero-action) 12%, var(--hero-tile));
 }
 
 .today-friend-pill:hover,
-.today-friend-pill:focus-visible { background: rgba(255, 255, 255, 0.18); }
+.today-friend-pill:focus-visible { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
+.today-friend-pill.invite:hover,
+.today-friend-pill.invite:focus-visible { background: color-mix(in srgb, var(--hero-action) 18%, var(--hero-tile)); }
 
 .today-friend-badge {
   min-width: 22px;
   padding: 2px 6px;
-  color: #123560;
+  color: var(--hero-on-action);
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--hero-action);
   font-size: 12px;
   line-height: 16px;
   text-align: center;
@@ -6932,13 +6943,13 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 .training-settings-summary strong { flex: none; color: var(--primary); font-weight: 600; }
-.training-settings-summary.on-hero { color: rgba(255, 255, 255, 0.86); }
-.training-settings-summary.on-hero strong { color: #ffffff; }
-/* Link-style text on the blue hero fill needs 4.5:1; the themed primary/muted tokens reach only ~4:1 there. */
+.training-settings-summary.on-hero { color: var(--hero-muted); }
+.training-settings-summary.on-hero strong { color: var(--hero-action-label); }
+/* Link-style text on the tonal hero surface uses the hero tokens so it stays above 4.5:1 in both themes. */
 .hero-panel .training-settings-summary,
-.focus-lens .training-settings-summary { color: rgba(255, 255, 255, 0.86); }
+.focus-lens .training-settings-summary { color: var(--hero-muted); }
 .hero-panel .training-settings-summary strong,
-.focus-lens .training-settings-summary strong { color: #ffffff; }
+.focus-lens .training-settings-summary strong { color: var(--hero-action-label); }
 
 .training-settings-sheet { display: grid; gap: 16px; }
 .training-settings-sheet .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -7168,10 +7179,10 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .rank-hero .rank-hero-track {
   height: 6px;
   margin: 0;
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--hero-track);
 }
 
-.rank-hero .rank-hero-track > span { background: #ffffff; }
+.rank-hero .rank-hero-track > span { background: var(--hero-accent); }
 
 .rank-ladder-panel { padding: 8px 16px; }
 
@@ -7269,8 +7280,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-workout-hero {
   gap: 10px;
   padding: 18px;
-  border-color: rgba(255, 255, 255, 0.24);
-  background: linear-gradient(145deg, var(--brand-fill) 0%, var(--brand-fill-bright) 100%);
+  border-color: var(--hero-outline);
+  background: var(--hero-surface);
 }
 .active-hero-main {
   display: flex;
@@ -7288,7 +7299,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 6px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--hero-muted);
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
@@ -7298,10 +7309,10 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   height: 7px;
   flex: none;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--mint);
 }
 .active-hero-elapsed {
-  color: #ffffff;
+  color: var(--hero-text);
   font-weight: 600;
   font-size: 36px;
   line-height: 40px;
@@ -7309,7 +7320,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 .active-hero-now {
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--hero-muted);
   font-size: 12px;
   line-height: 16px;
   text-overflow: ellipsis;
@@ -7322,8 +7333,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   height: 68px;
 }
 .active-hero-ring svg { display: block; width: 68px; height: 68px; }
-.active-hero-ring-track { stroke: rgba(255, 255, 255, 0.28); }
-.active-hero-ring-arc { stroke: #ffffff; }
+.active-hero-ring-track { stroke: var(--hero-track); }
+.active-hero-ring-arc { stroke: var(--hero-accent); }
 .active-hero-ring-text {
   position: absolute;
   inset: 0;
@@ -7332,7 +7343,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   align-items: center;
   justify-content: center;
   gap: 1px;
-  color: #ffffff;
+  color: var(--hero-text);
 }
 .active-hero-ring-text strong {
   font-size: 17px;
@@ -7341,14 +7352,14 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 .active-hero-ring-text span {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--hero-muted);
   font-size: 10px;
   line-height: 12px;
 }
-.active-workout-hero .active-workout-screen-note { margin: 0; color: rgba(255, 255, 255, 0.85); }
+.active-workout-hero .active-workout-screen-note { margin: 0; color: var(--hero-muted); }
 .active-workout-hero .active-workout-note {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
+  color: var(--hero-text);
+  background: var(--hero-tile);
 }
 
 .active-workout-exercise-summary { gap: 12px; justify-content: flex-start; }

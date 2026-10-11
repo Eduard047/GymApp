@@ -79,7 +79,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -107,6 +106,7 @@ import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
@@ -117,11 +117,13 @@ import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SoloProgressHero
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
+import com.example.gymapp.ui.components.brandFillColor
+import com.example.gymapp.ui.components.heroPrimaryButtonColors
+import com.example.gymapp.ui.components.heroSecondaryBorder
+import com.example.gymapp.ui.components.heroSecondaryOutlinedColors
 import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.theme.BrandFill
-import com.example.gymapp.ui.theme.BrandFillBright
-import com.example.gymapp.ui.theme.BrandFillBrightNight
 import com.example.gymapp.ui.theme.BrandFillNight
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.localizedExerciseName
@@ -582,19 +584,7 @@ private fun FocusLens(
         hasActiveWorkout = hasActiveWorkout
     )
     val hasCompletedToday = hasCompletedWorkoutToday && !hasActiveWorkout
-    val darkTheme = isSystemInDarkTheme()
     val lensShape = remember { RoundedCornerShape(28.dp) }
-    val lensBrush = remember(darkTheme) {
-        if (darkTheme) {
-            Brush.linearGradient(
-                listOf(Color(0xFF124A96), Color(0xFF1569BB), Color(0xFF164F9B))
-            )
-        } else {
-            Brush.linearGradient(
-                listOf(Color(0xFF1A62CB), Color(0xFF1E66D0), Color(0xFF1A57B6))
-            )
-        }
-    }
 
     val focusModifier = if (tutorialAnchors == null) {
         modifier
@@ -611,7 +601,8 @@ private fun FocusLens(
         modifier = focusModifier
             .fillMaxWidth()
             .clip(lensShape)
-            .background(lensBrush)
+            .background(HeroTone.surface)
+            .border(BorderStroke(1.dp, HeroTone.outline), lensShape)
             .padding(if (hasCompletedToday) 18.dp else 22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -635,7 +626,7 @@ private fun FocusLens(
                 } else {
                     MaterialTheme.typography.headlineLarge
                 },
-                color = Color.White,
+                color = HeroTone.title,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -649,13 +640,13 @@ private fun FocusLens(
                     activeWorkoutFocus.totalSets
                 ),
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White
+                color = HeroTone.supporting
             )
         } else if (hasCompletedToday) {
             Text(
                 text = stringResource(R.string.today_workout_completed_supporting),
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White
+                color = HeroTone.supporting
             )
         } else if (todayPlan != null && todayPlan.rhythm.decision in setOf(
                 WeeklyTrainingDecision.Rest,
@@ -673,7 +664,7 @@ private fun FocusLens(
                     stringResource(todayPlan.effortAdjustment.recoveryReasonResource())
                 },
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White
+                color = HeroTone.supporting
             )
             todayPlan.rhythm.nextRecommendedDayMillis?.let { nextDay ->
                 val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
@@ -683,7 +674,7 @@ private fun FocusLens(
                         DateTimeUtils.formatLongDate(nextDay, locale)
                     ),
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    color = HeroTone.title,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -728,8 +719,8 @@ private fun FocusLens(
                     .semantics {
                         stateDescription = if (showPlanDetails) expandedState else collapsedState
                     },
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                colors = heroSecondaryOutlinedColors(),
+                border = heroSecondaryBorder()
             ) {
                 Icon(
                     imageVector = if (showPlanDetails) Icons.Default.ExpandLess
@@ -748,7 +739,7 @@ private fun FocusLens(
                     ) {
                         Text(
                             stringResource(R.string.activation_build_manually),
-                            color = Color.White
+                            color = HeroTone.actionLabel
                         )
                     }
                 }
@@ -763,11 +754,7 @@ private fun FocusLens(
                     .heightIn(min = 54.dp)
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF123560)
-                ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                colors = heroPrimaryButtonColors()
             ) {
                 Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -784,11 +771,8 @@ private fun FocusLens(
                         stateDescription = if (showActiveOptions) expandedState else collapsedState
                     },
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color.White.copy(alpha = 0.08f),
-                    contentColor = Color.White
-                ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.36f))
+                colors = heroSecondaryOutlinedColors(),
+                border = heroSecondaryBorder()
             ) {
                 Text(
                     text = stringResource(R.string.active_workout_more_options),
@@ -809,8 +793,8 @@ private fun FocusLens(
                     onClick = onDiscardWorkout,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     shape = RoundedCornerShape(50),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                    colors = heroSecondaryOutlinedColors(),
+                    border = heroSecondaryBorder()
                 ) {
                     Text(stringResource(R.string.active_workout_discard_action))
                 }
@@ -823,11 +807,7 @@ private fun FocusLens(
                     .heightIn(min = 54.dp)
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF123560)
-                ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                colors = heroPrimaryButtonColors()
             ) {
                 Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -839,8 +819,8 @@ private fun FocusLens(
             OutlinedButton(
                 onClick = onCancelRetainedPlan,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                colors = heroSecondaryOutlinedColors(),
+                border = heroSecondaryBorder()
             ) {
                 Text(stringResource(R.string.today_cancel_plan))
             }
@@ -848,8 +828,8 @@ private fun FocusLens(
             OutlinedButton(
                 onClick = onStartWorkout,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                colors = heroSecondaryOutlinedColors(),
+                border = heroSecondaryBorder()
             ) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -870,11 +850,7 @@ private fun FocusLens(
                     .heightIn(min = 54.dp)
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF123560)
-                ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                colors = heroPrimaryButtonColors()
             ) {
                 Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -884,8 +860,8 @@ private fun FocusLens(
                 OutlinedButton(
                     onClick = { onOpenPlan(launchToken) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                    colors = heroSecondaryOutlinedColors(),
+                    border = heroSecondaryBorder()
                 ) {
                     Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -903,11 +879,7 @@ private fun FocusLens(
                     .heightIn(min = 54.dp)
                     .primaryTutorialAnchor(),
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF123560)
-                ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                colors = heroPrimaryButtonColors()
             ) {
                 Icon(
                     imageVector = if (launchToken == null) Icons.Default.Add else Icons.Default.PlayArrow,
@@ -931,8 +903,8 @@ private fun FocusLens(
                 OutlinedButton(
                     onClick = { onOpenPlan(token) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                    colors = heroSecondaryOutlinedColors(),
+                    border = heroSecondaryBorder()
                 ) {
                     Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1611,7 +1583,7 @@ private fun TodayHeroMetric(
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
+            color = HeroTone.title,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -1619,7 +1591,7 @@ private fun TodayHeroMetric(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.76f),
+            color = HeroTone.supporting,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
@@ -1696,25 +1668,6 @@ private fun FirstWorkoutActivationCard(
     var effort by rememberSaveable { mutableStateOf(FirstWorkoutEffort.Standard) }
     var showRecommendationOptions by rememberSaveable { mutableStateOf(false) }
     val darkTheme = isSystemInDarkTheme()
-    val brandBrush = remember(darkTheme) {
-        if (darkTheme) {
-            Brush.linearGradient(listOf(BrandFillNight, BrandFillBrightNight))
-        } else {
-            Brush.linearGradient(listOf(BrandFill, BrandFillBright))
-        }
-    }
-    val heroBrush = remember(darkTheme) {
-        if (darkTheme) {
-            Brush.linearGradient(
-                listOf(Color(0xFF124A96), Color(0xFF1569BB), Color(0xFF164F9B))
-            )
-        } else {
-            Brush.linearGradient(
-                listOf(Color(0xFF1A62CB), Color(0xFF1E66D0), Color(0xFF1A57B6))
-            )
-        }
-    }
-    val brush = if (hasRetainedWorkoutDraft) heroBrush else brandBrush
     val adjustLabel = stringResource(R.string.activation_adjust_recommendation)
     val adjustOpenState = stringResource(R.string.activation_adjust_open)
     val adjustClosedState = stringResource(R.string.activation_adjust_closed)
@@ -1732,7 +1685,8 @@ private fun FirstWorkoutActivationCard(
         modifier = focusModifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .background(brush)
+            .background(HeroTone.surface)
+            .border(BorderStroke(1.dp, HeroTone.outline), RoundedCornerShape(28.dp))
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -1740,17 +1694,13 @@ private fun FirstWorkoutActivationCard(
             Text(
                 text = stringResource(R.string.title_workout_plan),
                 style = MaterialTheme.typography.headlineLarge,
-                color = Color.White,
+                color = HeroTone.title,
                 fontWeight = FontWeight.Bold
             )
             Button(
                 onClick = onContinuePlan,
                 modifier = primaryModifier.fillMaxWidth().heightIn(min = 54.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF123560)
-                ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.34f))
+                colors = heroPrimaryButtonColors()
             ) {
                 Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -1762,8 +1712,8 @@ private fun FirstWorkoutActivationCard(
             OutlinedButton(
                 onClick = onCancelPlan,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.46f))
+                colors = heroSecondaryOutlinedColors(),
+                border = heroSecondaryBorder()
             ) {
                 Text(stringResource(R.string.today_cancel_plan))
             }
@@ -1777,7 +1727,7 @@ private fun FirstWorkoutActivationCard(
                     Text(
                         text = stringResource(R.string.activation_first_plan_title),
                         style = MaterialTheme.typography.headlineLarge,
-                        color = Color.White,
+                        color = HeroTone.title,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
@@ -1796,14 +1746,14 @@ private fun FirstWorkoutActivationCard(
                             },
                         colors = IconButtonDefaults.iconButtonColors(
                             containerColor = if (showRecommendationOptions) {
-                                Color.White
-                            } else {
-                                Color.White.copy(alpha = 0.16f)
-                            },
-                            contentColor = if (showRecommendationOptions) {
                                 if (darkTheme) BrandFillNight else BrandFill
                             } else {
+                                HeroTone.tile
+                            },
+                            contentColor = if (showRecommendationOptions) {
                                 Color.White
+                            } else {
+                                HeroTone.actionLabel
                             }
                         )
                     ) {
@@ -1813,7 +1763,7 @@ private fun FirstWorkoutActivationCard(
                 Text(
                     text = stringResource(R.string.activation_first_plan_supporting),
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.86f)
+                    color = HeroTone.supporting
                 )
                 if (showRecommendationOptions) {
                     Column(
@@ -1823,8 +1773,8 @@ private fun FirstWorkoutActivationCard(
                         TrainingSettingsSummaryRow(
                             profile = trainingProfile,
                             onEdit = { showTrainingSettings = true },
-                            textColor = Color.White.copy(alpha = 0.86f),
-                            linkColor = Color.White
+                            textColor = HeroTone.supporting,
+                            linkColor = HeroTone.actionLabel
                         )
                         // Short one-word labels keep the three efforts in one equal-width row.
                         ActivationChoiceRow(
@@ -1847,12 +1797,12 @@ private fun FirstWorkoutActivationCard(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = null,
-                                tint = Color.White
+                                tint = HeroTone.actionLabel
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 stringResource(R.string.activation_edit_plan),
-                                color = Color.White
+                                color = HeroTone.actionLabel
                             )
                         }
                     }
@@ -1861,10 +1811,7 @@ private fun FirstWorkoutActivationCard(
             Button(
                 onClick = { onStart(goal, days, effort) },
                 modifier = primaryModifier.fillMaxWidth().heightIn(min = 54.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF123560)
-                )
+                colors = heroPrimaryButtonColors()
             ) {
                 Text(
                     stringResource(R.string.activation_start_plan),
@@ -1877,7 +1824,7 @@ private fun FirstWorkoutActivationCard(
             ) {
                 Text(
                     stringResource(R.string.activation_build_manually),
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = HeroTone.actionLabel,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -1914,18 +1861,16 @@ private fun TrainWithFriendPill(
             .heightIn(min = 48.dp)
             .semantics { contentDescription = "$title. $hint" },
         shape = RoundedCornerShape(50),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = Color.White.copy(alpha = if (inviteCount != null) 0.22f else 0.08f),
-            contentColor = Color.White
-        ),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = if (inviteCount != null) 0.7f else 0.36f))
+        // Tonal pill with a blue label; the invite state adds a solid blue count badge.
+        colors = heroSecondaryOutlinedColors(),
+        border = heroSecondaryBorder()
     ) {
         Icon(imageVector = Icons.Default.Group, contentDescription = null)
         Spacer(modifier = Modifier.width(8.dp))
         Text(title, fontWeight = FontWeight.Bold, maxLines = 1)
         if (inviteCount != null) {
             Spacer(modifier = Modifier.width(8.dp))
-            Surface(shape = RoundedCornerShape(50), color = Color.White, contentColor = Color(0xFF123560)) {
+            Surface(shape = RoundedCornerShape(50), color = brandFillColor(), contentColor = Color.White) {
                 Text(
                     text = inviteCount.toString(),
                     style = MaterialTheme.typography.labelSmall,
@@ -2013,7 +1958,7 @@ private fun <T> ActivationChoiceRow(
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = Color.White.copy(alpha = 0.84f)
+            color = HeroTone.supporting
         )
         if (columns == 2) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2027,14 +1972,12 @@ private fun <T> ActivationChoiceRow(
                             Surface(
                                 onClick = { onSelected(value) },
                                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                                color = if (isSelected) Color(0xFFE2FAF4) else Color.Transparent,
-                                contentColor = if (isSelected) Color(0xFF102849) else Color.White,
+                                color = if (isSelected) brandFillColor() else HeroTone.tile,
+                                contentColor = if (isSelected) Color.White else HeroTone.actionLabel,
                                 shape = RoundedCornerShape(50),
                                 border = BorderStroke(
                                     1.dp,
-                                    if (isSelected) Color.Transparent else {
-                                        Color.White.copy(alpha = 0.46f)
-                                    }
+                                    if (isSelected) Color.Transparent else HeroTone.outline
                                 )
                             ) {
                                 Box(
@@ -2065,10 +2008,16 @@ private fun <T> ActivationChoiceRow(
                         selected = value == selected,
                         onClick = { onSelected(value) },
                         colors = FilterChipDefaults.filterChipColors(
-                            containerColor = Color.Transparent,
-                            labelColor = Color.White,
-                            selectedContainerColor = Color(0xFFE2FAF4),
-                            selectedLabelColor = Color(0xFF102849)
+                            containerColor = HeroTone.tile,
+                            labelColor = HeroTone.actionLabel,
+                            selectedContainerColor = brandFillColor(),
+                            selectedLabelColor = Color.White
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = value == selected,
+                            borderColor = HeroTone.outline,
+                            selectedBorderColor = Color.Transparent
                         ),
                         label = {
                             Text(
@@ -2112,13 +2061,13 @@ private fun FocusLensMetric(
         Text(
             text = value,
             style = MaterialTheme.typography.titleLarge,
-            color = Color.White,
+            color = HeroTone.title,
             fontWeight = FontWeight.Bold
         )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White
+            color = HeroTone.supporting
         )
     }
 }
@@ -2133,12 +2082,12 @@ private fun DashboardCard(
             Text(
                 text = stringResource(R.string.dashboard_title),
                 style = MaterialTheme.typography.titleLarge,
-                color = Color.White
+                color = HeroTone.title
             )
             Text(
                 text = stringResource(R.string.dashboard_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.9f)
+                color = HeroTone.supporting
             )
 
             Row(

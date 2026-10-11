@@ -1577,28 +1577,28 @@ struct WorkoutDetailView: View {
                         languageCode: languageCode
                     ))
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.84))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 } else if garminSummary != nil {
                     Text(GarminWorkoutDetailCopy.workoutTitle(languageCode: languageCode))
                         .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.84))
+                        .foregroundStyle(GymTheme.onHeroSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let note = workout.note, !note.isEmpty {
                     Text(note)
                         .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.84))
+                        .foregroundStyle(GymTheme.onHeroSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(heroMetricsLine(workout, languageCode: languageCode))
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Color.white.opacity(0.88))
+                        .foregroundStyle(GymTheme.onHero)
                 }
 
                 if garminSummary != nil && !activityOnly {
                     Text(GarminWorkoutDetailCopy.syncedSupporting(languageCode: languageCode))
                         .font(.caption)
-                        .foregroundStyle(Color.white.opacity(0.76))
+                        .foregroundStyle(GymTheme.onHeroSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -1627,7 +1627,7 @@ struct WorkoutDetailView: View {
                     // line above, so surface the compact metrics separately.
                     Text(heroMetricsLine(workout, languageCode: languageCode))
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Color.white.opacity(0.88))
+                        .foregroundStyle(GymTheme.onHeroSecondary)
                 }
 
                 if activityOnly {
@@ -1638,7 +1638,7 @@ struct WorkoutDetailView: View {
                         languageCode: languageCode
                     ))
                     .font(.caption)
-                    .foregroundStyle(Color.white.opacity(0.78))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                 }
             }
         }

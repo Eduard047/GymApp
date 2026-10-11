@@ -521,12 +521,9 @@ private fun SelectedMuscleHighlight(
     val muscle = heatmap.muscles.firstOrNull { it.id == heatmap.selectedMuscleId } ?: return
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
+        color = HeroTone.surface,
         shape = MaterialTheme.shapes.small,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-        )
+        border = androidx.compose.foundation.BorderStroke(1.dp, HeroTone.outline)
     ) {
         Text(
             text = stringResource(
@@ -538,7 +535,7 @@ private fun SelectedMuscleHighlight(
             ),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            color = HeroTone.title,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )

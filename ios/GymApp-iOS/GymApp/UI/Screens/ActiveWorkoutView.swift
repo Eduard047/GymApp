@@ -690,13 +690,7 @@ struct ActiveWorkoutView: View {
     private func progressPanel(_ draft: ActiveWorkoutDraft) -> some View {
         let exerciseName = currentExerciseDisplayName(draft)
         return GymHeroPanel(
-            contentPadding: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18),
-            gradient: LinearGradient(
-                colors: [GymTheme.brandFill, GymTheme.brandFillBright],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            solidFill: GymTheme.brandFill
+            contentPadding: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18)
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 if draft.commitIntent != nil {
@@ -709,7 +703,7 @@ struct ActiveWorkoutView: View {
                         )
                     )
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.9))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
                 }
 
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -718,7 +712,7 @@ struct ActiveWorkoutView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 6) {
                                 Circle()
-                                    .fill(Color.white)
+                                    .fill(GymTheme.secondary)
                                     .frame(width: 7, height: 7)
                                 Text(
                                     gymText(
@@ -730,11 +724,11 @@ struct ActiveWorkoutView: View {
                                 )
                                 .font(.caption.weight(.semibold))
                             }
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(GymTheme.onHeroSecondary)
 
                             Text(Self.clock(elapsed))
                                 .font(.system(size: 36, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(.white)
+                                .foregroundStyle(GymTheme.onHero)
 
                             if let exerciseName {
                                 Text(
@@ -746,7 +740,7 @@ struct ActiveWorkoutView: View {
                                     )
                                 )
                                 .font(.caption)
-                                .foregroundStyle(Color.white.opacity(0.85))
+                                .foregroundStyle(GymTheme.onHeroSecondary)
                                 .lineLimit(1)
                             }
                         }
@@ -755,18 +749,18 @@ struct ActiveWorkoutView: View {
 
                         ZStack {
                             Circle()
-                                .stroke(Color.white.opacity(0.28), lineWidth: 7)
+                                .stroke(GymTheme.heroOutline, lineWidth: 7)
                             Circle()
                                 .trim(
                                     from: 0,
                                     to: min(1, Double(draft.completedSetCount) / Double(max(1, draft.plannedSetCount)))
                                 )
-                                .stroke(Color.white, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                                .stroke(GymTheme.heroAccent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
                             VStack(spacing: 1) {
                                 Text("\(draft.completedSetCount)/\(draft.plannedSetCount)")
                                     .font(.headline.monospacedDigit())
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(GymTheme.onHero)
                                 Text(
                                     gymText(
                                         "sets",
@@ -776,7 +770,7 @@ struct ActiveWorkoutView: View {
                                     )
                                 )
                                 .font(.system(size: 10))
-                                .foregroundStyle(Color.white.opacity(0.85))
+                                .foregroundStyle(GymTheme.onHeroSecondary)
                             }
                         }
                         .frame(width: 68, height: 68)
@@ -970,13 +964,7 @@ struct ActiveWorkoutView: View {
         }
         .overlay(alignment: .leading) {
             Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [GymTheme.primary, GymTheme.secondary],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(GymTheme.primary)
                 .frame(width: 4)
                 .padding(.leading, 5)
                 .padding(.vertical, GymTheme.Spacing.large)
@@ -1031,7 +1019,7 @@ struct ActiveWorkoutView: View {
             VStack(alignment: .leading, spacing: GymTheme.Spacing.medium) {
                 Text(peerName)
                     .font(GymTheme.TypeScale.heroTitle)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(GymTheme.onHero)
                 HStack(spacing: GymTheme.Spacing.small) {
                     Image(systemName: peer?.finishedAt == nil
                         ? "wave.3.right.circle.fill"
@@ -1046,7 +1034,7 @@ struct ActiveWorkoutView: View {
                         ))
                 }
                 .font(.headline.monospacedDigit())
-                .foregroundStyle(.white)
+                .foregroundStyle(GymTheme.onHero)
                 Text(gymText(
                     "Live progress · Read only",
                     "Live-прогрес · Лише перегляд",
@@ -1054,7 +1042,7 @@ struct ActiveWorkoutView: View {
                     languageCode: gymCurrentLanguageCode()
                 ))
                 .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.82))
+                .foregroundStyle(GymTheme.onHeroSecondary)
             }
         }
     }
@@ -1938,7 +1926,7 @@ struct ActiveWorkoutView: View {
         let mmss = String(format: "%d:%02d", restSeconds / 60, restSeconds % 60)
         let suffix = Text(verbatim: " · \(mmss)")
         .font(.subheadline)
-        .foregroundStyle(Color.white.opacity(0.75))
+        .foregroundStyle(Color.white)
         return main + suffix
     }
 

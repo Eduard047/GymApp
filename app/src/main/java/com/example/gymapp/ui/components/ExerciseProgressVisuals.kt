@@ -38,12 +38,12 @@ fun ExerciseSpotlightCard(
             Text(
                 text = spotlight.title,
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+                color = HeroTone.title
             )
             Text(
                 text = spotlight.subtitle,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.88f)
+                color = HeroTone.supporting
             )
 
             Row(
@@ -71,7 +71,7 @@ fun ExerciseSpotlightCard(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoPill(
                     text = spotlight.weightDeltaLabel,
-                    accent = Color.White
+                    onHero = true
                 )
                 if (
                     spotlight.volumeDeltaLabel.isNotBlank() &&
@@ -79,7 +79,7 @@ fun ExerciseSpotlightCard(
                 ) {
                     InfoPill(
                         text = spotlight.volumeDeltaLabel,
-                        accent = Color.White
+                        onHero = true
                     )
                 }
             }

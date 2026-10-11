@@ -63,12 +63,13 @@ function authContext(overrides = {}) {
   return context;
 }
 
-test("auth header is a compact brand-gradient identity strip", () => {
+test("auth header is a compact flat tonal identity strip", () => {
   const panel = block(".auth-brand-panel");
   assert.match(panel, /grid-template-columns:\s*48px minmax\(0, 1fr\) auto;/);
   assert.match(panel, /gap:\s*12px;/);
   assert.match(panel, /padding:\s*10px 16px;/);
-  assert.match(panel, /linear-gradient\(135deg, var\(--brand-fill\) 0%, var\(--brand-fill-bright\) 100%\)/);
+  assert.match(panel, /background:\s*var\(--hero-surface\);/);
+  assert.doesNotMatch(panel, /gradient/i);
   assert.match(block(".auth-brand-mark"), /width:\s*48px;[\s\S]*height:\s*48px;/);
   assert.match(appSource, /class="auth-brand-mark" src="\.\/icon-192\.png" width="48" height="48"/);
   assert.match(block(".auth-wordmark"), /font-size:\s*22px;\s*font-weight:\s*700;\s*line-height:\s*28px;/);
@@ -272,4 +273,18 @@ test("offline sheet has no nested card, a brand primary, and a quiet Cancel", ()
   assert.match(sheet, /<button type="button" class="auth-quiet-link" data-action="close-modal">Cancel<\/button>/);
   assert.doesNotMatch(sheet, /button ghost full/);
   assert.doesNotMatch(block(".offline-account-sheet"), /border|box-shadow|background/);
+});
+
+test("PWA styles are flat: no gradients and one tonal hero token set in both themes", () => {
+  assert.doesNotMatch(stylesSource, /(?:linear|radial|conic)-gradient/i);
+  assert.doesNotMatch(stylesSource, /--hero-(?:gradient|grad-|fill)/);
+  const dark = stylesSource.slice(stylesSource.indexOf(':root[data-theme="dark"]'));
+  for (const token of ["--hero-surface", "--hero-outline", "--hero-text", "--hero-muted", "--hero-tile", "--hero-action", "--hero-action-label", "--hero-track", "--hero-accent"]) {
+    assert.match(stylesSource, new RegExp(`:root \\{[\\s\\S]*?${token}:\\s*#[0-9a-f]{6};`), `${token} light`);
+    assert.match(dark, new RegExp(`${token}:\\s*#[0-9a-f]{6};`), `${token} dark`);
+  }
+  assert.match(stylesSource, /\n\.hero-panel \{[^}]*background:\s*var\(--hero-surface\);/);
+  assert.match(block(".focus-lens"), /background:\s*var\(--hero-surface\);/);
+  assert.match(block(".focus-lens-action"), /background:\s*var\(--hero-action\);/);
+  assert.match(stylesSource, /\n\.highlighted \{[^}]*background:\s*var\(--hero-surface\);[^}]*border-color:\s*var\(--hero-outline\);/);
 });

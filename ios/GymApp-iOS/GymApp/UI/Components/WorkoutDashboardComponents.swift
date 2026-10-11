@@ -436,13 +436,7 @@ struct WorkoutProgressHero: View {
 
     var body: some View {
         GymHeroPanel(
-            contentPadding: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16),
-            gradient: LinearGradient(
-                colors: [GymTheme.brandFill, GymTheme.brandFillBright],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            solidFill: GymTheme.brandFill
+            contentPadding: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(
@@ -455,12 +449,12 @@ struct WorkoutProgressHero: View {
                 )
                 .font(.caption.weight(.semibold))
                 .tracking(0.3)
-                .foregroundStyle(Color.white.opacity(0.8))
+                .foregroundStyle(GymTheme.onHeroSecondary)
 
                 identity
 
                 ProgressView(value: progression.levelProgress)
-                    .tint(.white)
+                    .progressViewStyle(GymHeroProgressStyle())
                     .accessibilityLabel("Level progress")
                     .accessibilityValue(
                         gymText(
@@ -500,7 +494,12 @@ struct WorkoutProgressHero: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .frame(maxWidth: .infinity)
-                        .background(Color.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(GymTheme.heroActionLabel)
+                        .background(GymTheme.heroTile, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14)
+                                .strokeBorder(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth)
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the full rank ladder")
@@ -519,7 +518,7 @@ struct WorkoutProgressHero: View {
                     Spacer(minLength: 8)
                     Text(totalXPCompactLabel)
                         .font(.title3.bold())
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(GymTheme.heroAccent)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .contentTransition(.numericText())
@@ -533,7 +532,7 @@ struct WorkoutProgressHero: View {
                     }
                     Text(totalXPEarnedLabel)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(GymTheme.onHeroSecondary)
                         .contentTransition(.numericText())
                 }
             }
@@ -544,7 +543,7 @@ struct WorkoutProgressHero: View {
             .accessibilityValue(progression.totalXP.formatted(.number.locale(gymAppLocale())))
             Text(gymLocalized(progressSummary))
                 .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.86))
+                .foregroundStyle(GymTheme.onHeroSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -557,7 +556,9 @@ struct WorkoutProgressHero: View {
         .font(.caption.weight(.bold))
         .padding(.horizontal, 11)
         .padding(.vertical, 7)
-        .background(Color.white.opacity(0.13), in: Capsule())
+        .foregroundStyle(GymTheme.heroAccent)
+        .background(GymTheme.heroTile, in: Capsule())
+        .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth) }
         .fixedSize()
     }
 
@@ -624,7 +625,7 @@ struct WorkoutKPICard: View {
                     .accessibilityAddTraits(.isHeader)
                 Text("Track consistency, output and intensity at a glance.")
                     .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.86))
+                    .foregroundStyle(GymTheme.onHeroSecondary)
 
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 128), spacing: 8)],
@@ -1048,7 +1049,7 @@ struct WorkoutMuscleLoadCard: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(GymTheme.surfaceVariant)
                         Capsule()
-                            .fill(muscleColor(muscle.intensity).gradient)
+                            .fill(muscleColor(muscle.intensity))
                             .frame(width: max(4, proxy.size.width * muscle.intensity))
                     }
                 }

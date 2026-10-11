@@ -12961,7 +12961,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertTrue(source.contains("showsTrainingSettings = true"))
         XCTAssertFalse(source.contains("\"Days / week\""))
         XCTAssertTrue(source.contains("\"Today’s effort\""))
-        XCTAssertTrue(source.contains("activationLensShape.fill(GymTheme.heroGradient)"))
+        XCTAssertTrue(source.contains("activationLensShape.fill(GymTheme.heroSurface)"))
         XCTAssertTrue(source.contains("topLeadingRadius: 28"))
         XCTAssertTrue(source.contains("topTrailingRadius: 28"))
         XCTAssertTrue(source.contains("ActivationChipButtonStyle"))

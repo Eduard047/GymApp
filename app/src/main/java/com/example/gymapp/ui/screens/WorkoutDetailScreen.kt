@@ -112,6 +112,7 @@ import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricStrip
 import com.example.gymapp.ui.components.MetricTile
@@ -707,13 +708,13 @@ private fun WorkoutHeaderCard(
             Text(
                 text = summaryLine,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.84f)
+                color = HeroTone.supporting
             )
             noteText?.let {
                 Text(
                     text = stringResource(R.string.details_note, it),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.84f),
+                    color = HeroTone.supporting,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -787,7 +788,7 @@ private fun GarminWorkoutHeaderCard(
                             date
                         ),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.78f),
+                        color = HeroTone.supporting,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -859,7 +860,7 @@ private fun GarminWorkoutHeaderCard(
                     )
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.78f)
+                color = HeroTone.supporting
             )
             if (!isActivityOnly) {
                 val completedSetCount = metrics.completedSetCount
@@ -874,7 +875,7 @@ private fun GarminWorkoutHeaderCard(
                                     plannedSetCount
                                 ),
                                 style = MaterialTheme.typography.labelLarge,
-                                color = Color.White
+                                color = HeroTone.title
                             )
                         }
                 }
@@ -899,8 +900,8 @@ private fun WorkoutEditModeButton(
         modifier = Modifier.height(40.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
         colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = Color.White.copy(alpha = 0.16f),
-            contentColor = Color.White
+            containerColor = HeroTone.tile,
+            contentColor = HeroTone.actionLabel
         )
     ) {
         Icon(
