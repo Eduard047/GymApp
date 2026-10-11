@@ -1487,11 +1487,13 @@ struct WorkoutDetailView: View {
                     Button {
                         beginEditing()
                     } label: {
-                        Text(gymText(
-                            "Edit", "Змінити", "Изменить",
-                            languageCode: gymCurrentLanguageCode()
-                        ))
+                        Image(systemName: "pencil")
+                            .frame(minWidth: 44, minHeight: 44)
                     }
+                    .accessibilityLabel(gymText(
+                        "Edit", "Змінити", "Изменить",
+                        languageCode: gymCurrentLanguageCode()
+                    ))
 
                     if sharedWorkoutURL(workout) != nil {
                         Button {
