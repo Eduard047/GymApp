@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import kotlin.math.abs
 import androidx.navigation.NavHostController
 import android.view.View
 import android.view.ViewGroup
@@ -217,6 +218,84 @@ object UiAuditHooks {
                 openTab(nav, AppDestination.Workouts)
                 nav.navigate(AppDestination.postWorkoutSummaryRoute(sessionId))
             }
+        },
+        // Batch B1 (Today + Progress). Panels inside a scrolling list are scrolled to by their own heading; sheets and
+        // dialogs are presented only (nothing is saved or confirmed).
+        "today-history" to { nav, app ->
+            if (auditRepository(app, "today-history") != null) {
+                openTab(nav, AppDestination.Workouts)
+                scrollStep("today-history", "history panel", string(nav, R.string.training_history_title))
+            }
+        },
+        "weekly-review" to { nav, app ->
+            if (openProgress(nav, app, "weekly-review")) {
+                // First card of the overview list: already at the top once composed, no scrolling needed.
+                if (!awaitNode(string(nav, R.string.training_weekly_review))) Log.w(TAG, "weekly-review: review card not found")
+            }
+        },
+        // The comparison dialog behind an insight row ("62.50 kg · 8 -> 10 reps").
+        "weekly-evidence" to { nav, app ->
+            if (openProgress(nav, app, "weekly-evidence")) {
+                awaitNode(string(nav, R.string.training_weekly_review))
+                step("weekly-evidence", "insight row", formatMatcher(nav, R.string.training_rep_comparison))
+            }
+        },
+        "activity-heatmap" to { nav, app ->
+            if (openProgress(nav, app, "activity-heatmap")) {
+                scrollStep("activity-heatmap", "heatmap card", string(nav, R.string.activity_heatmap_title))
+            }
+        },
+        "muscle-map" to { nav, app ->
+            if (openProgress(nav, app, "muscle-map")) {
+                scrollStep("muscle-map", "muscle map card", string(nav, R.string.muscle_heatmap_title))
+            }
+        },
+        "ranks" to { nav, app ->
+            if (openProgress(nav, app, "ranks")) {
+                nav.navigate(AppDestination.Ranks.route)
+            }
+        },
+        "progress-exercises" to { nav, app ->
+            if (openProgress(nav, app, "progress-exercises")) {
+                step("progress-exercises", "exercises segment", string(nav, R.string.progress_section_exercises), topmost = true)
+            }
+        },
+        // Exercises segment, then the selector (the change-exercise row, or the empty-state button when none is chosen).
+        "progress-exercise-selector" to { nav, app ->
+            if (openProgress(nav, app, "progress-exercise-selector") &&
+                step("progress-exercise-selector", "exercises segment", string(nav, R.string.progress_section_exercises), topmost = true)
+            ) {
+                val change = string(nav, R.string.cd_change_exercise)
+                val select = string(nav, R.string.label_select_exercise)
+                step("progress-exercise-selector", "selector", { change(it) || select(it) })
+            }
+        },
+        "progress-goals" to { nav, app ->
+            if (openProgress(nav, app, "progress-goals")) {
+                step("progress-goals", "goals segment", string(nav, R.string.progress_section_goals), topmost = true)
+            }
+        },
+        // Goals segment, then the first badge tile of the achievements grid ("Title, Unlocked|Locked, progress").
+        "achievement-detail" to { nav, app ->
+            if (openProgress(nav, app, "achievement-detail") &&
+                step("achievement-detail", "goals segment", string(nav, R.string.progress_section_goals), topmost = true)
+            ) {
+                val tile = formatMatcher(nav, R.string.achievement_tile_a11y)
+                val unlocked = ", " + nav.context.getString(R.string.achievement_status_unlocked) + ", "
+                val locked = ", " + nav.context.getString(R.string.achievement_status_locked) + ", "
+                step(
+                    "achievement-detail", "badge tile",
+                    { tile(it) && (it.contains(unlocked) || it.contains(locked)) },
+                    scroll = true
+                )
+            }
+        },
+        // Profile > Settings > Training settings row (the sheet is the same one the weekly review card opens).
+        "training-settings" to { nav, app ->
+            if (auditRepository(app, "training-settings") != null) {
+                openTab(nav, AppDestination.Profile)
+                step("training-settings", "settings row", string(nav, R.string.training_settings_title), scroll = true)
+            }
         }
     )
 
@@ -293,10 +372,79 @@ object UiAuditHooks {
     /** Matches a localized format string (e.g. "Delete set %1$d for %2$s") against any argument values. */
     private fun formatMatcher(nav: NavHostController, id: Int): (String) -> Boolean {
         val regex = Regex(
-            nav.context.getString(id).split(Regex("%\\d*\\$?[sd]")).joinToString(".*") { Regex.escape(it) },
+            nav.context.getString(id).split(Regex("%(\\d+\\$)?\\.?\\d*[sdf]")).joinToString(".*") { Regex.escape(it) },
             RegexOption.DOT_MATCHES_ALL
         )
         return { regex.matches(it) }
+    }
+
+    private fun openProgress(nav: NavHostController, app: GymApplication, route: String): Boolean {
+        if (auditRepository(app, route) == null) return false
+        openTab(nav, AppDestination.Progress)
+        return true
+    }
+
+    private suspend fun scrollStep(route: String, what: String, matcher: (String) -> Boolean): Boolean {
+        val ok = scrollToLabel(matcher)
+        if (!ok) {
+            Log.w(TAG, "$route: $what not found")
+            dumpClickables(route)
+        }
+        return ok
+    }
+
+    /**
+     * Scrolls the largest vertical scroll container until a node labelled [matches] sits near the top
+     * (or stops moving at the end of the list); scrolls down in steps while the node is not composed yet.
+     */
+    @OptIn(InternalComposeUiApi::class)
+    private suspend fun scrollToLabel(matches: (String) -> Boolean, topFraction: Float = 0.17f): Boolean {
+        var previous: Float? = null
+        var stalled = 0
+        var nextIndex = 1
+        repeat(40) {
+            val reading = withContext(Dispatchers.Main) {
+                val activity = activityRef?.get() ?: return@withContext null
+                val root = findComposeRoot(activity.window.decorView) ?: return@withContext null
+                val height = (root as View).height.toFloat()
+                val tree = root.semanticsOwner.rootSemanticsNode
+                val scroll = findNodes(tree) {
+                    it.config.getOrNull(SemanticsActions.ScrollBy) != null &&
+                        it.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null
+                }.maxByOrNull { it.size.height }?.config?.getOrNull(SemanticsActions.ScrollBy)?.action
+                val target = findNodes(tree) { labelsOf(it).any(matches) }.firstOrNull()
+                if (target == null) {
+                    // Jump item by item (instant) so a deep panel is reached before the capture settles; ScrollBy otherwise.
+                    val toIndex = findNodes(tree) {
+                        it.config.getOrNull(SemanticsActions.ScrollToIndex) != null &&
+                            it.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null
+                    }.maxByOrNull { it.size.height }?.config?.getOrNull(SemanticsActions.ScrollToIndex)?.action
+                    if (toIndex != null) toIndex.invoke(nextIndex++) else scroll?.invoke(0f, 1500f)
+                    Float.NaN to height
+                } else {
+                    val y = target.positionInRoot.y
+                    val delta = y - height * topFraction
+                    if (abs(delta) >= 24f) scroll?.invoke(0f, delta)
+                    y to height
+                }
+            }
+            if (reading != null && !reading.first.isNaN()) {
+                val (y, height) = reading
+                if (abs(y - height * topFraction) < 24f) {
+                    delay(500)
+                    return true
+                }
+                // Not moving any more (end of the list): good enough after three identical readings.
+                stalled = if (previous != null && abs(previous!! - y) < 1f) stalled + 1 else 0
+                if (stalled >= 3) {
+                    delay(500)
+                    return true
+                }
+                previous = y
+            }
+            delay(if (reading == null || reading.first.isNaN()) 200 else 400)
+        }
+        return false
     }
 
     private suspend fun step(
