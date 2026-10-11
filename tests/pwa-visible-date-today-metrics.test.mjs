@@ -900,7 +900,7 @@ test("training history states the weekly goal, shows volume with its unit, and u
     assert.match(markup, new RegExp(`<strong>${result[language].shortDate}</strong>`));
     assert.match(markup, language === "en" ? /<b>[^<]+ kg<\/b>/ : /<b>[^<]+ кг<\/b>/);
   }
-  assert.match(result.en.partial, /M12 2C6\.48|M20\.57 14\.86/);
+  assert.match(result.en.partial, /M1\.5 2h2v5\.6h-2z/);
   assert.doesNotMatch(result.en.partial, /M12 2C6\.48 2 2 6\.48/);
   assert.match(result.metWeek, /Goal: 2 of 2/);
   assert.match(result.metWeek, /<span role="group"[^>]*><svg[^>]*><path d="M12 2C6\.48/);

@@ -63,6 +63,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.AccountCircle
+import com.example.gymapp.ui.components.GymIcons
+import com.example.gymapp.ui.components.Weightlifter
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -1036,7 +1038,7 @@ private fun TrainingHistoryPanel(
                     } else {
                         Modifier
                     },
-                    leadingIcon = if (weeklyGoalMet) Icons.Default.CheckCircle else Icons.Default.FitnessCenter,
+                    leadingIcon = if (weeklyGoalMet) Icons.Default.CheckCircle else GymIcons.Weightlifter,
                     text = if (isWeek) {
                         stringResource(
                             R.string.today_weekly_goal,

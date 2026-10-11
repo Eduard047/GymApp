@@ -223,11 +223,12 @@ const icons = {
   remove: "M5 11h14v2H5z",
   waveform: "M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4",
   arrowUp: "M12 19V5M5 12l7-7 7 7",
-  chevronDown: "M6 9l6 6 6-6"
+  chevronDown: "M6 9l6 6 6-6",
+  weightlifter: "M1.5 2h2v5.6h-2zM20.5 2h2v5.6h-2zM3.5 3.9h17v1.7h-17zM6 5.6h1.7L10 10H8.3zM18 5.6h-1.7L14 10h1.7zM12 6.6a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM9.5 10h5v6h-5zM9.5 16h2.3l-.8 6H8.6zM12.2 16h2.3l.9 6H13z"
 };
 
 const filledIcons = new Set([
-  "add", "back", "calendarFilled", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "moon", "more", "person", "remove", "showChart", "sun"
+  "add", "back", "calendarFilled", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "moon", "more", "person", "remove", "showChart", "sun", "weightlifter"
 ]);
 
 function boundedLocationParameters(rawValue, maximumLength, maximumPairs = 32) {
@@ -11104,7 +11105,7 @@ function trainingHistoryMarkup() {
       `Цель недели: ${summary.completedTrainingDays} из ${summary.targetTrainingDays}`
     )
     : target;
-  const targetIcon = weekMode ? svg(goalMet ? "checkCircle" : "fitness", "small-icon") : "";
+  const targetIcon = weekMode ? svg(goalMet ? "checkCircle" : "weightlifter", "small-icon") : "";
   const metrics = [
     [tx3("Workouts", "Тренування", "Тренировки"), summary.completedWorkouts],
     [tx3("Minutes", "Хвилини", "Минуты"), summary.trainingMinutes],
