@@ -7782,3 +7782,43 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   outline: 2px solid var(--hero-action);
   outline-offset: -2px;
 }
+
+.workout-template-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+button.workout-template-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.workout-template-row h3,
+button.workout-template-row p {
+  margin: 0;
+}
+
+button.workout-template-row .workout-template-names {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+button.workout-template-row small {
+  font-size: 12px;
+}
+
+button.workout-template-row:hover,
+button.workout-template-row:focus-visible {
+  border-color: color-mix(in srgb, var(--sage) 60%, var(--outline-variant));
+}

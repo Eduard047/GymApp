@@ -179,7 +179,7 @@ test("retained browser source accepts Russian while the public landing owns its 
     ["By name", "По названию"],
     ["Built-in", "Встроенное"],
     ["Copy Last +2.5 kg", "Копировать последний +2,5 кг"],
-    ["Copy Previous Workout", "Скопировать предыдущую тренировку"],
+    ["Copy previous workout", "Скопировать предыдущую тренировку"],
     ["Completed missions and new badges from this finish.", "Выполненные миссии и новые значки после завершения тренировки."],
     ["Deload", "Разгрузка"],
     ["Garmin sync failed. Check your connection and try again.", "Не удалось синхронизировать Garmin. Проверь подключение и попробуй снова."],

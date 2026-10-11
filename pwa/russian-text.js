@@ -588,7 +588,7 @@ const RUSSIAN_TEXT = new Map([
   ["Copy JSON", "Копировать JSON"],
   ["Copy Last +2.5 kg", "Копировать последний +2,5 кг"],
   ["Copy Last Set", "Копировать подход"],
-  ["Copy Previous Workout", "Скопировать предыдущую тренировку"],
+  ["Copy previous workout", "Скопировать предыдущую тренировку"],
   ["Copy a previous workout", "Скопировать предыдущее"],
   ["Copy this Garmin pairing token into Connect IQ settings now. Treat it as a password. It will not be stored or shown again. Choose Cancel to revoke it.", "Скопируйте этот токен Garmin в настройку Connect IQ сейчас. Относись к нему как к паролю. Он не будет храниться и больше не показываться. Нажмите «Отмена», чтобы отозвать его."],
   ["Core", "Кор"],
