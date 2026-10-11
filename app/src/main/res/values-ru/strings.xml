@@ -421,6 +421,8 @@
     <string name="focus_lens_total_volume">Общий объём</string>
     <string name="action_start_workout">Начать тренировку</string>
     <string name="action_continue_workout">Продолжить тренировку</string>
+    <string name="continue_workout_bar_progress">%1$d / %2$d</string>
+    <string name="continue_workout_bar_discard">Удалить активную тренировку</string>
     <string name="add_workout_active_exercises">Упражнений: %1$d</string>
     <string name="add_workout_total_sets">Подходов: %1$d</string>
     <string name="add_workout_choose_training_day">Выбери тип тренировки</string>

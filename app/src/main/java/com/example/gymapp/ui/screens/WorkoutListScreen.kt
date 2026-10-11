@@ -108,6 +108,7 @@ import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
+import com.example.gymapp.ui.components.ActiveWorkoutDiscardDialog
 import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.GymSegmentItem
@@ -359,28 +360,12 @@ fun WorkoutListScreen(
     }
 
     if (showActiveWorkoutDiscardConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showActiveWorkoutDiscardConfirmation = false },
-            title = { Text(stringResource(R.string.active_workout_discard_title)) },
-            text = { Text(stringResource(R.string.active_workout_discard_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showActiveWorkoutDiscardConfirmation = false
-                        onDiscardActiveWorkout()
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text(stringResource(R.string.active_workout_discard_confirm))
-                }
+        ActiveWorkoutDiscardDialog(
+            onConfirm = {
+                showActiveWorkoutDiscardConfirmation = false
+                onDiscardActiveWorkout()
             },
-            dismissButton = {
-                TextButton(onClick = { showActiveWorkoutDiscardConfirmation = false }) {
-                    Text(stringResource(R.string.active_workout_discard_keep))
-                }
-            }
+            onDismiss = { showActiveWorkoutDiscardConfirmation = false }
         )
     }
     if (showRetainedPlanCancelConfirmation) {

@@ -121,6 +121,9 @@ import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
 import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.screens.AddWorkoutScreen
+import com.example.gymapp.ui.components.ActiveWorkoutDiscardDialog
+import com.example.gymapp.ui.components.ContinueWorkoutBar
+import com.example.gymapp.ui.components.shouldShowContinueWorkoutBar
 import com.example.gymapp.ui.screens.ActiveWorkoutOverflowMenu
 import com.example.gymapp.ui.screens.ActiveWorkoutScreen
 import com.example.gymapp.ui.screens.ActiveWorkoutToolbarState
@@ -2386,6 +2389,33 @@ internal fun GymAppRoot(
                 }
             }
 
+            val discardActiveWorkoutFailed = stringResource(R.string.active_workout_discard_failed)
+            // One discard path for the Today focus card and the resume bar.
+            val discardActiveWorkout: () -> Unit = {
+                activeWorkout?.activeWorkout?.revision?.let { activeRevision ->
+                    coroutineScope.launch {
+                        val discarded = runCatching {
+                            repository.discardActiveWorkout(activeRevision)
+                        }.getOrNull() == com.example.gymapp.data.repository.DiscardActiveWorkoutResult.Discarded
+                        if (discarded) {
+                            runCatching { restTimerController.stop() }
+                        } else {
+                            snackbarHostState.showSnackbar(discardActiveWorkoutFailed)
+                        }
+                    }
+                }
+            }
+            var showContinueBarDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+            val resumeBarFocus = remember(activeWorkout) { activeWorkoutFocus(activeWorkout) }
+            val showsContinueWorkoutBar = resumeBarFocus != null && shouldShowContinueWorkoutBar(
+                hasActiveWorkout = activeWorkout != null,
+                isActiveWorkoutRoute = isActiveWorkoutRoute,
+                isTodayRoute = currentRoute == AppDestination.Workouts.route
+            )
+            LaunchedEffect(showsContinueWorkoutBar) {
+                if (!showsContinueWorkoutBar) showContinueBarDiscardConfirmation = false
+            }
+
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2576,11 +2606,25 @@ internal fun GymAppRoot(
                     }
                 }
             ) { innerPadding ->
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                 ) {
+                    if (showsContinueWorkoutBar && resumeBarFocus != null) {
+                        ContinueWorkoutBar(
+                            completedSets = resumeBarFocus.completedSets,
+                            totalSets = resumeBarFocus.totalSets,
+                            showsDiscard = liveWorkoutState.activeRoomId == null,
+                            onContinue = {
+                                navController.navigate(AppDestination.ActiveWorkout.route) {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onDiscard = { showContinueBarDiscardConfirmation = true }
+                        )
+                    }
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     NavHost(
                         navController = navController,
                         startDestination = AppDestination.Workouts.route,
@@ -2620,9 +2664,6 @@ internal fun GymAppRoot(
                             val focusForToday = remember(activeWorkout) {
                                 activeWorkoutFocus(activeWorkout)
                             }
-                            val discardActiveWorkoutFailed = stringResource(
-                                R.string.active_workout_discard_failed
-                            )
                             val hasRetainedWorkoutDraft = shouldResumeRetainedWorkoutDraft(
                                 hasEditorDraft = addWorkoutDraftUiState.isDirty ||
                                     addWorkoutDraftUiState.exerciseDrafts.isNotEmpty() ||
@@ -2842,20 +2883,7 @@ internal fun GymAppRoot(
                                         }
                                     }
                                 },
-                                onDiscardActiveWorkout = {
-                                    activeWorkout?.activeWorkout?.revision?.let { activeRevision ->
-                                        coroutineScope.launch {
-                                            val discarded = runCatching {
-                                                repository.discardActiveWorkout(activeRevision)
-                                            }.getOrNull() == com.example.gymapp.data.repository.DiscardActiveWorkoutResult.Discarded
-                                            if (discarded) {
-                                                runCatching { restTimerController.stop() }
-                                            } else {
-                                                snackbarHostState.showSnackbar(discardActiveWorkoutFailed)
-                                            }
-                                        }
-                                    }
-                                },
+                                onDiscardActiveWorkout = discardActiveWorkout,
                                 onCancelRetainedPlan = {
                                     addWorkoutDraftViewModel.discardDraft()
                                     setLiveWorkoutDraftTarget(null)
@@ -4723,6 +4751,17 @@ internal fun GymAppRoot(
                         }
                     }
                 }
+                }
+            }
+
+            if (showContinueBarDiscardConfirmation && showsContinueWorkoutBar) {
+                ActiveWorkoutDiscardDialog(
+                    onConfirm = {
+                        showContinueBarDiscardConfirmation = false
+                        discardActiveWorkout()
+                    },
+                    onDismiss = { showContinueBarDiscardConfirmation = false }
+                )
             }
 
             val conflict = cloudSyncConflict
