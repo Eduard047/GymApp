@@ -17,6 +17,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
@@ -72,6 +74,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
@@ -2607,10 +2610,19 @@ internal fun GymAppRoot(
                     }
                 }
             ) { innerPadding ->
+                // The Exercises list draws under the floating tab bar and pads its last item instead.
+                val scrollsUnderTabBar = currentRoute == AppDestination.Exercises.route
+                val layoutDirection = LocalLayoutDirection.current
+                val tabBarInset = innerPadding.calculateBottomPadding()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding)
+                        .padding(
+                            start = innerPadding.calculateStartPadding(layoutDirection),
+                            top = innerPadding.calculateTopPadding(),
+                            end = innerPadding.calculateEndPadding(layoutDirection),
+                            bottom = if (scrollsUnderTabBar) 0.dp else tabBarInset
+                        )
                 ) {
                     if (showsContinueWorkoutBar && resumeBarFocus != null) {
                         ContinueWorkoutBar(
@@ -3793,7 +3805,8 @@ internal fun GymAppRoot(
                                 onDismissHistory = viewModel::closeExerciseHistory,
                                 onToggleFavorite = viewModel::toggleFavorite,
                                 onRetryLoad = viewModel::retryLoad,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                bottomContentInset = tabBarInset
                             )
                         }
 

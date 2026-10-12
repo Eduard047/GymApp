@@ -84,6 +84,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.example.gymapp.R
@@ -988,7 +989,9 @@ fun ExerciseListScreen(
     onDismissHistory: () -> Unit,
     onToggleFavorite: (ExerciseEntity) -> Unit,
     onRetryLoad: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Height of the floating tab bar the list scrolls under; added to the last item's bottom padding. */
+    bottomContentInset: Dp = 0.dp
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     var isAddExerciseOpen by rememberSaveable { mutableStateOf(false) }
@@ -1072,7 +1075,7 @@ fun ExerciseListScreen(
             start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,
             end = screenHorizontalPadding,
-            bottom = GymSpacing.ScreenBottom
+            bottom = GymSpacing.ScreenBottom + bottomContentInset
         ),
         verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
     ) {
