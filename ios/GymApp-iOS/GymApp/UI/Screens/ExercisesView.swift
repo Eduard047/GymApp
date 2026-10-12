@@ -87,41 +87,65 @@ struct ExerciseLibraryDeletionTarget: Equatable, Identifiable {
     }
 
     func confirmationMessage(languageCode: String) -> String {
-        let workouts = gymCount(
+        let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
+        let undone = gymLocalized("This cannot be undone.", languageCode: languageCode)
+        guard linkedWorkoutCount > 0 else {
+            return String(
+                format: gymLocalized(
+                    "Not used in any workout, so no history is removed. %@",
+                    languageCode: languageCode
+                ),
+                locale: locale,
+                arguments: [undone]
+            )
+        }
+        let workouts = gymPlural(
             linkedWorkoutCount,
-            englishOne: "workout",
-            englishMany: "workouts",
-            ukrainianOne: "тренування",
-            ukrainianFew: "тренування",
-            ukrainianMany: "тренувань",
+            en: ("%d workout", "%d workouts"),
+            uk: ("%d тренування", "%d тренувань", "%d тренувань"),
+            ru: ("%d тренировки", "%d тренировок", "%d тренировок"),
             languageCode: languageCode
         )
-        let sets = gymCount(
+        let sets = gymPlural(
             linkedSetCount,
-            englishOne: "set",
-            englishMany: "sets",
-            ukrainianOne: "підхід",
-            ukrainianFew: "підходи",
-            ukrainianMany: "підходів",
+            en: ("%d logged set", "%d logged sets"),
+            uk: ("%d записаного підходу", "%d записаних підходів", "%d записаних підходів"),
+            ru: ("%d записанного подхода", "%d записанных подходов", "%d записанных подходов"),
             languageCode: languageCode
         )
-        let deletedWorkouts = gymCount(
-            deletedWorkoutCount,
-            englishOne: "workout",
-            englishMany: "workouts",
-            ukrainianOne: "тренування",
-            ukrainianFew: "тренування",
-            ukrainianMany: "тренувань",
-            languageCode: languageCode
-        )
-        return String(
-            format: gymLocalized(
-                "The exercise will be permanently deleted. Linked impact: %1$@; %2$@; empty workouts deleted: %3$@. This cannot be undone.",
+        var sentences = [
+            String(
+                format: gymLocalized(
+                    "It will also be removed from %1$@ and %2$@.",
+                    languageCode: languageCode
+                ),
+                locale: locale,
+                arguments: [
+                    String(format: workouts, locale: locale, linkedWorkoutCount),
+                    String(format: sets, locale: locale, linkedSetCount)
+                ]
+            )
+        ]
+        if deletedWorkoutCount > 0 {
+            let emptied = gymPlural(
+                deletedWorkoutCount,
+                en: ("%d workout left empty will be deleted.", "%d workouts left empty will be deleted."),
+                uk: (
+                    "%d порожнє тренування буде видалено.",
+                    "%d порожні тренування будуть видалені.",
+                    "%d порожніх тренувань буде видалено."
+                ),
+                ru: (
+                    "%d опустевшая тренировка будет удалена.",
+                    "%d опустевшие тренировки будут удалены.",
+                    "%d опустевших тренировок будут удалены."
+                ),
                 languageCode: languageCode
-            ),
-            locale: AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale,
-            arguments: [workouts, sets, deletedWorkouts]
-        )
+            )
+            sentences.append(String(format: emptied, locale: locale, deletedWorkoutCount))
+        }
+        sentences.append(undone)
+        return sentences.joined(separator: " ")
     }
 
     @MainActor
@@ -735,7 +759,10 @@ struct ExercisesView: View {
                     do {
                         try store.deleteExercise(id: target.exerciseID, cascadeFromWorkouts: true)
                         target.restTimerIDs.forEach { appState.restTimers.cancel(id: $0) }
-                        resultMessage = "Exercise and linked workout entries deleted."
+                        resultMessage = gymLocalized(
+                            "Exercise and linked workout entries deleted.",
+                            languageCode: languageCode
+                        )
                         resultIsError = false
                     } catch {
                         activeAlert = .error(errorMessage(error))

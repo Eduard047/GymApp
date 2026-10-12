@@ -616,11 +616,11 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         XCTAssertEqual(target.restTimerIDs.count, 2)
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "en"),
-            "The exercise will be permanently deleted. Linked impact: 2 workouts; 3 sets; empty workouts deleted: 1 workout. This cannot be undone."
+            "It will also be removed from 2 workouts and 3 logged sets. 1 workout left empty will be deleted. This cannot be undone."
         )
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "ru"),
-            "Упражнение будет удалено навсегда. Связанные данные: 2 тренировки; 3 подхода; пустых тренировок будет удалено: 1 тренировка. Это действие нельзя отменить."
+            "Она также будет удалена из 2 тренировок и 3 записанных подходов. 1 опустевшая тренировка будет удалена. Это действие нельзя отменить."
         )
 
         let replacementStore = try makeStore(account: store.accountStorageKey)

@@ -6183,7 +6183,6 @@
       }
     },
     "Exercise and linked workout entries deleted." : {
-      "extractionState" : "stale",
       "localizations" : {
         "ru" : {
           "stringUnit" : {
@@ -13102,30 +13101,6 @@
         }
       }
     },
-    "The exercise will be permanently deleted. Linked impact: %1$@; %2$@; empty workouts deleted: %3$@. This cannot be undone." : {
-      "comment" : "An exercise deletion warning. The arguments are localized counts of linked workouts, linked sets, and workouts that become empty.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The exercise will be permanently deleted. Linked impact: %1$@; %2$@; empty workouts deleted: %3$@. This cannot be undone."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Упражнение будет удалено навсегда. Связанные данные: %1$@; %2$@; пустых тренировок будет удалено: %3$@. Это действие нельзя отменить."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Вправу буде остаточно видалено. Пов’язані дані: %1$@; %2$@; порожніх тренувань буде видалено: %3$@. Цю дію не можна скасувати."
-          }
-        }
-      }
-    },
     "The Garmin sync request is too large or malformed." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -15625,6 +15600,77 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Українська"
+          }
+        }
+      }
+    },
+    "It will also be removed from %1$@ and %2$@." : {
+      "comment" : "Exercise deletion warning. The arguments are localized counts of linked workouts and logged sets.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will also be removed from %1$@ and %2$@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Она также будет удалена из %1$@ и %2$@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Її також буде видалено з %1$@ і %2$@."
+          }
+        }
+      }
+    },
+    "Not used in any workout, so no history is removed. %@" : {
+      "comment" : "Exercise deletion warning for an exercise with no workouts. The argument is the sentence 'This cannot be undone.'",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not used in any workout, so no history is removed. %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не используется ни в одной тренировке, история не изменится. %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не використовується в жодному тренуванні, історія не зміниться. %@"
+          }
+        }
+      }
+    },
+    "This cannot be undone." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This cannot be undone."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это действие нельзя отменить."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цю дію не можна скасувати."
           }
         }
       }
