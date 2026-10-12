@@ -2778,21 +2778,19 @@ private fun ExerciseHistoryBottomSheetContent(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = localizedExerciseName(exerciseName),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 ExerciseMediaPreview(
                     exerciseId = exerciseId,
                     exerciseName = exerciseName,
                     ownerKey = exerciseMediaOwnerKey,
                     width = 84.dp,
                     height = 70.dp
-                )
-                Text(
-                    text = localizedExerciseName(exerciseName),
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.weight(1f)
                 )
             }
         }
