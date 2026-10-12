@@ -6053,6 +6053,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .achievement-sheet-description { margin: 0; color: var(--muted); }
 .achievement-sheet-progress { display: grid; gap: 8px; }
+.achievement-sheet-progress { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; }
+.achievement-sheet-progress .progress { grid-column: 1 / -1; }
+.achievement-sheet-progress .achievement-sheet-reward { justify-self: end; text-align: right; }
 .achievement-sheet-progress .progress { height: 8px; margin: 0; }
 .achievement-sheet.unlocked .achievement-sheet-progress .progress span { background: var(--badge-color); }
 .achievement-sheet-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
