@@ -6900,6 +6900,13 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 @media (min-width: 900px) {
+  /* Profile rows read as one column, like the settings sheets. */
+  .screen-leaderboard > * {
+    width: 100%;
+    max-width: 720px;
+    margin-inline: auto;
+  }
+
   .app-shell:not(.root-route-shell) .screen {
     width: min(calc(100% - 48px), 960px);
     margin-inline: auto;
