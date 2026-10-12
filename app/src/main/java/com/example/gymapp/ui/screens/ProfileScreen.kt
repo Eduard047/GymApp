@@ -404,9 +404,11 @@ internal fun ProfileScreen(
                 if (!isAccountActionLoading) showLocalProfileDeletion = false
             },
             title = {
-                Text(stringResource(R.string.local_profile_delete_confirm_title, localProfileName))
+                Text(stringResource(R.string.local_profile_delete_confirm_title))
             },
-            text = { Text(stringResource(R.string.local_profile_delete_warning)) },
+            text = {
+                Text(stringResource(R.string.local_profile_delete_warning, localProfileName))
+            },
             confirmButton = {
                 Button(
                     onClick = {

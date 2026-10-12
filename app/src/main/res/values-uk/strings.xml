@@ -353,8 +353,8 @@
     <string name="account_delete_local_cleanup_failed">Хмарний обліковий запис видалено, але частину локальних даних не вдалося очистити з цього пристрою.</string>
     <string name="local_profile_delete_title">Видалити локальний профіль</string>
     <string name="local_profile_delete_action">Видалити локальний профіль і дані</string>
-    <string name="local_profile_delete_confirm_title">Назавжди видалити %1$s?</string>
-    <string name="local_profile_delete_warning">Цю дію не можна скасувати. Спочатку експортуй резервну копію, якщо хочеш зберегти історію тренувань.</string>
+    <string name="local_profile_delete_confirm_title">Видалити локальний профіль?</string>
+    <string name="local_profile_delete_warning">Профіль «%1$s» і його тренування буде видалено з цього пристрою. Цю дію не можна скасувати.</string>
     <string name="local_profile_delete_confirm">Видалити локальний профіль</string>
     <string name="local_profile_delete_failed">Не вдалося видалити локальний профіль. Його дані залишено без змін.</string>
     <string name="local_profile_delete_cleanup_pending">Видалення локального профілю не завершено. GymApp повторить очищення після перезапуску.</string>

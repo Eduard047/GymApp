@@ -353,8 +353,8 @@
     <string name="account_delete_local_cleanup_failed">The cloud account was deleted, but some local account data could not be cleared from this device.</string>
     <string name="local_profile_delete_title">Delete local profile</string>
     <string name="local_profile_delete_action">Delete local profile and data</string>
-    <string name="local_profile_delete_confirm_title">Permanently delete %1$s?</string>
-    <string name="local_profile_delete_warning">This cannot be undone. Export a backup first if you want to retain your workout history.</string>
+    <string name="local_profile_delete_confirm_title">Delete local profile?</string>
+    <string name="local_profile_delete_warning">Profile “%1$s” and its workouts will be removed from this device. This cannot be undone.</string>
     <string name="local_profile_delete_confirm">Delete local profile</string>
     <string name="local_profile_delete_failed">The local profile could not be deleted. Its data was left untouched.</string>
     <string name="local_profile_delete_cleanup_pending">Local profile deletion is incomplete. GymApp will retry cleanup after restart.</string>

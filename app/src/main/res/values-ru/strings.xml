@@ -353,8 +353,8 @@
     <string name="account_delete_local_cleanup_failed">Облачный аккаунт удалён, но часть локальных данных аккаунта не удалось очистить с этого устройства.</string>
     <string name="local_profile_delete_title">Удалить локальный профиль</string>
     <string name="local_profile_delete_action">Удалить локальный профиль и данные</string>
-    <string name="local_profile_delete_confirm_title">Навсегда удалить %1$s?</string>
-    <string name="local_profile_delete_warning">Это действие нельзя отменить. Сначала экспортируй резервную копию, если хочешь сохранить историю тренировок.</string>
+    <string name="local_profile_delete_confirm_title">Удалить локальный профиль?</string>
+    <string name="local_profile_delete_warning">Профиль «%1$s» и его тренировки будут удалены с этого устройства. Это действие нельзя отменить.</string>
     <string name="local_profile_delete_confirm">Удалить локальный профиль</string>
     <string name="local_profile_delete_failed">Не удалось удалить локальный профиль. Его данные оставлены без изменений.</string>
     <string name="local_profile_delete_cleanup_pending">Удаление локального профиля не завершено. GymApp повторит очистку после перезапуска.</string>
