@@ -451,7 +451,10 @@ internal fun ProfileScreen(
 
 private const val DELETE_CONFIRMATION_WORD = "DELETE"
 
-/** Mirrors the iPhone rule: surrounding whitespace is ignored, the word is case-sensitive. */
+/**
+ * Mirrors the iPhone rule: surrounding whitespace is ignored, the word is case-sensitive. Shared by
+ * the local-profile and the cloud-account deletion dialogs.
+ */
 internal fun localProfileDeletionConfirmationMatches(input: String): Boolean =
     input.trim() == DELETE_CONFIRMATION_WORD
 
@@ -1031,7 +1034,8 @@ private fun DeleteCloudAccountDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = confirmation == "DELETE" && currentPassword.isNotEmpty(),
+                enabled = localProfileDeletionConfirmationMatches(confirmation) &&
+                    currentPassword.isNotEmpty(),
                 onClick = { onConfirm(currentPassword) }
             ) {
                 Text(
