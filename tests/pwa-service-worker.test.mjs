@@ -23,7 +23,7 @@ const VERSIONED_ASSET_PAIRS = [
   ["progression-rules.js", "progression-rules.v57.js"],
   ["shared-workout.js", "shared-workout.v66.js"],
   ["shared-workout-flow.js", "shared-workout-flow.v71.js"],
-  ["russian-text.js", "russian-text.v90.js"],
+  ["russian-text.js", "russian-text.v91.js"],
   ["exercise-search-vocabulary.js", "exercise-search-vocabulary.v1.js"],
   ["voice-workout.js", "voice-workout.v2.js"],
   ["supabase-realtime.js", "supabase-realtime.v1.js"],
@@ -623,7 +623,7 @@ test("current versioned pathname assets cannot be mistaken for predecessor asset
     "muscle-regions.v56.js", "supabase-config.v58.js", "state-contract.v73.js",
     "garmin-cloud-sync.v58.js", "progression-rules.v57.js", "shared-workout.v66.js",
     "shared-workout-flow.v71.js", "supabase-realtime.v1.js", "live-workout.v3.js",
-    "live-workout-state.v1.js", "russian-text.v90.js", "exercise-search-vocabulary.v1.js", "voice-workout.v2.js", "app.v125.js",
+    "live-workout-state.v1.js", "russian-text.v91.js", "exercise-search-vocabulary.v1.js", "voice-workout.v2.js", "app.v125.js",
     "workout/landing.v2.css", "workout/landing.v4.js"
   ];
 
@@ -804,7 +804,7 @@ test("install reloads one internally consistent fully served version before prom
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/workout/landing.v4.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/theme.v56.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v95.css")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/russian-text.v90.js")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/russian-text.v91.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/exercise-media/bench_press_0.jpg")));
   assert.equal(worker.addedAssets.some(asset => /retirement(?:\.v1)?\.(?:js|css)$/.test(asset.url)), false);
   assert.equal(worker.addedAssets.every(asset => asset instanceof Request && asset.cache === "reload"), true);
@@ -976,7 +976,7 @@ test("an old controlled client advances to one consistent v169 document and bund
   });
   const currentDocument = await documentResponse.text();
   assert.equal(currentDocument, indexHtml);
-  assert.match(currentDocument, /src="\.\/russian-text\.v90\.js"/);
+  assert.match(currentDocument, /src="\.\/russian-text\.v91\.js"/);
   assert.match(currentDocument, /src="\.\/app\.v125\.js"/);
   assert.doesNotMatch(currentDocument, /russian-text\.v78\.js|app\.v86\.js/);
   assert.equal(documentResponse.headers.get("Cache-Control"), "no-store");

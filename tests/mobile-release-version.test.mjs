@@ -10,7 +10,7 @@ const expected = Object.freeze({
   garminVersion: "4.0.3",
   pwaBundle: "app.v125.js",
   pwaStyleBundle: "styles.v95.css",
-  pwaRussianBundle: "russian-text.v90.js",
+  pwaRussianBundle: "russian-text.v91.js",
   pwaLiveWorkoutBundle: "live-workout.v3.js",
   pwaCache: "gym-pwa-v169",
 });

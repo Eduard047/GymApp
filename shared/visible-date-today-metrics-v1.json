@@ -133,7 +133,7 @@
   "pwaReleaseCoupling": {
     "appBundle": "app.v125.js",
     "styleBundle": "styles.v95.css",
-    "russianBundle": "russian-text.v90.js",
+    "russianBundle": "russian-text.v91.js",
     "liveWorkoutBundle": "live-workout.v3.js",
     "serviceWorkerCache": "gym-pwa-v169"
   }
