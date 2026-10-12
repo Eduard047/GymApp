@@ -7936,7 +7936,7 @@ button.workout-template-row:focus-visible {
 }
 
 /* Exercise history: stat labels stay on one line so the tiles keep equal heights; the muscle map header never splits its button label. */
-.exercise-history-metrics {
+.metric-grid.three.exercise-history-metrics {
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
 }
 
