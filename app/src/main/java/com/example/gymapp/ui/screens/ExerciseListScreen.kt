@@ -34,7 +34,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatListNumbered
@@ -1278,7 +1277,7 @@ fun ExerciseListScreen(
                                         menuExpanded = false
                                         onEditExerciseMapping(exercise.name)
                                     },
-                                    leadingIcon = { Icon(Icons.Default.FitnessCenter, contentDescription = null) }
+                                    leadingIcon = { Icon(Icons.Default.AccessibilityNew, contentDescription = null) }
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.exercise_load_profile_action)) },
