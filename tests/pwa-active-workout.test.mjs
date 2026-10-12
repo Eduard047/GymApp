@@ -4677,6 +4677,8 @@ test("Log all remaining sets offers one batch Undo that restores every batch set
 
   const markup = vm.runInContext("activeWorkoutScreen()", context);
   assert.match(markup, /data-active-batch-undo="1"[^>]*>.*All sets saved\..*data-action="undo-active-batch">Undo<\/button>/s);
+  assert.equal((markup.match(/All sets saved\./g) || []).length, 1, "the confirmation is shown once, not also as a status line");
+  assert.doesNotMatch(markup, /class="inline-status/);
   assert.notEqual(vm.runInContext("activeBatchUndoTimer", context), null, "auto-hides after about 8 seconds");
   assert.equal(vm.runInContext("ACTIVE_BATCH_UNDO_VISIBLE_MS", context), 8000);
 

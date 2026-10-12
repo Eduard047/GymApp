@@ -13377,7 +13377,7 @@ function activeBatchUndoMarkup(workout) {
     return "";
   }
   const message = tx3("All sets saved.", "Усі підходи збережено.", "Все подходы сохранены.");
-  return `<div class="active-set-confirmation" data-active-batch-undo="1"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text">${escapeHtml(message)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-batch">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-batch-undo" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
+  return `<div class="active-set-confirmation" data-active-batch-undo="1"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" role="status" aria-live="polite">${escapeHtml(message)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-batch">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-batch-undo" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
 }
 
 function clearActiveSetConfirmation() {
@@ -30944,6 +30944,8 @@ async function recordAllActiveSets() {
         const set = activeSetLocation(id, stored.workout)?.set;
         return set?.completed ? [{ setId: id, weight: set.weight, reps: set.reps, completedAt: set.completedAt }] : [];
       }), preBatchMarkerSetId);
+      // The batch Undo banner already says "All sets saved."; do not repeat it in the status line.
+      if (activeBatchUndo) activeWorkoutUi = activeWorkoutStatus();
     } else {
       clearActiveBatchUndo();
     }
