@@ -443,6 +443,8 @@ struct ExercisesView: View {
                 .background(
                     Capsule().fill(isSelected ? GymTheme.brandFill : GymTheme.surfaceVariant)
                 )
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
