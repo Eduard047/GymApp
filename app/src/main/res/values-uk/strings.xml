@@ -607,7 +607,7 @@
     <string name="active_workout_remaining_sets_skipped">Вправу збережено. Інші підходи пропущено.</string>
     <string name="active_workout_set_limit_reached">Досягнуто ліміту підходів для вправи.</string>
     <string name="active_workout_save_all_supporting">Спочатку перевіряються вага й повторення кожного незаписаного підходу, потім усі вони зберігаються однією операцією без нового відпочинку.</string>
-    <string name="active_workout_all_sets_saved">Одночасно збережено підходів: %1$d.</string>
+    <string name="active_workout_all_sets_saved">Усі підходи збережено.</string>
     <string name="active_workout_all_sets_saved_rest_failed">Усі підходи збережено, але старий таймер відпочинку не вдалося повністю зупинити.</string>
     <string name="active_workout_change_saved_rest_failed">Зміну збережено, але старий таймер відпочинку не вдалося повністю зупинити.</string>
     <string name="label_exercise_name">Назва вправи</string>

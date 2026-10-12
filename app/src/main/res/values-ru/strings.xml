@@ -607,7 +607,7 @@
     <string name="active_workout_remaining_sets_skipped">Упражнение сохранено. Остальные подходы пропущены.</string>
     <string name="active_workout_set_limit_reached">Достигнут лимит подходов для упражнения.</string>
     <string name="active_workout_save_all_supporting">Сначала проверяются вес и повторы каждого незаписанного подхода, затем все они сохраняются одной операцией без нового отдыха.</string>
-    <string name="active_workout_all_sets_saved">Одновременно сохранено подходов: %1$d.</string>
+    <string name="active_workout_all_sets_saved">Все подходы сохранены.</string>
     <string name="active_workout_all_sets_saved_rest_failed">Все подходы сохранены, но старый таймер отдыха не удалось полностью остановить.</string>
     <string name="active_workout_change_saved_rest_failed">Изменение сохранено, но старый таймер отдыха не удалось полностью остановить.</string>
     <string name="label_exercise_name">Название упражнения</string>

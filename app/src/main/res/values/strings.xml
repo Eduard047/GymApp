@@ -595,7 +595,7 @@
     <string name="active_workout_remaining_sets_skipped">Exercise saved. Remaining sets skipped.</string>
     <string name="active_workout_set_limit_reached">This exercise has reached the set limit.</string>
     <string name="active_workout_save_all_supporting">Every pending weight and rep value is validated first, then all remaining sets are saved together without starting another rest.</string>
-    <string name="active_workout_all_sets_saved">Saved %1$d remaining sets together.</string>
+    <string name="active_workout_all_sets_saved">All sets saved.</string>
     <string name="active_workout_all_sets_saved_rest_failed">All sets were saved, but the old rest timer could not be fully stopped.</string>
     <string name="active_workout_change_saved_rest_failed">The change was saved, but the old rest timer could not be fully stopped.</string>
     <string name="label_exercise_name">Exercise name</string>

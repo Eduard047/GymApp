@@ -1080,10 +1080,7 @@ class ActiveWorkoutViewModel(
                                     it.copy(
                                         isRecordingAll = false,
                                         message = if (restStopped) {
-                                            LocalizedText(
-                                                R.string.active_workout_all_sets_saved,
-                                                result.count
-                                            )
+                                            LocalizedText(R.string.active_workout_all_sets_saved)
                                         } else {
                                             LocalizedText(
                                                 R.string.active_workout_all_sets_saved_rest_failed
