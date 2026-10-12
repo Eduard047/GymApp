@@ -365,15 +365,15 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         XCTAssertEqual(target.impact, .setOnly)
         XCTAssertEqual(
             target.confirmationTitle(languageCode: "en"),
-            "Delete set 1 from “Safety Squat”?"
+            "Delete set?"
         )
         XCTAssertEqual(
             target.confirmationTitle(languageCode: "uk"),
-            "Видалити підхід 1 із «Safety Squat»?"
+            "Видалити підхід?"
         )
         XCTAssertEqual(
             target.confirmationTitle(languageCode: "ru"),
-            "Удалить подход 1 из «Safety Squat»?"
+            "Удалить подход?"
         )
         XCTAssertEqual(store.workout(id: workout.id)?.exercises.first?.sets.count, 2)
 
@@ -418,15 +418,15 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         XCTAssertEqual(target.impact, .setExerciseAndWorkout)
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "en"),
-            "This is the final set in the workout, so the exercise and the entire workout will also be deleted. Undo is available briefly while you stay on this screen."
+            "Set 1: Final Press\nThis is the final set in the workout, so the exercise and the entire workout will also be deleted. Undo is available briefly while you stay on this screen."
         )
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "uk"),
-            "Це останній підхід у тренуванні, тому вправу й усе тренування також буде видалено. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
+            "Підхід 1: Final Press\nЦе останній підхід у тренуванні, тому вправу й усе тренування також буде видалено. Скасування доступне протягом короткого часу, поки ти залишаєшся на цьому екрані."
         )
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "ru"),
-            "Это последний подход в тренировке, поэтому упражнение и вся тренировка также будут удалены. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
+            "Подход 1: Final Press\nЭто последний подход в тренировке, поэтому упражнение и вся тренировка также будут удалены. Отмена доступна в течение короткого времени, пока ты остаёшься на этом экране."
         )
         XCTAssertTrue(target.isCurrent(in: store, expectedWorkoutID: workout.id))
 

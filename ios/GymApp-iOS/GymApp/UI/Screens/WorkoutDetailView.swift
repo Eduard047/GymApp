@@ -1119,11 +1119,12 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
 
     func confirmationTitle(languageCode: String) -> String {
         switch self {
-        case let .set(_, _, _, position, exerciseName):
-            return localizedFormat(
-                "Delete set %1$lld from “%2$@”?",
-                languageCode: languageCode,
-                arguments: [Int64(position + 1), exerciseName]
+        case .set:
+            // Same title as Android and the PWA; the set and exercise are named
+            // in the message instead.
+            return gymText(
+                "Delete set?", "Видалити підхід?", "Удалить подход?",
+                languageCode: languageCode
             )
         case let .exercise(_, _, exerciseName):
             return localizedFormat(
@@ -1135,6 +1136,19 @@ enum WorkoutDetailDeletionTarget: Equatable, Identifiable {
     }
 
     func confirmationMessage(languageCode: String) -> String {
+        let consequence = confirmationConsequence(languageCode: languageCode)
+        guard case let .set(_, _, _, position, exerciseName) = self else { return consequence }
+        let number = position + 1
+        let target = gymText(
+            "Set \(number): \(exerciseName)",
+            "Підхід \(number): \(exerciseName)",
+            "Подход \(number): \(exerciseName)",
+            languageCode: languageCode
+        )
+        return "\(target)\n\(consequence)"
+    }
+
+    private func confirmationConsequence(languageCode: String) -> String {
         if context.retainsRecordedActivity &&
             (impact == .setExerciseAndWorkout || impact == .exerciseAndWorkout) {
             return gymText(
