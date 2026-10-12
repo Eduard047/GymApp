@@ -171,7 +171,14 @@ test("saved workout edit mode shows numbered rows, inline editors, menus and das
   assert.match(html, /aria-label="Exercise options: Bench Press"/);
   assert.match(html, /class="button full saved-workout-add-exercise"[^>]*data-action="open-workout-exercise-picker"[^>]*>\+ Add exercise<\/button>/);
   assert.doesNotMatch(html, /Add Exercise to This Workout/);
-  assert.match(html, /<section class="panel saved-workout-details"[\s\S]*Date and note[\s\S]*data-saved-detail-date value="2023-11-15"/);
+  // 1700000000000 is 2023-11-14T22:13:20Z, so its local calendar day depends on the runner's time zone.
+  const fixtureStart = new Date(1700000000000);
+  const localFixtureDay = [
+    fixtureStart.getFullYear(),
+    String(fixtureStart.getMonth() + 1).padStart(2, "0"),
+    String(fixtureStart.getDate()).padStart(2, "0")
+  ].join("-");
+  assert.match(html, new RegExp(`<section class="panel saved-workout-details"[\\s\\S]*Date and note[\\s\\S]*data-saved-detail-date value="${localFixtureDay}"`));
   assert.match(html, /data-saved-details-save disabled>Save<\/button>/);
   assert.ok(html.indexOf("saved-workout-details") < html.indexOf("saved-workout-exercise-list"));
   assert.ok(html.indexOf("saved-workout-exercise-list") < html.indexOf("saved-workout-add-exercise"));

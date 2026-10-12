@@ -246,6 +246,7 @@ fun ActiveWorkoutScreen(
     }
     // The one confirmation banner for a recorded set (visible Log button and the voice commands).
     val bannerContext = LocalContext.current
+    val bannerLocale = LocalConfiguration.current.locales[0]
     var recordedConfirmation by remember { mutableStateOf<RecordedConfirmation?>(null) }
     var confirmationWasShowing by remember(recordedConfirmation) { mutableStateOf(false) }
     LaunchedEffect(
@@ -278,7 +279,7 @@ fun ActiveWorkoutScreen(
         }
     }
     val onSetRecorded: (String, String, String, Int) -> Unit = { setId, weightText, repsText, restSeconds ->
-        val weightFormat = NumberFormat.getNumberInstance(bannerContext.resources.configuration.locales[0])
+        val weightFormat = NumberFormat.getNumberInstance(bannerLocale)
             .apply { maximumFractionDigits = 3 }
         val summary = bannerContext.getString(
             R.string.active_workout_set_summary,

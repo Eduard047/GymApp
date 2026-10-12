@@ -10,6 +10,9 @@ private final class FakeLiveActivityHandle: LiveActivityHandle {
     fileprivate(set) var updates: [WorkoutActivityAttributes.ContentState] = []
     private(set) var endCount = 0
     private(set) var lastDismissalPolicy: ActivityUIDismissalPolicy?
+    /// Invoked after `end(dismissalPolicy:)` has recorded the call, so a test
+    /// can wait for the real (detached) end instead of sleeping and hoping.
+    var onEnd: (() -> Void)?
 
     func update(_ content: ActivityContent<WorkoutActivityAttributes.ContentState>) async {
         updates.append(content.state)
@@ -18,6 +21,7 @@ private final class FakeLiveActivityHandle: LiveActivityHandle {
     func end(dismissalPolicy: ActivityUIDismissalPolicy) async {
         endCount += 1
         lastDismissalPolicy = dismissalPolicy
+        onEnd?()
     }
 }
 
@@ -449,19 +453,17 @@ final class WorkoutLiveActivityBridgeGuardTests: XCTestCase {
         // The controller's own `sync` already started an activity for this
         // draft inside `attach`.
         let handle = requester.nextHandle
+        let endExpectation = expectation(description: "stale activity ends")
+        handle.onEnd = { endExpectation.fulfill() }
 
         LiveActivityActionBridge.recordCurrentSet?(UUID(), setID)
 
         XCTAssertNil(active.draft?.exercises.first?.sets.first?.completedAt, "a mismatched id must not record")
-        // `end(dismissalPolicy:)` is dispatched onto a `Task`, so give it a
-        // beat before asserting (same pattern as
-        // `WorkoutLiveActivityControllerDecisionTests`).
-        let expectation = expectation(description: "stale activity ends")
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            expectation.fulfill()
-        }
-        wait(for: [expectation], timeout: 1)
+        // `end(dismissalPolicy:)` is dispatched onto a `Task` the test cannot
+        // await directly, so wait on the fake handle's own end signal rather
+        // than a fixed sleep: a slow CI runner can starve the main actor well
+        // past any sleep-based beat. Generous timeout; it only matters on failure.
+        wait(for: [endExpectation], timeout: 10)
         XCTAssertEqual(handle.endCount, 1, "a mismatched id must end the stale activity")
         XCTAssertEqual(handle.lastDismissalPolicy, .immediate)
     }
