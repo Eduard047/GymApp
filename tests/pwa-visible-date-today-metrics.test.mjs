@@ -784,6 +784,30 @@ test("summary Training metrics panel shows the workout note and falls back to a 
   assert.match(markup, /<span>Top muscle<\/span><strong>—<\/strong>/);
 });
 
+test("workout comparison card tints only increases with Recovery Mint and keeps sign or text for meaning", () => {
+  const sandbox = context();
+  const markup = vm.runInContext(`(() => {
+    const make = (id, startedAt, sets) => ({
+      id, startedAt, note: "", durationSeconds: 1800,
+      exerciseNames: [...new Set(sets.map(set => set[0]))],
+      sets: sets.map(([exerciseName, weight, reps], index) => ({ id: id * 10 + index, exerciseName, weight, reps, orderIndex: index }))
+    });
+    const before = make(1, new Date(2026, 0, 5, 12).getTime(), [["Bench Press", 50, 8], ["Bench Press", 50, 8]]);
+    const after = make(2, new Date(2026, 0, 12, 12).getTime(), [["Bench Press", 60, 8], ["Bench Press", 60, 8], ["Bench Press", 60, 4]]);
+    const fewer = make(3, new Date(2026, 0, 19, 12).getTime(), [["Bench Press", 40, 8], ["Bench Press", 40, 8]]);
+    state = { ...defaultAppState(), language: "en", sessions: [before, after, fewer] };
+    return { up: workoutComparisonCard(after), down: workoutComparisonCard(fewer) };
+  })()`, sandbox);
+  assert.match(markup.up, /<span class="nowrap comparison-delta up">\+1<\/span>/);
+  assert.match(markup.up, /<span class="nowrap comparison-delta up">\+/);
+  assert.doesNotMatch(markup.down, /comparison-delta up/);
+  assert.match(markup.down, /<span class="nowrap comparison-delta">−\d+/);
+  const rule = selector => stylesSource.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] || "";
+  assert.match(rule(".workout-comparison-card small .comparison-delta.up"), /color:\s*var\(--mint\)/);
+  assert.match(stylesSource, /:root\s*\{[^}]*--mint:\s*#23815e/i);
+  assert.match(stylesSource, /--mint:\s*#77ddb7/i);
+});
+
 test("summary feedback chips stay one row of three equal columns and stack only on very narrow screens", () => {
   const rule = selector => stylesSource.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] || "";
   assert.match(rule(".segmented.workout-feedback-options"), /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);

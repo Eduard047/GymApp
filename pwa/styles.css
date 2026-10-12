@@ -6808,6 +6808,12 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .workout-comparison-card small .nowrap { white-space: nowrap; }
 
+/* Like the iPhone card: the delta is semibold, and only an increase takes the Recovery Mint tint
+   (--mint: #23815E light, #77DDB7 dark). A decrease keeps the muted colour; the +/− sign and the
+   "no change" text carry the meaning, so colour is never the only cue. */
+.workout-comparison-card small .comparison-delta { font-weight: 600; }
+.workout-comparison-card small .comparison-delta.up { color: var(--mint); }
+
 .workout-comparison-card small {
   display: block;
   margin-top: 3px;

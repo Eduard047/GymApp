@@ -16723,7 +16723,7 @@ function workoutComparisonCard(session) {
     const delta = difference === 0
       ? tx3("no change", "без змін", "без изменений")
       : `${difference > 0 ? "+" : "−"}${amount(Math.abs(difference))}`;
-    return `<div><span>${escapeHtml(metric.label)}</span><strong>${amount(current)}${unitSuffix}</strong><small>${tx3("Previous", "Раніше", "Раньше")} ${amount(previous)}${unitSuffix} · <span class="nowrap">${escapeHtml(delta)}${difference !== 0 ? unitSuffix : ""}</span></small></div>`;
+    return `<div><span>${escapeHtml(metric.label)}</span><strong>${amount(current)}${unitSuffix}</strong><small>${tx3("Previous", "Раніше", "Раньше")} ${amount(previous)}${unitSuffix} · <span class="nowrap comparison-delta${difference > 0 ? " up" : ""}">${escapeHtml(delta)}${difference !== 0 ? unitSuffix : ""}</span></small></div>`;
   }).join("")}</div></section>`;
 }
 
