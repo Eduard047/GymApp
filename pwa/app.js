@@ -18713,20 +18713,53 @@ async function deleteCloudAccount() {
   }
 }
 
+// The destructive confirmation (including the typed DELETE step) lives in the confirm-delete-local-account
+// sheet. deleteLocalAccount() runs only from confirmDeleteLocalAccount(), after that sheet is confirmed.
+function requestDeleteLocalAccount() {
+  if (accountTransitionInProgress || authRequestInProgress) return false;
+  const account = normalizeStoredAccount(activeAccount);
+  if (!account || account.remote) return false;
+  modal = {
+    type: "confirm-delete-local-account",
+    intent: { accountId: account.id, accountEpoch, preview: { name: account.name } },
+    ...accountSheetReturnModal()
+  };
+  render();
+  return true;
+}
+
+async function confirmDeleteLocalAccount() {
+  const intent = modal?.type === "confirm-delete-local-account" ? modal.intent : null;
+  const account = normalizeStoredAccount(activeAccount);
+  if (!intent || !account || account.remote || account.id !== intent.accountId ||
+      intent.accountEpoch !== accountEpoch) {
+    return rejectStaleDestructiveConfirmation();
+  }
+  const input = document.getElementById("delete-local-account-confirm");
+  if (!input || input.value !== "DELETE") {
+    const error = document.getElementById("delete-local-account-error");
+    if (error) {
+      error.textContent = tx3(
+        "Type DELETE exactly to confirm.",
+        "Введи DELETE точно так, щоб підтвердити.",
+        "Введи DELETE точно так, чтобы подтвердить."
+      );
+      error.hidden = false;
+    }
+    if (input) {
+      input.setAttribute("aria-invalid", "true");
+      input.focus({ preventScroll: true });
+    }
+    return false;
+  }
+  await deleteLocalAccount();
+  if (modal?.type === "confirm-delete-local-account") closeModal();
+}
+
 async function deleteLocalAccount() {
   if (accountTransitionInProgress || authRequestInProgress) return;
   const account = normalizeStoredAccount(activeAccount);
   if (!account || account.remote) return;
-  const warning = tx(
-    "Permanently delete this local account and every workout saved for it in this browser? This cannot be undone. Export a backup first if needed.",
-    "Назавжди видалити цей локальний акаунт і всі його тренування в цьому браузері? Це неможливо скасувати. За потреби спочатку експортуй резервну копію."
-  );
-  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
-  const typed = typeof window.prompt === "function"
-    ? window.prompt(tx("Type DELETE to permanently delete the local account.", "Введи DELETE, щоб назавжди видалити локальний акаунт."), "")
-    : null;
-  if (typed !== "DELETE") return showToast(tx("Account deletion cancelled.", "Видалення акаунта скасовано."));
-
   const stateKey = activeStorageKey(account);
   const timerDescriptor = exerciseRestTimerAccountDescriptor(account);
   const activeWorkoutDescriptor = activeWorkoutAccountDescriptor(account);
@@ -26167,6 +26200,10 @@ function modalMarkup() {
     const preview = modal.intent?.preview || {};
     return bottomSheet(`<h2 id="delete-set-confirm-title">${tx3("Delete set?", "Видалити підхід?", "Удалить подход?")}</h2><p id="delete-set-confirm-target"><strong>${escapeHtml(preview.exerciseName || "")}</strong></p><p class="muted" id="delete-set-confirm-detail">${escapeHtml(preview.detail || "")}</p><p class="muted" id="delete-set-confirm-description">${tx3("This set will be removed from the workout.", "Підхід буде видалено з тренування.", "Подход будет удалён из тренировки.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Cancel", "Скасувати", "Отмена")}</button><button class="button danger full" data-action="confirm-delete-set">${tx3("Delete", "Видалити", "Удалить")}</button></div>`, "delete-set-confirm-title", "alertdialog", "delete-set-confirm-target delete-set-confirm-detail delete-set-confirm-description");
   }
+  if (modal.type === "confirm-delete-local-account") {
+    const profileName = escapeHtml(modal.intent?.preview?.name || "");
+    return bottomSheet(`<h2 id="delete-local-account-title">${tx3("Delete local profile?", "Видалити локальний профіль?", "Удалить локальный профиль?")}</h2><p class="muted" id="delete-local-account-description">${tx3(`Profile “${profileName}” and its workouts will be removed from this device. This cannot be undone.`, `Профіль «${profileName}» і його тренування буде видалено з цього пристрою. Цю дію не можна скасувати.`, `Профиль «${profileName}» и его тренировки будут удалены с этого устройства. Это действие нельзя отменить.`)}</p><label for="delete-local-account-confirm">${tx3("Type DELETE to confirm", "Введи DELETE, щоб підтвердити", "Введи DELETE, чтобы подтвердить")}</label><input id="delete-local-account-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="delete-local-account-error"><p class="muted" id="delete-local-account-error" role="alert" hidden></p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Cancel", "Скасувати", "Отмена")}</button><button class="button danger full" data-action="confirm-delete-local-account">${tx3("Delete local profile", "Видалити локальний профіль", "Удалить локальный профиль")}</button></div>`, "delete-local-account-title", "alertdialog", "delete-local-account-description");
+  }
   if (modal.type === "confirm-import") {
     const preview = modal.intent?.preview || {};
     return bottomSheet(`<h2 id="import-confirm-title">${tx("Replace profile with backup?", "Замінити профіль резервною копією?")}</h2><p class="muted" id="import-confirm-description">${tx("This import will replace workout history, exercises, mappings, and profile settings. This cannot be undone in GymApp.", "Цей імпорт замінить історію тренувань, вправи, зіставлення та налаштування профілю. У GymApp це неможливо скасувати.")}</p><div class="metric-grid three"><div><span>${tx("Exercises", "Вправи")}</span><strong>${Number(preview.exerciseCount) || 0}</strong></div><div><span>${tx("Workouts", "Тренування")}</span><strong>${Number(preview.sessionCount) || 0}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${Number(preview.setCount) || 0}</strong></div></div><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-import">${tx("Replace with backup", "Замінити резервною копією")}</button></div>`, "import-confirm-title", "alertdialog", "import-confirm-description");
@@ -26886,7 +26923,8 @@ async function handleAction(action, el) {
   if (action === "resolve-sync-conflict-local") return resolveSyncConflictWithLocal();
   if (action === "resolve-sync-conflict-cloud") return resolveSyncConflictWithCloud();
   if (action === "logout-account") return logoutAccount();
-  if (action === "delete-account") return activeAccount?.remote ? deleteCloudAccount() : deleteLocalAccount();
+  if (action === "delete-account") return activeAccount?.remote ? deleteCloudAccount() : requestDeleteLocalAccount();
+  if (action === "confirm-delete-local-account") return confirmDeleteLocalAccount();
   if (action === "sync-cloud-now") return syncCloudNow();
   if (action === "enable-web-push") {
     const enabled = await registerWebPush({ prompt: true });
@@ -27684,6 +27722,7 @@ function isDestructiveConfirmationModal(value = modal) {
     "confirm-discard-plan",
     "confirm-delete-exercise",
     "confirm-delete-set",
+    "confirm-delete-local-account",
     "confirm-import",
     "confirm-discard-active",
     "confirm-remove-active-exercise",

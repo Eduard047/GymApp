@@ -4870,6 +4870,46 @@ test("an unreadable deletion journal hides remote state without destroying the j
   assert.notEqual(values.get(`gym-pwa-account:${account.id}`), undefined, "unknown owner data is not guessed or purged");
 });
 
+test("local profile deletion runs only from the in-page sheet after the typed DELETE", async () => {
+  const context = loadContext(async () => {
+    throw new Error("local deletion must not use the network");
+  });
+  vm.runInContext("activeAccount = null; clearRemoteSession();", context);
+  await vm.runInContext("loginAccount('Local Owner')", context);
+  const localKey = `gym-pwa-account:${vm.runInContext("activeAccount.id", context)}`;
+  const browserDialog = () => { throw new Error("browser dialogs must not be used"); };
+  context.window.confirm = browserDialog;
+  context.window.prompt = browserDialog;
+  const input = { value: "", setAttribute() {}, focus() {} };
+  const error = { textContent: "", hidden: true };
+  context.document.getElementById = id => ({
+    "delete-local-account-confirm": input,
+    "delete-local-account-error": error
+  })[id] || null;
+  vm.runInContext("render = () => {};", context);
+
+  assert.equal(vm.runInContext("requestDeleteLocalAccount()", context), true);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-delete-local-account");
+  const markup = vm.runInContext("modalMarkup()", context);
+  assert.match(markup, /Delete local profile\?/);
+  assert.match(markup, /Profile “Local Owner” and its workouts will be removed from this device\. This cannot be undone\./);
+  assert.match(markup, /data-action="cancel-destructive" data-modal-initial-focus>Cancel<[\s\S]*class="button danger full" data-action="confirm-delete-local-account">Delete local profile</);
+  assert.match(vm.runInContext(`state.language = "ru"; modalMarkup()`, context), /Профиль «Local Owner» и его тренировки будут удалены с этого устройства\./);
+  assert.match(vm.runInContext(`state.language = "uk"; modalMarkup()`, context), /Профіль «Local Owner» і його тренування буде видалено з цього пристрою\./);
+  vm.runInContext(`state.language = "en";`, context);
+
+  input.value = "delete";
+  await vm.runInContext("confirmDeleteLocalAccount()", context);
+  assert.notEqual(context.localStorage.getItem(localKey), null);
+  assert.equal(error.hidden, false);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-delete-local-account");
+
+  input.value = "DELETE";
+  await vm.runInContext("confirmDeleteLocalAccount()", context);
+  assert.equal(context.localStorage.getItem(localKey), null);
+  assert.equal(vm.runInContext("activeAccount", context), null);
+});
+
 test("local account deletion removes only the confirmed local profile", async () => {
   const context = loadContext(async () => {
     throw new Error("local deletion must not use the network");
