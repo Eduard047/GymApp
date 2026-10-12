@@ -14,6 +14,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,8 +30,18 @@ import kotlin.math.abs
 private data class ComparisonMetric(
     val label: String,
     val currentValue: String,
-    val previousAndDelta: String
+    val previousAndDelta: String,
+    val delta: String,
+    /** Only a rise is tinted (Recovery Mint, like the iPhone); falls and no change stay neutral. */
+    val isIncrease: Boolean
 )
+
+/** Where [delta] sits in the formatted "Previous … · delta" line, or null when it can't be found. */
+internal fun comparisonDeltaRange(line: String, delta: String): IntRange? {
+    if (delta.isEmpty()) return null
+    val start = line.lastIndexOf(delta)
+    return if (start < 0) null else start until start + delta.length
+}
 
 @Composable
 fun WorkoutComparisonCard(
@@ -164,7 +177,9 @@ private fun comparisonMetric(
             R.string.workout_comparison_previous_delta,
             previous,
             delta
-        )
+        ),
+        delta = delta,
+        isIncrease = comparison.delta > 0.000_001
     )
 }
 
@@ -196,8 +211,25 @@ private fun ComparisonMetricCell(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        val deltaColor = if (metric.isIncrease) {
+            MaterialTheme.colorScheme.secondary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        val deltaRange = comparisonDeltaRange(metric.previousAndDelta, metric.delta)
         Text(
-            text = metric.previousAndDelta,
+            text = if (deltaRange == null) {
+                AnnotatedString(metric.previousAndDelta)
+            } else {
+                buildAnnotatedString {
+                    append(metric.previousAndDelta)
+                    addStyle(
+                        SpanStyle(color = deltaColor, fontWeight = FontWeight.SemiBold),
+                        deltaRange.first,
+                        deltaRange.last + 1
+                    )
+                }
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
