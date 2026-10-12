@@ -81,27 +81,34 @@ fun TrainingSettingsSheet(
         modifier = Modifier.statusBarsPadding(),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
+        // The title row stays pinned; only the options below it scroll.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = GymSpacing.XLarge),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.training_settings_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { heading() }
+            )
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.training_settings_done))
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(top = GymSpacing.Large)
                 .verticalScroll(scrollState)
                 .padding(horizontal = GymSpacing.XLarge)
                 .padding(bottom = GymSpacing.XXLarge),
             verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.training_settings_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() }
-                )
-                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.training_settings_done))
-                }
-            }
             TrainingSettingsOptions(
                 title = stringResource(R.string.training_profile_goal),
                 options = TrainingGoal.entries,
