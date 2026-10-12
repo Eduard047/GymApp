@@ -1053,9 +1053,7 @@
     <string name="exercise_history_empty">Для цієї вправи ще немає історії.</string>
     <string name="exercise_history_sets_inline">Підходів: %1$d</string>
     <string name="exercise_history_volume_inline">Обсяг: %1$s кг</string>
-    <string name="exercise_library_eyebrow">Твої тренування</string>
     <string name="exercise_library_title">Бібліотека вправ</string>
-    <string name="exercise_library_supporting">Додай власний рух або відкрий збережену вправу, щоб переглянути історію.</string>
     <string name="exercise_card_supporting">Торкнися, щоб відкрити історію та деталі тренувань.</string>
     <string name="exercise_card_history">Історія</string>
     <string name="exercise_mappings_eyebrow">Групи м’язів</string>

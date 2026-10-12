@@ -1021,9 +1021,7 @@
     <string name="exercise_history_empty">No history for this exercise yet.</string>
     <string name="exercise_history_sets_inline">Sets: %1$d</string>
     <string name="exercise_history_volume_inline">Volume: %1$s kg</string>
-    <string name="exercise_library_eyebrow">Your training</string>
     <string name="exercise_library_title">Exercise library</string>
-    <string name="exercise_library_supporting">Add a custom movement or open a saved exercise to view its history.</string>
     <string name="exercise_card_supporting">Tap to open history and training details.</string>
     <string name="exercise_card_history">History</string>
     <string name="exercise_mappings_eyebrow">Muscle groups</string>

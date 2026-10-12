@@ -1053,9 +1053,7 @@
     <string name="exercise_history_empty">Для этого упражнения еще нет истории.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>
     <string name="exercise_history_volume_inline">Объем: %1$s кг</string>
-    <string name="exercise_library_eyebrow">Твои тренировки</string>
     <string name="exercise_library_title">Библиотека упражнений</string>
-    <string name="exercise_library_supporting">Добавь собственное движение или открой сохраненное упражнение для просмотра истории.</string>
     <string name="exercise_card_supporting">Коснись, чтобы открыть историю и детали тренировок.</string>
     <string name="exercise_card_history">История</string>
     <string name="exercise_mappings_eyebrow">Группы мышц</string>

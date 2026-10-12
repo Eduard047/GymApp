@@ -1847,9 +1847,8 @@ private fun AddExerciseBottomSheetContent(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         SectionTitle(
-            eyebrow = stringResource(R.string.exercise_library_eyebrow),
-            title = stringResource(R.string.action_add_exercise),
-            supporting = stringResource(R.string.exercise_library_supporting)
+            eyebrow = "",
+            title = stringResource(R.string.action_add_exercise)
         )
         OutlinedTextField(
             value = exerciseName,
