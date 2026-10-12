@@ -5923,6 +5923,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .achievement-sheet { display: grid; gap: 16px; }
 .achievement-sheet-hero { display: grid; justify-items: center; gap: 10px; text-align: center; }
 .achievement-sheet-hero h2 { margin: 0; }
+/* Sheet titles reserve room for the close button on the end side only; this hero reserves it on both sides so the title stays on the disc's axis. */
+.modal-panel > .achievement-sheet > .achievement-sheet-hero > h2 { padding-inline: var(--sheet-close-clearance); }
 
 .achievement-disc {
   display: grid;
