@@ -1254,14 +1254,15 @@
 
     <string name="cd_language">Изменить язык</string>
     <string name="cd_more_actions">Другие действия</string>
+    <string name="cd_more_actions_named">Другие действия для %1$s</string>
     <string name="cd_add_workout">Добавить тренировку</string>
     <string name="cd_delete">Удалить</string>
     <string name="cd_delete_exercise_named">Удалить упражнение %1$s</string>
     <string name="cd_delete_set_named">Удалить подход %1$d для %2$s</string>
     <string name="cd_delete_history_set_named">Удалить подход %1$d для %2$s из тренировки от %3$s</string>
     <string name="cd_delete_workout_on">Удалить тренировку от %1$s</string>
-    <string name="exercise_favorite_add">Добавить в избранное</string>
-    <string name="exercise_favorite_remove">Убрать из избранного</string>
+    <string name="exercise_favorite_add">Добавить %1$s в избранное</string>
+    <string name="exercise_favorite_remove">Убрать %1$s из избранного</string>
     <string name="cd_edit">Редактировать</string>
     <string name="cd_remove_set">Удалить подход</string>
     <string name="cd_remove_exercise">Удалить упражнение</string>
@@ -1308,6 +1309,7 @@
     <string name="exercise_filter_core">Кор</string>
     <string name="exercise_filter_all_muscles">Все мышцы</string>
     <string name="exercise_filters_label">Фильтры</string>
+    <string name="exercise_filters_active_label">Фильтры, активных: %1$d</string>
     <string name="exercise_filter_category">Категория</string>
     <string name="exercise_filter_sort">Сортировка</string>
     <string name="exercise_sort_name">По названию</string>
@@ -1332,6 +1334,7 @@
     <string name="exercise_media_add">Добавить фото</string>
     <string name="exercise_media_no_preview">Нет демонстрации</string>
     <string name="exercise_media_open_preview">Открыть демонстрацию упражнения</string>
+    <string name="exercise_media_open_preview_named">Открыть демонстрацию упражнения %1$s</string>
     <string name="exercise_media_choose">Выбрать своё фото</string>
     <string name="exercise_media_restore">Вернуть встроенную демонстрацию</string>
     <string name="exercise_media_hint">Нажмите, чтобы увидеть начальное и конечное положение</string>

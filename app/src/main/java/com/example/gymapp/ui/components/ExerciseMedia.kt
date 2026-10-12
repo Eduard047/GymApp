@@ -120,7 +120,10 @@ fun ExerciseMediaPreview(
         modifier = modifier
             .size(width = width, height = height)
             .clickable(
-                onClickLabel = stringResource(R.string.exercise_media_open_preview)
+                onClickLabel = stringResource(
+                    R.string.exercise_media_open_preview_named,
+                    localizedExerciseName(exerciseName)
+                )
             ) { showSheet = true },
         shape = RoundedCornerShape(13.dp),
         color = MaterialTheme.colorScheme.surfaceVariant
@@ -130,7 +133,7 @@ fun ExerciseMediaPreview(
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap.asImageBitmap(),
-                    contentDescription = stringResource(R.string.exercise_media_hint),
+                    contentDescription = localizedExerciseName(exerciseName),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )

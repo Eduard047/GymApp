@@ -438,9 +438,12 @@ object UiAuditHooks {
     }
 
     /** Matches a localized format string (e.g. "Delete set %1$d for %2$s") against any argument values. */
-    private fun formatMatcher(nav: NavHostController, id: Int): (String) -> Boolean {
+    private fun formatMatcher(nav: NavHostController, id: Int): (String) -> Boolean =
+        formatMatcher(nav.context, id)
+
+    private fun formatMatcher(context: Context, id: Int): (String) -> Boolean {
         val regex = Regex(
-            nav.context.getString(id).split(Regex("%(\\d+\\$)?\\.?\\d*[sdf]")).joinToString(".*") { Regex.escape(it) },
+            context.getString(id).split(Regex("%(\\d+\\$)?\\.?\\d*[sdf]")).joinToString(".*") { Regex.escape(it) },
             RegexOption.DOT_MATCHES_ALL
         )
         return { regex.matches(it) }
@@ -452,14 +455,14 @@ object UiAuditHooks {
         return true
     }
 
-    /** Opens the overflow menu of the topmost catalog row (all rows share the "More actions" description). */
+    /** Opens the overflow menu of the topmost catalog row (each row labels it "More actions for <exercise>"). */
     private suspend fun openExerciseMenu(route: String): Boolean {
-        val label = activityRef?.get()?.getString(R.string.cd_more_actions)
-        if (label == null) {
+        val context = activityRef?.get()
+        if (context == null) {
             Log.w(TAG, "$route: no activity")
             return false
         }
-        return step(route, "row menu", { it == label }, topmost = true)
+        return step(route, "row menu", formatMatcher(context, R.string.cd_more_actions_named), topmost = true)
     }
 
     /** The signed-out Auth screen is only reachable with no session at all (fresh profile). */

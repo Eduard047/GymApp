@@ -1220,7 +1220,9 @@ fun ExerciseListScreen(
                             ) {
                                 IconButton(
                                     onClick = { onToggleFavorite(exercise) },
-                                    modifier = Modifier.size(44.dp)
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .semantics { selected = exercise.isFavorite }
                                 ) {
                                     Icon(
                                         imageVector = if (exercise.isFavorite) {
@@ -1233,7 +1235,8 @@ fun ExerciseListScreen(
                                                 R.string.exercise_favorite_remove
                                             } else {
                                                 R.string.exercise_favorite_add
-                                            }
+                                            },
+                                            displayExerciseName
                                         ),
                                         tint = if (exercise.isFavorite) {
                                             MaterialTheme.colorScheme.primary
@@ -1249,7 +1252,7 @@ fun ExerciseListScreen(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.MoreVert,
-                                            contentDescription = stringResource(R.string.cd_more_actions)
+                                            contentDescription = stringResource(R.string.cd_more_actions_named, displayExerciseName)
                                         )
                                     }
                             DropdownMenu(
@@ -1605,9 +1608,10 @@ internal fun ExerciseSearchAndFilters(
 ) {
     val languageTag = currentAppLanguageTag()
     var filterMenuOpen by remember { mutableStateOf(false) }
-    val isFilterCustomized = favoritesOnly ||
-        bodyFilter != ExerciseBodyFilter.All ||
-        sortMode != ExerciseSortMode.Name
+    val activeFilterCount = (if (favoritesOnly) 1 else 0) +
+        (if (bodyFilter != ExerciseBodyFilter.All) 1 else 0) +
+        (if (sortMode != ExerciseSortMode.Name) 1 else 0)
+    val isFilterCustomized = activeFilterCount > 0
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1663,7 +1667,7 @@ internal fun ExerciseSearchAndFilters(
                 ) {
                     Icon(
                         imageVector = Icons.Default.FilterList,
-                        contentDescription = stringResource(R.string.exercise_filters_label)
+                        contentDescription = stringResource(R.string.exercise_filters_active_label, activeFilterCount)
                     )
                 }
                 if (isFilterCustomized) {
