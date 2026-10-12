@@ -232,7 +232,7 @@ test("set operations are caller-owned, CAS-protected, bounded, and exactly idemp
 test("undo accepts any own completed set without weakening the apply boundary", async () => {
   const original = await readFile(apiPath, "utf8");
   const undoPath =
-    "supabase/migrations/20261012170946_live_undo_any_completed_set.sql";
+    "supabase/migrations/20261012190209_live_undo_any_completed_set.sql";
   const migration = await readFile(undoPath, "utf8");
   const name = "public.social_apply_live_workout_operation";
   const before = functionBody(original, name);
