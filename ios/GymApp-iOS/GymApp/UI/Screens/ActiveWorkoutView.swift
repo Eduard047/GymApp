@@ -221,6 +221,10 @@ struct ActiveWorkoutView: View {
     /// Shown after ANY set is logged — by the "Log set" button or by voice —
     /// so only one banner ever appears (see `recordSet(_:exercise:exerciseName:draft:)`).
     @State private var recordedSetConfirmation: (message: String, setID: UUID)?
+    /// One transient undo for the latest "Log all remaining" batch. In memory only
+    /// (never persisted); valid only while the draft is exactly the revision the
+    /// batch produced, so any other workout change hides it.
+    @State private var recordedBatchUndo: RecordedBatchUndo?
     /// History-only bests per exercise, taken when the workout opens (and again
     /// when its exercise list changes). Records are derived from the draft.
     @State private var personalRecordBaselines: [UUID: PersonalRecordBaseline] = [:]
@@ -232,6 +236,29 @@ struct ActiveWorkoutView: View {
     /// - `typed`: on-device recognition is unavailable/denied, or the user
     ///   chose "ввести текстом" — inline typed-command entry, never server
     ///   recognition.
+    private struct RecordedBatchUndo: Equatable {
+        static let visibleSeconds: UInt64 = 8
+
+        let id = UUID()
+        let draftID: UUID
+        /// Draft revision right after the batch (including any rest cleanup).
+        let revision: UInt64
+        /// Batch sets in the order the batch completed them.
+        let setIDs: [UUID]
+        /// The undo marker from just before the batch.
+        let restoringUndoableSetID: UUID?
+        let message: String
+
+        func isCurrent(for draft: ActiveWorkoutDraft) -> Bool {
+            draft.id == draftID && draft.revision == revision && draft.commitIntent == nil &&
+                setIDs.allSatisfy { setID in
+                    draft.exercises.contains { exercise in
+                        exercise.sets.contains { $0.id == setID && $0.isCompleted }
+                    }
+                }
+        }
+    }
+
     private enum VoiceCommandPhase: Equatable {
         case requesting
         case listening
@@ -314,6 +341,10 @@ struct ActiveWorkoutView: View {
 
                             if let recordedSetConfirmation {
                                 recordedSetConfirmationBanner(recordedSetConfirmation)
+                            }
+
+                            if let batch = recordedBatchUndo, batch.isCurrent(for: draft) {
+                                recordedBatchUndoBanner(batch, draft: draft)
                             }
 
                             ForEach(draft.exercises) { exercise in
@@ -400,6 +431,12 @@ struct ActiveWorkoutView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: currentDraft.map { Set($0.exercises.map(\.exerciseID)) }) {
             loadPersonalRecordBaselines()
+        }
+        .task(id: recordedBatchUndo?.id) {
+            guard let id = recordedBatchUndo?.id else { return }
+            try? await Task.sleep(nanoseconds: RecordedBatchUndo.visibleSeconds * 1_000_000_000)
+            guard !Task.isCancelled, recordedBatchUndo?.id == id else { return }
+            recordedBatchUndo = nil
         }
         .sensoryFeedback(.success, trigger: personalRecordFeedbackTrigger)
         .toolbar {
@@ -2120,6 +2157,8 @@ struct ActiveWorkoutView: View {
     /// undo is always visible next to the set. Undo is also in the
     /// "Записано: …" confirmation banner while it's showing, and via
     /// long-press ("Отменить подход") and the equivalent VoiceOver action.
+    /// Older recorded rows have no visible button; they carry the same
+    /// long-press and VoiceOver undo (see `canUndoOlder`).
     private func completedSetRow(
         _ set: ActiveWorkoutSet,
         position: Int,
@@ -2129,6 +2168,12 @@ struct ActiveWorkoutView: View {
     ) -> some View {
         let isLatestCompleted = draft.undoableSetID == set.id
         let canUndo = isLatestCompleted && draft.commitIntent == nil
+        // Older recorded rows get undo only through the long-press menu and the
+        // VoiceOver action (no extra visible button). In a live room this stays
+        // hidden until the server accepts it (`LiveWorkoutCoordinator.liveUndoAnySetEnabled`).
+        let canUndoOlder = !isLatestCompleted && draft.commitIntent == nil &&
+            liveWorkoutCoordinator.undoIsAllowed(isLatest: false)
+        let canUndoAny = canUndo || canUndoOlder
         let canDelete = activeWorkoutCanDeleteRecordedSet(
             exerciseSetCount: exercise.sets.count,
             hasCommitIntent: draft.commitIntent != nil,
@@ -2193,10 +2238,10 @@ struct ActiveWorkoutView: View {
         .accessibilityLabel(label)
 
         return Group {
-            if canUndo || canDelete {
+            if canUndoAny || canDelete {
                 content
                     .accessibilityActions {
-                        if canUndo {
+                        if canUndoAny {
                             Button(undoActionName) { undoLatestSet(set, draft: draft) }
                         }
                         if canDelete {
@@ -2211,7 +2256,7 @@ struct ActiveWorkoutView: View {
                         }
                     }
                     .contextMenu {
-                        if canUndo {
+                        if canUndoAny {
                             Button {
                                 undoLatestSet(set, draft: draft)
                             } label: {
@@ -2741,6 +2786,7 @@ struct ActiveWorkoutView: View {
         let liveInputs = orderedInputs.map {
             (id: $0.0, weight: $0.1.weight, reps: $0.1.reps)
         }
+        let preBatchUndoableSetID = draft.undoableSetID
         var liveQueueFailureMessage: String?
         do {
             try liveWorkoutCoordinator.preflightLocalSetsCompletion(liveInputs)
@@ -2775,7 +2821,16 @@ struct ActiveWorkoutView: View {
                     }
                 )
             }
-            applyActiveWorkoutActionStatus(
+            // One confirmation only: "All sets saved." with its Undo lives in the
+            // batch banner below, so the plain success text is suppressed here, but
+            // a live-queue failure or rest-projection warning still surfaces.
+            let batchMessage = gymText(
+                "All sets saved.",
+                "Усі підходи збережено.",
+                "Все подходы сохранены.",
+                languageCode: gymCurrentLanguageCode()
+            )
+            let resolved = activeWorkoutActionStatus(
                 liveQueueFailure: liveQueueFailureMessage,
                 restProjectionWarning: restCleanupSucceeded
                     ? nil
@@ -2785,25 +2840,45 @@ struct ActiveWorkoutView: View {
                         "Подходы сохранены, но старые локальные элементы не удалось полностью очистить.",
                         languageCode: gymCurrentLanguageCode()
                     ),
-                success: gymText(
-                    "All sets saved.",
-                    "Усі підходи збережено.",
-                    "Все подходы сохранены.",
-                    languageCode: gymCurrentLanguageCode()
-                )
+                success: batchMessage
             )
+            if resolved.isError {
+                statusMessage = resolved.message
+                statusIsError = true
+            } else {
+                statusMessage = nil
+            }
+            recordedSetConfirmation = nil
+            if let settled = activeWorkoutStore.draft, settled.id == draft.id {
+                recordedBatchUndo = RecordedBatchUndo(
+                    draftID: settled.id,
+                    revision: settled.revision,
+                    setIDs: orderedInputs.map(\.0),
+                    restoringUndoableSetID: preBatchUndoableSetID,
+                    message: batchMessage
+                )
+                announce(batchMessage)
+            }
         } catch {
             showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
         }
     }
 
+    /// Undoes one recorded set. The latest (marker) set keeps the original behaviour,
+    /// including stopping its rest; an older set is un-logged alone, leaving the
+    /// marker and any running rest untouched. In a live room an older set is
+    /// refused until `LiveWorkoutCoordinator.liveUndoAnySetEnabled` is on.
     private func undoLatestSet(
         _ set: ActiveWorkoutSet,
         draft: ActiveWorkoutDraft
     ) {
+        let isLatest = draft.undoableSetID == set.id
         var liveQueueFailureMessage: String?
         do {
-            let updated = try activeWorkoutStore.undoLatestRecordedSet(
+            guard liveWorkoutCoordinator.undoIsAllowed(isLatest: isLatest) else {
+                throw ActiveWorkoutStoreError.setIsNotLatest
+            }
+            let updated = try activeWorkoutStore.undoRecordedSet(
                 draftID: draft.id,
                 setID: set.id,
                 expectedRevision: draft.revision
@@ -2817,6 +2892,22 @@ struct ActiveWorkoutView: View {
                 )
                 liveQueueFailureMessage = message
                 reportStatus(message, true)
+            }
+            if recordedSetConfirmation?.setID == set.id {
+                recordedSetConfirmation = nil
+            }
+            guard isLatest else {
+                applyActiveWorkoutActionStatus(
+                    liveQueueFailure: liveQueueFailureMessage,
+                    restProjectionWarning: nil,
+                    success: gymText(
+                        "Set restored for editing.",
+                        "Підхід повернуто до редагування.",
+                        "Подход возвращён к редактированию.",
+                        languageCode: gymCurrentLanguageCode()
+                    )
+                )
+                return
             }
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
                 draft: updated,
@@ -2838,6 +2929,70 @@ struct ActiveWorkoutView: View {
                     "Latest set restored for editing. Rest stopped.",
                     "Останній підхід повернуто до редагування. Відпочинок зупинено.",
                     "Последний подход возвращён к редактированию. Отдых остановлен.",
+                    languageCode: gymCurrentLanguageCode()
+                )
+            )
+        } catch {
+            showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
+        }
+    }
+
+    /// Reverts the latest "Log all remaining" batch: every batch set returns to
+    /// editable state (values kept) in one draft revision, and in a live room one
+    /// `undo_set` per set is queued in reverse completion order.
+    private func undoRecordedBatch(_ batch: RecordedBatchUndo, draft: ActiveWorkoutDraft) {
+        recordedBatchUndo = nil
+        guard batch.isCurrent(for: draft) else { return }
+        let reversedSetIDs = Array(batch.setIDs.reversed())
+        var liveQueueFailureMessage: String?
+        do {
+            try liveWorkoutCoordinator.preflightLocalSetsUndo(localSetIDs: reversedSetIDs)
+            let updated = try activeWorkoutStore.undoRecordedBatch(
+                draftID: draft.id,
+                setIDs: batch.setIDs,
+                restoringUndoableSetID: batch.restoringUndoableSetID,
+                expectedRevision: draft.revision
+            )
+            do {
+                try liveWorkoutCoordinator.localSetsWereUndone(localSetIDs: reversedSetIDs)
+            } catch {
+                let message = gymLocalized(
+                    gymSafeEnglishErrorMessage(error),
+                    languageCode: gymCurrentLanguageCode()
+                )
+                liveQueueFailureMessage = message
+                reportStatus(message, true)
+            }
+            let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
+                draft: updated,
+                store: activeWorkoutStore,
+                manager: restTimers,
+                title: currentRestExerciseName(updated)
+            )
+            let batchSetIDs = Set(batch.setIDs)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                collapsedExerciseIDs.subtract(
+                    updated.exercises.compactMap { exercise in
+                        exercise.sets.contains(where: { batchSetIDs.contains($0.id) })
+                            ? exercise.id
+                            : nil
+                    }
+                )
+            }
+            applyActiveWorkoutActionStatus(
+                liveQueueFailure: liveQueueFailureMessage,
+                restProjectionWarning: restOutcome == .synchronized
+                    ? nil
+                    : gymText(
+                        "Sets restored, but old rest cleanup must be retried.",
+                        "Підходи відновлено, але очищення старого відпочинку треба повторити.",
+                        "Подходы восстановлены, но очистку старого отдыха нужно повторить.",
+                        languageCode: gymCurrentLanguageCode()
+                    ),
+                success: gymText(
+                    "Sets restored for editing.",
+                    "Підходи повернуто до редагування.",
+                    "Подходы возвращены к редактированию.",
                     languageCode: gymCurrentLanguageCode()
                 )
             )
@@ -3631,6 +3786,44 @@ struct ActiveWorkoutView: View {
                     undoLatestSet(set, draft: draft)
                 }
                 recordedSetConfirmation = nil
+            } label: {
+                Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GymTheme.primary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                .fill(GymTheme.surface)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(GymTheme.primary.opacity(0.36), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "All sets saved." + "Undo", shown for a few seconds after "Log all remaining"
+    /// while nothing else has changed the workout.
+    private func recordedBatchUndoBanner(
+        _ batch: RecordedBatchUndo,
+        draft: ActiveWorkoutDraft
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(GymTheme.primary)
+                .accessibilityHidden(true)
+            Text(batch.message)
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 8)
+            Button {
+                undoRecordedBatch(batch, draft: draft)
             } label: {
                 Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
                     .font(.subheadline.weight(.semibold))

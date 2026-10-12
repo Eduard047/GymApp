@@ -18705,9 +18705,12 @@ final class CoreParityTests: XCTestCase {
         )
         // Undo is reachable without a standing button: a long-press context
         // menu and an equivalent VoiceOver accessibility action, both named
-        // the same, on the latest completed row only (`canUndo`).
+        // the same, on the latest completed row (`canUndo`) and on older recorded
+        // rows (`canUndoOlder`, hidden in a live room until the server gate is on).
         XCTAssertTrue(source.contains("Button(undoActionName) { undoLatestSet(set, draft: draft) }"))
         XCTAssertTrue(source.contains(".contextMenu {"))
+        XCTAssertTrue(source.contains("let canUndoAny = canUndo || canUndoOlder"))
+        XCTAssertTrue(source.contains("liveWorkoutCoordinator.undoIsAllowed(isLatest: false)"))
         XCTAssertFalse(source.contains("Undo latest set"), "the old standing full-width undo button text must be gone")
 
         for localizedCopy in [
@@ -18856,7 +18859,7 @@ final class CoreParityTests: XCTestCase {
             ),
             (
                 try section(from: "private func undoLatestSet(", to: "private func startManualRest("),
-                "let updated = try activeWorkoutStore.undoLatestRecordedSet(",
+                "let updated = try activeWorkoutStore.undoRecordedSet(",
                 "try liveWorkoutCoordinator.localSetWasUndone("
             )
         ]

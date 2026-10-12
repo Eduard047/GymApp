@@ -1210,6 +1210,22 @@
         }
       }
     },
+    "This set has not been recorded." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот подход ещё не записан."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей підхід ще не записано."
+          }
+        }
+      }
+    },
     "An exercise keeps at least one set. Remove the exercise instead." : {
       "localizations" : {
         "ru" : {

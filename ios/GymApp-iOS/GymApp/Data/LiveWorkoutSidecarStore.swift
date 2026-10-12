@@ -301,12 +301,13 @@ final class LiveWorkoutSidecarStore: ObservableObject {
                 projected[setID] = (weight, reps)
                 projectedOrder.append(setID)
             case .undoSet:
+                // Any still-completed own set can be undone (not only the latest).
                 guard let setID = operation.serverSetID,
-                      projectedOrder.last == setID else {
+                      let index = projectedOrder.firstIndex(of: setID) else {
                     throw LiveWorkoutSidecarError.staleOperation
                 }
                 projected.removeValue(forKey: setID)
-                projectedOrder.removeLast()
+                projectedOrder.remove(at: index)
             case .finish:
                 break
             }
@@ -471,6 +472,21 @@ final class LiveWorkoutSidecarStore: ObservableObject {
         try enqueue(kind: .undoSet, localSetID: localSetID, weight: nil, reps: nil)
     }
 
+    /// Appends one `undo_set` per set, in the given order, with one atomic envelope
+    /// replacement (the undo of a "Log all remaining" batch). Nothing is queued when
+    /// any set is unmapped or the queue cannot hold the whole batch.
+    func enqueueUndoSets(localSetIDs: [UUID]) throws {
+        guard let current = attachment else { throw LiveWorkoutSidecarError.noAttachment }
+        let candidate = try Self.appendingUndoSets(localSetIDs, to: current)
+        try persist(candidate)
+        attachment = candidate
+    }
+
+    func preflightUndoSets(localSetIDs: [UUID]) throws {
+        guard let current = attachment else { throw LiveWorkoutSidecarError.noAttachment }
+        _ = try Self.appendingUndoSets(localSetIDs, to: current)
+    }
+
     func enqueueFinish() throws {
         try enqueue(kind: .finish, localSetID: nil, weight: nil, reps: nil)
     }
@@ -591,7 +607,6 @@ final class LiveWorkoutSidecarStore: ObservableObject {
 
         let retained = Array(current.pendingOperations.dropFirst(appliedCount))
         var simulatedCompleted = progress.completedSets.map(\.setID)
-        var simulatedUndoable = progress.undoableSetID
         var simulatedFinished = remotelyFinished
         for operation in retained {
             switch operation.kind {
@@ -600,18 +615,16 @@ final class LiveWorkoutSidecarStore: ObservableObject {
                       !simulatedFinished,
                       !simulatedCompleted.contains(setID) else { return .unsafe }
                 simulatedCompleted.append(setID)
-                simulatedUndoable = setID
             case .undoSet:
+                // The set only has to still be in own completed sets; the server keeps
+                // the marker on the last remaining set.
                 guard let setID = operation.serverSetID,
                       !simulatedFinished,
-                      simulatedUndoable == setID,
-                      simulatedCompleted.last == setID else { return .unsafe }
-                simulatedCompleted.removeLast()
-                simulatedUndoable = simulatedCompleted.last
+                      let index = simulatedCompleted.firstIndex(of: setID) else { return .unsafe }
+                simulatedCompleted.remove(at: index)
             case .finish:
                 guard !simulatedFinished else { return .unsafe }
                 simulatedFinished = true
-                simulatedUndoable = nil
             }
         }
         guard progress.revision <= maximumRevision - retained.count else {
@@ -771,6 +784,40 @@ final class LiveWorkoutSidecarStore: ObservableObject {
 
     func serverSetID(for localSetID: UUID) -> String? {
         attachment?.serverToLocalSetIDs.first(where: { $0.value == localSetID })?.key
+    }
+
+    private static func appendingUndoSets(
+        _ localSetIDs: [UUID],
+        to current: LiveWorkoutAttachment
+    ) throws -> LiveWorkoutAttachment {
+        guard !localSetIDs.isEmpty,
+              Set(localSetIDs).count == localSetIDs.count,
+              !current.pendingOperations.contains(where: { $0.kind == .finish }),
+              localSetIDs.count <= maximumOperations - current.pendingOperations.count,
+              current.progressRevision <=
+                maximumRevision - current.pendingOperations.count - localSetIDs.count else {
+            throw LiveWorkoutSidecarError.queueFull
+        }
+        let localToServer = Dictionary(
+            uniqueKeysWithValues: current.serverToLocalSetIDs.map { ($0.value, $0.key) }
+        )
+        var candidate = current
+        for localSetID in localSetIDs {
+            guard let serverSetID = localToServer[localSetID] else {
+                throw LiveWorkoutSidecarError.setUnavailable
+            }
+            candidate.pendingOperations.append(LiveWorkoutPendingOperation(
+                clientOperationID: UUID(),
+                kind: .undoSet,
+                expectedProgressRevision: candidate.progressRevision +
+                    candidate.pendingOperations.count,
+                serverSetID: serverSetID,
+                weight: nil,
+                reps: nil
+            ))
+        }
+        try validate(candidate)
+        return candidate
     }
 
     private static func appendingCompletedSets(

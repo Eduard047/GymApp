@@ -1027,6 +1027,256 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(context.active.draft, undone)
     }
 
+    // MARK: Undo of any recorded set and of a log-all batch
+
+    private func startThreeSets(
+        _ context: Context,
+        ids: [UUID],
+        startedAt: Date
+    ) throws -> ActiveWorkoutDraft {
+        try context.active.start(
+            workoutDate: startedAt,
+            note: nil,
+            exercises: [
+                ActiveWorkoutExercise(
+                    exerciseID: context.exercise.id,
+                    sets: [
+                        ActiveWorkoutSet(id: ids[0], weight: 80, reps: 8),
+                        ActiveWorkoutSet(id: ids[1], weight: 82.5, reps: 7),
+                        ActiveWorkoutSet(id: ids[2], weight: 85, reps: 6)
+                    ]
+                )
+            ],
+            workoutStore: context.history,
+            now: startedAt
+        )
+    }
+
+    func testUndoRecordedOlderSetUnlogsOnlyThatSetAndKeepsMarkerAndRest() throws {
+        let context = try makeContext(account: "active-undo-older")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_150)
+        let ids = [UUID(), UUID(), UUID()]
+        let started = try startThreeSets(context, ids: ids, startedAt: startedAt)
+        var current = started
+        for (offset, id) in ids.enumerated() {
+            current = try context.active.recordSet(
+                draftID: current.id,
+                setID: id,
+                expectedRevision: current.revision,
+                restSeconds: 90,
+                now: startedAt.addingTimeInterval(Double(10 * (offset + 1)))
+            )
+        }
+        XCTAssertEqual(current.undoableSetID, ids[2])
+        let restingUntil = try XCTUnwrap(current.timing?.restingUntil)
+
+        let undone = try context.active.undoRecordedSet(
+            draftID: current.id,
+            setID: ids[0],
+            expectedRevision: current.revision,
+            now: startedAt.addingTimeInterval(35)
+        )
+
+        let sets = try XCTUnwrap(undone.exercises.first?.sets)
+        XCTAssertFalse(sets[0].isCompleted)
+        XCTAssertEqual(sets[0].weight, 80)
+        XCTAssertEqual(sets[0].reps, 8)
+        XCTAssertTrue(sets[1].isCompleted, "undo of one set never un-logs another")
+        XCTAssertTrue(sets[2].isCompleted)
+        XCTAssertEqual(undone.undoableSetID, ids[2], "older-set undo leaves the marker on the latest set")
+        XCTAssertEqual(undone.timing?.restingUntil, restingUntil, "older-set undo does not touch rest")
+        XCTAssertEqual(context.active.draft, undone)
+
+        // A set that is not recorded cannot be undone, and nothing changes.
+        XCTAssertThrowsError(
+            try context.active.undoRecordedSet(
+                draftID: undone.id,
+                setID: ids[0],
+                expectedRevision: undone.revision,
+                now: startedAt.addingTimeInterval(36)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .setNotRecorded)
+        }
+        XCTAssertEqual(context.active.draft, undone)
+    }
+
+    func testUndoRecordedMarkerSetMatchesLatestUndoBehavior() throws {
+        let context = try makeContext(account: "active-undo-any-marker")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_150)
+        let ids = [UUID(), UUID(), UUID()]
+        let started = try startThreeSets(context, ids: ids, startedAt: startedAt)
+        let first = try context.active.recordSet(
+            draftID: started.id, setID: ids[0], expectedRevision: started.revision,
+            restSeconds: 90, now: startedAt.addingTimeInterval(10)
+        )
+        let undone = try context.active.undoRecordedSet(
+            draftID: first.id, setID: ids[0], expectedRevision: first.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        XCTAssertFalse(try XCTUnwrap(undone.exercises.first).sets[0].isCompleted)
+        XCTAssertNil(undone.undoableSetID)
+        XCTAssertNil(undone.timing?.restingUntil, "undoing the marker set stops its rest")
+    }
+
+    func testUndoRecordedSetRefusesStaleRevisionAndFinishingWorkout() throws {
+        let context = try makeContext(account: "active-undo-any-stale")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_150)
+        let ids = [UUID(), UUID(), UUID()]
+        let started = try startThreeSets(context, ids: ids, startedAt: startedAt)
+        let first = try context.active.recordSet(
+            draftID: started.id, setID: ids[0], expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(10)
+        )
+        let second = try context.active.recordSet(
+            draftID: first.id, setID: ids[1], expectedRevision: first.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        XCTAssertThrowsError(
+            try context.active.undoRecordedSet(
+                draftID: second.id, setID: ids[0], expectedRevision: first.revision,
+                now: startedAt.addingTimeInterval(21)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .staleDraft)
+        }
+        XCTAssertEqual(context.active.draft, second)
+    }
+
+    func testUndoRecordedSetRefusedWhileCommitIntentIsLocked() throws {
+        var activeWriteCount = 0
+        let context = try makeContext(
+            account: "active-undo-any-locked",
+            envelopeWriter: { data, url in
+                activeWriteCount += 1
+                if activeWriteCount == 4 { throw InjectedFailure.cleanupWrite }
+                try data.write(
+                    to: url,
+                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+                )
+            }
+        )
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_394)
+        let ids = [UUID(), UUID(), UUID()]
+        let started = try startThreeSets(context, ids: ids, startedAt: startedAt)
+        let recorded = try context.active.recordSet(
+            draftID: started.id, setID: ids[0], expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(20)
+        )
+        XCTAssertThrowsError(
+            try context.active.finish(
+                draftID: recorded.id, expectedRevision: recorded.revision,
+                into: context.history, now: startedAt.addingTimeInterval(30)
+            )
+        )
+        let locked = try XCTUnwrap(context.active.draft)
+        XCTAssertNotNil(locked.commitIntent)
+        XCTAssertThrowsError(
+            try context.active.undoRecordedSet(
+                draftID: locked.id, setID: ids[0], expectedRevision: locked.revision,
+                now: startedAt.addingTimeInterval(31)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .workoutFinishing)
+        }
+        XCTAssertThrowsError(
+            try context.active.undoRecordedBatch(
+                draftID: locked.id, setIDs: [ids[0]], restoringUndoableSetID: nil,
+                expectedRevision: locked.revision, now: startedAt.addingTimeInterval(32)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .workoutFinishing)
+        }
+        XCTAssertEqual(context.active.draft, locked)
+    }
+
+    func testUndoRecordedBatchRestoresAllBatchSetsAndPreBatchMarker() throws {
+        let context = try makeContext(account: "active-undo-batch")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_150)
+        let ids = [UUID(), UUID(), UUID()]
+        let started = try startThreeSets(context, ids: ids, startedAt: startedAt)
+        let first = try context.active.recordSet(
+            draftID: started.id, setID: ids[0], expectedRevision: started.revision,
+            now: startedAt.addingTimeInterval(10)
+        )
+        XCTAssertEqual(first.undoableSetID, ids[0])
+        let batch = try context.active.recordAllSets(
+            draftID: first.id,
+            expectedRevision: first.revision,
+            inputs: [
+                ids[1]: ActiveWorkoutSetInput(weight: 83, reps: 6),
+                ids[2]: ActiveWorkoutSetInput(weight: 86, reps: 5)
+            ],
+            now: startedAt.addingTimeInterval(20)
+        )
+        XCTAssertNil(batch.undoableSetID)
+
+        let undone = try context.active.undoRecordedBatch(
+            draftID: batch.id,
+            setIDs: [ids[1], ids[2]],
+            restoringUndoableSetID: first.undoableSetID,
+            expectedRevision: batch.revision,
+            now: startedAt.addingTimeInterval(25)
+        )
+        let sets = try XCTUnwrap(undone.exercises.first?.sets)
+        XCTAssertTrue(sets[0].isCompleted, "sets outside the batch are untouched")
+        XCTAssertFalse(sets[1].isCompleted)
+        XCTAssertFalse(sets[2].isCompleted)
+        XCTAssertEqual(sets[1].weight, 83, "values entered for the batch are kept")
+        XCTAssertEqual(sets[2].reps, 5)
+        XCTAssertEqual(undone.undoableSetID, ids[0], "marker returns to the pre-batch marker")
+        XCTAssertEqual(undone.revision, batch.revision + 1, "one draft revision for the whole batch")
+
+        // A second undo of the same batch is refused: nothing is recorded any more.
+        XCTAssertThrowsError(
+            try context.active.undoRecordedBatch(
+                draftID: undone.id, setIDs: [ids[1], ids[2]], restoringUndoableSetID: nil,
+                expectedRevision: undone.revision, now: startedAt.addingTimeInterval(26)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .setNotRecorded)
+        }
+        XCTAssertEqual(context.active.draft, undone)
+    }
+
+    func testUndoRecordedBatchClearsMarkerWhenPreBatchMarkerIsGoneAndRefusesAfterOtherChange() throws {
+        let context = try makeContext(account: "active-undo-batch-stale")
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_150)
+        let ids = [UUID(), UUID(), UUID()]
+        let started = try startThreeSets(context, ids: ids, startedAt: startedAt)
+        let batch = try context.active.recordAllSets(
+            draftID: started.id,
+            expectedRevision: started.revision,
+            inputs: Dictionary(uniqueKeysWithValues: ids.map {
+                ($0, ActiveWorkoutSetInput(weight: 50, reps: 5))
+            }),
+            now: startedAt.addingTimeInterval(20)
+        )
+        // Another workout change after the batch makes the captured revision stale.
+        let changed = try context.active.beginRest(
+            draftID: batch.id, expectedRevision: batch.revision, seconds: 60,
+            now: startedAt.addingTimeInterval(21)
+        )
+        XCTAssertThrowsError(
+            try context.active.undoRecordedBatch(
+                draftID: batch.id, setIDs: ids, restoringUndoableSetID: nil,
+                expectedRevision: batch.revision, now: startedAt.addingTimeInterval(22)
+            )
+        ) { error in
+            XCTAssertEqual(error as? ActiveWorkoutStoreError, .staleDraft)
+        }
+        XCTAssertEqual(context.active.draft, changed)
+
+        // An unknown pre-batch marker (not recorded) is cleared, never invented.
+        let undone = try context.active.undoRecordedBatch(
+            draftID: changed.id, setIDs: ids, restoringUndoableSetID: UUID(),
+            expectedRevision: changed.revision, now: startedAt.addingTimeInterval(23)
+        )
+        XCTAssertNil(undone.undoableSetID)
+        XCTAssertTrue(try XCTUnwrap(undone.exercises.first).sets.allSatisfy { !$0.isCompleted })
+        XCTAssertNil(undone.timing?.restingUntil)
+    }
+
     func testFinishKeepsOnlyCompletedSetsAndClearsLocalDraft() throws {
         let context = try makeContext(account: "active-finish")
         let startedAt = Date(timeIntervalSince1970: 1_800_000_200)

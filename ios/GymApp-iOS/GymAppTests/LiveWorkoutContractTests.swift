@@ -1372,6 +1372,96 @@ final class LiveWorkoutSidecarStoreTests: XCTestCase {
         )
     }
 
+    func testConflictReconcileRebasesUndoOfAnOlderSetStillCompleted() throws {
+        let fixture = try makeFixture()
+        let store = LiveWorkoutSidecarStore(
+            accountStorageKey: "cloud-\(liveUserID)",
+            workoutStorageURL: fixture.workoutStorageURL
+        )
+        try store.attach(snapshot: fixture.snapshot, draft: fixture.draft, context: liveContext)
+        try store.enqueueCompletedSets([
+            (id: fixture.firstSetID, weight: 80, reps: 8),
+            (id: fixture.secondSetID, weight: 82.5, reps: 7)
+        ])
+        // Undo of the OLDER set while the marker sits on the later one.
+        try store.enqueueUndo(localSetID: fixture.firstSetID)
+        let undoOperation = try XCTUnwrap(store.attachment?.pendingOperations.last)
+        let bothApplied = try liveSnapshotWithSelfProgress(
+            revision: 3,
+            completed: [
+                ["setId": "s_01_01", "weight": 80, "reps": 8, "completedAt": liveCompletedAt],
+                ["setId": "s_01_02", "weight": 82.5, "reps": 7, "completedAt": liveCompletedAt]
+            ],
+            undoable: "s_01_02"
+        )
+        guard case .reconciled(let reconciled) = try LiveWorkoutSidecarStore.reconcile(
+            attachment: try XCTUnwrap(store.attachment),
+            snapshot: bothApplied
+        ) else {
+            return XCTFail("An undo of a set that is still completed must rebase")
+        }
+        XCTAssertEqual(reconciled.pendingOperations.count, 1)
+        XCTAssertEqual(reconciled.pendingOperations[0].kind, .undoSet)
+        XCTAssertEqual(reconciled.pendingOperations[0].serverSetID, "s_01_01")
+        XCTAssertEqual(reconciled.pendingOperations[0].expectedProgressRevision, 3)
+        XCTAssertEqual(reconciled.pendingOperations[0].clientOperationID, undoOperation.clientOperationID)
+
+        // Still impossible when the set is not completed on the server any more.
+        let noneCompleted = LiveWorkoutSidecarStore(
+            accountStorageKey: "cloud-\(liveUserID)",
+            workoutStorageURL: fixture.workoutStorageURL
+                .deletingLastPathComponent()
+                .appendingPathComponent("undo-older-workout.json")
+        )
+        try noneCompleted.attach(snapshot: fixture.snapshot, draft: fixture.draft, context: liveContext)
+        try noneCompleted.enqueueUndo(localSetID: fixture.secondSetID)
+        XCTAssertEqual(
+            try LiveWorkoutSidecarStore.reconcile(
+                attachment: try XCTUnwrap(noneCompleted.attachment),
+                snapshot: fixture.snapshot
+            ),
+            .unsafe
+        )
+    }
+
+    func testBatchUndoQueuesOneUndoPerSetInGivenOrderAtomically() throws {
+        let fixture = try makeFixture()
+        let store = LiveWorkoutSidecarStore(
+            accountStorageKey: "cloud-\(liveUserID)",
+            workoutStorageURL: fixture.workoutStorageURL
+        )
+        try store.attach(snapshot: fixture.snapshot, draft: fixture.draft, context: liveContext)
+        try store.enqueueCompletedSets([
+            (id: fixture.firstSetID, weight: 80, reps: 8),
+            (id: fixture.secondSetID, weight: 82.5, reps: 7)
+        ])
+        let before = store.attachment
+
+        XCTAssertThrowsError(
+            try store.enqueueUndoSets(localSetIDs: [fixture.secondSetID, UUID()])
+        ) {
+            XCTAssertEqual($0 as? LiveWorkoutSidecarError, .setUnavailable)
+        }
+        XCTAssertThrowsError(try store.preflightUndoSets(localSetIDs: []))
+        XCTAssertThrowsError(
+            try store.enqueueUndoSets(localSetIDs: [fixture.firstSetID, fixture.firstSetID])
+        )
+        XCTAssertEqual(store.attachment, before, "a refused batch leaves the queue unchanged")
+
+        XCTAssertNoThrow(try store.preflightUndoSets(localSetIDs: [fixture.secondSetID, fixture.firstSetID]))
+        try store.enqueueUndoSets(localSetIDs: [fixture.secondSetID, fixture.firstSetID])
+        let operations = try XCTUnwrap(store.attachment?.pendingOperations)
+        XCTAssertEqual(operations.map(\.kind), [.completeSet, .completeSet, .undoSet, .undoSet])
+        XCTAssertEqual(operations.map(\.serverSetID), ["s_01_01", "s_01_02", "s_01_02", "s_01_01"])
+        XCTAssertEqual(operations.map(\.expectedProgressRevision), [1, 2, 3, 4])
+
+        let reopened = LiveWorkoutSidecarStore(
+            accountStorageKey: "cloud-\(liveUserID)",
+            workoutStorageURL: fixture.workoutStorageURL
+        )
+        XCTAssertEqual(reopened.attachment, store.attachment)
+    }
+
     func testLocalBatchRecoveryQueuesPlanOrderedSuffixAtomically() throws {
         let fixture = try makeFixture()
         let store = LiveWorkoutSidecarStore(
@@ -1771,5 +1861,28 @@ private final class LiveGatewayURLProtocolStub: URLProtocol, @unchecked Sendable
             headerFields: ["Content-Type": "application/json"]
         ))
         return (response, jsonData)
+    }
+}
+
+@MainActor
+final class LiveWorkoutUndoGateTests: XCTestCase {
+    func testAnySetUndoGateIsOffUntilTheServerChangeIsDeployed() {
+        XCTAssertFalse(LiveWorkoutCoordinator.liveUndoAnySetEnabled)
+    }
+
+    func testUndoRuleByLiveRoomAndGate() {
+        // Outside a live room any recorded set can be undone.
+        XCTAssertTrue(LiveWorkoutCoordinator.undoIsAllowed(isLatest: false, isLive: false, anySetEnabled: false))
+        XCTAssertTrue(LiveWorkoutCoordinator.undoIsAllowed(isLatest: true, isLive: false, anySetEnabled: false))
+        // Live room, gate off: only the latest (marker) set.
+        XCTAssertTrue(LiveWorkoutCoordinator.undoIsAllowed(isLatest: true, isLive: true, anySetEnabled: false))
+        XCTAssertFalse(LiveWorkoutCoordinator.undoIsAllowed(isLatest: false, isLive: true, anySetEnabled: false))
+        // Live room, gate on: any recorded set.
+        XCTAssertTrue(LiveWorkoutCoordinator.undoIsAllowed(isLatest: false, isLive: true, anySetEnabled: true))
+        // The default argument follows the shipped constant.
+        XCTAssertEqual(
+            LiveWorkoutCoordinator.undoIsAllowed(isLatest: false, isLive: true),
+            LiveWorkoutCoordinator.liveUndoAnySetEnabled
+        )
     }
 }

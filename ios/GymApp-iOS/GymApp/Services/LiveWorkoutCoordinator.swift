@@ -109,6 +109,26 @@ final class LiveWorkoutCoordinator: ObservableObject {
 
     var planIsFrozenForCurrentDraft: Bool { isAttachedToCurrentDraft }
 
+    /// Live-room gate for undoing a recorded set that is not the latest one. The
+    /// server accepts it only after the `live_undo_any_completed_set` migration is
+    /// deployed, so this stays `false` until then; outside a live room any recorded
+    /// set can always be undone.
+    static let liveUndoAnySetEnabled = false
+
+    /// Pure rule for one recorded set: outside a live room always; in a live room
+    /// only the latest (marker) set unless the any-set gate is on.
+    static func undoIsAllowed(
+        isLatest: Bool,
+        isLive: Bool,
+        anySetEnabled: Bool = liveUndoAnySetEnabled
+    ) -> Bool {
+        !isLive || isLatest || anySetEnabled
+    }
+
+    func undoIsAllowed(isLatest: Bool) -> Bool {
+        Self.undoIsAllowed(isLatest: isLatest, isLive: isAttachedToCurrentDraft)
+    }
+
     var peerProgress: LiveWorkoutProgress? { snapshot?.peerParticipant?.progress }
 
     var exerciseLaneSummaries: [LiveWorkoutExerciseLaneSummary] {
@@ -657,6 +677,32 @@ final class LiveWorkoutCoordinator: ObservableObject {
             throw error
         }
         scheduleFlush()
+    }
+
+    /// Queues the undo of a whole "Log all remaining" batch: one `undo_set` per set, in
+    /// the given order (callers pass the reverse of the completion order). The batch
+    /// is the tail of the own completed sets while the draft is unchanged since the
+    /// batch, which the pre-deploy server also accepts. Call only after
+    /// ActiveWorkoutStore has durably undone the sets.
+    func localSetsWereUndone(localSetIDs: [UUID]) throws {
+        guard isAttachedToCurrentDraft else { return }
+        do {
+            try sidecar.enqueueUndoSets(localSetIDs: localSetIDs)
+        } catch {
+            scheduleFlush()
+            throw error
+        }
+        scheduleFlush()
+    }
+
+    func preflightLocalSetsUndo(localSetIDs: [UUID]) throws {
+        guard isAttachedToCurrentDraft else { return }
+        do {
+            try sidecar.preflightUndoSets(localSetIDs: localSetIDs)
+        } catch {
+            scheduleFlush()
+            throw error
+        }
     }
 
     /// Call only after ActiveWorkoutStore has committed history and cleared its local draft.

@@ -12,6 +12,7 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
     case setUnavailable
     case setAlreadyCompleted
     case setIsNotLatest
+    case setNotRecorded
     case noCompletedSets
     case workoutFinishing
     case invalidDraft
@@ -43,6 +44,8 @@ enum ActiveWorkoutStoreError: Error, LocalizedError, Equatable, Sendable {
             "This set has already been recorded."
         case .setIsNotLatest:
             "Only the latest recorded set can be undone."
+        case .setNotRecorded:
+            "This set has not been recorded."
         case .noCompletedSets:
             "Record at least one set before finishing the workout."
         case .workoutFinishing:
@@ -524,6 +527,85 @@ final class ActiveWorkoutStore: ObservableObject {
             }
             candidate.exercises[location.exercise].sets[location.set].completedAt = nil
             candidate.undoableSetID = nil
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            if timing.restingUntil != nil {
+                timing.restingUntil = nil
+                timing.activeSince = now
+            }
+            candidate.timing = timing
+        }
+    }
+
+    /// Moves any one recorded set back to editable state (weight and reps are kept,
+    /// history is untouched). The undo marker set behaves exactly like
+    /// `undoLatestRecordedSet`: the marker clears and a running rest stops. An older
+    /// set leaves the marker and the rest timer untouched. A set that is not
+    /// recorded, a finishing workout, and a stale revision are refused unchanged.
+    @discardableResult
+    func undoRecordedSet(
+        draftID: UUID,
+        setID: UUID,
+        expectedRevision: UInt64,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            let location = try Self.setLocation(setID: setID, in: candidate)
+            guard candidate.exercises[location.exercise].sets[location.set].completedAt != nil else {
+                throw ActiveWorkoutStoreError.setNotRecorded
+            }
+            candidate.exercises[location.exercise].sets[location.set].completedAt = nil
+            guard candidate.undoableSetID == setID else { return }
+            candidate.undoableSetID = nil
+            var timing = Self.normalizedTiming(in: candidate, at: now)
+            if timing.restingUntil != nil {
+                timing.restingUntil = nil
+                timing.activeSince = now
+            }
+            candidate.timing = timing
+        }
+    }
+
+    /// Reverts one "Log all remaining" batch in one draft revision: every listed set
+    /// (all must still be recorded) returns to editable state with its values kept.
+    /// The marker returns to `restoringUndoableSetID` (the marker from just before
+    /// the batch) when that set is still recorded, otherwise it is cleared. Rest
+    /// stops like a single undo.
+    @discardableResult
+    func undoRecordedBatch(
+        draftID: UUID,
+        setIDs: [UUID],
+        restoringUndoableSetID: UUID?,
+        expectedRevision: UInt64,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard !setIDs.isEmpty, Set(setIDs).count == setIDs.count else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            let locations = try setIDs.map { setID -> (exercise: Int, set: Int) in
+                let location = try Self.setLocation(setID: setID, in: candidate)
+                guard candidate.exercises[location.exercise].sets[location.set].completedAt != nil else {
+                    throw ActiveWorkoutStoreError.setNotRecorded
+                }
+                return location
+            }
+            for location in locations {
+                candidate.exercises[location.exercise].sets[location.set].completedAt = nil
+            }
+            let stillRecorded = Set(candidate.exercises.flatMap { exercise in
+                exercise.sets.filter(\.isCompleted).map(\.id)
+            })
+            candidate.undoableSetID = restoringUndoableSetID.flatMap {
+                stillRecorded.contains($0) ? $0 : nil
+            }
             var timing = Self.normalizedTiming(in: candidate, at: now)
             if timing.restingUntil != nil {
                 timing.restingUntil = nil
