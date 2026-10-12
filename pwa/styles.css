@@ -7245,6 +7245,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .training-settings-sheet .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .training-settings-sheet h2 { margin: 0; }
 .training-settings-group { display: grid; gap: 6px; }
+.training-settings-group .field-caption { color: var(--muted); font-weight: 600; }
 
 .training-settings-options {
   display: grid;
