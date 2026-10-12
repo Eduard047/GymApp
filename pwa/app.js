@@ -19333,7 +19333,7 @@ function garminProfilePanel() {
     : devices;
   let body;
   if (!activeAccount?.remote) {
-    body = `<p class="muted">${tx("Garmin cloud watches are available after cloud sign-in.", "Годинники Garmin у хмарі доступні після входу в хмарний акаунт.")}</p>`;
+    body = `<p class="muted">${tx3("Garmin watches sync after cloud sign-in.", "Годинники Garmin синхронізуються після входу в хмарний акаунт.", "Часы Garmin синхронизируются после входа в облачный аккаунт.")}</p><button class="button ghost full" data-action="profile-cloud-sign-in">${tx3("Sign in", "Увійти", "Войти")}</button>`;
   } else if (!stateMatches || garminProfileState.status === "idle" || garminProfileState.status === "loading") {
     body = `<p class="muted">${tx("Loading watch status…", "Завантажуємо статус годинника…")}</p>`;
   } else if (garminProfileState.status === "error") {
@@ -19346,7 +19346,7 @@ function garminProfilePanel() {
   if (activeAccount?.remote && binding) {
     body += `<button class="button danger full garmin-unpair" data-action="unpair-garmin">${tx3("Unpair Garmin", "Від’єднати Garmin", "Отвязать Garmin")}</button>`;
   }
-  return `<section class="panel garmin-profile-card"><div class="section-title"><div><span class="eyebrow">Garmin</span><h2>${tx("Your watch", "Твій годинник")}</h2><p>${tx("The browser cannot see live Bluetooth status. This shows the latest protected cloud contact from the watch.", "Браузер не бачить поточний стан Bluetooth. Тут показано останній захищений зв’язок годинника з хмарою.")}</p></div></div>${body}</section>`;
+  return `<section class="panel garmin-profile-card"><div class="section-title"><div><span class="eyebrow">Garmin</span><h2>${tx("Your watch", "Твій годинник")}</h2></div></div>${body}</section>`;
 }
 
 function garminProfileDeviceRow(device) {
