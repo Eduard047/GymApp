@@ -352,8 +352,8 @@ class ActiveWorkoutViewModelTest {
                 isCompleted = true, isUndoTarget = false, inLiveRoom = true, liveUndoAnySetEnabled = false
             )
         )
-        assertFalse(com.example.gymapp.auth.LIVE_UNDO_ANY_SET_ENABLED)
-        assertFalse(activeWorkoutSetUndoAllowed(isCompleted = true, isUndoTarget = false, inLiveRoom = true))
+        assertTrue(com.example.gymapp.auth.LIVE_UNDO_ANY_SET_ENABLED)
+        assertTrue(activeWorkoutSetUndoAllowed(isCompleted = true, isUndoTarget = false, inLiveRoom = true))
     }
 
     @Test
