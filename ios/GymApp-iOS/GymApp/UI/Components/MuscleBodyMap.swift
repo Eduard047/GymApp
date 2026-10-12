@@ -71,7 +71,7 @@ struct MuscleBodyMap: View {
                 lineWidth: max(0.55, 0.12 * scale)
             )
 
-            if muscleID == selectedMuscleID {
+            if let selectedMuscleID, muscleID == selectedMuscleID {
                 context.stroke(
                     path,
                     with: .color(GymTheme.heatText(step: step)),
