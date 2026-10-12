@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +38,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.theme.HeatStepColors
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
@@ -395,15 +397,9 @@ private fun MuscleBodyMapCanvas(
     onMuscleSelected: ((String) -> Unit)?,
     modifier: Modifier
 ) {
-    // Derive the idle figure from foreground roles instead of neighboring pale
-    // surfaces. This keeps every region readable on both light and dark cards.
-    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-    val outlineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
-    val lowColor = Color(0xFF3B82F6)
-    val mediumColor = Color(0xFF8B5CF6)
-    val highColor = Color(0xFFE11D48)
-    val peakColor = Color(0xFFF59E0B)
-    val selectedOutlineColor = MaterialTheme.colorScheme.primary
+    // Every region is one step of the shared blue scale; the idle figure is step 0.
+    val dark = isSystemInDarkTheme()
+    val outlineColor = if (dark) Color(0xFFA7B6CB).copy(alpha = 0.45f) else Color(0xFF60708A).copy(alpha = 0.55f)
     val frontRegions = remember {
         SOURCE_FRONT_MUSCLE_REGIONS.map(::parseSourceRegion)
     }
@@ -449,14 +445,9 @@ private fun MuscleBodyMapCanvas(
             top = top,
             scale = scale,
             intensityByMuscle = intensityByMuscle,
-            inactiveColor = inactiveColor,
             outlineColor = outlineColor,
-            lowColor = lowColor,
-            mediumColor = mediumColor,
-            highColor = highColor,
-            peakColor = peakColor,
-            selectedMuscleId = selectedMuscleId,
-            selectedOutlineColor = selectedOutlineColor
+            dark = dark,
+            selectedMuscleId = selectedMuscleId
         )
         drawSourceBody(
             regions = backRegions,
@@ -465,25 +456,16 @@ private fun MuscleBodyMapCanvas(
             top = top,
             scale = scale,
             intensityByMuscle = intensityByMuscle,
-            inactiveColor = inactiveColor,
             outlineColor = outlineColor,
-            lowColor = lowColor,
-            mediumColor = mediumColor,
-            highColor = highColor,
-            peakColor = peakColor,
-            selectedMuscleId = selectedMuscleId,
-            selectedOutlineColor = selectedOutlineColor
+            dark = dark,
+            selectedMuscleId = selectedMuscleId
         )
     }
 }
 
 @Composable
 private fun MuscleLegend() {
-    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-    val lowColor = Color(0xFF3B82F6)
-    val mediumColor = Color(0xFF8B5CF6)
-    val highColor = Color(0xFFE11D48)
-    val peakColor = Color(0xFFF59E0B)
+    val emptyOutline = HeatStepColors.emptyOutline()
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -494,20 +476,18 @@ private fun MuscleLegend() {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        listOf(0f, 0.25f, 0.5f, 0.75f, 1f).forEach { intensity ->
+        repeat(HeatStepColors.STEPS) { step ->
             Box(
                 modifier = Modifier
                     .size(14.dp)
                     .clip(MaterialTheme.shapes.extraSmall)
-                    .background(
-                        heatColor(
-                            intensity = intensity,
-                            inactive = inactiveColor,
-                            low = lowColor,
-                            medium = mediumColor,
-                            high = highColor,
-                            peak = peakColor
-                        )
+                    .background(HeatStepColors.fill(step))
+                    .then(
+                        if (step == 0) {
+                            Modifier.border(1.dp, emptyOutline, MaterialTheme.shapes.extraSmall)
+                        } else {
+                            Modifier
+                        }
                     )
             )
         }
@@ -850,14 +830,7 @@ private fun TopMuscleRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accent = heatColor(
-        intensity = muscle.intensity,
-        inactive = MaterialTheme.colorScheme.surfaceVariant,
-        low = Color(0xFF3B82F6),
-        medium = Color(0xFF8B5CF6),
-        high = Color(0xFFE11D48),
-        peak = Color(0xFFF59E0B)
-    )
+    val accent = HeatStepColors.fill(HeatStepColors.step(muscle.intensity).coerceAtLeast(1))
 
     Column(
         modifier = modifier
@@ -895,7 +868,7 @@ private fun TopMuscleRow(
             Text(
                 text = stringResource(R.string.muscle_heatmap_load_value, muscle.load),
                 style = MaterialTheme.typography.labelLarge,
-                color = accent,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1002,14 +975,9 @@ private fun DrawScope.drawSourceBody(
     top: Float,
     scale: Float,
     intensityByMuscle: Map<String, Float>,
-    inactiveColor: Color,
     outlineColor: Color,
-    lowColor: Color,
-    mediumColor: Color,
-    highColor: Color,
-    peakColor: Color,
-    selectedMuscleId: String?,
-    selectedOutlineColor: Color
+    dark: Boolean,
+    selectedMuscleId: String?
 ) {
     withTransform({
         translate(left = left - viewBoxMinX * scale, top = top)
@@ -1018,23 +986,13 @@ private fun DrawScope.drawSourceBody(
         regions.forEach { region ->
             val muscleId = muscleIdForSourceRegion(region.source.id)
             val intensity = muscleId?.let { intensityByMuscle[it] } ?: 0f
-            val fillColor = if (muscleId == null || intensity <= 0f) {
-                inactiveColor
-            } else {
-                heatColor(
-                    intensity = intensity,
-                    inactive = inactiveColor,
-                    low = lowColor,
-                    medium = mediumColor,
-                    high = highColor,
-                    peak = peakColor
-                )
-            }
+            val step = HeatStepColors.step(intensity)
+            val fillColor = HeatStepColors.fill(step, dark)
             val selected = muscleId != null && muscleId == selectedMuscleId
 
             drawPath(
                 path = region.path,
-                // Selection is communicated by the primary outline below.
+                // Selection is communicated by the outline below, in the step's label colour.
                 // Do not increase fill opacity: a selected zero-load muscle
                 // must not look like a high-intensity region.
                 color = fillColor
@@ -1047,7 +1005,7 @@ private fun DrawScope.drawSourceBody(
             if (selected) {
                 drawPath(
                     path = region.path,
-                    color = selectedOutlineColor,
+                    color = HeatStepColors.text(step, dark),
                     style = Stroke(width = 0.42f)
                 )
             }
@@ -1082,24 +1040,6 @@ private fun muscleIdForSourceRegion(regionId: String): String? {
         regionId.contains("hamstrings") -> "hamstrings"
         regionId.contains("calves") || regionId.contains("tibialis") -> "calves"
         else -> null
-    }
-}
-
-private fun heatColor(
-    intensity: Float,
-    inactive: Color,
-    low: Color,
-    medium: Color,
-    high: Color,
-    peak: Color
-): Color {
-    val value = intensity.coerceIn(0f, 1f)
-    return when {
-        value <= 0f -> inactive
-        value < 0.28f -> lerp(low.copy(alpha = 0.42f), low, value / 0.28f)
-        value < 0.58f -> lerp(low, medium, (value - 0.28f) / 0.3f)
-        value < 0.86f -> lerp(medium, high, (value - 0.58f) / 0.28f)
-        else -> lerp(high, peak, (value - 0.86f) / 0.14f)
     }
 }
 

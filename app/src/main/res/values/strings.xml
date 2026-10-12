@@ -813,8 +813,8 @@
     <string name="achievement_status_unlocked">Unlocked</string>
     <string name="achievement_status_unlocked_on">Unlocked %1$s</string>
     <string name="achievement_tile_a11y">%1$s, %2$s, %3$s</string>
-    <string name="muscle_heatmap_title">Muscle Map</string>
-    <string name="muscle_heatmap_supporting">Colors show which muscle groups carried the most load across your logged training history.</string>
+    <string name="muscle_heatmap_title">Muscle map</string>
+    <string name="muscle_heatmap_supporting">Stronger blue means more load on that muscle group in the selected period.</string>
     <string name="muscle_heatmap_sets">Sets</string>
     <string name="muscle_heatmap_load">Load</string>
     <string name="muscle_heatmap_mapped">Mapped</string>

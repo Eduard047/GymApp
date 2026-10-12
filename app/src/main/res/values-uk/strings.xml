@@ -844,7 +844,7 @@
     <string name="achievement_status_unlocked_on">Відкрито %1$s</string>
     <string name="achievement_tile_a11y">%1$s, %2$s, %3$s</string>
     <string name="muscle_heatmap_title">Карта мʼязів</string>
-    <string name="muscle_heatmap_supporting">Кольори показують, які групи мʼязів отримали найбільше навантаження за всю історію тренувань.</string>
+    <string name="muscle_heatmap_supporting">Чим насиченіший синій, тим більше навантаження на групу мʼязів за вибраний період.</string>
     <string name="muscle_heatmap_sets">Підходи</string>
     <string name="muscle_heatmap_load">Навантаження</string>
     <string name="muscle_heatmap_mapped">Зіставлено</string>

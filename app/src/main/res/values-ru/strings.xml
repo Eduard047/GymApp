@@ -844,7 +844,7 @@
     <string name="achievement_status_unlocked_on">Открыто %1$s</string>
     <string name="achievement_tile_a11y">%1$s, %2$s, %3$s</string>
     <string name="muscle_heatmap_title">Карта мышц</string>
-    <string name="muscle_heatmap_supporting">Цвета показывают, какие группы мышц получили наибольшую нагрузку за всю историю тренировок.</string>
+    <string name="muscle_heatmap_supporting">Чем насыщеннее синий, тем больше нагрузка на группу мышц за выбранный период.</string>
     <string name="muscle_heatmap_sets">Подходы</string>
     <string name="muscle_heatmap_load">Нагрузка</string>
     <string name="muscle_heatmap_mapped">Сопоставлено</string>
