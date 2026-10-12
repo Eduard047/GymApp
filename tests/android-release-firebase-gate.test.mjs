@@ -365,3 +365,34 @@ test("Firebase gate checks bounded shape, permissions, artifact identity, and JS
 test("repository ignores only the supported local Firebase config locations", () => {
   assert.match(gitignore, /^google-services\*\.json$/m);
 });
+
+test("release scripts define ConvertFrom-JavaPropertyEscapes before sdk.dir resolution uses it", async () => {
+  for (const [name, script] of [["AAB", playScript], ["APK", phoneScript]]) {
+    const definition = script.search(/^function ConvertFrom-JavaPropertyEscapes\s*\{/m);
+    const firstUse = script.search(/\(ConvertFrom-JavaPropertyEscapes\s/);
+    assert.ok(definition >= 0, `${name} script must define ConvertFrom-JavaPropertyEscapes`);
+    assert.ok(firstUse > definition, `${name} script must define the function before its first use`);
+  }
+});
+
+test("ConvertFrom-JavaPropertyEscapes decodes Java properties escapes", async () => {
+  for (const script of [playScript, phoneScript]) {
+    const body = script.match(/^function ConvertFrom-JavaPropertyEscapes\s*\{[\s\S]*?^\}/m)?.[0];
+    assert.ok(body, "function body must be extractable");
+    const probe = `${body}
+$cases = @(
+  '/Users/x/Library/Android/sdk',
+  'C\\:\\\\Users\\\\x\\\\sdk',
+  '/Volumes/Dev\\ Store/sdk',
+  ('/a\\tb\\=c\\u0041\\q  ' + [char]13)
+)
+$cases | ForEach-Object { ConvertFrom-JavaPropertyEscapes $_ } | ConvertTo-Json -Compress`;
+    const { stdout } = await execFileAsync("pwsh", ["-NoProfile", "-Command", probe]);
+    assert.deepEqual(JSON.parse(stdout), [
+      "/Users/x/Library/Android/sdk",
+      "C:\\Users\\x\\sdk",
+      "/Volumes/Dev Store/sdk",
+      "/a\tb=cAq",
+    ]);
+  }
+});

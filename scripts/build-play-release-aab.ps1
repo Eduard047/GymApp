@@ -94,6 +94,51 @@ function Get-ReleaseKeystoreCertificateSha256 {
     return (Get-Sha256Hex $certificateBytes)
 }
 
+function ConvertFrom-JavaPropertyEscapes {
+    param([string]$Value)
+
+    if ([string]::IsNullOrEmpty($Value)) {
+        return ''
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    $protectedLength = 0
+    $index = 0
+    while ($index -lt $Value.Length) {
+        $character = $Value[$index]
+        if ($character -ne '\' -or $index -eq $Value.Length - 1) {
+            [void]$builder.Append($character)
+            $index++
+            continue
+        }
+
+        $escaped = $Value[$index + 1]
+        $index += 2
+        switch ($escaped) {
+            't' { [void]$builder.Append("`t") }
+            'n' { [void]$builder.Append("`n") }
+            'r' { [void]$builder.Append("`r") }
+            'f' { [void]$builder.Append("`f") }
+            'u' {
+                $hex = if ($index + 4 -le $Value.Length) { $Value.Substring($index, 4) } else { '' }
+                if ($hex -match '^[0-9A-Fa-f]{4}$') {
+                    [void]$builder.Append([char][Convert]::ToInt32($hex, 16))
+                    $index += 4
+                } else {
+                    [void]$builder.Append('u')
+                }
+            }
+            default { [void]$builder.Append($escaped) }
+        }
+        # An escaped character is data, so trailing-whitespace trimming must not remove it.
+        $protectedLength = $builder.Length
+    }
+
+    $decoded = $builder.ToString()
+    $trimmed = $decoded.Substring($protectedLength).TrimEnd()
+    return $decoded.Substring(0, $protectedLength) + $trimmed
+}
+
 function Resolve-AndroidSdkPath {
     param([string]$ProjectRoot)
 
