@@ -18736,7 +18736,7 @@ async function confirmDeleteLocalAccount() {
     return rejectStaleDestructiveConfirmation();
   }
   const input = document.getElementById("delete-local-account-confirm");
-  if (!input || input.value !== "DELETE") {
+  if (!input || input.value.trim() !== "DELETE") {
     const error = document.getElementById("delete-local-account-error");
     if (error) {
       error.textContent = tx3(

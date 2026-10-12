@@ -4904,7 +4904,12 @@ test("local profile deletion runs only from the in-page sheet after the typed DE
   assert.equal(error.hidden, false);
   assert.equal(vm.runInContext("modal.type", context), "confirm-delete-local-account");
 
-  input.value = "DELETE";
+  input.value = " delete ";
+  await vm.runInContext("confirmDeleteLocalAccount()", context);
+  assert.notEqual(context.localStorage.getItem(localKey), null);
+
+  // Like iPhone and Android: surrounding whitespace is ignored, the case is not.
+  input.value = "  DELETE \n";
   await vm.runInContext("confirmDeleteLocalAccount()", context);
   assert.equal(context.localStorage.getItem(localKey), null);
   assert.equal(vm.runInContext("activeAccount", context), null);
