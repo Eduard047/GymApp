@@ -26267,7 +26267,9 @@ function exerciseHistoryMarkup(exercise) {
   const history = allSets().filter(set => exercisesMatch(set, exercise)).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const groups = progressHistoryGroups(history);
   const total = history.reduce((s, x) => s + Number(x.weight || 0) * Number(x.reps || 0), 0);
-  return `<div class="exercise-history-heading"><h2>${escapeHtml(exerciseDisplayName(exercise))}</h2>${exerciseMediaThumbnail(exercise, { className: "progress" })}</div><div class="metric-grid three exercise-history-metrics"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx3("Total volume", "Загальний обсяг", "Общий объем")}</span><strong>${escapeHtml(formatWorkoutVolume(total))}</strong></div></div>${exerciseHistoryMuscleRow(exercise)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
+  const maxWeight = history.reduce((best, x) => Math.max(best, Number(x.weight) || 0), 0);
+  const kilograms = (value, fractionDigits) => `${new Intl.NumberFormat(displayLocale(), { maximumFractionDigits: fractionDigits }).format(value)}\u00A0${volumeUnitLabel()}`;
+  return `<div class="exercise-history-heading"><h2>${escapeHtml(exerciseDisplayName(exercise))}</h2>${exerciseMediaThumbnail(exercise, { className: "progress" })}</div><div class="metric-grid three exercise-history-metrics"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx3("Max weight", "Максимальна вага", "Максимальный вес")}</span><strong>${escapeHtml(kilograms(maxWeight, 2))}</strong></div><div><span>${tx3("Total volume", "Загальний обсяг", "Общий объем")}</span><strong>${escapeHtml(kilograms(total, 1))}</strong></div></div>${exerciseHistoryMuscleRow(exercise)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
 }
 
 function mappingEditor(name) {

@@ -8038,9 +8038,9 @@ button.workout-template-row:focus-visible {
   line-height: 24px;
 }
 
-/* Exercise history: stat labels stay on one line so the tiles keep equal heights; the muscle map header never splits its button label. */
+/* Exercise history: values stay on one line; labels may wrap to two lines so the longer Russian and Ukrainian labels never clip at 390px; the muscle map header never splits its button label. */
 .metric-grid.three.exercise-history-metrics {
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.1fr);
 }
 
 .exercise-history-metrics > div {
@@ -8050,8 +8050,16 @@ button.workout-template-row:focus-visible {
 .exercise-history-metrics span {
   display: block;
   font-size: 12px;
-  white-space: nowrap;
+  line-height: 16px;
+  white-space: normal;
+  overflow-wrap: normal;
   overflow: visible;
+}
+
+.exercise-history-metrics strong {
+  font-size: 17px;
+  line-height: 24px;
+  white-space: nowrap;
 }
 
 .button.mini {

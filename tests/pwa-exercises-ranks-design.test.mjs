@@ -276,9 +276,10 @@ test("first-plan metric labels grow to two lines instead of being clipped", () =
   assert.doesNotMatch(labelRule, /max-height/);
 });
 
-test("exercise history keeps stat labels and the muscle groups button on one line", () => {
+test("exercise history keeps stat values and the muscle groups button on one line", () => {
   assert.match(appSource, /<div class="metric-grid three exercise-history-metrics"><div><span>\$\{tx\("Sessions"/);
-  assert.match(stylesSource, /\.exercise-history-metrics span\s*\{[^}]*font-size:\s*12px;[^}]*white-space:\s*nowrap;/);
+  assert.match(stylesSource, /\.exercise-history-metrics span\s*\{[^}]*font-size:\s*12px;[^}]*white-space:\s*normal;/);
+  assert.match(stylesSource, /\.exercise-history-metrics strong\s*\{[^}]*white-space:\s*nowrap;/);
   assert.match(stylesSource, /\.button\.mini\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/);
   assert.match(stylesSource, /\.exercise-muscle-map > \.row-head\s*\{[^}]*flex-wrap:\s*wrap;/);
 });
@@ -315,8 +316,8 @@ test("exercise muscle map rows are one name and value line with the bar below", 
   assert.doesNotMatch(card, /"ціль"/);
 });
 
-test("exercise history gives the total volume tile the widest column so its label fits one line", () => {
-  assert.match(stylesSource, /\.exercise-history-metrics\s*\{[^}]*grid-template-columns:\s*minmax\(0, 0\.8fr\) minmax\(0, 0\.8fr\) minmax\(0, 1\.4fr\);/);
+test("exercise history gives the weight and volume tiles wider columns than the session count", () => {
+  assert.match(stylesSource, /\.exercise-history-metrics\s*\{[^}]*grid-template-columns:\s*minmax\(0, 0\.8fr\) minmax\(0, 1\.1fr\) minmax\(0, 1\.1fr\);/);
 });
 
 test("exercise history sheet has one Muscle groups row instead of the embedded muscle map", () => {
