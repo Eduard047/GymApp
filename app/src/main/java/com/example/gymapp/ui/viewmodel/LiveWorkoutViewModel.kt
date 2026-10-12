@@ -284,6 +284,12 @@ interface ActiveLiveWorkoutSync {
         expectedLocalRevision: Long
     ): LiveLocalMutationPreparation
 
+    /** One `undo_set` per set, in the given order (a "log all remaining" batch, newest set first). */
+    suspend fun prepareLocalSetsUndone(
+        localSetIds: List<String>,
+        expectedLocalRevision: Long
+    ): LiveLocalMutationPreparation
+
     suspend fun prepareLocalWorkoutFinished(
         expectedLocalRevision: Long
     ): LiveLocalMutationPreparation
@@ -349,10 +355,8 @@ internal fun resolvePreparedLiveMutation(
         val stillBeforeCommit = when (prepared.kind) {
             LivePreparedMutationKind.CompleteSet,
             LivePreparedMutationKind.CompleteBatch -> targets.all { !it.second.isCompleted }
-            LivePreparedMutationKind.UndoSet -> {
-                val target = targets.singleOrNull()?.second
-                target?.isCompleted == true && local.undoableSetId == target.localSetId
-            }
+            // Any recorded set may be undone, so the undo marker no longer identifies the target.
+            LivePreparedMutationKind.UndoSet -> targets.isNotEmpty() && targets.all { it.second.isCompleted }
             LivePreparedMutationKind.Finish -> false
         }
         return if (stillBeforeCommit) {
@@ -374,10 +378,8 @@ internal fun resolvePreparedLiveMutation(
         LivePreparedMutationKind.CompleteBatch -> targets.all { (operation, target) ->
             target.isCompleted && target.weight == operation.weight && target.reps == operation.reps
         } && local.undoableSetId == null
-        LivePreparedMutationKind.UndoSet -> {
-            val target = targets.singleOrNull()?.second
-            target?.isCompleted == false && local.undoableSetId == null
-        }
+        // The marker is untouched when an older set is undone, so only the sets themselves tell.
+        LivePreparedMutationKind.UndoSet -> targets.isNotEmpty() && targets.all { !it.second.isCompleted }
         LivePreparedMutationKind.Finish -> false
     }
     return if (committed) {
@@ -522,12 +524,12 @@ internal fun reconcileLiveQueueWithSnapshot(
             }
             LivePendingOperationKind.UndoSet -> {
                 val setId = checkNotNull(operation.serverSetId)
-                if (isRemotelyFinished || simulatedUndoable != setId ||
-                    simulatedCompleted.lastOrNull() != setId
-                ) {
+                // The server accepts the undo of any own completed set: it drops exactly that set and
+                // the marker follows the last remaining one.
+                if (isRemotelyFinished || setId !in simulatedCompleted) {
                     return LiveQueueReconcileResult.Unsafe
                 }
-                simulatedCompleted.removeAt(simulatedCompleted.lastIndex)
+                simulatedCompleted.remove(setId)
                 simulatedUndoable = simulatedCompleted.lastOrNull()
             }
             LivePendingOperationKind.Finish -> {
@@ -1250,10 +1252,18 @@ internal class LiveWorkoutViewModel(
     override suspend fun prepareLocalSetUndone(
         localSetId: String,
         expectedLocalRevision: Long
+    ): LiveLocalMutationPreparation = prepareLocalSetsUndone(
+        localSetIds = listOf(localSetId),
+        expectedLocalRevision = expectedLocalRevision
+    )
+
+    override suspend fun prepareLocalSetsUndone(
+        localSetIds: List<String>,
+        expectedLocalRevision: Long
     ): LiveLocalMutationPreparation = prepareLocalMutation(
         kind = LivePreparedMutationKind.UndoSet,
         expectedLocalRevision = expectedLocalRevision,
-        localSetId = localSetId
+        localSetIds = localSetIds
     )
 
     override suspend fun prepareLocalSetsCompleted(
@@ -1317,25 +1327,27 @@ internal class LiveWorkoutViewModel(
         kind: LivePreparedMutationKind,
         expectedLocalRevision: Long,
         updates: List<ActiveWorkoutSetUpdate> = emptyList(),
-        localSetId: String? = null
+        localSetIds: List<String> = emptyList()
     ): LiveLocalMutationPreparation = queueMutex.withLock {
         require(expectedLocalRevision in 0 until Long.MAX_VALUE) {
             "Local workout revision is invalid."
         }
         when (kind) {
             LivePreparedMutationKind.CompleteSet -> require(
-                updates.size == 1 && localSetId == null
+                updates.size == 1 && localSetIds.isEmpty()
             ) { "Local live set mutation is invalid." }
             LivePreparedMutationKind.CompleteBatch -> require(
                 updates.isNotEmpty() &&
                     updates.size <= com.example.gymapp.data.repository.SharedWorkoutLink.MAX_TOTAL_SETS &&
-                    updates.map { it.setId }.toSet().size == updates.size && localSetId == null
+                    updates.map { it.setId }.toSet().size == updates.size && localSetIds.isEmpty()
             ) { "Local live set batch is invalid." }
             LivePreparedMutationKind.UndoSet -> require(
-                updates.isEmpty() && localSetId != null
+                updates.isEmpty() && localSetIds.isNotEmpty() &&
+                    localSetIds.size <= com.example.gymapp.data.repository.SharedWorkoutLink.MAX_TOTAL_SETS &&
+                    localSetIds.toSet().size == localSetIds.size
             ) { "Local live undo mutation is invalid." }
             LivePreparedMutationKind.Finish -> require(
-                updates.isEmpty() && localSetId == null
+                updates.isEmpty() && localSetIds.isEmpty()
             ) { "Local live finish mutation is invalid." }
         }
         val cloudSession = session ?: return@withLock LiveLocalMutationPreparation.Standalone
@@ -1354,7 +1366,7 @@ internal class LiveWorkoutViewModel(
         val operationCount = when (kind) {
             LivePreparedMutationKind.CompleteSet,
             LivePreparedMutationKind.CompleteBatch -> updates.size
-            LivePreparedMutationKind.UndoSet,
+            LivePreparedMutationKind.UndoSet -> localSetIds.size
             LivePreparedMutationKind.Finish -> 1
         }
         if (binding.preparedMutation != null) {
@@ -1383,18 +1395,16 @@ internal class LiveWorkoutViewModel(
                     reps = update.reps
                 )
             }
-            LivePreparedMutationKind.UndoSet -> {
-                val serverSetId = localSetId?.let(binding.localToServerSetIds::get)
+            LivePreparedMutationKind.UndoSet -> localSetIds.mapIndexed { index, localSetId ->
+                val serverSetId = binding.localToServerSetIds[localSetId]
                     ?: return@withLock rejectPreparedMutationMapping(binding.roomId)
-                listOf(
-                    LivePendingOperation(
-                        clientOperationId = UUID.randomUUID().toString(),
-                        kind = LivePendingOperationKind.UndoSet,
-                        expectedProgressRevision = firstProgressRevision,
-                        serverSetId = serverSetId,
-                        weight = null,
-                        reps = null
-                    )
+                LivePendingOperation(
+                    clientOperationId = UUID.randomUUID().toString(),
+                    kind = LivePendingOperationKind.UndoSet,
+                    expectedProgressRevision = firstProgressRevision + index,
+                    serverSetId = serverSetId,
+                    weight = null,
+                    reps = null
                 )
             }
             LivePreparedMutationKind.Finish -> listOf(

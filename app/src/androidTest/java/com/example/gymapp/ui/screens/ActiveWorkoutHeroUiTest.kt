@@ -217,7 +217,7 @@ class ActiveWorkoutHeroUiTest {
         var undoneSetId: String? = null
         setActiveWorkoutContent(
             uiState = completedThenPendingState(restSecondsRemaining = 0),
-            onUndoLatestSet = { undoneSetId = it }
+            onUndoSet = { undoneSetId = it }
         )
 
         composeRule.onNodeWithTag(activeWorkoutCompletedSetTag("set-1")).performScrollTo()
@@ -234,7 +234,7 @@ class ActiveWorkoutHeroUiTest {
         var undoneSetId: String? = null
         setActiveWorkoutContent(
             uiState = twoCompletedSetsState(),
-            onUndoLatestSet = { undoneSetId = it }
+            onUndoSet = { undoneSetId = it }
         )
         val undoText = composeRule.activity.getString(R.string.voice_command_undo)
 
@@ -268,7 +268,7 @@ class ActiveWorkoutHeroUiTest {
         var undoneSetId: String? = null
         setActiveWorkoutContent(
             uiState = twoCompletedSetsState(),
-            onUndoLatestSet = { undoneSetId = it }
+            onUndoSet = { undoneSetId = it }
         )
         val undoLabel = composeRule.activity.getString(R.string.active_workout_undo_action)
         fun rowDescription(number: Int) = composeRule.activity.getString(
@@ -489,7 +489,7 @@ class ActiveWorkoutHeroUiTest {
     private fun setActiveWorkoutContent(
         uiState: ActiveWorkoutUiState,
         onRecordSet: (String) -> Unit = {},
-        onUndoLatestSet: (String) -> Unit = {},
+        onUndoSet: (String) -> Unit = {},
         onAdjustRestTimer: (Int) -> Unit = {},
         onStopRestTimer: () -> Unit = {},
         onSaveExercise: (String) -> Unit = {},
@@ -507,7 +507,7 @@ class ActiveWorkoutHeroUiTest {
                     onSkipRemainingSets = onSkipRemainingSets,
                     onRecordSet = onRecordSet,
                     onRecordAllPendingSets = {},
-                    onUndoLatestSet = onUndoLatestSet,
+                    onUndoSet = onUndoSet,
                     onAdjustRestTimer = onAdjustRestTimer,
                     onStopRestTimer = onStopRestTimer,
                     onFinishWorkout = {},

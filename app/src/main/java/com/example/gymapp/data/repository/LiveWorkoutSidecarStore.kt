@@ -471,8 +471,8 @@ internal object LiveWorkoutSidecarCodec {
                         }
                 ) { "Live workout queue is invalid." }
                 LivePreparedMutationKind.UndoSet -> require(
-                    prepared.operations.size == 1 &&
-                        prepared.operations.single().kind == LivePendingOperationKind.UndoSet
+                    prepared.operations.isNotEmpty() &&
+                        prepared.operations.all { it.kind == LivePendingOperationKind.UndoSet }
                 ) { "Live workout queue is invalid." }
                 LivePreparedMutationKind.Finish -> require(
                     prepared.operations.size == 1 &&

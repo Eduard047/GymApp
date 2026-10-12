@@ -12,6 +12,14 @@ internal const val LIVE_MAX_INBOX_INVITATIONS = 25
 internal const val LIVE_MAX_INBOX_ROOMS = 5
 internal const val LIVE_MAX_PARTICIPANTS = 2
 
+/**
+ * Live-room gate for undoing an own completed set that is not the latest one. Off until the
+ * server accepts `undo_set` for any completed set (migration live_undo_any_completed_set is not
+ * deployed yet); while off, a live room only undoes the latest set, as before. Outside a live room
+ * any recorded set can always be undone.
+ */
+internal const val LIVE_UNDO_ANY_SET_ENABLED = false
+
 private val liveRoomIdPattern = Regex("^lr_[0-9a-f]{32}$")
 private val liveExerciseIdPattern = Regex("^e_[0-9]{2}$")
 private val liveSetIdPattern = Regex("^s_[0-9]{2}_[0-9]{2}$")

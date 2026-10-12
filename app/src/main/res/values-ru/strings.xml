@@ -514,8 +514,8 @@
     <string name="active_workout_record_failed">Не удалось записать подход. Отдых не запущен.</string>
     <string name="active_workout_finish_failed">Не удалось завершить тренировку. Активный черновик остался сохранённым.</string>
     <string name="active_workout_discard_failed">Не удалось удалить тренировку. Активный черновик остался сохранённым.</string>
-    <string name="active_workout_undo_changed">Отменить можно только последний записанный подход. Показана актуальная сохранённая тренировка.</string>
-    <string name="active_workout_undo_failed">Не удалось отменить последний подход. Сохранённые данные не изменены.</string>
+    <string name="active_workout_undo_changed">Этот подход больше нельзя отменить. Показана актуальная сохранённая тренировка.</string>
+    <string name="active_workout_undo_failed">Не удалось отменить подход. Сохранённые данные не изменены.</string>
     <string name="active_workout_undo_action">Отменить подход</string>
     <string name="active_workout_delete_set">Удалить подход</string>
     <string name="active_workout_delete_recorded_set_target">Подход %1$d: %2$s</string>

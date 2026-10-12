@@ -9,6 +9,7 @@ import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ActiveWorkoutDetails
 import com.example.gymapp.auth.FriendGhosts
+import com.example.gymapp.auth.LIVE_UNDO_ANY_SET_ENABLED
 import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
 import com.example.gymapp.data.repository.LiveCompletedSet
 import com.example.gymapp.data.repository.LivePersonalRecords
@@ -40,6 +41,7 @@ import com.example.gymapp.util.parseWeightInputOrNull
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -124,6 +126,10 @@ data class ActiveWorkoutUiState(
     val latestCompletedSetId: String? = null,
     val setRecordingsInFlight: Set<String> = emptySet(),
     val undoingSetId: String? = null,
+    /** Older recorded rows may offer "Undo set" (always outside live rooms; gated inside one). */
+    val canUndoOlderSets: Boolean = false,
+    /** The "log all remaining" batch can still be undone as a whole (transient, in memory). */
+    val batchUndoAvailable: Boolean = false,
     val isRecordingAll: Boolean = false,
     val isFinishing: Boolean = false,
     val isDiscarding: Boolean = false,
@@ -385,6 +391,54 @@ internal fun hasCompleteActiveWorkoutSetInputs(
     pendingSetIds.distinct().size == pendingSetIds.size &&
     pendingSetIds.all(availableInputIds::contains)
 
+/**
+ * Any recorded set can be undone outside a live room. Inside one only the undo target (the latest
+ * recorded set) may be, until the server accepts the undo of any set ([LIVE_UNDO_ANY_SET_ENABLED]).
+ */
+internal fun activeWorkoutSetUndoAllowed(
+    isCompleted: Boolean,
+    isUndoTarget: Boolean,
+    inLiveRoom: Boolean,
+    liveUndoAnySetEnabled: Boolean = LIVE_UNDO_ANY_SET_ENABLED
+): Boolean = isCompleted && (isUndoTarget || !inLiveRoom || liveUndoAnySetEnabled)
+
+/** How long the one-tap undo of a "log all remaining" batch stays on screen. */
+internal const val ACTIVE_WORKOUT_BATCH_UNDO_WINDOW_MILLIS = 8_000L
+
+/**
+ * In-memory undo of the last "log all remaining" batch. [setIdsInUndoOrder] is newest first,
+ * [restoreUndoableSetId] the undo target before the batch, [revisionAfterBatch] the workout revision
+ * the batch produced, [liveRoomId] the live room (if any) the batch was recorded in.
+ */
+internal data class ActiveWorkoutBatchUndo(
+    val setIdsInUndoOrder: List<String>,
+    val restoreUndoableSetId: String?,
+    val revisionAfterBatch: Long,
+    val liveRoomId: String?
+)
+
+/**
+ * The batch undo is valid only while nothing else changed: the workout revision is the one the
+ * batch produced (every other mutation bumps it), the room is the same, and every batch set is still
+ * recorded. In a live room that also means the batch is the tail of the own recorded sets, which
+ * the server accepts even before it allows undoing any set.
+ */
+internal fun activeWorkoutBatchUndoAvailable(
+    batch: ActiveWorkoutBatchUndo?,
+    workout: ActiveWorkoutDetails?,
+    liveRoomId: String?
+): Boolean {
+    if (batch == null || workout == null || batch.setIdsInUndoOrder.isEmpty()) return false
+    if (workout.activeWorkout.revision != batch.revisionAfterBatch || liveRoomId != batch.liveRoomId) {
+        return false
+    }
+    val recorded = workout.exercises.asSequence()
+        .flatMap { it.sets.asSequence() }
+        .filter { it.completedAt != null }
+        .mapTo(hashSetOf()) { it.id }
+    return batch.setIdsInUndoOrder.all { it in recorded }
+}
+
 internal fun totalWorkoutElapsedSeconds(startedAtMillis: Long?, nowMillis: Long): Long {
     if (startedAtMillis == null ||
         !WorkoutDataLimits.isValidTimestamp(startedAtMillis) ||
@@ -519,6 +573,8 @@ class ActiveWorkoutViewModel(
     private val hasLoaded = MutableStateFlow(false)
     private val recordGate = ActiveWorkoutSetRecordGate()
     private val operationState = MutableStateFlow(ActiveWorkoutOperationState())
+    private val batchUndoState = MutableStateFlow<ActiveWorkoutBatchUndo?>(null)
+    private var batchUndoExpiryJob: Job? = null
 
     /** Last persisted values per pending set, to tell untouched inputs from user edits. */
     private var lastPersistedInputs: Map<String, ActiveWorkoutInput> = emptyMap()
@@ -666,8 +722,9 @@ class ActiveWorkoutViewModel(
         sourceState,
         recordGate.inFlight,
         operationState,
-        liveSync?.activeLiveUiState ?: kotlinx.coroutines.flow.flowOf(ActiveLiveWorkoutUiState())
-    ) { source, inFlight, operation, live ->
+        liveSync?.activeLiveUiState ?: kotlinx.coroutines.flow.flowOf(ActiveLiveWorkoutUiState()),
+        batchUndoState
+    ) { source, inFlight, operation, live, batchUndo ->
         val activeWorkout = source.details
         val workoutStartedAt = activeWorkout?.activeWorkout?.startedAt ?: 0L
         val recordSetIds = personalRecordSetIds(activeWorkout, source, workoutStartedAt)
@@ -743,6 +800,8 @@ class ActiveWorkoutViewModel(
             latestCompletedSetId = latestCompletedSetId,
             setRecordingsInFlight = inFlight,
             undoingSetId = operation.undoingSetId,
+            canUndoOlderSets = live.activeRoomId == null || LIVE_UNDO_ANY_SET_ENABLED,
+            batchUndoAvailable = activeWorkoutBatchUndoAvailable(batchUndo, activeWorkout, live.activeRoomId),
             isRecordingAll = operation.isRecordingAll,
             isFinishing = operation.isFinishing,
             isDiscarding = operation.isDiscarding,
@@ -1003,6 +1062,14 @@ class ActiveWorkoutViewModel(
                                 (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
                                     liveSync?.commitPreparedLocalMutation(it)
                                 }
+                                offerBatchUndo(
+                                    ActiveWorkoutBatchUndo(
+                                        setIdsInUndoOrder = parsed.updates.map { it.setId }.reversed(),
+                                        restoreUndoableSetId = snapshot.activeWorkout.undoableSetId,
+                                        revisionAfterBatch = result.revision,
+                                        liveRoomId = liveSync?.activeLiveUiState?.value?.activeRoomId
+                                    )
+                                )
                                 val restStopped = runCatching {
                                     restTimerController.stopActiveWorkoutRest(
                                         timerAccountKey,
@@ -1454,12 +1521,22 @@ class ActiveWorkoutViewModel(
         }
     }
 
-    fun undoLatestSet(setId: String) {
+    /**
+     * Un-logs one recorded set (weight and reps stay). The latest set keeps the old behaviour: its
+     * undo target and rest timer go away. An older set changes nothing else. In a live room an older
+     * set is refused while [LIVE_UNDO_ANY_SET_ENABLED] is off.
+     */
+    fun undoSet(setId: String) {
         val snapshot = details.value ?: return
-        if (recordGate.inFlight.value.isNotEmpty() || operationState.value.isRecordingAll ||
-            operationState.value.isFinishing ||
-            operationState.value.isDiscarding || operationState.value.undoingSetId != null
-        ) {
+        if (activeWorkoutOperationInProgress()) return
+        val isUndoTarget = snapshot.activeWorkout.undoableSetId == setId
+        val isCompleted = snapshot.exercises.any { exercise ->
+            exercise.sets.any { set -> set.id == setId && set.completedAt != null }
+        }
+        if (!activeWorkoutSetUndoAllowed(isCompleted, isUndoTarget, isInLiveRoom())) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.active_workout_undo_changed), messageSetId = setId)
+            }
             return
         }
         operationState.update {
@@ -1483,41 +1560,15 @@ class ActiveWorkoutViewModel(
                     }
                     return@launch
                 }
-                when (repository.undoLatestActiveWorkoutSet(setId, snapshot.activeWorkout.revision)) {
-                    is UndoActiveWorkoutSetResult.Undone -> {
-                        localCommitted = true
-                        (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
-                            liveSync?.commitPreparedLocalMutation(it)
-                        }
-                        runCatching {
-                            restTimerController.stopActiveWorkoutRest(
-                                timerAccountKey,
-                                snapshot.activeWorkout.startedAt
-                            )
-                        }
-                        operationState.update {
-                            it.copy(
-                                undoingSetId = null,
-                                message = it.message,
-                                messageSetId = it.messageSetId
-                            )
-                        }
-                    }
-                    UndoActiveWorkoutSetResult.Missing -> operationState.update {
-                        it.copy(
-                            undoingSetId = null,
-                            message = LocalizedText(R.string.active_workout_missing),
-                            messageSetId = setId
-                        )
-                    }
-                    UndoActiveWorkoutSetResult.Stale,
-                    UndoActiveWorkoutSetResult.NotLatest,
-                    UndoActiveWorkoutSetResult.TargetChanged -> operationState.update {
-                        it.copy(
-                            undoingSetId = null,
-                            message = LocalizedText(R.string.active_workout_undo_changed),
-                            messageSetId = setId
-                        )
+                val result = repository.undoActiveWorkoutSet(
+                    setId = setId,
+                    expectedRevision = snapshot.activeWorkout.revision,
+                    requireLatest = isInLiveRoom() && !LIVE_UNDO_ANY_SET_ENABLED
+                )
+                reportUndoResult(result, setId, snapshot.activeWorkout.startedAt, stopsRest = isUndoTarget) {
+                    localCommitted = true
+                    (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
+                        liveSync?.commitPreparedLocalMutation(it)
                     }
                 }
             } catch (error: CancellationException) {
@@ -1539,6 +1590,115 @@ class ActiveWorkoutViewModel(
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Un-logs the whole last "log all remaining" batch, newest set first, as one local change (one
+     * `undo_set` per set in a live room). Only offered while [batchUndoState] is still valid.
+     */
+    fun undoRecordedBatch() {
+        val batch = batchUndoState.value ?: return
+        val snapshot = details.value ?: return
+        val roomId = liveSync?.activeLiveUiState?.value?.activeRoomId
+        if (activeWorkoutOperationInProgress() ||
+            !activeWorkoutBatchUndoAvailable(batch, snapshot, roomId)
+        ) {
+            return
+        }
+        val busyId = batch.setIdsInUndoOrder.first()
+        batchUndoExpiryJob?.cancel()
+        operationState.update {
+            it.copy(undoingSetId = busyId, message = null, messageSetId = null)
+        }
+        viewModelScope.launch {
+            var preparation: LiveLocalMutationPreparation = LiveLocalMutationPreparation.Standalone
+            var localCommitted = false
+            try {
+                preparation = liveSync?.prepareLocalSetsUndone(
+                    localSetIds = batch.setIdsInUndoOrder,
+                    expectedLocalRevision = snapshot.activeWorkout.revision
+                ) ?: LiveLocalMutationPreparation.Standalone
+                if (preparation == LiveLocalMutationPreparation.Rejected) {
+                    operationState.update {
+                        it.copy(
+                            undoingSetId = null,
+                            message = LocalizedText(R.string.live_workout_queue_save_failed)
+                        )
+                    }
+                    return@launch
+                }
+                val result = repository.undoActiveWorkoutSets(
+                    setIds = batch.setIdsInUndoOrder,
+                    expectedRevision = snapshot.activeWorkout.revision,
+                    restoreUndoableSetId = batch.restoreUndoableSetId
+                )
+                reportUndoResult(result, null, snapshot.activeWorkout.startedAt, stopsRest = false) {
+                    localCommitted = true
+                    batchUndoState.value = null
+                    (preparation as? LiveLocalMutationPreparation.Prepared)?.let {
+                        liveSync?.commitPreparedLocalMutation(it)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                operationState.update {
+                    it.copy(undoingSetId = null, message = LocalizedText(R.string.active_workout_undo_failed))
+                }
+            } finally {
+                if (!localCommitted) {
+                    (preparation as? LiveLocalMutationPreparation.Prepared)?.let { prepared ->
+                        withContext(NonCancellable) {
+                            liveSync?.cancelPreparedLocalMutation(prepared)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun reportUndoResult(
+        result: UndoActiveWorkoutSetResult,
+        messageSetId: String?,
+        startedAt: Long,
+        stopsRest: Boolean,
+        onCommitted: suspend () -> Unit
+    ) {
+        when (result) {
+            is UndoActiveWorkoutSetResult.Undone -> {
+                onCommitted()
+                if (stopsRest) {
+                    runCatching { restTimerController.stopActiveWorkoutRest(timerAccountKey, startedAt) }
+                }
+                operationState.update { it.copy(undoingSetId = null) }
+            }
+            UndoActiveWorkoutSetResult.Missing -> operationState.update {
+                it.copy(
+                    undoingSetId = null,
+                    message = LocalizedText(R.string.active_workout_missing),
+                    messageSetId = messageSetId
+                )
+            }
+            UndoActiveWorkoutSetResult.Stale,
+            UndoActiveWorkoutSetResult.NotLatest,
+            UndoActiveWorkoutSetResult.TargetChanged -> operationState.update {
+                it.copy(
+                    undoingSetId = null,
+                    message = LocalizedText(R.string.active_workout_undo_changed),
+                    messageSetId = messageSetId
+                )
+            }
+        }
+    }
+
+    /** Keeps the batch undo for [ACTIVE_WORKOUT_BATCH_UNDO_WINDOW_MILLIS], then drops it. */
+    private fun offerBatchUndo(batch: ActiveWorkoutBatchUndo) {
+        batchUndoExpiryJob?.cancel()
+        batchUndoState.value = batch
+        batchUndoExpiryJob = viewModelScope.launch {
+            delay(ACTIVE_WORKOUT_BATCH_UNDO_WINDOW_MILLIS)
+            batchUndoState.compareAndSet(batch, null)
         }
     }
 

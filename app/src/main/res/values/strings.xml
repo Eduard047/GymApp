@@ -508,8 +508,8 @@
     <string name="active_workout_record_failed">The set could not be recorded. Rest was not started.</string>
     <string name="active_workout_finish_failed">The workout could not be finished. The active draft is still saved.</string>
     <string name="active_workout_discard_failed">The workout could not be discarded. The active draft is still saved.</string>
-    <string name="active_workout_undo_changed">Only the latest recorded set can be undone. The saved workout has been refreshed.</string>
-    <string name="active_workout_undo_failed">The latest set could not be undone. Its saved data was not changed.</string>
+    <string name="active_workout_undo_changed">This set can no longer be undone. The saved workout has been refreshed.</string>
+    <string name="active_workout_undo_failed">The set could not be undone. Its saved data was not changed.</string>
     <string name="active_workout_undo_action">Undo set</string>
     <string name="active_workout_delete_set">Delete set</string>
     <string name="active_workout_delete_recorded_set_target">Set %1$d: %2$s</string>

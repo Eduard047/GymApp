@@ -1,6 +1,11 @@
 package com.example.gymapp.ui.viewmodel
 
 import com.example.gymapp.R
+import com.example.gymapp.data.entity.ActiveWorkoutDetails
+import com.example.gymapp.data.entity.ActiveWorkoutEntity
+import com.example.gymapp.data.entity.ActiveWorkoutExerciseEntity
+import com.example.gymapp.data.entity.ActiveWorkoutExerciseWithDetails
+import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
 import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
@@ -327,4 +332,85 @@ class ActiveWorkoutViewModelTest {
             )
         )
     }
+
+    @Test
+    fun `outside a live room any recorded set can be undone but a pending set cannot`() {
+        assertTrue(activeWorkoutSetUndoAllowed(isCompleted = true, isUndoTarget = true, inLiveRoom = false))
+        assertTrue(activeWorkoutSetUndoAllowed(isCompleted = true, isUndoTarget = false, inLiveRoom = false))
+        assertFalse(activeWorkoutSetUndoAllowed(isCompleted = false, isUndoTarget = false, inLiveRoom = false))
+    }
+
+    @Test
+    fun `live gate off allows only the latest recorded set in a live room`() {
+        assertTrue(
+            activeWorkoutSetUndoAllowed(
+                isCompleted = true, isUndoTarget = true, inLiveRoom = true, liveUndoAnySetEnabled = false
+            )
+        )
+        assertFalse(
+            activeWorkoutSetUndoAllowed(
+                isCompleted = true, isUndoTarget = false, inLiveRoom = true, liveUndoAnySetEnabled = false
+            )
+        )
+        assertFalse(com.example.gymapp.auth.LIVE_UNDO_ANY_SET_ENABLED)
+        assertFalse(activeWorkoutSetUndoAllowed(isCompleted = true, isUndoTarget = false, inLiveRoom = true))
+    }
+
+    @Test
+    fun `live gate on allows any recorded set in a live room`() {
+        assertTrue(
+            activeWorkoutSetUndoAllowed(
+                isCompleted = true, isUndoTarget = false, inLiveRoom = true, liveUndoAnySetEnabled = true
+            )
+        )
+        assertFalse(
+            activeWorkoutSetUndoAllowed(
+                isCompleted = false, isUndoTarget = false, inLiveRoom = true, liveUndoAnySetEnabled = true
+            )
+        )
+    }
+
+    @Test
+    fun `batch undo stays available only while nothing else changed`() {
+        val batch = ActiveWorkoutBatchUndo(
+            setIdsInUndoOrder = listOf("b", "a"),
+            restoreUndoableSetId = null,
+            revisionAfterBatch = 5L,
+            liveRoomId = null
+        )
+        val ready = workout(revision = 5L, completed = setOf("a", "b"))
+
+        assertTrue(activeWorkoutBatchUndoAvailable(batch, ready, liveRoomId = null))
+        // Another mutation bumped the revision.
+        assertFalse(activeWorkoutBatchUndoAvailable(batch, workout(6L, setOf("a", "b")), null))
+        // A batch set is no longer recorded.
+        assertFalse(activeWorkoutBatchUndoAvailable(batch, workout(5L, setOf("a")), null))
+        // Workout finished or discarded.
+        assertFalse(activeWorkoutBatchUndoAvailable(batch, null, null))
+        assertFalse(activeWorkoutBatchUndoAvailable(null, ready, null))
+        // The live room changed after the batch.
+        assertFalse(activeWorkoutBatchUndoAvailable(batch, ready, liveRoomId = "lr_x"))
+        assertTrue(
+            activeWorkoutBatchUndoAvailable(batch.copy(liveRoomId = "lr_x"), ready, liveRoomId = "lr_x")
+        )
+    }
+
+    private fun workout(revision: Long, completed: Set<String>) = ActiveWorkoutDetails(
+        activeWorkout = ActiveWorkoutEntity(
+            id = 1L,
+            date = 0L,
+            note = null,
+            startedAt = 1_000L,
+            revision = revision,
+            undoableSetId = null
+        ),
+        exercises = listOf(
+            ActiveWorkoutExerciseWithDetails(
+                activeWorkoutExercise = ActiveWorkoutExerciseEntity("e", 1L, "Bench", null, 0),
+                sets = listOf("a", "b", "c").mapIndexed { index, id ->
+                    ActiveWorkoutSetEntity(id, "e", 50.0, 8, index, if (id in completed) 2_000L else null)
+                }
+            )
+        )
+    )
 }

@@ -160,6 +160,85 @@ class LiveWorkoutPreparedMutationTest {
     }
 
     @Test
+    fun `older set undo keeps the marker and is recovered after restart`() {
+        val undo = undoOperation("21111111-1111-4111-8111-111111111111", 1, "s_01_01")
+        val restarted = restart(
+            binding(
+                preparedMutation = LivePreparedMutation(
+                    localMutationId = "31111111-1111-4111-8111-111111111111",
+                    kind = LivePreparedMutationKind.UndoSet,
+                    expectedLocalRevision = 10,
+                    operations = listOf(undo)
+                )
+            )
+        )
+        val beforeCommit = localWorkout(
+            revision = 10,
+            undoableSetId = LOCAL_SET_2,
+            set1 = LiveLocalSetState(LOCAL_SET_1, 80.0, 8, true),
+            set2 = LiveLocalSetState(LOCAL_SET_2, 85.0, 6, true)
+        )
+        val afterCommit = localWorkout(
+            revision = 11,
+            undoableSetId = LOCAL_SET_2,
+            set1 = LiveLocalSetState(LOCAL_SET_1, 80.0, 8, false),
+            set2 = LiveLocalSetState(LOCAL_SET_2, 85.0, 6, true)
+        )
+
+        assertEquals(
+            LivePreparedMutationResolution.Cancel,
+            resolvePreparedLiveMutation(restarted, beforeCommit)
+        )
+        assertEquals(
+            LivePreparedMutationResolution.Promote,
+            resolvePreparedLiveMutation(restarted, afterCommit)
+        )
+        assertEquals(listOf(undo), promotePreparedLiveMutation(restarted).pendingOperations)
+    }
+
+    @Test
+    fun `batch undo prepares one undo per set in reverse order and is recovered after restart`() {
+        val operations = listOf(
+            undoOperation("21111111-1111-4111-8111-111111111111", 1, "s_01_02"),
+            undoOperation("31111111-1111-4111-8111-111111111111", 2, "s_01_01")
+        )
+        val restarted = restart(
+            binding(
+                preparedMutation = LivePreparedMutation(
+                    localMutationId = "41111111-1111-4111-8111-111111111111",
+                    kind = LivePreparedMutationKind.UndoSet,
+                    expectedLocalRevision = 12,
+                    operations = operations
+                )
+            )
+        )
+        val beforeCommit = localWorkout(
+            revision = 12,
+            set1 = LiveLocalSetState(LOCAL_SET_1, 80.0, 8, true),
+            set2 = LiveLocalSetState(LOCAL_SET_2, 85.0, 6, true)
+        )
+        val afterCommit = localWorkout(revision = 13)
+        val partial = localWorkout(
+            revision = 13,
+            set2 = LiveLocalSetState(LOCAL_SET_2, 85.0, 6, true)
+        )
+
+        assertEquals(
+            LivePreparedMutationResolution.Cancel,
+            resolvePreparedLiveMutation(restarted, beforeCommit)
+        )
+        assertEquals(
+            LivePreparedMutationResolution.Promote,
+            resolvePreparedLiveMutation(restarted, afterCommit)
+        )
+        assertEquals(
+            LivePreparedMutationResolution.Unsafe,
+            resolvePreparedLiveMutation(restarted, partial)
+        )
+        assertEquals(operations, promotePreparedLiveMutation(restarted).pendingOperations)
+    }
+
+    @Test
     fun `finish committed in Room is recovered after restart while precommit finish is cancelled`() {
         val finish = LivePendingOperation(
             clientOperationId = "11111111-1111-4111-8111-111111111111",
@@ -208,6 +287,15 @@ class LiveWorkoutPreparedMutationTest {
         revision = revision,
         undoableSetId = undoableSetId,
         sets = mapOf(LOCAL_SET_1 to set1, LOCAL_SET_2 to set2)
+    )
+
+    private fun undoOperation(id: String, revision: Int, serverSetId: String) = LivePendingOperation(
+        clientOperationId = id,
+        kind = LivePendingOperationKind.UndoSet,
+        expectedProgressRevision = revision,
+        serverSetId = serverSetId,
+        weight = null,
+        reps = null
     )
 
     private fun completeOperation(

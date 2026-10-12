@@ -219,6 +219,91 @@ class ActiveWorkoutLifecycleTest {
     }
 
     @Test
+    fun undoOfAnOlderRecordedSetKeepsTheLatestUndoTargetAndNeverCascades() = runBlocking {
+        withDatabase("active-workout-undo-older") { _, repository ->
+            val exerciseId = repository.addExercise("Synthetic older undo row")
+            repository.startActiveWorkout(
+                NOW,
+                null,
+                listOf(
+                    WorkoutExerciseDraft(
+                        exerciseId,
+                        listOf(WorkoutSetDraft(40.0, 10), WorkoutSetDraft(42.0, 8))
+                    )
+                )
+            )
+            val sets = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises.single().sets
+            repository.recordActiveWorkoutSet(sets[0].id, 0L, 41.0, 9)
+            repository.recordActiveWorkoutSet(sets[1].id, 1L, 43.0, 7)
+
+            assertEquals(
+                UndoActiveWorkoutSetResult.NotLatest,
+                repository.undoActiveWorkoutSet(sets[0].id, 2L, requireLatest = true)
+            )
+            assertEquals(
+                UndoActiveWorkoutSetResult.Undone(3L),
+                repository.undoActiveWorkoutSet(sets[0].id, 2L, requireLatest = false)
+            )
+            val afterOlder = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(sets[1].id, afterOlder.activeWorkout.undoableSetId)
+            assertNull(afterOlder.exercises.single().sets[0].completedAt)
+            assertEquals(41.0, afterOlder.exercises.single().sets[0].weight, 0.0)
+            assertNotNull(afterOlder.exercises.single().sets[1].completedAt)
+            assertEquals(
+                UndoActiveWorkoutSetResult.NotLatest,
+                repository.undoActiveWorkoutSet(sets[0].id, 3L, requireLatest = false)
+            )
+        }
+    }
+
+    @Test
+    fun batchUndoReopensEveryBatchSetAndRestoresTheEarlierUndoTarget() = runBlocking {
+        withDatabase("active-workout-undo-batch") { _, repository ->
+            val exerciseId = repository.addExercise("Synthetic batch undo row")
+            repository.startActiveWorkout(
+                NOW,
+                null,
+                listOf(
+                    WorkoutExerciseDraft(
+                        exerciseId,
+                        listOf(WorkoutSetDraft(40.0, 10), WorkoutSetDraft(42.0, 8), WorkoutSetDraft(44.0, 6))
+                    )
+                )
+            )
+            val sets = checkNotNull(repository.getActiveWorkoutSnapshot())
+                .exercises.single().sets
+            repository.recordActiveWorkoutSet(sets[0].id, 0L, 41.0, 9)
+            assertEquals(
+                RecordActiveWorkoutSetsResult.Recorded(2L, 2),
+                repository.recordActiveWorkoutSets(
+                    listOf(
+                        ActiveWorkoutSetUpdate(sets[1].id, 43.0, 7),
+                        ActiveWorkoutSetUpdate(sets[2].id, 45.0, 5)
+                    ),
+                    1L
+                )
+            )
+            assertNull(repository.getActiveWorkoutSnapshot()?.activeWorkout?.undoableSetId)
+
+            assertEquals(
+                UndoActiveWorkoutSetResult.Stale,
+                repository.undoActiveWorkoutSets(listOf(sets[2].id, sets[1].id), 1L, sets[0].id)
+            )
+            assertEquals(
+                UndoActiveWorkoutSetResult.Undone(3L),
+                repository.undoActiveWorkoutSets(listOf(sets[2].id, sets[1].id), 2L, sets[0].id)
+            )
+            val restored = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(sets[0].id, restored.activeWorkout.undoableSetId)
+            assertNotNull(restored.exercises.single().sets[0].completedAt)
+            assertNull(restored.exercises.single().sets[1].completedAt)
+            assertNull(restored.exercises.single().sets[2].completedAt)
+            assertEquals(45.0, restored.exercises.single().sets[2].weight, 0.0)
+        }
+    }
+
+    @Test
     fun oneActiveWorkoutPerDatabaseAndCatalogReplacementDoesNotEraseDraft() = runBlocking {
         withDatabase("active-workout-isolation") { database, repository ->
             val exerciseId = repository.addExercise("Synthetic cable row")

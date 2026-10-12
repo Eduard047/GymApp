@@ -202,7 +202,8 @@ fun ActiveWorkoutScreen(
     onAddExercise: (Long) -> Unit = {},
     onRecordSet: (String) -> Unit,
     onRecordAllPendingSets: () -> Unit,
-    onUndoLatestSet: (String) -> Unit,
+    onUndoSet: (String) -> Unit,
+    onUndoRecordedBatch: () -> Unit = {},
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit,
     onFinishWorkout: () -> Unit,
@@ -454,6 +455,18 @@ fun ActiveWorkoutScreen(
                                 MaterialTheme.colorScheme.error
                             }
                         )
+                        if (uiState.batchUndoAvailable &&
+                            message.resourceId == R.string.active_workout_all_sets_saved
+                        ) {
+                            // One undo for the whole "log all remaining" batch, for a few seconds.
+                            TextButton(
+                                onClick = onUndoRecordedBatch,
+                                enabled = !operationInProgress,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Text(text = stringResource(R.string.voice_command_undo))
+                            }
+                        }
                         TextButton(onClick = onDismissMessage) {
                             Text(text = stringResource(R.string.action_close))
                         }
@@ -468,7 +481,7 @@ fun ActiveWorkoutScreen(
                     confirmation = confirmation,
                     undoEnabled = confirmation.setId == uiState.latestCompletedSetId && !operationInProgress,
                     onUndo = {
-                        onUndoLatestSet(confirmation.setId)
+                        onUndoSet(confirmation.setId)
                         recordedConfirmation = null
                     },
                     onDismiss = { recordedConfirmation = null }
@@ -493,6 +506,7 @@ fun ActiveWorkoutScreen(
                 currentSetId = currentSetId,
                 inFlightSetIds = uiState.setRecordingsInFlight,
                 latestCompletedSetId = uiState.latestCompletedSetId,
+                canUndoOlderSets = uiState.canUndoOlderSets,
                 restSecondsRemaining = uiState.restSecondsRemaining,
                 inlineMessage = uiState.message,
                 inlineMessageSetId = uiState.messageSetId,
@@ -505,7 +519,7 @@ fun ActiveWorkoutScreen(
                 onRemoveExercise = { onRemoveExercise(exercise.id) },
                 onDeleteSet = onDeleteSet,
                 onRecordSet = onRecordSet,
-                onUndoLatestSet = onUndoLatestSet,
+                onUndoSet = onUndoSet,
                 onAdjustRestTimer = onAdjustRestTimer,
                 onStopRestTimer = onStopRestTimer,
                 onDismissMessage = onDismissMessage,
@@ -1079,6 +1093,7 @@ private fun ActiveWorkoutExerciseCard(
     currentSetId: String?,
     inFlightSetIds: Set<String>,
     latestCompletedSetId: String?,
+    canUndoOlderSets: Boolean,
     restSecondsRemaining: Int,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
     inlineMessageSetId: String?,
@@ -1091,7 +1106,7 @@ private fun ActiveWorkoutExerciseCard(
     onRemoveExercise: () -> Unit,
     onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
-    onUndoLatestSet: (String) -> Unit,
+    onUndoSet: (String) -> Unit,
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit,
     onDismissMessage: () -> Unit,
@@ -1268,6 +1283,7 @@ private fun ActiveWorkoutExerciseCard(
                     isCurrent = set.id == currentSetId,
                     isRecording = set.id in inFlightSetIds,
                     isLatestCompleted = set.id == latestCompletedSetId,
+                    canUndoOlderSet = canUndoOlderSets,
                     showsPlateCalculator = PlateCalculator.applies(exercise.catalogKey),
                     isBodyweight = isBodyweightCatalogKey(exercise.catalogKey),
                     restDurationSeconds = exercise.restDurationSeconds,
@@ -1280,7 +1296,7 @@ private fun ActiveWorkoutExerciseCard(
                     onWeightChanged = { value -> onSetWeightChanged(set.id, value) },
                     onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
                     onRecord = { onRecordSet(set.id) },
-                    onUndo = { onUndoLatestSet(set.id) },
+                    onUndo = { onUndoSet(set.id) },
                     exerciseName = exerciseName,
                     // A pending set deletes at once; a recorded one asks first (see the dialog below).
                     canDelete = allowExerciseActions && exercise.sets.size > 1 && !operationInProgress,
@@ -1435,6 +1451,7 @@ private fun ActiveWorkoutSetRow(
     isCurrent: Boolean,
     isRecording: Boolean,
     isLatestCompleted: Boolean,
+    canUndoOlderSet: Boolean,
     showsPlateCalculator: Boolean,
     isBodyweight: Boolean,
     restDurationSeconds: Int,
@@ -1462,6 +1479,7 @@ private fun ActiveWorkoutSetRow(
                 set = set,
                 operationInProgress = operationInProgress,
                 isLatestCompleted = isLatestCompleted,
+                canUndoOlderSet = canUndoOlderSet,
                 restSecondsRemaining = restSecondsRemaining,
                 onUndo = onUndo,
                 canDelete = canDelete,
@@ -1626,7 +1644,8 @@ internal fun activeWorkoutCompletedSetTag(setId: String): String = "active_worko
  * A recorded set: one line — check, "60 kg × 8", optional record badge, and (latest set, only
  * while its rest timer runs) a trailing compact countdown with −15 / +15 / stop pills that wraps
  * under the summary when it does not fit. The latest set also shows a visible "Undo" text button
- * (same path as the banner and the menu); Delete set (confirmed in a dialog) stays a long-press
+ * (same path as the banner and the menu); every recorded row offers "Undo set" in the long-press menu
+ * and as an accessibility action (live rooms: latest row only until the server allows more); Delete set (confirmed in a dialog) stays a long-press
  * menu / accessibility action, never a standing button.
  */
 @Composable
@@ -1634,6 +1653,7 @@ private fun CompletedSetRow(
     set: ActiveWorkoutSetUiState,
     operationInProgress: Boolean,
     isLatestCompleted: Boolean,
+    canUndoOlderSet: Boolean,
     restSecondsRemaining: Int,
     onUndo: () -> Unit,
     canDelete: Boolean,
@@ -1654,7 +1674,10 @@ private fun CompletedSetRow(
         number,
         summary
     )
+    // The latest set also has the visible button; an older set only has the long-press menu item
+    // and the accessibility action (no standing button on every row).
     val canUndo = isLatestCompleted && !operationInProgress
+    val canUndoFromMenu = (isLatestCompleted || canUndoOlderSet) && !operationInProgress
     val showsRest = isLatestCompleted && restSecondsRemaining > 0
     RecordedSetRow(
         summary = summary,
@@ -1662,7 +1685,7 @@ private fun CompletedSetRow(
         isPersonalRecord = set.isPersonalRecord,
         modifier = Modifier.testTag(activeWorkoutCompletedSetTag(set.id)),
         actions = listOfNotNull(
-            SetRowAction(label = undoLabel, onClick = onUndo).takeIf { canUndo },
+            SetRowAction(label = undoLabel, onClick = onUndo).takeIf { canUndoFromMenu },
             SetRowAction(label = deleteLabel, destructive = true, onClick = onDelete).takeIf { canDelete }
         ),
         inlineAction = if (canUndo) {

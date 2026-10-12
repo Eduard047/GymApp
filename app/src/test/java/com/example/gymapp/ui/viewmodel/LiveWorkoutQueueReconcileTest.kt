@@ -260,6 +260,69 @@ class LiveWorkoutQueueReconcileTest {
         assertTrue(afterUndo.binding.pendingOperations.isEmpty())
     }
 
+    private fun undoOperation(id: String, setId: String, revision: Int) = LivePendingOperation(
+        clientOperationId = id,
+        kind = LivePendingOperationKind.UndoSet,
+        expectedProgressRevision = revision,
+        serverSetId = setId,
+        weight = null,
+        reps = null
+    )
+
+    @Test
+    fun `queued undo of an older completed set is kept when the server marker is another set`() {
+        val completeFirst = operation("11111111-1111-4111-8111-111111111111", "s_01_01", 1, 80.0)
+        val completeSecond = operation("22222222-2222-4222-8222-222222222222", "s_01_02", 2, 82.5)
+        val undoFirst = undoOperation("33333333-3333-4333-8333-333333333333", "s_01_01", 3)
+
+        val result = reconcileLiveQueueWithSnapshot(
+            binding = binding(listOf(completeFirst, completeSecond, undoFirst)),
+            snapshot = snapshot(
+                revision = 2,
+                completed = listOf(LiveCompletedSet("s_01_01", 80.0, 8, NOW)),
+                undoable = "s_01_01"
+            )
+        ) as LiveQueueReconcileResult.Reconciled
+
+        assertEquals(listOf(completeSecond, undoFirst), result.binding.pendingOperations)
+    }
+
+    @Test
+    fun `queued reverse order batch undo is accepted and rebased`() {
+        val undoSecond = undoOperation("22222222-2222-4222-8222-222222222222", "s_01_02", 1)
+        val undoFirst = undoOperation("33333333-3333-4333-8333-333333333333", "s_01_01", 2)
+
+        val result = reconcileLiveQueueWithSnapshot(
+            binding = binding(listOf(undoSecond, undoFirst)),
+            snapshot = snapshot(
+                revision = 1,
+                completed = listOf(
+                    LiveCompletedSet("s_01_01", 80.0, 8, NOW),
+                    LiveCompletedSet("s_01_02", 82.5, 8, NOW)
+                ),
+                undoable = "s_01_02"
+            )
+        ) as LiveQueueReconcileResult.Reconciled
+
+        assertEquals(listOf(undoSecond, undoFirst), result.binding.pendingOperations)
+    }
+
+    @Test
+    fun `queued undo of a set that is not completed fails closed`() {
+        val undoSecond = undoOperation("22222222-2222-4222-8222-222222222222", "s_01_02", 1)
+
+        val result = reconcileLiveQueueWithSnapshot(
+            binding = binding(listOf(undoSecond)),
+            snapshot = snapshot(
+                revision = 1,
+                completed = listOf(LiveCompletedSet("s_01_01", 80.0, 8, NOW)),
+                undoable = "s_01_01"
+            )
+        )
+
+        assertEquals(LiveQueueReconcileResult.Unsafe, result)
+    }
+
     @Test
     fun `unrelated own progress revision fails closed`() {
         val result = reconcileLiveQueueWithSnapshot(

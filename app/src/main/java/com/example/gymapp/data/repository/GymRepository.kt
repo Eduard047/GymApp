@@ -2688,9 +2688,26 @@ class GymRepository(
         return sidecar.hasActiveBinding(userId, startedAt)
     }
 
+    /** Undoes the latest recorded set only (the single-set undo target). */
     suspend fun undoLatestActiveWorkoutSet(
         setId: String,
         expectedRevision: Long
+    ): UndoActiveWorkoutSetResult = undoActiveWorkoutSet(
+        setId = setId,
+        expectedRevision = expectedRevision,
+        requireLatest = true
+    )
+
+    /**
+     * Reopens one recorded set; its weight and reps stay and nothing else changes. With
+     * [requireLatest] only the undo target set may be undone (live rooms until the server accepts
+     * any set). Undoing the undo target clears it, as before; undoing an older set keeps the target.
+     * A set that is not recorded answers [UndoActiveWorkoutSetResult.NotLatest].
+     */
+    suspend fun undoActiveWorkoutSet(
+        setId: String,
+        expectedRevision: Long,
+        requireLatest: Boolean
     ): UndoActiveWorkoutSetResult = activeWorkoutMutationMutex.withLock {
         require(isStableActiveWorkoutId(setId)) { "Active set identifier is invalid." }
         require(expectedRevision >= 0L) { "Active workout revision is invalid." }
@@ -2703,7 +2720,8 @@ class GymRepository(
             if (details.activeWorkout.revision != expectedRevision) {
                 return@withTransaction UndoActiveWorkoutSetResult.Stale
             }
-            if (details.activeWorkout.undoableSetId != setId) {
+            val isUndoTarget = details.activeWorkout.undoableSetId == setId
+            if (requireLatest && !isUndoTarget) {
                 return@withTransaction UndoActiveWorkoutSetResult.NotLatest
             }
 
@@ -2717,13 +2735,16 @@ class GymRepository(
             val completedAt = target.second.completedAt
                 ?: return@withTransaction UndoActiveWorkoutSetResult.NotLatest
 
-            check(
+            val advanced = if (isUndoTarget) {
                 activeWorkoutDao.advanceRevisionAndClearUndoable(
                     activeWorkoutId = ACTIVE_WORKOUT_ID,
                     expectedRevision = expectedRevision,
                     setId = setId
-                ) == 1
-            ) { "Active workout changed while undoing the set." }
+                )
+            } else {
+                activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision)
+            }
+            check(advanced == 1) { "Active workout changed while undoing the set." }
             check(
                 activeWorkoutDao.reopenCompletedSet(
                     setId = setId,
@@ -2734,6 +2755,75 @@ class GymRepository(
             UndoActiveWorkoutSetResult.Undone(revision = expectedRevision + 1L)
         }
         result
+    }
+
+    /**
+     * Reopens every set of a "log all remaining" batch in one revision-checked transaction
+     * ([setIds] is the undo order, newest first). Weights and reps stay. The single-set undo target
+     * becomes [restoreUndoableSetId] when that set is still recorded and not part of the batch,
+     * otherwise none. A set that is no longer recorded refuses the whole batch.
+     */
+    suspend fun undoActiveWorkoutSets(
+        setIds: List<String>,
+        expectedRevision: Long,
+        restoreUndoableSetId: String?
+    ): UndoActiveWorkoutSetResult = activeWorkoutMutationMutex.withLock {
+        require(setIds.isNotEmpty() && setIds.toSet().size == setIds.size &&
+            setIds.size <= WorkoutDataLimits.MAX_EXERCISES_PER_SESSION *
+            WorkoutDataLimits.MAX_SETS_PER_EXERCISE
+        ) { "Active set undo batch is invalid." }
+        setIds.forEach { setId ->
+            require(isStableActiveWorkoutId(setId)) { "Active set identifier is invalid." }
+        }
+        require(restoreUndoableSetId == null || isStableActiveWorkoutId(restoreUndoableSetId)) {
+            "Active set identifier is invalid."
+        }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction UndoActiveWorkoutSetResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction UndoActiveWorkoutSetResult.Stale
+            }
+            val stored = details.exercises.flatMap { exercise ->
+                exercise.sets.map { set -> set to exercise.activeWorkoutExercise.id }
+            }.associateBy { (set, _) -> set.id }
+            val targets = setIds.map { setId ->
+                val (set, exerciseId) = stored[setId]
+                    ?: return@withTransaction UndoActiveWorkoutSetResult.TargetChanged
+                val completedAt = set.completedAt
+                    ?: return@withTransaction UndoActiveWorkoutSetResult.NotLatest
+                Triple(setId, exerciseId, completedAt)
+            }
+            val restoredTarget = restoreUndoableSetId?.takeIf { restoreId ->
+                restoreId !in setIds && stored[restoreId]?.first?.completedAt != null
+            }
+            val advanced = if (restoredTarget != null) {
+                activeWorkoutDao.advanceRevisionAndSetUndoable(
+                    activeWorkoutId = ACTIVE_WORKOUT_ID,
+                    expectedRevision = expectedRevision,
+                    setId = restoredTarget
+                )
+            } else {
+                activeWorkoutDao.advanceRevisionForBulkRecord(ACTIVE_WORKOUT_ID, expectedRevision)
+            }
+            check(advanced == 1) { "Active workout changed while undoing the set batch." }
+            targets.forEach { (setId, exerciseId, completedAt) ->
+                check(
+                    activeWorkoutDao.reopenCompletedSet(
+                        setId = setId,
+                        expectedActiveWorkoutExerciseId = exerciseId,
+                        expectedCompletedAt = completedAt
+                    ) == 1
+                ) { "Active set changed while undoing the set batch." }
+            }
+            UndoActiveWorkoutSetResult.Undone(revision = expectedRevision + 1L)
+        }
     }
 
     suspend fun finishActiveWorkout(

@@ -514,8 +514,8 @@
     <string name="active_workout_record_failed">Не вдалося записати підхід. Відпочинок не запущено.</string>
     <string name="active_workout_finish_failed">Не вдалося завершити тренування. Активна чернетка залишилася збереженою.</string>
     <string name="active_workout_discard_failed">Не вдалося відкинути тренування. Активна чернетка залишилася збереженою.</string>
-    <string name="active_workout_undo_changed">Скасувати можна лише останній записаний підхід. Показано актуальне збережене тренування.</string>
-    <string name="active_workout_undo_failed">Не вдалося скасувати останній підхід. Збережені дані не змінено.</string>
+    <string name="active_workout_undo_changed">Цей підхід більше не можна скасувати. Показано актуальне збережене тренування.</string>
+    <string name="active_workout_undo_failed">Не вдалося скасувати підхід. Збережені дані не змінено.</string>
     <string name="active_workout_undo_action">Скасувати підхід</string>
     <string name="active_workout_delete_set">Видалити підхід</string>
     <string name="active_workout_delete_recorded_set_target">Підхід %1$d: %2$s</string>
