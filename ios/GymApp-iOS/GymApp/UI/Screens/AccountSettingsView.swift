@@ -1273,8 +1273,11 @@ private struct AccountDeletionConfirmationView: View {
     @State private var isDeleting = false
     @State private var errorMessage: String?
 
+    private static let confirmButtonID = "account-deletion-confirm-button"
+
     var body: some View {
         GymBackground {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -1348,6 +1351,7 @@ private struct AccountDeletionConfirmationView: View {
                     .disabled(!deletionInputIsValid || isDeleting)
                     .opacity(deletionInputIsValid && !isDeleting ? 1 : 0.46)
                     .accessibilityHint("Permanently deletes the current profile and its data")
+                    .id(Self.confirmButtonID)
 
                     Text("Deletion starts only after you press the red button. Closing this screen leaves your account unchanged.")
                         .font(.caption)
@@ -1358,6 +1362,15 @@ private struct AccountDeletionConfirmationView: View {
                 .padding(.bottom, 18)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Keep the red button reachable above the keyboard once the typed
+            // word matches; scrolling never submits or deletes anything.
+            .onChange(of: deletionInputIsValid) { _, isValid in
+                guard isValid else { return }
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo(Self.confirmButtonID, anchor: .bottom)
+                }
+            }
+            }
         }
         .navigationTitle("Confirm deletion")
         .navigationBarTitleDisplayMode(.inline)
