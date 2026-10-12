@@ -1065,14 +1065,16 @@ private struct ExerciseHistorySheet: View {
 
     @ViewBuilder
     private var metricTiles: some View {
-        GymMetricTile(label: "Sessions", value: stats.sessionCount.formatted(.number.locale(gymAppLocale())))
+        GymMetricTile(label: "Sessions", value: stats.sessionCount.formatted(.number.locale(gymAppLocale())), singleLineLabel: true)
         GymMetricTile(
             label: "Max weight",
-            value: "\(stats.maxWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...2)))) \(gymLocalized("kg"))"
+            value: "\(stats.maxWeight.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...2)))) \(gymLocalized("kg"))",
+            singleLineLabel: true
         )
         GymMetricTile(
             label: "Total volume",
-            value: "\(stats.totalVolume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) \(gymLocalized("kg"))"
+            value: "\(stats.totalVolume.formatted(.number.locale(gymAppLocale()).precision(.fractionLength(0...1)))) \(gymLocalized("kg"))",
+            singleLineLabel: true
         )
     }
 

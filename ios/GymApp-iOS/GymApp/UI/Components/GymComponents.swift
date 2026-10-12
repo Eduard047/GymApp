@@ -264,6 +264,7 @@ public struct GymMetricTile: View {
     private let onHero: Bool
     private let labelUppercase: Bool
     private let compactValue: Bool
+    private let singleLineLabel: Bool
 
     public init(
         label: String,
@@ -271,7 +272,8 @@ public struct GymMetricTile: View {
         emphasized: Bool = false,
         onHero: Bool = false,
         labelUppercase: Bool = false,
-        compactValue: Bool = false
+        compactValue: Bool = false,
+        singleLineLabel: Bool = false
     ) {
         self.label = label
         self.value = value
@@ -279,6 +281,7 @@ public struct GymMetricTile: View {
         self.onHero = onHero
         self.labelUppercase = labelUppercase
         self.compactValue = compactValue
+        self.singleLineLabel = singleLineLabel
     }
 
     public var body: some View {
@@ -288,7 +291,8 @@ public struct GymMetricTile: View {
                 .foregroundStyle(onHero ? GymTheme.onHeroSecondary : GymTheme.textSecondary)
                 .textCase(labelUppercase ? .uppercase : nil)
                 .tracking(labelUppercase ? 0.35 : 0)
-                .lineLimit(2)
+                .lineLimit(singleLineLabel ? 1 : 2)
+                .minimumScaleFactor(singleLineLabel ? 0.7 : 1)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(gymLocalized(value, locale: locale))
