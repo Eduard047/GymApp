@@ -931,6 +931,33 @@ test("set deletion is bound to its session when imported set IDs collide", () =>
   assert.deepEqual(saved.sessions[1].sets, []);
 });
 
+test("deleting a saved workout asks in the in-page sheet and deletes only after confirmation", async () => {
+  const context = loadContext();
+  context.window.confirm = () => { throw new Error("browser dialogs must not be used"); };
+  vm.runInContext(`
+    state.sessions = [
+      { id: 8901, startedAt: 1760000000000, note: "Keep", sets: [{ id: 8911, exerciseName: "Squat", weight: 100, reps: 5, orderIndex: 0 }] },
+      { id: 8902, startedAt: 1760100000000, note: "Remove", sets: [{ id: 8912, exerciseName: "Deadlift", weight: 120, reps: 3, orderIndex: 0 }] }
+    ];
+    localStorage.setItem(activeStorageKey(), JSON.stringify(state));
+    requestDeleteSession(8902);
+  `, context);
+
+  assert.equal(vm.runInContext("modal.type", context), "confirm-delete-session");
+  const markup = vm.runInContext("modalMarkup()", context);
+  assert.match(markup, /Delete workout\?/);
+  assert.match(markup, /This removes the workout and every set\. This action cannot be undone\./);
+  assert.match(markup, /data-action="cancel-destructive" data-modal-initial-focus>Cancel<[\s\S]*class="button danger full" data-action="confirm-delete-session">Delete</);
+  assert.match(vm.runInContext(`state.language = "uk"; modalMarkup()`, context), /Видалити тренування\?/);
+  assert.match(vm.runInContext(`state.language = "ru"; modalMarkup()`, context), /Удалить тренировку\?/);
+  vm.runInContext(`state.language = "en";`, context);
+  assert.equal(JSON.parse(storedState(context)).sessions.length, 2);
+
+  await vm.runInContext("confirmDeleteSession()", context);
+  assert.deepEqual(JSON.parse(storedState(context)).sessions.map(item => item.id), [8901]);
+  assert.equal(vm.runInContext("modal", context), null);
+});
+
 test("same-account state saved by another tab invalidates an open confirmation", () => {
   const sharedStorage = createStorage();
   const firstTab = loadContext({ localStorage: sharedStorage });

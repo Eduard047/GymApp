@@ -26204,6 +26204,9 @@ function modalMarkup() {
     const profileName = escapeHtml(modal.intent?.preview?.name || "");
     return bottomSheet(`<h2 id="delete-local-account-title">${tx3("Delete local profile?", "Видалити локальний профіль?", "Удалить локальный профиль?")}</h2><p class="muted" id="delete-local-account-description">${tx3(`Profile “${profileName}” and its workouts will be removed from this device. This cannot be undone.`, `Профіль «${profileName}» і його тренування буде видалено з цього пристрою. Цю дію не можна скасувати.`, `Профиль «${profileName}» и его тренировки будут удалены с этого устройства. Это действие нельзя отменить.`)}</p><label for="delete-local-account-confirm">${tx3("Type DELETE to confirm", "Введи DELETE, щоб підтвердити", "Введи DELETE, чтобы подтвердить")}</label><input id="delete-local-account-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="delete-local-account-error"><p class="muted" id="delete-local-account-error" role="alert" hidden></p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Cancel", "Скасувати", "Отмена")}</button><button class="button danger full" data-action="confirm-delete-local-account">${tx3("Delete local profile", "Видалити локальний профіль", "Удалить локальный профиль")}</button></div>`, "delete-local-account-title", "alertdialog", "delete-local-account-description");
   }
+  if (modal.type === "confirm-delete-session") {
+    return bottomSheet(`<h2 id="delete-session-confirm-title">${tx3("Delete workout?", "Видалити тренування?", "Удалить тренировку?")}</h2><p class="muted" id="delete-session-confirm-description">${tx3("This removes the workout and every set. This action cannot be undone.", "Тренування й усі його підходи буде видалено. Цю дію не можна скасувати.", "Тренировка и все её подходы будут удалены. Это действие нельзя отменить.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx3("Cancel", "Скасувати", "Отмена")}</button><button class="button danger full" data-action="confirm-delete-session">${tx3("Delete", "Видалити", "Удалить")}</button></div>`, "delete-session-confirm-title", "alertdialog", "delete-session-confirm-description");
+  }
   if (modal.type === "confirm-import") {
     const preview = modal.intent?.preview || {};
     return bottomSheet(`<h2 id="import-confirm-title">${tx("Replace profile with backup?", "Замінити профіль резервною копією?")}</h2><p class="muted" id="import-confirm-description">${tx("This import will replace workout history, exercises, mappings, and profile settings. This cannot be undone in GymApp.", "Цей імпорт замінить історію тренувань, вправи, зіставлення та налаштування профілю. У GymApp це неможливо скасувати.")}</p><div class="metric-grid three"><div><span>${tx("Exercises", "Вправи")}</span><strong>${Number(preview.exerciseCount) || 0}</strong></div><div><span>${tx("Workouts", "Тренування")}</span><strong>${Number(preview.sessionCount) || 0}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${Number(preview.setCount) || 0}</strong></div></div><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-import">${tx("Replace with backup", "Замінити резервною копією")}</button></div>`, "import-confirm-title", "alertdialog", "import-confirm-description");
@@ -26719,13 +26722,13 @@ function syncTopbarVisibility() {
 }
 
 function destructiveReturnFocus(action, element = null) {
-  if (!["delete-exercise", "delete-set", "import-json", "discard-active-workout", "discard-plan"].includes(action)) return null;
+  if (!["delete-exercise", "delete-set", "delete-session", "import-json", "discard-active-workout", "discard-plan"].includes(action)) return null;
   return stableActionReturnFocus(action, element);
 }
 
 const STABLE_FOCUS_ACTIONS = new Set([
   "accept-shared-workout", "activation-options-toggle", "backup", "change-password", "choose-friend-workout", "clear-plan",
-  "configure-load-profile", "create-live-workout-for-friend", "delete-exercise", "delete-set",
+  "configure-load-profile", "create-live-workout-for-friend", "delete-exercise", "delete-session", "delete-set",
   "discard-active-workout", "discard-plan", "exercise-body-filter", "exercise-favorites-filter",
   "exercise-history", "exercise-muscle-filter", "exercise-sort", "export-diagnostics", "export-json",
   "import-json", "map-exercise", "open-exercise-add", "open-exercise-filters", "open-exercise-media",
@@ -26833,7 +26836,7 @@ function stableActionReturnFocus(action, element = null) {
 }
 
 function restoreDestructiveFocus(target) {
-  if (!target || !["delete-exercise", "delete-set", "import-json", "discard-active-workout", "discard-plan"].includes(target.action)) return;
+  if (!target || !["delete-exercise", "delete-set", "delete-session", "import-json", "discard-active-workout", "discard-plan"].includes(target.action)) return;
   restoreStableActionFocus(target);
 }
 
@@ -27162,7 +27165,7 @@ async function handleAction(action, el) {
       route().id === sessionId &&
       isActivityOnlySession(session);
     return isSavedWorkoutEditMode(sessionId) || activityOnlyDetail
-      ? deleteSession(sessionId)
+      ? requestDeleteSession(sessionId, destructiveReturnFocus("delete-session", el))
       : false;
   }
   if (action === "finish-workout") return push("summary", { id: Number(el.dataset.id) });
@@ -27695,6 +27698,7 @@ async function handleAction(action, el) {
     return deleteExercise(Number(el.dataset.id), returnFocus);
   }
   if (action === "confirm-delete-exercise") return confirmDeleteExercise();
+  if (action === "confirm-delete-session") return confirmDeleteSession();
   if (action === "exercise-history") {
     const returnFocus = modal?.type === "exercise-more" ? modal.returnFocus : null;
     modal = {
@@ -27723,6 +27727,7 @@ function isDestructiveConfirmationModal(value = modal) {
     "confirm-delete-exercise",
     "confirm-delete-set",
     "confirm-delete-local-account",
+    "confirm-delete-session",
     "confirm-import",
     "confirm-discard-active",
     "confirm-remove-active-exercise",
@@ -32194,14 +32199,37 @@ async function confirmRemoveSavedExercise() {
   return true;
 }
 
+// The confirmation lives in the confirm-delete-session sheet. deleteSession() runs only from
+// confirmDeleteSession(), after that sheet is confirmed.
+function requestDeleteSession(id, returnFocus = null) {
+  const matches = state.sessions.filter(session => session.id === id);
+  if (matches.length !== 1) return showToast(tx(
+    "This confirmation is no longer current. Nothing was changed.",
+    "Це підтвердження вже неактуальне. Нічого не змінено."
+  ));
+  const impactFingerprint = destructiveImpactFingerprint(matches[0]);
+  const intent = destructiveIntent({ sessionId: id, impactFingerprint, returnFocus });
+  if (!intent || !impactFingerprint) return showDestructiveSaveFailure();
+  modal = { type: "confirm-delete-session", intent };
+  render();
+}
+
+async function confirmDeleteSession() {
+  const intent = modal?.type === "confirm-delete-session" ? modal.intent : null;
+  const matches = intent ? state.sessions.filter(session => session.id === intent.sessionId) : [];
+  if (!destructiveIntentIsCurrent(intent) || matches.length !== 1 ||
+      destructiveImpactFingerprint(matches[0]) !== intent.impactFingerprint) {
+    return rejectStaleDestructiveConfirmation();
+  }
+  return deleteSession(intent.sessionId);
+}
+
 async function deleteSession(id) {
   const matches = state.sessions.filter(session => session.id === id);
   if (matches.length !== 1) return showToast(tx(
     "This confirmation is no longer current. Nothing was changed.",
     "Це підтвердження вже неактуальне. Нічого не змінено."
   ));
-  const session = matches[0];
-  if (!window.confirm(`${tx3("Delete workout?", "Видалити тренування?", "Удалить тренировку?")}\n${tx3("This removes the workout and every set. This action cannot be undone.", "Тренування й усі його підходи буде видалено. Цю дію не можна скасувати.", "Тренировка и все её подходы будут удалены. Это действие нельзя отменить.")}`)) return;
   const mutationContext = activeWorkoutMutationContext();
   if (!mutationContext) return showDestructiveSaveFailure();
   const result = await withActiveWorkoutDeletionLock(mutationContext.descriptor, () => {
