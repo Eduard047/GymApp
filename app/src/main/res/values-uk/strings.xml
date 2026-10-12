@@ -1263,7 +1263,7 @@
     <string name="cd_delete_workout_on">Видалити тренування за %1$s</string>
     <string name="exercise_favorite_add">Додати %1$s до обраного</string>
     <string name="exercise_favorite_remove">Прибрати %1$s з обраного</string>
-    <string name="cd_edit">Редагувати</string>
+    <string name="exercise_action_rename">Перейменувати</string>
     <string name="cd_remove_set">Видалити підхід</string>
     <string name="cd_remove_exercise">Видалити вправу</string>
     <string name="cd_prev_month">Попередній місяць</string>

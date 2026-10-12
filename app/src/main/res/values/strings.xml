@@ -1229,7 +1229,7 @@
     <string name="cd_delete_workout_on">Delete workout on %1$s</string>
     <string name="exercise_favorite_add">Add %1$s to favorites</string>
     <string name="exercise_favorite_remove">Remove %1$s from favorites</string>
-    <string name="cd_edit">Edit</string>
+    <string name="exercise_action_rename">Rename</string>
     <string name="cd_remove_set">Remove set</string>
     <string name="cd_remove_exercise">Remove exercise</string>
     <string name="cd_prev_month">Previous month</string>

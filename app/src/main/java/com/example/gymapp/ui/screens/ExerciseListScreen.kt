@@ -1285,7 +1285,7 @@ fun ExerciseListScreen(
                                 )
                                 if (!isBuiltIn) {
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.cd_edit)) },
+                                        text = { Text(stringResource(R.string.exercise_action_rename)) },
                                         onClick = {
                                             menuExpanded = false
                                             onStartRenameExercise(exercise)
