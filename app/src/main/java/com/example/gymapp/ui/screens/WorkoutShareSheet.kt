@@ -83,21 +83,11 @@ internal fun WorkoutShareSheet(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Groups,
-                                contentDescription = null,
-                                tint = HeroTone.title
-                            )
-                            Text(
-                                stringResource(R.string.workout_share_hero_title),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = HeroTone.title
-                            )
-                        }
+                        Icon(
+                            Icons.Default.Groups,
+                            contentDescription = null,
+                            tint = HeroTone.title
+                        )
                         Text(
                             stringResource(R.string.workout_share_hero_supporting),
                             style = MaterialTheme.typography.bodyMedium,

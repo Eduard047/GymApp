@@ -1332,7 +1332,6 @@
     <string name="workout_share_live_friend_title">Live with a friend</string>
     <string name="workout_share_live_friend_supporting">When your friend accepts, one synchronized workout starts for both of you.</string>
     <string name="workout_share_sheet_title">Share workout</string>
-    <string name="workout_share_hero_title">Share workout</string>
     <string name="workout_share_hero_supporting">Send a link, a copy, or a live invite.</string>
     <string name="workout_share_other_app_title">Use another app</string>
     <string name="workout_share_other_app_supporting">Works without adding a friend.</string>

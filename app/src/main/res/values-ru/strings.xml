@@ -1369,8 +1369,7 @@
     <string name="workout_share_copy_friend_action">Отправить копию: %1$s</string>
     <string name="workout_share_live_friend_title">Тренироваться вместе</string>
     <string name="workout_share_live_friend_supporting">Когда друг примет приглашение, одна синхронная тренировка начнётся для вас обоих.</string>
-    <string name="workout_share_sheet_title">Поделиться</string>
-    <string name="workout_share_hero_title">Поделиться тренировкой</string>
+    <string name="workout_share_sheet_title">Поделиться тренировкой</string>
     <string name="workout_share_hero_supporting">Отправь ссылку, копию или приглашение вживую.</string>
     <string name="workout_share_other_app_title">Отправить через другое приложение</string>
     <string name="workout_share_other_app_supporting">Работает без добавления в друзья.</string>
