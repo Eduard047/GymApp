@@ -5970,16 +5970,13 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   .achievement-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.favorite-toggle.selected {
-  color: var(--rose);
-  background: color-mix(in srgb, var(--rose) 12%, var(--surface));
-}
+.favorite-toggle.selected { color: var(--primary); }
 
 .favorite-filter svg { flex: 0 0 auto; }
 .favorite-filter.selected {
-  color: var(--rose);
-  border-color: color-mix(in srgb, var(--rose) 38%, var(--outline-variant));
-  background: color-mix(in srgb, var(--rose) 10%, var(--surface));
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--outline-variant));
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
 }
 
 .exercise-row {
