@@ -866,12 +866,12 @@
     <string name="muscle_heatmap_mappings_title">Сопоставление упражнений с мышцами</string>
     <string name="muscle_heatmap_mapping_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_mapping_unmapped_detail">Не сопоставлено • %1$s • %2$s</string>
-    <string name="muscle_heatmap_map_action">Задать</string>
-    <string name="muscle_heatmap_manual_title">Сопоставить "%1$s"</string>
+    <string name="muscle_heatmap_map_action">Группы мышц</string>
+    <string name="muscle_heatmap_manual_title">Группы мышц</string>
     <string name="exercise_mappings_title">Сопоставление упражнений с мышцами</string>
     <string name="exercise_mappings_unmapped">Не сопоставлено</string>
     <string name="exercise_mappings_edit">Редактировать</string>
-    <string name="exercise_mappings_editor_title">Сопоставить "%1$s"</string>
+    <string name="exercise_mappings_editor_title">Группы мышц</string>
     <string name="recommendations_title">Рекомендации</string>
     <string name="recommendations_supporting">На основе нагрузки на мышцы и пауз в тренировках.</string>
     <string name="smart_coach_title">Умный тренер</string>

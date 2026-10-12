@@ -866,12 +866,12 @@
     <string name="muscle_heatmap_mappings_title">Зіставлення вправ із мʼязами</string>
     <string name="muscle_heatmap_mapping_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_mapping_unmapped_detail">Не зіставлено • %1$s • %2$s</string>
-    <string name="muscle_heatmap_map_action">Задати</string>
-    <string name="muscle_heatmap_manual_title">Зіставити “%1$s”</string>
+    <string name="muscle_heatmap_map_action">Групи м’язів</string>
+    <string name="muscle_heatmap_manual_title">Групи м’язів</string>
     <string name="exercise_mappings_title">Зіставлення вправ із мʼязами</string>
     <string name="exercise_mappings_unmapped">Не зіставлено</string>
     <string name="exercise_mappings_edit">Змінити</string>
-    <string name="exercise_mappings_editor_title">Зіставити “%1$s”</string>
+    <string name="exercise_mappings_editor_title">Групи м’язів</string>
     <string name="recommendations_title">Рекомендації</string>
     <string name="recommendations_supporting">На основі навантаження мʼязів і пауз у тренуваннях.</string>
     <string name="smart_coach_title">Розумний тренер</string>

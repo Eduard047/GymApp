@@ -748,14 +748,18 @@ private fun ManualMappingEditor(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = stringResource(
-                    R.string.muscle_heatmap_manual_title,
-                    localizedExerciseName(exerciseName)
-                ),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(R.string.muscle_heatmap_manual_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = localizedExerciseName(exerciseName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             muscles.chunked(3).forEach { rowMuscles ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),

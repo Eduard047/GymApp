@@ -836,12 +836,12 @@
     <string name="muscle_heatmap_mappings_title">Exercise muscle mappings</string>
     <string name="muscle_heatmap_mapping_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_mapping_unmapped_detail">Unmapped • %1$s • %2$s</string>
-    <string name="muscle_heatmap_map_action">Map</string>
-    <string name="muscle_heatmap_manual_title">Map “%1$s”</string>
+    <string name="muscle_heatmap_map_action">Muscle groups</string>
+    <string name="muscle_heatmap_manual_title">Muscle groups</string>
     <string name="exercise_mappings_title">Exercise muscle mappings</string>
     <string name="exercise_mappings_unmapped">Unmapped</string>
     <string name="exercise_mappings_edit">Edit</string>
-    <string name="exercise_mappings_editor_title">Map “%1$s”</string>
+    <string name="exercise_mappings_editor_title">Muscle groups</string>
     <string name="recommendations_title">Recommendations</string>
     <string name="recommendations_supporting">Based on muscle load and recent training gaps.</string>
     <string name="smart_coach_title">Smart Coach</string>

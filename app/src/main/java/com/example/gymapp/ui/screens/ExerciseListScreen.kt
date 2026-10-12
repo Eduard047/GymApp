@@ -1900,13 +1900,17 @@ private fun ExerciseMappingBottomSheetContent(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text(
-                text = stringResource(
-                    R.string.exercise_mappings_editor_title,
-                    localizedExerciseName(exerciseName)
-                ),
-                style = MaterialTheme.typography.headlineSmall
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.exercise_mappings_editor_title),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = localizedExerciseName(exerciseName),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         items(
             items = muscles,
