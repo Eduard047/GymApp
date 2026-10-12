@@ -7020,6 +7020,14 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 .training-week-sessions[open] > summary .training-week-sessions-chevron { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .training-week-sessions-chevron { transition: none; } }
+/* The status caption is muted regular caption text sitting 4px above the count (12px grid gap minus 8px). */
+.training-week-status {
+  margin: 0 0 -8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
 .training-week-insight summary { min-height: 48px; padding: 8px 0; cursor: pointer; }
 .training-adapt-row { padding: 12px 0; border-bottom: 1px solid var(--outline-variant); }
 .training-program details > p { margin: 8px 0; }
