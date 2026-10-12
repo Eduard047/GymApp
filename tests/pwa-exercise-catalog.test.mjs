@@ -1507,7 +1507,7 @@ test("Local profile has no tabs or friends panel and opens on the settings row f
   const exercises = vm.runInContext("exercisesScreen()", context);
 
   assert.match(html, /Profile Owner/);
-  assert.match(html, /<div class="profile-hub-identity"><h2>Profile Owner<\/h2><p>This device<\/p>/);
+  assert.match(html, /<div class="profile-hub-identity"><h2>Profile Owner<\/h2><p>Stored on this device<\/p>/);
   assert.doesNotMatch(html, /friends<\/p>|0 friends/);
   assert.doesNotMatch(html, /role="tablist"|role="tab"|profile-training-panel|profile-settings-panel|friends-circle-card|Cloud sign-in required/);
   assert.doesNotMatch(html, /support\.html|privacy-policy\.html|profile-links-card|Show tutorial/);

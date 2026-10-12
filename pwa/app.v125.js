@@ -22064,7 +22064,7 @@ function friendsProfileScreen() {
     (liveWorkoutState.inbox?.invitations?.length || 0);
   const accountLabel = activeAccount?.name || tx("Local account", "Локальний акаунт");
   const remote = Boolean(activeAccount?.remote);
-  const cloudLabel = remote ? tx("Cloud protected", "Захищено хмарою") : tx("This device", "Цей пристрій");
+  const cloudLabel = remote ? tx("Cloud protected", "Захищено хмарою") : tx3("Stored on this device", "Збережено на цьому пристрої", "Хранится на этом устройстве");
   const trainingSelected = profileHubSection === "training";
   const trainingPanel = remote ? friendsPanel() : "";
   const settingsPanel = `${settingsPanelMarkup([remote ? "" : profileFriendsNeedCloudRow(), accountPanel(), profileLanguageRow(), trainingSettingsProfilePanel(), profileDataPanel()], "profile-settings-list")}${garminProfilePanel()}${themePreferencePanel()}`;
