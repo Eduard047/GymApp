@@ -1131,7 +1131,7 @@ private fun AuthModeSelector(
             modifier = Modifier.weight(1f)
         )
         AuthModeOption(
-            text = stringResource(R.string.auth_create_account),
+            text = stringResource(R.string.auth_sign_up),
             selected = isSignUp,
             enabled = enabled,
             onClick = { onModeSelected(true) },

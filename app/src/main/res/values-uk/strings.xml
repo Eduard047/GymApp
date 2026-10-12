@@ -261,6 +261,7 @@
     <string name="auth_email_app_unavailable">На цьому пристрої немає доступного поштового застосунку. Відкрийте пошту вручну.</string>
     <string name="auth_create_account">Створити обліковий запис</string>
     <string name="auth_log_in">Увійти</string>
+    <string name="auth_sign_up">Зареєструватися</string>
     <string name="auth_log_in_instead">Увійти натомість</string>
     <string name="auth_email">Електронна пошта</string>
     <string name="auth_repeat_email">Повтори електронну пошту</string>

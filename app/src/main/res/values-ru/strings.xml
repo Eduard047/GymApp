@@ -261,6 +261,7 @@
     <string name="auth_email_app_unavailable">На этом устройстве нет доступного почтового приложения. Откройте почту вручную.</string>
     <string name="auth_create_account">Создать аккаунт</string>
     <string name="auth_log_in">Войти</string>
+    <string name="auth_sign_up">Регистрация</string>
     <string name="auth_log_in_instead">Войти вместо регистрации</string>
     <string name="auth_email">Электронная почта</string>
     <string name="auth_repeat_email">Повтори электронную почту</string>

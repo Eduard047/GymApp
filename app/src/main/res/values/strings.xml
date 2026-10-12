@@ -260,7 +260,8 @@
     <string name="auth_confirmation_after_signup_hint">After creating the account, we will show where the confirmation email was sent.</string>
     <string name="auth_email_app_unavailable">No email app is available on this device. Open your inbox manually.</string>
     <string name="auth_create_account">Create account</string>
-    <string name="auth_log_in">Log in</string>
+    <string name="auth_log_in">Sign in</string>
+    <string name="auth_sign_up">Sign up</string>
     <string name="auth_log_in_instead">Log in instead</string>
     <string name="auth_email">Email</string>
     <string name="auth_repeat_email">Repeat email</string>
