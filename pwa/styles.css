@@ -6236,6 +6236,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   padding-inline-end: var(--sheet-close-clearance);
 }
 
+/* A sheet heading that sits directly above a field keeps the 16px rhythm instead of touching it. */
+.modal-panel > h2 + :is(input, select, textarea, label) { margin-top: 16px; }
+
 .toast {
   position: fixed;
   left: 16px;
