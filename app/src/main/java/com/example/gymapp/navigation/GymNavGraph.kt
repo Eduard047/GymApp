@@ -3781,6 +3781,7 @@ internal fun GymAppRoot(
                                 onEditExerciseMapping = viewModel::openExerciseMapping,
                                 onToggleExerciseMappingMuscle = viewModel::toggleExerciseMappingMuscle,
                                 onSaveExerciseMapping = viewModel::saveExerciseMapping,
+                                onUseAutomaticExerciseMapping = viewModel::useAutomaticExerciseMapping,
                                 onDismissExerciseMapping = viewModel::closeExerciseMapping,
                                 onEditExerciseLoadProfile = viewModel::openExerciseLoadProfile,
                                 onExerciseLoadDirectionChange = viewModel::updateExerciseLoadDirection,

@@ -19,6 +19,7 @@ import com.example.gymapp.data.entity.ExerciseHistoryEntry
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
+import com.example.gymapp.data.repository.catalogContributionsForExercise
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.toManualContributionMap
@@ -603,6 +604,17 @@ class ExerciseListViewModel(
         }
         viewModelScope.launch {
             repository.saveExerciseMuscleMapping(current, selectedIds.toList())
+        }
+    }
+
+    /** Resets the selection to the catalog default muscles; a no-op without catalog data. */
+    fun useAutomaticExerciseMapping() {
+        val exerciseName = mappingEditorExerciseName.value ?: return
+        val defaultIds = catalogContributionsForExercise(exerciseName)
+            ?.map { it.muscleId }
+            ?: return
+        viewModelScope.launch {
+            repository.saveExerciseMuscleMapping(exerciseName, defaultIds)
         }
     }
 

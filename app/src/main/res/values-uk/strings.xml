@@ -873,6 +873,7 @@
     <string name="exercise_mappings_unmapped">Не зіставлено</string>
     <string name="exercise_mappings_edit">Змінити</string>
     <string name="exercise_mappings_editor_title">Групи м’язів</string>
+    <string name="exercise_mappings_use_automatic">Використати автоматичне</string>
     <string name="recommendations_title">Рекомендації</string>
     <string name="recommendations_supporting">На основі навантаження мʼязів і пауз у тренуваннях.</string>
     <string name="smart_coach_title">Розумний тренер</string>

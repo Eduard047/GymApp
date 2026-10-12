@@ -90,6 +90,7 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.repository.catalogContributionsForExercise
 import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
@@ -975,6 +976,7 @@ fun ExerciseListScreen(
     onEditExerciseMapping: (String) -> Unit,
     onToggleExerciseMappingMuscle: (String) -> Unit,
     onSaveExerciseMapping: () -> Unit,
+    onUseAutomaticExerciseMapping: () -> Unit,
     onDismissExerciseMapping: () -> Unit,
     onEditExerciseLoadProfile: (ExerciseEntity) -> Unit,
     onExerciseLoadDirectionChange: (ExerciseLoadDirection) -> Unit,
@@ -1401,6 +1403,7 @@ fun ExerciseListScreen(
                 exerciseName = mappingExerciseName,
                 muscles = uiState.mappingEditorMuscles,
                 onToggleMuscle = onToggleExerciseMappingMuscle,
+                onUseAutomatic = onUseAutomaticExerciseMapping,
                 onSave = onSaveExerciseMapping,
                 onDismiss = onDismissExerciseMapping
             )
@@ -1888,10 +1891,14 @@ private fun ExerciseMappingBottomSheetContent(
     exerciseName: String,
     muscles: List<ExerciseMuscleOptionUiModel>,
     onToggleMuscle: (String) -> Unit,
+    onUseAutomatic: () -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val languageTag = currentAppLanguageTag()
+    val hasCatalogDefault = remember(exerciseName) {
+        catalogContributionsForExercise(exerciseName) != null
+    }
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 28.dp),
@@ -1930,6 +1937,16 @@ private fun ExerciseMappingBottomSheetContent(
                     text = localizedMuscleName(muscle.id, languageTag),
                     style = MaterialTheme.typography.bodyLarge
                 )
+            }
+        }
+        if (hasCatalogDefault) {
+            item {
+                OutlinedButton(
+                    onClick = onUseAutomatic,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.exercise_mappings_use_automatic))
+                }
             }
         }
         item {

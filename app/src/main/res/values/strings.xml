@@ -843,6 +843,7 @@
     <string name="exercise_mappings_unmapped">Unmapped</string>
     <string name="exercise_mappings_edit">Edit</string>
     <string name="exercise_mappings_editor_title">Muscle groups</string>
+    <string name="exercise_mappings_use_automatic">Use automatic</string>
     <string name="recommendations_title">Recommendations</string>
     <string name="recommendations_supporting">Based on muscle load and recent training gaps.</string>
     <string name="smart_coach_title">Smart Coach</string>

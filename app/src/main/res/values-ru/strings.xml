@@ -873,6 +873,7 @@
     <string name="exercise_mappings_unmapped">Не сопоставлено</string>
     <string name="exercise_mappings_edit">Редактировать</string>
     <string name="exercise_mappings_editor_title">Группы мышц</string>
+    <string name="exercise_mappings_use_automatic">Использовать автоматическое</string>
     <string name="recommendations_title">Рекомендации</string>
     <string name="recommendations_supporting">На основе нагрузки на мышцы и пауз в тренировках.</string>
     <string name="smart_coach_title">Умный тренер</string>
