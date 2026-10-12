@@ -854,6 +854,14 @@ test("Progress overview uses the shared inline navigator, compact hero, and life
   const muscle = run("en", "return muscleMapCard();");
   assert.doesNotMatch(muscle.split('<div class="period-tabs">')[0], /class="pill"/);
   assert.match(muscle, /metric-grid three tile-emphasized/);
+  assert.match(muscle, /<h2>Muscle map<\/h2>/);
+  assert.match(appSource, /<path class="body-region heat-\$\{heatStep\(intensity\)\}/);
+  assert.doesNotMatch(appSource, /function heatColor|function mixHex/);
+  assert.match(muscle, /<span>Back<\/span>/);
+  assert.doesNotMatch(muscle, /<span>Rear<\/span>|across your logged|orange/i);
+  assert.equal((muscle.match(/<i class="heat-sw heat-[0-4]"/g) || []).length, 5);
+  assert.match(run("ru", "return muscleMapCard();"), /<span>Сзади<\/span>/);
+  assert.doesNotMatch(stylesSource + appSource, /#8B5CF6|#E11D48|#F59E0B|orange/i);
   const overview = appSource.slice(appSource.indexOf("function progressScreen()"), appSource.indexOf("function exerciseProgressPanel()"));
   assert.doesNotMatch(overview.slice(overview.indexOf("} else {\n    content")), /monthSwitcher\(\)/);
 });

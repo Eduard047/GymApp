@@ -25,6 +25,7 @@
   --heat-text-3: #ffffff;
   --heat-text-4: #ffffff;
   --heat-ring: #216bd7;
+  --heat-stroke: rgba(96, 112, 138, 0.55);
   --primary: var(--sage);
   --clay: #ff6f66;
   --blue: #3a8dff;
@@ -120,6 +121,7 @@ html.frame-blocked body {
   --heat-text-3: #071321;
   --heat-text-4: #071321;
   --heat-ring: #7fb2ff;
+  --heat-stroke: rgba(167, 182, 203, 0.45);
   --clay: #ff9d94;
   --blue: #79afff;
   --violet: #b4a6ff;
@@ -5779,18 +5781,28 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 .body-region {
-  stroke: rgba(232, 238, 242, 0.28);
+  stroke: var(--heat-stroke);
   stroke-width: 0.12;
   cursor: pointer;
-  transition: filter 160ms ease, stroke-width 160ms ease;
+  transition: stroke-width 160ms ease;
 }
 
-.body-region:hover,
-.body-region.selected {
-  filter: brightness(1.22);
-  stroke: var(--sage);
-  stroke-width: 0.34;
-}
+.body-region.heat-0 { fill: var(--heat-0); }
+.body-region.heat-1 { fill: var(--heat-1); }
+.body-region.heat-2 { fill: var(--heat-2); }
+.body-region.heat-3 { fill: var(--heat-3); }
+.body-region.heat-4 { fill: var(--heat-4); }
+
+.body-region.heat-0[data-action]:hover,
+.body-region.heat-0.selected { stroke: var(--heat-text-0); stroke-width: 0.34; }
+.body-region.heat-1[data-action]:hover,
+.body-region.heat-1.selected { stroke: var(--heat-text-1); stroke-width: 0.34; }
+.body-region.heat-2[data-action]:hover,
+.body-region.heat-2.selected { stroke: var(--heat-text-2); stroke-width: 0.34; }
+.body-region.heat-3[data-action]:hover,
+.body-region.heat-3.selected { stroke: var(--heat-text-3); stroke-width: 0.34; }
+.body-region.heat-4[data-action]:hover,
+.body-region.heat-4.selected { stroke: var(--heat-text-4); stroke-width: 0.34; }
 
 .body-labels {
   display: flex;

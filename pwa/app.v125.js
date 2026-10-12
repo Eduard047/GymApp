@@ -12469,7 +12469,7 @@ function muscleMapCard() {
   const selected = selectedMuscle ? data.find(item => item.id === selectedMuscle) : null;
   const selectedExercises = selected ? selected.exercises.slice().sort((a, b) => b.load - a.load) : [];
   return `<section class="panel highlighted muscle-map-card">
-    <div class="section-title"><div><h2>${t("muscleMap")}</h2><p>${tx("Colors show which muscle groups carried the most load.", "Кольори показують, які групи м'язів отримали найбільше навантаження.")}</p></div></div>
+    <div class="section-title"><div><h2>${t("muscleMap")}</h2><p>${tx3("Stronger blue means more load on that muscle group in the selected period.", "Чим насиченіший синій, тим більше навантаження на групу м'язів за вибраний період.", "Чем насыщеннее синий, тем больше нагрузка на группу мышц за выбранный период.")}</p></div></div>
     <div class="period-tabs">${["all", "month", "week"].map(period => `<button class="${musclePeriod === period ? "selected" : ""}" data-action="muscle-period" data-period="${period}">${musclePeriodLabel(period)}</button>`).join("")}</div>
     <div class="metric-grid three tile-emphasized"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
     ${sourceBodyMapSvg(data, max)}
@@ -12588,13 +12588,13 @@ function sourceBodyMapSvg(data, maxLoad, { interactive = true, showLabels = true
     const intensity = item && maxLoad > 0 ? Math.min(1, item.load / maxLoad) : 0;
     const selected = interactive && muscleId && selectedMuscle === muscleId;
     const interactionAttrs = interactive && muscleId ? ` data-action="select-muscle" data-id="${muscleId}"` : "";
-    return `<path class="body-region ${selected ? "selected" : ""}" d="${escapeAttr(region.pathData)}" fill="${heatColor(intensity)}" aria-hidden="true" focusable="false"${interactionAttrs}><title>${escapeHtml(region.name)}${item ? ` · ${Math.round(item.load)} ${tx("load", "навантаження")}` : ""}</title></path>`;
+    return `<path class="body-region heat-${heatStep(intensity)}${selected ? " selected" : ""}" d="${escapeAttr(region.pathData)}" aria-hidden="true" focusable="false"${interactionAttrs}><title>${escapeHtml(region.name)}${item ? ` · ${Math.round(item.load)} ${tx("load", "навантаження")}` : ""}</title></path>`;
   }).join("");
   return `<div class="body-map-svg-wrap">
     <svg class="body-map-svg" viewBox="0 0 72 93" role="img" aria-label="${txAttr("Muscle load map", "Карта навантаження м'язів")}">
       ${regionMarkup}
     </svg>
-    ${showLabels ? `<div class="body-labels"><span>${tx("Front", "Спереду")}</span><span>${tx("Rear", "Ззаду")}</span></div>` : ""}
+    ${showLabels ? `<div class="body-labels"><span>${tx("Front", "Спереду")}</span><span>${tx3("Back", "Ззаду", "Сзади")}</span></div>${heatLegendMarkup()}` : ""}
   </div>`;
 }
 
@@ -12665,22 +12665,6 @@ function muscleIdForSourceRegion(regionId) {
   if (regionId.includes("hamstrings")) return "hamstrings";
   if (regionId.includes("calves") || regionId.includes("tibialis")) return "calves";
   return null;
-}
-
-function heatColor(intensity) {
-  const value = Math.min(1, Math.max(0, intensity));
-  if (value <= 0) return "rgba(180,195,207,0.22)";
-  if (value < 0.28) return `rgba(59,130,246,${0.42 + value / 0.28 * 0.58})`;
-  if (value < 0.58) return mixHex("#3b82f6", "#8b5cf6", (value - 0.28) / 0.3);
-  if (value < 0.86) return mixHex("#8b5cf6", "#e11d48", (value - 0.58) / 0.28);
-  return mixHex("#e11d48", "#f59e0b", (value - 0.86) / 0.14);
-}
-
-function mixHex(a, b, t) {
-  const av = a.match(/\w\w/g).map(x => parseInt(x, 16));
-  const bv = b.match(/\w\w/g).map(x => parseInt(x, 16));
-  const cv = av.map((v, i) => Math.round(v + (bv[i] - v) * Math.min(1, Math.max(0, t))));
-  return `rgb(${cv[0]},${cv[1]},${cv[2]})`;
 }
 
 function recommendationsCard() {
