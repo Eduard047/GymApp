@@ -1168,17 +1168,8 @@ private struct ExerciseMuscleMappingSheet: View {
                             contentPadding: EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
                         ) {
                             Toggle(isOn: binding(for: muscle.id)) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(localizedMuscleTitle)
-                                        .font(.headline)
-                                    Text(exerciseMuscleMappingSecondaryTitle(
-                                        english: muscle.titleEn,
-                                        ukrainian: muscle.titleUk,
-                                        languageCode: languageCode
-                                    ))
-                                        .font(.caption)
-                                        .foregroundStyle(GymTheme.textSecondary)
-                                }
+                                Text(localizedMuscleTitle)
+                                    .font(.headline)
                             }
                             .tint(GymTheme.primary)
                             .accessibilityHint(
