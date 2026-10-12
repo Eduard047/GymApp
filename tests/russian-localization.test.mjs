@@ -129,7 +129,7 @@ test("iOS String Catalog has Russian values for every key and preserves format p
   assert.match(addWorkout, /The current edited plan is sent to the selected watch\. No workout is saved or started\./);
   assert.doesNotMatch(addWorkout, /Garmin plan mode: after saving, every planned row is sent/);
   assert.match(addWorkout, /Adds every planned row to history and summaries as completed/);
-  assert.match(workoutDashboard, /"\\\(progression\.xpIntoLevel\) из "/);
+  assert.match(workoutDashboard, /"\\\(progression\.xpIntoLevel(?:\.formatted\([^"]*\))?\) из "/);
 });
 
 test("retained browser source accepts Russian while the public landing owns its compact Russian copy", async () => {
