@@ -649,9 +649,8 @@ a:focus-visible,
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  color: var(--primary);
-  box-shadow: 0 4px 12px rgba(16, 35, 63, 0.2);
+  background: var(--primary);
+  color: var(--on-primary);
 }
 
 .exercise-media-play svg { width: 16px; height: 16px; }
@@ -673,7 +672,7 @@ a:focus-visible,
 .exercise-media-thumb.progress .exercise-media-play {
   width: 28px;
   height: 28px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  background: var(--primary);
 }
 
 /* The Progress picker card uses the same 76x64 thumbnail as the shared media button on iOS. */
