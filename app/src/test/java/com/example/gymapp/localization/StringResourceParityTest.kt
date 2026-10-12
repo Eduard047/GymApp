@@ -151,7 +151,7 @@ class StringResourceParityTest {
             "auth_new_password_requirements" to
                 "Используй не менее 6 символов (до 72 байт UTF-8).",
             "activity_heatmap_legend" to
-                "Цвет показывает дневной объём тренировок за этот месяц: вес × повторения. Чем темнее, тем меньше объём; чем ярче оранжевый, тем больше.",
+                "Чем насыщеннее синий, тем больше объём тренировок за день.",
             "smart_kind_hold_and_build" to
                 "Удержать",
             "smart_reason_calorie_deficit" to

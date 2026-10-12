@@ -2838,7 +2838,8 @@ button.leaderboard-row {
 
 .progress-hub-switch {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--outline-variant);
