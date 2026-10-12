@@ -979,7 +979,7 @@ const RUSSIAN_TEXT = new Map([
   ["View workout", "Просмотр тренировки"],
   ["Visual Trends", "Визуальные тренды"],
   ["Volume", "Объём"],
-  ["Volume = weight x reps across all completed sets.", "Объем = вес x повторы по всем завершенным подходам."],
+  ["Volume = weight × reps across all completed sets.", "Объем = вес × повторы по всем завершенным подходам."],
   ["Volume builder", "Покоритель объёма"],
   ["Wait for Garmin sync to finish before switching accounts.", "Дождись завершения синхронизации с Garmin перед сменой аккаунта."],
   ["Wait for Garmin sync to finish before unpairing.", "Дождись завершения синхронизации с Garmin перед отсоединением."],

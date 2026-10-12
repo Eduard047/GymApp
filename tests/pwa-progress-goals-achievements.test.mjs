@@ -147,9 +147,9 @@ test("Exercise picker card holds thumbnail, name, logged sessions and the picker
 
 test("G1 the missions hero is one compact tappable row that opens ranks", () => {
   for (const [language, summary, hint] of [
-    ["en", /Level 1 · [^<·]+ · 0 XP/, "Opens ranks"],
-    ["uk", /Рівень 1 · [^<·]+ · 0 XP/, "Відкриває ранги"],
-    ["ru", /Уровень 1 · [^<·]+ · 0 XP/, "Открывает ранги"]
+    ["en", /Level 1 ·\u00A0[^<·]+ ·\u00A00\u00A0XP/, "Opens ranks"],
+    ["uk", /Рівень 1 ·\u00A0[^<·]+ ·\u00A00\u00A0XP/, "Відкриває ранги"],
+    ["ru", /Уровень 1 ·\u00A0[^<·]+ ·\u00A00\u00A0XP/, "Открывает ранги"]
   ]) {
     const screen = run(language, "return missionsScreen();");
     assert.match(screen, /^<div class="settings-panel missions-rank-panel"><button type="button" class="settings-row" data-action="open-ranks" aria-label="/);
