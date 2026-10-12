@@ -2,6 +2,7 @@ package com.example.gymapp.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
@@ -26,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 
 /**
- * Compact inline month control shared with iOS (`GymMonthNavigator`): no card, 44dp chevrons and
+ * Compact inline month control shared with iOS (`GymMonthNavigator`): no card, 48dp chevrons at the row ends and
  * a centre label that also returns to the current month when another month is selected.
  */
 @Composable
@@ -43,11 +44,10 @@ fun GymMonthNavigator(
         monthLabel
     )
     Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onPrevious, modifier = Modifier.size(44.dp)) {
+        IconButton(onClick = onPrevious, modifier = Modifier.size(48.dp)) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.NavigateBefore,
                 contentDescription = stringResource(R.string.cd_prev_month),
@@ -56,11 +56,12 @@ fun GymMonthNavigator(
         }
         Row(
             modifier = Modifier
-                .heightIn(min = 44.dp)
+                .weight(1f)
+                .heightIn(min = 48.dp)
                 .clickable(enabled = !isCurrentMonth, role = Role.Button, onClick = onCurrent)
                 .semantics { contentDescription = centerDescription },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)
         ) {
             Text(
                 text = monthLabel,
@@ -84,7 +85,7 @@ fun GymMonthNavigator(
         IconButton(
             onClick = onNext,
             enabled = !isCurrentMonth,
-            modifier = Modifier.size(44.dp)
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.NavigateNext,
