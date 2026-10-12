@@ -356,6 +356,10 @@
     <string name="local_profile_delete_confirm_title">Видалити локальний профіль?</string>
     <string name="local_profile_delete_warning">Профіль «%1$s» і його тренування буде видалено з цього пристрою. Цю дію не можна скасувати.</string>
     <string name="local_profile_delete_confirm">Видалити локальний профіль</string>
+    <string name="local_profile_delete_typed_label">Підтвердження видалення</string>
+    <string name="local_profile_delete_typed_explanation">GymApp зітре локальні дані тренувань цього профілю та виконає вихід. Цю дію не можна скасувати.</string>
+    <string name="local_profile_delete_typed_hint">Введи DELETE без помилок, щоб дозволити остаточне видалення.</string>
+    <string name="local_profile_delete_typed_confirm">Остаточно видалити локальний профіль</string>
     <string name="local_profile_delete_failed">Не вдалося видалити локальний профіль. Його дані залишено без змін.</string>
     <string name="local_profile_delete_cleanup_pending">Видалення локального профілю не завершено. GymApp повторить очищення після перезапуску.</string>
     <string name="cloud_sync_load_failed">Не вдалося безпечно завантажити хмарні дані. Автоматичне вивантаження призупинено.</string>

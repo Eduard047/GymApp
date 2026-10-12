@@ -356,6 +356,10 @@
     <string name="local_profile_delete_confirm_title">Delete local profile?</string>
     <string name="local_profile_delete_warning">Profile “%1$s” and its workouts will be removed from this device. This cannot be undone.</string>
     <string name="local_profile_delete_confirm">Delete local profile</string>
+    <string name="local_profile_delete_typed_label">Deletion confirmation</string>
+    <string name="local_profile_delete_typed_explanation">GymApp will erase this profile’s local workout data and sign you out. This action cannot be undone.</string>
+    <string name="local_profile_delete_typed_hint">Type DELETE exactly to enable permanent deletion.</string>
+    <string name="local_profile_delete_typed_confirm">Permanently delete local profile</string>
     <string name="local_profile_delete_failed">The local profile could not be deleted. Its data was left untouched.</string>
     <string name="local_profile_delete_cleanup_pending">Local profile deletion is incomplete. GymApp will retry cleanup after restart.</string>
     <string name="cloud_sync_load_failed">Cloud data could not be loaded safely. Automatic upload is paused.</string>

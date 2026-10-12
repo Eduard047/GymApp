@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.Button
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
@@ -57,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -184,6 +187,7 @@ internal fun ProfileScreen(
     var showPasswordChange by rememberSaveable { mutableStateOf(false) }
     var showAccountDeletion by rememberSaveable { mutableStateOf(false) }
     var showLocalProfileDeletion by rememberSaveable { mutableStateOf(false) }
+    var showLocalProfileDeletionConfirmation by rememberSaveable { mutableStateOf(false) }
     var selectedSection by rememberSaveable { mutableStateOf(ProfileSection.Training) }
     var showTrainingSettings by rememberSaveable { mutableStateOf(false) }
     var showAccountSettings by rememberSaveable { mutableStateOf(false) }
@@ -413,7 +417,7 @@ internal fun ProfileScreen(
                 Button(
                     onClick = {
                         showLocalProfileDeletion = false
-                        onDeleteLocalProfile()
+                        showLocalProfileDeletionConfirmation = true
                     },
                     enabled = !isAccountActionLoading,
                     colors = ButtonDefaults.buttonColors(
@@ -434,6 +438,85 @@ internal fun ProfileScreen(
             }
         )
     }
+    if (showLocalProfileDeletionConfirmation && localProfileName != null) {
+        DeleteLocalProfileConfirmationDialog(
+            profileName = localProfileName,
+            actionsEnabled = !isAccountActionLoading,
+            onDismiss = { showLocalProfileDeletionConfirmation = false },
+            onConfirm = {
+                showLocalProfileDeletionConfirmation = false
+                onDeleteLocalProfile()
+            }
+        )
+    }
+}
+
+private const val DELETE_CONFIRMATION_WORD = "DELETE"
+
+/** Mirrors the iPhone rule: surrounding whitespace is ignored, the word is case-sensitive. */
+internal fun localProfileDeletionConfirmationMatches(input: String): Boolean =
+    input.trim() == DELETE_CONFIRMATION_WORD
+
+@Composable
+private fun DeleteLocalProfileConfirmationDialog(
+    profileName: String,
+    actionsEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    var confirmation by rememberSaveable { mutableStateOf("") }
+    val confirmationLabel = stringResource(R.string.local_profile_delete_typed_label)
+    val matches = localProfileDeletionConfirmationMatches(confirmation)
+    AlertDialog(
+        onDismissRequest = {
+            if (actionsEnabled) onDismiss()
+        },
+        title = { Text(stringResource(R.string.local_profile_delete_action)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = profileName,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(stringResource(R.string.local_profile_delete_typed_explanation))
+                OutlinedTextField(
+                    value = confirmation,
+                    onValueChange = { confirmation = it.take(16) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = confirmationLabel },
+                    label = { Text(confirmationLabel) },
+                    placeholder = { Text(DELETE_CONFIRMATION_WORD) },
+                    supportingText = {
+                        Text(stringResource(R.string.local_profile_delete_typed_hint))
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Done
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = matches && actionsEnabled,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text(stringResource(R.string.local_profile_delete_typed_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = actionsEnabled) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
 }
 
 @Composable
