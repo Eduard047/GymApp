@@ -620,7 +620,7 @@ final class WorkoutDetailDeletionTests: XCTestCase {
         )
         XCTAssertEqual(
             target.confirmationMessage(languageCode: "ru"),
-            "Она также будет удалена из 2 тренировок и 3 записанных подходов. 1 опустевшая тренировка будет удалена. Это действие нельзя отменить."
+            "Упражнение также будет удалено из 2 тренировок и 3 записанных подходов. 1 опустевшая тренировка будет удалена. Это действие нельзя отменить."
         )
 
         let replacementStore = try makeStore(account: store.accountStorageKey)
