@@ -831,7 +831,7 @@ const RUSSIAN_TEXT = new Map([
   ["Push Up", "Отжимания от пола"],
   ["Push day", "Жимовой день"],
   ["Push day, pull day, deload...", "Жимовой день, тяговый день, разгрузка…"],
-  ["Rank Titles", "Ранги"],
+  ["Ranks", "Ранги"],
   ["Rank ladder", "Лестница рангов"],
   ["Rare", "Редкая"],
   ["Reach ten logged workouts.", "Набери 10 записанных тренировок."],

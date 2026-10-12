@@ -272,7 +272,7 @@ function handleEmailConfirmationRedirect() {
 
 const text = {
   en: {
-    workouts: "Workouts", missions: "Missions", exercises: "Exercises", progress: "Progress", ranks: "Rank Titles",
+    workouts: "Workouts", missions: "Missions", exercises: "Exercises", progress: "Progress", ranks: "Ranks",
     addWorkout: "Add Workout", finishWorkout: "Finish Workout", saveWorkout: "Save Workout", saveCompletedWorkout: "Save as completed workout", repeatLast: "Repeat Last Workout",
     copyWorkout: "Copy previous workout", overview: "Overview", workoutList: "Workout list", current: "Current",
     soloProgress: "Solo Progress", monthlySnapshot: "Monthly Snapshot", heatmap: "Activity heatmap", muscleMap: "Muscle map",
