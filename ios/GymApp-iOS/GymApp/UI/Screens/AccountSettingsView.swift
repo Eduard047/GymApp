@@ -671,9 +671,43 @@ struct AccountSettingsView: View {
                 secondaryButton: .cancel()
             )
 
+        case .beginDeletion(let target) where !target.isCloudAccount:
+            let languageCode = gymCurrentLanguageCode()
+            let name = target.accountName
+            return Alert(
+                title: Text(gymText(
+                    "Delete local profile?",
+                    "Видалити локальний профіль?",
+                    "Удалить локальный профиль?",
+                    languageCode: languageCode
+                )),
+                message: Text(gymText(
+                    "Profile \u{201C}\(name)\u{201D} and its workouts will be removed from this device. This cannot be undone.",
+                    "Профіль «\(name)» і його тренування буде видалено з цього пристрою. Цю дію не можна скасувати.",
+                    "Профиль «\(name)» и его тренировки будут удалены с этого устройства. Это действие нельзя отменить.",
+                    languageCode: languageCode
+                )),
+                primaryButton: .destructive(Text(gymText(
+                    "Delete local profile",
+                    "Видалити локальний профіль",
+                    "Удалить локальный профиль",
+                    languageCode: languageCode
+                ))) {
+                    Task { @MainActor in
+                        deletionConfirmationTarget = target
+                    }
+                },
+                secondaryButton: .cancel(Text(gymText(
+                    "Cancel",
+                    "Скасувати",
+                    "Отмена",
+                    languageCode: languageCode
+                )))
+            )
+
         case .beginDeletion(let target):
             return Alert(
-                title: Text(gymLocalized(target.isCloudAccount ? "Permanently delete this account?" : "Permanently delete this local profile?")),
+                title: Text(gymLocalized("Permanently delete this account?")),
                 message: Text("This cannot be undone. Export a backup first if you want to retain your workout history."),
                 primaryButton: .destructive(Text("Continue")) {
                     Task { @MainActor in
