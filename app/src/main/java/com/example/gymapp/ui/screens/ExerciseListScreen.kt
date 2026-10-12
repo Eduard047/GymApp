@@ -28,8 +28,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
@@ -2027,7 +2027,7 @@ internal fun BackupToolsSettingsRow(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val chevronRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
+        targetValue = if (expanded) 90f else 0f,
         label = "backupToolsChevron"
     )
     Column {
@@ -2041,7 +2041,7 @@ internal fun BackupToolsSettingsRow(
             ),
             trailingContent = {
                 Icon(
-                    imageVector = Icons.Default.ExpandMore,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp).rotate(chevronRotation),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
