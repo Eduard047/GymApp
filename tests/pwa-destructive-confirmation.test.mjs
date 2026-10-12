@@ -956,6 +956,55 @@ test("exercise deletion leaves the in-progress active workout alone", async () =
   assert.equal(vm.runInContext("state.exercises.some(item => item.id === 9101)", context), false);
 });
 
+test("exercise deletion rewrites the commit ledger so the merge cannot bring the exercise back", async () => {
+  const context = loadContext();
+  stubScreenFocus(context);
+  seedExerciseCascade(context);
+  vm.runInContext(`
+    const descriptor = activeWorkoutAccountDescriptor();
+    const workout = (id, startedAt, blocks) => ({
+      version: 1,
+      owner: descriptor.owner,
+      id,
+      startedAt,
+      createdAt: startedAt + 1000,
+      updatedAt: startedAt + 2000,
+      revision: 1,
+      note: "",
+      blocks: blocks.map(([blockId, exerciseName, setId, catalogKey]) => ({
+        id: blockId,
+        exerciseName,
+        ...(catalogKey ? { catalogKey } : {}),
+        sets: [{ id: setId, weight: 20, reps: 10, completed: true, completedAt: startedAt + 1500 }]
+      }))
+    });
+    localStorage.setItem(descriptor.commitKey, JSON.stringify({
+      version: 1,
+      owner: descriptor.owner,
+      workouts: [
+        workout(9201, 1760000000000, [[9401, "Cable Fly", 9301], [9402, "Squat", 9302, "squat"]]),
+        workout(9202, 1760100000000, [[9403, "Cable Fly", 9303]])
+      ]
+    }));
+    deleteExercise(9101);
+  `, context);
+  await vm.runInContext("confirmDeleteExercise()", context);
+
+  const ledger = JSON.parse(vm.runInContext(
+    "localStorage.getItem(activeWorkoutAccountDescriptor().commitKey)", context));
+  assert.deepEqual(ledger.workouts.map(workout => workout.id), [9201]);
+  assert.deepEqual(ledger.workouts[0].blocks.map(block => block.exerciseName), ["Squat"]);
+
+  const merged = JSON.parse(vm.runInContext(`JSON.stringify(mergeActiveWorkoutCommitLedger(
+    loadStoredStateBase(activeAccount),
+    loadActiveWorkoutCommitLedger(activeAccount).ledger
+  ))`, context));
+  assert.equal(merged.exercises.some(item => item.id === 9101 || item.name === "Cable Fly"), false);
+  assert.deepEqual(merged.sessions.map(session => session.id), [9201, 9203]);
+  assert.deepEqual(merged.sessions[0].sets.map(set => set.id), [9302]);
+  assert.equal(merged.sessions.some(session => session.sets.some(set => set.exerciseName === "Cable Fly")), false);
+});
+
 test("exercise deletion restores exercises, sessions and mappings when persistence fails", async () => {
   const context = loadContext();
   seedExerciseCascade(context);
