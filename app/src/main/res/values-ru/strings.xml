@@ -1050,7 +1050,7 @@
     <string name="splash_loading">Готовим твою сессию...</string>
 
     <string name="exercise_history_sessions">Сессии</string>
-    <string name="exercise_history_sets">Подходы</string>
+    <string name="exercise_history_max_weight">Максимальный вес</string>
     <string name="exercise_history_volume">Общий объем</string>
     <string name="exercise_history_empty">Для этого упражнения еще нет истории.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>

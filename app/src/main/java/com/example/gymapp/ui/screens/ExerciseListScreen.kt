@@ -2771,6 +2771,19 @@ private fun ExerciseHistoryBottomSheetContent(
     }
 
     val totalVolume = remember(history) { history.sumOf { it.weight * it.reps } }
+    val maxWeight = remember(history) { history.maxOfOrNull { it.weight } ?: 0.0 }
+    val weightFormat = remember(locale) {
+        NumberFormat.getNumberInstance(locale).apply {
+            minimumFractionDigits = 0
+            maximumFractionDigits = 2
+        }
+    }
+    val volumeFormat = remember(locale) {
+        NumberFormat.getNumberInstance(locale).apply {
+            minimumFractionDigits = 0
+            maximumFractionDigits = 1
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -2809,15 +2822,18 @@ private fun ExerciseHistoryBottomSheetContent(
                         modifier = Modifier.weight(1f)
                     )
                     HistoryStat(
-                        label = stringResource(R.string.exercise_history_sets),
-                        value = history.size.toString(),
+                        label = stringResource(R.string.exercise_history_max_weight),
+                        value = stringResource(
+                            R.string.today_history_volume_kg,
+                            weightFormat.format(maxWeight)
+                        ),
                         modifier = Modifier.weight(1f)
                     )
                     HistoryStat(
                         label = stringResource(R.string.exercise_history_volume),
                         value = stringResource(
                             R.string.today_history_volume_kg,
-                            NumberFormat.getIntegerInstance(locale).format(totalVolume)
+                            volumeFormat.format(totalVolume)
                         ),
                         modifier = Modifier.weight(1f)
                     )
@@ -2900,7 +2916,7 @@ private fun HistoryStat(
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
         Text(
