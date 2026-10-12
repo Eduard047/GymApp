@@ -326,3 +326,13 @@ test("exercise history sheet has one Muscle groups row instead of the embedded m
   assert.equal((markup.match(/data-action="map-exercise"/g) || []).length, 1);
   assert.match(markup, /<div class="settings-panel"><button type="button" class="settings-row has-subtitle" data-action="map-exercise"/);
 });
+
+test("muscle groups editor offers Use automatic only when catalog muscles exist", () => {
+  const context = loadPwaContext();
+  const builtIn = run(context, `mappingEditor("Bench Press")`);
+  assert.match(builtIn, /data-action="auto-map" data-ids="[a-zA-Z,]+"/);
+  assert.ok(builtIn.indexOf('data-action="auto-map"') < builtIn.indexOf('data-action="save-map"'));
+  const custom = run(context, `mappingEditor("Zzz Custom Mover 42")`);
+  assert.doesNotMatch(custom, /auto-map/);
+  assert.match(appSource, /action === "auto-map"/);
+});

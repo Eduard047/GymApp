@@ -12513,6 +12513,14 @@ function mappedCount() {
   return state.exercises.filter(ex => contributionFor(ex).length).length;
 }
 
+// Catalog default muscles for built-in exercises; null when there is no catalog data (custom exercises).
+function catalogMuscleIdsFor(exercise) {
+  const normalized = normalizeExerciseName(exerciseRawName(exercise));
+  const ids = builtInExerciseFor(exercise)?.muscleIds || (Object.hasOwn(defaultMappings, normalized) ? defaultMappings[normalized] : null);
+  const valid = Array.isArray(ids) ? ids.filter(id => muscles.some(([muscleId]) => muscleId === id)) : [];
+  return valid.length ? valid : null;
+}
+
 function mappingFor(exercise) {
   const rawName = exerciseRawName(exercise);
   const key = normalizeExerciseName(rawName);
@@ -26188,7 +26196,8 @@ function exerciseHistoryMarkup(exercise) {
 
 function mappingEditor(name) {
   const current = new Set(mappingFor(name));
-  return `<h2>${tx("Muscle groups", "Групи м’язів")}</h2><p><strong>${escapeHtml(exerciseDisplayName(name))}</strong></p><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike mapping-chip ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}" aria-pressed="${current.has(id)}">${svg("check", "small-icon mapping-chip-check")}<span>${escapeHtml(muscleLabel(id))}</span></button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
+  const catalogIds = catalogMuscleIdsFor(name);
+  return `<h2>${tx("Muscle groups", "Групи м’язів")}</h2><p><strong>${escapeHtml(exerciseDisplayName(name))}</strong></p><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike mapping-chip ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}" aria-pressed="${current.has(id)}">${svg("check", "small-icon mapping-chip-check")}<span>${escapeHtml(muscleLabel(id))}</span></button>`).join("")}</div>${catalogIds ? `<button class="button ghost full" data-action="auto-map" data-ids="${escapeAttr(catalogIds.join(","))}">${tx3("Use automatic", "Використати автоматичне", "Использовать автоматическое")}</button>` : ""}<button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
 }
 
 function modalFocusableElements(modalElement) {
@@ -27218,6 +27227,15 @@ async function handleAction(action, el) {
     const returnFocus = modal?.type === "exercise-more" ? modal.returnFocus : null;
     modal = { type: "map", name: el.dataset.name, returnFocus };
     return render();
+  }
+  if (action === "auto-map") {
+    const ids = new Set(String(el.dataset.ids || "").split(","));
+    document.querySelectorAll(".mapping-grid .mapping-chip").forEach(chip => {
+      const selected = ids.has(chip.dataset.id);
+      chip.classList.toggle("selected", selected);
+      chip.setAttribute("aria-pressed", String(selected));
+    });
+    return;
   }
   if (action === "toggle-map") { el.setAttribute("aria-pressed", String(el.classList.toggle("selected"))); return; }
   if (action === "save-map") return saveMapping(el.dataset.name);
