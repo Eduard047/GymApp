@@ -892,7 +892,7 @@ private struct MainTabShell: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(GymTheme.heroAccent)
+                        .foregroundStyle(GymTheme.heroAccentText)
                         if !liveWorkoutCoordinator.isAttachedToCurrentDraft {
                             Button(role: .destructive) {
                                 showingActiveDraftDiscardConfirmation = true

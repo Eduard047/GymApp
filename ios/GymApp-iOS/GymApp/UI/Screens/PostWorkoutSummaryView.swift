@@ -368,7 +368,7 @@ struct PostWorkoutSummaryView: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 30, weight: .bold))
-                        .foregroundStyle(GymTheme.heroAccent)
+                        .foregroundStyle(GymTheme.heroAccentText)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(gymText(
@@ -391,7 +391,7 @@ struct PostWorkoutSummaryView: View {
                     Text("+\(xp) XP")
                         .font(.system(size: 34, weight: .semibold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(GymTheme.heroAccent)
+                        .foregroundStyle(GymTheme.heroAccentText)
                     Text(gymText(
                         "Session XP",
                         "XP сесії",
