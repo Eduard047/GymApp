@@ -275,7 +275,7 @@ const text = {
     workouts: "Workouts", missions: "Missions", exercises: "Exercises", progress: "Progress", ranks: "Rank Titles",
     addWorkout: "Add Workout", finishWorkout: "Finish Workout", saveWorkout: "Save Workout", saveCompletedWorkout: "Save as completed workout", repeatLast: "Repeat Last Workout",
     copyWorkout: "Copy previous workout", overview: "Overview", workoutList: "Workout list", current: "Current",
-    soloProgress: "Solo Progress", monthlySnapshot: "Monthly Snapshot", heatmap: "Activity Heatmap", muscleMap: "Muscle Map",
+    soloProgress: "Solo Progress", monthlySnapshot: "Monthly Snapshot", heatmap: "Activity heatmap", muscleMap: "Muscle map",
     recommendations: "Recommendations", achievements: "Achievements", noWorkouts: "No workouts in this month.",
     note: "Note", trainingProfile: "Training Profile", smartCoach: "Smart Coach", generateSmart: "Generate Smart Workout",
     syncWatch: "Sync Plan to Watch", addExercise: "Add Exercise", addSet: "Add Set", addPlannedSet: "Add planned set", logSetAndRest: "Log set · rest 90 s", copyLast: "Copy Last Set",
@@ -289,7 +289,7 @@ const text = {
     workouts: "Тренування", missions: "Місії", exercises: "Вправи", progress: "Прогрес", ranks: "Ранги",
     addWorkout: "Додати тренування", finishWorkout: "Завершити", saveWorkout: "Зберегти тренування", saveCompletedWorkout: "Зберегти як виконане тренування", repeatLast: "Повторити останнє тренування",
     copyWorkout: "Скопіювати попереднє тренування", overview: "Огляд", workoutList: "Список тренувань", current: "Поточний",
-    soloProgress: "Особистий прогрес", monthlySnapshot: "Підсумок місяця", heatmap: "Карта активності", muscleMap: "Карта м'язів",
+    soloProgress: "Особистий прогрес", monthlySnapshot: "Підсумок місяця", heatmap: "Теплова карта активності", muscleMap: "Карта м'язів",
     recommendations: "Рекомендації", achievements: "Досягнення", noWorkouts: "Немає тренувань у цьому місяці.",
     note: "Нотатка", trainingProfile: "Профіль тренувань", smartCoach: "Розумний тренер", generateSmart: "Згенерувати тренування",
     syncWatch: "Синхронізувати з годинником", addExercise: "Додати вправу", addSet: "Додати підхід", addPlannedSet: "Додати запланований підхід", logSetAndRest: "Записати підхід · відпочинок 90 с", copyLast: "Копіювати останній підхід",
@@ -12425,19 +12425,32 @@ function activityHeatmapCard() {
     byDay.set(day, (byDay.get(day) || 0) + trainingLoad([session]));
   });
   const max = Math.max(1, ...byDay.values());
+  const today = new Date();
+  const isViewedMonthToday = today.getFullYear() === d.getFullYear() && today.getMonth() === d.getMonth();
   const cellMarkup = cells.map(day => {
     if (!day) {
-      return `<button type="button" class="heat-cell outside" tabindex="-1" aria-hidden="true"></button>`;
+      return `<div class="heat-cell outside" aria-hidden="true"></div>`;
     }
     const load = Math.round(byDay.get(day) || 0);
     const date = new Date(d.getFullYear(), d.getMonth(), day);
     const label = `${fmtDate(date.getTime())}: ${load} ${tx("load", "навантаження")}`;
-    return `<button type="button" class="heat-cell ${heatLevelClass(load / max)}" tabindex="-1" aria-disabled="true" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">${day}</button>`;
+    const isToday = isViewedMonthToday && today.getDate() === day;
+    return `<div class="heat-cell ${heatLevelClass(load / max)}${isToday ? " is-today" : ""}" role="img" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"${isToday ? ' aria-current="date"' : ""}>${day}</div>`;
   }).join("");
+  const weekdays = (state.language === "uk" ? ["П", "В", "С", "Ч", "П", "С", "Н"]
+    : state.language === "ru" ? ["П", "В", "С", "Ч", "П", "С", "В"]
+      : ["M", "T", "W", "T", "F", "S", "S"]).map(letter => `<span>${letter}</span>`).join("");
+  const gridLabel = `${t("heatmap")}, ${fmtDate(d.getTime(), { month: "long", year: "numeric" })}`;
   return `<section class="panel highlighted activity-heatmap-card"><div class="section-title heatmap-header"><div class="heatmap-title"><h2>${t("heatmap")}</h2>${monthNavigatorInline()}</div><span class="pill">${svg("calendarCheck", "small-icon")}${n(byDay.size, "active day", "active days", "активний день", "активні дні", "активних днів")}</span></div>
-    <div class="heatmap-grid">${cellMarkup}</div>
-    <div class="legend"><span>${tx("Less", "Менше")}</span><i></i><i></i><i></i><i></i><span>${tx("More", "Більше")}</span></div>
+    <p class="muted heatmap-caption">${tx3("Stronger blue means more training volume that day.", "Чим насиченіший синій, тим більший обсяг тренувань за день.", "Чем насыщеннее синий, тем больше объём тренировок за день.")}</p>
+    <div class="heatmap-weekdays" aria-hidden="true">${weekdays}</div>
+    <div class="heatmap-grid" role="group" aria-label="${escapeAttr(gridLabel)}">${cellMarkup}</div>
+    ${heatLegendMarkup()}
   </section>`;
+}
+
+function heatLegendMarkup() {
+  return `<div class="legend"><span>${tx3("Less", "Менше", "Меньше")}</span>${[0, 1, 2, 3, 4].map(step => `<i class="heat-sw heat-${step}" aria-hidden="true"></i>`).join("")}<span>${tx3("More", "Більше", "Больше")}</span></div>`;
 }
 
 function mappingOverviewCard() {
@@ -32574,10 +32587,14 @@ function percentageClass(value) {
   return `percentage-${Math.round(bounded / 5) * 5}`;
 }
 
-function heatLevelClass(value) {
+function heatStep(value) {
   const numeric = Number(value);
-  const bounded = Number.isFinite(numeric) ? clamp(numeric, 0, 1) : 0;
-  return `heat-level-${Math.round(bounded * 10)}`;
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.min(4, Math.ceil(Math.min(1, numeric) * 4 - 1e-9));
+}
+
+function heatLevelClass(value) {
+  return `heat-${heatStep(value)}`;
 }
 
 function roundToNearestHalf(value) {

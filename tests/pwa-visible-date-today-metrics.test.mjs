@@ -849,7 +849,7 @@ test("Progress overview uses the shared inline navigator, compact hero, and life
   assert.match(lifetime, /Прогресс за всё время[\s\S]*Тренировки[\s\S]*Серия недель[\s\S]*Объём/);
 
   const heatmap = run("en", "return activityHeatmapCard();");
-  assert.match(heatmap, /<h2>Activity Heatmap<\/h2><div class="month-navigator-inline">/);
+  assert.match(heatmap, /<h2>Activity heatmap<\/h2><div class="month-navigator-inline">/);
   assert.doesNotMatch(heatmap, /Sessions|metric-grid/);
   const muscle = run("en", "return muscleMapCard();");
   assert.doesNotMatch(muscle.split('<div class="period-tabs">')[0], /class="pill"/);

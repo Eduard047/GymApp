@@ -475,16 +475,23 @@ test("activity heatmap cells stay out of the tab order and expose useful labels"
     }];
     return activityHeatmapCard();
   })()`, context);
-  const cells = html.match(/<button[^>]*class="heat-cell[^"]*"[^>]*>/g) || [];
+  const cells = html.match(/<div[^>]*class="heat-cell[^"]*"[^>]*>/g) || [];
   const outsideCells = cells.filter(cell => /class="heat-cell outside"/.test(cell));
   const dayCells = cells.filter(cell => !/class="heat-cell outside"/.test(cell));
 
   assert.ok(cells.length >= 28 && cells.length <= 42);
-  assert.ok(cells.every(cell => /tabindex="-1"/.test(cell)));
+  assert.doesNotMatch(html, /<button[^>]*class="heat-cell/);
+  assert.ok(cells.every(cell => !/tabindex|aria-disabled/.test(cell)));
   assert.ok(outsideCells.length > 0);
   assert.ok(outsideCells.every(cell => /aria-hidden="true"/.test(cell)));
-  assert.ok(dayCells.every(cell => /aria-disabled="true"/.test(cell)));
+  assert.ok(dayCells.every(cell => /role="img"/.test(cell)));
+  assert.ok(dayCells.every(cell => /class="heat-cell heat-[0-4]/.test(cell)));
   assert.ok(dayCells.every(cell => /aria-label="[^"]+: \d+ load"/.test(cell)));
+  assert.match(html, /heatmap-weekdays[^>]*aria-hidden="true"><span>M<\/span><span>T<\/span><span>W<\/span><span>T<\/span><span>F<\/span><span>S<\/span><span>S<\/span>/);
+  assert.match(html, /Stronger blue means more training volume that day\./);
+  assert.doesNotMatch(html, /orange/i);
+  const swatches = html.match(/<i class="heat-sw heat-[0-4]"/g) || [];
+  assert.equal(swatches.length, 5);
 });
 
 test("saved workout cards activate from Enter and Space", () => {
