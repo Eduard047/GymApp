@@ -152,6 +152,13 @@ private struct GymWeightFieldFormat: ParseableFormatStyle {
     }
 }
 
+/// Trailing "Undo" text button of the latest completed set row.
+private struct CompletedSetRowUndo {
+    let title: String
+    let accessibilityLabel: String
+    let action: () -> Void
+}
+
 private enum LiveParticipantSelection: String {
     case current
     case peer
@@ -2108,11 +2115,11 @@ struct ActiveWorkoutView: View {
 
     /// A completed row is one compact line — checkmark, weight×reps, and
     /// (only for the latest completed set, only while resting) a trailing
-    /// countdown + three small rest-control capsules. Undo lives in the
-    /// "Записано: …" confirmation banner while it's showing, and stays
-    /// reachable afterward via long-press ("Отменить подход") and the
-    /// equivalent VoiceOver accessibility action — never as a standing
-    /// full-width button.
+    /// countdown + three small rest-control capsules. While the set is still
+    /// undoable the row also carries a small trailing text "Undo" button, so
+    /// undo is always visible next to the set. Undo is also in the
+    /// "Записано: …" confirmation banner while it's showing, and via
+    /// long-press ("Отменить подход") and the equivalent VoiceOver action.
     private func completedSetRow(
         _ set: ActiveWorkoutSet,
         position: Int,
@@ -2145,6 +2152,20 @@ struct ActiveWorkoutView: View {
         let undoActionName = gymText(
             "Undo set", "Скасувати підхід", "Отменить подход", languageCode: gymCurrentLanguageCode()
         )
+        // Same undo path as the banner and the context menu; shown only while
+        // `canUndo` holds, so it disappears as soon as the set is not undoable.
+        let rowUndo: CompletedSetRowUndo? = canUndo
+            ? CompletedSetRowUndo(
+                title: gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()),
+                accessibilityLabel: "\(undoActionName) \(position + 1)",
+                action: {
+                    undoLatestSet(set, draft: draft)
+                    if recordedSetConfirmation?.setID == set.id {
+                        recordedSetConfirmation = nil
+                    }
+                }
+            )
+            : nil
 
         let content = Group {
             if isLatestCompleted, let deadline = draft.timing?.restingUntil {
@@ -2154,7 +2175,8 @@ struct ActiveWorkoutView: View {
                         set: set,
                         draft: draft,
                         isPersonalRecord: isPersonalRecord,
-                        remainingRestSeconds: remaining > 0 ? remaining : nil
+                        remainingRestSeconds: remaining > 0 ? remaining : nil,
+                        undo: rowUndo
                     )
                 }
             } else {
@@ -2162,7 +2184,8 @@ struct ActiveWorkoutView: View {
                     set: set,
                     draft: draft,
                     isPersonalRecord: isPersonalRecord,
-                    remainingRestSeconds: nil
+                    remainingRestSeconds: nil,
+                    undo: rowUndo
                 )
             }
         }
@@ -2219,13 +2242,26 @@ struct ActiveWorkoutView: View {
         set: ActiveWorkoutSet,
         draft: ActiveWorkoutDraft,
         isPersonalRecord: Bool,
-        remainingRestSeconds: Int?
+        remainingRestSeconds: Int?,
+        undo: CompletedSetRowUndo?
     ) -> some View {
         let summary = GymCompletedSetSummary(
             summary: weightRepsSummary(weight: set.weight, reps: set.reps),
             isPersonalRecord: isPersonalRecord
         )
         .layoutPriority(1)
+        let undoButton = undo.map { undo in
+            Button(action: undo.action) {
+                Text(undo.title)
+                    .font(.subheadline.weight(.semibold))
+                    .fixedSize()
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GymTheme.primary)
+            .accessibilityLabel(undo.accessibilityLabel)
+        }
 
         return Group {
             if let remainingRestSeconds {
@@ -2234,17 +2270,34 @@ struct ActiveWorkoutView: View {
                     HStack(spacing: 8) {
                         summary
                         Spacer(minLength: 8)
+                        if let undoButton { undoButton }
+                        controls
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            summary
+                            Spacer(minLength: 8)
+                            if let undoButton { undoButton }
+                        }
                         controls
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         summary
+                        if let undoButton { undoButton }
                         controls
                     }
                 }
             } else {
-                HStack(spacing: 8) {
-                    summary
-                    Spacer(minLength: 8)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        summary
+                        Spacer(minLength: 8)
+                        if let undoButton { undoButton }
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        summary
+                        if let undoButton { undoButton }
+                    }
                 }
             }
         }
