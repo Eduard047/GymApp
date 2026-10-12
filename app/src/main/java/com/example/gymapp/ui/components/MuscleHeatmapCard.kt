@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -182,38 +184,41 @@ private fun MusclePeriodSelector(
     onPeriodSelected: (MuscleMapPeriod) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         heatmap.periodOptions.forEach { option ->
             Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onPeriodSelected(option.period) },
+                    .selectable(
+                        selected = option.isSelected,
+                        role = Role.RadioButton,
+                        onClick = { onPeriodSelected(option.period) }
+                    ),
                 color = if (option.isSelected) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                    brandFillColor()
                 } else {
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                    MaterialTheme.colorScheme.surfaceVariant
                 },
-                shape = MaterialTheme.shapes.small,
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = if (option.isSelected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
-                    }
-                )
+                shape = MaterialTheme.shapes.small
             ) {
                 Text(
                     text = option.label,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 40.dp)
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (option.isSelected) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (option.isSelected) {
-                        MaterialTheme.colorScheme.primary
+                        Color.White
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        MaterialTheme.colorScheme.onSurface
                     },
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
