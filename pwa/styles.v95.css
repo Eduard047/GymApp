@@ -8056,10 +8056,17 @@ button.workout-template-row:focus-visible {
   overflow: visible;
 }
 
+.exercise-history-metrics > div { min-width: 0; }
+
 .exercise-history-metrics strong {
   font-size: 17px;
   line-height: 24px;
   white-space: nowrap;
+}
+
+.exercise-history-metrics strong.long-value {
+  font-size: 14px;
+  line-height: 24px;
 }
 
 .button.mini {
