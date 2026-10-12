@@ -36,10 +36,14 @@ val HeroOutline = Color(0xFFDCE5F2)
 val HeroOutlineNight = Color(0xFF22395A)
 val HeroTitle = Ink
 val HeroTitleNight = Color(0xFFF2F6FC)
-val HeroSupporting = InkMuted
+// Light-theme muted text and link/accent text on the tonal surface reach >= 5.0:1 on #EEF4FF
+// (the global InkMuted / Cobalt are 4.5:1 there). Same values on iOS and the PWA.
+val HeroSupporting = Color(0xFF596881)
 val HeroSupportingNight = Color(0xFFA7B6CB)
 val HeroTile = Paper
 val HeroTileNight = Color(0xFF172C47)
 val HeroAccent = Cobalt
+val HeroActionLabel = Color(0xFF1F64C9)
+val HeroAccentText = Color(0xFF1F64C9)
 val HeroAccentNight = Color(0xFF7FB2FF)
 val HeroActionLabelNight = Color(0xFF8AB8FF)

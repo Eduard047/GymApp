@@ -238,7 +238,7 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
                     Text(
                         text = compactXp,
                         style = xpStyle,
-                        color = HeroTone.accent,
+                        color = HeroTone.accentText,
                         maxLines = 1
                     )
                 }
@@ -260,7 +260,7 @@ private fun SoloHeroIdentity(progress: SoloProgressUiModel, locale: Locale) {
                         text = earnedXp,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = HeroTone.accent
+                        color = HeroTone.accentText
                     )
                 }
             }

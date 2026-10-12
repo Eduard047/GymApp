@@ -69,6 +69,8 @@ import com.example.gymapp.R
 import com.example.gymapp.ui.theme.BrandFill
 import com.example.gymapp.ui.theme.BrandFillNight
 import com.example.gymapp.ui.theme.HeroAccent
+import com.example.gymapp.ui.theme.HeroAccentText
+import com.example.gymapp.ui.theme.HeroActionLabel
 import com.example.gymapp.ui.theme.HeroAccentNight
 import com.example.gymapp.ui.theme.HeroActionLabelNight
 import com.example.gymapp.ui.theme.HeroOutline
@@ -151,10 +153,12 @@ object HeroTone {
     val tile: Color @Composable get() = if (isSystemInDarkTheme()) HeroTileNight else HeroTile
     /** Progress fill and the one emphasized value per card. */
     val accent: Color @Composable get() = if (isSystemInDarkTheme()) HeroAccentNight else HeroAccent
+    /** Text and glyph colour for the emphasized value; [accent] stays the fill colour. */
+    val accentText: Color @Composable get() = if (isSystemInDarkTheme()) HeroAccentNight else HeroAccentText
     /** Progress track (same as the outline). */
     val track: Color @Composable get() = outline
     /** Label colour of secondary (tonal or text) actions. */
-    val actionLabel: Color @Composable get() = if (isSystemInDarkTheme()) HeroActionLabelNight else HeroAccent
+    val actionLabel: Color @Composable get() = if (isSystemInDarkTheme()) HeroActionLabelNight else HeroActionLabel
 }
 
 /** Solid primary capsule inside a hero card: brand fill with a white label. */

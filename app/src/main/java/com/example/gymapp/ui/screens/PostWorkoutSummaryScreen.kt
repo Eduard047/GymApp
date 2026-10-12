@@ -389,7 +389,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     fontSize = 34.sp,
                     fontFamily = FontFamily.SansSerif,
                     fontWeight = FontWeight.SemiBold,
-                    color = HeroTone.accent
+                    color = HeroTone.accentText
                 )
                 Text(
                     text = stringResource(R.string.post_workout_session_xp),
