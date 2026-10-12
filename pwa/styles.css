@@ -7912,3 +7912,25 @@ button.workout-template-row:hover,
 button.workout-template-row:focus-visible {
   border-color: color-mix(in srgb, var(--sage) 60%, var(--outline-variant));
 }
+
+/* Muscle map tiles and period chips stay whole at 390px: one-line chips, labels that fit without clipping. */
+.muscle-map-card .period-tabs button {
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+
+.muscle-map-card .metric-grid.tile-emphasized > div {
+  padding-inline: 10px;
+}
+
+.muscle-map-card .metric-grid.tile-emphasized span {
+  font-size: 12px;
+  display: block;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.muscle-map-card .metric-grid.tile-emphasized strong {
+  font-size: 17px;
+  line-height: 24px;
+}
