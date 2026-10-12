@@ -286,14 +286,24 @@ public struct GymMetricTile: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(gymLocalized(label, locale: locale))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(onHero ? GymTheme.onHeroSecondary : GymTheme.textSecondary)
-                .textCase(labelUppercase ? .uppercase : nil)
-                .tracking(labelUppercase ? 0.35 : 0)
-                .lineLimit(singleLineLabel ? 1 : 2)
-                .minimumScaleFactor(singleLineLabel ? 0.7 : 1)
-                .fixedSize(horizontal: false, vertical: true)
+            ZStack(alignment: .topLeading) {
+                if singleLineLabel {
+                    // Reserves one full-size line so a scaled-down label keeps the value on the row's shared baseline.
+                    Text("Ag")
+                        .font(.caption.weight(.semibold))
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
+                Text(gymLocalized(label, locale: locale))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(onHero ? GymTheme.onHeroSecondary : GymTheme.textSecondary)
+                    .textCase(labelUppercase ? .uppercase : nil)
+                    .tracking(labelUppercase ? 0.35 : 0)
+                    .lineLimit(singleLineLabel ? 1 : 2)
+                    .minimumScaleFactor(singleLineLabel ? 0.7 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(gymLocalized(value, locale: locale))
                 .font(compactValue ? .headline.bold() : (emphasized ? .title2.bold() : GymTheme.TypeScale.metric))
