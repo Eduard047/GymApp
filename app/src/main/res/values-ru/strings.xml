@@ -1222,7 +1222,7 @@
     <string name="dialog_delete_workout_message">Тренировка и все её подходы будут удалены. Это действие нельзя отменить.</string>
     <string name="dialog_delete_exercise_title">Удалить упражнение?</string>
     <string name="dialog_delete_exercise_message">Удалить «%1$s» из библиотеки упражнений?</string>
-    <string name="dialog_delete_exercise_impact">Она также будет удалена из %1$s и %2$s. Это действие нельзя отменить.</string>
+    <string name="dialog_delete_exercise_impact">Упражнение также будет удалено из %1$s и %2$s. Это действие нельзя отменить.</string>
     <string name="dialog_delete_exercise_impact_unused">Не используется ни в одной тренировке, история не изменится. Это действие нельзя отменить.</string>
     <plurals name="dialog_delete_exercise_impact_workouts">
         <item quantity="one">%1$d тренировки</item>
