@@ -561,7 +561,7 @@ a:focus-visible,
 .exercise-muscle-chips { padding-bottom: 0; }
 
 .exercise-muscle-chips .chip {
-  min-height: 40px;
+  min-height: 44px;
   padding-inline: 14px;
   border: 0;
   border-radius: 999px;

@@ -282,3 +282,7 @@ test("exercise history keeps stat labels and the muscle groups button on one lin
   assert.match(stylesSource, /\.button\.mini\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/);
   assert.match(stylesSource, /\.exercise-muscle-map > \.row-head\s*\{[^}]*flex-wrap:\s*wrap;/);
 });
+
+test("primary muscle chips keep a 44px minimum hit area", () => {
+  assert.match(stylesSource, /\.exercise-muscle-chips \.chip\s*\{[^}]*min-height:\s*44px;/);
+});
