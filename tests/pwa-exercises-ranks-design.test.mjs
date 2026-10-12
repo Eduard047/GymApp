@@ -314,3 +314,7 @@ test("exercise muscle map rows are one name and value line with the bar below", 
   assert.doesNotMatch(card, /barRow\(/);
   assert.doesNotMatch(card, /"ціль"/);
 });
+
+test("exercise history gives the total volume tile the widest column so its label fits one line", () => {
+  assert.match(stylesSource, /\.exercise-history-metrics\s*\{[^}]*grid-template-columns:\s*minmax\(0, 0\.8fr\) minmax\(0, 0\.8fr\) minmax\(0, 1\.4fr\);/);
+});
