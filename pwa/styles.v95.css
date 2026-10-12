@@ -7961,3 +7961,25 @@ button.workout-template-row:focus-visible {
   flex: 1 1 160px;
   min-width: 0;
 }
+
+/* Muscle group mapping: flat tonal selected chip (tint fill and border, no glow) with a check so selection is not colour only. */
+.mapping-grid .mapping-chip {
+  justify-content: center;
+}
+
+.mapping-grid .mapping-chip .mapping-chip-check {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.mapping-grid .mapping-chip.selected {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  border-color: var(--primary);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.mapping-grid .mapping-chip.selected .mapping-chip-check {
+  display: block;
+}

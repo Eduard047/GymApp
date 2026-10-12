@@ -26144,7 +26144,7 @@ function exerciseHistoryMarkup(exercise) {
 
 function mappingEditor(name) {
   const current = new Set(mappingFor(name));
-  return `<h2>${tx("Muscle groups", "Групи м’язів")}</h2><p><strong>${escapeHtml(exerciseDisplayName(name))}</strong></p><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
+  return `<h2>${tx("Muscle groups", "Групи м’язів")}</h2><p><strong>${escapeHtml(exerciseDisplayName(name))}</strong></p><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike mapping-chip ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}" aria-pressed="${current.has(id)}">${svg("check", "small-icon mapping-chip-check")}<span>${escapeHtml(muscleLabel(id))}</span></button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
 }
 
 function modalFocusableElements(modalElement) {
@@ -27175,7 +27175,7 @@ async function handleAction(action, el) {
     modal = { type: "map", name: el.dataset.name, returnFocus };
     return render();
   }
-  if (action === "toggle-map") { el.classList.toggle("selected"); return; }
+  if (action === "toggle-map") { el.setAttribute("aria-pressed", String(el.classList.toggle("selected"))); return; }
   if (action === "save-map") return saveMapping(el.dataset.name);
   if (action === "profile") return updateProfile(el);
   if (action === "open-training-settings") {
