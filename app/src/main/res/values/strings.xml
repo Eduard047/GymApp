@@ -1196,6 +1196,11 @@
     <string name="dialog_delete_exercise_message">Delete “%1$s” from the exercise library?</string>
     <string name="dialog_delete_exercise_impact">It will also be removed from %1$s and %2$s. This cannot be undone.</string>
     <string name="dialog_delete_exercise_impact_unused">Not used in any workout, so no history is removed. This cannot be undone.</string>
+    <string name="dialog_delete_exercise_impact_with_emptied">It will also be removed from %1$s and %2$s. %3$s This cannot be undone.</string>
+    <plurals name="dialog_delete_exercise_emptied_workouts">
+        <item quantity="one">%1$d workout left empty will be deleted.</item>
+        <item quantity="other">%1$d workouts left empty will be deleted.</item>
+    </plurals>
     <plurals name="dialog_delete_exercise_impact_workouts">
         <item quantity="one">%1$d workout</item>
         <item quantity="other">%1$d workouts</item>

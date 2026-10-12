@@ -323,8 +323,16 @@ data class ExerciseDeletionSnapshot(
     val exerciseBlockCount: Int,
     val setCount: Int,
     val cascadeFingerprint: String,
-    val deletionStoreToken: String
-)
+    val deletionStoreToken: String,
+    /**
+     * Workouts whose only blocks belong to this exercise: they are left empty by the cascade and
+     * are deleted with it (the iPhone drops them too). Part of the snapshot identity, so a
+     * confirmation goes stale when another block is added to or removed from such a workout.
+     */
+    val emptiedWorkoutSessionIds: List<Long> = emptyList()
+) {
+    val emptiedWorkoutCount: Int get() = emptiedWorkoutSessionIds.size
+}
 
 /** Highest-level row that cleanup removes after deleting the selected set. */
 enum class SetDeletionImpact {
@@ -649,18 +657,45 @@ class GymRepository(
             if (exerciseDeletionSnapshot(expected.exerciseId) != expected) {
                 return@withTransaction false
             }
+            // Dates are read before the cascade removes the blocks; the sessions are re-checked
+            // after it, so only workouts that really ended up empty are deleted.
+            val emptiedSessionDates = expected.emptiedWorkoutSessionIds.mapNotNull { sessionId ->
+                workoutDao.getSessionDetailsSnapshot(sessionId)?.session?.let { sessionId to it.date }
+            }
             val deletedRows = exerciseDao.deleteIfUnchanged(
                 exerciseId = expected.exerciseId,
                 expectedName = expected.exerciseName,
                 expectedFavorite = expected.isFavorite
             )
-            deletedRows == 1 && exerciseDao.getById(expected.exerciseId) == null
+            if (deletedRows != 1 || exerciseDao.getById(expected.exerciseId) != null) {
+                return@withTransaction false
+            }
+            // Same cleanup as removing the last set of a workout: drop the empty workout and let
+            // a recorded watch activity at the same start time show again.
+            emptiedSessionDates.forEach { (sessionId, date) ->
+                if (workoutDao.getWorkoutExerciseCount(sessionId) == 0) {
+                    workoutDao.deleteSessionById(sessionId)
+                    restoreActivityOnlyMirrorIfUnshadowed(date)
+                }
+            }
+            // Mappings are keyed by the normalized name and names are unique after
+            // normalization, so the deleted exercise owns this key exclusively.
+            muscleMappingDao.deleteForExercise(expected.exerciseName.toExerciseMappingKey())
+            true
         }
     }
 
     private suspend fun exerciseDeletionSnapshot(exerciseId: Long): ExerciseDeletionSnapshot? {
         val exercise = exerciseDao.getById(exerciseId) ?: return null
         val cascadeRows = workoutDao.getExerciseDeletionCascadeRows(exercise.id)
+        val emptiedWorkoutSessionIds = cascadeRows
+            .groupBy { it.workoutSessionId }
+            .filter { (sessionId, rows) ->
+                rows.mapTo(hashSetOf()) { it.workoutExerciseId }.size ==
+                    workoutDao.getWorkoutExerciseCount(sessionId)
+            }
+            .keys
+            .sorted()
         return ExerciseDeletionSnapshot(
             exerciseId = exercise.id,
             exerciseName = exercise.name,
@@ -669,7 +704,8 @@ class GymRepository(
             exerciseBlockCount = cascadeRows.mapTo(linkedSetOf()) { it.workoutExerciseId }.size,
             setCount = cascadeRows.count { it.setId != null },
             cascadeFingerprint = exerciseDeletionCascadeFingerprint(cascadeRows),
-            deletionStoreToken = deletionStoreToken
+            deletionStoreToken = deletionStoreToken,
+            emptiedWorkoutSessionIds = emptiedWorkoutSessionIds
         )
     }
 

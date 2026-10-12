@@ -42,19 +42,30 @@ internal fun ExerciseDeleteConfirmationDialog(
         impact = if (snapshot.workoutCount == 0) {
             stringResource(R.string.dialog_delete_exercise_impact_unused)
         } else {
-            stringResource(
-                R.string.dialog_delete_exercise_impact,
-                pluralStringResource(
-                    R.plurals.dialog_delete_exercise_impact_workouts,
-                    snapshot.workoutCount,
-                    snapshot.workoutCount
-                ),
-                pluralStringResource(
-                    R.plurals.dialog_delete_exercise_impact_sets,
-                    snapshot.setCount,
-                    snapshot.setCount
-                )
+            val workouts = pluralStringResource(
+                R.plurals.dialog_delete_exercise_impact_workouts,
+                snapshot.workoutCount,
+                snapshot.workoutCount
             )
+            val sets = pluralStringResource(
+                R.plurals.dialog_delete_exercise_impact_sets,
+                snapshot.setCount,
+                snapshot.setCount
+            )
+            if (snapshot.emptiedWorkoutCount > 0) {
+                stringResource(
+                    R.string.dialog_delete_exercise_impact_with_emptied,
+                    workouts,
+                    sets,
+                    pluralStringResource(
+                        R.plurals.dialog_delete_exercise_emptied_workouts,
+                        snapshot.emptiedWorkoutCount,
+                        snapshot.emptiedWorkoutCount
+                    )
+                )
+            } else {
+                stringResource(R.string.dialog_delete_exercise_impact, workouts, sets)
+            }
         },
         isDeleting = isDeleting,
         error = error,

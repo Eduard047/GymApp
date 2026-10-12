@@ -164,12 +164,8 @@ class ConditionalDeletionTest {
             assertTrue(repository.deleteExerciseIfUnchanged(current))
             assertNull(database.exerciseDao().getById(exerciseId))
             assertEquals(0, database.setDao().getTotalSetCount())
-            assertEquals(
-                0,
-                database.workoutDao().getSessionDetailsSnapshot(replacementSessionId)
-                    ?.workoutExercises
-                    ?.size
-            )
+            // The only block of the workout was this exercise, so the workout is dropped too.
+            assertNull(database.workoutDao().getSessionDetailsSnapshot(replacementSessionId))
         } finally {
             database.close()
             context.deleteDatabase(databaseName)

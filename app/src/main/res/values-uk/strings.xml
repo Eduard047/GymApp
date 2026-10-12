@@ -1230,6 +1230,13 @@
     <string name="dialog_delete_exercise_message">Видалити «%1$s» із бібліотеки вправ?</string>
     <string name="dialog_delete_exercise_impact">Вправу також буде видалено з %1$s і %2$s. Цю дію не можна скасувати.</string>
     <string name="dialog_delete_exercise_impact_unused">Не використовується в жодному тренуванні, історія не зміниться. Цю дію не можна скасувати.</string>
+    <string name="dialog_delete_exercise_impact_with_emptied">Вправу також буде видалено з %1$s і %2$s. %3$s Цю дію не можна скасувати.</string>
+    <plurals name="dialog_delete_exercise_emptied_workouts">
+        <item quantity="one">%1$d порожнє тренування буде видалено.</item>
+        <item quantity="few">%1$d порожні тренування будуть видалені.</item>
+        <item quantity="many">%1$d порожніх тренувань буде видалено.</item>
+        <item quantity="other">%1$d порожніх тренувань буде видалено.</item>
+    </plurals>
     <plurals name="dialog_delete_exercise_impact_workouts">
         <item quantity="one">%1$d тренування</item>
         <item quantity="few">%1$d тренувань</item>
