@@ -11534,11 +11534,16 @@ function languageDisplayName() {
   return state.language === "uk" ? "Українська" : state.language === "ru" ? "Русский" : "English";
 }
 
+function languageMenuOptionMarkup(code, name) {
+  const selected = state.language === code;
+  return `<button class="language-option ${selected ? "selected" : ""}" role="menuitemradio" aria-checked="${selected}" data-action="set-language" data-language="${code}"><span>${name}</span>${selected ? svg("check", "small-icon") : ""}</button>`;
+}
+
 function languageMenuMarkup() {
   return `<div class="language-menu" role="menu" aria-label="${txAttr("Language", "Мова")}">
-      <button class="language-option ${state.language === "en" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="en">English</button>
-      <button class="language-option ${state.language === "uk" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="uk">Українська</button>
-      <button class="language-option ${state.language === "ru" ? "selected" : ""}" role="menuitem" data-action="set-language" data-language="ru">Русский</button>
+      ${languageMenuOptionMarkup("en", "English")}
+      ${languageMenuOptionMarkup("uk", "Українська")}
+      ${languageMenuOptionMarkup("ru", "Русский")}
       <span class="sr-only">${languageDisplayName()}</span>
     </div>`;
 }

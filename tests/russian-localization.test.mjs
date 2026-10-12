@@ -260,7 +260,8 @@ test("retained browser source accepts Russian while the public landing owns its 
   }
   assert.doesNotMatch([...auditedRussian.values()].join("\n"), /погруз|лунн|прыжком|\b(?:pull|push)\b|Sync Watch|Garmin sync/i);
   assert.match(contractSource, /\["en", "uk", "ru"\]\.includes/);
-  assert.match(appSource, /data-language="ru">Русский/);
+  assert.match(appSource, /languageMenuOptionMarkup\("ru", "Русский"\)/);
+  assert.match(appSource, /role="menuitemradio" aria-checked="\$\{selected\}" data-action="set-language" data-language="\$\{code\}"/);
   assert.match(appSource, /\^Garmin\(\?: Fenix 8\)\?\(\?: ·\|\$\)/);
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);

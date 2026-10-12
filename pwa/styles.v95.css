@@ -946,6 +946,9 @@ a:focus-visible,
 }
 
 .language-option.selected { color: var(--sage); }
+.language-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.language-option svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.language-option[aria-checked="true"] { font-weight: 600; }
 
 .sr-only {
   position: absolute !important;
