@@ -49,13 +49,15 @@
   --hero-surface: #eef4ff;
   --hero-outline: #dce5f2;
   --hero-text: #10233f;
-  --hero-muted: #60708a;
+  /* Light-theme text on the tonal surface #eef4ff reaches 5.1:1 (muted #596881, link/accent text #1f64c9); fills keep --hero-accent. */
+  --hero-muted: #596881;
   --hero-tile: #ffffff;
   --hero-action: #216bd7;
   --hero-on-action: #ffffff;
-  --hero-action-label: #216bd7;
+  --hero-action-label: #1f64c9;
   --hero-track: #dce5f2;
   --hero-accent: #216bd7;
+  --hero-accent-text: #1f64c9;
   /* Brand fill family for first-plan style cards: white text stays >=4.5:1 at the base, >=3:1 at the bright end. */
   --brand-fill: #216bd7;
   --brand-fill-bright: #3a8dff;
@@ -150,6 +152,7 @@ html.frame-blocked body {
   --hero-action-label: #8ab8ff;
   --hero-track: #22395a;
   --hero-accent: #7fb2ff;
+  --hero-accent-text: #7fb2ff;
   --brand-fill: #2e72d2;
   --brand-fill-bright: #3f84e5;
   --shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
@@ -1854,7 +1857,7 @@ svg.filled-icon.small-icon {
 
 .solo-xp {
   margin-left: auto;
-  color: var(--hero-accent);
+  color: var(--hero-accent-text);
   font-size: 17px;
   font-weight: 700;
   line-height: 24px;
@@ -1867,7 +1870,7 @@ svg.filled-icon.small-icon {
 .solo-identity-row.xp-wrapped .solo-xp {
   flex: 1 0 100%;
   margin-left: 0;
-  color: var(--hero-accent);
+  color: var(--hero-accent-text);
   font-size: 15px;
   font-weight: 600;
 }
@@ -2831,7 +2834,7 @@ button.leaderboard-row {
   place-items: center;
   border: 1px solid var(--hero-outline);
   border-radius: 17px;
-  color: var(--hero-accent);
+  color: var(--hero-accent-text);
   background: var(--hero-tile);
 }
 

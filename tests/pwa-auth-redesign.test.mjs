@@ -275,6 +275,19 @@ test("offline sheet has no nested card, a brand primary, and a quiet Cancel", ()
   assert.doesNotMatch(block(".offline-account-sheet"), /border|box-shadow|background/);
 });
 
+test("PWA tonal panels use the darker light-theme text colours while fills keep the accent", () => {
+  const light = stylesSource.slice(0, stylesSource.indexOf(':root[data-theme="dark"]'));
+  assert.match(light, /--hero-muted:\s*#596881;/);
+  assert.match(light, /--hero-action-label:\s*#1f64c9;/);
+  assert.match(light, /--hero-accent-text:\s*#1f64c9;/);
+  assert.match(light, /--hero-accent:\s*#216bd7;/);
+  const dark = stylesSource.slice(stylesSource.indexOf(':root[data-theme="dark"]'));
+  assert.match(dark, /--hero-muted:\s*#a7b6cb;/);
+  assert.match(dark, /--hero-accent-text:\s*#7fb2ff;/);
+  assert.match(stylesSource, /\.summary-hero \.progress > span \{ background: var\(--hero-accent\); \}/);
+  assert.doesNotMatch(stylesSource, /color:\s*var\(--hero-accent\);/);
+});
+
 test("PWA styles are flat: no gradients and one tonal hero token set in both themes", () => {
   assert.doesNotMatch(stylesSource, /(?:linear|radial|conic)-gradient/i);
   assert.doesNotMatch(stylesSource, /--hero-(?:gradient|grad-|fill)/);
