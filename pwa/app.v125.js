@@ -198,6 +198,11 @@ const icons = {
   share: "M18 16c-.8 0-1.5.3-2 .8L8.9 12.7c.1-.2.1-.5.1-.7s0-.5-.1-.7l7-4.1c.6.5 1.3.8 2.1.8 1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3c0 .2 0 .5.1.7l-7 4.1C7.5 9.3 6.8 9 6 9c-1.7 0-3 1.3-3 3s1.3 3 3 3c.8 0 1.5-.3 2-.8l7.1 4.1c-.1.2-.1.4-.1.7 0 1.7 1.3 3 3 3s3-1.3 3-3-1.3-3-3-3z",
   shield: "M12 2 4 5v6c0 5.1 3.4 9.8 8 11 4.6-1.2 8-5.9 8-11V5l-8-3zm-1 14-4-4 1.4-1.4 2.6 2.6 4.6-4.6L17 10l-6 6z",
   save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM7 21v-8h10v8M7 3v5h8",
+  groupSlash: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20v-1.5A4.5 4.5 0 0 1 7.5 14H10M16 5.2a3 3 0 0 1 0 5.6M21 20v-1.5a4.5 4.5 0 0 0-2.5-4M3 3l18 18",
+  personCheck: "M10 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20v-1a6 6 0 0 1 6-6h2M15 17.5l2 2 4-4.5",
+  tray: "M12 3v9m-3.5-3.5L12 12l3.5-3.5M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5h-4.5a3 3 0 0 1-7 0H4z",
+  drive: "M3 14h18v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5zM3 14l2.4-8.2A1 1 0 0 1 6.4 5h11.2a1 1 0 0 1 1 .8L21 14M17 17h.01",
+  hand: "M6 14.5V7.5a1.5 1.5 0 0 1 3 0V12M9 12V4.5a1.5 1.5 0 0 1 3 0V12M12 12V5.5a1.5 1.5 0 0 1 3 0V12M15 12V8.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-.5a6.5 6.5 0 0 1-4.9-2.2L3.6 16a1.5 1.5 0 0 1 2.3-1.9L6 14.5",
   search: "M21 21l-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z",
   showChart: "M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z",
   timer: "M10 2h4M12 14l4-4M5 5l2 2m10-2-2 2M12 22a8 8 0 1 0 0-16 8 8 0 0 0 0 16z",
@@ -19043,7 +19048,7 @@ function settingsPanelMarkup(rows, className = "") {
 // with this row first; it leads to the same Account sheet where cloud sign-in lives.
 function profileFriendsNeedCloudRow() {
   return settingsRowMarkup({
-    icon: "group",
+    icon: "groupSlash",
     title: tx3("Friends & live", "Друзі та live", "Друзья и live"),
     subtitle: tx3("Requires a cloud account", "Потрібен хмарний акаунт", "Нужен облачный аккаунт"),
     action: "open-account-settings",
@@ -19130,7 +19135,7 @@ function accountSettingsSheetMarkup() {
     : tx3("Local profile · this device only", "Локальний профіль · лише на цьому пристрої", "Локальный профиль · только на этом устройстве");
   const identity = `<section class="account-identity"><span class="account-identity-icon">${svg("person")}</span><div class="account-identity-text"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(subtitle)}</span></div></section>${accountIdCaptionMarkup()}`;
   const backup = remote ? "" : settingsPanelMarkup([settingsRowMarkup({
-    icon: "save",
+    icon: "drive",
     title: tx3("Backup", "Резервна копія", "Резервная копия"),
     subtitle: tx3("Make one before switching phones", "Зроби перед зміною телефона", "Сделай перед сменой телефона"),
     action: "export-json"
@@ -19144,7 +19149,7 @@ function accountSettingsSheetMarkup() {
     : "";
   const external = svg("external");
   const links = settingsPanelMarkup([
-    settingsRowMarkup({ icon: "privacy", title: tx3("Privacy policy", "Політика конфіденційності", "Политика конфиденциальности"), href: PRIVACY_URL, trailing: external }),
+    settingsRowMarkup({ icon: "hand", title: tx3("Privacy policy", "Політика конфіденційності", "Политика конфиденциальности"), href: PRIVACY_URL, trailing: external }),
     settingsRowMarkup({ icon: "help", title: tx3("Support", "Підтримка", "Поддержка"), href: SUPPORT_URL, trailing: external }),
     settingsRowMarkup({ icon: "phone", title: tx3("Google Play", "Google Play", "Google Play"), href: GOOGLE_PLAY_APP_URL, trailing: external }),
     settingsRowMarkup({ icon: "watch", title: tx3("Garmin Connect IQ", "Garmin Connect IQ", "Garmin Connect IQ"), href: garminStoreAppLink(), trailing: external })
@@ -19178,7 +19183,7 @@ function accountPanel() {
     ? (accountDisplayEmail() || tx3("Cloud account", "Хмарний акаунт", "Облачный аккаунт"))
     : tx3("Local profile", "Локальний профіль", "Локальный профиль");
   return settingsRowMarkup({
-    icon: "person",
+    icon: remote ? "personCheck" : "phone",
     title: tx3("Account", "Акаунт", "Аккаунт"),
     subtitle,
     action: "open-account-settings",
@@ -19287,7 +19292,7 @@ async function syncCloudNow() {
 }
 
 function profileDataPanel() {
-  const backup = `<details class="settings-disclosure profile-data-details"><summary class="settings-row has-subtitle"><span class="settings-row-icon">${svg("save")}</span><span class="settings-row-text"><strong>${escapeHtml(tx3("Backup & diagnostics", "Бекап і діагностика", "Бэкап и диагностика"))}</strong><small>${tx3("Export, import, diagnostics", "Експорт, імпорт, діагностика", "Экспорт, импорт, диагностика")}</small></span><span class="settings-row-trailing" aria-hidden="true">${svg("chevronRight")}</span></summary><div class="settings-disclosure-body"><p class="muted">${tx("A full import replaces this profile. Manual backups include favorite exercises; cloud schema-v2 intentionally keeps favorites local to this account and device.", "Повний імпорт замінює цей профіль. Ручна резервна копія містить улюблені вправи; хмарна schema-v2 навмисно зберігає їх локально для цього акаунта й пристрою.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></div></details>`;
+  const backup = `<details class="settings-disclosure profile-data-details"><summary class="settings-row has-subtitle"><span class="settings-row-icon">${svg("tray")}</span><span class="settings-row-text"><strong>${escapeHtml(tx3("Backup & diagnostics", "Бекап і діагностика", "Бэкап и диагностика"))}</strong><small>${tx3("Export, import, diagnostics", "Експорт, імпорт, діагностика", "Экспорт, импорт, диагностика")}</small></span><span class="settings-row-trailing" aria-hidden="true">${svg("chevronRight")}</span></summary><div class="settings-disclosure-body"><p class="muted">${tx("A full import replaces this profile. Manual backups include favorite exercises; cloud schema-v2 intentionally keeps favorites local to this account and device.", "Повний імпорт замінює цей профіль. Ручна резервна копія містить улюблені вправи; хмарна schema-v2 навмисно зберігає їх локально для цього акаунта й пристрою.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></div></details>`;
   const help = settingsRowMarkup({
     icon: "help",
     title: tx3("Help", "Допомога", "Помощь"),
