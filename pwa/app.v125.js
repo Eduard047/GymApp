@@ -80,6 +80,8 @@ const SOCIAL_WORKOUT_INBOX_MAX_PAGES = MAX_SOCIAL_WORKOUT_INBOX_ITEMS;
 const MAX_PENDING_LIVE_REQUESTS = 25;
 const MAX_LIVE_LOCAL_WORKOUT_ID = 2_147_483_647;
 const SOCIAL_REFRESH_MIN_INTERVAL_MS = 30 * 1000;
+// Live rooms may undo any own completed set only after the server change is deployed.
+const LIVE_UNDO_ANY_SET_ENABLED = false;
 const LIVE_POLL_ACTIVE_MS = 3000;
 const LIVE_POLL_LOBBY_MS = 10000;
 const LIVE_POLL_REALTIME_FALLBACK_MS = 30000;
@@ -1281,6 +1283,10 @@ let activeWorkoutUi = { status: "idle", messageKey: null, params: {} };
 // Memory-only confirmation for the latest recorded set: { workoutId, setId, message, announcement }.
 // Never persisted; it is dropped when the set is undone, replaced, or no longer the undoable latest.
 let activeSetConfirmation = null;
+// Transient (memory only) one-step Undo for the last "Log all remaining sets"; never persisted.
+let activeBatchUndo = null;
+let activeBatchUndoTimer = null;
+const ACTIVE_BATCH_UNDO_VISIBLE_MS = 8000;
 let activeSetMutationsInFlight = 0;
 // Memory-only: exercise cards the user finished (iOS collapsedExerciseIDs). { workoutId, ids: Set<blockId> }.
 // It forces a card's <details> closed on render and is never persisted; opening the card again removes it.
@@ -1547,6 +1553,26 @@ const ACTIVE_WORKOUT_STATUS_MESSAGES = Object.freeze({
   undoTimerNeedsCheck: [
     "Last set returned for editing, but the saved rest timer needs checking.",
     "Останній підхід повернуто для редагування, але збережений таймер потрібно перевірити."
+  ],
+  setUndone: [
+    "Set returned for editing.",
+    "Підхід повернуто для редагування.",
+    "Подход возвращён для редактирования."
+  ],
+  setNotUndoable: [
+    "This set is no longer recorded, so it cannot be undone.",
+    "Цей підхід уже не записано, тому його не можна скасувати.",
+    "Этот подход уже не записан, поэтому его нельзя отменить."
+  ],
+  batchUndone: [
+    "Sets returned for editing.",
+    "Підходи повернуто для редагування.",
+    "Подходы возвращены для редактирования."
+  ],
+  batchUndoUnavailable: [
+    "These sets changed, so they can no longer be undone together.",
+    "Ці підходи змінилися, тому їх уже не можна скасувати разом.",
+    "Эти подходы изменились, поэтому их уже нельзя отменить вместе."
   ],
   liveRoomInactive: [
     "This live room is no longer active. Your local workout remains available separately.",
@@ -11932,6 +11958,7 @@ function render() {
       current = route();
     }
     if (current.name !== "active") activeSetConfirmation = null;
+    if (current.name !== "active") clearActiveBatchUndo();
     app.classList?.toggle("root-route-shell", isRootRoute(current.name));
     app.innerHTML = `
       <header class="topbar${routeHasBodyTitle(current.name) ? " topbar-title-hidden" : ""}">
@@ -13279,6 +13306,80 @@ function activeUndoableSetId(workout = activeWorkout) {
     : null;
 }
 
+// Any completed own set can be undone outside live rooms. In a live room only the marker (latest) set can,
+// until the server accepts older-set undo (LIVE_UNDO_ANY_SET_ENABLED). Options exist so tests can pass the flag.
+function activeSetUndoAllowed(workout, setId, options = {}) {
+  const location = workout ? activeSetLocation(setId, workout) : null;
+  if (!location || !location.set.completed) return false;
+  const inLive = options.inLive ?? (liveWorkoutBinding?.localWorkoutId === workout.id);
+  if (!inLive) return true;
+  const pendingFinish = options.pendingFinish ??
+    (liveWorkoutBinding?.pendingOperations?.some(operation => operation.kind === "finish") === true);
+  if (pendingFinish) return false;
+  const markerSetId = options.markerSetId !== undefined ? options.markerSetId : activeUndoableSetId(workout);
+  const liveUndoAnySet = options.liveUndoAnySet ?? LIVE_UNDO_ANY_SET_ENABLED;
+  return markerSetId === setId || liveUndoAnySet === true;
+}
+
+function clearActiveBatchUndo() {
+  activeBatchUndo = null;
+  clearTimeout(activeBatchUndoTimer);
+  activeBatchUndoTimer = null;
+  try {
+    app?.querySelector?.("[data-active-batch-undo]")?.remove?.();
+  } catch { /* The next render drops the banner anyway. */ }
+}
+
+function setActiveBatchUndo(workout, entries, preBatchMarkerSetId) {
+  clearActiveBatchUndo();
+  if (!workout || !entries.length) return;
+  activeBatchUndo = {
+    workoutId: workout.id,
+    owner: workout.owner,
+    revision: workout.revision,
+    entries,
+    preBatchMarkerSetId: Number.isSafeInteger(preBatchMarkerSetId) ? preBatchMarkerSetId : null
+  };
+  const current = activeBatchUndo;
+  activeBatchUndoTimer = setTimeout(() => {
+    if (activeBatchUndo === current) clearActiveBatchUndo();
+  }, ACTIVE_BATCH_UNDO_VISIBLE_MS);
+  activeBatchUndoTimer?.unref?.();
+}
+
+// The batch Undo is valid only while nothing else changed the workout (same revision), every batch set is still
+// recorded as logged, and, in a live room, no other own set was recorded after the batch (the batch is the tail,
+// which the previous server also accepts when undone in reverse order).
+function activeBatchUndoIsValid(workout, batch = activeBatchUndo, options = {}) {
+  if (!batch || !workout || workout.id !== batch.workoutId || workout.owner !== batch.owner ||
+      workout.revision !== batch.revision) return false;
+  const batchIds = new Set();
+  for (const entry of batch.entries) {
+    const location = activeSetLocation(entry.setId, workout);
+    if (!location || !location.set.completed || location.set.completedAt !== entry.completedAt ||
+        location.set.weight !== entry.weight || location.set.reps !== entry.reps) return false;
+    batchIds.add(entry.setId);
+  }
+  const inLive = options.inLive ?? (liveWorkoutBinding?.localWorkoutId === workout.id);
+  if (!inLive) return true;
+  const pendingFinish = options.pendingFinish ??
+    (liveWorkoutBinding?.pendingOperations?.some(operation => operation.kind === "finish") === true);
+  if (pendingFinish) return false;
+  const batchAt = Math.min(...batch.entries.map(entry => entry.completedAt));
+  return activeCompletedEntries(workout).every(entry =>
+    batchIds.has(entry.set.id) || entry.set.completedAt < batchAt);
+}
+
+function activeBatchUndoMarkup(workout) {
+  if (!activeBatchUndo) return "";
+  if (!activeBatchUndoIsValid(workout)) {
+    clearActiveBatchUndo();
+    return "";
+  }
+  const message = tx3("All sets saved.", "Усі підходи збережено.", "Все подходы сохранены.");
+  return `<div class="active-set-confirmation" data-active-batch-undo="1"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text">${escapeHtml(message)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-batch">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-batch-undo" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
+}
+
 function clearActiveSetConfirmation() {
   activeSetConfirmation = null;
   try {
@@ -13323,7 +13424,7 @@ function trackActiveSetMutation(pending) {
 function openActiveSetUndoMenu(setId) {
   if (route().name !== "active" || !activeWorkout || modal) return false;
   if (activeSetMutationsInFlight > 0 || !Number.isSafeInteger(setId) || setId <= 0) return false;
-  if (activeUndoableSetId(activeWorkout) !== setId) return false;
+  if (!activeSetUndoAllowed(activeWorkout, setId)) return false;
   modal = { type: "active-set-undo", setId, autoFocus: true, returnFocus: null };
   render();
   return true;
@@ -13438,7 +13539,7 @@ function eventTargetElement(event) {
   return typeof event.target?.closest === "function" ? event.target : event.target?.parentElement;
 }
 
-// Undo (latest recorded set) and Delete (any unrecorded set) share one row gesture; a row is never both.
+// Undo (any recorded set; the latest also has a visible button) and Delete (any unrecorded set) share one row gesture; a row is never both.
 function activeSetRowMenuTarget(target) {
   const savedRow = target?.closest?.("[data-saved-set-deletable]");
   if (savedRow) {
@@ -13450,6 +13551,8 @@ function activeSetRowMenuTarget(target) {
   }
   const undoRow = target?.closest?.("[data-active-set-undoable]");
   if (undoRow) return { kind: "undo", setId: Number(undoRow.dataset.activeSetUndoable) };
+  const olderUndoRow = target?.closest?.("[data-active-set-undo-any]");
+  if (olderUndoRow) return { kind: "undo", setId: Number(olderUndoRow.dataset.activeSetUndoAny) };
   const deleteRow = target?.closest?.("[data-active-set-deletable]");
   if (deleteRow) return { kind: "delete", setId: Number(deleteRow.dataset.activeSetDeletable) };
   return null;
@@ -13532,6 +13635,7 @@ function activeWorkoutScreen() {
     </section>
     ${statusMessage ? `<div class="inline-status ${escapeAttr(activeWorkoutUi.status)}" role="${activeWorkoutUi.status === "error" ? "alert" : "status"}" aria-live="polite">${escapeHtml(statusMessage)}</div>` : ""}
     ${activeSetConfirmationMarkup(workout, undoableSetId)}
+    ${activeBatchUndoMarkup(workout)}
     <section class="active-workout-list">${workout.blocks.map((block, index) => activeWorkoutBlockMarkup(
       block,
       index,
@@ -14802,6 +14906,8 @@ function activeRestControlsMarkup(timerKey, remaining) {
 // countdown with −15 / +15 / stop. Undo is also reachable by the banner, long-press and context menu.
 function activeCompletedSetMarkup(set, setIndex, options) {
   const { undoable, record, timerKey, remaining } = options;
+  // Older recorded rows get no visible button; their long-press / context menu offers "Undo set".
+  const undoAny = !undoable && activeSetUndoAllowed(activeWorkout, set.id);
   const setId = escapeAttr(String(set.id));
   const number = setIndex + 1;
   const summary = formatLocalizedWeightReps(set.weight, set.reps);
@@ -14814,7 +14920,7 @@ function activeCompletedSetMarkup(set, setIndex, options) {
   const undo = undoable
     ? `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${setId}" aria-label="${escapeAttr(`${tx3("Undo set", "Скасувати підхід", "Отменить подход")} ${number}`)}">${tx3("Undo", "Скасувати", "Отменить")}</button>`
     : "";
-  return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${undo}${restControls}</div></div>`;
+  return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""}${undoAny ? ` data-active-set-undo-any="${setId}" tabindex="0"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${undo}${restControls}</div></div>`;
 }
 
 // Every unrecorded row can be logged out of order; the first unrecorded set only keeps the "current" emphasis.
@@ -23839,8 +23945,7 @@ async function recoverLiveWorkoutQueue(identity, operation, contextIsCurrent) {
     mayRebase = !completed && self.state === "joined" && self.progress.finishedAt === null;
   } else if (operation.kind === "undo_set") {
     alreadyApplied = !completed;
-    mayRebase = Boolean(completed && self.progress.undoableSetId === operation.serverSetId &&
-      self.state === "joined" && self.progress.finishedAt === null);
+    mayRebase = Boolean(completed && self.state === "joined" && self.progress.finishedAt === null);
   } else {
     alreadyApplied = self.state === "finished" && self.progress.finishedAt !== null;
     mayRebase = self.state === "joined" && self.progress.finishedAt === null;
@@ -27563,6 +27668,14 @@ async function handleAction(action, el) {
     clearActiveSetConfirmation();
     return trackActiveSetMutation(undoLatestActiveSet(setId));
   }
+  if (action === "undo-active-batch") {
+    if (route().name !== "active") return false;
+    return trackActiveSetMutation(undoActiveSetBatch());
+  }
+  if (action === "dismiss-active-batch-undo") {
+    clearActiveBatchUndo();
+    return true;
+  }
   if (action === "delete-active-set") {
     const setId = Number(el.dataset.id);
     if (route().name !== "active" || !Number.isSafeInteger(setId) || setId <= 0) return false;
@@ -30720,6 +30833,7 @@ async function recordAllActiveSets() {
   const expectedRaw = activeWorkoutStorageRaw;
   const expectedWorkoutId = activeWorkout.id;
   const expectedRevision = activeWorkout.revision;
+  const preBatchMarkerSetId = activeUndoableSetId(activeWorkout);
   const values = collectAllActiveSetInputs(activeWorkout);
   if (!values || values.size === 0) {
     showToast(values
@@ -30825,6 +30939,14 @@ async function recordAllActiveSets() {
       cleanupSucceeded ? "success" : "error",
       cleanupSucceeded ? "allSetsSaved" : "oldControlsCleanupFailed"
     );
+    if (cleanupSucceeded) {
+      setActiveBatchUndo(stored.workout, [...values.keys()].flatMap(id => {
+        const set = activeSetLocation(id, stored.workout)?.set;
+        return set?.completed ? [{ setId: id, weight: set.weight, reps: set.reps, completedAt: set.completedAt }] : [];
+      }), preBatchMarkerSetId);
+    } else {
+      clearActiveBatchUndo();
+    }
     render();
     return true;
   });
@@ -30992,6 +31114,8 @@ async function recordActiveSet(setId) {
   return result.value === true;
 }
 
+// Undoes one recorded set (the name is historical: the latest set, via its marker, keeps today's behaviour).
+// An older set is un-logged alone: values kept, other sets and the rest timer untouched, marker unchanged.
 async function undoLatestActiveSet(setId) {
   if (!Number.isSafeInteger(setId) || setId <= 0) return false;
   const mutationContext = activeWorkoutMutationContext();
@@ -31012,12 +31136,20 @@ async function undoLatestActiveSet(setId) {
     activeWorkoutStorageRaw = loaded.raw;
     activeWorkoutUndoMarker = loadedUndo.marker;
     activeWorkoutUndoStorageRaw = loadedUndo.raw;
-    const latest = latestActiveCompletedEntry(loaded.workout);
-    if (!latest || latest.set.id !== setId || loadedUndo.marker?.setId !== setId) {
+    const target = activeSetLocation(setId, loaded.workout);
+    if (!target || !target.set.completed) {
+      activeWorkoutUi = activeWorkoutStatus("error", "setNotUndoable");
+      render();
+      return false;
+    }
+    const markerSetId = loadedUndo.marker?.setId ?? null;
+    const isMarkerSet = markerSetId === setId;
+    if (!activeSetUndoAllowed(loaded.workout, setId, { markerSetId })) {
       activeWorkoutUi = activeWorkoutStatus("error", "onlyLatestSetUndoable");
       render();
       return false;
     }
+    const latest = target;
     const now = Math.max(Date.now(), loaded.workout.updatedAt + 1);
     if (!Number.isSafeInteger(now) || loaded.workout.revision >= Number.MAX_SAFE_INTEGER) return false;
     const next = {
@@ -31057,19 +31189,28 @@ async function undoLatestActiveSet(setId) {
     activeWorkout = stored.workout;
     activeWorkoutStorageRaw = stored.raw;
     reconcileActiveWorkoutInputDraft(stored.workout, mutationContext.account);
-    const consumedUndo = persistActiveWorkoutUndoRecord(
-      stored.workout,
-      null,
-      mutationContext.account,
-      loadedUndo.raw
-    );
-    if (consumedUndo) {
+    // The marker set consumes its marker; an older set leaves it on the same latest set at the new revision.
+    const consumedUndo = isMarkerSet
+      ? persistActiveWorkoutUndoRecord(stored.workout, null, mutationContext.account, loadedUndo.raw)
+      : markerSetId === null
+        ? { marker: null, raw: loadedUndo.raw, untouched: true }
+        : persistActiveWorkoutUndoRecord(stored.workout, markerSetId, mutationContext.account, loadedUndo.raw);
+    if (consumedUndo?.untouched) {
+      const undoLoaded = loadActiveWorkoutUndoRecord(stored.workout, mutationContext.account);
+      activeWorkoutUndoMarker = undoLoaded.marker;
+      activeWorkoutUndoStorageRaw = undoLoaded.raw;
+    } else if (consumedUndo) {
       activeWorkoutUndoMarker = consumedUndo.marker;
       activeWorkoutUndoStorageRaw = consumedUndo.raw;
     } else {
       const undoLoaded = loadActiveWorkoutUndoRecord(stored.workout, mutationContext.account);
       activeWorkoutUndoMarker = undoLoaded.marker;
       activeWorkoutUndoStorageRaw = undoLoaded.raw;
+    }
+    if (!isMarkerSet) {
+      activeWorkoutUi = activeWorkoutStatus(consumedUndo ? "success" : "error", consumedUndo ? "setUndone" : "undoFinalizeFailed");
+      render();
+      return true;
     }
     const timerKey = `${stored.workout.id}:${latest.block.exerciseName}`;
     const timerStopped = stopExerciseRestTimerLocked(timerKey);
@@ -31081,6 +31222,102 @@ async function undoLatestActiveSet(setId) {
           ? "undoCompleted"
           : "undoTimerNeedsCheck"
     );
+    render();
+    return true;
+  });
+  if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
+  if (result.value === true) commitPreparedLiveWorkoutOperations(preparedLiveBatch);
+  return result.value === true;
+}
+
+// One Undo for the last "Log all remaining sets": every batch set returns to unrecorded (values kept), undone in
+// reverse order. In a live room that is one undo_set op per set, newest first, through the same queue.
+async function undoActiveSetBatch() {
+  const batch = activeBatchUndo;
+  clearActiveBatchUndo();
+  if (!batch || !activeWorkout) return false;
+  const mutationContext = activeWorkoutMutationContext();
+  if (!mutationContext) return activeWorkoutMutationUnavailable(null);
+  let preparedLiveBatch = null;
+  const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
+    if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
+    const loaded = loadActiveWorkoutRecord(mutationContext.account);
+    const reconciliationNow = Math.max(Date.now(), loaded.workout?.updatedAt || 0);
+    if (!loaded.workout ||
+        !reconcileActiveWorkoutRestTransition(loaded.workout, mutationContext.account, reconciliationNow) ||
+        !reconcileActiveWorkoutBulkCleanupIntent(loaded.workout, mutationContext.account, reconciliationNow)) {
+      reloadActiveWorkoutContext(mutationContext.account);
+      return false;
+    }
+    const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
+    activeWorkout = loaded.workout;
+    activeWorkoutStorageRaw = loaded.raw;
+    activeWorkoutUndoMarker = loadedUndo.marker;
+    activeWorkoutUndoStorageRaw = loadedUndo.raw;
+    if (!activeBatchUndoIsValid(loaded.workout, batch)) {
+      activeWorkoutUi = activeWorkoutStatus("error", "batchUndoUnavailable");
+      render();
+      return false;
+    }
+    const now = Math.max(Date.now(), loaded.workout.updatedAt + 1);
+    if (!Number.isSafeInteger(now) || loaded.workout.revision >= Number.MAX_SAFE_INTEGER) return false;
+    const batchIds = new Set(batch.entries.map(entry => entry.setId));
+    const next = {
+      ...loaded.workout,
+      updatedAt: now,
+      revision: loaded.workout.revision + 1,
+      blocks: loaded.workout.blocks.map(block => block.sets.some(set => batchIds.has(set.id))
+        ? {
+            ...block,
+            sets: block.sets.map(set => batchIds.has(set.id)
+              ? { ...set, completed: false, completedAt: null }
+              : set)
+          }
+        : block)
+    };
+    preparedLiveBatch = prepareLiveSetOperationBatch([...batch.entries].reverse().map(entry => ({
+      kind: "undo_set",
+      localSetId: entry.setId,
+      weight: null,
+      reps: null,
+      localMutationAt: now
+    })));
+    if (preparedLiveBatch.required && !preparedLiveBatch.token) {
+      activeWorkoutUi = activeWorkoutStatus("error", "liveUndoPrepareFailed");
+      render();
+      return false;
+    }
+    const stored = persistActiveWorkoutRecord(next, mutationContext.account, loaded.raw);
+    if (!stored || !activeWorkoutMutationContextIsCurrent(mutationContext)) {
+      rollbackPreparedLiveWorkoutOperations(preparedLiveBatch);
+      preparedLiveBatch = null;
+      reloadActiveWorkoutContext(mutationContext.account);
+      activeWorkoutUi = activeWorkoutStatus("error", "batchUndoUnavailable");
+      render();
+      return false;
+    }
+    activeWorkout = stored.workout;
+    activeWorkoutStorageRaw = stored.raw;
+    reconcileActiveWorkoutInputDraft(stored.workout, mutationContext.account);
+    // Restore the pre-batch marker only if that set is still recorded and is the latest recorded set.
+    let restored = null;
+    if (batch.preBatchMarkerSetId !== null) {
+      restored = persistActiveWorkoutUndoRecord(
+        stored.workout,
+        batch.preBatchMarkerSetId,
+        mutationContext.account,
+        loadedUndo.raw
+      );
+    }
+    if (restored) {
+      activeWorkoutUndoMarker = restored.marker;
+      activeWorkoutUndoStorageRaw = restored.raw;
+    } else {
+      const undoLoaded = loadActiveWorkoutUndoRecord(stored.workout, mutationContext.account);
+      activeWorkoutUndoMarker = undoLoaded.marker;
+      activeWorkoutUndoStorageRaw = undoLoaded.raw;
+    }
+    activeWorkoutUi = activeWorkoutStatus("success", "batchUndone");
     render();
     return true;
   });

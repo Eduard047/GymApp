@@ -50,7 +50,8 @@ function createWebLocks() {
 function loadContext({
   localStorage = createStorage(),
   locks = createWebLocks(),
-  trackTimers = false
+  trackTimers = false,
+  source = appSource
 } = {}) {
   const sessionStorage = createStorage();
   const runtimeNodes = new Map();
@@ -155,7 +156,7 @@ function loadContext({
   vm.createContext(context);
   vm.runInContext(stateContractSource, context);
   context.window.GymStateContract = context.GymStateContract;
-  vm.runInContext(appSource, context);
+  vm.runInContext(source, context);
   const startupState = JSON.parse(vm.runInContext("JSON.stringify(state)", context));
   const startupActiveWorkout = JSON.parse(vm.runInContext("JSON.stringify(activeWorkout)", context));
   const startupWorkoutDraft = JSON.parse(vm.runInContext("JSON.stringify(workoutDraft)", context));
@@ -1924,7 +1925,6 @@ test("a separate durable marker preserves exactly one latest undo across reload 
   assert.match(reloadMarkup, /data-action="timer-adjust"[^>]*data-seconds="15"/);
   assert.match(reloadMarkup, /data-action="timer-stop"/);
 
-  assert.equal(await vm.runInContext(`undoLatestActiveSet(${firstSetId})`, context), false);
   assert.equal(await vm.runInContext(`undoLatestActiveSet(${secondSetId})`, context), true);
   let stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
   assert.equal(Object.hasOwn(stored, "undoableSetId"), false);
@@ -1939,15 +1939,19 @@ test("a separate durable marker preserves exactly one latest undo across reload 
 
   vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), null);
-  assert.equal(await vm.runInContext(`undoLatestActiveSet(${firstSetId})`, context), false,
-    "undo must not cascade into older completed sets");
-  stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
-  assert.equal(stored.blocks[0].sets[0].completed, true);
+  // The consumed marker never cascades: the older set shows no visible Undo button or latest marker,
+  // only its row menu offers an explicit, single-set undo.
   const markup = vm.runInContext("activeWorkoutScreen()", context);
-  assert.doesNotMatch(markup, /data-action="undo-active-set"|data-active-set-undoable/);
+  assert.doesNotMatch(markup, /data-action="undo-active-set"|data-active-set-undoable=/);
+  assert.match(markup, new RegExp(`data-active-set-undo-any="${firstSetId}"`));
   assert.match(markup, /data-active-field="weight"[^>]*value="83"/);
   assert.match(markup, /data-active-workout-hero aria-label="Elapsed [0-9:]+, 1 of 2 sets done/);
   assert.match(markup, /<strong>1\/2<\/strong><span>sets<\/span>/);
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${firstSetId})`, context), true,
+    "an explicit undo of the older set un-logs only that set");
+  stored = JSON.parse(localStorage.getItem(activeStorageKey(context)));
+  assert.deepEqual(stored.blocks[0].sets.map(set => set.completed), [false, false]);
+  assert.deepEqual(stored.blocks[0].sets.map(set => [set.weight, set.reps]), [[81.5, 7], [83, 5]]);
 });
 
 test("storage events refresh the separate undo marker across tabs", async () => {
@@ -2162,6 +2166,7 @@ test("undo: visible Undo button on the latest set row plus latest-only long-pres
   const olderRow = completedRowMarkup(markup, firstId);
   const latestRow = completedRowMarkup(markup, secondId);
   assert.doesNotMatch(olderRow, /data-active-set-undoable|undo-active-set|active-set-undo-key/);
+  assert.match(olderRow, new RegExp(`data-active-set-undo-any="${firstId}"`), "older row is reachable by its row menu");
   assert.match(latestRow, new RegExp(`data-active-set-undoable="${secondId}"`));
   assert.match(latestRow, new RegExp(
     `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${secondId}" aria-label="Undo set 2">Undo</button>`
@@ -2175,7 +2180,7 @@ test("undo: visible Undo button on the latest set row plus latest-only long-pres
   assert.doesNotMatch(undoKeyRule, /clip:|position:\s*absolute|width:\s*1px/);
 
   // Menu only for the undoable latest set and never while a set mutation is in flight.
-  assert.equal(vm.runInContext(`openActiveSetUndoMenu(${firstId})`, context), false);
+  assert.equal(vm.runInContext(`openActiveSetUndoMenu(9999)`, context), false, "unknown set");
   vm.runInContext("activeSetMutationsInFlight = 1", context);
   assert.equal(vm.runInContext(`openActiveSetUndoMenu(${secondId})`, context), false);
   vm.runInContext("activeSetMutationsInFlight = 0", context);
@@ -4509,4 +4514,240 @@ test("a default draft date shows today while an explicit date and old stored pay
 
   store({ startedAt: past, startedAtExplicit: false, note: "", blocks: [block] });
   assert.equal(vm.runInContext("loadStoredWorkoutDraftRecord()", context), null);
+});
+
+
+// ---- Round 3: undo of any recorded set and one batch undo for "Log all remaining sets" ----
+
+async function startThreeSetWorkout(context) {
+  return vm.runInContext(`
+    workoutDraft = {
+      startedAt: Date.now(),
+      note: "",
+      blocks: [{
+        exerciseName: "Bench Press",
+        catalogKey: "bench_press",
+        sets: [{ weight: 80, reps: 8 }, { weight: 82.5, reps: 6 }, { weight: 85, reps: 4 }]
+      }]
+    };
+    startWorkout();
+  `, context);
+}
+
+function stubLiveOps(context, { pendingOperations = [] } = {}) {
+  vm.runInContext(`
+    globalThis.__liveOps = [];
+    liveWorkoutBinding = { localWorkoutId: activeWorkout.id, pendingOperations: ${JSON.stringify(pendingOperations)} };
+    prepareLiveSetOperationBatch = requests => {
+      globalThis.__liveOps.push(...requests.map(request => ({ kind: request.kind, localSetId: request.localSetId })));
+      return { required: true, token: { stub: true } };
+    };
+    commitPreparedLiveWorkoutOperations = () => true;
+    rollbackPreparedLiveWorkoutOperations = () => true;
+  `, context);
+}
+
+function liveOps(context) {
+  return JSON.parse(vm.runInContext("JSON.stringify(globalThis.__liveOps)", context));
+}
+
+function storedSets(context, localStorage) {
+  return JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks[0].sets;
+}
+
+test("undo of an older recorded set un-logs only that set and leaves the marker and rest timer alone", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startThreeSetWorkout(context);
+  const [first, second, third] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, second, 82.5, 6), true);
+  const timerKey = vm.runInContext("`${activeWorkout.id}:${activeWorkout.blocks[0].exerciseName}`", context);
+  const timerStorageKey = vm.runInContext("exerciseRestTimerAccountDescriptor().storageKey", context);
+  const timerBefore = localStorage.getItem(timerStorageKey);
+  assert.notEqual(timerBefore, null);
+  assert.equal(vm.runInContext("activeUndoableSetId(activeWorkout)", context), second);
+
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  const olderRow = completedRowMarkup(markup, first);
+  assert.match(olderRow, new RegExp(`data-active-set-undo-any="${first}"`));
+  assert.doesNotMatch(olderRow, /<button|data-action="undo-active-set"/, "no new visible button on older rows");
+  assert.equal(vm.runInContext(`openActiveSetUndoMenu(${first})`, context), true);
+  assert.match(vm.runInContext("modalMarkup()", context),
+    new RegExp(`data-action="undo-active-set" data-id="${first}">Undo set</button>`));
+  vm.runInContext("modal = null", context);
+
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${first})`, context), true);
+  const sets = storedSets(context, localStorage);
+  assert.deepEqual(sets.map(set => set.completed), [false, true, false], "no cascade into other sets");
+  assert.deepEqual([sets[0].weight, sets[0].reps], [80, 8], "values are kept");
+  assert.equal(vm.runInContext("activeUndoableSetId(activeWorkout)", context), second, "marker stays on the latest set");
+  assert.equal(JSON.parse(localStorage.getItem(activeUndoStorageKey(context))).setId, second);
+  assert.equal(localStorage.getItem(timerStorageKey), timerBefore, "rest timer untouched");
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(timerKey)})`, context) > 0);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), new RegExp(`data-active-set-undoable="${second}"`));
+  assert.equal(third > 0, true);
+
+  // The latest set still undoes exactly as before: marker consumed, rest stopped.
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${second})`, context), true);
+  assert.equal(JSON.parse(localStorage.getItem(activeUndoStorageKey(context))).setId, null);
+  assert.equal(localStorage.getItem(timerStorageKey), null);
+});
+
+test("undo is refused for an unrecorded set and for a set with a pending finish intent in a live room", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startThreeSetWorkout(context);
+  const [first, second, third] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${third})`, context), false, "never recorded");
+  assert.equal(vm.runInContext("activeWorkoutStatusText()", context).length > 0, true);
+  assert.equal(vm.runInContext(`openActiveSetUndoMenu(${second})`, context), false);
+  assert.equal(vm.runInContext(`activeSetUndoAllowed(activeWorkout, ${third})`, context), false);
+  assert.equal(vm.runInContext(`activeSetUndoAllowed(activeWorkout, ${first})`, context), true);
+  const before = localStorage.getItem(activeStorageKey(context));
+
+  stubLiveOps(context, { pendingOperations: [{ kind: "finish" }] });
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${first})`, context), false, "finish intent");
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+  assert.deepEqual(liveOps(context), []);
+});
+
+test("live room gate OFF: only the latest set undoes and queues undo_set; the gate flag opens older sets", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startThreeSetWorkout(context);
+  const [first, second] = twoSetIds(context);
+  assert.equal(vm.runInContext("LIVE_UNDO_ANY_SET_ENABLED", context), false);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, second, 82.5, 6), true);
+  stubLiveOps(context);
+
+  assert.equal(vm.runInContext(`activeSetUndoAllowed(activeWorkout, ${first})`, context), false);
+  assert.equal(vm.runInContext(`openActiveSetUndoMenu(${first})`, context), false, "older-row menu item hidden");
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /data-active-set-undo-any/);
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${first})`, context), false);
+  assert.deepEqual(liveOps(context), []);
+  assert.deepEqual(storedSets(context, localStorage).map(set => set.completed), [true, true, false]);
+
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${second})`, context), true);
+  assert.deepEqual(liveOps(context), [{ kind: "undo_set", localSetId: second }]);
+
+  // The pure gate function accepts the flag, so the post-deploy behavior is covered too.
+  assert.equal(vm.runInContext(
+    `activeSetUndoAllowed(activeWorkout, ${first}, { liveUndoAnySet: true, markerSetId: null })`, context), true);
+  assert.equal(vm.runInContext(
+    `activeSetUndoAllowed(activeWorkout, ${first}, { liveUndoAnySet: false, markerSetId: null })`, context), false);
+});
+
+test("live room gate ON enqueues undo_set for an older set and the queue rebases it while the set stays recorded", async () => {
+  const gateOnSource = appSource.replace(
+    "const LIVE_UNDO_ANY_SET_ENABLED = false;",
+    "const LIVE_UNDO_ANY_SET_ENABLED = true;"
+  );
+  assert.notEqual(gateOnSource, appSource);
+  const { context, localStorage, runtimeNodes } = loadContext({ source: gateOnSource });
+  await startThreeSetWorkout(context);
+  const [first, second] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, second, 82.5, 6), true);
+  stubLiveOps(context);
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${first})`, context), true);
+  assert.deepEqual(liveOps(context), [{ kind: "undo_set", localSetId: first }]);
+  assert.deepEqual(storedSets(context, localStorage).map(set => set.completed), [false, true, false]);
+
+  const recoverSource = appSource.slice(
+    appSource.indexOf("async function recoverLiveWorkoutQueue"),
+    appSource.indexOf("async function recoverLiveWorkoutQueue") + 3000
+  );
+  assert.doesNotMatch(recoverSource, /undoableSetId === operation\.serverSetId/,
+    "an undo may rebase whenever the set is still in own completedSets");
+});
+
+test("Log all remaining sets offers one batch Undo that restores every batch set and the pre-batch marker", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startThreeSetWorkout(context);
+  const [first, second, third] = twoSetIds(context);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  assert.equal(vm.runInContext("activeUndoableSetId(activeWorkout)", context), first);
+  for (const [id, weight, reps] of [[second, "82.5", "6"], [third, "85", "4"]]) {
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="weight"]`, { value: weight });
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="reps"]`, { value: reps });
+  }
+  assert.equal(await vm.runInContext("recordAllActiveSets()", context), true);
+  assert.deepEqual(storedSets(context, localStorage).map(set => set.completed), [true, true, true]);
+  assert.equal(vm.runInContext("activeUndoableSetId(activeWorkout)", context), null);
+
+  const markup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.match(markup, /data-active-batch-undo="1"[^>]*>.*All sets saved\..*data-action="undo-active-batch">Undo<\/button>/s);
+  assert.notEqual(vm.runInContext("activeBatchUndoTimer", context), null, "auto-hides after about 8 seconds");
+  assert.equal(vm.runInContext("ACTIVE_BATCH_UNDO_VISIBLE_MS", context), 8000);
+
+  assert.equal(await vm.runInContext("handleAction('undo-active-batch', { dataset: {} })", context), true);
+  assert.deepEqual(storedSets(context, localStorage).map(set => [set.completed, set.weight, set.reps]), [
+    [true, 80, 8], [false, 82.5, 6], [false, 85, 4]
+  ], "batch sets return to unrecorded with values kept; the earlier set is untouched");
+  assert.equal(vm.runInContext("activeUndoableSetId(activeWorkout)", context), first, "pre-batch marker restored");
+  assert.equal(vm.runInContext("activeBatchUndo", context), null);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", context), /data-active-batch-undo/);
+});
+
+test("batch Undo sends one undo_set per set in reverse order in a live room and is refused after another mutation", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startThreeSetWorkout(context);
+  const [first, second, third] = twoSetIds(context);
+  for (const [id, weight, reps] of [[first, "80", "8"], [second, "82.5", "6"], [third, "85", "4"]]) {
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="weight"]`, { value: weight });
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="reps"]`, { value: reps });
+  }
+  stubLiveOps(context);
+  assert.equal(await vm.runInContext("recordAllActiveSets()", context), true);
+  assert.deepEqual(liveOps(context).map(op => [op.kind, op.localSetId]), [
+    ["complete_set", first], ["complete_set", second], ["complete_set", third]
+  ]);
+  vm.runInContext("globalThis.__liveOps = []", context);
+  assert.match(vm.runInContext("activeWorkoutScreen()", context), /data-active-batch-undo/);
+  assert.equal(await vm.runInContext("undoActiveSetBatch()", context), true);
+  assert.deepEqual(liveOps(context).map(op => [op.kind, op.localSetId]), [
+    ["undo_set", third], ["undo_set", second], ["undo_set", first]
+  ], "reverse of the order the batch completed them");
+  assert.deepEqual(storedSets(context, localStorage).map(set => set.completed), [false, false, false]);
+
+  // Another mutation after the batch hides and refuses the batch Undo; nothing is un-logged.
+  const other = loadContext();
+  await startThreeSetWorkout(other.context);
+  const ids = twoSetIds(other.context);
+  for (const id of ids.slice(0, 2)) {
+    other.runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="weight"]`, { value: "50" });
+    other.runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="reps"]`, { value: "5" });
+  }
+  assert.equal(await other.runtimeNodes && await vm.runInContext("recordAllActiveSets()", other.context), false,
+    "all unfinished sets need reps first");
+  other.runtimeNodes.set(`[data-active-set-id="${ids[2]}"][data-active-field="weight"]`, { value: "50" });
+  other.runtimeNodes.set(`[data-active-set-id="${ids[2]}"][data-active-field="reps"]`, { value: "5" });
+  assert.equal(await vm.runInContext("recordAllActiveSets()", other.context), true);
+  assert.match(vm.runInContext("activeWorkoutScreen()", other.context), /data-active-batch-undo/);
+  // Undo one batch set directly: the revision changes, so the batch Undo disappears and is refused.
+  assert.equal(await vm.runInContext(`undoLatestActiveSet(${ids[0]})`, other.context), true);
+  assert.equal(vm.runInContext("activeBatchUndoIsValid(activeWorkout)", other.context), false);
+  assert.doesNotMatch(vm.runInContext("activeWorkoutScreen()", other.context), /data-active-batch-undo/);
+  assert.equal(await vm.runInContext("undoActiveSetBatch()", other.context), false);
+  assert.deepEqual(storedSets(other.context, other.localStorage).map(set => set.completed), [false, true, true]);
+});
+
+test("in a live room the batch Undo is hidden when a newer own set exists after the batch", async () => {
+  const { context, runtimeNodes } = loadContext();
+  await startThreeSetWorkout(context);
+  const [first, second, third] = twoSetIds(context);
+  for (const id of [first, second, third]) {
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="weight"]`, { value: "50" });
+    runtimeNodes.set(`[data-active-set-id="${id}"][data-active-field="reps"]`, { value: "5" });
+  }
+  stubLiveOps(context);
+  assert.equal(await vm.runInContext("recordAllActiveSets()", context), true);
+  const valid = "activeBatchUndoIsValid(activeWorkout, activeBatchUndo, { inLive: true, pendingFinish: false })";
+  assert.equal(vm.runInContext(valid, context), true);
+  assert.equal(vm.runInContext(`activeBatchUndoIsValid(activeWorkout, activeBatchUndo, { inLive: true, pendingFinish: true })`, context), false);
+  // A recorded set outside the batch that is not older than it breaks the tail rule.
+  vm.runInContext("globalThis.__saved = activeBatchUndo.entries.slice(); activeBatchUndo.entries.pop();", context);
+  assert.equal(vm.runInContext(valid, context), false, "a set outside the batch is as new as the batch");
+  vm.runInContext("activeBatchUndo.entries = globalThis.__saved; activeBatchUndo.entries[0].completedAt += 1000", context);
+  assert.equal(vm.runInContext(valid, context), false, "changed completion time means the set is not the same record");
 });
