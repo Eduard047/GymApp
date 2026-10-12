@@ -458,12 +458,12 @@ struct WorkoutProgressHero: View {
                     .accessibilityLabel("Level progress")
                     .accessibilityValue(
                         gymText(
-                            "\(progression.xpIntoLevel) of " +
-                                "\(progression.xpIntoLevel + progression.xpToNextLevel) XP",
-                            "\(progression.xpIntoLevel) із " +
-                                "\(progression.xpIntoLevel + progression.xpToNextLevel) XP",
-                            "\(progression.xpIntoLevel) из " +
-                                "\(progression.xpIntoLevel + progression.xpToNextLevel) XP",
+                            "\(progression.xpIntoLevel.formatted(.number.locale(gymAppLocale()))) of " +
+                                "\((progression.xpIntoLevel + progression.xpToNextLevel).formatted(.number.locale(gymAppLocale()))) XP",
+                            "\(progression.xpIntoLevel.formatted(.number.locale(gymAppLocale()))) із " +
+                                "\((progression.xpIntoLevel + progression.xpToNextLevel).formatted(.number.locale(gymAppLocale()))) XP",
+                            "\(progression.xpIntoLevel.formatted(.number.locale(gymAppLocale()))) из " +
+                                "\((progression.xpIntoLevel + progression.xpToNextLevel).formatted(.number.locale(gymAppLocale()))) XP",
                             languageCode: gymCurrentLanguageCode()
                         )
                     )
@@ -471,7 +471,7 @@ struct WorkoutProgressHero: View {
                 HStack(spacing: 8) {
                     GymMetricTile(
                         label: "Month XP",
-                        value: "\(monthXP) XP",
+                        value: "\(monthXP.formatted(.number.locale(gymAppLocale()))) XP",
                         emphasized: true,
                         onHero: true,
                         compactValue: true
@@ -1487,7 +1487,7 @@ struct AchievementGallery: View {
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(GymTheme.textSecondary)
                         Spacer(minLength: 8)
-                        Text("+\(achievement.rewardXP) XP")
+                        Text("+\(achievement.rewardXP.formatted(.number.locale(gymAppLocale()))) XP")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(achievement.unlocked ? accent : GymTheme.primary)
                     }
