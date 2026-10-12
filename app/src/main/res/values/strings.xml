@@ -1190,7 +1190,16 @@
     <string name="dialog_delete_workout_message">This removes the workout and every set. This action cannot be undone.</string>
     <string name="dialog_delete_exercise_title">Delete exercise?</string>
     <string name="dialog_delete_exercise_message">Delete “%1$s” from the exercise library?</string>
-    <string name="dialog_delete_exercise_impact">Workouts affected: %1$d. Exercise blocks removed: %2$d. Sets deleted: %3$d. This cannot be undone.</string>
+    <string name="dialog_delete_exercise_impact">It will also be removed from %1$s and %2$s. This cannot be undone.</string>
+    <string name="dialog_delete_exercise_impact_unused">Not used in any workout, so no history is removed. This cannot be undone.</string>
+    <plurals name="dialog_delete_exercise_impact_workouts">
+        <item quantity="one">%1$d workout</item>
+        <item quantity="other">%1$d workouts</item>
+    </plurals>
+    <plurals name="dialog_delete_exercise_impact_sets">
+        <item quantity="one">%1$d logged set</item>
+        <item quantity="other">%1$d logged sets</item>
+    </plurals>
     <string name="dialog_delete_set_title">Delete set?</string>
     <string name="dialog_delete_set_message">Delete set %1$d for “%2$s” from the workout on %3$s? Recorded load: %4$s kg × %5$d.</string>
     <string name="dialog_delete_set_impact_set_only">This set will be removed from the workout.</string>

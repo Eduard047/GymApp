@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
@@ -38,12 +39,23 @@ internal fun ExerciseDeleteConfirmationDialog(
     PersistedDeleteConfirmationDialog(
         title = stringResource(R.string.dialog_delete_exercise_title),
         message = stringResource(R.string.dialog_delete_exercise_message, exerciseName),
-        impact = stringResource(
-            R.string.dialog_delete_exercise_impact,
-            snapshot.workoutCount,
-            snapshot.exerciseBlockCount,
-            snapshot.setCount
-        ),
+        impact = if (snapshot.workoutCount == 0) {
+            stringResource(R.string.dialog_delete_exercise_impact_unused)
+        } else {
+            stringResource(
+                R.string.dialog_delete_exercise_impact,
+                pluralStringResource(
+                    R.plurals.dialog_delete_exercise_impact_workouts,
+                    snapshot.workoutCount,
+                    snapshot.workoutCount
+                ),
+                pluralStringResource(
+                    R.plurals.dialog_delete_exercise_impact_sets,
+                    snapshot.setCount,
+                    snapshot.setCount
+                )
+            )
+        },
         isDeleting = isDeleting,
         error = error,
         onDismiss = onDismiss,

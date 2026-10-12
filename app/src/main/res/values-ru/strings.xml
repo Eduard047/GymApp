@@ -1224,7 +1224,20 @@
     <string name="dialog_delete_workout_message">Тренировка и все её подходы будут удалены. Это действие нельзя отменить.</string>
     <string name="dialog_delete_exercise_title">Удалить упражнение?</string>
     <string name="dialog_delete_exercise_message">Удалить «%1$s» из библиотеки упражнений?</string>
-    <string name="dialog_delete_exercise_impact">Затронуто тренировок: %1$d. Будет удалено блоков упражнения: %2$d. Подходов: %3$d. Это действие нельзя отменить.</string>
+    <string name="dialog_delete_exercise_impact">Она также будет удалена из %1$s и %2$s. Это действие нельзя отменить.</string>
+    <string name="dialog_delete_exercise_impact_unused">Не используется ни в одной тренировке, история не изменится. Это действие нельзя отменить.</string>
+    <plurals name="dialog_delete_exercise_impact_workouts">
+        <item quantity="one">%1$d тренировки</item>
+        <item quantity="few">%1$d тренировок</item>
+        <item quantity="many">%1$d тренировок</item>
+        <item quantity="other">%1$d тренировок</item>
+    </plurals>
+    <plurals name="dialog_delete_exercise_impact_sets">
+        <item quantity="one">%1$d записанного подхода</item>
+        <item quantity="few">%1$d записанных подходов</item>
+        <item quantity="many">%1$d записанных подходов</item>
+        <item quantity="other">%1$d записанных подходов</item>
+    </plurals>
     <string name="dialog_delete_set_title">Удалить подход?</string>
     <string name="dialog_delete_set_message">Удалить подход %1$d для упражнения «%2$s» из тренировки за %3$s? Записано: %4$s кг × %5$d.</string>
     <string name="dialog_delete_set_impact_set_only">Подход будет удалён из тренировки.</string>
