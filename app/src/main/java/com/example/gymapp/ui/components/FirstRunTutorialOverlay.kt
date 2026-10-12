@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -304,6 +305,10 @@ internal fun FirstRunTutorialOverlay(
                 ) {
                     FilledTonalButton(
                         onClick = onSkip,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = GymSpacing.MinimumTouch)
