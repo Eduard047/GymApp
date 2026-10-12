@@ -12459,10 +12459,10 @@ function heatLegendMarkup() {
 
 function mappingOverviewCard() {
   const rows = groupedExercises().sort((a, b) => Number(!mappingFor(a).length) - Number(!mappingFor(b).length) || a.name.localeCompare(b.name));
-  return `<div class="subpanel"><div class="row-head"><div><h3>${tx("Exercise mapping", "Зіставлення вправ")}</h3><p>${tx("Auto mapping works first, manual choices override it.", "Спочатку застосовується автоматичне зіставлення, а ручний вибір має пріоритет.")}</p></div><span class="pill">${mappedCount()}/${state.exercises.length}</span></div>${rows.length ? rows.map(ex => {
+  return `<div class="subpanel"><div class="row-head"><div><h3>${tx("Muscle groups by exercise", "Групи м’язів за вправами")}</h3><p>${tx("Auto mapping works first, manual choices override it.", "Спочатку застосовується автоматичне зіставлення, а ручний вибір має пріоритет.")}</p></div><span class="pill">${mappedCount()}/${state.exercises.length}</span></div>${rows.length ? rows.map(ex => {
     const ids = mappingFor(ex);
     const labels = ids.length ? ids.map(muscleLabel).join(", ") : tx("Not mapped", "Не зіставлено");
-    return `<div class="row-line mapping-row"><span>${escapeHtml(exerciseDisplayName(ex))}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`;
+    return `<div class="row-line mapping-row"><span>${escapeHtml(exerciseDisplayName(ex))}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Muscle groups", "Групи м’язів")}</button></div>`;
   }).join("") : `<div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div>`}</div>`;
 }
 
@@ -12478,7 +12478,7 @@ function muscleMapCard() {
     <div class="metric-grid three tile-emphasized"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${escapeHtml(formatGroupedCount(trainingLoad(periodSessions())))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
     ${sourceBodyMapSvg(data, max)}
     ${muscleMapSelectionList(data)}
-    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${escapeHtml(selected.label)}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(exerciseDisplayName(ex))}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} · ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} · ${formatGroupedCount(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "Для цієї групи м'язів у вибраному періоді немає записаних вправ.")}</div>`}</div>` : ""}
+    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${escapeHtml(selected.label)}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(exerciseDisplayName(ex))}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} · ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} · ${formatGroupedCount(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Muscle groups", "Групи м’язів")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "Для цієї групи м'язів у вибраному періоді немає записаних вправ.")}</div>`}</div>` : ""}
     ${mappingOverviewCard()}
     <h3>${tx("Top muscle groups", "Топ груп м'язів")}</h3><div class="bars">${top.length ? top.slice(0, 8).map(item => barRow(item.label, item.load, max, `${n(item.sets, "set", "sets", "підхід", "підходи", "підходів")} · ${n(item.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")}`)).join("") : `<div class="empty">${tx("Log sets to light up the body map.", "Запиши підходи, щоб підсвітити карту тіла.")}</div>`}</div>
   </section>`;
@@ -12625,7 +12625,7 @@ function exerciseMuscleMapCard(exercise, framed = false) {
   const max = Math.max(1, ...data.map(item => item.load));
   const active = data.filter(item => item.weight > 0).sort((a, b) => b.weight - a.weight);
   const label = active.map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(" · ") || tx("Not mapped", "Не зіставлено");
-  return `<section class="${framed ? "panel highlighted" : "subpanel"} exercise-muscle-map"><div class="row-head"><div><h3>${t("muscleMap")}</h3><p>${escapeHtml(label)}</p></div><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exerciseName)}">${tx("Map", "Мапити")}</button></div>
+  return `<section class="${framed ? "panel highlighted" : "subpanel"} exercise-muscle-map"><div class="row-head"><div><h3>${t("muscleMap")}</h3><p>${escapeHtml(label)}</p></div><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exerciseName)}">${tx("Muscle groups", "Групи м’язів")}</button></div>
     <div class="exercise-muscle-layout">${sourceBodyMapSvg(data, max)}<div class="bars">${active.length ? active.map(item => barRow(item.label, item.weight, 1, `${Math.round(item.weight * 100)}% ${tx("target", "ціль")}`)).join("") : `<div class="empty">${tx("Choose muscles for this exercise.", "Вибери м'язи для цієї вправи.")}</div>`}</div></div></section>`;
 }
 
@@ -24769,9 +24769,9 @@ function removeExerciseLoadProfile(id) {
 }
 
 function exerciseMappingsPanel(exercises) {
-  return `<section class="material-card mappings-card"><h2>${tx("Exercise mapping", "Мапінг вправ")}</h2>${exercises.map(exercise => {
+  return `<section class="material-card mappings-card"><h2>${tx("Muscle groups by exercise", "Групи м’язів за вправами")}</h2>${exercises.map(exercise => {
     const labels = mappingFor(exercise.name).map(muscleLabel).join(", ") || tx("Not mapped", "Не зіставлено");
-    return `<div class="row-line mapping-row"><span>${escapeHtml(exerciseDisplayName(exercise))}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Map", "Мапити")}</button></div>`;
+    return `<div class="row-line mapping-row"><span>${escapeHtml(exerciseDisplayName(exercise))}<small>${escapeHtml(labels)}</small></span><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exercise.name)}">${tx("Muscle groups", "Групи м’язів")}</button></div>`;
   }).join("")}</section>`;
 }
 
@@ -26144,7 +26144,7 @@ function exerciseHistoryMarkup(exercise) {
 
 function mappingEditor(name) {
   const current = new Set(mappingFor(name));
-  return `<h2>${tx("Map", "Мапінг")} "${escapeHtml(exerciseDisplayName(name))}"</h2><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
+  return `<h2>${tx("Muscle groups", "Групи м’язів")}</h2><p><strong>${escapeHtml(exerciseDisplayName(name))}</strong></p><div class="mapping-grid">${muscles.map(([id]) => `<button class="chip buttonlike ${current.has(id) ? "selected" : ""}" data-action="toggle-map" data-id="${id}">${escapeHtml(muscleLabel(id))}</button>`).join("")}</div><button class="button full" data-action="save-map" data-name="${escapeAttr(name)}">${tx("Save", "Зберегти")}</button>`;
 }
 
 function modalFocusableElements(modalElement) {
