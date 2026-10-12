@@ -1326,13 +1326,11 @@ class WorkoutListViewModel(
                 isRussian() -> "$weeklyStreakWeeks нед. подряд с $weeklyTarget тренировками."
                 else -> "$weeklyStreakWeeks successful week${if (weeklyStreakWeeks == 1) "" else "s"} in a row."
             }
-            monthXp > 0 -> t(
-                en = "$monthXp XP earned this month.",
-                uk = "За цей місяць зароблено $monthXp XP."
-            )
-            isUkrainian() -> "Тижнева ціль: $weeklyTarget"
-            isRussian() -> "Недельная цель: $weeklyTarget"
-            else -> "Weekly target: $weeklyTarget"
+            isUkrainian() ->
+                "Набери $weeklyTarget ${slavicForm(weeklyTarget, "тренувальний день", "тренувальні дні", "тренувальних днів")}, щоб почати тижневий ритм."
+            isRussian() ->
+                "Набери $weeklyTarget ${slavicForm(weeklyTarget, "тренировочный день", "тренировочных дня", "тренировочных дней")}, чтобы начать недельный ритм."
+            else -> "Reach $weeklyTarget ${if (weeklyTarget == 1) "training day" else "training days"} to start your weekly rhythm."
         }
 
         return SoloProgressUiModel(
@@ -1921,6 +1919,16 @@ class WorkoutListViewModel(
             Locale.getDefault()
         } else {
             appLocales[0] ?: Locale.getDefault()
+        }
+    }
+
+    private fun slavicForm(count: Int, one: String, few: String, many: String): String {
+        val n = kotlin.math.abs(count)
+        return when {
+            n % 100 in 11..14 -> many
+            n % 10 == 1 -> one
+            n % 10 in 2..4 -> few
+            else -> many
         }
     }
 
