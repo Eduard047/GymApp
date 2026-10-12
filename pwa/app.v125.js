@@ -11442,7 +11442,7 @@ function loginScreen() {
 
 function offlineAccountSheetMarkup() {
   const accounts = accountList().filter(account => !account.remote);
-  return `<div class="offline-account-sheet"><h2>${tx("Offline profile", "Офлайн-профіль")}</h2><p class="muted">${tx("Workouts stay only on this device until you export them; cloud sync and recovery are unavailable.", "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні.")}</p><label>${tx("Profile name", "Ім’я профілю")}<input id="offline-profile-name" autocomplete="nickname" maxlength="32" placeholder="Local"></label><div class="actions vertical"><button class="button full" data-action="continue-offline" data-modal-initial-focus>${tx("Continue offline", "Продовжити офлайн")}</button><button type="button" class="auth-quiet-link" data-action="close-modal">${tx("Cancel", "Скасувати")}</button></div>${accounts.length ? `<div class="saved-offline-profiles"><h3>${tx("Saved profiles", "Збережені профілі")}</h3>${accounts.map(account => `<button class="button secondary full saved-offline-profile" data-action="resume-offline-account" data-account-id="${escapeAttr(account.id)}"><span>${escapeHtml(account.name)}</span><span aria-hidden="true">›</span></button>`).join("")}</div>` : ""}</div>`;
+  return `<div class="offline-account-sheet"><h2 id="offline-profile-title">${tx("Offline profile", "Офлайн-профіль")}</h2><p class="muted">${tx("Workouts stay only on this device until you export them; cloud sync and recovery are unavailable.", "Тренування зберігаються лише на цьому пристрої, доки ти їх не експортуєш; хмарна синхронізація й відновлення недоступні.")}</p><label>${tx("Profile name", "Ім’я профілю")}<input id="offline-profile-name" autocomplete="nickname" maxlength="32" placeholder="Local"></label><div class="actions vertical"><button class="button full" data-action="continue-offline" data-modal-initial-focus>${tx("Continue offline", "Продовжити офлайн")}</button><button type="button" class="auth-quiet-link" data-action="close-modal">${tx("Cancel", "Скасувати")}</button></div>${accounts.length ? `<div class="saved-offline-profiles"><h3>${tx("Saved profiles", "Збережені профілі")}</h3>${accounts.map(account => `<button class="button secondary full saved-offline-profile" data-action="resume-offline-account" data-account-id="${escapeAttr(account.id)}"><span>${escapeHtml(account.name)}</span><span aria-hidden="true">›</span></button>`).join("")}</div>` : ""}</div>`;
 }
 
 // Password input with an overlaid 44x44 visibility toggle; the field keeps its 56px height.
@@ -26116,8 +26116,9 @@ function modalMarkup() {
 }
 
 function bottomSheet(content, labelledBy = "", requestedRole = "dialog", describedBy = "") {
-  const accessibleName = labelledBy
-    ? `aria-labelledby="${escapeAttr(labelledBy)}"`
+  const headingId = labelledBy || String(content).match(/<h2\b[^>]*?\sid="([^"]+)"/)?.[1] || "";
+  const accessibleName = headingId
+    ? `aria-labelledby="${escapeAttr(headingId)}"`
     : `aria-label="${txAttr("Dialog", "Діалог")}"`;
   const accessibleDescription = describedBy ? ` aria-describedby="${escapeAttr(describedBy)}"` : "";
   const role = requestedRole === "alertdialog" ? "alertdialog" : "dialog";
