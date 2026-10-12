@@ -229,6 +229,60 @@ test("set operations are caller-owned, CAS-protected, bounded, and exactly idemp
   assert.match(replay, /return receipt_row\.result/);
 });
 
+test("undo accepts any own completed set without weakening the apply boundary", async () => {
+  const original = await readFile(apiPath, "utf8");
+  const undoPath =
+    "supabase/migrations/20261012170946_live_undo_any_completed_set.sql";
+  const migration = await readFile(undoPath, "utf8");
+  const name = "public.social_apply_live_workout_operation";
+  const before = functionBody(original, name);
+  const after = functionBody(migration, name);
+
+  // Latest definition: the "latest only" rule is gone, replaced by an
+  // own-progress membership check that raises before any mutation.
+  assert.doesNotMatch(after, /Only the latest own set can be undone/);
+  assert.doesNotMatch(after, /undoableSetId'\s+is distinct from set_id/);
+  const notCompleted = after.indexOf("Live workout set is not completed.");
+  assert.ok(notCompleted > 0);
+  assert.ok(
+    notCompleted < after.indexOf("update gymapp_private.live_workout_progress"),
+    "denial must precede every progress mutation",
+  );
+  assert.match(
+    after,
+    /pg_catalog\.jsonb_array_elements\(progress_row\.payload->'completedSets'\) as completed\(value\)\s+where completed\.value->>'setId' = set_id/,
+  );
+  assert.match(after, /where completed\.value->>'setId' is distinct from set_id/);
+  // New marker is still the latest remaining set, as the payload CHECK requires.
+  assert.match(after, /previous_set_id := completed_sets -> -1 ->> 'setId'/);
+
+  // Every other guard is byte-identical to the original definition.
+  const strip = (body) => body.slice(0, body.indexOf("\n  else\n"));
+  assert.equal(strip(after), strip(before));
+  const tailOf = (body) => body.slice(body.indexOf("  update gymapp_private.live_workout_progress as progress"));
+  assert.equal(tailOf(after), tailOf(before));
+  for (const guard of [
+    "security definer",
+    "set search_path = ''",
+    "pg_catalog.pg_column_size(p_operation) > 4096",
+    "progress.user_id = p_caller_user_id",
+    "progress_row.revision <> p_expected_progress_revision",
+    "if replayed_result is not null then",
+    "Live workout set is invalid.",
+    "live_workout_store_receipt",
+  ]) {
+    assert.ok(after.includes(guard), `${guard} must remain`);
+  }
+  assert.doesNotMatch(after, /progress\.user_id = peer_user_id/);
+
+  assert.match(
+    migration,
+    /revoke all on function public\.social_apply_live_workout_operation\(uuid, uuid, text, uuid, bigint, jsonb\)\s+from public, anon, authenticated, service_role;\s+grant execute on function public\.social_apply_live_workout_operation\(uuid, uuid, text, uuid, bigint, jsonb\)\s+to service_role;/,
+  );
+  assert.doesNotMatch(migration, /\bgrant\b[^;]*\b(anon|authenticated)\b/i);
+  assert.doesNotMatch(migration, /create table|alter table|drop (function|table)|delete from|truncate/i);
+});
+
 test("durable operation receipts replay before lifecycle and CAS rejection", async () => {
   const api = await readFile(apiPath, "utf8");
   const cases = [
