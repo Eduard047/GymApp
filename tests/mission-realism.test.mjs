@@ -361,10 +361,10 @@ test("post-workout rewards include only missions completed by that session", () 
   })())`, context));
 
   assert.ok(result.firstMissionIds.includes("daily-check-in"));
-  assert.ok(result.firstMissionTitles.includes("Daily check-in"));
+  assert.ok(result.firstMissionTitles.includes("Show up"));
   assert.ok(result.firstBadges.includes("First Workout"));
   assert.ok(!result.secondMissionIds.includes("daily-check-in"));
-  assert.ok(!result.secondMissionTitles.includes("Daily check-in"));
+  assert.ok(!result.secondMissionTitles.includes("Show up"));
   assert.ok(!result.secondBadges.includes("First Workout"));
 });
 

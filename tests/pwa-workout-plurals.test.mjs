@@ -61,40 +61,32 @@ function title(language, cadence, family, goal) {
 test("ru and uk mission titles on workout screens use the right plural form", () => {
   const ru = (cadence, family) => [1, 2, 5, 21].map(goal => title("ru", cadence, family, goal));
   const uk = (cadence, family) => [1, 2, 5, 21].map(goal => title("uk", cadence, family, goal));
-  assert.deepEqual(ru("weekly", "workouts"), ["1 тренировка за неделю", "2 тренировки за неделю", "5 тренировок за неделю", "21 тренировка за неделю"]);
-  assert.deepEqual(ru("monthly", "workouts"), ["1 тренировка за месяц", "2 тренировки за месяц", "5 тренировок за месяц", "21 тренировка за месяц"]);
-  assert.deepEqual(ru("weekly", "sets"), ["1 подход за неделю", "2 подхода за неделю", "5 подходов за неделю", "21 подход за неделю"]);
-  assert.deepEqual(uk("weekly", "sets"), ["Тиждень на 1 підхід", "Тиждень на 2 підходи", "Тиждень на 5 підходів", "Тиждень на 21 підхід"]);
-  assert.deepEqual(uk("monthly", "sets"), ["Місяць на 1 підхід", "Місяць на 2 підходи", "Місяць на 5 підходів", "Місяць на 21 підхід"]);
-  assert.deepEqual(ru("daily", "sets"), ["Цель: 1 подход", "Цель: 2 подхода", "Цель: 5 подходов", "Цель: 21 подход"]);
-  assert.deepEqual(uk("daily", "sets"), ["Ціль: 1 підхід", "Ціль: 2 підходи", "Ціль: 5 підходів", "Ціль: 21 підхід"]);
-  assert.deepEqual(ru("daily", "exercises"), ["1 упражнение сегодня", "2 упражнения сегодня", "5 упражнений сегодня", "21 упражнение сегодня"]);
   assert.deepEqual(ru("weekly", "exercises"), ["1 упражнение за неделю", "2 упражнения за неделю", "5 упражнений за неделю", "21 упражнение за неделю"]);
   assert.deepEqual(uk("weekly", "exercises"), ["1 вправа за тиждень", "2 вправи за тиждень", "5 вправ за тиждень", "21 вправа за тиждень"]);
   assert.deepEqual(uk("monthly", "exercises"), ["1 вправа за місяць", "2 вправи за місяць", "5 вправ за місяць", "21 вправа за місяць"]);
-  assert.deepEqual(ru("weekly", "active-days"), ["1 активный день", "2 активных дня", "5 активных дней", "21 активный день"]);
+  assert.deepEqual(ru("monthly", "active-days"), ["1 активный день", "2 активных дня", "5 активных дней", "21 активный день"]);
   assert.deepEqual(ru("monthly", "max-session-sets"), ["Лучшая сессия: 1 подход", "Лучшая сессия: 2 подхода", "Лучшая сессия: 5 подходов", "Лучшая сессия: 21 подход"]);
   assert.deepEqual(ru("monthly", "max-session-exercises"), ["Лучшая сессия: 1 упражнение", "Лучшая сессия: 2 упражнения", "Лучшая сессия: 5 упражнений", "Лучшая сессия: 21 упражнение"]);
   // English and label-style titles keep the catalog text.
-  assert.equal(title("en", "weekly", "sets", 2), null);
-  assert.equal(title("uk", "weekly", "workouts", 2), null);
+  assert.equal(title("en", "weekly", "exercises", 2), null);
+  assert.equal(title("uk", "monthly", "active-days", 2), null);
 });
 
-test("mission() builds the localized counted title and keeps English unchanged", () => {
+test("mission() builds the localized counted title and shows the iOS title for aligned missions", () => {
   context.__language = "ru";
   const ruTitle = vm.runInContext(`(() => {
     state = { ...defaultAppState(), language: __language };
     const template = weeklyMissionCatalog().find(item => item.family === "workouts" && item.goal === 2);
     return mission(template, "weekly", weeklyMissionStats([]), []).title;
   })()`, context);
-  assert.equal(ruTitle, "2 тренировки за неделю");
+  assert.equal(ruTitle, "Ритм недели");
   context.__language = "en";
   const enTitle = vm.runInContext(`(() => {
     state = { ...defaultAppState(), language: __language };
     const template = weeklyMissionCatalog().find(item => item.family === "workouts" && item.goal === 2);
     return mission(template, "weekly", weeklyMissionStats([]), []).title;
   })()`, context);
-  assert.equal(enTitle, "2-workout week");
+  assert.equal(enTitle, "Weekly rhythm");
 });
 
 test("active workout progress label uses the genitive after из/із", () => {

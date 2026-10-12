@@ -226,6 +226,7 @@ const icons = {
   target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 12h.01",
   tune: "M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6",
   remove: "M5 11h14v2H5z",
+  grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
   waveform: "M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4",
   arrowUp: "M12 19V5M5 12l7-7 7 7",
   chevronDown: "M6 9l6 6 6-6",
@@ -25382,17 +25383,9 @@ function missionCountedTitle(template, cadence) {
   const ru = language === "ru";
   const sets = countNoun(goal, "sets");
   const exercises = countNoun(goal, "exercises");
-  const workouts = countNoun(goal, "workouts");
   const key = `${cadence}/${template.family}`;
   switch (key) {
-    case "daily/exercises": return ru ? `${exercises} сегодня` : null;
-    case "daily/sets": return ru ? `Цель: ${sets}` : `Ціль: ${sets}`;
-    case "weekly/workouts": return ru ? `${workouts} за неделю` : null;
-    case "monthly/workouts": return ru ? `${workouts} за месяц` : null;
-    case "weekly/active-days":
     case "monthly/active-days": return ru ? n(goal, "active day", "active days", "", "", "") : null;
-    case "weekly/sets": return ru ? `${sets} за неделю` : `Тиждень на ${sets}`;
-    case "monthly/sets": return ru ? `${sets} за месяц` : `Місяць на ${sets}`;
     case "weekly/exercises": return `${exercises} ${ru ? "за неделю" : "за тиждень"}`;
     case "monthly/exercises": return `${exercises} ${ru ? "за месяц" : "за місяць"}`;
     case "monthly/max-session-sets": return ru ? `Лучшая сессия: ${sets}` : null;
@@ -25401,14 +25394,35 @@ function missionCountedTitle(template, cadence) {
   }
 }
 
+// Display-only alignment with the iOS mission board (GamificationEngine.swift): a PWA mission that tracks the
+// same metric over the same period shows the iOS title and glyph. Ids, targets and progress stay PWA-owned;
+// missions with no iOS counterpart keep their catalog title and the default glyph.
+const IOS_ALIGNED_MISSION_DISPLAY = Object.freeze({
+  "daily/workouts": { icon: "weightlifter", title: ["Show up", "Прийди на тренування", "Приди на тренировку"] },
+  "daily/sets": { icon: "list", title: ["Quality sets", "Якісні підходи", "Качественные подходы"] },
+  "daily/exercises": { icon: "grid", title: ["Balanced session", "Збалансована сесія", "Сбалансированная сессия"] },
+  "weekly/workouts": { icon: "calendar", title: ["Weekly rhythm", "Ритм тижня", "Ритм недели"] },
+  "weekly/active-days": { icon: "calendarCheck", title: ["Active days", "Активні дні", "Активные дни"] },
+  "weekly/sets": { icon: "list", title: ["Steady sets", "Сталі підходи", "Стабильные подходы"] },
+  "monthly/workouts": { icon: "calendar", title: ["Monthly base", "Основа місяця", "Основа месяца"] },
+  "monthly/sets": { icon: "list", title: ["Sustainable sets", "Сталий обсяг підходів", "Стабильный объём подходов"] }
+});
+
+function iosAlignedMissionDisplay(template, cadence) {
+  const key = `${cadence}/${template.family}`;
+  return Object.hasOwn(IOS_ALIGNED_MISSION_DISPLAY, key) ? IOS_ALIGNED_MISSION_DISPLAY[key] : null;
+}
+
 function mission(template, cadence, stats, history) {
   const progress = template.progress(stats);
+  const aligned = iosAlignedMissionDisplay(template, cadence);
   const cadenceLabel = cadence === "daily" ? t("daily") : cadence === "weekly" ? t("weekly") : t("monthly");
   return {
     id: template.id,
     cadence,
     cadenceLabel,
-    title: missionCountedTitle(template, cadence) || tx(template.titleEn, template.titleUk),
+    title: aligned ? tx3(...aligned.title) : (missionCountedTitle(template, cadence) || tx(template.titleEn, template.titleUk)),
+    icon: aligned ? aligned.icon : "timer",
     summary: missionSummary(template, cadence),
     progressLabel: `${Math.round(progress)} / ${template.goal} ${missionUnitLabel(template)}`,
     progress,
@@ -26008,7 +26022,7 @@ function missionCard(m) {
   const missionNumber = value => (Number.isFinite(Number(value)) ? Number(value) : 0).toLocaleString(displayLocale(), { maximumFractionDigits: 0 });
   const counter = `${missionNumber(m.progress)} / ${missionNumber(m.target)}`;
   const completedPill = m.done ? `<span class="pill mission-completed-pill">${svg("check", "small-icon")}${tx3("Completed", "Виконано", "Выполнено")}</span>` : "";
-  return `<article class="mission-row ${m.done ? "highlighted" : ""}" aria-label="${escapeAttr(`${m.cadenceLabel}. ${status}`)}"><div class="mission-card-head"><span class="mission-card-icon" aria-hidden="true">${svg(m.done ? "checkCircle" : "timer")}</span><div class="mission-card-copy"><h3>${escapeHtml(m.title)}</h3><p>${escapeHtml(m.summary)}</p></div><div class="mission-card-counter"><span class="mission-counter">${escapeHtml(counter)}</span>${completedPill}</div></div><div class="progress"><span class="${percentageClass(m.progress / Math.max(1, m.target) * 100)}"></span></div></article>`;
+  return `<article class="mission-row ${m.done ? "highlighted" : ""}" aria-label="${escapeAttr(`${m.cadenceLabel}. ${status}`)}"><div class="mission-card-head"><span class="mission-card-icon" aria-hidden="true">${svg(m.done ? "checkCircle" : (m.icon || "timer"))}</span><div class="mission-card-copy"><h3>${escapeHtml(m.title)}</h3><p>${escapeHtml(m.summary)}</p></div><div class="mission-card-counter"><span class="mission-counter">${escapeHtml(counter)}</span>${completedPill}</div></div><div class="progress"><span class="${percentageClass(m.progress / Math.max(1, m.target) * 100)}"></span></div></article>`;
 }
 
 function ranksScreen() {
