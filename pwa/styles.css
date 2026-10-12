@@ -4888,7 +4888,7 @@ textarea:focus {
 
 .active-workout-exercise-summary { margin: 0; }
 
-/* One confirmation per recorded set: check, one ellipsized line, trailing Undo. */
+/* One confirmation per recorded set: check, text wrapping to at most two lines, trailing Undo. */
 .active-set-confirmation {
   display: flex;
   align-items: center;
@@ -4908,8 +4908,13 @@ textarea:focus {
   overflow: hidden;
   color: var(--text);
   font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: normal;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .active-set-confirmation-undo,
