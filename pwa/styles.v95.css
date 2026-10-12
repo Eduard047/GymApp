@@ -8088,3 +8088,5 @@ button.workout-template-row:focus-visible {
 .mapping-overview > .empty { margin: 0 12px; }
 .mapping-overview[open] { padding-bottom: 8px; }
 @media (prefers-reduced-motion: reduce) { .mapping-overview-chevron { transition: none; } }
+
+.exercise-history-muscles { margin: 12px 0; }

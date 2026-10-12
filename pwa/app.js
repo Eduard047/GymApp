@@ -26164,11 +26164,26 @@ function handleDestructiveModalKeydown(modalElement, event) {
   }
 }
 
+function exerciseHistoryMuscleRow(exercise) {
+  const summary = displayContributionFor(exercise)
+    .filter(item => muscles.some(([id]) => id === item.muscleId) && item.weight > 0)
+    .sort((a, b) => b.weight - a.weight)
+    .map(item => `${muscleLabel(item.muscleId)} ${Math.round(item.weight * 100)}%`)
+    .join(" · ") || tx("Not mapped", "Не зіставлено");
+  return `<div class="exercise-history-muscles">${settingsPanelMarkup([settingsRowMarkup({
+    icon: "fitness",
+    title: tx("Muscle groups", "Групи м’язів"),
+    subtitle: summary,
+    action: "map-exercise",
+    attrs: `data-name="${escapeAttr(exerciseRawName(exercise))}"`
+  })])}</div>`;
+}
+
 function exerciseHistoryMarkup(exercise) {
   const history = allSets().filter(set => exercisesMatch(set, exercise)).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const groups = progressHistoryGroups(history);
   const total = history.reduce((s, x) => s + Number(x.weight || 0) * Number(x.reps || 0), 0);
-  return `<div class="exercise-history-heading">${exerciseMediaThumbnail(exercise, { className: "progress" })}<h2>${escapeHtml(exerciseDisplayName(exercise))}</h2></div><div class="metric-grid three exercise-history-metrics"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx3("Total volume", "Загальний обсяг", "Общий объем")}</span><strong>${escapeHtml(formatWorkoutVolume(total))}</strong></div></div>${exerciseMuscleMapCard(exercise)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
+  return `<div class="exercise-history-heading">${exerciseMediaThumbnail(exercise, { className: "progress" })}<h2>${escapeHtml(exerciseDisplayName(exercise))}</h2></div><div class="metric-grid three exercise-history-metrics"><div><span>${tx("Sessions", "Сесії")}</span><strong>${groups.length}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${history.length}</strong></div><div><span>${tx3("Total volume", "Загальний обсяг", "Общий объем")}</span><strong>${escapeHtml(formatWorkoutVolume(total))}</strong></div></div>${exerciseHistoryMuscleRow(exercise)}${groups.length ? groupedExerciseHistory(groups) : `<div class="empty">${tx("No history for this exercise yet.", "Історії для цієї вправи ще немає.")}</div>`}`;
 }
 
 function mappingEditor(name) {

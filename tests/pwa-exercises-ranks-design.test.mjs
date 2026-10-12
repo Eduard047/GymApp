@@ -318,3 +318,11 @@ test("exercise muscle map rows are one name and value line with the bar below", 
 test("exercise history gives the total volume tile the widest column so its label fits one line", () => {
   assert.match(stylesSource, /\.exercise-history-metrics\s*\{[^}]*grid-template-columns:\s*minmax\(0, 0\.8fr\) minmax\(0, 0\.8fr\) minmax\(0, 1\.4fr\);/);
 });
+
+test("exercise history sheet has one Muscle groups row instead of the embedded muscle map", () => {
+  const context = loadPwaContext();
+  const markup = run(context, `exerciseHistoryMarkup({ id: 1, name: "Bench Press" })`);
+  assert.doesNotMatch(markup, /exercise-muscle-map|exercise-muscle-layout/);
+  assert.equal((markup.match(/data-action="map-exercise"/g) || []).length, 1);
+  assert.match(markup, /<div class="settings-panel"><button type="button" class="settings-row has-subtitle" data-action="map-exercise"/);
+});
