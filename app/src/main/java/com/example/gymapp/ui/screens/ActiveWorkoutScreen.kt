@@ -1625,8 +1625,9 @@ internal fun activeWorkoutCompletedSetTag(setId: String): String = "active_worko
 /**
  * A recorded set: one line — check, "60 kg × 8", optional record badge, and (latest set, only
  * while its rest timer runs) a trailing compact countdown with −15 / +15 / stop pills that wraps
- * under the summary when it does not fit. Undo (latest set only) and Delete set (confirmed in a
- * dialog) are long-press menu / accessibility actions, never standing buttons.
+ * under the summary when it does not fit. The latest set also shows a visible "Undo" text button
+ * (same path as the banner and the menu); Delete set (confirmed in a dialog) stays a long-press
+ * menu / accessibility action, never a standing button.
  */
 @Composable
 private fun CompletedSetRow(
@@ -1664,6 +1665,25 @@ private fun CompletedSetRow(
             SetRowAction(label = undoLabel, onClick = onUndo).takeIf { canUndo },
             SetRowAction(label = deleteLabel, destructive = true, onClick = onDelete).takeIf { canDelete }
         ),
+        inlineAction = if (canUndo) {
+            {
+                val buttonDescription = "$undoLabel, $description"
+                TextButton(
+                    onClick = onUndo,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .semantics { contentDescription = buttonDescription }
+                ) {
+                    Text(
+                        text = stringResource(R.string.voice_command_undo),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1
+                    )
+                }
+            }
+        } else {
+            null
+        },
         trailing = if (showsRest) {
             {
                 CompactRestControls(

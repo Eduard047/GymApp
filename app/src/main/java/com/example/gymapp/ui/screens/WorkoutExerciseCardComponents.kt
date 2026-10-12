@@ -836,7 +836,9 @@ internal data class SetRowAction(
  * A recorded set: one line — check, "60 kg × 8", optional record badge, and an optional [trailing]
  * block (the active workout's rest countdown) that wraps under the summary when it does not fit.
  * When [actions] is not empty, a long-press menu / accessibility actions run them (Undo and
- * Delete set on the active workout). [modifier] is applied inside the row padding.
+ * Delete set on the active workout). [inlineAction] is an optional always-visible control (the active
+ * workout's Undo button) shown at the end of the summary line, outside the row's merged semantics.
+ * [modifier] is applied inside the row padding.
  */
 @Composable
 internal fun RecordedSetRow(
@@ -845,6 +847,7 @@ internal fun RecordedSetRow(
     isPersonalRecord: Boolean,
     modifier: Modifier = Modifier,
     actions: List<SetRowAction> = emptyList(),
+    inlineAction: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null
 ) {
     val canAct = actions.isNotEmpty()
@@ -868,45 +871,52 @@ internal fun RecordedSetRow(
             modifier = Modifier.fillMaxWidth(),
             leading = {
                 Row(
-                    modifier = Modifier
-                        .heightIn(min = 44.dp)
-                        .clearAndSetSemantics {
-                            contentDescription = description
-                            if (canAct) {
-                                customActions = actions.map { action ->
-                                    CustomAccessibilityAction(action.label) {
-                                        menuOpen = false
-                                        action.onClick()
-                                        true
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .heightIn(min = 44.dp)
+                            .clearAndSetSemantics {
+                                contentDescription = description
+                                if (canAct) {
+                                    customActions = actions.map { action ->
+                                        CustomAccessibilityAction(action.label) {
+                                            menuOpen = false
+                                            action.onClick()
+                                            true
+                                        }
                                     }
                                 }
-                            }
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f), CircleShape),
-                        contentAlignment = Alignment.Center
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(18.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Text(
+                            text = summary,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
                         )
+                        if (isPersonalRecord) {
+                            PersonalRecordBadge()
+                        }
                     }
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                    if (isPersonalRecord) {
-                        PersonalRecordBadge()
-                    }
+                    inlineAction?.invoke()
                 }
             },
             trailing = trailing

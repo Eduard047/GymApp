@@ -5,6 +5,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -227,6 +230,25 @@ class ActiveWorkoutHeroUiTest {
     }
 
     @Test
+    fun latestCompletedRowShowsAVisibleUndoButtonForThatSetOnly() {
+        var undoneSetId: String? = null
+        setActiveWorkoutContent(
+            uiState = twoCompletedSetsState(),
+            onUndoLatestSet = { undoneSetId = it }
+        )
+        val undoText = composeRule.activity.getString(R.string.voice_command_undo)
+
+        composeRule.onNode(
+            hasText(undoText) and hasAnyAncestor(hasTestTag(activeWorkoutCompletedSetTag("set-1")))
+        ).assertDoesNotExist()
+        composeRule.onNode(
+            hasText(undoText) and hasAnyAncestor(hasTestTag(activeWorkoutCompletedSetTag("set-2")))
+        ).performScrollTo().assertIsDisplayed().performClick()
+
+        composeRule.runOnIdle { assertEquals("set-2", undoneSetId) }
+    }
+
+    @Test
     fun screenEntryCollapsesAnExerciseWithoutTheLatestSetAndKeepsTheLatestOneOpen() {
         setActiveWorkoutContent(uiState = twoCompletedSetsState())
         composeRule.onNodeWithTag(activeWorkoutCompletedSetTag("set-2")).assertExists()
@@ -305,8 +327,9 @@ class ActiveWorkoutHeroUiTest {
         composeRule.onNodeWithTag(ACTIVE_WORKOUT_RECORDED_BANNER_TAG).assertIsDisplayed()
         composeRule.onNodeWithText(message).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(announcement).assertIsDisplayed()
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(R.string.voice_command_undo)
+        composeRule.onNode(
+            hasText(composeRule.activity.getString(R.string.voice_command_undo)) and
+                hasAnyAncestor(hasTestTag(ACTIVE_WORKOUT_RECORDED_BANNER_TAG))
         ).assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription(
