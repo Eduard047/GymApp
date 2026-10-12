@@ -657,7 +657,8 @@ struct AppTutorialOverlay: View {
             height: usesBoundedScroll ? maximumCardHeight : nil,
             alignment: .topLeading
         )
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        // Opaque tonal surface: text must not sit on blur over the dimmed scrim.
+        .background(GymTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(GymTheme.outline.opacity(0.55), lineWidth: 1)
