@@ -26093,7 +26093,7 @@ function modalMarkup() {
       return `<article class="smart-alternative-card">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(smartMovementLabel(analysis))} · ${escapeHtml(smartRoleLabel(analysis.role))}</small></div><button class="button mini" data-action="apply-smart-alternative" data-block="${modal.blockIndex}" data-replacement-id="${Number(exercise.id)}">${tx3("Use this exercise", "Використати цю вправу", "Использовать это упражнение")}</button></article>`;
     }).join("")}</div></div>`);
   }
-  if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "Резервна копія JSON готова")}</h2><textarea readonly>${escapeHtml(modal.json)}</textarea><div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
+  if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "Резервна копія JSON готова")}</h2>${backupSummaryMarkup(modal.json)}<div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
   if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="320" value="${escapeAttr(exerciseDisplayName(modal.exercise))}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "load-profile") {
     const exercise = state.exercises.find(item => Number(item.id) === Number(modal.exerciseId));
@@ -32355,6 +32355,25 @@ function exportSessionExercises(session) {
     groups.push(group);
   });
   return groups;
+}
+
+// Summary of an export shown instead of the raw JSON; counts and size come from the same string that Copy/Download use.
+function backupSummaryMarkup(json) {
+  let data = null;
+  try { data = JSON.parse(json); } catch { data = null; }
+  const count = value => Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0;
+  const summary = data?.summary;
+  const sessions = summary ? count(summary.sessionCount) : count(data?.sessions?.length);
+  const exercises = summary ? count(summary.exerciseCount) : count(data?.exercises?.length);
+  const sets = summary ? count(summary.setCount) : count((data?.sessions || []).reduce((total, session) => total + (Array.isArray(session?.sets) ? session.sets.length : 0), 0));
+  const bytes = new TextEncoder().encode(String(json || "")).length;
+  const size = bytes < 1024 ? `${bytes} ${tx3("B", "Б", "Б")}` : `${(bytes / 1024).toLocaleString(displayLocale(), { maximumFractionDigits: 1 })} ${tx3("KB", "КБ", "КБ")}`;
+  const exportedAt = new Date(Number(data?.exportedAt));
+  const created = Number.isFinite(exportedAt.getTime())
+    ? exportedAt.toLocaleString(displayLocale(), { dateStyle: "medium", timeStyle: "short" })
+    : "";
+  const format = value => value.toLocaleString(displayLocale());
+  return `<div class="metric-grid three backup-summary"><div><span>${tx("Sessions", "Сесії")}</span><strong>${escapeHtml(format(sessions))}</strong></div><div><span>${tx3("Exercises", "Вправи", "Упражнения")}</span><strong>${escapeHtml(format(exercises))}</strong></div><div><span>${tx("Sets", "Підходи")}</span><strong>${escapeHtml(format(sets))}</strong></div></div><p class="muted backup-summary-meta">${escapeHtml([created, size].filter(Boolean).join(" · "))}</p>`;
 }
 
 function exportPayload(diagnostics) {

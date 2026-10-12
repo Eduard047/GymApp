@@ -336,3 +336,15 @@ test("muscle groups editor offers Use automatic only when catalog muscles exist"
   assert.doesNotMatch(custom, /auto-map/);
   assert.match(appSource, /action === "auto-map"/);
 });
+
+test("backup ready dialog shows a summary instead of the raw backup JSON", () => {
+  const context = loadPwaContext();
+  const json = run(context, `exportPayload(false)`);
+  const markup = run(context, `backupSummaryMarkup(${JSON.stringify(json)})`);
+  assert.match(markup, /backup-summary/);
+  assert.doesNotMatch(markup, /schemaVersion|gym-pwa/);
+  const sheetStart = appSource.indexOf('modal.type === "backup-json"');
+  const sheet = appSource.slice(sheetStart, appSource.indexOf("\n", sheetStart));
+  assert.doesNotMatch(sheet, /<textarea/);
+  for (const action of ["copy-json", "download-json", "pdf-report"]) assert.match(sheet, new RegExp(`data-action="${action}"`));
+});
