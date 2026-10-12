@@ -17,6 +17,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import com.example.gymapp.util.TrainingProfile
 import java.time.LocalDate
 import java.util.Locale
@@ -89,7 +93,27 @@ fun WeeklyReviewCard(
                 }
             }
             if (review.insights.isEmpty()) Text(stringResource(if (review.comparableCount == 0) R.string.training_insufficient_history else R.string.training_unchanged_reps))
-            TextButton(onClick = { expanded = !expanded }) { Text(stringResource(R.string.training_week_workouts)) }
+            val expandedState = stringResource(if (expanded) R.string.state_expanded else R.string.state_collapsed)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable(role = Role.Button) { expanded = !expanded }
+                    .semantics(mergeDescendants = true) { stateDescription = expandedState },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.training_week_workouts),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (expanded) review.sessions.forEach { (id, date) ->
                 TextButton(onClick = { onOpenWorkout(id) }) { Text(DateTimeUtils.formatDate(date)) }
             }
