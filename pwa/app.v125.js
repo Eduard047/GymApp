@@ -25327,12 +25327,12 @@ function missionsScreen() {
     ? `<section class="mission-list" id="mission-panel-${missionPeriod}" role="tabpanel" aria-labelledby="mission-tab-${missionPeriod}">${selected.missions.map(missionCard).join("")}</section>`
     : `<section class="panel empty-state-panel"><h2>${tx("No missions yet", "Місій ще немає")}</h2><p>${tx("Add workouts to unlock daily, weekly, and monthly goals.", "Додай тренування, щоб відкрити щоденні, тижневі й місячні цілі.")}</p><button class="button" data-action="open-add">${svg("add", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
   const formatXpNumber = value => Number(value).toLocaleString(displayLocale());
-  // Non-breaking spaces keep each separator with the item that follows it, so a wrapped rank row never ends on a dangling dot.
+  // A non-breaking space before each separator keeps the dot with the item it follows, so a wrapped rank row never starts a line with a dot.
   const nbsp = "\u00A0";
   const levelSummary = tx3(
-    `Level ${levelState.level} ·${nbsp}${rankTitle(xp)} ·${nbsp}${formatXpNumber(xp)}${nbsp}XP`,
-    `Рівень ${levelState.level} ·${nbsp}${rankTitle(xp)} ·${nbsp}${formatXpNumber(xp)}${nbsp}XP`,
-    `Уровень ${levelState.level} ·${nbsp}${rankTitle(xp)} ·${nbsp}${formatXpNumber(xp)}${nbsp}XP`
+    `Level ${levelState.level}${nbsp}· ${rankTitle(xp)}${nbsp}· ${formatXpNumber(xp)}${nbsp}XP`,
+    `Рівень ${levelState.level}${nbsp}· ${rankTitle(xp)}${nbsp}· ${formatXpNumber(xp)}${nbsp}XP`,
+    `Уровень ${levelState.level}${nbsp}· ${rankTitle(xp)}${nbsp}· ${formatXpNumber(xp)}${nbsp}XP`
   );
   const ranksHint = tx3("Opens ranks", "Відкриває ранги", "Открывает ранги");
   const rankRow = settingsPanelMarkup([settingsRowMarkup({
