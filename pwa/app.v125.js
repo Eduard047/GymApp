@@ -19152,7 +19152,7 @@ function accountSettingsSheetMarkup() {
   const subtitle = remote
     ? (email || tx3("Cloud account", "Хмарний акаунт", "Облачный аккаунт"))
     : tx3("Local profile · this device only", "Локальний профіль · лише на цьому пристрої", "Локальный профиль · только на этом устройстве");
-  const identity = `<section class="account-identity"><span class="account-identity-icon">${svg("person")}</span><div class="account-identity-text"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(subtitle)}</span></div></section>${accountIdCaptionMarkup()}`;
+  const identity = `<section class="account-identity"><div class="account-identity-main"><span class="account-identity-icon">${svg("person")}</span><div class="account-identity-text"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(subtitle)}</span></div></div>${accountIdCaptionMarkup()}</section>`;
   const backup = remote ? "" : settingsPanelMarkup([settingsRowMarkup({
     icon: "drive",
     title: tx3("Backup", "Резервна копія", "Резервная копия"),
