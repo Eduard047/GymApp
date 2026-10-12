@@ -1188,7 +1188,7 @@ svg.filled-icon.small-icon {
 
 .progress-exercise-option {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -6763,10 +6763,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 @media (max-width: 760px) {
   .garmin-metrics-summary { grid-template-columns: minmax(0, 1fr) 30px; }
   .garmin-metrics-peek { grid-column: 1 / -1; justify-content: flex-start; }
-
-  .progress-exercise-option {
-    grid-template-columns: 52px minmax(0, 1fr) auto;
-  }
 
   .exercise-muscle-layout {
     grid-template-columns: 1fr;
