@@ -303,6 +303,12 @@ test("training settings scroll to Workouts per week only from the weekly review 
   assert.match(appSource, /scrollIntoView\(\{ block: "start", behavior: reducedMotion \? "auto" : "smooth" \}\)/);
 });
 
+test("training settings keeps its title and Done pinned above the scrolling body", () => {
+  assert.match(stylesSource, /\.training-settings-sheet > \.section-title:first-child \{[\s\S]*?position: sticky;[\s\S]*?top: -18px;[\s\S]*?background: var\(--surface-strong\);/);
+  assert.match(stylesSource, /\.training-settings-sheet > \.training-settings-group \{ scroll-margin-top: var\(--training-settings-header-height\); \}/);
+  assert.doesNotMatch(stylesSource.match(/\.training-settings-sheet > \.section-title:first-child \{[^}]*\}/)[0], /backdrop-filter/);
+});
+
 test("sheets with their own Done or Cancel drop the X close button and the others keep it", () => {
   const context = loadPwaContext();
   const render = modalState => run(context, `(() => { state = defaultAppState(); modal = ${JSON.stringify(modalState)}; return modalMarkup(); })()`);

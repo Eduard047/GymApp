@@ -7282,6 +7282,19 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .training-settings-sheet { display: grid; gap: 16px; }
 .training-settings-sheet .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .training-settings-sheet h2 { margin: 0; }
+/* The title and Done stay pinned while the sheet body scrolls; the solid panel colour hides what passes beneath. */
+.training-settings-sheet { --training-settings-header-height: 64px; }
+.training-settings-sheet > .section-title:first-child {
+  position: sticky;
+  top: -18px; /* the panel's top padding; keeps content from showing above the pinned header */
+  z-index: 2;
+  box-sizing: border-box;
+  min-height: var(--training-settings-header-height);
+  margin-top: -16px;
+  padding-block: 16px 8px;
+  background: var(--surface-strong);
+}
+.training-settings-sheet > .training-settings-group { scroll-margin-top: var(--training-settings-header-height); }
 .training-settings-group { display: grid; gap: 6px; }
 .training-settings-group .field-caption { color: var(--muted); font-weight: 600; }
 
