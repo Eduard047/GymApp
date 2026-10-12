@@ -7934,3 +7934,30 @@ button.workout-template-row:focus-visible {
   font-size: 17px;
   line-height: 24px;
 }
+
+/* Exercise history: stat labels stay on one line so the tiles keep equal heights; the muscle map header never splits its button label. */
+.exercise-history-metrics > div {
+  padding-inline: 10px;
+}
+
+.exercise-history-metrics span {
+  display: block;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.button.mini {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.exercise-muscle-map > .row-head {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.exercise-muscle-map > .row-head > div {
+  flex: 1 1 160px;
+  min-width: 0;
+}
