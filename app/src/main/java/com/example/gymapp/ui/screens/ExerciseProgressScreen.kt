@@ -62,6 +62,7 @@ import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.ExerciseProgressUiState
 import com.example.gymapp.util.DateTimeUtils
+import java.text.NumberFormat
 import java.util.Locale
 
 private data class ProgressSessionHistoryGroup(
@@ -437,14 +438,14 @@ private fun ProgressSummaryCard(
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_best_weight),
             value = uiState.bestWeight?.let {
-                stringResource(R.string.progress_weight_value, it)
+                stringResource(R.string.progress_weight_value, formatProgressWeight(it))
             } ?: "—",
             emphasized = true
         ),
         ProgressMetricUi(
             label = stringResource(R.string.progress_stat_avg_weight),
             value = uiState.averageWeight?.let {
-                stringResource(R.string.progress_weight_value, it)
+                stringResource(R.string.progress_weight_value, formatProgressWeight(it))
             } ?: "—"
         ),
         ProgressMetricUi(
@@ -562,7 +563,7 @@ private fun ProgressSessionHistoryCard(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = String.format(Locale.getDefault(), "%.1f", set.weight),
+                        text = formatProgressWeight(set.weight),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -581,3 +582,10 @@ private fun ProgressSessionHistoryCard(
         }
     }
 }
+
+/** A weight without a trailing ".0", with the app language's decimal separator ("92,5", "160"). */
+internal fun formatProgressWeight(weight: Double, locale: Locale = Locale.getDefault()): String =
+    NumberFormat.getNumberInstance(locale).apply {
+        minimumFractionDigits = 0
+        maximumFractionDigits = 2
+    }.format(weight)

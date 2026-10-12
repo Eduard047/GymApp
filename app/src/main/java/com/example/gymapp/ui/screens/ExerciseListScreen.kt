@@ -2926,7 +2926,7 @@ private fun ExerciseHistorySessionCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = stringResource(R.string.progress_weight_value, maxWeight),
+                    text = stringResource(R.string.progress_weight_value, formatProgressWeight(maxWeight, locale)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )

@@ -1006,9 +1006,9 @@
     <string name="progress_spotlight_consistency">Consistency</string>
     <string name="progress_peak_weight">Peak weight</string>
     <string name="progress_average_volume">Avg volume</string>
-    <string name="progress_weight_value">%1$.1f kg</string>
+    <string name="progress_weight_value">%1$s kg</string>
     <string name="progress_reps_value">%1$d reps</string>
-    <string name="progress_session_max_weight_inline">Max %1$.1f kg</string>
+    <string name="progress_session_max_weight_inline">Max %1$s kg</string>
     <string name="progress_session_volume_inline">Vol %1$s kg</string>
     <string name="chart_no_data">Add sets to see chart.</string>
     <string name="splash_tagline">Build strength with focus and consistency.</string>

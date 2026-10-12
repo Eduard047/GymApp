@@ -1038,9 +1038,9 @@
     <string name="progress_spotlight_consistency">Регулярность</string>
     <string name="progress_peak_weight">Пиковый вес</string>
     <string name="progress_average_volume">Сред. объём</string>
-    <string name="progress_weight_value">%1$.1f кг</string>
+    <string name="progress_weight_value">%1$s кг</string>
     <string name="progress_reps_value">%1$d повт</string>
-    <string name="progress_session_max_weight_inline">Макс %1$.1f кг</string>
+    <string name="progress_session_max_weight_inline">Макс %1$s кг</string>
     <string name="progress_session_volume_inline">Объем %1$s кг</string>
     <string name="chart_no_data">Добавь подходы, чтобы увидеть график.</string>
     <string name="splash_tagline">Развивай силу с фокусом и системностью.</string>
