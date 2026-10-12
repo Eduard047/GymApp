@@ -303,6 +303,24 @@ test("training settings scroll to Workouts per week only from the weekly review 
   assert.match(appSource, /scrollIntoView\(\{ block: "start", behavior: reducedMotion \? "auto" : "smooth" \}\)/);
 });
 
+test("sheets with their own Done or Cancel drop the X close button and the others keep it", () => {
+  const context = loadPwaContext();
+  const render = modalState => run(context, `(() => { state = defaultAppState(); modal = ${JSON.stringify(modalState)}; return modalMarkup(); })()`);
+  for (const modalState of [{ type: "training-settings" }, { type: "account-settings" }, { type: "offline-account" }, { type: "confirm-finish-active-workout" }]) {
+    const markup = render(modalState);
+    assert.ok(markup.includes('<section class="modal-panel no-sheet-close">'), `${modalState.type} has its own dismiss`);
+    assert.doesNotMatch(markup, /icon-button sheet-close/, `${modalState.type} drops the X`);
+  }
+  for (const modalState of [{ type: "history", exercise: { id: 1, name: "Bench Press" } }, { type: "add-exercise" }, { type: "rename", exercise: { id: 1, name: "Bench Press" } }]) {
+    const markup = render(modalState);
+    assert.match(markup, /<button class="icon-button sheet-close" data-action="close-modal"/, `${modalState.type} keeps the X`);
+    assert.doesNotMatch(markup, /no-sheet-close/);
+  }
+  const confirm = run(context, `bottomSheet('<h2 id="t">Delete?</h2><button data-action="cancel-destructive">Cancel</button>', "t", "alertdialog")`);
+  assert.doesNotMatch(confirm, /icon-button sheet-close/);
+  assert.match(stylesSource, /\.modal-panel\.no-sheet-close\s*\{[^}]*--sheet-close-clearance:\s*0px;/);
+});
+
 test("primary muscle chips keep a 44px minimum hit area", () => {
   assert.match(stylesSource, /\.exercise-muscle-chips \.chip\s*\{[^}]*min-height:\s*44px;/);
 });

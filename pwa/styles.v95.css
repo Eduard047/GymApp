@@ -6356,6 +6356,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   --sheet-close-clearance: 52px;
 }
 
+/* Sheets with their own Done or Cancel have no X, so their titles and trailing Done use the full width. */
+.modal-panel.no-sheet-close {
+  --sheet-close-clearance: 0px;
+}
+
 .modal-panel > h2,
 .modal-panel > * > h2,
 .modal-panel > * > div:first-child > h2,

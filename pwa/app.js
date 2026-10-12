@@ -26221,7 +26221,12 @@ function bottomSheet(content, labelledBy = "", requestedRole = "dialog", describ
     : `aria-label="${txAttr("Dialog", "Діалог")}"`;
   const accessibleDescription = describedBy ? ` aria-describedby="${escapeAttr(describedBy)}"` : "";
   const role = requestedRole === "alertdialog" ? "alertdialog" : "dialog";
-  return `<div class="modal" role="${role}" aria-modal="true" ${accessibleName}${accessibleDescription}><section class="modal-panel"><div class="sheet-handle"></div><button class="icon-button sheet-close" data-action="close-modal" aria-label="${txAttr("Close dialog", "Закрити діалог")}">${svg("close")}</button>${content}</section></div>`;
+  // A sheet that already has its own Done, Cancel or Keep button drops the separate X; Esc and the backdrop still close it.
+  const hasOwnDismiss = /<button\b[^>]*\bdata-action="(?:close-modal|cancel-destructive)"/.test(String(content));
+  const closeButton = hasOwnDismiss
+    ? ""
+    : `<button class="icon-button sheet-close" data-action="close-modal" aria-label="${txAttr("Close dialog", "Закрити діалог")}">${svg("close")}</button>`;
+  return `<div class="modal" role="${role}" aria-modal="true" ${accessibleName}${accessibleDescription}><section class="modal-panel${hasOwnDismiss ? " no-sheet-close" : ""}"><div class="sheet-handle"></div>${closeButton}${content}</section></div>`;
 }
 
 function handleDestructiveModalKeydown(modalElement, event) {
