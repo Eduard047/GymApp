@@ -66,11 +66,17 @@ fun WeeklyReviewCard(
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.training_next_week))
                 }
             }
-            if (review.partial) Text(stringResource(R.string.training_partial_week), style = MaterialTheme.typography.labelMedium)
-            Text(
-                pluralStringResource(R.plurals.training_weekly_progress, target, review.trainingDays, target),
-                style = MaterialTheme.typography.titleMedium
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (review.partial) Text(
+                    stringResource(R.string.training_partial_week),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    pluralStringResource(R.plurals.training_weekly_progress, target, review.trainingDays, target),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
             Text(
                 text = stringResource(R.string.training_settings_title) + " · " + stringResource(R.string.training_settings_edit),
                 style = MaterialTheme.typography.bodySmall,
