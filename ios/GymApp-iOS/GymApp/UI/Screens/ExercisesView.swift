@@ -825,10 +825,6 @@ private struct ExerciseEditorSheet: View {
         GymBackground {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    GymSectionTitle(
-                        title: title
-                    )
-
                     TextField("Exercise name", text: $name)
                         .textInputAutocapitalization(.words)
                         .submitLabel(.done)
