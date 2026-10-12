@@ -1049,7 +1049,7 @@
 
     <string name="exercise_history_sessions">Сессии</string>
     <string name="exercise_history_sets">Подходы</string>
-    <string name="exercise_history_volume">Объём</string>
+    <string name="exercise_history_volume">Общий объем</string>
     <string name="exercise_history_empty">Для этого упражнения еще нет истории.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>
     <string name="exercise_history_volume_inline">Объем: %1$s кг</string>

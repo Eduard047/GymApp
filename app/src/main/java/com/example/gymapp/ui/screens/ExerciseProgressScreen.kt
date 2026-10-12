@@ -452,7 +452,7 @@ private fun ProgressSummaryCard(
             label = stringResource(R.string.progress_stat_total_volume),
             value = stringResource(
                 R.string.today_history_volume_kg,
-                String.format(Locale.getDefault(), "%.0f", totalVolume)
+                NumberFormat.getIntegerInstance(Locale.getDefault()).format(totalVolume)
             )
         )
     )

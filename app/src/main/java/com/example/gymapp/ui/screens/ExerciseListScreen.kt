@@ -119,6 +119,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.text.DateFormat
 import java.text.Normalizer
+import java.text.NumberFormat
 import java.security.MessageDigest
 import java.util.Date
 import java.util.Locale
@@ -2801,7 +2802,7 @@ private fun ExerciseHistoryBottomSheetContent(
                         label = stringResource(R.string.exercise_history_volume),
                         value = stringResource(
                             R.string.today_history_volume_kg,
-                            String.format(locale, "%.0f", totalVolume)
+                            NumberFormat.getIntegerInstance(locale).format(totalVolume)
                         ),
                         modifier = Modifier.weight(1f)
                     )
@@ -2942,7 +2943,7 @@ private fun ExerciseHistorySessionCard(
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = stringResource(R.string.exercise_history_volume_inline, String.format(locale, "%.0f", totalVolume)),
+                    text = stringResource(R.string.exercise_history_volume_inline, NumberFormat.getIntegerInstance(locale).format(totalVolume)),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,

@@ -1049,7 +1049,7 @@
 
     <string name="exercise_history_sessions">Сесії</string>
     <string name="exercise_history_sets">Підходи</string>
-    <string name="exercise_history_volume">Обсяг</string>
+    <string name="exercise_history_volume">Загальний обсяг</string>
     <string name="exercise_history_empty">Для цієї вправи ще немає історії.</string>
     <string name="exercise_history_sets_inline">Підходів: %1$d</string>
     <string name="exercise_history_volume_inline">Обсяг: %1$s кг</string>
