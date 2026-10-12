@@ -21,10 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -302,20 +302,23 @@ internal fun FirstRunTutorialOverlay(
                     horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(
+                    FilledTonalButton(
                         onClick = onSkip,
-                        modifier = Modifier.heightIn(min = GymSpacing.MinimumTouch)
-                    ) {
-                        Text(stringResource(R.string.tutorial_skip))
-                    }
-                    OutlinedButton(
-                        onClick = onBack,
-                        enabled = safeIndex > 0,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = GymSpacing.MinimumTouch)
                     ) {
-                        Text(stringResource(R.string.tutorial_back))
+                        Text(stringResource(R.string.tutorial_skip))
+                    }
+                    if (safeIndex > 0) {
+                        OutlinedButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = GymSpacing.MinimumTouch)
+                        ) {
+                            Text(stringResource(R.string.tutorial_back))
+                        }
                     }
                     Button(
                         onClick = if (safeIndex == FIRST_RUN_TUTORIAL_STEPS.lastIndex) {
