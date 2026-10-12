@@ -777,7 +777,10 @@ private fun AuthExternalLink(
     TextButton(
         onClick = { openStaticWebPage(context, url) },
         modifier = modifier.heightIn(min = 48.dp),
-        contentPadding = PaddingValues(horizontal = 2.dp)
+        contentPadding = PaddingValues(horizontal = 2.dp),
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Icon(
             imageVector = icon,
@@ -790,7 +793,7 @@ private fun AuthExternalLink(
             maxLines = 1,
             softWrap = false,
             textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelMedium
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal)
         )
     }
 }
