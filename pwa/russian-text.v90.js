@@ -326,7 +326,7 @@ const RUSSIAN_TEXT = new Map([
   ["Rest timer could not be saved.", "Не удалось сохранить таймер отдыха."],
   ["Rest timer could not be stopped.", "Не удалось остановить таймер отдыха."],
   ["Set logged, but the rest timer could not be saved.", "Подход записан, но сохранить таймер отдыха не удалось."],
-  ["Delete this exercise from your library? This cannot be undone in GymApp.", "Удалить это упражнение из каталога? В GymApp это действие нельзя отменить."],
+  ["Not used in any workout, so no history is removed. This cannot be undone.", "Не используется ни в одной тренировке, история не изменится. Это действие нельзя отменить."],
   ["Delete this saved set? Workout totals, progress, and recommendations will be updated. This cannot be undone in GymApp.", "Удалить этот сохранённый подход? Итоги тренировки, прогресс и рекомендации будут обновлены. В GymApp это действие нельзя отменить."],
   ["Edit set", "Редактировать подход"],
   ["Enter the email for your cloud account. The reset link must be opened in this browser.", "Введите адрес электронной почты облачного аккаунта. Ссылку для сброса нужно открыть в этом браузере."],

@@ -329,7 +329,7 @@ test("destructive confirmations have explicit Russian labels and escaped preview
   const cases = new Map([
     ["Cancel", "Отмена"],
     ["Delete set", "Удалить подход"],
-    ["Delete this exercise from your library? This cannot be undone in GymApp.", "Удалить это упражнение из каталога? В GymApp это действие нельзя отменить."],
+    ["Not used in any workout, so no history is removed. This cannot be undone.", "Не используется ни в одной тренировке, история не изменится. Это действие нельзя отменить."],
     ["Replace profile with backup?", "Заменить профиль резервной копией?"],
     ["Replace with backup", "Заменить резервной копией"],
     ["This confirmation is no longer current. Nothing was changed.", "Это подтверждение уже неактуально. Ничего не изменено."]
