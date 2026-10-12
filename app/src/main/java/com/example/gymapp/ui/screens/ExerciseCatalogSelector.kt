@@ -19,6 +19,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
@@ -41,6 +43,9 @@ import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.util.currentAppLanguageTag
+
+/** Which flow the catalog sheet serves: adding an exercise to a workout, or choosing one to view. */
+internal enum class ExerciseSelectorMode { Add, Choose }
 
 /**
  * Shared catalog picker for both new-workout planning and editing saved workouts.
@@ -62,8 +67,11 @@ internal fun ExerciseCatalogSelector(
     trigger: (@Composable (openPicker: () -> Unit) -> Unit)? = null,
     /** Lets a caller with several "add" buttons open the picker itself; [onExternalDismiss] resets its flag. */
     externalOpen: Boolean = false,
-    onExternalDismiss: () -> Unit = {}
+    onExternalDismiss: () -> Unit = {},
+    /** [ExerciseSelectorMode.Choose] is the Progress picker: own title, no add-flow chips, session counts. */
+    mode: ExerciseSelectorMode = ExerciseSelectorMode.Add
 ) {
+    val isChooseMode = mode == ExerciseSelectorMode.Choose
     var internalExpanded by rememberSaveable { mutableStateOf(false) }
     val expanded = internalExpanded || externalOpen
     val closePicker = {
@@ -139,10 +147,12 @@ internal fun ExerciseCatalogSelector(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.action_add_exercise),
+                    text = stringResource(
+                        if (isChooseMode) R.string.progress_choose_exercise else R.string.action_add_exercise
+                    ),
                     style = androidx.compose.material3.MaterialTheme.typography.headlineSmall
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!isChooseMode) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ExerciseMuscleChip(
                         selected = !frequentOnly,
                         onClick = { frequentOnly = false },
@@ -205,7 +215,14 @@ internal fun ExerciseCatalogSelector(
                                     onExerciseSelected(exercise.id)
                                     closePicker()
                                 },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = if (isChooseMode) {
+                                    ButtonDefaults.outlinedButtonColors(
+                                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                                    )
+                                } else {
+                                    ButtonDefaults.outlinedButtonColors()
+                                }
                             ) {
                                 ExerciseMediaPreview(
                                     exerciseId = exercise.id,
@@ -237,6 +254,19 @@ internal fun ExerciseCatalogSelector(
                                             style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                                             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    } else if (isChooseMode) {
+                                        val sessionCount = exerciseWorkoutCounts[exercise.id] ?: 0
+                                        Text(
+                                            text = pluralStringResource(
+                                                R.plurals.progress_sessions_count,
+                                                sessionCount,
+                                                sessionCount
+                                            ),
+                                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }

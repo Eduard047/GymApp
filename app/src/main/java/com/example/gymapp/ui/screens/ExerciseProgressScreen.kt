@@ -338,6 +338,7 @@ private fun ExerciseSelectorCard(
                 exerciseMuscleIds = uiState.exerciseMuscleIds,
                 exerciseMediaOwnerKey = exerciseMediaOwnerKey,
                 onExerciseSelected = onSelectExercise,
+                mode = ExerciseSelectorMode.Choose,
                 trigger = selectedExercise?.let { exercise ->
                     { openPicker ->
                         val sessionCount = uiState.exerciseWorkoutCounts[exercise.id] ?: 0
