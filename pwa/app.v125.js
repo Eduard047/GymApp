@@ -12626,7 +12626,11 @@ function exerciseMuscleMapCard(exercise, framed = false) {
   const active = data.filter(item => item.weight > 0).sort((a, b) => b.weight - a.weight);
   const label = active.map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(" · ") || tx("Not mapped", "Не зіставлено");
   return `<section class="${framed ? "panel highlighted" : "subpanel"} exercise-muscle-map"><div class="row-head"><div><h3>${t("muscleMap")}</h3><p>${escapeHtml(label)}</p></div><button class="button secondary mini" data-action="map-exercise" data-name="${escapeAttr(exerciseName)}">${tx("Muscle groups", "Групи м’язів")}</button></div>
-    <div class="exercise-muscle-layout">${sourceBodyMapSvg(data, max)}<div class="bars">${active.length ? active.map(item => barRow(item.label, item.weight, 1, `${Math.round(item.weight * 100)}% ${tx("target", "ціль")}`)).join("") : `<div class="empty">${tx("Choose muscles for this exercise.", "Вибери м'язи для цієї вправи.")}</div>`}</div></div></section>`;
+    <div class="exercise-muscle-layout">${sourceBodyMapSvg(data, max)}<div class="exercise-muscle-breakdown-bars">${active.length ? active.map(item => muscleShareRow(item.label, Math.round(item.weight * 100))).join("") : `<div class="empty">${tx("Choose muscles for this exercise.", "Вибери м'язи для цієї вправи.")}</div>`}</div></div></section>`;
+}
+
+function muscleShareRow(label, percent) {
+  return `<div class="exercise-muscle-breakdown-row"><div><span>${escapeHtml(label)}</span><strong>${percent}%</strong></div><div class="bar-track"><div class="bar-fill ${percentageClass(percent)}"></div></div></div>`;
 }
 
 function exerciseMuscleBreakdownCard(exercise, framed = false) {
@@ -12645,8 +12649,7 @@ function exerciseMuscleBreakdownCard(exercise, framed = false) {
   return `<section class="${className}">
     <div class="exercise-muscle-breakdown-heading"><h3>${tx3("Muscle Breakdown", "Розподіл по м’язах", "Распределение по мышцам")}</h3><span class="pill exercise-muscle-groups-pill">${svg("fitness", "small-icon")}${escapeHtml(countNoun(active.length, "groups"))}</span></div>
     <div class="exercise-muscle-breakdown-bars">${active.map(item => {
-      const percent = Math.round(item.weight * 100);
-      return `<div class="exercise-muscle-breakdown-row"><div><span>${escapeHtml(item.label)}</span><strong>${percent}%</strong></div><div class="bar-track"><div class="bar-fill ${percentageClass(percent)}"></div></div></div>`;
+      return muscleShareRow(item.label, Math.round(item.weight * 100));
     }).join("")}</div>
   </section>`;
 }

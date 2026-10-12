@@ -302,3 +302,15 @@ test("muscle mapping chips use a flat tinted selected state with a check and ari
   assert.doesNotMatch(selectedRule, /gradient/);
   assert.match(appSource, /action === "toggle-map"\) \{ el\.setAttribute\("aria-pressed"/);
 });
+
+test("exercise muscle map rows are one name and value line with the bar below", () => {
+  const context = loadPwaContext();
+  const row = run(context, `muscleShareRow("Chest", 100)`);
+  assert.match(row, /^<div class="exercise-muscle-breakdown-row"><div><span>Chest<\/span><strong>100%<\/strong><\/div><div class="bar-track">/);
+  assert.doesNotMatch(row, /target|ціль|цель/);
+  const start = appSource.indexOf("function exerciseMuscleMapCard");
+  const card = appSource.slice(start, appSource.indexOf("function muscleShareRow", start));
+  assert.match(card, /muscleShareRow\(item\.label/);
+  assert.doesNotMatch(card, /barRow\(/);
+  assert.doesNotMatch(card, /"ціль"/);
+});
