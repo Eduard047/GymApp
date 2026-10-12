@@ -4612,7 +4612,12 @@ test("undo is refused for an unrecorded set and for a set with a pending finish 
 });
 
 test("live room gate OFF: only the latest set undoes and queues undo_set; the gate flag opens older sets", async () => {
-  const { context, localStorage, runtimeNodes } = loadContext();
+  const gateOffSource = appSource.replace(
+    "const LIVE_UNDO_ANY_SET_ENABLED = true;",
+    "const LIVE_UNDO_ANY_SET_ENABLED = false;"
+  );
+  assert.notEqual(gateOffSource, appSource);
+  const { context, localStorage, runtimeNodes } = loadContext({ source: gateOffSource });
   await startThreeSetWorkout(context);
   const [first, second] = twoSetIds(context);
   assert.equal(vm.runInContext("LIVE_UNDO_ANY_SET_ENABLED", context), false);
@@ -4638,12 +4643,8 @@ test("live room gate OFF: only the latest set undoes and queues undo_set; the ga
 });
 
 test("live room gate ON enqueues undo_set for an older set and the queue rebases it while the set stays recorded", async () => {
-  const gateOnSource = appSource.replace(
-    "const LIVE_UNDO_ANY_SET_ENABLED = false;",
-    "const LIVE_UNDO_ANY_SET_ENABLED = true;"
-  );
-  assert.notEqual(gateOnSource, appSource);
-  const { context, localStorage, runtimeNodes } = loadContext({ source: gateOnSource });
+  const { context, localStorage, runtimeNodes } = loadContext();
+  assert.equal(vm.runInContext("LIVE_UNDO_ANY_SET_ENABLED", context), true, "server rule is deployed");
   await startThreeSetWorkout(context);
   const [first, second] = twoSetIds(context);
   assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);

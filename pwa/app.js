@@ -80,8 +80,8 @@ const SOCIAL_WORKOUT_INBOX_MAX_PAGES = MAX_SOCIAL_WORKOUT_INBOX_ITEMS;
 const MAX_PENDING_LIVE_REQUESTS = 25;
 const MAX_LIVE_LOCAL_WORKOUT_ID = 2_147_483_647;
 const SOCIAL_REFRESH_MIN_INTERVAL_MS = 30 * 1000;
-// Live rooms may undo any own completed set only after the server change is deployed.
-const LIVE_UNDO_ANY_SET_ENABLED = false;
+// Live rooms may undo any own completed set (server rule live_undo_any_completed_set is deployed).
+const LIVE_UNDO_ANY_SET_ENABLED = true;
 const LIVE_POLL_ACTIVE_MS = 3000;
 const LIVE_POLL_LOBBY_MS = 10000;
 const LIVE_POLL_REALTIME_FALLBACK_MS = 30000;
