@@ -14797,9 +14797,9 @@ function activeRestControlsMarkup(timerKey, remaining) {
   return `<div class="active-set-rest" data-active-rest-controls="${key}" role="group" aria-label="${escapeAttr(tx3("Rest timer", "Таймер відпочинку", "Таймер отдыха"))}"><span class="active-set-rest-time" data-timer-display="${key}" aria-hidden="true">${formatTimer(remaining)}</span>${pill(-15, "−15", tx3("Decrease rest by 15 seconds", "Зменшити відпочинок на 15 секунд", "Уменьшить отдых на 15 секунд"))}${pill(15, "+15", tx3("Increase rest by 15 seconds", "Збільшити відпочинок на 15 секунд", "Увеличить отдых на 15 секунд"))}<button class="active-set-rest-pill active-set-rest-stop" type="button" data-action="timer-stop" data-timer-control="${key}" data-timer-stop="${key}" data-key="${key}" aria-label="${escapeAttr(tx3("Stop rest", "Зупинити відпочинок", "Остановить отдых"))}"><span>${svg("stop", "small-icon")}</span></button></div>`;
 }
 
-// The latest completed row is one line: check, weight × reps, record badge and, only while its rest
-// runs, the compact countdown with −15 / +15 / stop. Undo is reachable by long-press, context menu, or
-// a focus-revealed keyboard button; there is no standing Undo button.
+// The latest completed row is one line: check, weight × reps, record badge, a standing text Undo button
+// (only while this set is still the undoable latest) and, only while its rest runs, the compact
+// countdown with −15 / +15 / stop. Undo is also reachable by the banner, long-press and context menu.
 function activeCompletedSetMarkup(set, setIndex, options) {
   const { undoable, record, timerKey, remaining } = options;
   const setId = escapeAttr(String(set.id));
@@ -14812,9 +14812,9 @@ function activeCompletedSetMarkup(set, setIndex, options) {
   ) + (record ? `, ${tx3("personal record", "особистий рекорд", "личный рекорд")}` : "");
   const restControls = timerKey && remaining > 0 ? activeRestControlsMarkup(timerKey, remaining) : "";
   const undo = undoable
-    ? `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${setId}">${tx3("Undo set", "Скасувати підхід", "Отменить подход")}</button>`
+    ? `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${setId}" aria-label="${escapeAttr(`${tx3("Undo set", "Скасувати підхід", "Отменить подход")} ${number}`)}">${tx3("Undo", "Скасувати", "Отменить")}</button>`
     : "";
-  return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${restControls}</div>${undo}</div>`;
+  return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${undo}${restControls}</div></div>`;
 }
 
 // Every unrecorded row can be logged out of order; the first unrecorded set only keeps the "current" emphasis.

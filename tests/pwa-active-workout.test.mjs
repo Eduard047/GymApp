@@ -2150,7 +2150,7 @@ test("rest controls hide at zero instead of showing Ready and are absent once th
   assert.match(styles, /\.active-set-rest\[hidden\]\s*\{\s*display:\s*none;/);
 });
 
-test("undo without a standing button: latest-only long-press menu, context menu and keyboard action", async () => {
+test("undo: visible Undo button on the latest set row plus latest-only long-press menu and context menu", async () => {
   const { context, runtimeNodes } = loadContext();
   await startTwoSetWorkout(context);
   const [firstId, secondId] = twoSetIds(context);
@@ -2164,8 +2164,15 @@ test("undo without a standing button: latest-only long-press menu, context menu 
   assert.doesNotMatch(olderRow, /data-active-set-undoable|undo-active-set|active-set-undo-key/);
   assert.match(latestRow, new RegExp(`data-active-set-undoable="${secondId}"`));
   assert.match(latestRow, new RegExp(
-    `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${secondId}">Undo set</button>`
+    `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${secondId}" aria-label="Undo set 2">Undo</button>`
   ));
+  // The button sits inside the one-line row (trailing), not as a clipped extra block under it.
+  assert.match(latestRow, /<\/span><button class="active-set-undo-key"[^>]*>Undo<\/button>(?:<div class="active-set-rest"|<\/div><\/div>$)/);
+  const styles = await readFile("pwa/styles.css", "utf8");
+  const undoKeyRule = styles.match(/\n\.active-set-undo-key\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(undoKeyRule, /min-height:\s*44px/);
+  assert.match(undoKeyRule, /color:\s*var\(--primary\)/);
+  assert.doesNotMatch(undoKeyRule, /clip:|position:\s*absolute|width:\s*1px/);
 
   // Menu only for the undoable latest set and never while a set mutation is in flight.
   assert.equal(vm.runInContext(`openActiveSetUndoMenu(${firstId})`, context), false);

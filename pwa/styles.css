@@ -4992,8 +4992,7 @@ textarea:focus {
 .active-set-rest-stop svg path { fill: currentColor; stroke: none; }
 .active-set-rest-pill:disabled { opacity: 0.5; cursor: default; }
 
-/* Keyboard alternative to long-press: hidden until it receives focus. */
-.active-set-undo-key,
+/* Keyboard alternative to long-press for Delete: hidden until it receives focus. */
 .active-set-delete-key {
   position: absolute;
   width: 1px;
@@ -5006,7 +5005,6 @@ textarea:focus {
   border: 0;
 }
 
-.active-set-undo-key:focus-visible,
 .active-set-delete-key:focus-visible {
   position: static;
   width: auto;
@@ -5023,6 +5021,22 @@ textarea:focus {
   color: var(--primary);
   font-size: 14px;
   font-weight: 600;
+}
+
+/* Standing Undo on the latest recorded set: flat accent text in a >=44px target, pushed to the trailing edge. */
+.active-set-undo-key {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .active-set-list { gap: 0; }
