@@ -264,28 +264,61 @@ class ActiveWorkoutHeroUiTest {
     }
 
     @Test
-    fun latestCompletedRowExposesUndoAsAnAccessibilityActionOnly() {
+    fun everyRecordedRowOffersUndoAsAnAccessibilityActionWhenOlderSetsMayBeUndone() {
         var undoneSetId: String? = null
         setActiveWorkoutContent(
-            uiState = twoCompletedSetsState(),
+            uiState = twoCompletedSetsState().copy(canUndoOlderSets = true),
             onUndoSet = { undoneSetId = it }
         )
         val undoLabel = composeRule.activity.getString(R.string.active_workout_undo_action)
-        fun rowDescription(number: Int) = composeRule.activity.getString(
+
+        // Only the latest row has the visible Undo button; the older row keeps the action alone.
+        composeRule.onNode(
+            hasText(composeRule.activity.getString(R.string.voice_command_undo)) and
+                hasAnyAncestor(hasTestTag(activeWorkoutCompletedSetTag("set-1")))
+        ).assertDoesNotExist()
+
+        val earlier = recordedRowNode(1)
+        val earlierUndo = earlier.config[SemanticsActions.CustomActions].single { it.label == undoLabel }
+        composeRule.runOnUiThread { earlierUndo.action() }
+        composeRule.runOnIdle { assertEquals("set-1", undoneSetId) }
+
+        val latest = recordedRowNode(2)
+        val latestUndo = latest.config[SemanticsActions.CustomActions].single { it.label == undoLabel }
+        composeRule.runOnUiThread { latestUndo.action() }
+        composeRule.runOnIdle { assertEquals("set-2", undoneSetId) }
+    }
+
+    @Test
+    fun olderRecordedRowHasNoUndoActionWhenOlderSetsCannotBeUndone() {
+        var undoneSetId: String? = null
+        setActiveWorkoutContent(
+            uiState = twoCompletedSetsState().copy(canUndoOlderSets = false),
+            onUndoSet = { undoneSetId = it }
+        )
+        val undoLabel = composeRule.activity.getString(R.string.active_workout_undo_action)
+
+        val earlier = recordedRowNode(1)
+        val earlierLabels = if (SemanticsActions.CustomActions in earlier.config) {
+            earlier.config[SemanticsActions.CustomActions].map { it.label }
+        } else {
+            emptyList()
+        }
+        assertEquals(false, undoLabel in earlierLabels)
+
+        val latest = recordedRowNode(2)
+        val latestUndo = latest.config[SemanticsActions.CustomActions].single { it.label == undoLabel }
+        composeRule.runOnUiThread { latestUndo.action() }
+        composeRule.runOnIdle { assertEquals("set-2", undoneSetId) }
+    }
+
+    private fun recordedRowNode(number: Int) = composeRule.onNodeWithContentDescription(
+        composeRule.activity.getString(
             R.string.active_workout_set_recorded_cd,
             number,
             composeRule.activity.getString(R.string.active_workout_set_summary, "60", "8")
         )
-
-        val earlier = composeRule.onNodeWithContentDescription(rowDescription(1)).fetchSemanticsNode()
-        assertEquals(false, SemanticsActions.CustomActions in earlier.config)
-
-        val latest = composeRule.onNodeWithContentDescription(rowDescription(2)).fetchSemanticsNode()
-        val undo = latest.config[SemanticsActions.CustomActions].single { it.label == undoLabel }
-        composeRule.runOnUiThread { undo.action() }
-
-        composeRule.runOnIdle { assertEquals("set-2", undoneSetId) }
-    }
+    ).fetchSemanticsNode()
 
     @Test
     fun restControlsAndUndoAreDisabledWhileAWorkoutMutationIsInFlight() {
