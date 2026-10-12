@@ -649,8 +649,8 @@ a:focus-visible,
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--brand-fill);
+  color: var(--on-accent);
 }
 
 .exercise-media-play svg { width: 16px; height: 16px; }
@@ -672,7 +672,7 @@ a:focus-visible,
 .exercise-media-thumb.progress .exercise-media-play {
   width: 28px;
   height: 28px;
-  background: var(--primary);
+  background: var(--brand-fill);
 }
 
 /* The Progress picker card uses the same 76x64 thumbnail as the shared media button on iOS. */
@@ -6235,6 +6235,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .modal-panel > .exercise-history-heading {
   padding-inline-end: var(--sheet-close-clearance);
 }
+
+/* The add-exercise sheet keeps 12px between its field and the primary action. */
+.modal-panel > #new-exercise-name + .button { margin-top: 12px; }
 
 /* A sheet heading that sits directly above a field keeps the 16px rhythm instead of touching it. */
 .modal-panel > h2 + :is(input, select, textarea, label) { margin-top: 16px; }
