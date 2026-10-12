@@ -25,9 +25,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -48,15 +55,25 @@ internal val TrainingSettingsWorkoutsPerWeek = 2..6
 /**
  * The single editor for every training-profile field: goal, calories, split and workouts per
  * week. Other screens show [TrainingSettingsSummaryRow] with an "edit" link that opens this sheet.
- * Every choice is applied immediately through [onProfileChange].
+ * Every choice is applied immediately through [onProfileChange]. With [scrollToWorkoutsPerWeek]
+ * (used by the weekly review card, whose message is about that setting) the sheet opens scrolled
+ * to the "Workouts per week" section; every other entry point opens at the top.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainingSettingsSheet(
     profile: TrainingProfile,
     onProfileChange: (TrainingProfile) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    scrollToWorkoutsPerWeek: Boolean = false
 ) {
+    val scrollState = rememberScrollState()
+    var workoutsPerWeekTop by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(scrollToWorkoutsPerWeek, workoutsPerWeekTop) {
+        if (scrollToWorkoutsPerWeek && workoutsPerWeekTop >= 0) {
+            scrollState.animateScrollTo(workoutsPerWeekTop)
+        }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         // The fully expanded sheet is as tall as the edge-to-edge window; keep its top edge below
@@ -67,7 +84,7 @@ fun TrainingSettingsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = GymSpacing.XLarge)
                 .padding(bottom = GymSpacing.XXLarge),
             verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
@@ -106,7 +123,15 @@ fun TrainingSettingsSheet(
                 label = { it.trainingSettingsLabel() },
                 onSelected = { onProfileChange(profile.copy(split = it)) }
             )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                // Measured once, while the sheet is still at the top, so scrolling cannot move it.
+                modifier = Modifier.onGloballyPositioned {
+                    if (workoutsPerWeekTop < 0) {
+                        workoutsPerWeekTop = it.positionInParent().y.toInt()
+                    }
+                },
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 TrainingSettingsSectionTitle(stringResource(R.string.training_settings_workouts_per_week))
                 Row(
                     modifier = Modifier.fillMaxWidth(),

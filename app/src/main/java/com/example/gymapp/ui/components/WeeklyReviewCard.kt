@@ -44,7 +44,8 @@ fun WeeklyReviewCard(
         TrainingSettingsSheet(
             profile = trainingProfile,
             onProfileChange = onTrainingProfileChange,
-            onDismiss = { showTrainingSettings = false }
+            onDismiss = { showTrainingSettings = false },
+            scrollToWorkoutsPerWeek = true
         )
     }
     var offset by rememberSaveable { mutableIntStateOf(0) }
