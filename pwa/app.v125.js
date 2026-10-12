@@ -14874,7 +14874,7 @@ function trainingSettingsSummaryMarkup({ onHero = false } = {}) {
 }
 
 function trainingSettingsOptionsMarkup(title, field, options, selected) {
-  return `<div class="training-settings-group"><span class="field-caption">${title}</span><div class="training-settings-options">${options.map(option => `<button type="button" class="training-settings-option ${option === selected ? "selected" : ""}" data-action="profile" data-field="${field}" data-value="${escapeAttr(option)}" aria-pressed="${option === selected}"><span>${profileValueLabel(option)}</span>${option === selected ? svg("check", "small-icon") : ""}</button>`).join("")}</div></div>`;
+  return `<div class="training-settings-group"><span class="field-caption">${title}</span><div class="training-settings-options" role="group" aria-label="${escapeAttr(title)}">${options.map(option => `<button type="button" class="training-settings-option ${option === selected ? "selected" : ""}" data-action="profile" data-field="${field}" data-value="${escapeAttr(option)}" aria-pressed="${option === selected}"><span>${profileValueLabel(option)}</span>${option === selected ? svg("check", "small-icon") : ""}</button>`).join("")}</div></div>`;
 }
 
 function trainingSettingsSheetMarkup() {
