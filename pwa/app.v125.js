@@ -10912,6 +10912,10 @@ function formatVolumeWithUnit(value, compact = true) {
 
 // Full grouped volume with its unit ("10,570 kg", "10 570 кг"); the no-break space keeps
 // the number and unit together. Compact notation stays on the Today cards only.
+function formatGroupedCount(value) {
+  return Math.round(Math.max(0, Number(value) || 0)).toLocaleString(displayLocale(), { maximumFractionDigits: 0 });
+}
+
 function formatWorkoutVolume(value) {
   return formatVolumeWithUnit(Math.round(Number(value) || 0), false).replace(" ", "\u00A0");
 }
@@ -12320,9 +12324,9 @@ function soloProgressHero() {
   const totalXpText = xp.toLocaleString(locale);
   const monthXpText = xpForSessions(selectedMonthSessions()).toLocaleString(locale);
   const levelProgressLabel = tx3(
-    `${progress.currentLevelXp} of ${progress.xpForNextLevel} XP`,
-    `${progress.currentLevelXp} із ${progress.xpForNextLevel} XP`,
-    `${progress.currentLevelXp} из ${progress.xpForNextLevel} XP`
+    `${formatGroupedCount(progress.currentLevelXp)} of ${formatGroupedCount(progress.xpForNextLevel)} XP`,
+    `${formatGroupedCount(progress.currentLevelXp)} із ${formatGroupedCount(progress.xpForNextLevel)} XP`,
+    `${formatGroupedCount(progress.currentLevelXp)} из ${formatGroupedCount(progress.xpForNextLevel)} XP`
   );
   const summary = soloProgressSummary(
     state.sessions.filter(session => Array.isArray(session?.sets) && session.sets.length > 0).length,
@@ -12471,10 +12475,10 @@ function muscleMapCard() {
   return `<section class="panel highlighted muscle-map-card">
     <div class="section-title"><div><h2>${t("muscleMap")}</h2><p>${tx3("Stronger blue means more load on that muscle group in the selected period.", "Чим насиченіший синій, тим більше навантаження на групу м'язів за вибраний період.", "Чем насыщеннее синий, тем больше нагрузка на группу мышц за выбранный период.")}</p></div></div>
     <div class="period-tabs">${["all", "month", "week"].map(period => `<button class="${musclePeriod === period ? "selected" : ""}" data-action="muscle-period" data-period="${period}">${musclePeriodLabel(period)}</button>`).join("")}</div>
-    <div class="metric-grid three tile-emphasized"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${Math.round(trainingLoad(periodSessions()))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
+    <div class="metric-grid three tile-emphasized"><div><span>${tx("Sets", "Підходи")}</span><strong>${allSets(periodSessions()).length}</strong></div><div><span>${tx("Load", "Навантаження")}</span><strong>${escapeHtml(formatWorkoutVolume(trainingLoad(periodSessions())))}</strong></div><div><span>${tx("Mapped", "Зіставлено")}</span><strong>${mappedCount()}/${state.exercises.length}</strong></div></div>
     ${sourceBodyMapSvg(data, max)}
     ${muscleMapSelectionList(data)}
-    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${escapeHtml(selected.label)}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(exerciseDisplayName(ex))}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} · ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} · ${Math.round(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "Для цієї групи м'язів у вибраному періоді немає записаних вправ.")}</div>`}</div>` : ""}
+    ${selected ? `<div class="subpanel"><h3>${tx("Exercises for", "Вправи для")}: ${escapeHtml(selected.label)}</h3>${selectedExercises.length ? selectedExercises.map(ex => `<div class="row-line"><span>${escapeHtml(exerciseDisplayName(ex))}</span><span class="muted">${n(ex.sets, "set", "sets", "підхід", "підходи", "підходів")} · ${n(ex.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")} · ${formatGroupedCount(ex.load)} ${tx("load", "навантаження")}</span><button class="button ghost mini" data-action="map-exercise" data-name="${escapeAttr(ex.name)}">${tx("Map", "Мапити")}</button></div>`).join("") : `<div class="empty">${tx("No logged exercises for this muscle in the selected period.", "Для цієї групи м'язів у вибраному періоді немає записаних вправ.")}</div>`}</div>` : ""}
     ${mappingOverviewCard()}
     <h3>${tx("Top muscle groups", "Топ груп м'язів")}</h3><div class="bars">${top.length ? top.slice(0, 8).map(item => barRow(item.label, item.load, max, `${n(item.sets, "set", "sets", "підхід", "підходи", "підходів")} · ${n(item.sessions.size, "session", "sessions", "сесія", "сесії", "сесій")}`)).join("") : `<div class="empty">${tx("Log sets to light up the body map.", "Запиши підходи, щоб підсвітити карту тіла.")}</div>`}</div>
   </section>`;
@@ -12588,7 +12592,7 @@ function sourceBodyMapSvg(data, maxLoad, { interactive = true, showLabels = true
     const intensity = item && maxLoad > 0 ? Math.min(1, item.load / maxLoad) : 0;
     const selected = interactive && muscleId && selectedMuscle === muscleId;
     const interactionAttrs = interactive && muscleId ? ` data-action="select-muscle" data-id="${muscleId}"` : "";
-    return `<path class="body-region heat-${heatStep(intensity)}${selected ? " selected" : ""}" d="${escapeAttr(region.pathData)}" aria-hidden="true" focusable="false"${interactionAttrs}><title>${escapeHtml(region.name)}${item ? ` · ${Math.round(item.load)} ${tx("load", "навантаження")}` : ""}</title></path>`;
+    return `<path class="body-region heat-${heatStep(intensity)}${selected ? " selected" : ""}" d="${escapeAttr(region.pathData)}" aria-hidden="true" focusable="false"${interactionAttrs}><title>${escapeHtml(region.name)}${item ? ` · ${formatGroupedCount(item.load)} ${tx("load", "навантаження")}` : ""}</title></path>`;
   }).join("");
   return `<div class="body-map-svg-wrap">
     <svg class="body-map-svg" viewBox="0 0 72 93" role="img" aria-label="${txAttr("Muscle load map", "Карта навантаження м'язів")}">
@@ -12601,8 +12605,8 @@ function sourceBodyMapSvg(data, maxLoad, { interactive = true, showLabels = true
 function muscleMapSelectionList(data) {
   return `<div class="muscle-map-selector" role="group" aria-label="${escapeAttr(tx3("Choose muscle group", "Обрати групу м’язів", "Выбрать группу мышц"))}">${data.map(item => {
     const selected = selectedMuscle === item.id;
-    const load = Math.round(Math.max(0, Number(item.load) || 0));
-    return `<button class="chip buttonlike ${selected ? "selected" : ""}" data-action="select-muscle" data-id="${escapeAttr(item.id)}" aria-pressed="${selected}"><span>${escapeHtml(item.label)}</span><small>${load} ${tx("load", "навантаження")}</small></button>`;
+    const load = formatGroupedCount(Math.max(0, Number(item.load) || 0));
+    return `<button class="chip buttonlike ${selected ? "selected" : ""}" data-action="select-muscle" data-id="${escapeAttr(item.id)}" aria-pressed="${selected}"><span>${escapeHtml(item.label)}</span><small>${escapeHtml(load)} ${tx("load", "навантаження")}</small></button>`;
   }).join("")}</div>`;
 }
 
@@ -25090,7 +25094,7 @@ function exerciseProgressPanel() {
   const monthEmpty = `<section class="panel empty-state-panel progress-month-empty"><span class="progress-month-empty-icon" aria-hidden="true">${svg("chart")}</span><h2>${tx3("No progress this month", "Немає прогресу за цей місяць", "В этом месяце прогресса пока нет")}</h2><p>${tx3("Log sets for the selected exercise to unlock trends.", "Додай підходи для вибраної вправи, щоб відкрити тренди.", "Запиши подходы выбранного упражнения, чтобы открыть тренды.")}</p></section>`;
   return `${monthNavigatorInline()}${progressExercisePickerMarkup(selected, loggedSessionCount)}
     ${hasMuscleMapping ? exerciseMuscleBreakdownCard(selected, true) : ""}
-    <section class="panel progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight × reps across all completed sets.", "Обсяг = вага × повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${reps}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(best))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(avg))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${escapeHtml(formatLocalizedSetWeight(Math.round(vol)))}</strong></div></div></section>
+    <section class="panel progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight × reps across all completed sets.", "Обсяг = вага × повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${formatGroupedCount(reps)}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(best))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(avg))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${escapeHtml(formatLocalizedSetWeight(Math.round(vol)))}</strong></div></div></section>
     ${hasMonthData ? `<section class="hero-panel progress-spotlight">${spotlight(selected, grouped, allTimeBest)}</section>
     ${exerciseTrendCharts(grouped, best)}` : ""}
     ${hasMonthData ? `<section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.map(g => progressHistoryCard(g)).join("")}</section>` : monthEmpty}`;
