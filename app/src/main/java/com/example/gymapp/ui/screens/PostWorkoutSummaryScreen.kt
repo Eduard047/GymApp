@@ -3,11 +3,13 @@ package com.example.gymapp.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -55,11 +57,14 @@ import com.example.gymapp.ui.components.GymProgressBar
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.HeroTone
 import com.example.gymapp.ui.components.InfoPill
+import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.achievementGridColumns
 import com.example.gymapp.ui.components.achievementRarityLabel
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.theme.GymControlShape
+import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
+import com.example.gymapp.ui.util.localizedMuscleName
 import com.example.gymapp.ui.viewmodel.CompletedMissionUiState
 import com.example.gymapp.ui.viewmodel.NewBadgeUiState
 import com.example.gymapp.ui.viewmodel.PostWorkoutPrUiState
@@ -110,6 +115,10 @@ fun PostWorkoutSummaryScreen(
             ) {
                 item {
                     HeroCard(uiState = uiState)
+                }
+
+                item {
+                    TrainingMetricsCard(uiState = uiState)
                 }
 
                 item {
@@ -200,6 +209,49 @@ private fun SectionHeading(text: String) {
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold
     )
+}
+
+/** Exercise count and the most loaded muscle of the finished workout, like the iPhone summary. */
+@Composable
+private fun TrainingMetricsCard(uiState: PostWorkoutSummaryUiState) {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val languageTag = currentAppLanguageTag()
+    val topMuscle = uiState.topMuscleId?.let { localizedMuscleName(it, languageTag) } ?: "—"
+
+    AppPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SectionHeading(text = stringResource(R.string.post_workout_metrics_title))
+                if (!uiState.note.isNullOrBlank()) {
+                    Text(
+                        text = uiState.note,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                MetricTile(
+                    label = stringResource(R.string.post_workout_metric_exercises),
+                    value = NumberFormat.getIntegerInstance(locale).format(uiState.exerciseCount),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricTile(
+                    label = stringResource(R.string.post_workout_metric_top_muscle),
+                    value = topMuscle,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
 }
 
 @Composable

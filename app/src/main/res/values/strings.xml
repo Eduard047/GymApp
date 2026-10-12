@@ -1233,6 +1233,8 @@
     <string name="post_workout_level">Level %1$d</string>
     <string name="post_workout_level_up">Level up! %1$d → %2$d</string>
     <string name="post_workout_metric_exercises">Exercises</string>
+    <string name="post_workout_metrics_title">Training metrics</string>
+    <string name="post_workout_metric_top_muscle">Top muscle</string>
     <string name="post_workout_metric_sets">Sets</string>
     <string name="post_workout_metric_volume">Volume</string>
 

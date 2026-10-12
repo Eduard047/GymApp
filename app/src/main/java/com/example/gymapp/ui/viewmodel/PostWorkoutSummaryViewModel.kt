@@ -12,6 +12,11 @@ import com.example.gymapp.data.repository.GamificationEngine
 import com.example.gymapp.data.repository.GamificationSnapshot
 import com.example.gymapp.data.repository.GymOneRepMax
 import com.example.gymapp.data.repository.GymRepository
+import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
+import com.example.gymapp.data.repository.MuscleContribution
+import com.example.gymapp.data.repository.estimatedLoad
+import com.example.gymapp.data.repository.muscleContributionsForExercise
+import com.example.gymapp.data.repository.toManualContributionMap
 import com.example.gymapp.data.repository.RANK_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutFeedback
 import com.example.gymapp.data.repository.WeeklyStreakCalculator
@@ -66,6 +71,9 @@ data class PostWorkoutSummaryUiState(
     val durationSeconds: Long? = null,
     val workoutCount: Int = 0,
     val exerciseCount: Int = 0,
+    val note: String? = null,
+    /** Id of the most loaded muscle of this session (see [topTrainedMuscleId]), or null. */
+    val topMuscleId: String? = null,
     val setCount: Int = 0,
     val volume: Double = 0.0,
     val xpGained: Int = 0,
@@ -195,6 +203,30 @@ internal fun buildPostWorkoutPersonalRecords(
 
 private const val ESTIMATE_TOLERANCE = 1e-9
 
+/**
+ * The muscle that carried the most load in one session, like the top row of the iPhone's trained
+ * muscles ranking: every set adds its estimated load times each mapped muscle's weight, muscles
+ * without load are dropped and ties keep the catalog order. Null when nothing was mapped.
+ */
+internal fun topTrainedMuscleId(
+    sessionEntries: List<ExerciseHistoryEntry>,
+    manualMappings: Map<String, List<MuscleContribution>> = emptyMap()
+): String? {
+    val loadByMuscle = HashMap<String, Double>()
+    sessionEntries.forEach { entry ->
+        val load = entry.estimatedLoad()
+        muscleContributionsForExercise(entry.exerciseName, manualMappings).forEach { contribution ->
+            loadByMuscle[contribution.muscleId] =
+                (loadByMuscle[contribution.muscleId] ?: 0.0) + load * contribution.weight
+        }
+    }
+    return MUSCLE_DEFINITIONS
+        .map { it.id to (loadByMuscle[it.id] ?: 0.0) }
+        .filter { (_, load) -> load > 0.0 }
+        .maxByOrNull { (_, load) -> load }
+        ?.first
+}
+
 class PostWorkoutSummaryViewModel(
     private val repository: GymRepository,
     private val sessionId: Long,
@@ -222,8 +254,9 @@ class PostWorkoutSummaryViewModel(
         repository.observeSessionDetails(sessionId),
         sessions,
         repository.observeAllExerciseHistory(),
-        experience
-    ) { sessionDetails, sessions, exerciseHistory, experience ->
+        experience,
+        repository.observeExerciseMuscleMappings()
+    ) { sessionDetails, sessions, exerciseHistory, experience, muscleMappings ->
         if (sessionDetails == null) {
             PostWorkoutSummaryUiState(
                 isLoading = false,
@@ -309,6 +342,11 @@ class PostWorkoutSummaryViewModel(
                 durationSeconds = sessionDetails.session.durationSeconds,
                 workoutCount = afterSnapshot.summary.workoutCount,
                 exerciseCount = workoutExerciseCount,
+                note = sessionDetails.session.note?.trim()?.takeIf { it.isNotEmpty() },
+                topMuscleId = topTrainedMuscleId(
+                    sessionEntries = sessionHistoryEntries,
+                    manualMappings = muscleMappings.toManualContributionMap()
+                ),
                 setCount = setCount,
                 volume = volume,
                 xpGained = (afterSnapshot.progression.totalXp - beforeSnapshot.progression.totalXp).coerceAtLeast(0),

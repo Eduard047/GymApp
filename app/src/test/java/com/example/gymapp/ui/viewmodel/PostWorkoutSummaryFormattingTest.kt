@@ -1,6 +1,8 @@
 package com.example.gymapp.ui.viewmodel
 
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
+import com.example.gymapp.data.repository.MuscleContribution
+import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.ui.screens.formatPostWorkoutRecordValue
 import com.example.gymapp.ui.screens.postWorkoutSubtitle
 import com.example.gymapp.util.DateTimeUtils
@@ -133,5 +135,43 @@ class PostWorkoutSummaryFormattingTest {
             DateTimeUtils.formatShortDate(date, Locale("ru")) + " · 4 ч 31 мин",
             postWorkoutSubtitle(date, 16271L, Locale("ru"))
         )
+    }
+
+    private fun manual(exerciseId: Long, vararg muscles: Pair<String, Double>) =
+        "Exercise $exerciseId".normalizedExerciseName() to
+            muscles.map { MuscleContribution(it.first, it.second) }
+
+    @Test
+    fun topMuscleIsTheMostLoadedMuscleOfTheSession() {
+        val mappings = mapOf(
+            manual(bench, "chest" to 1.0, "triceps" to 0.5),
+            manual(squat, "quads" to 1.0)
+        )
+        val session = listOf(
+            today(bench, 60.0, 8),
+            today(bench, 60.0, 8),
+            today(squat, 100.0, 8)
+        )
+        // chest: 2 x (480 + 35) = 1030; quads: 800 + 35 = 835.
+        assertEquals("chest", topTrainedMuscleId(session, mappings))
+        assertEquals("quads", topTrainedMuscleId(session.drop(2), mappings))
+    }
+
+    @Test
+    fun topMuscleWeighsSecondaryContributionsAndKeepsCatalogOrderOnTies() {
+        val mappings = mapOf(
+            manual(bench, "triceps" to 0.5, "biceps" to 0.5),
+            manual(squat, "quads" to 0.2, "calves" to 0.9)
+        )
+        // Equal loads: the muscle listed first in the catalog (biceps before triceps) wins.
+        assertEquals("biceps", topTrainedMuscleId(listOf(today(bench, 60.0, 8)), mappings))
+        assertEquals("calves", topTrainedMuscleId(listOf(today(squat, 100.0, 8)), mappings))
+    }
+
+    @Test
+    fun topMuscleIsNullWithoutMappedLoad() {
+        assertNull(topTrainedMuscleId(emptyList(), emptyMap()))
+        val unmapped = listOf(today(bench, 60.0, 8)).map { it.copy(exerciseName = "Zzz unknown thing") }
+        assertNull(topTrainedMuscleId(unmapped, emptyMap()))
     }
 }

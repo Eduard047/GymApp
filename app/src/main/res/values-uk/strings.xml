@@ -1273,6 +1273,8 @@
     <string name="post_workout_level">Рівень %1$d</string>
     <string name="post_workout_level_up">Новий рівень! %1$d → %2$d</string>
     <string name="post_workout_metric_exercises">Вправи</string>
+    <string name="post_workout_metrics_title">Показники тренування</string>
+    <string name="post_workout_metric_top_muscle">Головний м’яз</string>
     <string name="post_workout_metric_sets">Підходи</string>
     <string name="post_workout_metric_volume">Обсяг</string>
 
