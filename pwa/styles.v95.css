@@ -1176,32 +1176,50 @@ svg.filled-icon.small-icon {
   gap: 12px;
 }
 
-.progress-exercise-picker-sheet > h2,
-.progress-exercise-picker-sheet > p { margin: 0; }
+.progress-exercise-picker-sheet > h2 { margin: 0; }
 
 .progress-exercise-options {
   display: grid;
-  gap: 8px;
+  gap: 0;
   max-height: min(52vh, 560px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 2px;
 }
 
 .progress-exercise-option {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--outline-variant);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.progress-exercise-option.selected {
-  border-color: color-mix(in srgb, var(--sage) 70%, var(--outline-variant));
-  background: color-mix(in srgb, var(--sage) 12%, var(--surface));
+.progress-exercise-option:last-child { border-bottom: 0; }
+.progress-exercise-option.selected strong { font-weight: 700; }
+
+.progress-exercise-option-check {
+  display: inline-flex;
+  color: var(--sage);
+}
+
+.progress-exercise-option-check svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .progress-exercise-option-copy {
@@ -6747,10 +6765,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   .garmin-metrics-peek { grid-column: 1 / -1; justify-content: flex-start; }
 
   .progress-exercise-option {
-    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-columns: 52px minmax(0, 1fr) auto;
   }
-
-  .progress-exercise-option > .button { grid-column: 1 / -1; }
 
   .exercise-muscle-layout {
     grid-template-columns: 1fr;
@@ -8054,3 +8070,24 @@ button.workout-template-row:focus-visible {
 .mapping-grid .mapping-chip.selected .mapping-chip-check {
   display: block;
 }
+
+.mapping-overview { padding: 0; }
+.mapping-overview-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.mapping-overview-summary::-webkit-details-marker { display: none; }
+.mapping-overview-trailing { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+.mapping-overview-chevron { display: inline-flex; transition: transform 0.15s ease; }
+.mapping-overview[open] .mapping-overview-chevron { transform: rotate(90deg); }
+.mapping-overview > .mapping-row,
+.mapping-overview > .empty { margin: 0 12px; }
+.mapping-overview[open] { padding-bottom: 8px; }
+@media (prefers-reduced-motion: reduce) { .mapping-overview-chevron { transition: none; } }

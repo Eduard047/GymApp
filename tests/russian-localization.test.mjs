@@ -264,8 +264,8 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /role="menuitemradio" aria-checked="\$\{selected\}" data-action="set-language" data-language="\$\{code\}"/);
   assert.match(appSource, /\^Garmin\(\?: Fenix 8\)\?\(\?: ·\|\$\)/);
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
-  assert.match(appSource, /txAttr\("Name in English, Ukrainian, or Russian", "Назва англійською, українською або російською"\)/);
-  assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian/);
+  assert.match(appSource, /tx3\("Search exercises", "Пошук вправ", "Поиск упражнений"\)/);
+  assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian|Name in English, Ukrainian, or Russian/);
   assert.match(indexSource, /russian-text\.v90\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
   assert.match(indexSource, /app\.v125\.js/);

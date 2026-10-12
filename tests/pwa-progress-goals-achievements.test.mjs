@@ -145,6 +145,33 @@ test("Exercise picker card holds thumbnail, name, logged sessions and the picker
   assert.match(progressPanel("uk", true), /1 записана сесія/);
 });
 
+test("Progress picker sheet is a title, a short search and tappable session rows", () => {
+  const sandbox = context();
+  vm.runInContext(`
+    state = { ...defaultAppState(), language: "ru", exercises: [{ id: 1, name: "Bench Press" }, { id: 2, name: "<b>x</b>" }], sessions: [], mappings: {}, progressExerciseId: 1 };
+    progressExerciseSearchQuery = "";
+  `, sandbox);
+  const sheet = vm.runInContext("progressExercisePickerSheetMarkup()", sandbox);
+  assert.match(sheet, /<h2 id="progress-picker-sheet-title">Выберите упражнение<\/h2>/);
+  assert.match(sheet, /placeholder="Поиск упражнений"/);
+  assert.doesNotMatch(sheet, /<label|eyebrow|class="muted"|Выбрано|data-action="select-progress-exercise"[^>]*disabled/);
+  assert.equal((sheet.match(/data-action="select-progress-exercise"/g) || []).length, 2);
+  assert.equal((sheet.match(/aria-current="true"/g) || []).length, 1);
+  assert.match(sheet, /aria-selected="true" aria-current="true" data-action="select-progress-exercise" data-id="1"/);
+  assert.match(sheet, /<small>0 сессий<\/small>/);
+  assert.match(sheet, /progress-exercise-option-check/);
+  assert.match(sheet, /&lt;b&gt;x&lt;\/b&gt;/);
+});
+
+test("Muscle map card keeps the exercise mapping list behind one row below Top muscle groups", () => {
+  const sandbox = context();
+  vm.runInContext(`state = { ...defaultAppState(), language: "en", exercises: [{ id: 1, name: "Bench Press" }], sessions: [] };`, sandbox);
+  const card = vm.runInContext("muscleMapCard()", sandbox);
+  assert.match(card, /<details class="subpanel mapping-overview"><summary class="mapping-overview-summary">[\s\S]*Muscle groups by exercise/);
+  assert.ok(card.indexOf("Top muscle groups") < card.indexOf('<details class="subpanel mapping-overview"'));
+  assert.doesNotMatch(card, /Auto mapping works first/);
+});
+
 test("G1 the missions hero is one compact tappable row that opens ranks", () => {
   for (const [language, summary, hint] of [
     ["en", /Level 1 ·\u00A0[^<·]+ ·\u00A00\u00A0XP/, "Opens ranks"],

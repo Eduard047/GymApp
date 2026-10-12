@@ -492,7 +492,7 @@ test("Progress is read-only and uses a compact bounded searchable picker", () =>
   assert.doesNotMatch(screen, /progress-exercise-options|data-action="delete-set"/);
 
   const sheet = vm.runInContext("progressExercisePickerSheetMarkup()", context);
-  assert.equal((sheet.match(/<article class="progress-exercise-option/g) || []).length, 80);
+  assert.equal((sheet.match(/<button type="button" class="progress-exercise-option/g) || []).length, 80);
   assert.match(sheet, /15 more matches\. Refine the search to see them\./);
   assert.doesNotMatch(sheet, /<img src=x onerror=/);
   assert.match(sheet, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
