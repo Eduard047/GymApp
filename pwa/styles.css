@@ -690,10 +690,13 @@ a:focus-visible,
   flex-basis: 84px;
   width: 84px;
   height: 72px;
+  /* The generic .progress bar rule (999px radius) also matches this size class; keep the rounded rectangle. */
+  border-radius: 16px;
 }
 
 /* The "progress" size class also matches the generic `.progress span` bar rule; keep the play badge a small circle. */
 .exercise-media-thumb.progress .exercise-media-play {
+  display: grid;
   width: 28px;
   height: 28px;
   background: var(--brand-fill);
@@ -1886,7 +1889,7 @@ svg.filled-icon.small-icon {
 .heatmap-header .pill { flex: 0 0 auto; }
 .heatmap-header .pill .small-icon { width: 15px; height: 15px; }
 
-.month-navigator-inline { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.month-navigator-inline { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 2px; width: 100%; min-width: 0; }
 
 .month-navigator-inline .month-nav-chevron { flex: 0 0 auto; width: 44px; height: 44px; }
 .month-navigator-inline .month-nav-chevron svg { width: 15px; height: 15px; stroke-width: 2.4; }
@@ -1895,6 +1898,7 @@ svg.filled-icon.small-icon {
 .month-nav-current {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   min-width: 0;
   min-height: 44px;
@@ -7021,6 +7025,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .training-week-sessions[open] > summary .training-week-sessions-chevron { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .training-week-sessions-chevron { transition: none; } }
 /* The status caption is muted regular caption text sitting 4px above the count (12px grid gap minus 8px). */
+.training-week-review > h3 { margin: 0; }
 .training-week-status {
   margin: 0 0 -8px;
   color: var(--muted);
