@@ -284,6 +284,25 @@ test("exercise history keeps stat values and the muscle groups button on one lin
   assert.match(stylesSource, /\.exercise-muscle-map > \.row-head\s*\{[^}]*flex-wrap:\s*wrap;/);
 });
 
+test("training settings scroll to Workouts per week only from the weekly review card", () => {
+  const context = loadPwaContext();
+  const result = run(context, `(() => {
+    state = defaultAppState();
+    modal = null;
+    handleAction("open-training-settings", { dataset: {} });
+    const plain = { ...modal };
+    modal = null;
+    handleAction("open-training-settings", { dataset: { section: "workouts-per-week" } });
+    return JSON.stringify({ plain, weekly: { ...modal }, sheet: trainingSettingsSheetMarkup() });
+  })()`);
+  const parsed = JSON.parse(result);
+  assert.equal(parsed.plain.scrollTo, undefined);
+  assert.equal(parsed.weekly.scrollTo, "training-settings-workouts-per-week");
+  assert.match(parsed.sheet, /id="training-settings-workouts-per-week"/);
+  assert.match(appSource, /class="training-settings-link" data-action="open-training-settings" data-section="workouts-per-week"/);
+  assert.match(appSource, /scrollIntoView\(\{ block: "start", behavior: reducedMotion \? "auto" : "smooth" \}\)/);
+});
+
 test("primary muscle chips keep a 44px minimum hit area", () => {
   assert.match(stylesSource, /\.exercise-muscle-chips \.chip\s*\{[^}]*min-height:\s*44px;/);
 });

@@ -824,7 +824,7 @@ test("Progress overview uses the shared inline navigator, compact hero, and life
   }
   const review = run("en", "return trainingWeeklyReviewMarkup();");
   assert.match(review, /Comparison with previous weeks appears after a couple of weeks of training\./);
-  assert.match(review, /class="training-settings-link" data-action="open-training-settings">Training settings · edit</);
+  assert.match(review, /class="training-settings-link" data-action="open-training-settings" data-section="workouts-per-week">Training settings · edit</);
   assert.doesNotMatch(review, /training days|Not enough comparable/);
   assert.match(run("ru", "return trainingWeeklyReviewMarkup();"), /Настройки тренировок · изменить/);
 
