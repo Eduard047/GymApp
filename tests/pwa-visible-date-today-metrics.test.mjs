@@ -745,7 +745,11 @@ test("post-workout summary shows the iOS hero, records, badges, and actions", ()
   assert.match(screen, /\+\d+ XP<\/strong><span>Session XP/);
   assert.match(screen, /Level \d+\u00A0· [^<]+<\/strong><div class="progress"/);
   assert.match(screen, /\d+ XP to level \d+/);
-  assert.doesNotMatch(screen, /metric-grid|summary-metrics|Level progress|Week streak|Most loaded|Previous best/);
+  assert.doesNotMatch(screen, /Level progress|Week streak|Most loaded|Previous best/);
+  // Training metrics panel sits right after the hero, before the feedback panel (iPhone parity).
+  assert.match(screen, /<\/section>\s*<section class="panel summary-metrics"[\s\S]*?Training metrics<\/h2><\/div><\/div><div class="metric-grid tile-emphasized"><div><span>Exercises<\/span><strong>4<\/strong><\/div><div><span>Top muscle<\/span><strong[^>]*>[^<—][^<]*<\/strong><\/div><\/div><\/section>/);
+  assert.ok(screen.indexOf("summary-metrics") > screen.indexOf("summary-hero-xp") && screen.indexOf("summary-metrics") < screen.indexOf("Easy"));
+  assert.match(out.ruScreen, /Показатели тренировки[\s\S]*<span>Упражнения<\/span>[\s\S]*<span>Главная мышца<\/span>/);
   assert.match(screen, />Easy<[\s\S]*>Just right<[\s\S]*>Hard</);
   // Only Bench Press is a record: Row ties, Squat is 0 kg, Curl is a first session.
   assert.deepEqual(out.records.map(item => item.name), ["Bench Press"]);
@@ -765,6 +769,19 @@ test("post-workout summary shows the iOS hero, records, badges, and actions", ()
   assert.match(out.ruScreen, /Новые рекорды/);
   assert.match(out.ruScreen, /60 кг · 1ПМ 76 кг/);
   assert.match(out.ruScreen, /Детали тренировки/);
+});
+
+test("summary Training metrics panel shows the workout note and falls back to a dash without a mapped muscle", () => {
+  const sandbox = context();
+  const markup = vm.runInContext(`(() => {
+    const at = new Date(2026, 0, 5, 12).getTime();
+    const session = { id: 1, startedAt: at, note: "Felt <b>strong</b>", durationSeconds: 1800, exerciseNames: ["Zzz Unmapped Move"], sets: [{ id: 10, exerciseName: "Zzz Unmapped Move", weight: 20, reps: 10, orderIndex: 0 }] };
+    state = { ...defaultAppState(), language: "en", sessions: [session] };
+    return summaryMetricsPanel(session);
+  })()`, sandbox);
+  assert.match(markup, /<p>Felt &lt;b&gt;strong&lt;\/b&gt;<\/p>/);
+  assert.match(markup, /<span>Exercises<\/span><strong>1<\/strong>/);
+  assert.match(markup, /<span>Top muscle<\/span><strong>—<\/strong>/);
 });
 
 test("summary feedback chips stay one row of three equal columns and stack only on very narrow screens", () => {

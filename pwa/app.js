@@ -17171,11 +17171,24 @@ function summaryScreen(id) {
   const xpTotal = xpForSessions(sessionsThroughCurrent(session));
   const rewards = summaryRewards(session);
   return `${summaryHeroMarkup(session, xpGain, xpTotal)}
+    ${summaryMetricsPanel(session)}
     ${workoutFeedbackPanel(session)}
     ${summaryRecordsSection(summaryPersonalRecords(session))}
     ${summaryRewardsSection(rewards)}
     ${summaryBadgesSection(rewards.badges)}
     <div class="summary-actions"><button class="button full" data-action="summary-done">${tx3("Done", "Готово", "Готово")}</button><button class="summary-details-button" type="button" data-action="summary-view" data-id="${escapeAttr(String(session.id))}">${tx3("Workout details", "Деталі тренування", "Детали тренировки")}</button></div>`;
+}
+
+// "Training metrics" panel (iPhone parity): exercise count and the most loaded muscle of this
+// workout, with the workout note as supporting text. Placed right after the hero.
+function summaryMetricsPanel(session) {
+  const exerciseCount = sessionSummary(session).exercises;
+  const topMuscle = muscleStats([session])
+    .filter(item => item.load > 0)
+    .sort((left, right) => right.load - left.load)[0];
+  const note = String(session.note || "").trim();
+  const tile = (label, value) => `<div><span>${escapeHtml(label)}</span><strong${value.length > 8 ? ' class="long-value"' : ""}>${escapeHtml(value)}</strong></div>`;
+  return `<section class="panel summary-metrics" aria-labelledby="summary-metrics-title"><div class="section-title"><div><h2 id="summary-metrics-title">${tx3("Training metrics", "Показники тренування", "Показатели тренировки")}</h2>${note ? `<p>${escapeHtml(note)}</p>` : ""}</div></div><div class="metric-grid tile-emphasized">${tile(tx3("Exercises", "Вправи", "Упражнения"), String(exerciseCount))}${tile(tx3("Top muscle", "Головний м’яз", "Главная мышца"), topMuscle ? topMuscle.label : "—")}</div></section>`;
 }
 
 // Missions completed by this session, plus the real achievements it unlocked (present
