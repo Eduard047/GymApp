@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -60,6 +61,8 @@ import com.example.gymapp.ui.viewmodel.MuscleHeatmapUiModel
 import com.example.gymapp.ui.viewmodel.MuscleMapPeriod
 import com.example.gymapp.ui.viewmodel.MuscleOptionUiModel
 import com.example.gymapp.ui.viewmodel.MuscleProgressUiModel
+import java.text.NumberFormat
+import java.util.Locale
 import kotlin.math.min
 
 @Composable
@@ -109,7 +112,7 @@ fun MuscleHeatmapCard(
                 )
                 MetricTile(
                     label = stringResource(R.string.muscle_heatmap_load),
-                    value = heatmap.totalLoad.toString(),
+                    value = groupedLoadText(heatmap.totalLoad),
                     modifier = Modifier.weight(1f),
                     emphasized = true
                 )
@@ -514,7 +517,7 @@ private fun SelectedMuscleHighlight(
             text = stringResource(
                 R.string.muscle_heatmap_highlight_detail,
                 muscle.label,
-                muscle.load,
+                groupedLoadText(muscle.load),
                 setsCountText(muscle.sets),
                 sessionsCountText(muscle.sessions)
             ),
@@ -575,7 +578,7 @@ private fun SelectedMuscleExercises(
                             Text(
                                 text = stringResource(
                                     R.string.muscle_heatmap_exercise_detail,
-                                    exercise.load,
+                                    groupedLoadText(exercise.load),
                                     setsCountText(exercise.sets),
                                     sessionsCountText(exercise.sessions)
                                 ),
@@ -870,7 +873,7 @@ private fun TopMuscleRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = stringResource(R.string.muscle_heatmap_load_value, muscle.load),
+                text = stringResource(R.string.muscle_heatmap_load_value, groupedLoadText(muscle.load)),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -1052,6 +1055,14 @@ private data class RenderedSourceRegion(
     val path: Path,
     val bounds: Rect
 )
+
+@Composable
+private fun groupedLoadText(load: Int): String {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    return remember(locale, load) {
+        NumberFormat.getIntegerInstance(locale).format(load.toLong())
+    }
+}
 
 @Composable
 private fun setsCountText(count: Int): String =

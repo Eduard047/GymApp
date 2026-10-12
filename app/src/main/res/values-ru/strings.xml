@@ -853,14 +853,14 @@
     <string name="muscle_heatmap_back">Сзади</string>
     <string name="muscle_heatmap_less">Меньше</string>
     <string name="muscle_heatmap_more">Больше</string>
-    <string name="muscle_heatmap_highlight_detail">Выбрано: %1$s • нагрузка %2$d • %3$s • %4$s</string>
+    <string name="muscle_heatmap_highlight_detail">Выбрано: %1$s • нагрузка %2$s • %3$s • %4$s</string>
     <string name="muscle_heatmap_empty">Запиши подходы для подсветки карты тела.</string>
     <string name="muscle_heatmap_top_title">Наиболее нагруженные группы</string>
-    <string name="muscle_heatmap_load_value">нагрузка %1$d</string>
+    <string name="muscle_heatmap_load_value">нагрузка %1$s</string>
     <string name="muscle_heatmap_muscle_detail">%1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_selected_title">Нагрузка на %1$s по упражнениям</string>
     <string name="muscle_heatmap_selected_empty">В выбранном периоде нет сопоставимых подходов для этой группы.</string>
-    <string name="muscle_heatmap_exercise_detail">нагрузка %1$d • %2$s • %3$s</string>
+    <string name="muscle_heatmap_exercise_detail">нагрузка %1$s • %2$s • %3$s</string>
     <string name="muscle_heatmap_unmapped_title">Новые / несопоставимые упражнения</string>
     <string name="muscle_heatmap_unmapped_detail">%1$s • %2$s</string>
     <string name="muscle_heatmap_mappings_title">Сопоставление упражнений с мышцами</string>
