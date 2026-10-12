@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v168";
-// v168 ships app.v124 and styles.v94; v167 shipped app.v123 and styles.v94; v166 shipped app.v122 and styles.v93; v165 shipped app.v121 and styles.v93; v164 shipped app.v120 and styles.v92; v163 shipped app.v119 and styles.v92; v162 shipped app.v119 and styles.v91; v161 shipped app.v118 and styles.v90; v160 let saved and active workouts be edited set by set.
+const CACHE_VERSION = "v169";
+// v169 ships app.v125, styles.v95 and russian-text.v91; v168 shipped app.v124 and styles.v94; v167 shipped app.v123 and styles.v94; v166 shipped app.v122 and styles.v93; v165 shipped app.v121 and styles.v93; v164 shipped app.v120 and styles.v92; v163 shipped app.v119 and styles.v92; v162 shipped app.v119 and styles.v91; v161 shipped app.v118 and styles.v90; v160 let saved and active workouts be edited set by set.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,7 +48,7 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v94.css",
+  "./styles.v95.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v73.js",
@@ -59,10 +59,10 @@ const SHELL_ASSETS = [
   "./supabase-realtime.v1.js",
   "./live-workout.v3.js",
   "./live-workout-state.v1.js",
-  "./russian-text.v90.js",
+  "./russian-text.v91.js",
   "./exercise-search-vocabulary.v1.js",
   "./voice-workout.v2.js",
-  "./app.v124.js",
+  "./app.v125.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
