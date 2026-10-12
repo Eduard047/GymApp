@@ -294,7 +294,8 @@ test("A4 achievement details open through a modal sheet and unknown ids are igno
   assert.match(sheet, /class="pill achievement-rarity-pill">[^<]+<\/span>/);
   assert.match(sheet, /<strong class="achievement-sheet-count">0 \/ 5<\/strong>/);
   assert.match(sheet, /achievement-sheet-status"><svg[^>]*>.*?<\/svg>Закрыто<\/p>/);
-  assert.doesNotMatch(sheet, /XP|unlock date/i);
+  assert.match(sheet, /achievement-sheet-reward">\+150 XP</);
+  assert.doesNotMatch(sheet, /unlock date/i);
   assert.match(run("uk", `return achievementSheetMarkup("workout_5");`), /Заблоковано<\/p>/);
   const missions = run("en", "return missionsScreen();");
   assert.doesNotMatch(missions, /achievement-sheet|role="dialog"/);
