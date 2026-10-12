@@ -970,19 +970,22 @@ struct WorkoutMuscleLoadCard: View {
                     GymMetricTile(
                         label: "Sets",
                         value: data.totalSets.formatted(.number.locale(gymAppLocale())),
-                        emphasized: true
+                        emphasized: true,
+                        singleLineLabel: true
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: "Load",
                         value: compactNumber(data.totalLoad),
-                        emphasized: true
+                        emphasized: true,
+                        singleLineLabel: true
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: "Mapped",
                         value: "\(data.mappedExerciseCount)/\(data.totalExerciseCount)",
-                        emphasized: true
+                        emphasized: true,
+                        singleLineLabel: true
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
