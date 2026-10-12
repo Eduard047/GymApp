@@ -185,7 +185,7 @@ data class MuscleOptionUiModel(
 
 data class MuscleHeatmapUiModel(
     val periodLabel: String = DateTimeUtils.monthLabel(0),
-    val period: MuscleMapPeriod = MuscleMapPeriod.AllTime,
+    val period: MuscleMapPeriod = MuscleMapPeriod.Month,
     val periodOptions: List<MuscleMapPeriodOptionUiModel> = emptyList(),
     val totalSets: Int = 0,
     val totalLoad: Int = 0,
@@ -366,7 +366,7 @@ class WorkoutListViewModel(
     private val monthOffset = MutableStateFlow(0)
     private val weekOffset = MutableStateFlow(0)
     private val historyPeriod = MutableStateFlow(TrainingHistoryPeriod.Week)
-    private val muscleMapPeriod = MutableStateFlow(MuscleMapPeriod.AllTime)
+    private val muscleMapPeriod = MutableStateFlow(MuscleMapPeriod.Month)
     private val selectedMuscleId = MutableStateFlow<String?>(null)
     private val manualMappingExerciseName = MutableStateFlow<String?>(null)
     private val recommendationRefresh = MutableStateFlow(0L)
@@ -457,7 +457,7 @@ class WorkoutListViewModel(
         } else {
             flowOf(
                 WorkoutMuscleSelection(
-                    period = MuscleMapPeriod.AllTime,
+                    period = MuscleMapPeriod.Month,
                     muscleId = null,
                     editorName = null,
                     mappings = emptyList()
