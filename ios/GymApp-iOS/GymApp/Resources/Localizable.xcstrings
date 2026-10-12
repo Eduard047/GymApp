@@ -2528,7 +2528,7 @@
         }
       }
     },
-    "Activity Heatmap" : {
+    "Activity heatmap" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
@@ -8745,7 +8745,7 @@
         }
       }
     },
-    "Muscle Map" : {
+    "Muscle map" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {

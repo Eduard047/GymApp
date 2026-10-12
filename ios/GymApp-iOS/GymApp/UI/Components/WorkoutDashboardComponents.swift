@@ -837,7 +837,7 @@ struct WorkoutActivityHeatmap: View {
 
     private var heatmapTitle: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Activity Heatmap")
+            Text("Activity heatmap")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
             monthNavigator
@@ -945,7 +945,7 @@ struct WorkoutMuscleLoadCard: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Muscle Map")
+                    Text("Muscle map")
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
                     Text("Compare which muscle groups carried your logged training load.")
