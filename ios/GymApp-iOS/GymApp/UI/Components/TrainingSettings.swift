@@ -13,7 +13,12 @@ import SwiftUI
 struct TrainingSettingsView: View {
     @Binding var profile: TrainingProfile
     var presentedAsSheet: Bool = false
+    /// When true, the view scrolls to the "Workouts per week" section on appear
+    /// (used by the weekly review card, whose message is about that setting).
+    var scrollToWorkoutsPerWeek: Bool = false
     var onChange: (TrainingProfile) -> Void = { _ in }
+
+    private static let workoutsPerWeekSectionID = "training-settings-workouts-per-week"
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
@@ -22,6 +27,7 @@ struct TrainingSettingsView: View {
 
     var body: some View {
         GymBackground {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
                     optionSection(
@@ -85,10 +91,18 @@ struct TrainingSettingsView: View {
                             languageCode: languageCode
                         ))
                     }
+                    .id(Self.workoutsPerWeekSectionID)
                 }
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
                 .padding(.top, GymTheme.screenVerticalInset)
                 .padding(.bottom, GymTheme.screenBottomInset)
+            }
+            .onAppear {
+                guard scrollToWorkoutsPerWeek else { return }
+                DispatchQueue.main.async {
+                    proxy.scrollTo(Self.workoutsPerWeekSectionID, anchor: .top)
+                }
+            }
             }
         }
         .navigationTitle(gymText(
@@ -156,11 +170,17 @@ struct TrainingSettingsView: View {
 /// modally (rather than pushing it in an existing `NavigationStack`).
 struct TrainingSettingsSheet: View {
     @Binding var profile: TrainingProfile
+    var scrollToWorkoutsPerWeek: Bool = false
     var onChange: (TrainingProfile) -> Void = { _ in }
 
     var body: some View {
         NavigationStack {
-            TrainingSettingsView(profile: $profile, presentedAsSheet: true, onChange: onChange)
+            TrainingSettingsView(
+                profile: $profile,
+                presentedAsSheet: true,
+                scrollToWorkoutsPerWeek: scrollToWorkoutsPerWeek,
+                onChange: onChange
+            )
         }
         .presentationDetents([.large])
     }

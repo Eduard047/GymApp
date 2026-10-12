@@ -111,7 +111,10 @@ struct WeeklyReviewCard: View {
         }
 #endif
         .sheet(isPresented: $showsWeeklyTargetEditor) {
-            TrainingSettingsSheet(profile: trainingProfileBinding(current: trainingProfile))
+            TrainingSettingsSheet(
+                profile: trainingProfileBinding(current: trainingProfile),
+                scrollToWorkoutsPerWeek: true
+            )
         }
         .sheet(item: $evidence) { insight in
             NavigationStack {
