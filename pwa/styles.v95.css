@@ -3256,6 +3256,10 @@ button.leaderboard-row {
   cursor: pointer;
 }
 
+.segmented.auth-mode-switch button {
+  text-align: center;
+}
+
 .segmented button span {
   display: block;
   margin-top: 3px;
