@@ -185,9 +185,9 @@ test("More sheet holds History, Muscle groups, Machine weights, Rename for custo
 
 test("Ranks hero states the XP still needed with the next rank name and hides the caption at max rank", () => {
   for (const [language, pattern, level] of [
-    ["en", /XP to [A-Z][^<]+<\/p>/, /Level 1 · 100 XP/],
-    ["uk", /XP до «[^»]+»/, /Рівень 1 · 100 XP/],
-    ["ru", /XP до «Начинающий»/, /Уровень 1 · 100 XP/]
+    ["en", /XP to [A-Z][^<]+<\/p>/, /Level 1\u00A0· 100 XP/],
+    ["uk", /XP до «[^»]+»/, /Рівень 1\u00A0· 100 XP/],
+    ["ru", /XP до «Начинающий»/, /Уровень 1\u00A0· 100 XP/]
   ]) {
     const context = loadPwaContext(language);
     run(context, "totalXp = () => 100");
@@ -216,7 +216,7 @@ test("Ranks ladder is one list with one progress bar on the next rank and a curr
   assert.match(screen, /rank-row current unlocked" role="listitem" aria-current="true"/);
   assert.doesNotMatch(screen, /class="pill"/);
   assert.match(screen, /<span class="sr-only">, Current<\/span>/);
-  assert.match(screen, /Level 3 · from [\d,.   ]+ XP/);
+  assert.match(screen, /Level 3\u00A0· from [\d,.   ]+ XP/);
   assert.match(screen, /<span class="rank-remaining">[\d,.   ]+ XP to go<\/span>/);
   const nextRow = screen.match(/<li class="rank-row [^>]*>(?:(?!<\/li>)[\s\S])*rank-row-track[\s\S]*?<\/li>/)[0];
   assert.match(nextRow, /Starter/);

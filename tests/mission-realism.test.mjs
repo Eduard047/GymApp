@@ -421,7 +421,7 @@ test("historical summaries use deterministic timestamp and id chronology", () =>
   assert.notEqual(result.currentProgress.level, result.globalProgress.level,
     "future workouts must not change an old summary level");
   const toNext = result.currentProgress.xpForNextLevel - result.currentProgress.currentLevelXp;
-  assert.match(result.currentMarkup, new RegExp(`>Level ${result.currentProgress.level} · `));
+  assert.match(result.currentMarkup, new RegExp(`>Level ${result.currentProgress.level}\u00A0· `));
   assert.match(result.currentMarkup, new RegExp(`>${toNext} XP to level ${result.currentProgress.level + 1}<`));
   assert.match(result.currentMarkup, />20 kg · Est\. 1RM 20\.7 kg</);
   assert.match(result.laterMarkup, />30 kg · Est\. 1RM 31 kg</);

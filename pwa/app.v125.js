@@ -17047,7 +17047,7 @@ function summaryHeroMarkup(session, xpGain, xpTotal) {
   const duration = Number(session.durationSeconds) > 0 ? savedWorkoutDurationLabel(session.durationSeconds) : "";
   const dateLine = `${fmtShortDate(session.startedAt)}${duration ? ` · ${duration}` : ""}`;
   const toNext = Math.max(0, progress.xpForNextLevel - progress.currentLevelXp);
-  return `<section class="hero-panel summary-hero"><div class="summary-hero-title">${svg("checkCircle")}<div><h2>${tx3("Workout complete", "Тренування завершено", "Тренировка завершена")}</h2><p>${escapeHtml(dateLine)}</p></div></div>${summaryStatsRowMarkup(session)}<div class="summary-hero-xp"><strong>+${xpGain} XP</strong><span>${tx3("Session XP", "XP сесії", "XP сессии")}</span></div><div class="summary-hero-level"><strong>${tx3(`Level ${level} · ${rankTitle(xpTotal)}`, `Рівень ${level} · ${rankTitle(xpTotal)}`, `Уровень ${level} · ${rankTitle(xpTotal)}`)}</strong><div class="progress" aria-hidden="true"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div><span>${tx3(`${toNext} XP to level ${level + 1}`, `${toNext} XP до рівня ${level + 1}`, `${toNext} XP до уровня ${level + 1}`)}</span></div></section>`;
+  return `<section class="hero-panel summary-hero"><div class="summary-hero-title">${svg("checkCircle")}<div><h2>${tx3("Workout complete", "Тренування завершено", "Тренировка завершена")}</h2><p>${escapeHtml(dateLine)}</p></div></div>${summaryStatsRowMarkup(session)}<div class="summary-hero-xp"><strong>+${xpGain} XP</strong><span>${tx3("Session XP", "XP сесії", "XP сессии")}</span></div><div class="summary-hero-level"><strong>${tx3(`Level ${level}\u00A0· ${rankTitle(xpTotal)}`, `Рівень ${level}\u00A0· ${rankTitle(xpTotal)}`, `Уровень ${level}\u00A0· ${rankTitle(xpTotal)}`)}</strong><div class="progress" aria-hidden="true"><span class="${percentageClass(progress.progressFraction * 100)}"></span></div><span>${tx3(`${toNext} XP to level ${level + 1}`, `${toNext} XP до рівня ${level + 1}`, `${toNext} XP до уровня ${level + 1}`)}</span></div></section>`;
 }
 
 // Completed-sets / volume / duration tiles, rendered inside the summary hero under the title block.
@@ -22052,7 +22052,7 @@ function socialRankingRows() {
 
 function friendRankingRow(row, index) {
   const stats = row.statsAvailable && row.xp !== null && row.level !== null && row.workouts !== null;
-  const content = `<div class="rank-place">${row.isCurrent ? svg("person", "small-icon") : index + 1}</div><div><h3>${escapeHtml(row.displayName)}</h3><p>${stats ? `${tx("Level", "Рівень")} ${row.level} · ${n(row.workouts, "workout", "workouts", "тренування", "тренування", "тренувань")}` : tx("Progress is private", "Прогрес приховано")}</p></div><strong>${stats ? `${row.xp} XP` : "—"}</strong>`;
+  const content = `<div class="rank-place">${row.isCurrent ? svg("person", "small-icon") : index + 1}</div><div><h3>${escapeHtml(row.displayName)}</h3><p>${stats ? `${tx("Level", "Рівень")} ${row.level}\u00A0· ${n(row.workouts, "workout", "workouts", "тренування", "тренування", "тренувань")}` : tx("Progress is private", "Прогрес приховано")}</p></div><strong>${stats ? `${row.xp} XP` : "—"}</strong>`;
   return row.isCurrent
     ? `<article class="leaderboard-row highlighted">${content}</article>`
     : `<button class="leaderboard-row social-friend-row ${socialPushObjectClass("friend_request_accepted", row.friendshipId)}" data-action="open-friend" data-profile-id="${escapeAttr(row.profileId)}" data-social-object-type="friend_request_accepted" data-social-object-id="${escapeAttr(row.friendshipId)}">${content}</button>`;
@@ -26065,14 +26065,14 @@ function ranksScreen() {
   const number = value => Number(value).toLocaleString(displayLocale());
   const nextRank = ranks.find(rank => !rank.isUnlocked) || null;
   const nextProgress = nextRank ? Math.round(nextRank.progressFraction * 100) : 100;
-  const hero = `<section class="hero-panel rank-hero"><h2 class="rank-hero-title">${svg("trophy")}<span>${rankTitle(xp)}</span></h2><p class="rank-hero-subtitle">${tx3(`Level ${level} · ${number(xp)} XP`, `Рівень ${level} · ${number(xp)} XP`, `Уровень ${level} · ${number(xp)} XP`)}</p>${nextRank ? `<div class="progress rank-hero-track" aria-hidden="true"><span class="${percentageClass(nextProgress)}"></span></div><p class="rank-hero-caption">${tx3(`${number(nextRank.xpRemaining)} XP to ${nextRank.title}`, `${number(nextRank.xpRemaining)} XP до «${nextRank.title}»`, `${number(nextRank.xpRemaining)} XP до «${nextRank.title}»`)}</p>` : ""}</section>`;
+  const hero = `<section class="hero-panel rank-hero"><h2 class="rank-hero-title">${svg("trophy")}<span>${rankTitle(xp)}</span></h2><p class="rank-hero-subtitle">${tx3(`Level ${level}\u00A0· ${number(xp)} XP`, `Рівень ${level}\u00A0· ${number(xp)} XP`, `Уровень ${level}\u00A0· ${number(xp)} XP`)}</p>${nextRank ? `<div class="progress rank-hero-track" aria-hidden="true"><span class="${percentageClass(nextProgress)}"></span></div><p class="rank-hero-caption">${tx3(`${number(nextRank.xpRemaining)} XP to ${nextRank.title}`, `${number(nextRank.xpRemaining)} XP до «${nextRank.title}»`, `${number(nextRank.xpRemaining)} XP до «${nextRank.title}»`)}</p>` : ""}</section>`;
   if (!ranks.length) {
     return `${hero}<section class="panel"><div class="empty"><h2>${tx("No ranks yet", "Рангів ще немає")}</h2><p>${tx("Earn XP to unlock rank titles.", "Заробляй XP, щоб відкривати ранги.")}</p></div></section>`;
   }
   const rows = ranks.map(rank => {
     const isNext = nextRank?.id === rank.id;
     const state = rank.isCurrent ? tx("Current", "Поточний") : rank.isUnlocked ? tx("Unlocked", "Відкрито") : tx("Locked", "Закрито");
-    const detail = tx3(`Level ${rank.level} · from ${number(rank.xp)} XP`, `Рівень ${rank.level} · від ${number(rank.xp)} XP`, `Уровень ${rank.level} · от ${number(rank.xp)} XP`);
+    const detail = tx3(`Level ${rank.level}\u00A0· from ${number(rank.xp)} XP`, `Рівень ${rank.level}\u00A0· від ${number(rank.xp)} XP`, `Уровень ${rank.level}\u00A0· от ${number(rank.xp)} XP`);
     return `<li class="rank-row ${rank.isCurrent ? "current" : ""} ${rank.isUnlocked ? "unlocked" : "locked"}" role="listitem"${rank.isCurrent ? ' aria-current="true"' : ""}><span class="rank-icon" aria-hidden="true">${svg(rank.isUnlocked ? "trophy" : "lock")}</span><div class="rank-copy"><strong class="rank-name">${rank.title}<span class="sr-only">, ${state}</span></strong><small class="rank-detail">${detail}</small>${isNext ? `<div class="progress rank-row-track" aria-hidden="true"><span class="${percentageClass(nextProgress)}"></span></div><span class="rank-remaining">${tx3(`${number(rank.xpRemaining)} XP to go`, `ще ${number(rank.xpRemaining)} XP`, `ещё ${number(rank.xpRemaining)} XP`)}</span>` : ""}</div></li>`;
   }).join("");
   return `${hero}<section class="panel rank-ladder-panel"><ul class="rank-ladder" role="list" aria-label="${txAttr("Rank ladder", "Драбина рангів")}">${rows}</ul></section>`;

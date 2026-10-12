@@ -743,7 +743,7 @@ test("post-workout summary shows the iOS hero, records, badges, and actions", ()
   assert.match(screen, /Workout complete/);
   assert.match(screen, /Tue, Jan 6 · 4 h 31 min/);
   assert.match(screen, /\+\d+ XP<\/strong><span>Session XP/);
-  assert.match(screen, /Level \d+ · [^<]+<\/strong><div class="progress"/);
+  assert.match(screen, /Level \d+\u00A0· [^<]+<\/strong><div class="progress"/);
   assert.match(screen, /\d+ XP to level \d+/);
   assert.doesNotMatch(screen, /metric-grid|summary-metrics|Level progress|Week streak|Most loaded|Previous best/);
   assert.match(screen, />Easy<[\s\S]*>Just right<[\s\S]*>Hard</);
