@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.outlined.PanTool
 import androidx.compose.material.icons.outlined.Storage
 import com.example.gymapp.ui.theme.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -323,8 +324,13 @@ private fun AccountIdentifierRow(label: String, value: String) {
                 modifier = Modifier.semantics { contentDescription = value }
             )
         }
+        // Blue tonal pill like iPhone: Recovery Mint is for recovery states, not secondary actions.
         FilledTonalButton(
             onClick = { if (copyAccountIdentifier(context, label, value)) copied = true },
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.primary
+            ),
             modifier = Modifier.semantics {
                 contentDescription = "$copyLabel. $copyHint"
                 if (copied) liveRegion = LiveRegionMode.Polite
