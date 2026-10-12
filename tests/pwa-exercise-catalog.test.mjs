@@ -5193,6 +5193,13 @@ test("Discard plan is localized, exact, and distinct from clearing editor conten
   assert.equal(vm.runInContext("requestDiscardWorkoutDraft()", context), true);
   assert.equal(vm.runInContext("modal.type", context), "confirm-discard-plan");
   assert.match(vm.runInContext("modalMarkup()", context), /Discard this workout plan\?/);
+  assert.match(vm.runInContext("modalMarkup()", context), /The plan and its saved draft will be removed\.[\s\S]*The selected LIVE recipient will be removed too\./);
+  assert.match(vm.runInContext(`state.language = "uk"; modalMarkup()`, context), /План і його збережену чернетку буде видалено\./);
+  assert.match(vm.runInContext(`state.language = "ru"; modalMarkup()`, context), /План и его сохранённый черновик будут удалены\./);
+  assert.doesNotMatch(vm.runInContext(`state.language = "en"; workoutDraftLiveRecipient = null; modalMarkup()`, context), /LIVE recipient/);
+  vm.runInContext(`workoutDraftLiveRecipient = {
+    profileId: "${profileId}", friendshipId: "f_22222222222222222222222222222222", friendshipRevision: 3
+  }; state.language = "en";`, context);
   assert.match(vm.runInContext(`state.language = "uk"; modalMarkup()`, context), /Відкинути цей план тренування\?/);
   assert.match(vm.runInContext(`state.language = "ru"; modalMarkup()`, context), /Удалить этот план тренировки\?/);
   vm.runInContext(`
