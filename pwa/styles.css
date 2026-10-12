@@ -6991,6 +6991,35 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .training-week-navigation { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; gap: 8px; }
 .training-week-navigation p { margin: 0; text-align: center; }
 .training-week-navigation .icon-button { width: 48px; height: 48px; }
+/* The weekly workouts toggle is a full-width 44px row with a trailing chevron that turns down when open, like iPhone. */
+.training-week-sessions > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+.training-week-sessions > summary::-webkit-details-marker { display: none; }
+.training-week-sessions > summary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--sage) 72%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.training-week-sessions-chevron {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s ease;
+}
+.training-week-sessions[open] > summary .training-week-sessions-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .training-week-sessions-chevron { transition: none; } }
 .training-week-insight summary { min-height: 48px; padding: 8px 0; cursor: pointer; }
 .training-adapt-row { padding: 12px 0; border-bottom: 1px solid var(--outline-variant); }
 .training-program details > p { margin: 8px 0; }
