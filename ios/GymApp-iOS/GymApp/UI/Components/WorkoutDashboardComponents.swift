@@ -792,7 +792,7 @@ struct WorkoutActivityHeatmap: View {
                     }
                 }
 
-                Text("Color shows daily training volume. Orange marks the highest-load days.")
+                Text("Stronger blue means more training volume that day.")
                     .font(.caption)
                     .foregroundStyle(GymTheme.textSecondary)
 
@@ -815,9 +815,8 @@ struct WorkoutActivityHeatmap: View {
 
                 HStack(spacing: 7) {
                     Text("Less")
-                    ForEach(1 ... 4, id: \.self) { level in
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(heatmapColor(intensity: Double(level) / 4, isInMonth: true))
+                    ForEach(0 ... 4, id: \.self) { step in
+                        HeatStepSwatch(step: step)
                             .frame(width: 14, height: 14)
                             .accessibilityHidden(true)
                     }
@@ -874,19 +873,23 @@ struct WorkoutActivityHeatmap: View {
     }
 
     private func heatmapCell(_ day: WorkoutActivityHeatmapDay) -> some View {
-        Text(day.isInMonth ? calendar.component(.day, from: day.date).formatted(.number.locale(gymAppLocale())) : "")
+        let step = GymTheme.heatStep(intensity: day.intensity)
+        return Text(day.isInMonth ? calendar.component(.day, from: day.date).formatted(.number.locale(gymAppLocale())) : "")
             .font(.system(size: 12, weight: .semibold, design: .rounded))
             .monospacedDigit()
-            .foregroundStyle(day.intensity > 0.62 ? Color.white : GymTheme.textPrimary)
+            .foregroundStyle(GymTheme.heatText(step: step))
             .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(heatmapColor(intensity: day.intensity, isInMonth: day.isInMonth))
-            )
+            .background {
+                if day.isInMonth {
+                    HeatStepSwatch(step: step, cornerRadius: 7)
+                }
+            }
             .overlay {
                 if day.isToday {
-                    RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(GymTheme.primary, lineWidth: 2)
+                    // Ring sits outside the cell (2pt gap) so it stays visible on every step.
+                    RoundedRectangle(cornerRadius: 11)
+                        .strokeBorder(GymTheme.heatRing, lineWidth: 2)
+                        .padding(-4)
                 }
             }
             .accessibilityElement(children: .ignore)
@@ -915,19 +918,22 @@ struct WorkoutActivityHeatmap: View {
             languageCode: gymCurrentLanguageCode()
         )
     }
+}
 
-    private func heatmapColor(intensity: Double, isInMonth: Bool) -> Color {
-        guard isInMonth else { return GymTheme.surfaceVariant.opacity(0.22) }
-        switch intensity {
-        case ...0:
-            return GymTheme.surfaceVariant.opacity(0.78)
-        case ..<0.35:
-            return GymTheme.secondary.opacity(0.32)
-        case ..<0.7:
-            return GymTheme.primary.opacity(0.54)
-        default:
-            return GymTheme.tertiary.opacity(0.9)
-        }
+/// Flat swatch for one step of the shared blue heat scale. Step 0 carries a hairline.
+struct HeatStepSwatch: View {
+    let step: Int
+    var cornerRadius: CGFloat = 4
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(GymTheme.heatFill(step: step))
+            .overlay {
+                if step <= 0 {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .strokeBorder(GymTheme.heroOutline, lineWidth: 1)
+                }
+            }
     }
 }
 

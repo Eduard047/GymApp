@@ -65,6 +65,45 @@ public enum GymTheme {
     /// Secondary action label on `heroSurface` / `heroTile`.
     public static let heroActionLabel = adaptive(light: 0x216BD7, dark: 0x8AB8FF)
 
+    // MARK: One blue heat scale (activity heatmap and muscle map)
+    // Five opaque steps on `heroSurface`: 0 = empty, 1...4 = load. Single hue,
+    // lightness monotone (deeper in light, brighter in dark). No gradients or alpha.
+
+    private static let heatLightFills: [UInt32] = [0xFFFFFF, 0xC4D9F8, 0x7FAAEB, 0x216BD7, 0x164396]
+    private static let heatDarkFills: [UInt32] = [0x172C47, 0x1E4378, 0x2B63B0, 0x4A8EEF, 0x7FB2FF]
+    private static let heatLightText: [UInt32] = [0x10233F, 0x10233F, 0x10233F, 0xFFFFFF, 0xFFFFFF]
+    private static let heatDarkText: [UInt32] = [0xF2F6FC, 0xF2F6FC, 0xF2F6FC, 0x071321, 0x071321]
+
+    /// Maps a 0...1 intensity to a heat step: (0, .25] -> 1 ... (.75, 1] -> 4; 0 -> 0.
+    public static func heatStep(intensity: Double) -> Int {
+        guard intensity > 0 else { return 0 }
+        return min(4, max(1, Int((intensity * 4 - 1e-9).rounded(.up))))
+    }
+
+    /// Cell, region and legend swatch fill for a heat step.
+    public static func heatFill(step: Int) -> Color {
+        let index = min(4, max(0, step))
+        return adaptive(light: heatLightFills[index], dark: heatDarkFills[index])
+    }
+
+    /// Day number / selected-region outline colour with >= 4.5:1 against `heatFill(step:)`.
+    public static func heatText(step: Int) -> Color {
+        let index = min(4, max(0, step))
+        return adaptive(light: heatLightText[index], dark: heatDarkText[index])
+    }
+
+    /// "Today" ring drawn outside the cell (Active Current mark).
+    public static let heatRing = adaptive(light: 0x216BD7, dark: 0x7FB2FF)
+
+    /// Hairline between muscle-map regions (Muted Label at 55% light, 45% dark).
+    public static let heatRegionStroke = Color(
+        uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(rgb: 0xA7B6CB, alpha: 0.45)
+                : UIColor(rgb: 0x60708A, alpha: 0.55)
+        }
+    )
+
     public static let panelCornerRadius: CGFloat = 26
     public static let compactCornerRadius: CGFloat = 20
     public static let controlCornerRadius: CGFloat = 18

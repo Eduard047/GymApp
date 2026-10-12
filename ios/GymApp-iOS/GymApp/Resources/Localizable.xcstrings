@@ -2539,7 +2539,7 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Теплова мапа активності"
+            "value" : "Теплова карта активності"
           }
         }
       }
@@ -4082,18 +4082,18 @@
         }
       }
     },
-    "Color shows daily training volume. Orange marks the highest-load days." : {
+    "Stronger blue means more training volume that day." : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Цвет показывает дневной объем тренировок. Оранжевый обозначает дни с наибольшей нагрузкой."
+            "value" : "Чем насыщеннее синий, тем больше объём тренировок за день."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Колір показує денний обсяг тренувань. Помаранчевий позначає дні з найбільшим навантаженням."
+            "value" : "Чим насиченіший синій, тим більший обсяг тренувань за день."
           }
         }
       }
