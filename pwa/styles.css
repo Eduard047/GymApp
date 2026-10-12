@@ -7385,7 +7385,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .account-id-copy {
   flex: none;
-  min-height: 32px;
+  min-height: 44px;
   padding: 0 12px;
   color: var(--primary);
   border: 0;
