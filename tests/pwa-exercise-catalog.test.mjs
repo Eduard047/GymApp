@@ -1071,6 +1071,20 @@ test("hip abduction aliases map to glutes without shoulder pollution", () => {
   }
 });
 
+test("built-in exercises show graded muscle shares like Android and iPhone", () => {
+  const context = loadPwaContext();
+  assert.deepEqual(jsonFrom(context, 'displayContributionFor({ name: "Leg Press" })'), [
+    { muscleId: "quads", weight: 1 },
+    { muscleId: "glutes", weight: 0.55 },
+    { muscleId: "hamstrings", weight: 0.35 }
+  ]);
+  // A seeded profile mapping (ids only) that still equals the catalog muscles shows the same shares.
+  assert.deepEqual(jsonFrom(context, '(() => { state.mappings["leg press"] = ["quads", "glutes", "hamstrings"]; return displayContributionFor({ name: "Leg Press" }); })()').map(item => item.weight), [1, 0.55, 0.35]);
+  // A changed manual mapping keeps equal weights, and the coach/load maths still use contributionFor.
+  assert.deepEqual(jsonFrom(context, '(() => { state.mappings["leg press"] = ["quads", "calves"]; return displayContributionFor({ name: "Leg Press" }); })()').map(item => item.weight), [1, 1]);
+  assert.deepEqual(jsonFrom(context, '(() => { state.mappings["leg press"] = ["quads", "glutes", "hamstrings"]; return contributionFor({ name: "Leg Press" }); })()').map(item => item.weight), [1, 1, 1]);
+});
+
 test("recognized raw name wins over a conflicting imported catalog key", () => {
   const context = loadPwaContext();
   const normalized = jsonFrom(context, `normalizeExerciseCatalog([

@@ -12535,13 +12535,27 @@ function normalizeExerciseName(name) {
   return normalizeExerciseKey(name);
 }
 
-function inferMuscleContributions(exercise) {
+// Muscle shares shown on the exercise Muscle Breakdown and exercise muscle map, like Android and iPhone: catalog muscles
+// take the name-guess share (Leg Press 100/55/35), otherwise 100% for the primary and 60% for the others.
+// Display only: a profile's stored mapping (ids, no weights) and the coach/load maths keep using contributionFor.
+function displayContributionFor(exercise) {
+  const normalized = normalizeExerciseName(exerciseRawName(exercise));
+  const manual = Object.hasOwn(state.mappings, normalized) ? state.mappings[normalized] : undefined;
+  const catalogIds = builtInExerciseFor(exercise)?.muscleIds || (Object.hasOwn(defaultMappings, normalized) ? defaultMappings[normalized] : null);
+  const untouched = catalogIds?.length && (!manual?.length || (catalogIds.length === manual.length && catalogIds.every(muscleId => manual.includes(muscleId))));
+  if (!untouched) return contributionFor(exercise);
+  const guessed = new Map(inferMuscleContributions(exercise, { seedCatalog: false }).map(item => [item.muscleId, item.weight]));
+  return catalogIds.filter(muscleId => muscles.some(([id]) => id === muscleId))
+    .map((muscleId, index) => ({ muscleId, weight: guessed.get(muscleId) ?? (index === 0 ? 1 : 0.6) }));
+}
+
+function inferMuscleContributions(exercise, { seedCatalog = true } = {}) {
   const normalized = normalizeExerciseName(exerciseRawName(exercise));
   const inferred = new Map();
   const add = (muscleId, weight) => inferred.set(muscleId, Math.max(inferred.get(muscleId) || 0, clamp(weight, 0, 1)));
   const has = (...tokens) => tokens.some(token => normalized.includes(token));
   const defaults = Object.hasOwn(defaultMappings, normalized) ? defaultMappings[normalized] : [];
-  (builtInExerciseFor(exercise)?.muscleIds || defaults).forEach(id => add(id, 1));
+  if (seedCatalog) (builtInExerciseFor(exercise)?.muscleIds || defaults).forEach(id => add(id, 1));
   if (has("біцепс", "бицепс", "bicep", "curl", "сгибание рук", "згинання рук")) { add("biceps", 1); add("forearms", 0.25); }
   if (has("трицепс", "tricep", "француз", "розгинання рук", "разгибание рук", "pushdown")) add("triceps", 1);
   if (has("жим ног", "жим ногами", "leg press")) { add("quads", 1); add("glutes", 0.55); add("hamstrings", 0.35); }
@@ -12622,7 +12636,7 @@ function muscleMapSelectionList(data) {
 
 function exerciseMuscleMapCard(exercise, framed = false) {
   const exerciseName = exerciseRawName(exercise);
-  const contributions = contributionFor(exercise).filter(item => muscles.some(([id]) => id === item.muscleId));
+  const contributions = displayContributionFor(exercise).filter(item => muscles.some(([id]) => id === item.muscleId));
   const data = muscles.map(([id]) => {
     const contribution = contributions.find(item => item.muscleId === id);
     return {
@@ -12644,7 +12658,7 @@ function muscleShareRow(label, percent) {
 }
 
 function exerciseMuscleBreakdownCard(exercise, framed = false) {
-  const active = contributionFor(exercise)
+  const active = displayContributionFor(exercise)
     .filter(item => muscles.some(([id]) => id === item.muscleId) && item.weight > 0)
     .map(item => ({
       ...item,
