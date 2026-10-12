@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.material3.Button
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -414,15 +413,14 @@ internal fun ProfileScreen(
                 Text(stringResource(R.string.local_profile_delete_warning, localProfileName))
             },
             confirmButton = {
-                Button(
+                TextButton(
                     onClick = {
                         showLocalProfileDeletion = false
                         showLocalProfileDeletionConfirmation = true
                     },
                     enabled = !isAccountActionLoading,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
                     Text(stringResource(R.string.local_profile_delete_confirm))
@@ -500,12 +498,11 @@ private fun DeleteLocalProfileConfirmationDialog(
             }
         },
         confirmButton = {
-            Button(
+            TextButton(
                 onClick = onConfirm,
                 enabled = matches && actionsEnabled,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
                 Text(stringResource(R.string.local_profile_delete_typed_confirm))
