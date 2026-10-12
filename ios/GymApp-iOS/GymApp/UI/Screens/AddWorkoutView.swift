@@ -1280,11 +1280,9 @@ struct AddWorkoutView: View {
                     LazyVStack(spacing: 12) {
                         GymHeroPanel {
                             VStack(alignment: .leading, spacing: 8) {
-                                Label(
-                                    t("Share workout", "Поділитися тренуванням", "Поделиться тренировкой"),
-                                    systemImage: "person.2.wave.2.fill"
-                                )
-                                .font(.title2.bold())
+                                Image(systemName: "person.2.wave.2.fill")
+                                    .font(.title2.bold())
+                                    .accessibilityHidden(true)
                                 Text(
                                     t(
                                         "Send a link, a copy, or a live invite.",
@@ -1444,7 +1442,7 @@ struct AddWorkoutView: View {
                     .padding(.bottom, 24)
                 }
             }
-            .navigationTitle(t("Share workout", "Поділитися", "Поделиться"))
+            .navigationTitle(t("Share workout", "Поділитися тренуванням", "Поделиться тренировкой"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
