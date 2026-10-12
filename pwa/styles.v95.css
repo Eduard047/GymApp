@@ -8090,3 +8090,6 @@ button.workout-template-row:focus-visible {
 @media (prefers-reduced-motion: reduce) { .mapping-overview-chevron { transition: none; } }
 
 .exercise-history-muscles { margin: 12px 0; }
+
+.achievement-sheet-subtitle { margin: 0; color: var(--muted); font-size: 14px; line-height: 20px; text-align: center; }
+.achievement-sheet-reward { color: var(--primary); font-size: 14px; font-weight: 600; text-align: right; }

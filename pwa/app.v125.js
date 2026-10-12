@@ -12818,12 +12818,33 @@ function achievementsGallery() {
   return `<section class="achievements-section" aria-labelledby="achievements-title"><div class="achievements-heading"><span class="achievements-eyebrow">${tx3("Achievements", "Досягнення", "Достижения")}</span><h2 id="achievements-title">${tx3("Your badge collection", "Твоя колекція відзнак", "Твоя коллекция значков")}</h2><p>${tx3("Every milestone, its progress and rarity.", "Кожна ціль, її прогрес і рідкість.", "Каждая цель, её прогресс и редкость.")}</p></div><div class="achievements-summary"><span class="pill">${svg("check", "small-icon")}${unlocked} / ${achievements.length}</span><span class="achievements-summary-caption">${tx3("Unlocked collection", "Відкрита колекція", "Открытая коллекция")}</span></div><div class="achievement-gallery">${achievements.map(item => achievementTileMarkup(item)).join("")}</div></section>`;
 }
 
+// Display-only reward XP and secondary badge names, the same values as the Android and iPhone gamification engines.
+const ACHIEVEMENT_REWARD_XP = Object.freeze({
+  first_workout: 100, workout_5: 150, workout_10: 200, workout_25: 350, workout_50: 500, workout_100: 900,
+  streak_7: 150, streak_14: 250, streak_30: 500, volume_10k: 200, volume_50k: 500, comeback: 200
+});
+
+function achievementBadgeName(id) {
+  return ({
+    first_workout: tx3("First Rep", "Перше повторення", "Первое повторение"),
+    workout_10: tx3("Consistency", "Стабільність", "Стабильность"),
+    streak_7: tx3("Momentum", "Імпульс", "Импульс"),
+    streak_14: tx3("Flow State", "Потоковий стан", "Состояние потока"),
+    streak_30: tx3("Unbroken", "Незламність", "Несокрушимость"),
+    volume_10k: tx3("Volume Maker", "Творець обсягу", "Создатель объёма"),
+    volume_50k: tx3("Mountain Mover", "Рухач гір", "Двигатель гор")
+  })[id] || "";
+}
+
 function achievementSheetMarkup(id) {
   const item = achievementDefinitions().find(entry => entry.id === id);
   if (!item) return "";
   const isUnlocked = item.progress >= item.target;
   const percent = achievementProgressFraction(item) * 100;
-  return `<div class="achievement-sheet rarity-${escapeAttr(item.rarity)} ${isUnlocked ? "unlocked" : "locked"}"><div class="achievement-sheet-hero"><span class="achievement-disc" aria-hidden="true">${svg(item.icon)}</span><h2 id="achievement-sheet-title">${escapeHtml(item.title)}</h2><span class="pill achievement-rarity-pill">${escapeHtml(achievementRarityLabel(item.rarity))}</span></div><p class="achievement-sheet-description">${escapeHtml(item.description)}</p><div class="achievement-sheet-progress"><div class="progress"><span class="${percentageClass(percent)}"></span></div><strong class="achievement-sheet-count">${escapeHtml(achievementProgressText(item))}</strong></div><p class="achievement-sheet-status">${svg(isUnlocked ? "checkCircle" : "lock", "small-icon")}${achievementStatusLabel(isUnlocked)}</p></div>`;
+  const badgeName = achievementBadgeName(item.id);
+  const subtitle = badgeName && badgeName.trim().toLowerCase() !== String(item.title).trim().toLowerCase() ? badgeName : "";
+  const reward = ACHIEVEMENT_REWARD_XP[item.id];
+  return `<div class="achievement-sheet rarity-${escapeAttr(item.rarity)} ${isUnlocked ? "unlocked" : "locked"}"><div class="achievement-sheet-hero"><span class="achievement-disc" aria-hidden="true">${svg(item.icon)}</span><h2 id="achievement-sheet-title">${escapeHtml(item.title)}</h2>${subtitle ? `<p class="achievement-sheet-subtitle">${escapeHtml(subtitle)}</p>` : ""}<span class="pill achievement-rarity-pill">${escapeHtml(achievementRarityLabel(item.rarity))}</span></div><p class="achievement-sheet-description">${escapeHtml(item.description)}</p><div class="achievement-sheet-progress"><div class="progress"><span class="${percentageClass(percent)}"></span></div><strong class="achievement-sheet-count">${escapeHtml(achievementProgressText(item))}</strong>${reward ? `<strong class="achievement-sheet-reward">+${escapeHtml(reward.toLocaleString(displayLocale()))} XP</strong>` : ""}</div><p class="achievement-sheet-status">${svg(isUnlocked ? "checkCircle" : "lock", "small-icon")}${achievementStatusLabel(isUnlocked)}</p></div>`;
 }
 
 function achievementRarityLabel(rarity) {

@@ -348,3 +348,12 @@ test("backup ready dialog shows a summary instead of the raw backup JSON", () =>
   assert.doesNotMatch(sheet, /<textarea/);
   for (const action of ["copy-json", "download-json", "pdf-report"]) assert.match(sheet, new RegExp(`data-action="${action}"`));
 });
+
+test("achievement sheet shows the secondary name and the XP reward", () => {
+  const context = loadPwaContext();
+  const markup = run(context, `achievementSheetMarkup("first_workout")`);
+  assert.match(markup, /achievement-sheet-subtitle">First Rep</);
+  assert.match(markup, /achievement-sheet-reward">\+100 XP</);
+  const same = run(context, `achievementSheetMarkup("workout_5")`);
+  assert.doesNotMatch(same, /achievement-sheet-subtitle/);
+});
