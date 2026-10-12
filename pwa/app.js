@@ -12370,7 +12370,7 @@ function lifetimeProgressCard() {
     [tx3("Volume", "Обсяг", "Объём"), formatVolumeWithUnit(metrics.totalVolume)]
   ];
   return `<section class="panel highlighted lifetime-progress-card"><div class="section-title"><h2>${tx3("Lifetime progress", "Прогрес за весь час", "Прогресс за всё время")}</h2></div>
-    <div class="metric-grid three tile-emphasized">${tiles.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
+    <div class="metric-grid three tile-emphasized">${tiles.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong${value.length > 8 ? ' class="long-value"' : ""}>${escapeHtml(value)}</strong></div>`).join("")}</div>
   </section>`;
 }
 

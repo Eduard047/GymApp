@@ -847,6 +847,8 @@ test("Progress overview uses the shared inline navigator, compact hero, and life
 
   const lifetime = run("ru", "return lifetimeProgressCard();");
   assert.match(lifetime, /Прогресс за всё время[\s\S]*Тренировки[\s\S]*Серия недель[\s\S]*Объём/);
+  assert.match(appSource, /<strong\$\{value\.length > 8 \? ' class="long-value"' : ""\}>/);
+  assert.match(stylesSource, /\.metric-grid\.tile-emphasized strong\.long-value\s*\{[^}]*font-size:\s*14px;[^}]*white-space:\s*nowrap;/);
 
   const heatmap = run("en", "return activityHeatmapCard();");
   assert.match(heatmap, /<h2>Activity heatmap<\/h2><div class="month-navigator-inline">/);

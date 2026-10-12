@@ -1941,6 +1941,13 @@ svg.filled-icon.small-icon {
   line-height: 24px;
 }
 
+/* A long value (such as "80,7 тыс. кг") starts smaller so the fit step keeps it on one line instead of clipping it. */
+.metric-grid.tile-emphasized strong.long-value {
+  font-size: 14px;
+  line-height: 24px;
+  white-space: nowrap;
+}
+
 .heatmap-header { align-items: flex-start; flex-wrap: wrap; row-gap: 10px; }
 .heatmap-title { display: grid; gap: 3px; min-width: 0; }
 .heatmap-header .pill { flex: 0 0 auto; }
