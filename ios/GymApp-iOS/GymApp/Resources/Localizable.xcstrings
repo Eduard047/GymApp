@@ -4132,18 +4132,18 @@
         }
       }
     },
-    "Compare which muscle groups carried your logged training load." : {
+    "Stronger blue means more load on that muscle group in the selected period." : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сравни, какие группы мышц получили наибольшую зафиксированную нагрузку."
+            "value" : "Чем насыщеннее синий, тем больше нагрузка на группу мышц за выбранный период."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Порівняй, які групи м’язів отримали найбільше зафіксованого навантаження."
+            "value" : "Чим насиченіший синій, тим більше навантаження на групу м’язів за вибраний період."
           }
         }
       }
@@ -8756,7 +8756,7 @@
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Мапа м’язів"
+            "value" : "Карта м’язів"
           }
         }
       }

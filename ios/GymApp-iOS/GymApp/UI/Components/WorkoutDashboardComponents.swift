@@ -954,7 +954,7 @@ struct WorkoutMuscleLoadCard: View {
                     Text("Muscle map")
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Compare which muscle groups carried your logged training load.")
+                    Text("Stronger blue means more load on that muscle group in the selected period.")
                         .font(.caption)
                         .foregroundStyle(GymTheme.textSecondary)
                 }
