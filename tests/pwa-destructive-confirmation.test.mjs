@@ -842,6 +842,133 @@ test("exercise deletion cancels without persistence and rejects stale account in
   assert.equal(emptyTopbarFocused, false);
 });
 
+function stubScreenFocus(context) {
+  const heading = { hasAttribute: () => false, setAttribute() {}, focus() {} };
+  context.runtimeNodes.set("main[data-scroll-key]", {
+    dataset: { scrollKey: "test" }, scrollTop: 0, addEventListener() {},
+    querySelector: selector => selector === "h2" ? heading : null
+  });
+}
+
+function seedExerciseCascade(context) {
+  vm.runInContext(`
+    state.exercises = [
+      { id: 9101, name: "Cable Fly" },
+      { id: 9102, name: "Squat", catalogKey: "squat" }
+    ];
+    state.mappings = { "cable fly": ["chest"], "squat": ["quads"] };
+    state.sessions = [
+      { id: 9201, startedAt: 1760000000000, note: "", sets: [
+        { id: 9301, exerciseName: "Cable Fly", weight: 20, reps: 12, orderIndex: 0 },
+        { id: 9302, exerciseName: "Squat", catalogKey: "squat", weight: 100, reps: 5, orderIndex: 1 }
+      ] },
+      { id: 9202, startedAt: 1760100000000, note: "", sets: [
+        { id: 9303, exerciseName: "Cable Fly", weight: 22, reps: 10, orderIndex: 0 },
+        { id: 9304, exerciseName: "Cable Fly", weight: 22, reps: 9, orderIndex: 1 }
+      ] },
+      { id: 9203, startedAt: 1760200000000, note: "", sets: [
+        { id: 9305, exerciseName: "Squat", catalogKey: "squat", weight: 110, reps: 3, orderIndex: 0 }
+      ] }
+    ];
+    saveState({ queueRemote: false, markDirty: false });
+  `, context);
+}
+
+test("deleting an exercise with history cascades through sessions, names and mapping", async () => {
+  const context = loadContext();
+  stubScreenFocus(context);
+  seedExerciseCascade(context);
+
+  vm.runInContext("deleteExercise(9101)", context);
+  assert.equal(vm.runInContext("modal.type", context), "confirm-delete-exercise");
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(modal.intent.preview)", context)), {
+    name: "Cable Fly", workoutCount: 2, setCount: 3, emptiedCount: 1
+  });
+  const markup = vm.runInContext("modalMarkup()", context);
+  assert.match(markup, /It will also be removed from 2 workouts and 3 logged sets\. 1 workout left empty will be deleted\. This cannot be undone\./);
+  assert.doesNotMatch(markup, /Not used in any workout/);
+
+  await vm.runInContext("confirmDeleteExercise()", context);
+  const saved = JSON.parse(storedState(context));
+  assert.equal(saved.exercises.some(item => item.id === 9101), false);
+  assert.deepEqual(saved.sessions.map(session => session.id), [9201, 9203]);
+  assert.deepEqual(saved.sessions[0].sets.map(set => set.id), [9302]);
+  assert.equal(Object.hasOwn(saved.mappings, "cable fly"), false);
+  assert.deepEqual(saved.mappings.squat, ["quads"]);
+  assert.equal(vm.runInContext("modal", context), null);
+});
+
+test("deleting an exercise also drops its listed names and sessions that only listed it", async () => {
+  const context = loadContext();
+  stubScreenFocus(context);
+  seedExerciseCascade(context);
+  vm.runInContext(`
+    state.sessions.push({ id: 9204, startedAt: 1760300000000, note: "", sets: [], exerciseNames: ["Cable Fly"] });
+    state.sessions.push({ id: 9205, startedAt: 1760400000000, note: "", sets: [], exerciseNames: ["Cable Fly", "Squat"] });
+    saveState({ queueRemote: false, markDirty: false });
+    deleteExercise(9101);
+  `, context);
+  assert.equal(vm.runInContext("modal.intent.preview.workoutCount", context), 4);
+  await vm.runInContext("confirmDeleteExercise()", context);
+  const saved = JSON.parse(storedState(context));
+  assert.equal(saved.sessions.some(session => session.id === 9204), false);
+  assert.deepEqual(saved.sessions.find(session => session.id === 9205).exerciseNames, ["Squat"]);
+});
+
+test("deleting an unused exercise keeps the no-history copy and removes only the exercise and its mapping", async () => {
+  const context = loadContext();
+  stubScreenFocus(context);
+  seedExerciseCascade(context);
+  vm.runInContext(`state.exercises.push({ id: 9103, name: "Unused move" }); state.mappings["unused move"] = ["back"]; saveState({ queueRemote: false, markDirty: false }); deleteExercise(9103);`, context);
+  assert.match(vm.runInContext("modalMarkup()", context), /Not used in any workout, so no history is removed\. This cannot be undone\./);
+  await vm.runInContext("confirmDeleteExercise()", context);
+  const saved = JSON.parse(storedState(context));
+  assert.equal(saved.sessions.length, 3);
+  assert.equal(Object.hasOwn(saved.mappings, "unused move"), false);
+});
+
+test("exercise deletion confirmation localizes counts and rejects a stale workout impact", async () => {
+  const context = loadContext();
+  seedExerciseCascade(context);
+  vm.runInContext(`state.language = "uk"; saveState({ queueRemote: false, markDirty: false }); deleteExercise(9101);`, context);
+  assert.match(vm.runInContext("modalMarkup()", context), /Вправу також буде видалено з 2 тренувань і 3 записаних підходів\. 1 порожнє тренування буде видалено\./);
+  vm.runInContext(`state.language = "ru"; saveState({ queueRemote: false, markDirty: false }); deleteExercise(9101);`, context);
+  assert.match(vm.runInContext("modalMarkup()", context), /Упражнение также будет удалено из 2 тренировок и 3 записанных подходов\./);
+  vm.runInContext(`state.language = "en"; saveState({ queueRemote: false, markDirty: false }); deleteExercise(9101);`, context);
+  const before = storedState(context);
+  // A session changed after the confirmation opened: nothing is deleted.
+  vm.runInContext(`state.sessions[1].sets[0].reps = 11; saveState({ queueRemote: false, markDirty: false });`, context);
+  const changed = storedState(context);
+  await vm.runInContext("confirmDeleteExercise()", context);
+  assert.notEqual(before, changed);
+  assert.equal(storedState(context), changed);
+  assert.equal(vm.runInContext("state.exercises.some(item => item.id === 9101)", context), true);
+  assert.equal(vm.runInContext("state.sessions.length", context), 3);
+});
+
+test("exercise deletion leaves the in-progress active workout alone", async () => {
+  const context = loadContext();
+  stubScreenFocus(context);
+  seedExerciseCascade(context);
+  vm.runInContext(`activeWorkout = { marker: "live" }; deleteExercise(9101);`, context);
+  await vm.runInContext("confirmDeleteExercise()", context);
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(activeWorkout)", context)), { marker: "live" });
+  assert.equal(vm.runInContext("state.exercises.some(item => item.id === 9101)", context), false);
+});
+
+test("exercise deletion restores exercises, sessions and mappings when persistence fails", async () => {
+  const context = loadContext();
+  seedExerciseCascade(context);
+  vm.runInContext("deleteExercise(9101)", context);
+  const before = storedState(context);
+  context.localStorage.failNextSet(`gym-pwa-account:${LOCAL_ACCOUNT_ID}`);
+  await vm.runInContext("confirmDeleteExercise()", context);
+  assert.equal(storedState(context), before);
+  assert.equal(vm.runInContext("state.exercises.some(item => item.id === 9101)", context), true);
+  assert.equal(vm.runInContext("state.sessions.length", context), 3);
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(state.mappings['cable fly'])", context)), ["chest"]);
+});
+
 test("set deletion cancels cleanly and fails closed when the workout impact changes", () => {
   const context = loadContext();
   vm.runInContext(`

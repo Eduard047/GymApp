@@ -26299,7 +26299,7 @@ function modalMarkup() {
   }
   if (modal.type === "confirm-delete-exercise") {
     const preview = modal.intent?.preview || {};
-    return bottomSheet(`<h2 id="delete-exercise-confirm-title">${tx("Delete exercise", "Видалити вправу")}</h2><p id="delete-exercise-confirm-target"><strong>${escapeHtml(preview.name || "")}</strong></p><p class="muted" id="delete-exercise-confirm-description">${tx("Not used in any workout, so no history is removed. This cannot be undone.", "Не використовується в жодному тренуванні, історія не зміниться. Цю дію не можна скасувати.")}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-delete-exercise">${tx("Delete exercise", "Видалити вправу")}</button></div>`, "delete-exercise-confirm-title", "alertdialog", "delete-exercise-confirm-target delete-exercise-confirm-description");
+    return bottomSheet(`<h2 id="delete-exercise-confirm-title">${tx("Delete exercise", "Видалити вправу")}</h2><p id="delete-exercise-confirm-target"><strong>${escapeHtml(preview.name || "")}</strong></p><p class="muted" id="delete-exercise-confirm-description">${escapeHtml(exerciseDeleteDescription(preview))}</p><div class="actions vertical"><button class="button ghost full" data-action="cancel-destructive" data-modal-initial-focus>${tx("Cancel", "Скасувати")}</button><button class="button danger full" data-action="confirm-delete-exercise">${tx("Delete exercise", "Видалити вправу")}</button></div>`, "delete-exercise-confirm-title", "alertdialog", "delete-exercise-confirm-target delete-exercise-confirm-description");
   }
   if (modal.type === "confirm-delete-set") {
     const preview = modal.intent?.preview || {};
@@ -32638,51 +32638,167 @@ function exerciseLocation(id) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+function exerciseMappingKey(exercise) {
+  return normalizeExerciseName(exerciseRawName(exercise));
+}
+
+// Everything the cascade would remove for this exercise: matching sets and listed names in every session,
+// sessions that end up empty (no sets and no listed names), and the custom muscle mapping. Same rules as iPhone/Android.
+function exerciseDeletionImpact(exercise) {
+  const sessions = [];
+  let setCount = 0;
+  let emptiedCount = 0;
+  state.sessions.forEach(session => {
+    const matchingSets = session.sets.filter(set => exercisesMatch(set, exercise));
+    const names = Array.isArray(session.exerciseNames) ? session.exerciseNames : [];
+    const matchingNames = names.filter(name => exercisesMatch(name, exercise));
+    if (!matchingSets.length && !matchingNames.length) return;
+    sessions.push(session);
+    setCount += matchingSets.length;
+    if (matchingSets.length === session.sets.length && matchingNames.length === names.length) emptiedCount += 1;
+  });
+  const key = exerciseMappingKey(exercise);
+  const mapping = Object.hasOwn(state.mappings, key) ? state.mappings[key] : null;
+  return {
+    sessions,
+    workoutCount: sessions.length,
+    setCount,
+    emptiedCount,
+    fingerprint: destructiveImpactFingerprint({ exercise, sessions, mapping })
+  };
+}
+
+function rejectStaleExerciseDeletion() {
+  closeModal();
+  showToast(tx3(
+    "The exercise or its linked workout data changed before deletion. Review it and try again.",
+    "Вправа або пов’язані з нею дані тренувань змінилися перед видаленням. Перевір їх і спробуй ще раз.",
+    "Упражнение или связанные с ним данные тренировок изменились перед удалением. Проверь их и попробуй ещё раз."
+  ));
+}
+
+function exerciseDeleteDescription(preview) {
+  const workoutCount = Number(preview?.workoutCount) || 0;
+  if (workoutCount <= 0) {
+    return tx("Not used in any workout, so no history is removed. This cannot be undone.", "Не використовується в жодному тренуванні, історія не зміниться. Цю дію не можна скасувати.");
+  }
+  const setCount = Number(preview?.setCount) || 0;
+  const emptiedCount = Number(preview?.emptiedCount) || 0;
+  const workouts = `${workoutCount} ${pluralForm(workoutCount, ["workout", "workouts"], ["тренування", "тренувань", "тренувань"], ["тренировки", "тренировок", "тренировок"])}`;
+  const sets = `${setCount} ${pluralForm(setCount, ["logged set", "logged sets"], ["записаного підходу", "записаних підходів", "записаних підходів"], ["записанного подхода", "записанных подходов", "записанных подходов"])}`;
+  const sentences = [tx3(
+    `It will also be removed from ${workouts} and ${sets}.`,
+    `Вправу також буде видалено з ${workouts} і ${sets}.`,
+    `Упражнение также будет удалено из ${workouts} и ${sets}.`
+  )];
+  if (emptiedCount > 0) {
+    const emptied = pluralForm(emptiedCount,
+      ["workout left empty will be deleted.", "workouts left empty will be deleted."],
+      ["порожнє тренування буде видалено.", "порожні тренування будуть видалені.", "порожніх тренувань буде видалено."],
+      ["опустевшая тренировка будет удалена.", "опустевшие тренировки будут удалены.", "опустевших тренировок будут удалены."]);
+    sentences.push(`${emptiedCount} ${emptied}`);
+  }
+  sentences.push(tx3("This cannot be undone.", "Цю дію не можна скасувати.", "Это действие нельзя отменить."));
+  return sentences.join(" ");
+}
+
 function deleteExercise(id, returnFocus = null) {
   if (!Number.isSafeInteger(id) || id <= 0) return;
   const exercise = exerciseLocation(id);
   if (!exercise) return rejectStaleDestructiveConfirmation();
-  if (state.sessions.some(session => session.sets.some(set => exercisesMatch(set, exercise)))) {
-    return showToast(tx("Exercise is used in workouts.", "Вправа використовується у тренуваннях."));
-  }
-  const impactFingerprint = destructiveImpactFingerprint(exercise);
+  const impact = exerciseDeletionImpact(exercise);
+  const impactFingerprint = impact.fingerprint;
   const intent = destructiveIntent({
     exerciseId: id,
     impactFingerprint,
     returnFocus,
-    preview: { name: exerciseDisplayName(exercise) }
+    preview: {
+      name: exerciseDisplayName(exercise),
+      workoutCount: impact.workoutCount,
+      setCount: impact.setCount,
+      emptiedCount: impact.emptiedCount
+    }
   });
   if (!intent || !impactFingerprint) return showDestructiveSaveFailure();
   modal = { type: "confirm-delete-exercise", intent };
   render();
 }
 
-function confirmDeleteExercise() {
+// Deleting an exercise also removes its sets from every workout (like iPhone and Android). The in-progress
+// active workout is not touched. The saved-workout commit ledger is rewritten so a removed set cannot be restored.
+async function confirmDeleteExercise() {
   const intent = modal?.type === "confirm-delete-exercise" ? modal.intent : null;
   const exercise = intent ? exerciseLocation(intent.exerciseId) : null;
-  const isUsed = exercise && state.sessions.some(session =>
-    session.sets.some(set => exercisesMatch(set, exercise))
-  );
-  if (!destructiveIntentIsCurrent(intent) || !exercise || isUsed ||
-      destructiveImpactFingerprint(exercise) !== intent.impactFingerprint) {
-    return rejectStaleDestructiveConfirmation();
+  if (!destructiveIntentIsCurrent(intent) || !exercise ||
+      exerciseDeletionImpact(exercise).fingerprint !== intent.impactFingerprint) {
+    return rejectStaleExerciseDeletion();
   }
-  const previousExercises = state.exercises;
-  state.exercises = previousExercises.filter(item => item.id !== intent.exerciseId);
-  if (state.exercises.length !== previousExercises.length - 1) {
-    state.exercises = previousExercises;
-    return rejectStaleDestructiveConfirmation();
-  }
-  try {
-    persistDestructiveState(intent.storageSnapshot);
-  } catch {
-    state.exercises = previousExercises;
-    return showDestructiveSaveFailure();
-  }
+  const mutationContext = activeWorkoutMutationContext();
+  if (!mutationContext) return showDestructiveSaveFailure();
+  const result = await withActiveWorkoutDeletionLock(mutationContext.descriptor, () => {
+    if (!activeWorkoutMutationContextIsCurrent(mutationContext) ||
+        !destructiveIntentIsCurrent(intent)) return false;
+    const target = exerciseLocation(intent.exerciseId);
+    if (!target) return false;
+    const impact = exerciseDeletionImpact(target);
+    if (impact.fingerprint !== intent.impactFingerprint) return false;
+    const rollbackRecords = destructivePersistenceRollbackRecords();
+    let previousLedgerRaw;
+    try {
+      previousLedgerRaw = localStorage.getItem(mutationContext.descriptor.commitKey);
+    } catch {
+      return false;
+    }
+    if (!rollbackRecords) return false;
+    const previous = { exercises: state.exercises, sessions: state.sessions, mappings: state.mappings };
+    const mappingKey = exerciseMappingKey(target);
+    state.exercises = previous.exercises.filter(item => item.id !== intent.exerciseId);
+    if (state.exercises.length !== previous.exercises.length - 1) {
+      state.exercises = previous.exercises;
+      return false;
+    }
+    state.sessions = previous.sessions.flatMap(session => {
+      if (!impact.sessions.includes(session)) return [session];
+      const sets = session.sets.filter(set => !exercisesMatch(set, target));
+      const next = { ...session, sets };
+      if (Array.isArray(session.exerciseNames)) {
+        next.exerciseNames = session.exerciseNames.filter(name => !exercisesMatch(name, target));
+      }
+      return sets.length || next.exerciseNames?.length ? [next] : [];
+    });
+    if (Object.hasOwn(previous.mappings, mappingKey)) {
+      const { [mappingKey]: _removed, ...remainingMappings } = previous.mappings;
+      state.mappings = remainingMappings;
+    }
+    try {
+      persistDestructiveState(intent.storageSnapshot);
+      if (state.sessions.length !== previous.sessions.length && !pruneTrainingGuidance()) {
+        throw new Error("Workout feedback could not be pruned.");
+      }
+      const ledgerChange = rewriteActiveWorkoutCommitLedger(workouts => workouts.flatMap(workout => {
+        const blocks = workout.blocks.filter(block => !exercisesMatch(block, target));
+        return blocks.length ? [{ ...workout, blocks }] : [];
+      }), mutationContext.account);
+      if (!ledgerChange) throw new Error("Commit ledger could not record the exercise deletion.");
+      return true;
+    } catch {
+      state.exercises = previous.exercises;
+      state.sessions = previous.sessions;
+      state.mappings = previous.mappings;
+      restoreDestructivePersistenceRecords(rollbackRecords);
+      restoreActiveWorkoutCommitLedger(previousLedgerRaw, mutationContext.account);
+      return false;
+    }
+  });
+  if (!result.acquired || result.value !== true) return showDestructiveSaveFailure();
   modal = null;
   render();
   focusStableScreenContext();
-  showToast(tx("Exercise deleted.", "Вправу видалено."));
+  showToast(tx3(
+    "Exercise and linked workout entries deleted.",
+    "Вправу й пов’язані записи тренувань видалено.",
+    "Упражнение и связанные записи тренировок были удалены."
+  ));
 }
 
 function saveMapping(name) {
