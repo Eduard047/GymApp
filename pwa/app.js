@@ -11720,10 +11720,10 @@ function onboardingTourMarkup() {
   return `<div class="onboarding-tour" data-onboarding-step="${onboardingTour.stepIndex + 1}">
     <div class="onboarding-spotlight" aria-hidden="true"></div>
     <section class="onboarding-coach" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" aria-describedby="onboarding-body" tabindex="-1">
-      <div class="onboarding-progress"><span>${tx(`Step ${onboardingTour.stepIndex + 1} of ${steps.length}`, `Крок ${onboardingTour.stepIndex + 1} із ${steps.length}`)}</span><div class="onboarding-dots" aria-hidden="true">${steps.map((_, index) => `<i class="${index <= onboardingTour.stepIndex ? "filled" : ""}"></i>`).join("")}</div></div>
+      <div class="onboarding-progress"><span>${tx(`Step ${onboardingTour.stepIndex + 1} of ${steps.length}`, `Крок ${onboardingTour.stepIndex + 1} із ${steps.length}`)}</span></div>
       <h2 id="onboarding-title">${escapeHtml(step.title)}</h2>
       <p id="onboarding-body">${escapeHtml(step.body)}</p>
-      <div class="onboarding-actions"><button class="button ghost" data-action="onboarding-skip">${tx("Skip", "Пропустити")}</button><div><button class="button ghost" data-action="onboarding-back" ${onboardingTour.stepIndex === 0 ? "disabled" : ""}>${tx("Back", "Назад")}</button><button class="button" data-action="${last ? "onboarding-done" : "onboarding-next"}">${last ? tx("Done", "Готово") : tx("Next", "Далі")}</button></div></div>
+      <div class="onboarding-actions"><button class="button onboarding-skip" data-action="onboarding-skip">${tx("Skip", "Пропустити")}</button><div>${onboardingTour.stepIndex === 0 ? "" : `<button class="button ghost" data-action="onboarding-back">${tx("Back", "Назад")}</button>`}<button class="button" data-action="${last ? "onboarding-done" : "onboarding-next"}">${last ? tx("Done", "Готово") : tx("Next", "Далі")}</button></div></div>
     </section>
   </div>`;
 }

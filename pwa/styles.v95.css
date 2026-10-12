@@ -6235,14 +6235,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .onboarding-progress,
 .onboarding-actions { justify-content: space-between; gap: 12px; }
 .onboarding-progress > span { color: var(--sage); font-size: 12px; font-weight: 750; }
-.onboarding-dots { display: flex; gap: 5px; }
-.onboarding-dots i {
-  width: 16px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--outline-variant);
-}
-.onboarding-dots i.filled { background: var(--sage); }
 .onboarding-actions {
   position: sticky;
   bottom: -18px;
@@ -6253,6 +6245,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 .onboarding-actions > div { gap: 7px; }
 .onboarding-actions .button { min-height: 44px; }
+.onboarding-actions .button.onboarding-skip {
+  color: var(--text);
+  background: var(--surface-3);
+  border: 0;
+}
 
 @media (min-width: 760px) {
   .onboarding-coach {
