@@ -976,7 +976,7 @@ struct WorkoutMuscleLoadCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     GymMetricTile(
                         label: "Load",
-                        value: compactNumber(data.totalLoad),
+                        value: Int(data.totalLoad.rounded()).formatted(.number.locale(gymAppLocale())),
                         emphasized: true,
                         singleLineLabel: true
                     )
