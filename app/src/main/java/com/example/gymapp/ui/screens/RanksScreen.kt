@@ -114,7 +114,7 @@ fun RanksScreen(
                             imageVector = Icons.Default.EmojiEvents,
                             contentDescription = null,
                             modifier = Modifier.size(30.dp),
-                            tint = HeroTone.accent
+                            tint = HeroTone.accentText
                         )
                         Text(
                             text = currentTitle,
