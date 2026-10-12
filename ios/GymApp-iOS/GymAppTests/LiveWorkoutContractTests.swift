@@ -9,11 +9,10 @@ final class LiveWorkoutContractTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let suiteName = "FinishedLiveTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
-        let urlSession = URLSession(configuration: configuration)
+        let stub = LiveGatewayStubSession()
+        let urlSession = stub.urlSession
         defer {
-            LiveGatewayURLProtocolStub.handler = nil
+            stub.handler = nil
             urlSession.invalidateAndCancel()
             defaults.removePersistentDomain(forName: suiteName)
             try? FileManager.default.removeItem(at: root)
@@ -37,7 +36,7 @@ final class LiveWorkoutContractTests: XCTestCase {
         participants[0]["progress"] = progress
         object["participants"] = participants
         let responseData = try liveJSONData(["version": 1, "result": object])
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             XCTAssertEqual(try LiveGatewayURLProtocolStub.requestObject(request)["action"] as? String, "live_snapshot")
             return try LiveGatewayURLProtocolStub.response(for: request, jsonData: responseData)
         }
@@ -265,11 +264,10 @@ final class LiveWorkoutContractTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let recorder = LiveGatewayActionRecorder()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
-        let urlSession = URLSession(configuration: configuration)
+        let stub = LiveGatewayStubSession()
+        let urlSession = stub.urlSession
         defer {
-            LiveGatewayURLProtocolStub.handler = nil
+            stub.handler = nil
             urlSession.invalidateAndCancel()
             defaults.removePersistentDomain(forName: suiteName)
             try? FileManager.default.removeItem(at: root)
@@ -315,7 +313,7 @@ final class LiveWorkoutContractTests: XCTestCase {
             )
         ])
         let sendCount = LiveGatewayCounter()
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
             let action = try XCTUnwrap(requestObject["action"] as? String)
             recorder.append(action)
@@ -408,11 +406,10 @@ final class LiveWorkoutContractTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let recorder = LiveGatewayActionRecorder()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
-        let urlSession = URLSession(configuration: configuration)
+        let stub = LiveGatewayStubSession()
+        let urlSession = stub.urlSession
         defer {
-            LiveGatewayURLProtocolStub.handler = nil
+            stub.handler = nil
             urlSession.invalidateAndCancel()
             defaults.removePersistentDomain(forName: suiteName)
             try? FileManager.default.removeItem(at: root)
@@ -438,7 +435,7 @@ final class LiveWorkoutContractTests: XCTestCase {
             workoutStorageURL: workoutStore.storageURL
         )
         let frozenObject = liveWaitingAliasSnapshotObject()
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
             let action = try XCTUnwrap(requestObject["action"] as? String)
             recorder.append(action)
@@ -516,11 +513,10 @@ final class LiveWorkoutContractTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let recorder = LiveGatewayActionRecorder()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
-        let urlSession = URLSession(configuration: configuration)
+        let stub = LiveGatewayStubSession()
+        let urlSession = stub.urlSession
         defer {
-            LiveGatewayURLProtocolStub.handler = nil
+            stub.handler = nil
             urlSession.invalidateAndCancel()
             defaults.removePersistentDomain(forName: suiteName)
             try? FileManager.default.removeItem(at: root)
@@ -578,7 +574,7 @@ final class LiveWorkoutContractTests: XCTestCase {
                 "sets": [["setId": "s_01_01", "weight": 50, "reps": 8]]
             ]]
         ]
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
             let action = try XCTUnwrap(requestObject["action"] as? String)
             recorder.append(action)
@@ -648,11 +644,10 @@ final class LiveWorkoutContractTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let recorder = LiveGatewayActionRecorder()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
-        let urlSession = URLSession(configuration: configuration)
+        let stub = LiveGatewayStubSession()
+        let urlSession = stub.urlSession
         defer {
-            LiveGatewayURLProtocolStub.handler = nil
+            stub.handler = nil
             urlSession.invalidateAndCancel()
             defaults.removePersistentDomain(forName: suiteName)
             try? FileManager.default.removeItem(at: root)
@@ -705,7 +700,7 @@ final class LiveWorkoutContractTests: XCTestCase {
         participants[0]["joinedAt"] = createdAt
         waiting["participants"] = participants
 
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
             let action = try XCTUnwrap(requestObject["action"] as? String)
             recorder.append(action)
@@ -785,11 +780,10 @@ final class LiveWorkoutContractTests: XCTestCase {
         let suiteName = "LiveWorkoutProgressRestoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
-        let urlSession = URLSession(configuration: configuration)
+        let stub = LiveGatewayStubSession()
+        let urlSession = stub.urlSession
         defer {
-            LiveGatewayURLProtocolStub.handler = nil
+            stub.handler = nil
             urlSession.invalidateAndCancel()
             defaults.removePersistentDomain(forName: suiteName)
             try? FileManager.default.removeItem(at: root)
@@ -853,7 +847,7 @@ final class LiveWorkoutContractTests: XCTestCase {
             "finishedAt": NSNull()
         ]
         object["participants"] = participants
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
             XCTAssertEqual(requestObject["action"] as? String, "live_snapshot")
             return try LiveGatewayURLProtocolStub.response(
@@ -938,7 +932,7 @@ final class LiveWorkoutContractTests: XCTestCase {
                 ]
             ]]
         ]
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             let requestObject = try LiveGatewayURLProtocolStub.requestObject(request)
             switch requestObject["action"] as? String {
             case "live_inbox":
@@ -966,7 +960,7 @@ final class LiveWorkoutContractTests: XCTestCase {
         XCTAssertEqual(workoutStore.workout(id: draft.id), completedWorkout)
         coordinator.stopMonitoring()
 
-        LiveGatewayURLProtocolStub.handler = { request in
+        stub.handler = { request in
             try LiveGatewayURLProtocolStub.response(
                 for: request,
                 statusCode: 404,
@@ -1685,9 +1679,40 @@ private final class LiveGatewayCounter: @unchecked Sendable {
     }
 }
 
+private typealias LiveGatewayStubHandler = (URLRequest) throws -> (HTTPURLResponse, Data)
+
+/// One isolated stubbed URLSession per test. Every request the session sends
+/// carries a unique header, and the stub protocol resolves the handler by that
+/// header, so tests running in parallel can never see each other's handler.
+private final class LiveGatewayStubSession: @unchecked Sendable {
+    let id = UUID().uuidString
+    let urlSession: URLSession
+
+    init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveGatewayURLProtocolStub.self]
+        configuration.httpAdditionalHeaders = [LiveGatewayURLProtocolStub.sessionHeader: id]
+        urlSession = URLSession(configuration: configuration)
+    }
+
+    var handler: LiveGatewayStubHandler? {
+        get { LiveGatewayURLProtocolStub.handler(forSession: id) }
+        set { LiveGatewayURLProtocolStub.setHandler(newValue, forSession: id) }
+    }
+}
+
 private final class LiveGatewayURLProtocolStub: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var handler:
-        ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    static let sessionHeader = "X-Live-Gateway-Stub-Session"
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var handlers: [String: LiveGatewayStubHandler] = [:]
+
+    static func handler(forSession id: String) -> LiveGatewayStubHandler? {
+        lock.withLock { handlers[id] }
+    }
+
+    static func setHandler(_ handler: LiveGatewayStubHandler?, forSession id: String) {
+        lock.withLock { handlers[id] = handler }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "owrcbsrectdgaotndtxy.supabase.co"
@@ -1697,7 +1722,10 @@ private final class LiveGatewayURLProtocolStub: URLProtocol, @unchecked Sendable
 
     override func startLoading() {
         do {
-            guard let handler = Self.handler else { throw URLError(.unsupportedURL) }
+            guard let sessionID = request.value(forHTTPHeaderField: Self.sessionHeader),
+                  let handler = Self.handler(forSession: sessionID) else {
+                throw URLError(.unsupportedURL)
+            }
             let (response, data) = try handler(request)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
