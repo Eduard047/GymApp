@@ -19333,7 +19333,7 @@ function garminProfilePanel() {
     : devices;
   let body;
   if (!activeAccount?.remote) {
-    body = `<p class="muted">${tx3("Garmin watches sync after cloud sign-in.", "Годинники Garmin синхронізуються після входу в хмарний акаунт.", "Часы Garmin синхронизируются после входа в облачный аккаунт.")}</p><button class="button ghost full" data-action="profile-cloud-sign-in">${tx3("Sign in", "Увійти", "Войти")}</button>`;
+    body = `<p class="muted">${tx3("Garmin watches sync after cloud sign-in.", "Годинники Garmin синхронізуються після входу в хмарний акаунт.", "Часы Garmin синхронизируются после входа в облачный аккаунт.")}</p>`;
   } else if (!stateMatches || garminProfileState.status === "idle" || garminProfileState.status === "loading") {
     body = `<p class="muted">${tx("Loading watch status…", "Завантажуємо статус годинника…")}</p>`;
   } else if (garminProfileState.status === "error") {
