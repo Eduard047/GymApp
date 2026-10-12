@@ -779,7 +779,7 @@
         <item quantity="many">%1$d активних днів</item>
         <item quantity="other">%1$d активного дня</item>
     </plurals>
-    <string name="activity_heatmap_legend">Колір показує денний обсяг у цьому місяці: вага × повтори. Темніше — менше, оранжеве — більше.</string>
+    <string name="activity_heatmap_legend">Чим насиченіший синій, тим більший обсяг тренувань за день.</string>
     <string name="activity_heatmap_less">Менше</string>
     <string name="activity_heatmap_more">Більше</string>
     <string name="activity_heatmap_day_a11y">%1$s. Сесій: %2$d. Обсяг: %3$d кг.</string>

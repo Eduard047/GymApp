@@ -754,12 +754,12 @@
     <string name="ranks_xp_to_next">%1$s XP to %2$s</string>
     <string name="ranks_empty_title">No ranks yet</string>
     <string name="ranks_empty_supporting">Rank tiers will appear here once the progress ladder is available.</string>
-    <string name="activity_heatmap_title">Activity Heatmap</string>
+    <string name="activity_heatmap_title">Activity heatmap</string>
     <plurals name="activity_heatmap_active_days">
         <item quantity="one">%1$d active day</item>
         <item quantity="other">%1$d active days</item>
     </plurals>
-    <string name="activity_heatmap_legend">Color shows daily training volume in this month: weight x reps, darker is less, orange is more.</string>
+    <string name="activity_heatmap_legend">Stronger blue means more training volume that day.</string>
     <string name="activity_heatmap_less">Less</string>
     <string name="activity_heatmap_more">More</string>
     <string name="activity_heatmap_day_a11y">%1$s. %2$d sessions. Volume %3$d kg.</string>

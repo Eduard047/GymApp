@@ -22,6 +22,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.example.gymapp.ui.theme.HeatStepColors
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringArrayResource
@@ -355,38 +361,38 @@ fun ActivityHeatmapCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Title and pill share a row when they fit and the pill wraps under the title
-            // otherwise; the month navigator always sits on its own line so its width never
-            // moves the pill.
+            // Left block = title over month navigator, glued together. The pill sits beside it
+            // when it fits and drops under the whole block otherwise (it is a single line, so it
+            // moves as a unit and the navigator never changes position between languages).
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.activity_heatmap_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier
-                        .align(Alignment.CenterVertically)
-                        .semantics { heading() }
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = stringResource(R.string.activity_heatmap_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.semantics { heading() }
+                    )
+                    GymMonthNavigator(
+                        monthLabel = heatmap.monthLabel,
+                        isCurrentMonth = isCurrentMonth,
+                        onPrevious = onPreviousMonth,
+                        onCurrent = onCurrentMonth,
+                        onNext = onNextMonth
+                    )
+                }
                 InfoPill(
                     text = pluralStringResource(
                         R.plurals.activity_heatmap_active_days,
                         heatmap.activeDays,
                         heatmap.activeDays
                     ),
-                    leadingIcon = Icons.Default.EventAvailable
+                    leadingIcon = Icons.Default.EventAvailable,
+                    maxLines = 1
                 )
             }
-
-            GymMonthNavigator(
-                monthLabel = heatmap.monthLabel,
-                isCurrentMonth = isCurrentMonth,
-                onPrevious = onPreviousMonth,
-                onCurrent = onCurrentMonth,
-                onNext = onNextMonth
-            )
 
             Text(
                 text = stringResource(R.string.activity_heatmap_legend),
@@ -435,13 +441,23 @@ fun ActivityHeatmapCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                repeat(4) { index ->
-                    val intensity = (index + 1) / 4f
+                repeat(HeatStepColors.STEPS) { step ->
                     Box(
                         modifier = Modifier
-                            .size(12.dp)
+                            .size(14.dp)
                             .clip(MaterialTheme.shapes.extraSmall)
-                            .background(heatmapColor(intensity, true, false))
+                            .background(HeatStepColors.fill(step))
+                            .then(
+                                if (step == 0) {
+                                    Modifier.border(
+                                        1.dp,
+                                        HeatStepColors.emptyOutline(),
+                                        MaterialTheme.shapes.extraSmall
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
                     )
                 }
                 Text(
@@ -926,11 +942,10 @@ private fun HeatmapDayCell(
     modifier: Modifier = Modifier
 ) {
     val cellShape = RoundedCornerShape(7.dp)
-    val backgroundColor = heatmapColor(
-        intensity = day.intensity,
-        isCurrentMonth = day.isCurrentMonth,
-        isToday = day.isToday
-    )
+    val step = if (day.isCurrentMonth) HeatStepColors.step(day.intensity) else -1
+    val backgroundColor = if (step >= 0) HeatStepColors.fill(step) else Color.Transparent
+    val ringColor = HeatStepColors.ring()
+    val emptyOutline = HeatStepColors.emptyOutline()
     val accessibilityDescription = if (day.isCurrentMonth) {
         stringResource(
             R.string.activity_heatmap_day_a11y,
@@ -954,49 +969,38 @@ private fun HeatmapDayCell(
         modifier = modifier
             .height(38.dp)
             .then(accessibilityModifier)
+            .then(
+                if (day.isToday) {
+                    // 2dp ring outside the cell with a 2dp gap, so it stays visible on every step.
+                    Modifier.drawBehind {
+                        val outset = 4.dp.toPx()
+                        drawRoundRect(
+                            color = ringColor,
+                            topLeft = Offset(-outset, -outset),
+                            size = Size(size.width + outset * 2, size.height + outset * 2),
+                            cornerRadius = CornerRadius(11.dp.toPx()),
+                            style = Stroke(width = 2.dp.toPx())
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .clip(cellShape)
             .background(backgroundColor)
-            .border(
-                width = if (day.isToday) 2.dp else 0.dp,
-                color = if (day.isToday) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = cellShape
+            .then(
+                if (step == 0) Modifier.border(1.dp, emptyOutline, cellShape) else Modifier
             ),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = day.dayNumber?.toString().orEmpty(),
-            style = MaterialTheme.typography.labelMedium.tabularDigits(),
-            fontWeight = FontWeight.SemiBold,
-            color = if (day.isCurrentMonth && day.intensity > 0.55f) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = if (day.isCurrentMonth) 0.82f else 0.22f)
-            },
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
-private fun heatmapColor(
-    intensity: Float,
-    isCurrentMonth: Boolean,
-    isToday: Boolean
-): Color {
-    if (!isCurrentMonth) {
-        return MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
-    }
-
-    val base = when {
-        intensity <= 0f -> MaterialTheme.colorScheme.surfaceVariant
-        intensity < 0.35f -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f)
-        intensity < 0.7f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
-        else -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.72f)
-    }
-
-    return if (isToday) {
-        base.copy(alpha = 0.95f)
-    } else {
-        base
+        if (day.isCurrentMonth) {
+            Text(
+                text = day.dayNumber?.toString().orEmpty(),
+                style = MaterialTheme.typography.labelMedium.tabularDigits(),
+                fontWeight = FontWeight.SemiBold,
+                color = HeatStepColors.text(step),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }

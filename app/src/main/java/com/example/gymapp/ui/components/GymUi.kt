@@ -490,7 +490,8 @@ fun InfoPill(
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.primary,
     leadingIcon: ImageVector? = null,
-    onHero: Boolean = false
+    onHero: Boolean = false,
+    maxLines: Int = 2
 ) {
     // On a hero card the pill is a solid white / navy chip with the title colour; otherwise it is
     // a 12% tint of the accent.
@@ -517,7 +518,7 @@ fun InfoPill(
                 text = text,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
+                maxLines = maxLines,
                 overflow = TextOverflow.Ellipsis
             )
         }

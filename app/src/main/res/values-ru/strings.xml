@@ -779,7 +779,7 @@
         <item quantity="many">%1$d активных дней</item>
         <item quantity="other">%1$d активного дня</item>
     </plurals>
-    <string name="activity_heatmap_legend">Цвет показывает дневной объём тренировок за этот месяц: вес × повторения. Чем темнее, тем меньше объём; чем ярче оранжевый, тем больше.</string>
+    <string name="activity_heatmap_legend">Чем насыщеннее синий, тем больше объём тренировок за день.</string>
     <string name="activity_heatmap_less">Меньше</string>
     <string name="activity_heatmap_more">Больше</string>
     <string name="activity_heatmap_day_a11y">%1$s. Сессий: %2$d. Объем: %3$d кг.</string>
