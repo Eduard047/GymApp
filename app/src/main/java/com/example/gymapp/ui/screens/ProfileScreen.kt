@@ -35,13 +35,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.HowToReg
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GroupOff
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.runtime.Composable
@@ -567,7 +568,8 @@ private fun LazyListScope.profileSettingsContent(
                 SettingsRowDivider()
             }
             SettingsRow(
-                icon = Icons.Default.AccountCircle,
+                // iPhone: person.crop.circle.badge.checkmark (cloud) / iphone (this device).
+                icon = if (accountState.isCloudAccount) Icons.Outlined.HowToReg else Icons.Outlined.PhoneAndroid,
                 title = stringResource(R.string.account_sheet_title),
                 subtitle = accountSubtitle(accountState, compact = true),
                 onClick = onOpenAccountSettings
@@ -580,7 +582,7 @@ private fun LazyListScope.profileSettingsContent(
             if (trainingProfile != null) {
                 SettingsRowDivider()
                 SettingsRow(
-                    icon = Icons.Default.Tune,
+                    icon = Icons.Outlined.TrackChanges,
                     title = stringResource(R.string.training_settings_title),
                     subtitle = trainingProfile.trainingSettingsSummary(),
                     onClick = onEditTrainingSettings,

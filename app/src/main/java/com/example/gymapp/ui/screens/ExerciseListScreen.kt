@@ -28,8 +28,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
@@ -2032,7 +2032,7 @@ internal fun BackupToolsSettingsRow(
     )
     Column {
         SettingsRow(
-            icon = Icons.Default.Backup,
+            icon = Icons.Default.MoveToInbox,
             title = stringResource(R.string.backup_tools_title),
             subtitle = stringResource(R.string.profile_backup_compact_supporting),
             onClick = { expanded = !expanded },

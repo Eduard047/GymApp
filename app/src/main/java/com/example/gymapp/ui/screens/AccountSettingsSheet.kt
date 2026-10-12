@@ -16,13 +16,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.PrivacyTip
-import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.outlined.PanTool
+import androidx.compose.material.icons.outlined.Storage
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -146,7 +146,7 @@ internal fun AccountSettingsSheet(
             } else {
                 SettingsPanel {
                     SettingsRow(
-                        icon = Icons.Default.Backup,
+                        icon = Icons.Outlined.Storage,
                         title = stringResource(R.string.account_backup_title),
                         subtitle = stringResource(R.string.account_backup_hint),
                         // The export opens its own sheet, so this one steps aside first.
@@ -358,7 +358,7 @@ private fun AccountLinksPanel(context: Context) {
     Column(verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)) {
         SettingsPanel {
             SettingsRow(
-                icon = Icons.Default.PrivacyTip,
+                icon = Icons.Outlined.PanTool,
                 title = stringResource(R.string.auth_privacy_policy),
                 onClick = {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROFILE_PRIVACY_URL)))
@@ -368,7 +368,7 @@ private fun AccountLinksPanel(context: Context) {
             )
             SettingsRowDivider()
             SettingsRow(
-                icon = Icons.Default.SupportAgent,
+                icon = Icons.AutoMirrored.Outlined.HelpOutline,
                 title = stringResource(R.string.profile_support_action),
                 onClick = {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROFILE_SUPPORT_URL)))
