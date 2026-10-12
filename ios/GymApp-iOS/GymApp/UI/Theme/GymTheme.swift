@@ -56,14 +56,20 @@ public enum GymTheme {
     public static let heroOutline = adaptive(light: 0xDCE5F2, dark: 0x22395A)
     /// Title and key numbers on `heroSurface` (Clear Label).
     public static let onHero = adaptive(light: 0x10233F, dark: 0xF2F6FC)
-    /// Supporting text on `heroSurface` (Muted Label), >= 4.5:1 in both modes.
-    public static let onHeroSecondary = adaptive(light: 0x60708A, dark: 0xA7B6CB)
+    /// Supporting text on `heroSurface` (Muted Label), >= 5.0:1 in both modes
+    /// (light #596881 is 5.11:1 on #EEF4FF; same hue as #60708A, darker only).
+    public static let onHeroSecondary = adaptive(light: 0x596881, dark: 0xA7B6CB)
     /// Inner tiles, pills and chips sitting on `heroSurface`.
     public static let heroTile = adaptive(light: 0xFFFFFF, dark: 0x172C47)
     /// The single emphasised value, progress fill and link-like label on `heroSurface`.
     public static let heroAccent = adaptive(light: 0x216BD7, dark: 0x7FB2FF)
-    /// Secondary action label on `heroSurface` / `heroTile`.
-    public static let heroActionLabel = adaptive(light: 0x216BD7, dark: 0x8AB8FF)
+    /// Emphasised or link-like *text* on `heroSurface` / `heroTile`. Use this instead of
+    /// `heroAccent` for glyphs; `heroAccent` stays the fill/stroke colour. Light
+    /// #1F64C9 is 5.11:1 on #EEF4FF (same hue as #216BD7, darker only).
+    public static let heroAccentText = adaptive(light: 0x1F64C9, dark: 0x7FB2FF)
+    /// Secondary action label on `heroSurface` / `heroTile`, >= 5.0:1 on both
+    /// (light #1F64C9 is 5.11:1 on #EEF4FF).
+    public static let heroActionLabel = adaptive(light: 0x1F64C9, dark: 0x8AB8FF)
 
     // MARK: One blue heat scale (activity heatmap and muscle map)
     // Five opaque steps on `heroSurface`: 0 = empty, 1...4 = load. Single hue,

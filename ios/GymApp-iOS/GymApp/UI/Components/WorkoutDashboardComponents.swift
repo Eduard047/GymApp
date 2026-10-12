@@ -518,7 +518,7 @@ struct WorkoutProgressHero: View {
                     Spacer(minLength: 8)
                     Text(totalXPCompactLabel)
                         .font(.title3.bold())
-                        .foregroundStyle(GymTheme.heroAccent)
+                        .foregroundStyle(GymTheme.heroAccentText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .contentTransition(.numericText())
@@ -556,7 +556,7 @@ struct WorkoutProgressHero: View {
         .font(.caption.weight(.bold))
         .padding(.horizontal, 11)
         .padding(.vertical, 7)
-        .foregroundStyle(GymTheme.heroAccent)
+        .foregroundStyle(GymTheme.heroAccentText)
         .background(GymTheme.heroTile, in: Capsule())
         .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth) }
         .fixedSize()
