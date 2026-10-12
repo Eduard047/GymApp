@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -89,18 +90,16 @@ import com.example.gymapp.R
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ExerciseHistoryEntry
-import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.ExerciseLoadDirection
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.data.repository.WorkoutDataLimits
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
-import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
+import com.example.gymapp.ui.components.SettingsRow
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.ScreenHeader
 import com.example.gymapp.ui.components.SectionTitle
-import com.example.gymapp.ui.components.SettingsRow
 import com.example.gymapp.ui.components.brandFillColor
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
@@ -2753,10 +2752,6 @@ private fun ExerciseHistoryBottomSheetContent(
     }
 
     val totalVolume = remember(history) { history.sumOf { it.weight * it.reps } }
-    val muscleIntensities = remember(exerciseName) {
-        defaultContributionsForExercise(exerciseName)
-            .associate { contribution -> contribution.muscleId to contribution.weight.toFloat() }
-    }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -2813,12 +2808,13 @@ private fun ExerciseHistoryBottomSheetContent(
             }
         }
 
-        if (muscleIntensities.isNotEmpty()) {
-            item {
-                ExerciseMuscleBreakdownCard(
-                    exerciseName = exerciseName,
-                    muscleIntensities = muscleIntensities,
-                    onEditMapping = onEditExerciseMapping
+        item {
+            AppPanel(modifier = Modifier.fillMaxWidth()) {
+                SettingsRow(
+                    icon = Icons.Default.AccessibilityNew,
+                    title = stringResource(R.string.exercise_card_muscle_groups),
+                    onClick = onEditExerciseMapping,
+                    modifier = Modifier.padding(horizontal = 12.dp)
                 )
             }
         }
