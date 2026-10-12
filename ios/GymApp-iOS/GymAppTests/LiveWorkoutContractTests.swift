@@ -1866,8 +1866,8 @@ private final class LiveGatewayURLProtocolStub: URLProtocol, @unchecked Sendable
 
 @MainActor
 final class LiveWorkoutUndoGateTests: XCTestCase {
-    func testAnySetUndoGateIsOffUntilTheServerChangeIsDeployed() {
-        XCTAssertFalse(LiveWorkoutCoordinator.liveUndoAnySetEnabled)
+    func testAnySetUndoGateIsOnNowThatTheServerChangeIsDeployed() {
+        XCTAssertTrue(LiveWorkoutCoordinator.liveUndoAnySetEnabled)
     }
 
     func testUndoRuleByLiveRoomAndGate() {

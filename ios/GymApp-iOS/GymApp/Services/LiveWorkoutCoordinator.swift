@@ -109,11 +109,11 @@ final class LiveWorkoutCoordinator: ObservableObject {
 
     var planIsFrozenForCurrentDraft: Bool { isAttachedToCurrentDraft }
 
-    /// Live-room gate for undoing a recorded set that is not the latest one. The
-    /// server accepts it only after the `live_undo_any_completed_set` migration is
-    /// deployed, so this stays `false` until then; outside a live room any recorded
-    /// set can always be undone.
-    static let liveUndoAnySetEnabled = false
+    /// Live-room gate for undoing a recorded set that is not the latest one. On since
+    /// the `live_undo_any_completed_set` migration is deployed; when off, a live room
+    /// only undoes the latest set. Outside a live room any recorded set can always be
+    /// undone.
+    static let liveUndoAnySetEnabled = true
 
     /// Pure rule for one recorded set: outside a live room always; in a live room
     /// only the latest (marker) set unless the any-set gate is on.
