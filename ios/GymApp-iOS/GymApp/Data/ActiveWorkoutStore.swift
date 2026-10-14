@@ -817,6 +817,39 @@ final class ActiveWorkoutStore: ObservableObject {
         }
     }
 
+    /// Moves one exercise block `offset` positions (negative = earlier), clamped to
+    /// the ends of the list. Returns the draft unchanged, without a revision bump,
+    /// when the block is already at that end. Block and set ids are stable, so the
+    /// undo target and a running rest are untouched. Refused while a live room or
+    /// reservation freezes the plan.
+    @discardableResult
+    func moveExercise(
+        draftID: UUID,
+        exerciseBlockID: UUID,
+        by offset: Int,
+        expectedRevision: UInt64,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        let current = try currentDraft(draftID: draftID, expectedRevision: expectedRevision)
+        guard let index = current.exercises.firstIndex(where: { $0.id == exerciseBlockID }) else {
+            throw ActiveWorkoutStoreError.exerciseUnavailable
+        }
+        let count = current.exercises.count
+        let boundedOffset = max(-count, min(count, offset))
+        let target = max(0, min(count - 1, index + boundedOffset))
+        guard target != index else { return current }
+        return try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            let block = candidate.exercises.remove(at: index)
+            candidate.exercises.insert(block, at: target)
+        }
+    }
+
     private func assertStructuralChangeAllowed(isSolo: () -> Bool) throws {
         guard isSolo() else { throw ActiveWorkoutStoreError.invalidDraft }
         do {

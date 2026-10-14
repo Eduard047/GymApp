@@ -35,6 +35,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -249,8 +251,10 @@ internal fun WorkoutExerciseCardHeader(
 }
 
 /**
- * Card header overflow: a destructive remove item (only composed when the exercise may be removed)
- * after any [extraItems] (e.g. the plan editor's "Replace with similar"). The defaults read
+ * Card header overflow: optional "Move up" / "Move down" items first (composed when the matching
+ * callback is set, disabled at the list edge via [canMoveUp] / [canMoveDown]), then any [extraItems]
+ * (e.g. the plan editor's "Replace with similar"), then a destructive remove item (only composed when
+ * the exercise may be removed). The defaults read
  * "Remove exercise"; the plan editor passes its own [removeLabel], [buttonDescription] and
  * [modifier] (test tag for the overflow button).
  */
@@ -261,6 +265,10 @@ internal fun WorkoutExerciseMenu(
     modifier: Modifier = Modifier,
     removeLabel: String = stringResource(R.string.active_workout_remove_exercise),
     buttonDescription: String = stringResource(R.string.active_workout_more_options),
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
+    canMoveUp: Boolean = true,
+    canMoveDown: Boolean = true,
     extraItems: @Composable ColumnScope.(closeMenu: () -> Unit) -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -273,6 +281,28 @@ internal fun WorkoutExerciseMenu(
             )
         }
         DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            if (onMoveUp != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.workout_exercise_move_up)) },
+                    leadingIcon = { Icon(imageVector = Icons.Default.ArrowUpward, contentDescription = null) },
+                    enabled = canMoveUp,
+                    onClick = {
+                        expanded = false
+                        onMoveUp()
+                    }
+                )
+            }
+            if (onMoveDown != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.workout_exercise_move_down)) },
+                    leadingIcon = { Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = null) },
+                    enabled = canMoveDown,
+                    onClick = {
+                        expanded = false
+                        onMoveDown()
+                    }
+                )
+            }
             extraItems { expanded = false }
             DropdownMenuItem(
                 text = {

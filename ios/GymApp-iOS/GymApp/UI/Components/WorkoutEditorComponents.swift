@@ -265,6 +265,9 @@ struct WorkoutDraftExerciseCard: View {
     var allowedWeights: [Double] = []
     let onShowSimilar: (() -> Void)?
     let onDeleteExercise: () -> Void
+    /// Reorder handlers; nil = unavailable (first/last exercise).
+    var onMoveUp: (() -> Void)?
+    var onMoveDown: (() -> Void)?
     var highlightsInvalid = false
     @State private var showingMedia = false
     @State private var mediaReloadToken = 0
@@ -277,6 +280,8 @@ struct WorkoutDraftExerciseCard: View {
             highlighted: true,
             collapsible: false,
             contentSpacing: 12,
+            onMoveUp: onMoveUp,
+            onMoveDown: onMoveDown,
             media: {
                 ExerciseMediaThumbnail(
                     rawExerciseName: rawExerciseName,
@@ -313,6 +318,7 @@ struct WorkoutDraftExerciseCard: View {
                     ),
                     onRemove: onDeleteExercise
                 ) {
+                    GymExerciseMoveMenuItems(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
                     if let onShowSimilar {
                         Button(action: onShowSimilar) {
                             Label {

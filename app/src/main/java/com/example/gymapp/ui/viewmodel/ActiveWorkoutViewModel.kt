@@ -28,6 +28,7 @@ import com.example.gymapp.data.repository.FinishActiveWorkoutResult
 import com.example.gymapp.data.repository.GymRepository
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetResult
 import com.example.gymapp.data.repository.RecordActiveWorkoutSetsResult
+import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.SaveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.UndoActiveWorkoutSetResult
@@ -205,7 +206,8 @@ internal enum class ActiveWorkoutEditBlock {
     Busy,
     Missing,
     LastSet,
-    LastExercise
+    LastExercise,
+    AtEdge
 }
 
 /** A set (pending or recorded) can be deleted unless a live room owns the plan or it is the exercise's last set. */
@@ -238,6 +240,33 @@ internal fun activeWorkoutExerciseRemovalBlock(
     }
     if (details.exercises.size <= 1) return ActiveWorkoutEditBlock.LastExercise
     return ActiveWorkoutEditBlock.Allowed
+}
+
+/**
+ * An exercise can move by [offset] unless a live room owns the plan; already at the list edge in
+ * that direction is [ActiveWorkoutEditBlock.AtEdge] (a silent no-op, nothing is written).
+ */
+internal fun activeWorkoutExerciseMoveBlock(
+    details: ActiveWorkoutDetails?,
+    exerciseId: String,
+    offset: Int,
+    inLiveRoom: Boolean,
+    operationInProgress: Boolean
+): ActiveWorkoutEditBlock {
+    if (inLiveRoom) return ActiveWorkoutEditBlock.LiveRoom
+    if (operationInProgress) return ActiveWorkoutEditBlock.Busy
+    details ?: return ActiveWorkoutEditBlock.Missing
+    val index = details.exercises.indexOfFirst { it.activeWorkoutExercise.id == exerciseId }
+    if (index < 0) return ActiveWorkoutEditBlock.Missing
+    if ((index + offset).coerceIn(0, details.exercises.lastIndex) == index) return ActiveWorkoutEditBlock.AtEdge
+    return ActiveWorkoutEditBlock.Allowed
+}
+
+internal fun activeWorkoutMoveExerciseOutcomeMessage(result: MoveActiveWorkoutExerciseResult): Int? = when (result) {
+    is MoveActiveWorkoutExerciseResult.Moved, MoveActiveWorkoutExerciseResult.NoChange -> null
+    MoveActiveWorkoutExerciseResult.Missing -> R.string.active_workout_missing
+    MoveActiveWorkoutExerciseResult.LivePlanFrozen -> R.string.training_adaptation_live_blocked
+    else -> R.string.active_workout_changed
 }
 
 internal fun activeWorkoutDeleteSetOutcomeMessage(result: DeleteActiveWorkoutSetResult): Int? = when (result) {
@@ -1396,6 +1425,54 @@ class ActiveWorkoutViewModel(
                     R.string.active_workout_changed
                 } else {
                     activeWorkoutAddExerciseOutcomeMessage(result)
+                }
+                it.copy(
+                    isRecordingAll = false,
+                    message = message?.let { id -> LocalizedText(id) },
+                    messageSetId = null
+                )
+            }
+        }
+    }
+
+    /**
+     * Moves an exercise one position up (-1) or down (+1). Clamped: at the list edge nothing is
+     * written. Refused in live rooms. Undo and the rest timer are untouched.
+     */
+    fun moveExercise(exerciseId: String, offset: Int) {
+        val snapshot = details.value
+        val block = activeWorkoutExerciseMoveBlock(
+            details = snapshot,
+            exerciseId = exerciseId,
+            offset = offset,
+            inLiveRoom = isInLiveRoom(),
+            operationInProgress = activeWorkoutOperationInProgress()
+        )
+        if (block == ActiveWorkoutEditBlock.LiveRoom) {
+            operationState.update {
+                it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
+            }
+            return
+        }
+        if (block != ActiveWorkoutEditBlock.Allowed) {
+            if (block == ActiveWorkoutEditBlock.Missing) {
+                operationState.update {
+                    it.copy(message = LocalizedText(R.string.active_workout_changed), messageSetId = null)
+                }
+            }
+            return
+        }
+        val revision = checkNotNull(snapshot).activeWorkout.revision
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                repository.moveActiveWorkoutExercise(exerciseId, offset, revision)
+            }.getOrNull()
+            operationState.update {
+                val message = if (result == null) {
+                    R.string.active_workout_changed
+                } else {
+                    activeWorkoutMoveExerciseOutcomeMessage(result)
                 }
                 it.copy(
                     isRecordingAll = false,

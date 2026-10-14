@@ -1070,11 +1070,11 @@ test("Android exercise card matches the iOS compact set rows and single actions 
   );
   const shared = await readFile("app/src/main/java/com/example/gymapp/ui/screens/WorkoutExerciseCardComponents.kt", "utf8");
   // The card is built from the same pieces as the active and saved workout cards, highlighted and never collapsible.
-  assert.match(card, /WorkoutExerciseCardShell\(highlighted = true\)[\s\S]{0,200}WorkoutExerciseCardHeader\([\s\S]{0,200}onToggleExpanded = null/);
+  assert.match(card, /WorkoutExerciseCardShell\((?:modifier = modifier, )?highlighted = true\)[\s\S]{0,200}WorkoutExerciseCardHeader\([\s\S]{0,200}onToggleExpanded = null/);
   assert.match(card, /WorkoutExerciseMedia\(/);
   // One "⋯" menu (shared overflow): Replace with similar (only with an exercise) + destructive Delete.
   assert.match(card, /WorkoutExerciseMenu\([\s\S]{0,900}removeLabel = stringResource\(R\.string\.action_delete\)[\s\S]{0,600}if \(selectedExercise != null\)[\s\S]{0,300}R\.string\.editor_replace_with_similar/);
-  assert.match(shared, /Icons\.Default\.MoreVert[\s\S]{0,800}extraItems \{ expanded = false \}[\s\S]{0,300}text = removeLabel/);
+  assert.match(shared, /Icons\.Default\.MoreVert[\s\S]{0,1800}extraItems \{ expanded = false \}[\s\S]{0,300}text = removeLabel/);
   assert.match(card, /R\.string\.editor_last_logged/);
   assert.doesNotMatch(card, /isExpanded|ExpandLess|ExpandMore|ExerciseMuscleBreakdownCard|OutlinedButton|OutlinedTextField|MoreHoriz/);
   assert.doesNotMatch(card, /action_copy_last|action_apply_last_weight|R\.string\.cd_remove_exercise/);
@@ -1101,4 +1101,45 @@ test("Android exercise card matches the iOS compact set rows and single actions 
     assert.match(androidRussian, new RegExp(`name="${key}">${ru.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<`));
   }
   assert.match(androidEditorViewModel, /fun copyPreviousSet\([\s\S]*fun addWeightToSet\([\s\S]*fun duplicateSet\(/);
+});
+
+test("Move up and Move down reorder exercises on every client: plan editor and running workout", async () => {
+  // Same two labels everywhere.
+  for (const [key, en, uk, ru] of [
+    ["workout_exercise_move_up", "Move up", "Перемістити вище", "Переместить выше"],
+    ["workout_exercise_move_down", "Move down", "Перемістити нижче", "Переместить ниже"]
+  ]) {
+    assert.match(androidEnglish, new RegExp(`name="${key}">${en}<`));
+    assert.match(androidUkrainian, new RegExp(`name="${key}">${uk}<`));
+    assert.match(androidRussian, new RegExp(`name="${key}">${ru}<`));
+  }
+  const iosCards = await readFile("ios/GymApp-iOS/GymApp/UI/Components/WorkoutExerciseCardComponents.swift", "utf8");
+  assert.match(iosCards, /gymText\("Move up", "Перемістити вище", "Переместить выше"/);
+  assert.match(iosCards, /gymText\("Move down", "Перемістити нижче", "Переместить ниже"/);
+  assert.match(pwaSource, /tx3\("Move up", "Перемістити вище", "Переместить выше"\)/);
+  assert.match(pwaSource, /tx3\("Move down", "Перемістити нижче", "Переместить ниже"\)/);
+
+  // Plan editor: move by one, clamped at the ends, a no-op at an edge; the matching menu item is disabled there.
+  assert.match(androidEditorViewModel, /fun movedExerciseDraft\([\s\S]{0,500}coerceIn\(0, drafts\.lastIndex\)[\s\S]{0,120}if \(to == from\) return null/);
+  assert.match(androidEditorViewModel, /fun moveExerciseDraft\(draftId: Long, offset: Int\): Boolean/);
+  assert.match(androidEditor, /canMoveUp = index > 0,\s*canMoveDown = index < uiState\.exerciseDrafts\.lastIndex/);
+  assert.match(iosEditor, /onMoveUp: visibleIndex > 0/);
+  assert.match(iosEditor, /onMoveDown: visibleIndex < visibleDraftIDs\.count - 1/);
+  assert.match(iosCards, /\.disabled\(onMoveUp == nil\)[\s\S]{0,300}\.disabled\(onMoveDown == nil\)/);
+  assert.match(pwaSource, /disabled: blockIndex <= 0[\s\S]{0,400}disabled: blockIndex >= draftBlockCount - 1/);
+  assert.match(pwaSource, /function moveDraftBlock\(index, offset\)[\s\S]{0,700}persistWorkoutDraft\(\);\s*render\(\);/);
+
+  // A lone exercise offers no move items on any client.
+  assert.match(iosCards, /if onMoveUp != nil \|\| onMoveDown != nil/);
+  assert.match(pwaSource, /draftBlockCount > 1/);
+
+  // Running workout: refused in a live room, revision/raw checked, nothing written at an edge, undo untouched.
+  assert.match(androidRepository, /suspend fun moveActiveWorkoutExercise\([\s\S]{0,1800}LivePlanFrozen[\s\S]{0,900}NoChange[\s\S]{0,900}advanceRevisionKeepingUndoable/);
+  assert.match(iosActiveStore, /func moveExercise\([\s\S]{0,400}assertStructuralChangeAllowed[\s\S]{0,900}guard target != index else \{ return current \}/);
+  assert.match(iosActive, /private func moveExercise\([\s\S]{0,300}planIsFrozenForCurrentDraft/);
+  const pwaMove = pwaSource.slice(pwaSource.indexOf("async function moveActiveWorkoutExercise("));
+  assert.match(pwaMove, /^async function moveActiveWorkoutExercise\([^)]*\) \{\s*if \(!activeWorkout \|\| liveWorkoutBinding\?\.localWorkoutId === activeWorkout\.id\) return false;/);
+  assert.match(pwaMove, /loaded\.raw !== expectedRaw[\s\S]{0,500}activeExerciseMoveTarget\(loaded\.workout, blockId, offset\)[\s\S]{0,1200}carryActiveWorkoutUndoMarker\(/);
+  // The running-workout items sit with the other exercise actions and are disabled at an edge.
+  assert.match(pwaSource, /activeExerciseMoveTarget\(activeWorkout, blockId, offset\) \? "" : ` disabled aria-disabled="true"`/);
 });

@@ -235,6 +235,7 @@ struct ActiveWorkoutView: View {
     @State private var recordFeedbackTrigger = 0
     @State private var undoFeedbackTrigger = 0
     @State private var deleteFeedbackTrigger = 0
+    @State private var moveExerciseFeedbackTrigger = 0
     @State private var errorFeedbackTrigger = 0
     @State private var restEndFeedbackTrigger = 0
 
@@ -454,6 +455,7 @@ struct ActiveWorkoutView: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: recordFeedbackTrigger)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: undoFeedbackTrigger)
         .sensoryFeedback(.warning, trigger: deleteFeedbackTrigger)
+        .sensoryFeedback(.selection, trigger: moveExerciseFeedbackTrigger)
         .sensoryFeedback(.error, trigger: errorFeedbackTrigger)
         .sensoryFeedback(.warning, trigger: restEndFeedbackTrigger)
         .task(id: currentDraft?.timing?.restingUntil) {
@@ -1331,6 +1333,16 @@ struct ActiveWorkoutView: View {
             ukrainianMany: "підходів",
             languageCode: gymCurrentLanguageCode()
         )
+        let canMoveExercise = activeWorkoutCanRemoveExercise(
+            exerciseCount: draft.exercises.count,
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+        )
+        let exerciseIndex = draft.exercises.firstIndex(where: { $0.id == exercise.id })
+        let onMoveUp: (() -> Void)? = canMoveExercise && (exerciseIndex ?? 0) > 0
+            ? { moveExercise(exercise, by: -1) } : nil
+        let onMoveDown: (() -> Void)? = canMoveExercise && (exerciseIndex ?? draft.exercises.count - 1) < draft.exercises.count - 1
+            ? { moveExercise(exercise, by: 1) } : nil
         return GymExerciseCard(
             name: exerciseName,
             highlighted: isCurrent,
@@ -1342,6 +1354,8 @@ struct ActiveWorkoutView: View {
                     else { collapsedExerciseIDs.insert(exercise.id) }
                 }
             },
+            onMoveUp: onMoveUp,
+            onMoveDown: onMoveDown,
             media: {
                 if let storedExercise {
                     ExerciseMediaButton(
@@ -1395,7 +1409,7 @@ struct ActiveWorkoutView: View {
                     hasCommitIntent: draft.commitIntent != nil,
                     isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
                 ) {
-                    exerciseOverflowMenu(exercise)
+                    exerciseOverflowMenu(exercise, onMoveUp: onMoveUp, onMoveDown: onMoveDown)
                 }
             },
             content: {
@@ -1537,10 +1551,15 @@ struct ActiveWorkoutView: View {
 
     /// Overflow (ellipsis) menu in the exercise header. Rendered only while the
     /// plan is editable; the destructive action asks for confirmation first.
-    private func exerciseOverflowMenu(_ exercise: ActiveWorkoutExercise) -> some View {
-        GymExerciseOverflowMenu {
-            pendingRemoveExerciseID = exercise.id
-        }
+    private func exerciseOverflowMenu(
+        _ exercise: ActiveWorkoutExercise,
+        onMoveUp: (() -> Void)?,
+        onMoveDown: (() -> Void)?
+    ) -> some View {
+        GymExerciseOverflowMenu(
+            onRemove: { pendingRemoveExerciseID = exercise.id },
+            extraItems: { GymExerciseMoveMenuItems(onMoveUp: onMoveUp, onMoveDown: onMoveDown) }
+        )
     }
 
     private func friendGhost(for exercise: ActiveWorkoutExercise, storedExercise: Exercise?) -> FriendGhost? {
@@ -3617,6 +3636,30 @@ struct ActiveWorkoutView: View {
             } else {
                 showRestProjectionWarning(restCleanupWarning)
             }
+        } catch {
+            show(error)
+        }
+    }
+
+    /// Moves one exercise one position up (-1) or down (+1) through the store,
+    /// which checks the revision, the commit lock and the live-room freeze itself.
+    private func moveExercise(_ exercise: ActiveWorkoutExercise, by offset: Int) {
+        guard let draft = currentDraft else { return }
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return
+        }
+        do {
+            _ = try withAnimation(GymMotion.animation(reduceMotion: reduceMotion)) {
+                try activeWorkoutStore.moveExercise(
+                    draftID: draft.id,
+                    exerciseBlockID: exercise.id,
+                    by: offset,
+                    expectedRevision: draft.revision,
+                    isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+                )
+            }
+            moveExerciseFeedbackTrigger &+= 1
         } catch {
             show(error)
         }

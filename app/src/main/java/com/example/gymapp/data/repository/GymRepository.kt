@@ -156,6 +156,16 @@ sealed interface RemoveActiveWorkoutExerciseResult {
     data object LivePlanFrozen : RemoveActiveWorkoutExerciseResult
 }
 
+sealed interface MoveActiveWorkoutExerciseResult {
+    data class Moved(val revision: Long) : MoveActiveWorkoutExerciseResult
+    /** The exercise is already at the edge in the requested direction; nothing was written. */
+    data object NoChange : MoveActiveWorkoutExerciseResult
+    data object Missing : MoveActiveWorkoutExerciseResult
+    data object Stale : MoveActiveWorkoutExerciseResult
+    data object TargetChanged : MoveActiveWorkoutExerciseResult
+    data object LivePlanFrozen : MoveActiveWorkoutExerciseResult
+}
+
 sealed interface AddActiveWorkoutExerciseResult {
     data class Added(val revision: Long, val activeExerciseId: String) : AddActiveWorkoutExerciseResult
     data object Missing : AddActiveWorkoutExerciseResult
@@ -2714,6 +2724,60 @@ class GymRepository(
                 removedRecordedSets = target.sets.count { it.completedAt != null },
                 clearedUndo = clearsUndo
             )
+        }
+    }
+
+    /**
+     * Moves one exercise by [offset] positions (clamped to the list ends) and keeps `orderIndex`
+     * contiguous. Atomic and revision-checked; refused while a live room owns the plan. Already at
+     * the edge answers [MoveActiveWorkoutExerciseResult.NoChange] without writing. Undo and the rest
+     * timer are untouched (the revision bump keeps the undo target).
+     */
+    suspend fun moveActiveWorkoutExercise(
+        exerciseId: String,
+        offset: Int,
+        expectedRevision: Long
+    ): MoveActiveWorkoutExerciseResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(exerciseId)) { "Active exercise identifier is invalid." }
+        require(expectedRevision in 0 until Long.MAX_VALUE) {
+            "Active workout revision is invalid."
+        }
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction MoveActiveWorkoutExerciseResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction MoveActiveWorkoutExerciseResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction MoveActiveWorkoutExerciseResult.LivePlanFrozen
+            }
+            val ids = details.exercises.map { it.activeWorkoutExercise.id }
+            val from = ids.indexOf(exerciseId)
+            if (from < 0) return@withTransaction MoveActiveWorkoutExerciseResult.TargetChanged
+            val to = (from + offset).coerceIn(0, ids.lastIndex)
+            if (to == from) return@withTransaction MoveActiveWorkoutExerciseResult.NoChange
+            val reordered = ids.toMutableList().apply { add(to, removeAt(from)) }
+            val advanced = activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision)
+            check(advanced == 1) { "Active workout changed while moving the exercise." }
+            // The unique (workout, orderIndex) index forbids a direct swap: park the affected rows
+            // above the live range first, then write their final positions.
+            val low = minOf(from, to)
+            val high = maxOf(from, to)
+            for (index in low..high) {
+                check(
+                    activeWorkoutDao.updateExerciseOrderIndex(
+                        ACTIVE_WORKOUT_ID,
+                        ids[index],
+                        ids.size + index
+                    ) == 1
+                )
+            }
+            for (index in low..high) {
+                check(activeWorkoutDao.updateExerciseOrderIndex(ACTIVE_WORKOUT_ID, reordered[index], index) == 1)
+            }
+            MoveActiveWorkoutExerciseResult.Moved(expectedRevision + 1L)
         }
     }
 

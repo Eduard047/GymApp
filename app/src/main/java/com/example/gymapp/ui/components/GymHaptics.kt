@@ -20,7 +20,8 @@ internal enum class GymHapticEvent {
     StepperRepeatTick,
     DestructiveConfirm,
     Error,
-    RestEnd
+    RestEnd,
+    Reorder
 }
 
 /** The [HapticFeedbackConstants] value for [event] on a device running [sdkInt]. */
@@ -36,6 +37,8 @@ internal fun gymHapticConstant(event: GymHapticEvent, sdkInt: Int): Int = when (
         } else {
             HapticFeedbackConstants.CLOCK_TICK
         }
+    GymHapticEvent.Reorder ->
+        if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) HapticFeedbackConstants.SEGMENT_TICK else HapticFeedbackConstants.CLOCK_TICK
     GymHapticEvent.DestructiveConfirm -> HapticFeedbackConstants.LONG_PRESS
     // The foreground rest-end buzz; a notification channel owns the background one, so no Vibrator here.
     GymHapticEvent.RestEnd ->

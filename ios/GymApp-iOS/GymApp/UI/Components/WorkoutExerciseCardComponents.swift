@@ -22,6 +22,55 @@ func gymRemoveExerciseActionTitle(languageCode: String = gymCurrentLanguageCode(
     gymText("Remove exercise", "Видалити вправу", "Удалить упражнение", languageCode: languageCode)
 }
 
+/// "Move up" / "Move down" exercise reorder titles (overflow menu items and
+/// VoiceOver custom actions).
+func gymMoveExerciseUpActionTitle(languageCode: String = gymCurrentLanguageCode()) -> String {
+    gymText("Move up", "Перемістити вище", "Переместить выше", languageCode: languageCode)
+}
+
+func gymMoveExerciseDownActionTitle(languageCode: String = gymCurrentLanguageCode()) -> String {
+    gymText("Move down", "Перемістити нижче", "Переместить ниже", languageCode: languageCode)
+}
+
+/// "Move up" / "Move down" overflow-menu items. A nil handler means the move is
+/// unavailable (first/last exercise) and shows the item disabled.
+struct GymExerciseMoveMenuItems: View {
+    let onMoveUp: (() -> Void)?
+    let onMoveDown: (() -> Void)?
+
+    var body: some View {
+        // A lone exercise cannot move either way: no items at all.
+        if onMoveUp != nil || onMoveDown != nil {
+            Button { onMoveUp?() } label: {
+                Label(gymMoveExerciseUpActionTitle(), systemImage: "arrow.up")
+            }
+            .disabled(onMoveUp == nil)
+            Button { onMoveDown?() } label: {
+                Label(gymMoveExerciseDownActionTitle(), systemImage: "arrow.down")
+            }
+            .disabled(onMoveDown == nil)
+        }
+    }
+}
+
+extension View {
+    /// VoiceOver custom actions "Move up" / "Move down"; an unavailable move
+    /// (nil handler) is not offered at all.
+    func gymExerciseMoveAccessibilityActions(
+        onMoveUp: (() -> Void)?,
+        onMoveDown: (() -> Void)?
+    ) -> some View {
+        accessibilityActions {
+            if let onMoveUp {
+                Button(gymMoveExerciseUpActionTitle(), action: onMoveUp)
+            }
+            if let onMoveDown {
+                Button(gymMoveExerciseDownActionTitle(), action: onMoveDown)
+            }
+        }
+    }
+}
+
 /// Consequence line of the "Remove exercise?" alert: the exercise name plus how
 /// many recorded sets disappear. With no recorded sets only planned ones are
 /// affected.
@@ -94,6 +143,9 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
     /// Gap between the header and the body.
     var contentSpacing: CGFloat = 14
     var onToggle: () -> Void = {}
+    /// Reorder handlers exposed as VoiceOver actions on the title; nil = unavailable.
+    var onMoveUp: (() -> Void)?
+    var onMoveDown: (() -> Void)?
     @ViewBuilder let media: () -> Media
     @ViewBuilder let info: () -> Info
     @ViewBuilder let overflow: () -> Overflow
@@ -118,11 +170,13 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
                         .accessibilityLabel(accessibilityLabelText ?? name)
                         .accessibilityValue(accessibilityValueText)
                         .accessibilityHint(accessibilityHintText ?? "")
+                        .gymExerciseMoveAccessibilityActions(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
                     } else {
                         titleBlock
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isHeader)
+                            .gymExerciseMoveAccessibilityActions(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
                     }
 
                     overflow()

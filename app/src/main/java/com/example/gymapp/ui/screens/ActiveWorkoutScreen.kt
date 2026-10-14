@@ -76,6 +76,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -219,6 +220,7 @@ fun ActiveWorkoutScreen(
     onSkipRemainingSets: (String) -> Unit = {},
     onDeleteSet: (String) -> Unit = {},
     onRemoveExercise: (String) -> Unit = {},
+    onMoveExercise: (String, Int) -> Unit = { _, _ -> },
     addExerciseCatalog: ActiveWorkoutAddExerciseCatalog = ActiveWorkoutAddExerciseCatalog(),
     onAddExercise: (Long) -> Unit = {},
     onRecordSet: (String) -> Unit,
@@ -584,10 +586,10 @@ fun ActiveWorkoutScreen(
             }
         }
 
-        items(
+        itemsIndexed(
             items = uiState.exercises,
-            key = ActiveWorkoutExerciseUiState::id
-        ) { exercise ->
+            key = { _, exercise -> exercise.id }
+        ) { exerciseIndex, exercise ->
             ActiveWorkoutExerciseCard(
                 modifier = Modifier.animateItem(
                     fadeInSpec = GymMotion.fadeInSpec(),
@@ -618,6 +620,9 @@ fun ActiveWorkoutScreen(
                 onSkipRemainingSets = { onSkipRemainingSets(exercise.id) },
                 canRemoveExercise = uiState.liveConnectionMode == null && uiState.exercises.size > 1,
                 onRemoveExercise = { onRemoveExercise(exercise.id) },
+                canMoveUp = exerciseIndex > 0,
+                canMoveDown = exerciseIndex < uiState.exercises.lastIndex,
+                onMoveExercise = { offset -> onMoveExercise(exercise.id, offset) },
                 onDeleteSet = onDeleteSet,
                 onRecordSet = onRecordSet,
                 onUndoSet = onUndoSet,
@@ -1214,6 +1219,9 @@ private fun ActiveWorkoutExerciseCard(
     onSkipRemainingSets: () -> Unit,
     canRemoveExercise: Boolean,
     onRemoveExercise: () -> Unit,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveExercise: (Int) -> Unit,
     onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
     onUndoSet: (String) -> Unit,
@@ -1267,6 +1275,12 @@ private fun ActiveWorkoutExerciseCard(
     val totalCount = exercise.sets.size
     val exerciseName = localizedExerciseName(exercise.exerciseName)
     val progressValue = "$completedCount / $totalCount"
+    val moveUpLabel = stringResource(R.string.workout_exercise_move_up)
+    val moveDownLabel = stringResource(R.string.workout_exercise_move_down)
+    val moveExercise = { offset: Int ->
+        gymHaptics.perform(GymHapticEvent.Reorder)
+        onMoveExercise(offset)
+    }
     WorkoutExerciseCardShell(modifier = modifier) {
         WorkoutExerciseCardHeader(
             title = exerciseName,
@@ -1286,11 +1300,23 @@ private fun ActiveWorkoutExerciseCard(
                 {
                     WorkoutExerciseMenu(
                         enabled = !operationInProgress,
-                        onRemove = { showRemoveDialog = true }
+                        onRemove = { showRemoveDialog = true },
+                        onMoveUp = { moveExercise(-1) },
+                        onMoveDown = { moveExercise(1) },
+                        canMoveUp = canMoveUp,
+                        canMoveDown = canMoveDown
                     )
                 }
             } else {
                 null
+            },
+            accessibilityActions = if (canRemoveExercise && !operationInProgress) {
+                buildList {
+                    if (canMoveUp) add(CustomAccessibilityAction(moveUpLabel) { moveExercise(-1); true })
+                    if (canMoveDown) add(CustomAccessibilityAction(moveDownLabel) { moveExercise(1); true })
+                }
+            } else {
+                emptyList()
             }
         ) {
             if (isExpanded) {

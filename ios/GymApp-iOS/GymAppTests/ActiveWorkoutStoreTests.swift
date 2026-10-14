@@ -2634,6 +2634,67 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(context.active.draft, removedOther)
     }
 
+    func testMoveExerciseReordersBlocksKeepsUndoAndRestAndRefusesFrozen() throws {
+        let context = try makeContext(account: "active-move-exercise")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = [ActiveWorkoutSet(weight: 60, reps: 8), ActiveWorkoutSet(weight: 60, reps: 8)]
+        let b = [ActiveWorkoutSet(weight: 30, reps: 10)]
+        let started = try startTwoExercises(context, first: a, second: b, now: now)
+        let recorded = try context.active.recordSet(
+            draftID: started.draft.id, setID: a[0].id, expectedRevision: started.draft.revision,
+            restSeconds: 120, now: now.addingTimeInterval(10)
+        )
+        XCTAssertNotNil(recorded.timing?.restingUntil)
+
+        // Frozen, stale and unknown are refused before anything changes.
+        XCTAssertThrowsError(try context.active.moveExercise(
+            draftID: recorded.id, exerciseBlockID: started.secondBlock, by: -1,
+            expectedRevision: recorded.revision, isSolo: { false }, now: now.addingTimeInterval(15)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertThrowsError(try context.active.moveExercise(
+            draftID: recorded.id, exerciseBlockID: started.secondBlock, by: -1,
+            expectedRevision: recorded.revision - 1, isSolo: { true }, now: now.addingTimeInterval(15)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+        XCTAssertThrowsError(try context.active.moveExercise(
+            draftID: recorded.id, exerciseBlockID: UUID(), by: -1,
+            expectedRevision: recorded.revision, isSolo: { true }, now: now.addingTimeInterval(15)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .exerciseUnavailable) }
+        XCTAssertEqual(context.active.draft, recorded)
+
+        // Edges are a no-op: no revision bump, nothing rewritten.
+        let firstUp = try context.active.moveExercise(
+            draftID: recorded.id, exerciseBlockID: started.firstBlock, by: -1,
+            expectedRevision: recorded.revision, isSolo: { true }, now: now.addingTimeInterval(16)
+        )
+        XCTAssertEqual(firstUp, recorded)
+        let lastDown = try context.active.moveExercise(
+            draftID: recorded.id, exerciseBlockID: started.secondBlock, by: 1,
+            expectedRevision: recorded.revision, isSolo: { true }, now: now.addingTimeInterval(16)
+        )
+        XCTAssertEqual(lastDown, recorded)
+        XCTAssertEqual(context.active.draft, recorded)
+
+        // Move up: order flips, revision bumps, undo target and rest are untouched.
+        let movedUp = try context.active.moveExercise(
+            draftID: recorded.id, exerciseBlockID: started.secondBlock, by: -1,
+            expectedRevision: recorded.revision, isSolo: { true }, now: now.addingTimeInterval(20)
+        )
+        XCTAssertEqual(movedUp.exercises.map(\.id), [started.secondBlock, started.firstBlock])
+        XCTAssertEqual(movedUp.revision, recorded.revision + 1)
+        XCTAssertEqual(movedUp.undoableSetID, a[0].id)
+        XCTAssertEqual(movedUp.timing?.restingUntil, recorded.timing?.restingUntil)
+        XCTAssertEqual(movedUp.exercises.last?.sets, recorded.exercises.first?.sets)
+        XCTAssertEqual(context.active.draft, movedUp)
+
+        // Move down restores the original order; an oversized offset clamps to the end.
+        let movedDown = try context.active.moveExercise(
+            draftID: movedUp.id, exerciseBlockID: started.secondBlock, by: 5,
+            expectedRevision: movedUp.revision, isSolo: { true }, now: now.addingTimeInterval(25)
+        )
+        XCTAssertEqual(movedDown.exercises.map(\.id), [started.firstBlock, started.secondBlock])
+        XCTAssertEqual(movedDown.undoableSetID, a[0].id)
+    }
+
     func testRemoveExerciseWithRecordedSetsClearsOwnedUndoAndStopsItsRest() throws {
         let context = try makeContext(account: "active-remove-owned-undo")
         let now = Date(timeIntervalSince1970: 1_800_000_000)

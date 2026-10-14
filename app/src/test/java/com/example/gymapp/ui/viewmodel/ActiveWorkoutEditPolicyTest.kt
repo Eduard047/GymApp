@@ -9,6 +9,7 @@ import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.repository.AddActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
+import com.example.gymapp.data.repository.MoveActiveWorkoutExerciseResult
 import com.example.gymapp.data.repository.RemoveActiveWorkoutExerciseResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -181,5 +182,69 @@ class ActiveWorkoutEditPolicyTest {
             activeWorkoutExercisesAvailableToAdd(catalog, details).map { it.id }
         )
         assertEquals(3, activeWorkoutExercisesAvailableToAdd(catalog, null).size)
+    }
+
+    @Test
+    fun exerciseMoveIsAllowedInsideTheListAndSilentAtTheEdges() {
+        val details = workout(listOf(false), listOf(false), listOf(false))
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutExerciseMoveBlock(details, "e1", -1, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutExerciseMoveBlock(details, "e1", 1, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.AtEdge,
+            activeWorkoutExerciseMoveBlock(details, "e0", -1, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.AtEdge,
+            activeWorkoutExerciseMoveBlock(details, "e2", 1, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.AtEdge,
+            activeWorkoutExerciseMoveBlock(workout(listOf(false)), "e0", 1, false, false)
+        )
+    }
+
+    @Test
+    fun exerciseMoveIsRefusedInLiveRoomWhileBusyAndForUnknownExercises() {
+        val details = workout(listOf(false), listOf(false))
+        assertEquals(
+            ActiveWorkoutEditBlock.LiveRoom,
+            activeWorkoutExerciseMoveBlock(details, "e0", 1, inLiveRoom = true, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Busy,
+            activeWorkoutExerciseMoveBlock(details, "e0", 1, inLiveRoom = false, operationInProgress = true)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Missing,
+            activeWorkoutExerciseMoveBlock(details, "gone", 1, false, false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Missing,
+            activeWorkoutExerciseMoveBlock(null, "e0", 1, false, false)
+        )
+    }
+
+    @Test
+    fun moveOutcomeMessagesAreSilentOnSuccessAndNoChange() {
+        assertNull(activeWorkoutMoveExerciseOutcomeMessage(MoveActiveWorkoutExerciseResult.Moved(2L)))
+        assertNull(activeWorkoutMoveExerciseOutcomeMessage(MoveActiveWorkoutExerciseResult.NoChange))
+        assertEquals(
+            R.string.active_workout_missing,
+            activeWorkoutMoveExerciseOutcomeMessage(MoveActiveWorkoutExerciseResult.Missing)
+        )
+        assertEquals(
+            R.string.training_adaptation_live_blocked,
+            activeWorkoutMoveExerciseOutcomeMessage(MoveActiveWorkoutExerciseResult.LivePlanFrozen)
+        )
+        assertEquals(
+            R.string.active_workout_changed,
+            activeWorkoutMoveExerciseOutcomeMessage(MoveActiveWorkoutExerciseResult.Stale)
+        )
     }
 }

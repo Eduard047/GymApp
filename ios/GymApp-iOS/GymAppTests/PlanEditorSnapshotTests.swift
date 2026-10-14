@@ -41,6 +41,23 @@ final class PlanEditorSnapshotTests: XCTestCase {
         )
     }
 
+    func testSnapshotDetectsExerciseReorder() {
+        let date = Date(timeIntervalSince1970: 1_787_000_000)
+        let first = WorkoutEditorExerciseDraft(
+            exerciseID: UUID(),
+            sets: [WorkoutEditorSetDraft(weight: 40, reps: 8)]
+        )
+        let second = WorkoutEditorExerciseDraft(
+            exerciseID: UUID(),
+            sets: [WorkoutEditorSetDraft(weight: 20, reps: 12)]
+        )
+
+        XCTAssertNotEqual(
+            PlanEditorSnapshot(date: date, note: "", effort: .auto, drafts: [first, second]),
+            PlanEditorSnapshot(date: date, note: "", effort: .auto, drafts: [second, first])
+        )
+    }
+
     func testNavigationDraftPreservesMeaningfulEditorStateForSameAccountOnly() {
         let account = "account-a"
         let date = Date(timeIntervalSince1970: 1_787_000_000)

@@ -499,6 +499,19 @@ internal fun firstInvalidStartDraftId(
         ?: drafts.takeIf { list -> list.none { it.exerciseId != null } }?.firstOrNull()?.draftId
 }
 
+/** [drafts] with [draftId] moved by [offset] (clamped to the list ends), or null when nothing would change. */
+internal fun movedExerciseDraft(
+    drafts: List<ExerciseInputState>,
+    draftId: Long,
+    offset: Int
+): List<ExerciseInputState>? {
+    val from = drafts.indexOfFirst { it.draftId == draftId }
+    if (from < 0) return null
+    val to = (from + offset).coerceIn(0, drafts.lastIndex)
+    if (to == from) return null
+    return drafts.toMutableList().apply { add(to, removeAt(from)) }
+}
+
 /** New exercise cards are appended, so the first added stays first (insertion order). */
 internal fun appendExerciseDraft(
     current: List<ExerciseInputState>,
@@ -1535,6 +1548,26 @@ class AddWorkoutViewModel internal constructor(
             markDraftDirty()
             current.filterNot { it.draftId == draftId }
         }
+    }
+
+    /**
+     * Moves a draft card by [offset] (-1 up, +1 down), clamped to the list ends. Returns true when
+     * the order changed; at an edge or for an unknown draft nothing is written.
+     */
+    fun moveExerciseDraft(draftId: Long, offset: Int): Boolean {
+        var moved = false
+        exerciseDrafts.update { current ->
+            val reordered = movedExerciseDraft(current, draftId, offset) ?: return@update current
+            moved = true
+            reordered
+        }
+        if (!moved) return false
+        resetWatchPlanSyncResult()
+        generatedSmartPlan.value = null
+        smartAlternativePicker.value = null
+        clearStartFieldErrors()
+        markDraftDirty()
+        return true
     }
 
     /** Clears only the local plan draft. Account-level Coach settings and metadata stay intact. */

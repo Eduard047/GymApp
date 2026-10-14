@@ -1,6 +1,7 @@
 package com.example.gymapp.ui.viewmodel
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,5 +28,23 @@ class AppendExerciseDraftTest {
         val result = appendExerciseDraft(existing, 9L)
         assertEquals(listOf(7L, 3L, 9L), result.map { it.draftId })
         assertEquals(existing, result.take(existing.size))
+    }
+
+    @Test
+    fun movingADraftSwapsItWithItsNeighbourAndKeepsTheOthers() {
+        val drafts = (1L..4L).map { ExerciseInputState(draftId = it) }
+        assertEquals(listOf(1L, 3L, 2L, 4L), movedExerciseDraft(drafts, 2L, 1)!!.map { it.draftId })
+        assertEquals(listOf(2L, 1L, 3L, 4L), movedExerciseDraft(drafts, 2L, -1)!!.map { it.draftId })
+        assertEquals(drafts[2], movedExerciseDraft(drafts, 3L, -1)!![1])
+    }
+
+    @Test
+    fun movingPastAnEdgeOrAnUnknownDraftChangesNothing() {
+        val drafts = (1L..3L).map { ExerciseInputState(draftId = it) }
+        assertNull(movedExerciseDraft(drafts, 1L, -1))
+        assertNull(movedExerciseDraft(drafts, 3L, 1))
+        assertNull(movedExerciseDraft(drafts, 99L, 1))
+        assertNull(movedExerciseDraft(drafts, 2L, 0))
+        assertNull(movedExerciseDraft(emptyList(), 1L, 1))
     }
 }

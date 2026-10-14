@@ -525,6 +525,8 @@
     <string name="active_workout_exercise_already_added">Ця вправа вже є в тренуванні.</string>
     <string name="active_workout_log_set_cd">Записати підхід %1$d</string>
     <string name="active_workout_remove_exercise">Видалити вправу</string>
+    <string name="workout_exercise_move_up">Перемістити вище</string>
+    <string name="workout_exercise_move_down">Перемістити нижче</string>
     <string name="active_workout_remove_exercise_title">Видалити вправу?</string>
     <string name="active_workout_remove_exercise_message">Її заплановані підходи буде видалено з цього тренування.</string>
     <plurals name="active_workout_remove_exercise_recorded_sets">

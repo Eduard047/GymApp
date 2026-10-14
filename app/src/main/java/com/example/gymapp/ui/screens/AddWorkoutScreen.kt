@@ -84,6 +84,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
@@ -93,6 +94,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
@@ -106,6 +109,10 @@ import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationKind
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.GymHapticEvent
+import com.example.gymapp.ui.components.GymMotion
+import com.example.gymapp.ui.components.rememberGymHaptics
+import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
 import com.example.gymapp.ui.components.ExerciseMuscleMap
 import com.example.gymapp.ui.components.ExerciseMediaPreview
@@ -159,6 +166,7 @@ fun AddWorkoutScreen(
     onAddExerciseWithSelection: (Long) -> Unit,
     onClearPlan: () -> Unit,
     onRemoveExerciseDraft: (Long) -> Unit,
+    onMoveExerciseDraft: (Long, Int) -> Boolean = { _, _ -> false },
     onExerciseSelected: (Long, Long) -> Unit,
     onAddSet: (Long) -> Unit,
     onRemoveSet: (Long, Int) -> Unit,
@@ -264,6 +272,8 @@ fun AddWorkoutScreen(
         externalOpen = showAddExercisePicker && !editorInteractionsLocked,
         onExternalDismiss = { showAddExercisePicker = false }
     )
+    val gymHaptics = rememberGymHaptics()
+    val reduceMotion = rememberReduceMotion()
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -435,7 +445,17 @@ fun AddWorkoutScreen(
                 onDuplicateSet = { setIndex -> onDuplicateSet(draft.draftId, setIndex) },
                 onApplyWorkoutRecommendation = { onApplyWorkoutRecommendation(draft.draftId) },
                 onOpenSmartAlternatives = { onOpenSmartAlternatives(draft.draftId) },
-                onRemoveExerciseDraft = { onRemoveExerciseDraft(draft.draftId) }
+                onRemoveExerciseDraft = { onRemoveExerciseDraft(draft.draftId) },
+                canMoveUp = index > 0,
+                canMoveDown = index < uiState.exerciseDrafts.lastIndex,
+                onMoveExerciseDraft = { offset ->
+                    if (onMoveExerciseDraft(draft.draftId, offset)) gymHaptics.perform(GymHapticEvent.Reorder)
+                },
+                modifier = Modifier.animateItem(
+                    fadeInSpec = GymMotion.fadeInSpec(),
+                    placementSpec = if (reduceMotion) null else GymMotion.standardSpring(IntOffset.VisibilityThreshold),
+                    fadeOutSpec = GymMotion.fadeOutSpec()
+                )
             )
         }
 
@@ -1257,7 +1277,11 @@ private fun ExerciseDraftCard(
     onDuplicateSet: (Int) -> Unit,
     onApplyWorkoutRecommendation: () -> Unit,
     onOpenSmartAlternatives: () -> Unit,
-    onRemoveExerciseDraft: () -> Unit
+    onRemoveExerciseDraft: () -> Unit,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveExerciseDraft: (Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val selectedExercise = exercises.firstOrNull { it.id == draft.exerciseId }
     val exerciseName = selectedExercise?.let { localizedExerciseName(it.name) }
@@ -1265,10 +1289,17 @@ private fun ExerciseDraftCard(
     val locale = Locale.forLanguageTag(currentAppLanguageTag())
     val addSetDescription = stringResource(R.string.action_add_planned_set)
 
-    WorkoutExerciseCardShell(highlighted = true) {
+    val moveUpLabel = stringResource(R.string.workout_exercise_move_up)
+    val moveDownLabel = stringResource(R.string.workout_exercise_move_down)
+
+    WorkoutExerciseCardShell(modifier = modifier, highlighted = true) {
         WorkoutExerciseCardHeader(
             title = exerciseName,
             onToggleExpanded = null,
+            accessibilityActions = buildList {
+                if (canMoveUp) add(CustomAccessibilityAction(moveUpLabel) { onMoveExerciseDraft(-1); true })
+                if (canMoveDown) add(CustomAccessibilityAction(moveDownLabel) { onMoveExerciseDraft(1); true })
+            },
             media = selectedExercise?.let { exercise ->
                 {
                     WorkoutExerciseMedia(
@@ -1285,6 +1316,10 @@ private fun ExerciseDraftCard(
                     modifier = Modifier.testTag("workout_plan_exercise_menu"),
                     removeLabel = stringResource(R.string.action_delete),
                     buttonDescription = stringResource(R.string.cd_exercise_actions, exerciseName),
+                    onMoveUp = { onMoveExerciseDraft(-1) },
+                    onMoveDown = { onMoveExerciseDraft(1) },
+                    canMoveUp = canMoveUp,
+                    canMoveDown = canMoveDown,
                     extraItems = { closeMenu ->
                         if (selectedExercise != null) {
                             DropdownMenuItem(

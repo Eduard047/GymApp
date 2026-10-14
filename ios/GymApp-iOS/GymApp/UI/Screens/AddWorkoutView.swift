@@ -158,6 +158,8 @@ struct AddWorkoutView: View {
     @ObservedObject private var garminCloud: GarminCloudService
     private let garminPhone: GarminPhoneSyncService?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var moveExerciseFeedbackTrigger = 0
     @State private var date = Date()
     @State private var dateIsExplicit = false
     @State private var note = ""
@@ -591,6 +593,7 @@ struct AddWorkoutView: View {
         .onChange(of: currentEditorDraftState) { _, draft in
             onDraftChange(draft)
         }
+        .sensoryFeedback(.selection, trigger: moveExerciseFeedbackTrigger)
         .onAppear {
             onDraftChange(currentEditorDraftState)
 #if DEBUG
@@ -1015,8 +1018,10 @@ struct AddWorkoutView: View {
             }
             .buttonStyle(GymPrimaryButtonStyle())
         } else {
+            let visibleDraftIDs = drafts.filter { store.exercise(id: $0.exerciseID) != nil }.map(\.id)
             ForEach(drafts) { item in
                 if let exercise = store.exercise(id: item.exerciseID) {
+                    let visibleIndex = visibleDraftIDs.firstIndex(of: item.id) ?? 0
                     WorkoutDraftExerciseCard(
                         draft: binding(for: item.id),
                         exerciseID: exercise.id,
@@ -1031,6 +1036,10 @@ struct AddWorkoutView: View {
                             latestSmartPlan = nil
                             drafts.removeAll { $0.id == item.id }
                         },
+                        onMoveUp: visibleIndex > 0
+                            ? { moveDraft(item.id, toward: visibleDraftIDs[visibleIndex - 1]) } : nil,
+                        onMoveDown: visibleIndex < visibleDraftIDs.count - 1
+                            ? { moveDraft(item.id, toward: visibleDraftIDs[visibleIndex + 1]) } : nil,
                         highlightsInvalid: highlightsInvalidSets
                     )
                     .id(item.id)
@@ -1962,6 +1971,17 @@ struct AddWorkoutView: View {
         }
     }
 #endif
+
+    /// Swaps an exercise with its visible neighbour; the animation and the
+    /// haptic follow the user's Reduce Motion setting and the other editor actions.
+    private func moveDraft(_ draftID: UUID, toward neighbourID: UUID) {
+        guard let from = drafts.firstIndex(where: { $0.id == draftID }),
+              let to = drafts.firstIndex(where: { $0.id == neighbourID }) else { return }
+        withAnimation(GymMotion.animation(reduceMotion: reduceMotion)) {
+            drafts.swapAt(from, to)
+        }
+        moveExerciseFeedbackTrigger &+= 1
+    }
 
     private func showAlternatives(for draftID: UUID) {
         guard let draft = drafts.first(where: { $0.id == draftID }),

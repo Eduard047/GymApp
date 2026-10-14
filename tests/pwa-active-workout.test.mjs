@@ -4754,3 +4754,193 @@ test("in a live room the batch Undo is hidden when a newer own set exists after 
   vm.runInContext("activeBatchUndo.entries = globalThis.__saved; activeBatchUndo.entries[0].completedAt += 1000", context);
   assert.equal(vm.runInContext(valid, context), false, "changed completion time means the set is not the same record");
 });
+
+const THREE_EXERCISE_PLAN = [
+  { exerciseName: "Bench Press", catalogKey: "bench_press", sets: [{ weight: 80, reps: 8 }, { weight: 82.5, reps: 6 }] },
+  { exerciseName: "Squat", catalogKey: "squat", sets: [{ weight: 100, reps: 5 }] },
+  { exerciseName: "Deadlift", catalogKey: "deadlift", sets: [{ weight: 120, reps: 5 }, { weight: 120, reps: 4 }] }
+];
+
+test("Move up and Move down reorder active exercises by stable id and keep every set, undo target and rest", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  const [bench, squat, deadlift] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  const blocksBefore = activeRunJson(context, "activeWorkout.blocks");
+  const [benchSet] = blockSetIds(context, 0);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, benchSet, 80, 8), true);
+  const timerKey = vm.runInContext(`activeWorkout.id + ":Bench Press"`, context);
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(timerKey)})`, context) > 0);
+  const revisionBefore = vm.runInContext("activeWorkout.revision", context);
+
+  // Move the middle exercise up: [Squat, Bench, Deadlift].
+  assert.equal(await vm.runInContext(`requestMoveActiveExercise(${squat}, -1)`, context), true);
+  assert.deepEqual(activeRunJson(context, "activeWorkout.blocks.map(block => block.id)"), [squat, bench, deadlift]);
+  assert.equal(vm.runInContext("activeWorkout.revision", context), revisionBefore + 1);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), vm.runInContext("activeWorkoutStorageRaw", context));
+  // Move the first (now Squat) down: [Bench, Squat, Deadlift].
+  assert.equal(await vm.runInContext(`requestMoveActiveExercise(${squat}, 1)`, context), true);
+  assert.deepEqual(activeRunJson(context, "activeWorkout.blocks.map(block => block.id)"), [bench, squat, deadlift]);
+  // Move the middle down: [Bench, Deadlift, Squat].
+  assert.equal(await vm.runInContext(`requestMoveActiveExercise(${squat}, 1)`, context), true);
+  assert.deepEqual(activeRunJson(context, "activeWorkout.blocks.map(block => block.exerciseName)"), ["Bench Press", "Deadlift", "Squat"]);
+
+  // Block and set data (ids, weights, completion) are preserved exactly; only the order changed.
+  const byId = new Map(activeRunJson(context, "activeWorkout.blocks").map(block => [block.id, block]));
+  for (const before of blocksBefore) {
+    const after = byId.get(before.id);
+    assert.deepEqual(after.sets.map(set => set.id), before.sets.map(set => set.id));
+    assert.deepEqual(after.sets.map(set => [set.weight, set.reps]), before.sets.map(set => [set.weight, set.reps]));
+  }
+  assert.equal(undoMarkerSetId(context), benchSet, "undo target survives a reorder");
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(timerKey)})`, context) > 0, "rest survives a reorder");
+  assert.equal(vm.runInContext("modal", context), null);
+});
+
+test("Move up and Move down are refused at the list edges without a write", async () => {
+  const { context, localStorage } = loadContext();
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  const [bench, , deadlift] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  const before = localStorage.getItem(activeStorageKey(context));
+  const revision = vm.runInContext("activeWorkout.revision", context);
+  assert.equal(await vm.runInContext(`moveActiveWorkoutExercise(${bench}, -1)`, context), false, "first cannot move up");
+  assert.equal(await vm.runInContext(`moveActiveWorkoutExercise(${deadlift}, 1)`, context), false, "last cannot move down");
+  assert.equal(await vm.runInContext("moveActiveWorkoutExercise(999, 1)", context), false, "unknown block");
+  assert.equal(await vm.runInContext(`moveActiveWorkoutExercise(${bench}, 2)`, context), false, "only single steps");
+  assert.equal(await vm.runInContext(`requestMoveActiveExercise(${bench}, -1)`, context), false);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+  assert.equal(vm.runInContext("activeWorkout.revision", context), revision);
+
+  // The sheet disables exactly the move that cannot apply and escapes nothing unsafe.
+  vm.runInContext(`openActiveExerciseMoreMenu(${bench})`, context);
+  let sheet = vm.runInContext("modalMarkup()", context);
+  assert.match(sheet, new RegExp(`data-action="move-active-exercise-up" data-block-id="${bench}" disabled aria-disabled="true"`));
+  assert.match(sheet, new RegExp(`data-action="move-active-exercise-down" data-block-id="${bench}">`));
+  vm.runInContext("modal = null", context);
+  vm.runInContext(`openActiveExerciseMoreMenu(${deadlift})`, context);
+  sheet = vm.runInContext("modalMarkup()", context);
+  assert.match(sheet, new RegExp(`data-action="move-active-exercise-up" data-block-id="${deadlift}">`));
+  assert.match(sheet, new RegExp(`data-action="move-active-exercise-down" data-block-id="${deadlift}" disabled aria-disabled="true"`));
+  assert.ok(sheet.indexOf("move-active-exercise-down") < sheet.indexOf("remove-active-exercise"), "move items come before the destructive item");
+  vm.runInContext("modal = null", context);
+});
+
+test("Move up and Move down are localized and wired through the click router", async () => {
+  const { context } = loadContext();
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  const [bench, squat] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  for (const [language, up, down] of [
+    ["en", "Move up", "Move down"],
+    ["uk", "Перемістити вище", "Перемістити нижче"],
+    ["ru", "Переместить выше", "Переместить ниже"]
+  ]) {
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    vm.runInContext(`openActiveExerciseMoreMenu(${squat})`, context);
+    const sheet = vm.runInContext("modalMarkup()", context);
+    assert.match(sheet, new RegExp(`data-action="move-active-exercise-up"[^>]*>[\\s\\S]*?</svg>${up}</button>`), language);
+    assert.match(sheet, new RegExp(`data-action="move-active-exercise-down"[^>]*>[\\s\\S]*?</svg>${down}</button>`), language);
+    vm.runInContext("modal = null", context);
+  }
+  vm.runInContext("state.language = 'en'", context);
+  vm.runInContext(`openActiveExerciseMoreMenu(${squat})`, context);
+  assert.equal(await vm.runInContext(`handleAction("move-active-exercise-up", { dataset: { blockId: "${squat}" } })`, context), true);
+  assert.equal(vm.runInContext("modal", context), null, "the sheet closes after a move");
+  assert.equal(vm.runInContext("activeWorkout.blocks[0].id", context), squat);
+  assert.equal(await vm.runInContext(`handleAction("move-active-exercise-down", { dataset: { blockId: "${bench}" } })`, context), true);
+  assert.deepEqual(activeRunJson(context, "activeWorkout.blocks.map(block => block.exerciseName)"), ["Squat", "Deadlift", "Bench Press"]);
+});
+
+test("Move up and Move down are refused in a live room and for a stale in-memory raw (CAS)", async () => {
+  const { context, localStorage } = loadContext();
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  const [bench, squat] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  const before = localStorage.getItem(activeStorageKey(context));
+
+  // Live room: the sheet cannot open, the request and the writer refuse, nothing is written.
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", context);
+  assert.equal(vm.runInContext(`openActiveExerciseMoreMenu(${squat})`, context), false);
+  assert.equal(vm.runInContext(`activeExerciseMoreSheetMarkup(${squat})`, context), "");
+  assert.equal(await vm.runInContext(`requestMoveActiveExercise(${squat}, -1)`, context), false);
+  assert.equal(await vm.runInContext(`moveActiveWorkoutExercise(${squat}, -1)`, context), false);
+  vm.runInContext("liveWorkoutBinding = null", context);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+
+  // Stale raw: another tab wrote a newer revision after this tab captured its raw.
+  const staleRaw = vm.runInContext("activeWorkoutStorageRaw", context);
+  const foreign = JSON.parse(before);
+  foreign.revision += 1;
+  foreign.updatedAt += 1;
+  localStorage.setItem(activeStorageKey(context), JSON.stringify(foreign));
+  assert.equal(await vm.runInContext(`moveActiveWorkoutExercise(${squat}, -1, ${JSON.stringify(staleRaw)})`, context), false);
+  assert.deepEqual(
+    JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks.map(block => block.id),
+    foreign.blocks.map(block => block.id),
+    "a stale move reorders nothing"
+  );
+  void bench;
+});
+
+test("a lone active exercise offers no Move items", async () => {
+  const { context } = loadContext();
+  await startTwoSetWorkout(context);
+  const only = vm.runInContext("activeWorkout.blocks[0].id", context);
+  assert.equal(vm.runInContext(`openActiveExerciseMoreMenu(${only})`, context), false);
+  assert.equal(vm.runInContext(`activeExerciseMoreSheetMarkup(${only})`, context), "");
+  assert.equal(vm.runInContext(`activeExerciseMoveTarget(activeWorkout, ${only}, 1)`, context), null);
+  assert.equal(vm.runInContext(`activeExerciseMoveTarget(activeWorkout, ${only}, -1)`, context), null);
+});
+
+test("plan editor Move up and Move down reorder the draft, persist it and disable the edge items", async () => {
+  const { context } = loadContext();
+  vm.runInContext(`
+    globalThis.persisted = 0;
+    persistWorkoutDraft = () => { globalThis.persisted += 1; };
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: ${JSON.stringify(THREE_EXERCISE_PLAN)} };
+  `, context);
+  const order = () => activeRunJson(context, "workoutDraft.blocks.map(block => block.exerciseName)");
+  const menu = index => {
+    vm.runInContext(`planEditorMenu = "block-${index}"`, context);
+    return vm.runInContext(`draftBlock(workoutDraft.blocks[${index}], ${index})`, context);
+  };
+
+  // Edge items stay in the menu but are disabled; the middle exercise can move both ways.
+  assert.match(menu(0), /data-action="move-block-up" data-block="0" disabled aria-disabled="true"/);
+  assert.match(menu(0), /data-action="move-block-down" data-block="0">/);
+  assert.match(menu(1), /data-action="move-block-up" data-block="1">/);
+  assert.match(menu(1), /data-action="move-block-down" data-block="1">/);
+  assert.match(menu(2), /data-action="move-block-up" data-block="2">/);
+  assert.match(menu(2), /data-action="move-block-down" data-block="2" disabled aria-disabled="true"/);
+  for (const [language, up, down] of [
+    ["en", "Move up", "Move down"],
+    ["uk", "Перемістити вище", "Перемістити нижче"],
+    ["ru", "Переместить выше", "Переместить ниже"]
+  ]) {
+    vm.runInContext(`state.language = ${JSON.stringify(language)}`, context);
+    const markup = menu(1);
+    assert.ok(markup.includes(`<span>${up}</span>`) && markup.includes(`<span>${down}</span>`), language);
+  }
+  vm.runInContext("state.language = 'en'; planEditorMenu = null", context);
+
+  vm.runInContext("smartGeneratedPlan = { stale: true }", context);
+  assert.equal(await vm.runInContext(`handleAction("move-block-up", { dataset: { block: "1" } })`, context), true);
+  assert.deepEqual(order(), ["Squat", "Bench Press", "Deadlift"]);
+  assert.equal(vm.runInContext("globalThis.persisted", context), 1, "the draft is persisted like other draft edits");
+  assert.equal(vm.runInContext("smartGeneratedPlan", context), null, "a generated plan is no longer current after reordering");
+  assert.equal(await vm.runInContext(`handleAction("move-block-down", { dataset: { block: "1" } })`, context), true);
+  assert.deepEqual(order(), ["Squat", "Deadlift", "Bench Press"]);
+  assert.equal(vm.runInContext("globalThis.persisted", context), 2);
+
+  // Edges, unknown and malformed indexes are no-ops without a persist.
+  for (const [action, block] of [["move-block-up", "0"], ["move-block-down", "2"], ["move-block-up", "9"], ["move-block-down", "-1"], ["move-block-up", "x"]]) {
+    assert.equal(await vm.runInContext(`handleAction(${JSON.stringify(action)}, { dataset: { block: ${JSON.stringify(block)} } })`, context), false, `${action} ${block}`);
+  }
+  assert.deepEqual(order(), ["Squat", "Deadlift", "Bench Press"]);
+  assert.equal(vm.runInContext("globalThis.persisted", context), 2);
+
+  // Set data travels with its exercise.
+  assert.deepEqual(activeRunJson(context, "workoutDraft.blocks[0].sets"), THREE_EXERCISE_PLAN[1].sets);
+
+  // A lone exercise has no Move items at all.
+  vm.runInContext(`workoutDraft.blocks.splice(1)`, context);
+  const lone = menu(0);
+  assert.doesNotMatch(lone, /move-block-(up|down)/);
+});
