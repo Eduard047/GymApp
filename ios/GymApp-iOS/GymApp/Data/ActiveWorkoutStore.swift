@@ -819,9 +819,8 @@ final class ActiveWorkoutStore: ObservableObject {
 
     /// Moves one exercise block `offset` positions (negative = earlier), clamped to
     /// the ends of the list. Returns the draft unchanged, without a revision bump,
-    /// when the block is already at that end. Block and set ids are stable, so the
-    /// undo target and a running rest are untouched. Refused while a live room or
-    /// reservation freezes the plan.
+    /// when the block is already at that end. Thin wrapper over the absolute
+    /// `moveExercise(draftID:exerciseBlockID:to:...)`.
     @discardableResult
     func moveExercise(
         draftID: UUID,
@@ -839,14 +838,46 @@ final class ActiveWorkoutStore: ObservableObject {
         let count = current.exercises.count
         let boundedOffset = max(-count, min(count, offset))
         let target = max(0, min(count - 1, index + boundedOffset))
-        guard target != index else { return current }
+        return try moveExercise(
+            draftID: draftID,
+            exerciseBlockID: exerciseBlockID,
+            to: target,
+            expectedRevision: expectedRevision,
+            isSolo: isSolo,
+            now: now
+        )
+    }
+
+    /// Moves one exercise block to `targetIndex` (its index in the list after the
+    /// move) in a single write: one revision bump, one persist. Block and set ids
+    /// are stable, so the undo target and a running rest are untouched. Returns the
+    /// draft unchanged, without a revision bump, when the block already sits at
+    /// `targetIndex` or `targetIndex` is out of range. Refused while a live room or
+    /// reservation freezes the plan, and on a stale revision.
+    @discardableResult
+    func moveExercise(
+        draftID: UUID,
+        exerciseBlockID: UUID,
+        to targetIndex: Int,
+        expectedRevision: UInt64,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        let current = try currentDraft(draftID: draftID, expectedRevision: expectedRevision)
+        guard let index = current.exercises.firstIndex(where: { $0.id == exerciseBlockID }) else {
+            throw ActiveWorkoutStoreError.exerciseUnavailable
+        }
+        guard current.exercises.indices.contains(targetIndex), targetIndex != index else {
+            return current
+        }
         return try mutate(
             draftID: draftID,
             expectedRevision: expectedRevision,
             now: now
         ) { candidate in
             let block = candidate.exercises.remove(at: index)
-            candidate.exercises.insert(block, at: target)
+            candidate.exercises.insert(block, at: targetIndex)
         }
     }
 

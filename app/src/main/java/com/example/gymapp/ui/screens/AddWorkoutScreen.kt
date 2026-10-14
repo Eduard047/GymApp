@@ -109,8 +109,13 @@ import com.example.gymapp.data.repository.WorkoutRecommendation
 import com.example.gymapp.data.repository.WorkoutRecommendationKind
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.ExerciseDragHandle
+import com.example.gymapp.ui.components.ExerciseReorderSync
 import com.example.gymapp.ui.components.GymHapticEvent
 import com.example.gymapp.ui.components.GymMotion
+import com.example.gymapp.ui.components.exerciseReorderItem
+import com.example.gymapp.ui.components.exerciseReorderViewport
+import com.example.gymapp.ui.components.rememberExerciseReorderState
 import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.ExerciseMuscleBreakdownCard
@@ -167,6 +172,7 @@ fun AddWorkoutScreen(
     onClearPlan: () -> Unit,
     onRemoveExerciseDraft: (Long) -> Unit,
     onMoveExerciseDraft: (Long, Int) -> Boolean = { _, _ -> false },
+    onMoveExerciseDraftTo: (Long, Int) -> Boolean = { _, _ -> false },
     onExerciseSelected: (Long, Long) -> Unit,
     onAddSet: (Long) -> Unit,
     onRemoveSet: (Long, Int) -> Unit,
@@ -274,10 +280,16 @@ fun AddWorkoutScreen(
     )
     val gymHaptics = rememberGymHaptics()
     val reduceMotion = rememberReduceMotion()
+    val reorder = rememberExerciseReorderState(listState)
+    val draftKeys = uiState.exerciseDrafts.map { it.draftId }
+    val canReorderDrafts = uiState.exerciseDrafts.size >= 2 && !editorInteractionsLocked
+    ExerciseReorderSync(reorder, draftKeys, enabled = canReorderDrafts)
+    val displayedDrafts = reorder.displayed(uiState.exerciseDrafts) { it.draftId }
     LazyColumn(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
+            .exerciseReorderViewport(reorder)
             .testTag("workout_plan_editor_list")
             .then(
                 if (editorInteractionsLocked) {
@@ -412,9 +424,10 @@ fun AddWorkoutScreen(
         }
 
         itemsIndexed(
-            items = uiState.exerciseDrafts,
+            items = displayedDrafts,
             key = { _, draft -> draft.draftId }
         ) { index, draft ->
+            val isDragged = reorder.draggedKey == draft.draftId
             ExerciseDraftCard(
                 index = index,
                 draft = draft,
@@ -451,11 +464,30 @@ fun AddWorkoutScreen(
                 onMoveExerciseDraft = { offset ->
                     if (onMoveExerciseDraft(draft.draftId, offset)) gymHaptics.perform(GymHapticEvent.Reorder)
                 },
-                modifier = Modifier.animateItem(
-                    fadeInSpec = GymMotion.fadeInSpec(),
-                    placementSpec = if (reduceMotion) null else GymMotion.standardSpring(IntOffset.VisibilityThreshold),
-                    fadeOutSpec = GymMotion.fadeOutSpec()
-                )
+                reorderHandle = if (canReorderDrafts) {
+                    {
+                        ExerciseDragHandle(
+                            state = reorder,
+                            itemKey = draft.draftId,
+                            sourceKeys = draftKeys,
+                            enabled = true,
+                            onCommit = { _, toIndex -> onMoveExerciseDraftTo(draft.draftId, toIndex) }
+                        )
+                    }
+                } else {
+                    null
+                },
+                modifier = Modifier
+                    .exerciseReorderItem(reorder, draft.draftId)
+                    .animateItem(
+                        fadeInSpec = GymMotion.fadeInSpec(),
+                        placementSpec = when {
+                            reduceMotion || isDragged -> null
+                            reorder.isActive -> GymMotion.snappySpring(IntOffset.VisibilityThreshold)
+                            else -> GymMotion.standardSpring(IntOffset.VisibilityThreshold)
+                        },
+                        fadeOutSpec = GymMotion.fadeOutSpec()
+                    )
             )
         }
 
@@ -1281,6 +1313,7 @@ private fun ExerciseDraftCard(
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveExerciseDraft: (Int) -> Unit,
+    reorderHandle: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val selectedExercise = exercises.firstOrNull { it.id == draft.exerciseId }
@@ -1296,6 +1329,7 @@ private fun ExerciseDraftCard(
         WorkoutExerciseCardHeader(
             title = exerciseName,
             onToggleExpanded = null,
+            leading = reorderHandle,
             accessibilityActions = buildList {
                 if (canMoveUp) add(CustomAccessibilityAction(moveUpLabel) { onMoveExerciseDraft(-1); true })
                 if (canMoveDown) add(CustomAccessibilityAction(moveDownLabel) { onMoveExerciseDraft(1); true })

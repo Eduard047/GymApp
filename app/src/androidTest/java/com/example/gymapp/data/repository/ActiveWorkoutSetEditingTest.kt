@@ -289,6 +289,59 @@ class ActiveWorkoutSetEditingTest {
         }
     }
 
+    @Test
+    fun movingExerciseToAnAbsoluteSlotShiftsTheOthersAndRefusesNoOpsAndStaleRevisions() = runBlocking {
+        withDatabase("active-edit-move-exercise-to") { repository ->
+            start(repository, listOf(1, 1, 1, 1))
+            val initial = checkNotNull(repository.getActiveWorkoutSnapshot())
+            val ids = initial.exercises.map { it.activeWorkoutExercise.id }
+            repository.recordActiveWorkoutSet(initial.exercises[0].sets.single().id, 0L, 40.0, 8)
+            // Down several slots in one write: [0,1,2,3] -> [1,2,3,0].
+            assertEquals(
+                MoveActiveWorkoutExerciseResult.Moved(2L),
+                repository.moveActiveWorkoutExerciseTo(ids[0], 3, expectedRevision = 1L)
+            )
+            var after = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(listOf(ids[1], ids[2], ids[3], ids[0]), after.exercises.map { it.activeWorkoutExercise.id })
+            assertEquals(listOf(0, 1, 2, 3), after.exercises.map { it.activeWorkoutExercise.orderIndex })
+            assertEquals(initial.exercises[0].sets.single().id, after.activeWorkout.undoableSetId)
+            // Up several slots: [1,2,3,0] -> [3,1,2,0].
+            assertEquals(
+                MoveActiveWorkoutExerciseResult.Moved(3L),
+                repository.moveActiveWorkoutExerciseTo(ids[3], 0, expectedRevision = 2L)
+            )
+            after = checkNotNull(repository.getActiveWorkoutSnapshot())
+            assertEquals(listOf(ids[3], ids[1], ids[2], ids[0]), after.exercises.map { it.activeWorkoutExercise.id })
+            assertEquals(listOf(0, 1, 2, 3), after.exercises.map { it.activeWorkoutExercise.orderIndex })
+            // Same slot and out-of-range targets write nothing.
+            assertEquals(
+                MoveActiveWorkoutExerciseResult.NoChange,
+                repository.moveActiveWorkoutExerciseTo(ids[3], 0, expectedRevision = 3L)
+            )
+            assertEquals(
+                MoveActiveWorkoutExerciseResult.NoChange,
+                repository.moveActiveWorkoutExerciseTo(ids[3], 4, expectedRevision = 3L)
+            )
+            assertEquals(
+                MoveActiveWorkoutExerciseResult.NoChange,
+                repository.moveActiveWorkoutExerciseTo(ids[3], -1, expectedRevision = 3L)
+            )
+            assertEquals(3L, repository.getActiveWorkoutSnapshot()?.activeWorkout?.revision)
+            assertEquals(
+                MoveActiveWorkoutExerciseResult.Stale,
+                repository.moveActiveWorkoutExerciseTo(ids[1], 3, expectedRevision = 1L)
+            )
+            assertEquals(
+                MoveActiveWorkoutExerciseResult.TargetChanged,
+                repository.moveActiveWorkoutExerciseTo("00000000-0000-0000-0000-000000000000", 1, expectedRevision = 3L)
+            )
+            assertEquals(
+                listOf(ids[3], ids[1], ids[2], ids[0]),
+                checkNotNull(repository.getActiveWorkoutSnapshot()).exercises.map { it.activeWorkoutExercise.id }
+            )
+        }
+    }
+
     private suspend fun withDatabase(prefix: String, block: suspend (GymRepository) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "$prefix-${UUID.randomUUID()}"

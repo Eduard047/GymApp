@@ -247,4 +247,50 @@ class ActiveWorkoutEditPolicyTest {
             activeWorkoutMoveExerciseOutcomeMessage(MoveActiveWorkoutExerciseResult.Stale)
         )
     }
+
+    @Test
+    fun exerciseMoveToIsAllowedForAnyOtherSlotAndSilentForTheSameOrOutOfRange() {
+        val details = workout(listOf(false), listOf(false), listOf(false), listOf(false))
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutExerciseMoveToBlock(details, "e0", 3, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Allowed,
+            activeWorkoutExerciseMoveToBlock(details, "e3", 0, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.AtEdge,
+            activeWorkoutExerciseMoveToBlock(details, "e1", 1, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.AtEdge,
+            activeWorkoutExerciseMoveToBlock(details, "e1", 4, inLiveRoom = false, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.AtEdge,
+            activeWorkoutExerciseMoveToBlock(details, "e1", -1, inLiveRoom = false, operationInProgress = false)
+        )
+    }
+
+    @Test
+    fun exerciseMoveToIsRefusedInLiveRoomWhileBusyAndForUnknownExercises() {
+        val details = workout(listOf(false), listOf(false), listOf(false))
+        assertEquals(
+            ActiveWorkoutEditBlock.LiveRoom,
+            activeWorkoutExerciseMoveToBlock(details, "e0", 2, inLiveRoom = true, operationInProgress = false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Busy,
+            activeWorkoutExerciseMoveToBlock(details, "e0", 2, inLiveRoom = false, operationInProgress = true)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Missing,
+            activeWorkoutExerciseMoveToBlock(details, "gone", 2, false, false)
+        )
+        assertEquals(
+            ActiveWorkoutEditBlock.Missing,
+            activeWorkoutExerciseMoveToBlock(null, "e0", 2, false, false)
+        )
+    }
 }

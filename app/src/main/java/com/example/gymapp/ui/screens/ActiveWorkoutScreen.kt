@@ -77,6 +77,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -165,6 +166,8 @@ import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
+import com.example.gymapp.ui.components.ExerciseDragHandle
+import com.example.gymapp.ui.components.ExerciseReorderSync
 import com.example.gymapp.ui.components.GymHapticEvent
 import com.example.gymapp.ui.components.GymMotion
 import com.example.gymapp.ui.components.gymExpandHorizontally
@@ -180,6 +183,9 @@ import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.SectionTitle
 import com.example.gymapp.ui.components.longPressRipple
 import com.example.gymapp.ui.components.pressScale
+import com.example.gymapp.ui.components.exerciseReorderItem
+import com.example.gymapp.ui.components.exerciseReorderViewport
+import com.example.gymapp.ui.components.rememberExerciseReorderState
 import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutAddExerciseCatalog
@@ -221,6 +227,7 @@ fun ActiveWorkoutScreen(
     onDeleteSet: (String) -> Unit = {},
     onRemoveExercise: (String) -> Unit = {},
     onMoveExercise: (String, Int) -> Unit = { _, _ -> },
+    onMoveExerciseTo: (String, Int) -> Unit = { _, _ -> },
     addExerciseCatalog: ActiveWorkoutAddExerciseCatalog = ActiveWorkoutAddExerciseCatalog(),
     onAddExercise: (Long) -> Unit = {},
     onRecordSet: (String) -> Unit,
@@ -462,8 +469,15 @@ fun ActiveWorkoutScreen(
         .firstOrNull { set -> !set.isCompleted }
         ?.id
 
+    val listState = rememberLazyListState()
+    val reorder = rememberExerciseReorderState(listState)
+    val exerciseKeys = uiState.exercises.map { it.id }
+    val canReorderExercises = uiState.liveConnectionMode == null && uiState.exercises.size >= 2
+    ExerciseReorderSync(reorder, exerciseKeys, enabled = canReorderExercises)
+    val displayedExercises = reorder.displayed(uiState.exercises) { it.id }
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        state = listState,
+        modifier = modifier.fillMaxSize().exerciseReorderViewport(reorder),
         contentPadding = PaddingValues(
             start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,
@@ -587,15 +601,35 @@ fun ActiveWorkoutScreen(
         }
 
         itemsIndexed(
-            items = uiState.exercises,
+            items = displayedExercises,
             key = { _, exercise -> exercise.id }
         ) { exerciseIndex, exercise ->
+            val isDragged = reorder.draggedKey == exercise.id
             ActiveWorkoutExerciseCard(
-                modifier = Modifier.animateItem(
-                    fadeInSpec = GymMotion.fadeInSpec(),
-                    placementSpec = if (reduceMotion) null else GymMotion.standardSpring(IntOffset.VisibilityThreshold),
-                    fadeOutSpec = GymMotion.fadeOutSpec()
-                ),
+                modifier = Modifier
+                    .exerciseReorderItem(reorder, exercise.id)
+                    .animateItem(
+                        fadeInSpec = GymMotion.fadeInSpec(),
+                        placementSpec = when {
+                            reduceMotion || isDragged -> null
+                            reorder.isActive -> GymMotion.snappySpring(IntOffset.VisibilityThreshold)
+                            else -> GymMotion.standardSpring(IntOffset.VisibilityThreshold)
+                        },
+                        fadeOutSpec = GymMotion.fadeOutSpec()
+                    ),
+                reorderHandle = if (canReorderExercises) {
+                    {
+                        ExerciseDragHandle(
+                            state = reorder,
+                            itemKey = exercise.id,
+                            sourceKeys = exerciseKeys,
+                            enabled = !operationInProgress,
+                            onCommit = { _, toIndex -> onMoveExerciseTo(exercise.id, toIndex) }
+                        )
+                    }
+                } else {
+                    null
+                },
                 exercise = exercise,
                 initiallyExpanded = exercise.id == currentExerciseId,
                 screenEntryToken = screenEntryToken,
@@ -1222,6 +1256,7 @@ private fun ActiveWorkoutExerciseCard(
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveExercise: (Int) -> Unit,
+    reorderHandle: (@Composable () -> Unit)? = null,
     onDeleteSet: (String) -> Unit,
     onRecordSet: (String) -> Unit,
     onUndoSet: (String) -> Unit,
@@ -1287,6 +1322,7 @@ private fun ActiveWorkoutExerciseCard(
             expanded = isExpanded,
             onToggleExpanded = { isExpanded = !isExpanded },
             stateText = progressValue,
+            leading = reorderHandle,
             media = exercise.exerciseId?.let { exerciseId ->
                 {
                     WorkoutExerciseMedia(

@@ -1120,26 +1120,30 @@ test("Move up and Move down reorder exercises on every client: plan editor and r
   assert.match(pwaSource, /tx3\("Move down", "Перемістити нижче", "Переместить ниже"\)/);
 
   // Plan editor: move by one, clamped at the ends, a no-op at an edge; the matching menu item is disabled there.
-  assert.match(androidEditorViewModel, /fun movedExerciseDraft\([\s\S]{0,500}coerceIn\(0, drafts\.lastIndex\)[\s\S]{0,120}if \(to == from\) return null/);
+  assert.match(androidEditorViewModel, /fun movedExerciseDraft\([\s\S]{0,500}coerceIn\(0, drafts\.lastIndex\)[\s\S]{0,600}fun movedExerciseDraftTo\([\s\S]{0,300}toIndex == from\) return null/);
   assert.match(androidEditorViewModel, /fun moveExerciseDraft\(draftId: Long, offset: Int\): Boolean/);
   assert.match(androidEditor, /canMoveUp = index > 0,\s*canMoveDown = index < uiState\.exerciseDrafts\.lastIndex/);
   assert.match(iosEditor, /onMoveUp: visibleIndex > 0/);
   assert.match(iosEditor, /onMoveDown: visibleIndex < visibleDraftIDs\.count - 1/);
   assert.match(iosCards, /\.disabled\(onMoveUp == nil\)[\s\S]{0,300}\.disabled\(onMoveDown == nil\)/);
   assert.match(pwaSource, /disabled: blockIndex <= 0[\s\S]{0,400}disabled: blockIndex >= draftBlockCount - 1/);
-  assert.match(pwaSource, /function moveDraftBlock\(index, offset\)[\s\S]{0,700}persistWorkoutDraft\(\);\s*render\(\);/);
+  assert.match(pwaSource, /function moveDraftBlockTo\(from, to, \{ restoreFocus = false, silent = false \} = \{\}\)[\s\S]{0,700}persistWorkoutDraft\(\);\s*render\(\);/);
+  assert.match(pwaSource, /function moveDraftBlock\(index, offset\)[\s\S]{0,300}moveDraftBlockTo\(index, index \+ offset, \{ restoreFocus: true \}\)/);
 
   // A lone exercise offers no move items on any client.
   assert.match(iosCards, /if onMoveUp != nil \|\| onMoveDown != nil/);
   assert.match(pwaSource, /draftBlockCount > 1/);
 
   // Running workout: refused in a live room, revision/raw checked, nothing written at an edge, undo untouched.
-  assert.match(androidRepository, /suspend fun moveActiveWorkoutExercise\([\s\S]{0,1800}LivePlanFrozen[\s\S]{0,900}NoChange[\s\S]{0,900}advanceRevisionKeepingUndoable/);
-  assert.match(iosActiveStore, /func moveExercise\([\s\S]{0,400}assertStructuralChangeAllowed[\s\S]{0,900}guard target != index else \{ return current \}/);
+  assert.match(androidRepository, /suspend fun moveActiveWorkoutExercise(?:Resolving)?\([\s\S]{0,2600}LivePlanFrozen[\s\S]{0,900}NoChange[\s\S]{0,900}advanceRevisionKeepingUndoable/);
+  assert.match(iosActiveStore, /func moveExercise\([\s\S]{0,400}assertStructuralChangeAllowed[\s\S]{0,900}guard current\.exercises\.indices\.contains\(targetIndex\), targetIndex != index else \{\s*return current\s*\}/);
   assert.match(iosActive, /private func moveExercise\([\s\S]{0,300}planIsFrozenForCurrentDraft/);
-  const pwaMove = pwaSource.slice(pwaSource.indexOf("async function moveActiveWorkoutExercise("));
-  assert.match(pwaMove, /^async function moveActiveWorkoutExercise\([^)]*\) \{\s*if \(!activeWorkout \|\| liveWorkoutBinding\?\.localWorkoutId === activeWorkout\.id\) return false;/);
-  assert.match(pwaMove, /loaded\.raw !== expectedRaw[\s\S]{0,500}activeExerciseMoveTarget\(loaded\.workout, blockId, offset\)[\s\S]{0,1200}carryActiveWorkoutUndoMarker\(/);
+  const pwaMove = pwaSource.slice(pwaSource.indexOf("async function moveActiveWorkoutExerciseTo("));
+  assert.match(pwaMove, /^async function moveActiveWorkoutExerciseTo\([^)]*\) \{\s*if \(!activeWorkout \|\| liveWorkoutBinding\?\.localWorkoutId === activeWorkout\.id\) return false;/);
+  assert.match(pwaMove, /loaded\.raw !== expectedRaw[\s\S]{0,500}activeExerciseMoveToIndex\(loaded\.workout, blockId, toIndex\)[\s\S]{0,1200}carryActiveWorkoutUndoMarker\(/);
+  // The +/-1 entry point and the drag drop share that one writer.
+  assert.match(pwaSource, /async function moveActiveWorkoutExercise\(blockId, offset[^)]*\) \{[\s\S]{0,400}moveActiveWorkoutExerciseTo\(blockId, target\.to, expectedRaw\)/);
+  assert.match(pwaSource, /async function requestMoveActiveExerciseTo\(blockId, toIndex\)/);
   // The running-workout items sit with the other exercise actions and are disabled at an edge.
   assert.match(pwaSource, /activeExerciseMoveTarget\(activeWorkout, blockId, offset\) \? "" : ` disabled aria-disabled="true"`/);
 });

@@ -253,12 +253,29 @@ internal fun activeWorkoutExerciseMoveBlock(
     inLiveRoom: Boolean,
     operationInProgress: Boolean
 ): ActiveWorkoutEditBlock {
+    val index = details?.exercises?.indexOfFirst { it.activeWorkoutExercise.id == exerciseId } ?: -1
+    val target = if (details == null || index < 0) -1 else (index + offset).coerceIn(0, details.exercises.lastIndex)
+    return activeWorkoutExerciseMoveToBlock(details, exerciseId, target, inLiveRoom, operationInProgress)
+}
+
+/**
+ * An exercise can move to absolute position [toIndex] (drag-to-reorder drop) unless a live room owns
+ * the plan; the same position or an index outside the list is [ActiveWorkoutEditBlock.AtEdge] (a
+ * silent no-op, nothing is written).
+ */
+internal fun activeWorkoutExerciseMoveToBlock(
+    details: ActiveWorkoutDetails?,
+    exerciseId: String,
+    toIndex: Int,
+    inLiveRoom: Boolean,
+    operationInProgress: Boolean
+): ActiveWorkoutEditBlock {
     if (inLiveRoom) return ActiveWorkoutEditBlock.LiveRoom
     if (operationInProgress) return ActiveWorkoutEditBlock.Busy
     details ?: return ActiveWorkoutEditBlock.Missing
     val index = details.exercises.indexOfFirst { it.activeWorkoutExercise.id == exerciseId }
     if (index < 0) return ActiveWorkoutEditBlock.Missing
-    if ((index + offset).coerceIn(0, details.exercises.lastIndex) == index) return ActiveWorkoutEditBlock.AtEdge
+    if (toIndex !in details.exercises.indices || toIndex == index) return ActiveWorkoutEditBlock.AtEdge
     return ActiveWorkoutEditBlock.Allowed
 }
 
@@ -1448,6 +1465,31 @@ class ActiveWorkoutViewModel(
             inLiveRoom = isInLiveRoom(),
             operationInProgress = activeWorkoutOperationInProgress()
         )
+        runExerciseMove(snapshot, block) { revision -> repository.moveActiveWorkoutExercise(exerciseId, offset, revision) }
+    }
+
+    /**
+     * Moves an exercise to absolute position [toIndex] in one write (drag-to-reorder drop). The same
+     * position or an index outside the list writes nothing. Refused in live rooms. Undo and the rest
+     * timer are untouched.
+     */
+    fun moveExerciseTo(exerciseId: String, toIndex: Int) {
+        val snapshot = details.value
+        val block = activeWorkoutExerciseMoveToBlock(
+            details = snapshot,
+            exerciseId = exerciseId,
+            toIndex = toIndex,
+            inLiveRoom = isInLiveRoom(),
+            operationInProgress = activeWorkoutOperationInProgress()
+        )
+        runExerciseMove(snapshot, block) { revision -> repository.moveActiveWorkoutExerciseTo(exerciseId, toIndex, revision) }
+    }
+
+    private fun runExerciseMove(
+        snapshot: ActiveWorkoutDetails?,
+        block: ActiveWorkoutEditBlock,
+        move: suspend (revision: Long) -> MoveActiveWorkoutExerciseResult
+    ) {
         if (block == ActiveWorkoutEditBlock.LiveRoom) {
             operationState.update {
                 it.copy(message = LocalizedText(R.string.training_adaptation_live_blocked), messageSetId = null)
@@ -1465,9 +1507,7 @@ class ActiveWorkoutViewModel(
         val revision = checkNotNull(snapshot).activeWorkout.revision
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
         viewModelScope.launch {
-            val result = runCatching {
-                repository.moveActiveWorkoutExercise(exerciseId, offset, revision)
-            }.getOrNull()
+            val result = runCatching { move(revision) }.getOrNull()
             operationState.update {
                 val message = if (result == null) {
                     R.string.active_workout_changed

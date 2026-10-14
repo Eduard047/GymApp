@@ -507,9 +507,21 @@ internal fun movedExerciseDraft(
 ): List<ExerciseInputState>? {
     val from = drafts.indexOfFirst { it.draftId == draftId }
     if (from < 0) return null
-    val to = (from + offset).coerceIn(0, drafts.lastIndex)
-    if (to == from) return null
-    return drafts.toMutableList().apply { add(to, removeAt(from)) }
+    return movedExerciseDraftTo(drafts, draftId, (from + offset).coerceIn(0, drafts.lastIndex))
+}
+
+/**
+ * [drafts] with [draftId] moved to absolute position [toIndex] (drag-to-reorder drop), or null when
+ * nothing would change: unknown draft, same position, or an index outside the list.
+ */
+internal fun movedExerciseDraftTo(
+    drafts: List<ExerciseInputState>,
+    draftId: Long,
+    toIndex: Int
+): List<ExerciseInputState>? {
+    val from = drafts.indexOfFirst { it.draftId == draftId }
+    if (from < 0 || toIndex !in drafts.indices || toIndex == from) return null
+    return drafts.toMutableList().apply { add(toIndex, removeAt(from)) }
 }
 
 /** New exercise cards are appended, so the first added stays first (insertion order). */
@@ -1555,9 +1567,19 @@ class AddWorkoutViewModel internal constructor(
      * the order changed; at an edge or for an unknown draft nothing is written.
      */
     fun moveExerciseDraft(draftId: Long, offset: Int): Boolean {
+        val from = exerciseDrafts.value.indexOfFirst { it.draftId == draftId }
+        if (from < 0) return false
+        return applyExerciseDraftMove { movedExerciseDraft(it, draftId, offset) }
+    }
+
+    /** Moves a draft card to absolute position [toIndex] (drag-to-reorder drop); true when the order changed. */
+    fun moveExerciseDraftTo(draftId: Long, toIndex: Int): Boolean =
+        applyExerciseDraftMove { movedExerciseDraftTo(it, draftId, toIndex) }
+
+    private fun applyExerciseDraftMove(reorder: (List<ExerciseInputState>) -> List<ExerciseInputState>?): Boolean {
         var moved = false
         exerciseDrafts.update { current ->
-            val reordered = movedExerciseDraft(current, draftId, offset) ?: return@update current
+            val reordered = reorder(current) ?: return@update current
             moved = true
             reordered
         }

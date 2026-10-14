@@ -16,7 +16,7 @@ function fixture() {
     Date, Map, JSON, state: { language: "en" }, modal: null, activeAccount: null,
     app: { classList: { toggle() {} } }, document: { documentElement: {} },
     rememberVisibleScroll() {}, bindEvents() {}, requestAnimationFrame() {},
-    restoreVisibleScroll() {}, pendingEnterAnimation: null, settleActiveRingProgress() {}
+    restoreVisibleScroll() {}, pendingEnterAnimation: null, settleActiveRingProgress() {}, exerciseDragDefersRender: () => false
   });
   vm.runInContext(`${dates}\n${render}`, context);
   return { context, constructions: () => constructions };

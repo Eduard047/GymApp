@@ -169,7 +169,7 @@ internal fun WorkoutExerciseMedia(
 }
 
 /**
- * Card header: optional [media], a title block (title plus the [subtitle] lines) and an optional
+ * Card header: optional [leading] slot (the drag handle) and [media], a title block (title plus the [subtitle] lines) and an optional
  * [menu] slot (the overflow button) at the end. With an [onToggleExpanded] the title block is
  * tappable and shows an expand/collapse chevron; with null (the plan editor's cards) it is a plain,
  * non-collapsible title block without a chevron.
@@ -181,6 +181,7 @@ internal fun WorkoutExerciseCardHeader(
     modifier: Modifier = Modifier,
     expanded: Boolean = true,
     stateText: String? = null,
+    leading: (@Composable () -> Unit)? = null,
     media: (@Composable () -> Unit)? = null,
     menu: (@Composable () -> Unit)? = null,
     accessibilityActions: List<CustomAccessibilityAction> = emptyList(),
@@ -194,6 +195,7 @@ internal fun WorkoutExerciseCardHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        leading?.invoke()
         media?.invoke()
         Row(
             modifier = Modifier

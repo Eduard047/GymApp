@@ -2695,6 +2695,71 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(movedDown.undoableSetID, a[0].id)
     }
 
+    func testMoveExerciseToIndexMovesSeveralPlacesInOneWriteAndRefusesInvalid() throws {
+        let context = try makeContext(account: "active-move-exercise-to")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let two = try startTwoExercises(
+            context,
+            first: [ActiveWorkoutSet(weight: 60, reps: 8)],
+            second: [ActiveWorkoutSet(weight: 30, reps: 10)],
+            now: now
+        )
+        // Third block appended through the store's own add path so ids stay real.
+        let third = try context.history.addExercise(name: "Active Test Third \(UUID().uuidString)")
+        let withThird = try context.active.addExercise(
+            draftID: two.draft.id,
+            exerciseID: third.id,
+            expectedRevision: two.draft.revision,
+            workoutStore: context.history,
+            isSolo: { true },
+            now: now.addingTimeInterval(1)
+        )
+        let ids = withThird.exercises.map(\.id)
+        XCTAssertEqual(ids.count, 3)
+
+        // Same index and out-of-range indices are no-ops: no revision bump.
+        for target in [0, -1, 3, 99] {
+            let result = try context.active.moveExercise(
+                draftID: withThird.id, exerciseBlockID: ids[0], to: target,
+                expectedRevision: withThird.revision, isSolo: { true }, now: now.addingTimeInterval(2)
+            )
+            XCTAssertEqual(result, withThird, "target \(target)")
+        }
+
+        // Frozen, stale and unknown are refused before anything changes.
+        XCTAssertThrowsError(try context.active.moveExercise(
+            draftID: withThird.id, exerciseBlockID: ids[0], to: 2,
+            expectedRevision: withThird.revision, isSolo: { false }, now: now.addingTimeInterval(2)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .invalidDraft) }
+        XCTAssertThrowsError(try context.active.moveExercise(
+            draftID: withThird.id, exerciseBlockID: ids[0], to: 2,
+            expectedRevision: withThird.revision - 1, isSolo: { true }, now: now.addingTimeInterval(2)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .staleDraft) }
+        XCTAssertThrowsError(try context.active.moveExercise(
+            draftID: withThird.id, exerciseBlockID: UUID(), to: 2,
+            expectedRevision: withThird.revision, isSolo: { true }, now: now.addingTimeInterval(2)
+        )) { XCTAssertEqual($0 as? ActiveWorkoutStoreError, .exerciseUnavailable) }
+        XCTAssertEqual(context.active.draft, withThird)
+
+        // Down several places: one write, one revision bump, blocks keep their sets.
+        let movedDown = try context.active.moveExercise(
+            draftID: withThird.id, exerciseBlockID: ids[0], to: 2,
+            expectedRevision: withThird.revision, isSolo: { true }, now: now.addingTimeInterval(3)
+        )
+        XCTAssertEqual(movedDown.exercises.map(\.id), [ids[1], ids[2], ids[0]])
+        XCTAssertEqual(movedDown.revision, withThird.revision + 1)
+        XCTAssertEqual(movedDown.exercises.last?.sets, withThird.exercises.first?.sets)
+        XCTAssertEqual(context.active.draft, movedDown)
+
+        // Up several places.
+        let movedUp = try context.active.moveExercise(
+            draftID: movedDown.id, exerciseBlockID: ids[0], to: 0,
+            expectedRevision: movedDown.revision, isSolo: { true }, now: now.addingTimeInterval(4)
+        )
+        XCTAssertEqual(movedUp.exercises.map(\.id), ids)
+        XCTAssertEqual(movedUp.revision, movedDown.revision + 1)
+    }
+
     func testRemoveExerciseWithRecordedSetsClearsOwnedUndoAndStopsItsRest() throws {
         let context = try makeContext(account: "active-remove-owned-undo")
         let now = Date(timeIntervalSince1970: 1_800_000_000)

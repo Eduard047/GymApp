@@ -2737,6 +2737,27 @@ class GymRepository(
         exerciseId: String,
         offset: Int,
         expectedRevision: Long
+    ): MoveActiveWorkoutExerciseResult = moveActiveWorkoutExerciseResolving(exerciseId, expectedRevision) { from, last ->
+        (from + offset).coerceIn(0, last)
+    }
+
+    /**
+     * Moves one exercise to absolute position [toIndex] in one transaction (drag-to-reorder drop).
+     * Same guarantees as [moveActiveWorkoutExercise]; a [toIndex] outside the list or equal to the
+     * current position answers [MoveActiveWorkoutExerciseResult.NoChange] without writing.
+     */
+    suspend fun moveActiveWorkoutExerciseTo(
+        exerciseId: String,
+        toIndex: Int,
+        expectedRevision: Long
+    ): MoveActiveWorkoutExerciseResult = moveActiveWorkoutExerciseResolving(exerciseId, expectedRevision) { from, last ->
+        if (toIndex in 0..last) toIndex else from
+    }
+
+    private suspend fun moveActiveWorkoutExerciseResolving(
+        exerciseId: String,
+        expectedRevision: Long,
+        resolveTarget: (from: Int, lastIndex: Int) -> Int
     ): MoveActiveWorkoutExerciseResult = activeWorkoutMutationMutex.withLock {
         require(isStableActiveWorkoutId(exerciseId)) { "Active exercise identifier is invalid." }
         require(expectedRevision in 0 until Long.MAX_VALUE) {
@@ -2756,8 +2777,8 @@ class GymRepository(
             val ids = details.exercises.map { it.activeWorkoutExercise.id }
             val from = ids.indexOf(exerciseId)
             if (from < 0) return@withTransaction MoveActiveWorkoutExerciseResult.TargetChanged
-            val to = (from + offset).coerceIn(0, ids.lastIndex)
-            if (to == from) return@withTransaction MoveActiveWorkoutExerciseResult.NoChange
+            val to = resolveTarget(from, ids.lastIndex)
+            if (to == from || to !in ids.indices) return@withTransaction MoveActiveWorkoutExerciseResult.NoChange
             val reordered = ids.toMutableList().apply { add(to, removeAt(from)) }
             val advanced = activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision)
             check(advanced == 1) { "Active workout changed while moving the exercise." }

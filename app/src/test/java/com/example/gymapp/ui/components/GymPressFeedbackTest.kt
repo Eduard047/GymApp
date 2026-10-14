@@ -67,6 +67,8 @@ class GymPressFeedbackTest {
         assertEquals(HapticFeedbackConstants.CLOCK_TICK, gymHapticConstant(GymHapticEvent.StepperRepeatTick, 33))
         assertEquals(HapticFeedbackConstants.SEGMENT_TICK, gymHapticConstant(GymHapticEvent.Reorder, 34))
         assertEquals(HapticFeedbackConstants.CLOCK_TICK, gymHapticConstant(GymHapticEvent.Reorder, 33))
+        assertEquals(HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE, gymHapticConstant(GymHapticEvent.ReorderPickup, 34))
+        assertEquals(HapticFeedbackConstants.LONG_PRESS, gymHapticConstant(GymHapticEvent.ReorderPickup, 33))
         assertEquals(HapticFeedbackConstants.LONG_PRESS, gymHapticConstant(GymHapticEvent.DestructiveConfirm, 36))
         assertEquals(HapticFeedbackConstants.REJECT, gymHapticConstant(GymHapticEvent.Error, 30))
         assertEquals(HapticFeedbackConstants.LONG_PRESS, gymHapticConstant(GymHapticEvent.Error, 29))

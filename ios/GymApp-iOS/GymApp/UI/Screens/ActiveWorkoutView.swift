@@ -236,6 +236,7 @@ struct ActiveWorkoutView: View {
     @State private var undoFeedbackTrigger = 0
     @State private var deleteFeedbackTrigger = 0
     @State private var moveExerciseFeedbackTrigger = 0
+    @State private var exerciseReorder = GymReorderCoordinator(spacing: GymTheme.contentSpacing)
     @State private var errorFeedbackTrigger = 0
     @State private var restEndFeedbackTrigger = 0
 
@@ -362,6 +363,7 @@ struct ActiveWorkoutView: View {
 
                             ForEach(draft.exercises) { exercise in
                                 exercisePanel(exercise, draft: draft)
+                                    .gymReorderable(exerciseReorder, id: exercise.id)
                             }
 
                             if activeWorkoutCanAddExercise(
@@ -387,6 +389,13 @@ struct ActiveWorkoutView: View {
                     .padding(.bottom, GymTheme.screenBottomInset)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .gymExerciseReorderContainer(
+                    exerciseReorder,
+                    ids: draft.exercises.map(\.id),
+                    isEnabled: canReorderExercises(draft),
+                    revision: draft.revision,
+                    onMove: { id, _, to in moveExercise(id: id, to: to) }
+                )
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if focusedWeightSetID != nil {
                         weightKeyboardDoneBar
@@ -1356,6 +1365,8 @@ struct ActiveWorkoutView: View {
             },
             onMoveUp: onMoveUp,
             onMoveDown: onMoveDown,
+            reorderHandle: canReorderExercises(draft)
+                ? GymReorderHandleSource(coordinator: exerciseReorder, id: exercise.id) : nil,
             media: {
                 if let storedExercise {
                     ExerciseMediaButton(
@@ -3662,6 +3673,40 @@ struct ActiveWorkoutView: View {
             moveExerciseFeedbackTrigger &+= 1
         } catch {
             show(error)
+        }
+    }
+
+    /// Drag-to-reorder is offered only for an editable multi-exercise plan: never
+    /// while finishing, bound to a live room, or viewing a participant's tab.
+    private func canReorderExercises(_ draft: ActiveWorkoutDraft) -> Bool {
+        activeWorkoutCanRemoveExercise(
+            exerciseCount: draft.exercises.count,
+            hasCommitIntent: draft.commitIntent != nil,
+            isLivePlanFrozen: liveWorkoutCoordinator.planIsFrozenForCurrentDraft
+        ) && (!liveWorkoutCoordinator.isAttachedToCurrentDraft || liveParticipantSelection == .current)
+    }
+
+    /// Drag-and-drop commit: one store write that moves the block to `index`
+    /// (same revision/lock/live-freeze checks as the one-step move). The haptic
+    /// and animation belong to the drag. False when the store refused the move.
+    private func moveExercise(id: UUID, to index: Int) -> Bool {
+        guard let draft = currentDraft else { return false }
+        guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            show(LiveWorkoutSidecarError.invalidState)
+            return false
+        }
+        do {
+            _ = try activeWorkoutStore.moveExercise(
+                draftID: draft.id,
+                exerciseBlockID: id,
+                to: index,
+                expectedRevision: draft.revision,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+            return true
+        } catch {
+            show(error)
+            return false
         }
     }
 

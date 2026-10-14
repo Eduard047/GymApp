@@ -4944,3 +4944,226 @@ test("plan editor Move up and Move down reorder the draft, persist it and disabl
   const lone = menu(0);
   assert.doesNotMatch(lone, /move-block-(up|down)/);
 });
+
+test("dragging an active exercise to any slot writes once, keeps ids/sets/undo/rest and refuses same or out-of-range slots", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  const [bench, squat, deadlift] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  const blocksBefore = activeRunJson(context, "activeWorkout.blocks");
+  const [benchSet] = blockSetIds(context, 0);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, benchSet, 80, 8), true);
+  const timerKey = vm.runInContext(`activeWorkout.id + ":Bench Press"`, context);
+  const revisionBefore = vm.runInContext("activeWorkout.revision", context);
+  const order = () => activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+
+  // Down several slots in ONE write: [bench, squat, deadlift] -> [squat, deadlift, bench].
+  assert.equal(await vm.runInContext(`requestMoveActiveExerciseTo(${bench}, 2)`, context), true);
+  assert.deepEqual(order(), [squat, deadlift, bench]);
+  assert.equal(vm.runInContext("activeWorkout.revision", context), revisionBefore + 1, "one revision for the whole drag");
+  assert.equal(localStorage.getItem(activeStorageKey(context)), vm.runInContext("activeWorkoutStorageRaw", context));
+  // Up several slots: bench back to the top.
+  assert.equal(await vm.runInContext(`requestMoveActiveExerciseTo(${bench}, 0)`, context), true);
+  assert.deepEqual(order(), [bench, squat, deadlift]);
+  assert.equal(vm.runInContext("activeWorkout.revision", context), revisionBefore + 2);
+
+  // Data travels with its exercise; undo target and rest survive.
+  const byId = new Map(activeRunJson(context, "activeWorkout.blocks").map(block => [block.id, block]));
+  for (const before of blocksBefore) {
+    const after = byId.get(before.id);
+    assert.deepEqual(after.sets.map(set => set.id), before.sets.map(set => set.id));
+    assert.deepEqual(after.sets.map(set => [set.weight, set.reps]), before.sets.map(set => [set.weight, set.reps]));
+  }
+  assert.equal(undoMarkerSetId(context), benchSet);
+  assert.ok(vm.runInContext(`timerRemaining(${JSON.stringify(timerKey)})`, context) > 0);
+
+  // Same slot, out-of-range, non-integer and unknown block: refused without a write.
+  const raw = localStorage.getItem(activeStorageKey(context));
+  for (const [id, to] of [[squat, 1], [squat, 3], [squat, -1], [squat, 1.5], [squat, "2"], [999, 0], [0, 1]]) {
+    assert.equal(await vm.runInContext(`moveActiveWorkoutExerciseTo(${id}, ${JSON.stringify(to)})`, context), false, `${id} -> ${to}`);
+  }
+  assert.equal(localStorage.getItem(activeStorageKey(context)), raw);
+  assert.equal(vm.runInContext(`activeExerciseMoveToIndex(activeWorkout, ${squat}, 1)`, context), null);
+  assert.deepEqual(activeRunJson(context, `activeExerciseMoveToIndex(activeWorkout, ${squat}, 2)`), { from: 1, to: 2 });
+  assert.deepEqual(activeRunJson(context, `activeExerciseMoveTarget(activeWorkout, ${squat}, -1)`), { from: 1, to: 0 });
+});
+
+test("dragging an active exercise is refused in a live room and for a stale raw (CAS)", async () => {
+  const { context, localStorage } = loadContext();
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  const [bench] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  const before = localStorage.getItem(activeStorageKey(context));
+
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", context);
+  assert.equal(await vm.runInContext(`requestMoveActiveExerciseTo(${bench}, 2)`, context), false);
+  assert.equal(await vm.runInContext(`moveActiveWorkoutExerciseTo(${bench}, 2)`, context), false);
+  vm.runInContext("liveWorkoutBinding = null", context);
+  assert.equal(localStorage.getItem(activeStorageKey(context)), before);
+
+  const staleRaw = vm.runInContext("activeWorkoutStorageRaw", context);
+  const foreign = JSON.parse(before);
+  foreign.revision += 1;
+  foreign.updatedAt += 1;
+  localStorage.setItem(activeStorageKey(context), JSON.stringify(foreign));
+  assert.equal(await vm.runInContext(`moveActiveWorkoutExerciseTo(${bench}, 2, ${JSON.stringify(staleRaw)})`, context), false);
+  assert.deepEqual(
+    JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks.map(block => block.id),
+    foreign.blocks.map(block => block.id),
+    "a stale drag reorders nothing"
+  );
+});
+
+test("plan editor drag moves a draft exercise to any slot with one persist and refuses invalid slots", () => {
+  const { context } = loadContext();
+  vm.runInContext(`
+    globalThis.persisted = 0;
+    persistWorkoutDraft = () => { globalThis.persisted += 1; };
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: ${JSON.stringify(THREE_EXERCISE_PLAN)} };
+    smartGeneratedPlan = { stale: true };
+  `, context);
+  const order = () => activeRunJson(context, "workoutDraft.blocks.map(block => block.exerciseName)");
+  assert.equal(vm.runInContext("moveDraftBlockTo(0, 2)", context), true);
+  assert.deepEqual(order(), ["Squat", "Deadlift", "Bench Press"]);
+  assert.equal(vm.runInContext("globalThis.persisted", context), 1, "one persist per drag");
+  assert.equal(vm.runInContext("smartGeneratedPlan", context), null);
+  assert.equal(vm.runInContext("moveDraftBlockTo(2, 0)", context), true);
+  assert.deepEqual(order(), ["Bench Press", "Squat", "Deadlift"]);
+  assert.equal(vm.runInContext("globalThis.persisted", context), 2);
+  for (const [from, to] of [[1, 1], [0, 3], [3, 0], [-1, 0], [0, -1], [0.5, 1], [1, "2"]]) {
+    assert.equal(vm.runInContext(`moveDraftBlockTo(${JSON.stringify(from)}, ${JSON.stringify(to)})`, context), false, `${from} -> ${to}`);
+  }
+  assert.equal(vm.runInContext("globalThis.persisted", context), 2, "refused moves persist nothing");
+  assert.deepEqual(order(), ["Bench Press", "Squat", "Deadlift"]);
+  // The +/-1 menu entry points are thin wrappers over the same path.
+  assert.equal(vm.runInContext("moveDraftBlock(0, 1)", context), true);
+  assert.deepEqual(order(), ["Squat", "Bench Press", "Deadlift"]);
+  assert.equal(vm.runInContext("moveDraftBlock(0, 2)", context), false);
+});
+
+test("the drag handle is aria-hidden and unfocusable, present only with two or more exercises and never in a live room", async () => {
+  const { context } = loadContext();
+  vm.runInContext(`
+    persistWorkoutDraft = () => {};
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: ${JSON.stringify(THREE_EXERCISE_PLAN)} };
+  `, context);
+  const draft = index => vm.runInContext(`draftBlock(workoutDraft.blocks[${index}], ${index})`, context);
+  for (const index of [0, 1, 2]) {
+    const markup = draft(index);
+    const handle = markup.match(/<span class="exercise-drag-handle[^>]*>/)?.[0] || "";
+    assert.match(handle, new RegExp(`data-reorder-handle="draft" data-reorder-key="${index}"`));
+    assert.match(handle, /aria-hidden="true"/);
+    assert.doesNotMatch(handle, /tabindex|role=|data-action/);
+    assert.ok(markup.indexOf("exercise-drag-handle") < markup.indexOf("draft-exercise-title"), "handle sits at the leading edge of the header");
+  }
+  vm.runInContext("workoutDraft.blocks.splice(1)", context);
+  assert.doesNotMatch(draft(0), /exercise-drag-handle|data-reorder/, "a lone draft exercise has no handle");
+  assert.doesNotMatch(draft(0), /data-reorder/);
+
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  const active = index => vm.runInContext(`activeWorkoutBlockMarkup(activeWorkout.blocks[${index}], ${index})`, context);
+  const [bench] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  const markup = active(0);
+  const handle = markup.match(/<span class="exercise-drag-handle[^>]*>/)?.[0] || "";
+  assert.match(handle, new RegExp(`data-reorder-handle="active" data-reorder-key="${bench}"`));
+  assert.match(handle, /aria-hidden="true"/);
+  assert.doesNotMatch(handle, /tabindex|role=|data-action/);
+  assert.ok(markup.indexOf("exercise-drag-handle") > markup.indexOf("</details>"), "the handle is a sibling of <details>, not inside the toggling summary");
+
+  vm.runInContext("liveWorkoutBinding = { localWorkoutId: activeWorkout.id }", context);
+  assert.doesNotMatch(active(0), /exercise-drag-handle|data-reorder/, "no handle while bound to a live room");
+  vm.runInContext("liveWorkoutBinding = null", context);
+
+  vm.runInContext("activeWorkout = { ...activeWorkout, blocks: activeWorkout.blocks.slice(0, 1) }", context);
+  assert.doesNotMatch(active(0), /exercise-drag-handle|data-reorder/, "a lone active exercise has no handle");
+});
+
+test("drag geometry: target slot at neighbour midpoints, neighbour shifts, drop offset and capped proportional auto-scroll", () => {
+  const { context } = loadContext();
+  const run = code => activeRunJson(context, code);
+  // Three 100px cards with a 10px gap: mids 50, 160, 270.
+  const mids = [50, 160, 270];
+  const rects = [{ top: 0, bottom: 100 }, { top: 110, bottom: 210 }, { top: 220, bottom: 320 }];
+  const target = (from, centre) => run(`reorderTargetIndex(${from}, ${centre}, ${JSON.stringify(mids)})`);
+  assert.equal(target(0, 60), 0);
+  assert.equal(target(0, 161), 1, "crossing the next midpoint changes the slot");
+  assert.equal(target(0, 159), 0);
+  assert.equal(target(0, 400), 2);
+  assert.equal(target(2, 159), 1);
+  assert.equal(target(2, 49), 0);
+  assert.equal(target(1, 160), 1, "the centre sitting on its own slot stays");
+  // Neighbours between the two slots part by one dragged step toward the vacated slot.
+  const shifts = (from, to) => [0, 1, 2].map(index => run(`reorderNeighbourShift(${index}, ${from}, ${to}, 110)`));
+  assert.deepEqual(shifts(0, 2), [0, -110, -110]);
+  assert.deepEqual(shifts(2, 0), [110, 110, 0]);
+  assert.deepEqual(shifts(1, 1), [0, 0, 0]);
+  assert.deepEqual(shifts(0, 1), [0, -110, 0]);
+  // Drop offsets are relative to the dragged card's own natural place.
+  assert.equal(run(`reorderDropOffset(0, 2, ${JSON.stringify(rects)})`), 220);
+  assert.equal(run(`reorderDropOffset(2, 0, ${JSON.stringify(rects)})`), -220);
+  assert.equal(run(`reorderDropOffset(1, 1, ${JSON.stringify(rects)})`), 0);
+  // Auto-scroll: none mid-viewport, proportional near an edge, capped at 12 px/frame, signed by direction.
+  assert.equal(run("reorderAutoScrollDelta(400, 0, 800)"), 0);
+  assert.equal(run("reorderAutoScrollDelta(32, 0, 800)"), -6);
+  assert.equal(run("reorderAutoScrollDelta(768, 0, 800)"), 6);
+  assert.equal(run("reorderAutoScrollDelta(-50, 0, 800)"), -12);
+  assert.equal(run("reorderAutoScrollDelta(2000, 0, 800)"), 12);
+  assert.equal(run("reorderAutoScrollDelta(10, 0, 100)"), 0, "a list shorter than two zones never auto-scrolls");
+});
+
+test("render() defers while a drag is armed and runs after it; a live room cancels an active drag", async () => {
+  // The test context stubs render(), so assert the guard is its first statement and exercise the guard itself.
+  assert.match(appSource, /function render\(\) \{\s*(?:\/\/[^\n]*\n\s*)*if \(exerciseDragDefersRender\(\)\) return;/);
+  const { context } = loadContext();
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  assert.equal(vm.runInContext("exerciseDragDefersRender()", context), false, "no drag: render runs");
+  vm.runInContext("exerciseDrag = { kind: 'draft', renderDeferred: false }", context);
+  assert.equal(vm.runInContext("exerciseDragDefersRender()", context), true, "an armed drag defers render");
+  assert.equal(vm.runInContext("exerciseDrag.renderDeferred", context), true, "the skipped render is remembered for the drop");
+  vm.runInContext("exerciseDrag = null", context);
+
+  // A live room appearing mid-drag cancels an active-workout drag and lets the render through.
+  vm.runInContext(`
+    globalThis.rendered = 0;
+    exerciseDrag = {
+      kind: 'active', renderDeferred: false, phase: 'lifted', reducedMotion: true, raf: 0, timers: [],
+      list: { classList: { remove() {} } }, cards: [], handle: { removeEventListener() {}, releasePointerCapture() {} }, pointerId: 1
+    };
+    document.removeEventListener = () => {};
+    liveWorkoutBinding = { localWorkoutId: activeWorkout.id };
+  `, context);
+  assert.equal(vm.runInContext("exerciseDragDefersRender()", context), false);
+  assert.equal(vm.runInContext("exerciseDrag", context), null);
+  vm.runInContext("liveWorkoutBinding = null", context);
+});
+
+test("drag haptics use the shared helper: pickup vibrates 10ms and slot ticks stay throttled", () => {
+  const calls = [];
+  const { context } = loadContext();
+  vm.runInContext(`navigator.vibrate = pattern => { globalThis.__vibrations.push(pattern); return true; }; globalThis.__vibrations = [];`, context);
+  assert.equal(vm.runInContext(`HAPTIC_PATTERNS.pickup`, context), 10);
+  assert.equal(vm.runInContext(`haptic("pickup")`, context), true);
+  assert.equal(vm.runInContext(`haptic("tick")`, context), true);
+  assert.equal(vm.runInContext(`haptic("tick")`, context), false, "ticks are limited to 10 per second");
+  assert.deepEqual(activeRunJson(context, "globalThis.__vibrations"), [10, 6]);
+  void calls;
+});
+
+test("a drag drop adds no haptic of its own (pickup and slot ticks already fired) while the menu move still ticks", async () => {
+  const { context } = loadContext();
+  vm.runInContext(`
+    persistWorkoutDraft = () => {};
+    workoutDraft = { startedAt: Date.now(), note: "", blocks: ${JSON.stringify(THREE_EXERCISE_PLAN)} };
+    globalThis.__vibrations = [];
+    navigator.vibrate = pattern => { globalThis.__vibrations.push(pattern); return true; };
+  `, context);
+  assert.equal(vm.runInContext("moveDraftBlockTo(0, 2, { silent: true })", context), true);
+  assert.deepEqual(activeRunJson(context, "globalThis.__vibrations"), [], "silent drop: no vibration");
+  assert.equal(vm.runInContext("moveDraftBlock(2, -1)", context), true);
+  assert.deepEqual(activeRunJson(context, "globalThis.__vibrations"), [6], "menu move keeps its tick");
+  await startFinishWorkout(context, THREE_EXERCISE_PLAN);
+  vm.runInContext("globalThis.__vibrations = []; lastHapticTickAt = -Infinity", context);
+  const [bench] = activeRunJson(context, "activeWorkout.blocks.map(block => block.id)");
+  assert.equal(await vm.runInContext(`requestMoveActiveExerciseTo(${bench}, 2)`, context), true);
+  assert.deepEqual(activeRunJson(context, "globalThis.__vibrations"), [], "active drop is silent too");
+  assert.equal(await vm.runInContext(`requestMoveActiveExercise(${bench}, -1)`, context), true);
+  assert.deepEqual(activeRunJson(context, "globalThis.__vibrations"), [6]);
+});

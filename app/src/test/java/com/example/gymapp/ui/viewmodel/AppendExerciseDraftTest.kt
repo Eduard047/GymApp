@@ -47,4 +47,23 @@ class AppendExerciseDraftTest {
         assertNull(movedExerciseDraft(drafts, 2L, 0))
         assertNull(movedExerciseDraft(emptyList(), 1L, 1))
     }
+
+    @Test
+    fun movingADraftToAnAbsoluteSlotShiftsTheOthersInBothDirections() {
+        val drafts = (1L..5L).map { ExerciseInputState(draftId = it) }
+        assertEquals(listOf(2L, 3L, 4L, 1L, 5L), movedExerciseDraftTo(drafts, 1L, 3)!!.map { it.draftId })
+        assertEquals(listOf(4L, 1L, 2L, 3L, 5L), movedExerciseDraftTo(drafts, 4L, 0)!!.map { it.draftId })
+        assertEquals(listOf(1L, 2L, 3L, 5L, 4L), movedExerciseDraftTo(drafts, 4L, 4)!!.map { it.draftId })
+        assertEquals(drafts[2], movedExerciseDraftTo(drafts, 3L, 0)!![0])
+    }
+
+    @Test
+    fun movingADraftToItsOwnSlotOutOfRangeOrUnknownChangesNothing() {
+        val drafts = (1L..3L).map { ExerciseInputState(draftId = it) }
+        assertNull(movedExerciseDraftTo(drafts, 2L, 1))
+        assertNull(movedExerciseDraftTo(drafts, 2L, -1))
+        assertNull(movedExerciseDraftTo(drafts, 2L, 3))
+        assertNull(movedExerciseDraftTo(drafts, 99L, 0))
+        assertNull(movedExerciseDraftTo(emptyList(), 1L, 0))
+    }
 }

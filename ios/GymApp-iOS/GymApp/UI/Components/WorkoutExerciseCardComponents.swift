@@ -146,6 +146,8 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
     /// Reorder handlers exposed as VoiceOver actions on the title; nil = unavailable.
     var onMoveUp: (() -> Void)?
     var onMoveDown: (() -> Void)?
+    /// Drag-to-reorder grip at the leading edge of the header; nil = no handle.
+    var reorderHandle: GymReorderHandleSource?
     @ViewBuilder let media: () -> Media
     @ViewBuilder let info: () -> Info
     @ViewBuilder let overflow: () -> Overflow
@@ -155,6 +157,9 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
         GymPanel(highlighted: highlighted) {
             VStack(alignment: .leading, spacing: contentSpacing) {
                 HStack(spacing: 10) {
+                    if let reorderHandle {
+                        GymExerciseDragHandle(source: reorderHandle)
+                    }
                     media()
                     if collapsible {
                         Button(action: onToggle) {

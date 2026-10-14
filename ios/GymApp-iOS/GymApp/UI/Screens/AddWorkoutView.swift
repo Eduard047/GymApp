@@ -160,6 +160,7 @@ struct AddWorkoutView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var moveExerciseFeedbackTrigger = 0
+    @State private var exerciseReorder = GymReorderCoordinator(spacing: 14)
     @State private var date = Date()
     @State private var dateIsExplicit = false
     @State private var note = ""
@@ -410,6 +411,14 @@ struct AddWorkoutView: View {
                     .padding(.bottom, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .gymExerciseReorderContainer(
+                    exerciseReorder,
+                    ids: visibleDraftIDs,
+                    isEnabled: visibleDraftIDs.count >= 2 && !isSaving,
+                    onMove: { id, from, to in
+                        moveDraftByDrag(id, from: from, to: to, visibleIDs: visibleDraftIDs)
+                    }
+                )
                 .onChange(of: lastInsertedDraftID) { _, newID in
                     guard let newID else { return }
                     DispatchQueue.main.async {
@@ -1018,7 +1027,8 @@ struct AddWorkoutView: View {
             }
             .buttonStyle(GymPrimaryButtonStyle())
         } else {
-            let visibleDraftIDs = drafts.filter { store.exercise(id: $0.exerciseID) != nil }.map(\.id)
+            let visibleDraftIDs = self.visibleDraftIDs
+            let canDragReorder = visibleDraftIDs.count >= 2 && !isSaving
             ForEach(drafts) { item in
                 if let exercise = store.exercise(id: item.exerciseID) {
                     let visibleIndex = visibleDraftIDs.firstIndex(of: item.id) ?? 0
@@ -1040,8 +1050,11 @@ struct AddWorkoutView: View {
                             ? { moveDraft(item.id, toward: visibleDraftIDs[visibleIndex - 1]) } : nil,
                         onMoveDown: visibleIndex < visibleDraftIDs.count - 1
                             ? { moveDraft(item.id, toward: visibleDraftIDs[visibleIndex + 1]) } : nil,
+                        reorderHandle: canDragReorder
+                            ? GymReorderHandleSource(coordinator: exerciseReorder, id: item.id) : nil,
                         highlightsInvalid: highlightsInvalidSets
                     )
+                    .gymReorderable(exerciseReorder, id: item.id)
                     .id(item.id)
                 }
             }
@@ -1972,6 +1985,12 @@ struct AddWorkoutView: View {
     }
 #endif
 
+    /// Exercises currently rendered as cards, in order (drafts whose catalog
+    /// exercise is missing are hidden and never take part in reordering).
+    private var visibleDraftIDs: [UUID] {
+        drafts.filter { store.exercise(id: $0.exerciseID) != nil }.map(\.id)
+    }
+
     /// Swaps an exercise with its visible neighbour; the animation and the
     /// haptic follow the user's Reduce Motion setting and the other editor actions.
     private func moveDraft(_ draftID: UUID, toward neighbourID: UUID) {
@@ -1981,6 +2000,18 @@ struct AddWorkoutView: View {
             drafts.swapAt(from, to)
         }
         moveExerciseFeedbackTrigger &+= 1
+    }
+
+    /// Drag-and-drop commit: splices the dragged exercise to the position of the
+    /// visible exercise now at `to` in one step (the drag owns the animation).
+    private func moveDraftByDrag(_ draftID: UUID, from: Int, to: Int, visibleIDs: [UUID]) -> Bool {
+        guard visibleIDs.indices.contains(from), visibleIDs.indices.contains(to),
+              visibleIDs[from] == draftID, from != to,
+              let fromIndex = drafts.firstIndex(where: { $0.id == draftID }),
+              let toIndex = drafts.firstIndex(where: { $0.id == visibleIDs[to] }) else { return false }
+        let moved = drafts.remove(at: fromIndex)
+        drafts.insert(moved, at: toIndex)
+        return true
     }
 
     private func showAlternatives(for draftID: UUID) {

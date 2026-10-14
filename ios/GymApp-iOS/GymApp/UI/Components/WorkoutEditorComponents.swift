@@ -268,6 +268,8 @@ struct WorkoutDraftExerciseCard: View {
     /// Reorder handlers; nil = unavailable (first/last exercise).
     var onMoveUp: (() -> Void)?
     var onMoveDown: (() -> Void)?
+    /// Drag-to-reorder grip; nil = no handle.
+    var reorderHandle: GymReorderHandleSource?
     var highlightsInvalid = false
     @State private var showingMedia = false
     @State private var mediaReloadToken = 0
@@ -282,6 +284,7 @@ struct WorkoutDraftExerciseCard: View {
             contentSpacing: 12,
             onMoveUp: onMoveUp,
             onMoveDown: onMoveDown,
+            reorderHandle: reorderHandle,
             media: {
                 ExerciseMediaThumbnail(
                     rawExerciseName: rawExerciseName,

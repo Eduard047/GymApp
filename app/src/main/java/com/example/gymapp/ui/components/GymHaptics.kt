@@ -21,7 +21,8 @@ internal enum class GymHapticEvent {
     DestructiveConfirm,
     Error,
     RestEnd,
-    Reorder
+    Reorder,
+    ReorderPickup
 }
 
 /** The [HapticFeedbackConstants] value for [event] on a device running [sdkInt]. */
@@ -39,6 +40,12 @@ internal fun gymHapticConstant(event: GymHapticEvent, sdkInt: Int): Int = when (
         }
     GymHapticEvent.Reorder ->
         if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) HapticFeedbackConstants.SEGMENT_TICK else HapticFeedbackConstants.CLOCK_TICK
+    GymHapticEvent.ReorderPickup ->
+        if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+        } else {
+            HapticFeedbackConstants.LONG_PRESS
+        }
     GymHapticEvent.DestructiveConfirm -> HapticFeedbackConstants.LONG_PRESS
     // The foreground rest-end buzz; a notification channel owns the background one, so no Vibrator here.
     GymHapticEvent.RestEnd ->
@@ -64,6 +71,7 @@ internal class HapticThrottle(private val minIntervalMs: Long = STEPPER_MIN_INTE
 
 internal class GymHaptics(private val view: View) {
     private val stepperThrottle = HapticThrottle()
+    private val reorderThrottle = HapticThrottle()
 
     fun perform(event: GymHapticEvent) {
         view.performHapticFeedback(gymHapticConstant(event, Build.VERSION.SDK_INT))
@@ -73,6 +81,12 @@ internal class GymHaptics(private val view: View) {
     fun stepperTick(repeating: Boolean) {
         if (!stepperThrottle.tryAcquire(android.os.SystemClock.uptimeMillis())) return
         perform(if (repeating) GymHapticEvent.StepperRepeatTick else GymHapticEvent.StepperTick)
+    }
+
+    /** A drag-to-reorder slot change. Throttled to 10 per second. */
+    fun reorderTick() {
+        if (!reorderThrottle.tryAcquire(android.os.SystemClock.uptimeMillis())) return
+        perform(GymHapticEvent.Reorder)
     }
 }
 
