@@ -225,11 +225,11 @@ test("Fluid Focus interaction contract keeps choices, navigation, and touch targ
   assert.match(stylesSource, /\.period-tabs button\s*\{[\s\S]*?min-height:\s*44px;/);
   assert.match(stylesSource, /html\[lang="ru"\] \.tab-button > span:last-child\s*\{[\s\S]*?text-overflow:\s*clip;/);
   assert.match(stylesSource, /\.segmented\.profile-hub-switch button\s*\{[\s\S]*?min-height:\s*48px;/);
-  assert.match(stylesSource, /\.active-live-participant-panel:not\(\[hidden\]\)\s*\{[\s\S]*animation:\s*active-live-panel-enter 180ms/);
+  assert.match(stylesSource, /\.active-live-participant-panel\[data-enter\]:not\(\[hidden\]\)\s*\{[\s\S]*animation:\s*active-live-panel-enter 180ms/);
   assert.match(stylesSource, /\.onboarding-coach\s*\{[\s\S]*max-height:\s*calc\(100dvh[\s\S]*overflow-y:\s*auto;/);
   assert.match(stylesSource, /\.onboarding-actions\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*-18px;/);
   assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\*::after\s*\{[\s\S]*?transition-duration:\s*0\.01ms !important;/);
-  assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.active-live-participant-panel\s*\{\s*animation:\s*none;/);
+  assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.active-live-participant-panel\[data-enter\]:not\(\[hidden\]\)[\s\S]*?animation:\s*active-enter-fade 150ms/);
 });
 
 test("main empty states explain the next action instead of ending the flow", () => {
