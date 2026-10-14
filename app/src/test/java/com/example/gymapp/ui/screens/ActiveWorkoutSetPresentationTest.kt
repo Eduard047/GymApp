@@ -190,4 +190,33 @@ class ActiveWorkoutSetPresentationTest {
         assertEquals("", displayWeightInput("", format(Locale("ru"))))
         assertEquals("9x", displayWeightInput("9x", format(Locale("ru"))))
     }
+
+    @Test
+    fun recordedSetGetsTheRecordHapticOnlyOnceItsStateArrives() {
+        assertEquals(RecordHaptic.None, recordHaptic("a", latestCompletedSetId = null, hasNewPersonalRecord = false, failedForPending = false))
+        assertEquals(RecordHaptic.Record, recordHaptic("a", latestCompletedSetId = "a", hasNewPersonalRecord = false, failedForPending = false))
+    }
+
+    @Test
+    fun personalRecordReplacesTheRecordHapticNeverAddsToIt() {
+        assertEquals(RecordHaptic.PersonalRecord, recordHaptic("a", latestCompletedSetId = "a", hasNewPersonalRecord = true, failedForPending = false))
+        assertEquals(RecordHaptic.PersonalRecord, recordHaptic(null, latestCompletedSetId = "a", hasNewPersonalRecord = true, failedForPending = false))
+    }
+
+    @Test
+    fun refusedRecordGetsTheErrorHaptic() {
+        assertEquals(RecordHaptic.Rejected, recordHaptic("a", latestCompletedSetId = "b", hasNewPersonalRecord = false, failedForPending = true))
+        assertEquals(RecordHaptic.None, recordHaptic(null, latestCompletedSetId = "b", hasNewPersonalRecord = false, failedForPending = true))
+    }
+
+    @Test
+    fun restEndFiresOnlyWhenTheCountdownRunsOutOnItsOwn() {
+        assertEquals(true, restEndedNaturally(previousSeconds = 1, currentSeconds = 0, endedByUser = false))
+        assertEquals(true, restEndedNaturally(previousSeconds = 2, currentSeconds = 0, endedByUser = false))
+        // Stopped or shortened by the person, still counting, already over, or a jump from far away.
+        assertEquals(false, restEndedNaturally(previousSeconds = 1, currentSeconds = 0, endedByUser = true))
+        assertEquals(false, restEndedNaturally(previousSeconds = 2, currentSeconds = 1, endedByUser = false))
+        assertEquals(false, restEndedNaturally(previousSeconds = 0, currentSeconds = 0, endedByUser = false))
+        assertEquals(false, restEndedNaturally(previousSeconds = 40, currentSeconds = 0, endedByUser = false))
+    }
 }

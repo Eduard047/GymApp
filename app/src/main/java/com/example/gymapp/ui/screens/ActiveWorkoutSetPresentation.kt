@@ -146,6 +146,43 @@ internal fun recordedConfirmationStep(
     else -> RecordedConfirmationStep.Waiting
 }
 
+/** Which haptic the record flow owes the current workout state (see [recordHaptic]). */
+internal enum class RecordHaptic { None, Record, PersonalRecord, Rejected }
+
+/**
+ * One haptic per recorded set. [pendingSetId] is the set whose Log was just tapped. The outcome is
+ * only known once the workout state arrives: a refused record is [RecordHaptic.Rejected]; a new
+ * personal record is [RecordHaptic.PersonalRecord], which takes the place of the plain
+ * [RecordHaptic.Record] ("set recorded") haptic, never in addition to it; a recorded pending set
+ * without a record is [RecordHaptic.Record]. A record that appears without a pending Log (another
+ * device in a live room) still gets the personal-record haptic.
+ */
+internal fun recordHaptic(
+    pendingSetId: String?,
+    latestCompletedSetId: String?,
+    hasNewPersonalRecord: Boolean,
+    failedForPending: Boolean
+): RecordHaptic = when {
+    pendingSetId != null && failedForPending -> RecordHaptic.Rejected
+    hasNewPersonalRecord -> RecordHaptic.PersonalRecord
+    pendingSetId != null && pendingSetId == latestCompletedSetId -> RecordHaptic.Record
+    else -> RecordHaptic.None
+}
+
+/** How long the rest controls stay up, tinted, after the countdown reaches zero. */
+internal const val REST_END_HIGHLIGHT_MS = 600L
+
+/** The countdown ticks once a second, so a rest that runs out was at 1 (2 allows for one late tick). */
+private const val REST_END_MAX_PREVIOUS_SECONDS = 2
+
+/**
+ * True when the rest countdown just ran out on its own while the screen watched: it went from
+ * 1 (or 2) seconds to 0 and the person did not stop or shorten it ([endedByUser]). A jump from a
+ * larger value (a stop from elsewhere, the app returning from the background) is not a rest end here.
+ */
+internal fun restEndedNaturally(previousSeconds: Int, currentSeconds: Int, endedByUser: Boolean): Boolean =
+    !endedByUser && currentSeconds == 0 && previousSeconds in 1..REST_END_MAX_PREVIOUS_SECONDS
+
 /** Status messages that report success rather than a problem (shown in the info tone). */
 internal fun activeWorkoutMessageIsSuccess(messageResourceId: Int): Boolean =
     messageResourceId == com.example.gymapp.R.string.active_workout_exercise_saved ||

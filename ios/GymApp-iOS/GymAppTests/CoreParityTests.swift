@@ -18662,7 +18662,7 @@ final class CoreParityTests: XCTestCase {
 
         for reachableAction in [
             "recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)",
-            "compactRestControls(draft: draft, remainingSeconds: remainingRestSeconds)",
+            "compactRestControls(\n                            draft: draft,\n                            remainingSeconds: remainingRestSeconds ?? 0,",
             "adjustManualRest(-15)",
             "adjustManualRest(15)",
             "stopManualRest()",

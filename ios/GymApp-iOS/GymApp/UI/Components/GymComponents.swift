@@ -471,6 +471,129 @@ public extension View {
     }
 }
 
+/// Shared motion tokens (DESIGN.md `motion`). `standard` is the critically damped
+/// default for layout and state changes; `fade` is the opacity-only 150 ms
+/// ease-out, which is also what Reduce Motion falls back to.
+enum GymMotion {
+    static let standard: Animation = .snappy(duration: 0.3)
+    static let fade: Animation = .easeOut(duration: 0.15)
+
+    static func animation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? fade : standard
+    }
+
+    /// `transition` as is, or a plain opacity fade under Reduce Motion.
+    static func transition(_ transition: AnyTransition, reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : transition
+    }
+}
+
+/// Wall-clock rest countdown for a `TimelineView`: one entry per whole second
+/// boundary of the deadline (so the digits change exactly when the second does),
+/// then one entry `endHighlightSeconds` after the deadline that ends the
+/// rest-end highlight.
+struct GymRestCountdownSchedule: TimelineSchedule {
+    static let endHighlightSeconds: TimeInterval = 0.6
+
+    let deadline: Date
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> [Date] {
+        Self.entryDates(deadline: deadline, from: startDate)
+    }
+
+    static func entryDates(deadline: Date, from start: Date) -> [Date] {
+        var dates = [start]
+        let remaining = deadline.timeIntervalSince(start)
+        if remaining > 0 {
+            for secondsToGo in stride(from: Int(remaining.rounded(.up)) - 1, through: 0, by: -1) {
+                dates.append(deadline.addingTimeInterval(-TimeInterval(secondsToGo)))
+            }
+        }
+        let highlightEnd = deadline.addingTimeInterval(endHighlightSeconds)
+        if highlightEnd > start { dates.append(highlightEnd) }
+        return dates
+    }
+
+    /// Whole seconds left, rounded up (the value the readout shows).
+    static func remainingSeconds(deadline: Date, at date: Date) -> Int {
+        max(0, Int(ceil(deadline.timeIntervalSince(date))))
+    }
+
+    /// True from the moment the countdown hits 0 until the highlight ends.
+    static func isEndHighlighted(deadline: Date, at date: Date) -> Bool {
+        let sinceEnd = date.timeIntervalSince(deadline)
+        return sinceEnd >= 0 && sinceEnd < endHighlightSeconds
+    }
+}
+
+/// Shared press feedback (DESIGN.md `motion.press`): scale 0.97 in 100 ms ease-out,
+/// released with a snappy spring.
+enum GymPressFeedback {
+    static let scale: CGFloat = 0.97
+    /// Opacity while pressed when Reduce Motion is on (no scale).
+    static let reducedMotionOpacity = 0.7
+
+    static func animation(isPressed: Bool) -> Animation {
+        isPressed ? .easeOut(duration: 0.1) : .snappy(duration: 0.2)
+    }
+}
+
+/// Pressed-state fill for a control whose visible capsule is drawn outside its
+/// Button (step buttons, rest pills): `side` picks the half of the capsule it
+/// covers, `height` the capsule height (nil = the label's own height), `inset`
+/// keeps it inside a border.
+struct GymPressHighlight {
+    enum Side { case whole, leading, trailing }
+
+    var side: Side = .whole
+    var color: Color
+    var height: CGFloat?
+    var inset: CGFloat = 0
+
+    @ViewBuilder
+    fileprivate func fill(isPressed: Bool, reduceMotion: Bool) -> some View {
+        let radius = max(0, (height ?? 44) / 2 - inset)
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: side == .trailing ? 0 : radius,
+            bottomLeadingRadius: side == .trailing ? 0 : radius,
+            bottomTrailingRadius: side == .leading ? 0 : radius,
+            topTrailingRadius: side == .leading ? 0 : radius,
+            style: .continuous
+        )
+        shape
+            .fill(color)
+            .padding(inset)
+            .frame(height: height)
+            .opacity(isPressed ? 1 : 0)
+            // Reduce Motion: the fill appears and clears without animation.
+            .animation(reduceMotion ? nil : GymPressFeedback.animation(isPressed: isPressed), value: isPressed)
+    }
+}
+
+/// Press feedback for the small `.plain` controls (step buttons, rest capsules,
+/// Undo, trash): the label scales to 0.97, or dims to 0.7 under Reduce Motion.
+/// An optional `highlight` fills the pressed part of a capsule drawn outside the
+/// button. Adds no shape or color of its own otherwise. `onPressChange` reports
+/// the pressed state (used by the hold-to-repeat steppers).
+struct GymPressableStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var highlight: GymPressHighlight?
+    var onPressChange: ((Bool) -> Void)?
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? GymPressFeedback.scale : 1)
+            .opacity(configuration.isPressed && reduceMotion ? GymPressFeedback.reducedMotionOpacity : 1)
+            .animation(GymPressFeedback.animation(isPressed: configuration.isPressed), value: configuration.isPressed)
+            .background {
+                if let highlight {
+                    highlight.fill(isPressed: configuration.isPressed, reduceMotion: reduceMotion)
+                }
+            }
+            .onChange(of: configuration.isPressed) { _, pressed in onPressChange?(pressed) }
+    }
+}
+
 public struct GymPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -494,8 +617,8 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
                     .brightness(configuration.isPressed ? -0.055 : 0)
             )
             .opacity(isEnabled ? 1 : 0.48)
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? GymPressFeedback.scale : 1)
+            .animation(reduceMotion ? nil : GymPressFeedback.animation(isPressed: configuration.isPressed), value: configuration.isPressed)
     }
 }
 
@@ -524,7 +647,7 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
                     .strokeBorder((isDestructive ? GymTheme.error : GymTheme.primary).opacity(0.4), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.48)
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? GymPressFeedback.scale : 1)
+            .animation(reduceMotion ? nil : GymPressFeedback.animation(isPressed: configuration.isPressed), value: configuration.isPressed)
     }
 }

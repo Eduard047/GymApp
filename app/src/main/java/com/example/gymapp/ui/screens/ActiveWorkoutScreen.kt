@@ -1,8 +1,18 @@
 package com.example.gymapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.unit.Dp
@@ -23,6 +33,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.text.BasicTextField
@@ -153,6 +164,11 @@ import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
+import com.example.gymapp.ui.components.GymHapticEvent
+import com.example.gymapp.ui.components.GymMotion
+import com.example.gymapp.ui.components.gymExpandHorizontally
+import com.example.gymapp.ui.components.gymShrinkHorizontally
+import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.GymSegmentItem
 import com.example.gymapp.ui.components.GymSegmentedControl
 import com.example.gymapp.ui.components.HeroPanel
@@ -161,6 +177,9 @@ import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.components.LoadingStatePanel
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.longPressRipple
+import com.example.gymapp.ui.components.pressScale
+import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutAddExerciseCatalog
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
@@ -186,6 +205,8 @@ import androidx.compose.material3.LocalContentColor
 
 internal const val ACTIVE_WORKOUT_ELAPSED_METRIC_TAG = "active_workout_elapsed_metric"
 internal const val ACTIVE_WORKOUT_COMPLETED_METRIC_TAG = "active_workout_completed_metric"
+/** How long a tapped Log waits for the workout state before its haptic is dropped. */
+private const val RECORD_HAPTIC_WAIT_MS = 1500L
 
 @Composable
 fun ActiveWorkoutScreen(
@@ -219,21 +240,85 @@ fun ActiveWorkoutScreen(
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
     val haptics = LocalHapticFeedback.current
+    val gymHaptics = rememberGymHaptics()
     val recordSetIds = uiState.exercises.asSequence()
         .flatMap { exercise -> exercise.sets.asSequence() }
         .filter { set -> set.isPersonalRecord }
         .map { set -> set.id }
         .toSet()
     var knownRecordSetIds by remember { mutableStateOf<Set<String>?>(null) }
-    LaunchedEffect(recordSetIds) {
+    // The set whose Log was just tapped, and the workout message at that moment (so an older message
+    // is not read as this record's failure). The tap arms it; the haptic fires with the state that
+    // shows the outcome: one haptic, "recorded", "personal record" (instead of it) or "refused".
+    var pendingRecordSetId by remember { mutableStateOf<String?>(null) }
+    var messageWhenRecordTapped by remember { mutableStateOf<com.example.gymapp.util.LocalizedText?>(null) }
+    LaunchedEffect(
+        recordSetIds,
+        pendingRecordSetId,
+        uiState.latestCompletedSetId,
+        uiState.message,
+        uiState.messageSetId
+    ) {
         // A newly logged record gets a short vibration; opening a workout that already holds
         // records does not.
         val known = knownRecordSetIds
-        if (known != null && (recordSetIds - known).isNotEmpty()) {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        }
+        val pending = pendingRecordSetId
+        val outcome = recordHaptic(
+            pendingSetId = pending,
+            latestCompletedSetId = uiState.latestCompletedSetId,
+            hasNewPersonalRecord = known != null && (recordSetIds - known).isNotEmpty(),
+            failedForPending = pending != null && uiState.message != null &&
+                uiState.messageSetId == pending && uiState.message != messageWhenRecordTapped
+        )
         knownRecordSetIds = recordSetIds
+        when (outcome) {
+            RecordHaptic.PersonalRecord -> haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            RecordHaptic.Record -> gymHaptics.perform(GymHapticEvent.RecordSet)
+            RecordHaptic.Rejected -> gymHaptics.perform(GymHapticEvent.Error)
+            RecordHaptic.None -> Unit
+        }
+        if (outcome != RecordHaptic.None) pendingRecordSetId = null
     }
+    LaunchedEffect(pendingRecordSetId) {
+        // A tap the workout never acted on (a guard refused it) must not fire a haptic later.
+        if (pendingRecordSetId != null) {
+            delay(RECORD_HAPTIC_WAIT_MS)
+            pendingRecordSetId = null
+        }
+    }
+    // The rest countdown reaching zero while this screen is up: one rest-end haptic and a short tint on the
+    // rest controls. A stop or a shortening by the person ends the rest too, and must stay silent.
+    var restEndedByUser by remember { mutableStateOf(false) }
+    var restEndHighlight by remember { mutableStateOf(false) }
+    var previousRestSeconds by remember { mutableIntStateOf(uiState.restSecondsRemaining) }
+    LaunchedEffect(uiState.restSecondsRemaining) {
+        val current = uiState.restSecondsRemaining
+        val previous = previousRestSeconds
+        previousRestSeconds = current
+        if (current > 0) {
+            restEndedByUser = false
+            restEndHighlight = false
+            return@LaunchedEffect
+        }
+        val endedNaturally = restEndedNaturally(previous, current, restEndedByUser)
+        restEndedByUser = false
+        if (endedNaturally) {
+            // No in-app RestEnd haptic: RestTimerService's finished notification already vibrates,
+            // also in the foreground, so a second buzz would stack on it.
+            restEndHighlight = true
+            delay(REST_END_HIGHLIGHT_MS)
+            restEndHighlight = false
+        }
+    }
+    val adjustRestTimer: (Int) -> Unit = { delta ->
+        if (delta < 0) restEndedByUser = true
+        onAdjustRestTimer(delta)
+    }
+    val stopRestTimer: () -> Unit = {
+        restEndedByUser = true
+        onStopRestTimer()
+    }
+    val reduceMotion = rememberReduceMotion()
     val voiceCommandScope = rememberCoroutineScope()
     // Feedback channel for the in-workout voice mic (LogSet/RepeatPrevious/SkipRest/
     // Unknown): a Snackbar with an optional action (e.g. "Отменить" after LogSet).
@@ -279,6 +364,8 @@ fun ActiveWorkoutScreen(
         }
     }
     val onSetRecorded: (String, String, String, Int) -> Unit = { setId, weightText, repsText, restSeconds ->
+        messageWhenRecordTapped = uiState.message
+        pendingRecordSetId = setId
         val weightFormat = NumberFormat.getNumberInstance(bannerLocale)
             .apply { maximumFractionDigits = 3 }
         val summary = bannerContext.getString(
@@ -477,11 +564,18 @@ fun ActiveWorkoutScreen(
         }
 
         recordedConfirmation?.let { confirmation ->
+            // animateItem: fades in (150 ms) / out (90 ms) and the cards below slide with spring-standard instead of jumping.
             item(key = "recorded-confirmation") {
                 RecordedConfirmationBanner(
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = GymMotion.fadeInSpec(),
+                        placementSpec = if (reduceMotion) null else GymMotion.standardSpring(IntOffset.VisibilityThreshold),
+                        fadeOutSpec = GymMotion.fadeOutSpec()
+                    ),
                     confirmation = confirmation,
                     undoEnabled = confirmation.setId == uiState.latestCompletedSetId && !operationInProgress,
                     onUndo = {
+                        gymHaptics.perform(GymHapticEvent.Undo)
                         onUndoSet(confirmation.setId)
                         recordedConfirmation = null
                     },
@@ -495,6 +589,11 @@ fun ActiveWorkoutScreen(
             key = ActiveWorkoutExerciseUiState::id
         ) { exercise ->
             ActiveWorkoutExerciseCard(
+                modifier = Modifier.animateItem(
+                    fadeInSpec = GymMotion.fadeInSpec(),
+                    placementSpec = if (reduceMotion) null else GymMotion.standardSpring(IntOffset.VisibilityThreshold),
+                    fadeOutSpec = GymMotion.fadeOutSpec()
+                ),
                 exercise = exercise,
                 initiallyExpanded = exercise.id == currentExerciseId,
                 screenEntryToken = screenEntryToken,
@@ -509,6 +608,7 @@ fun ActiveWorkoutScreen(
                 latestCompletedSetId = uiState.latestCompletedSetId,
                 canUndoOlderSets = uiState.canUndoOlderSets,
                 restSecondsRemaining = uiState.restSecondsRemaining,
+                restEnded = restEndHighlight,
                 inlineMessage = uiState.message,
                 inlineMessageSetId = uiState.messageSetId,
                 onSetWeightChanged = onSetWeightChanged,
@@ -521,8 +621,8 @@ fun ActiveWorkoutScreen(
                 onDeleteSet = onDeleteSet,
                 onRecordSet = onRecordSet,
                 onUndoSet = onUndoSet,
-                onAdjustRestTimer = onAdjustRestTimer,
-                onStopRestTimer = onStopRestTimer,
+                onAdjustRestTimer = adjustRestTimer,
+                onStopRestTimer = stopRestTimer,
                 onDismissMessage = onDismissMessage,
                 onSetRecorded = onSetRecorded,
                 onVoiceStarted = onVoiceStarted,
@@ -723,6 +823,7 @@ fun ActiveWorkoutScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        gymHaptics.perform(GymHapticEvent.DestructiveConfirm)
                         showDiscardConfirmation = false
                         onDiscardWorkout()
                     },
@@ -863,7 +964,14 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
     } else {
         stringResource(R.string.active_workout_hero_summary, elapsed, setsDone)
     }
-    val fraction = (completed.toFloat() / total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+    val targetFraction = (completed.toFloat() / total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+    val reduceMotion = rememberReduceMotion()
+    // The ring sweeps to the new fraction (spring, no bounce); reduced motion snaps. The count text never animates.
+    val fraction by animateFloatAsState(
+        targetValue = targetFraction,
+        animationSpec = if (reduceMotion) snap() else spring(dampingRatio = 1f, stiffness = 300f),
+        label = "workoutProgressRing"
+    )
     val titleColor = HeroTone.title
     val softColor = HeroTone.supporting
     val ringTrack = HeroTone.track
@@ -1096,6 +1204,7 @@ private fun ActiveWorkoutExerciseCard(
     latestCompletedSetId: String?,
     canUndoOlderSets: Boolean,
     restSecondsRemaining: Int,
+    restEnded: Boolean,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
     inlineMessageSetId: String?,
     onSetWeightChanged: (String, String) -> Unit,
@@ -1113,7 +1222,8 @@ private fun ActiveWorkoutExerciseCard(
     onDismissMessage: () -> Unit,
     onSetRecorded: (setId: String, weightText: String, repsText: String, restSeconds: Int) -> Unit = { _, _, _, _ -> },
     onVoiceStarted: () -> Unit = {},
-    onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = { _, _, _ -> }
+    onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = { _, _, _ -> },
+    modifier: Modifier = Modifier
 ) {
     val fullyCompleted = exercise.sets.isNotEmpty() &&
         exercise.sets.all(ActiveWorkoutSetUiState::isCompleted)
@@ -1125,6 +1235,7 @@ private fun ActiveWorkoutExerciseCard(
     var showFinishDialog by remember(exercise.id) { mutableStateOf(false) }
     var showRemoveDialog by remember(exercise.id) { mutableStateOf(false) }
     var recordedSetToDeleteId by remember(exercise.id) { mutableStateOf<String?>(null) }
+    val gymHaptics = rememberGymHaptics()
     // Set when the finish dialog starts a save or skip; the card then collapses as soon as every
     // remaining set is done, even though the latest recorded set still belongs to it.
     var collapseAfterFinish by remember(exercise.id) { mutableStateOf(false) }
@@ -1156,7 +1267,7 @@ private fun ActiveWorkoutExerciseCard(
     val totalCount = exercise.sets.size
     val exerciseName = localizedExerciseName(exercise.exerciseName)
     val progressValue = "$completedCount / $totalCount"
-    WorkoutExerciseCardShell {
+    WorkoutExerciseCardShell(modifier = modifier) {
         WorkoutExerciseCardHeader(
             title = exerciseName,
             expanded = isExpanded,
@@ -1293,6 +1404,7 @@ private fun ActiveWorkoutExerciseCard(
                     } else {
                         0
                     },
+                    restEnded = restEnded && set.id == latestCompletedSetId,
                     inlineMessage = inlineMessage.takeIf { inlineMessageSetId == set.id },
                     onWeightChanged = { value -> onSetWeightChanged(set.id, value) },
                     onRepsChanged = { value -> onSetRepsChanged(set.id, value) },
@@ -1351,6 +1463,7 @@ private fun ActiveWorkoutExerciseCard(
             exerciseName = exerciseName,
             recordedCount = completedCount,
             onConfirm = {
+                gymHaptics.perform(GymHapticEvent.DestructiveConfirm)
                 showRemoveDialog = false
                 onRemoveExercise()
             },
@@ -1367,6 +1480,7 @@ private fun ActiveWorkoutExerciseCard(
                 setNumber = target.orderIndex + 1,
                 summary = rememberSetSummary(target.weightInput, target.repsInput),
                 onConfirm = {
+                    gymHaptics.perform(GymHapticEvent.DestructiveConfirm)
                     recordedSetToDeleteId = null
                     onDeleteSet(targetId)
                 },
@@ -1457,6 +1571,7 @@ private fun ActiveWorkoutSetRow(
     isBodyweight: Boolean,
     restDurationSeconds: Int,
     restSecondsRemaining: Int,
+    restEnded: Boolean,
     inlineMessage: com.example.gymapp.util.LocalizedText?,
     onWeightChanged: (String) -> Unit,
     onRepsChanged: (String) -> Unit,
@@ -1474,7 +1589,20 @@ private fun ActiveWorkoutSetRow(
     onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = { _, _, _ -> }
 ) {
     val validSetInput = parseActiveWorkoutSetInput(set.weightInput, set.repsInput) != null
-    Column(modifier = Modifier.fillMaxWidth()) {
+    // Upcoming, current and recorded rows have different heights: the rows below ease into place instead of
+    // jumping when a set is logged (reduced motion: instant, the row swap itself is the state change).
+    val reduceMotion = rememberReduceMotion()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (reduceMotion) {
+                    Modifier
+                } else {
+                    Modifier.animateContentSize(GymMotion.standardSpring(IntSize.VisibilityThreshold))
+                }
+            )
+    ) {
         when {
             set.isCompleted -> CompletedSetRow(
                 set = set,
@@ -1482,6 +1610,7 @@ private fun ActiveWorkoutSetRow(
                 isLatestCompleted = isLatestCompleted,
                 canUndoOlderSet = canUndoOlderSet,
                 restSecondsRemaining = restSecondsRemaining,
+                restEnded = restEnded,
                 onUndo = onUndo,
                 canDelete = canDelete,
                 onDelete = onDelete,
@@ -1609,11 +1738,19 @@ private fun UpcomingLogButton(
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val contentColor = if (enabled) primary else primary.copy(alpha = 0.38f)
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
-            .heightIn(min = 44.dp)
+            .heightIn(min = GymSpacing.MinimumTouch)
+            .pressScale(interactionSource)
             .clip(CircleShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick
+            )
             .semantics(mergeDescendants = true) { contentDescription = description }
             .padding(horizontal = 4.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
@@ -1656,6 +1793,7 @@ private fun CompletedSetRow(
     isLatestCompleted: Boolean,
     canUndoOlderSet: Boolean,
     restSecondsRemaining: Int,
+    restEnded: Boolean,
     onUndo: () -> Unit,
     canDelete: Boolean,
     onDelete: () -> Unit,
@@ -1679,21 +1817,29 @@ private fun CompletedSetRow(
     // and the accessibility action (no standing button on every row).
     val canUndo = isLatestCompleted && !operationInProgress
     val canUndoFromMenu = (isLatestCompleted || canUndoOlderSet) && !operationInProgress
-    val showsRest = isLatestCompleted && restSecondsRemaining > 0
+    val gymHaptics = rememberGymHaptics()
+    // The inline button, the long-press menu item and the accessibility action all tick the same way.
+    val undoWithHaptic = {
+        gymHaptics.perform(GymHapticEvent.Undo)
+        onUndo()
+    }
+    // The controls stay up a moment after the countdown hits zero so the rest-end tint is seen.
+    val showsRest = isLatestCompleted && (restSecondsRemaining > 0 || restEnded)
+    val reduceMotion = rememberReduceMotion()
     RecordedSetRow(
         summary = summary,
         description = description,
         isPersonalRecord = set.isPersonalRecord,
         modifier = Modifier.testTag(activeWorkoutCompletedSetTag(set.id)),
         actions = listOfNotNull(
-            SetRowAction(label = undoLabel, onClick = onUndo).takeIf { canUndoFromMenu },
+            SetRowAction(label = undoLabel, onClick = undoWithHaptic).takeIf { canUndoFromMenu },
             SetRowAction(label = deleteLabel, destructive = true, onClick = onDelete).takeIf { canDelete }
         ),
         inlineAction = if (canUndo) {
             {
                 val buttonDescription = "$undoLabel, $description"
                 TextButton(
-                    onClick = onUndo,
+                    onClick = undoWithHaptic,
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .semantics { contentDescription = buttonDescription }
@@ -1708,26 +1854,31 @@ private fun CompletedSetRow(
         } else {
             null
         },
-        trailing = if (showsRest) {
-            {
+        // Always present so the controls can fade/expand in and out; it emits nothing while hidden.
+        trailing = {
+            AnimatedVisibility(
+                visible = showsRest,
+                enter = gymExpandHorizontally(reduceMotion),
+                exit = gymShrinkHorizontally(reduceMotion)
+            ) {
                 CompactRestControls(
                     remainingSeconds = restSecondsRemaining,
-                    enabled = !operationInProgress,
+                    enabled = !operationInProgress && restSecondsRemaining > 0,
+                    highlighted = restEnded,
                     onAdjustRestTimer = onAdjustRestTimer,
                     onStopRestTimer = onStopRestTimer
                 )
             }
-        } else {
-            null
         }
     )
 }
 
-/** Monospaced countdown + "−15" / "+15" / stop pills (~32dp visual, 44dp targets). */
+/** Monospaced countdown + "−15" / "+15" / stop pills (~32dp visual, 48dp targets). */
 @Composable
 private fun CompactRestControls(
     remainingSeconds: Int,
     enabled: Boolean,
+    highlighted: Boolean,
     onAdjustRestTimer: (Int) -> Unit,
     onStopRestTimer: () -> Unit
 ) {
@@ -1737,6 +1888,13 @@ private fun CompactRestControls(
     val increaseDescription = stringResource(R.string.active_workout_rest_add)
     val stopDescription = stringResource(R.string.active_workout_rest_stop)
     val pillTextStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    val primary = MaterialTheme.colorScheme.primary
+    // Rest-end tint behind the readout (REST_END_HIGHLIGHT_MS); instant with reduced motion.
+    val highlightColor by animateColorAsState(
+        targetValue = primary.copy(alpha = if (highlighted) 0.18f else 0f),
+        animationSpec = if (rememberReduceMotion()) snap() else tween(GymMotion.FadeInMillis),
+        label = "restEndHighlight"
+    )
     Row(
         modifier = Modifier.semantics {
             isTraversalGroup = true
@@ -1751,10 +1909,23 @@ private fun CompactRestControls(
             style = MaterialTheme.typography.labelLarge.copy(
                 fontWeight = FontWeight.SemiBold
             ).tabularDigits(),
-            color = MaterialTheme.colorScheme.primary,
+            color = primary,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.clearAndSetSemantics {}
+            modifier = Modifier
+                .drawBehind {
+                    if (highlightColor.alpha > 0f) {
+                        val padX = 6.dp.toPx()
+                        val padY = 3.dp.toPx()
+                        drawRoundRect(
+                            color = highlightColor,
+                            topLeft = Offset(-padX, -padY),
+                            size = Size(size.width + 2 * padX, size.height + 2 * padY),
+                            cornerRadius = CornerRadius(size.height)
+                        )
+                    }
+                }
+                .clearAndSetSemantics {}
         )
         RestPillButton(enabled, decreaseDescription, { onAdjustRestTimer(-15) }) { tint ->
             Text("−15", style = pillTextStyle, color = tint, maxLines = 1, softWrap = false)
@@ -1773,7 +1944,7 @@ private fun CompactRestControls(
     }
 }
 
-/** A ~32dp hairline-outlined capsule inside a full 44dp tap target. */
+/** A ~32dp hairline-outlined capsule inside a full 48dp tap target. */
 @Composable
 private fun RestPillButton(
     enabled: Boolean,
@@ -1782,11 +1953,19 @@ private fun RestPillButton(
     content: @Composable (tint: Color) -> Unit
 ) {
     val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.38f)
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
-            .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .defaultMinSize(minWidth = GymSpacing.MinimumTouch, minHeight = GymSpacing.MinimumTouch)
+            .pressScale(interactionSource)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick
+            )
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
@@ -1814,7 +1993,8 @@ private fun RecordedConfirmationBanner(
     confirmation: RecordedConfirmation,
     undoEnabled: Boolean,
     onUndo: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val dismissDescription = stringResource(R.string.action_dismiss)
     val primary = MaterialTheme.colorScheme.primary
@@ -1822,7 +2002,7 @@ private fun RecordedConfirmationBanner(
         shape = GymControlShape,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, primary.copy(alpha = 0.36f)),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .testTag(ACTIVE_WORKOUT_RECORDED_BANNER_TAG)
     ) {
@@ -1927,14 +2107,10 @@ private fun CurrentSetCard(
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
                 RoundedCornerShape(16.dp)
             )
-            .pointerInput(canDelete) {
-                // Long-press on an empty part of the card; its buttons and fields consume their own presses.
-                if (canDelete) {
-                    detectTapGestures(onLongPress = {
-                        deleteHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        deleteMenuOpen = true
-                    })
-                }
+            // Long-press on an empty part of the card; its buttons and fields consume their own presses.
+            .longPressRipple(enabled = canDelete) {
+                deleteHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                deleteMenuOpen = true
             }
             .padding(10.dp)
             .semantics {
@@ -1998,7 +2174,7 @@ private fun CurrentSetCard(
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                     modifier = Modifier
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = GymSpacing.MinimumTouch)
                         .clickable(
                             enabled = editorsEnabled,
                             onClickLabel = captionHint,
@@ -2105,10 +2281,12 @@ private fun SetLogButton(
         fontSize = MaterialTheme.typography.bodyMedium.fontSize,
         fontWeight = FontWeight.Normal
     )
+    val interactionSource = remember { MutableInteractionSource() }
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = 48.dp)
+        modifier = modifier.heightIn(min = GymSpacing.MinimumTouch).pressScale(interactionSource),
+        interactionSource = interactionSource
     ) {
         if (isRecording) {
             CircularProgressIndicator(
@@ -2550,7 +2728,7 @@ private fun VoiceListeningActionRow(voice: SetVoiceCommand) {
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 modifier = Modifier
-                    .heightIn(min = 44.dp)
+                    .heightIn(min = GymSpacing.MinimumTouch)
                     .clickable(role = Role.Button, onClick = voice.onTypeInstead)
                     .wrapContentHeight(Alignment.CenterVertically)
             )

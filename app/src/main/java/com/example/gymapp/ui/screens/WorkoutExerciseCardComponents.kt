@@ -1,9 +1,17 @@
 package com.example.gymapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -75,8 +84,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
@@ -99,9 +106,19 @@ import com.example.gymapp.R
 import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
+import com.example.gymapp.ui.components.GymMotion
+import com.example.gymapp.ui.components.StepperHoldRepeat
+import com.example.gymapp.ui.components.gymExpandVertically
+import com.example.gymapp.ui.components.gymShrinkVertically
+import com.example.gymapp.ui.components.rememberReduceMotion
+import com.example.gymapp.ui.components.longPressRipple
+import com.example.gymapp.ui.components.pressScale
+import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.tabularDigits
+import com.example.gymapp.ui.theme.GymSpacing
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
+import kotlin.math.roundToLong
 
 /*
  * Stateless building blocks of an exercise card, shared by the active-workout screen and the saved
@@ -483,6 +500,7 @@ internal val SetNumberBadgeSize = 22.dp
  * "Delete set" ([deleteLabel] in the menu, [deleteActionLabel] for TalkBack) when [canDelete]. [trailing] sits at the end of the line, outside the tap target.
  * Expansion is owned by the caller.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun EditableSetRow(
     number: Int,
@@ -505,6 +523,13 @@ internal fun EditableSetRow(
     val currentExpanded by rememberUpdatedState(expanded)
     val currentOnExpandedChange by rememberUpdatedState(onExpandedChange)
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val reduceMotion = rememberReduceMotion()
+    // One chevron turned half a way round (spring-snappy); reduced motion turns it at once.
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = if (reduceMotion) snap() else GymMotion.snappySpring(),
+        label = "setEditorChevron"
+    )
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -514,7 +539,7 @@ internal fun EditableSetRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 44.dp),
+                .heightIn(min = GymSpacing.MinimumTouch),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -522,27 +547,27 @@ internal fun EditableSetRow(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .pointerInput(canDelete) {
-                            // Tap expands the editor; long-press opens "Delete set" (mirrors Undo on a recorded set).
-                            detectTapGestures(
-                                onTap = { currentOnExpandedChange(!currentExpanded) },
-                                onLongPress = {
-                                    if (canDelete) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        menuOpen = true
-                                    }
+                        .heightIn(min = GymSpacing.MinimumTouch)
+                        .clip(RoundedCornerShape(12.dp))
+                        // Tap expands the editor; long-press opens "Delete set" (mirrors Undo on a recorded set).
+                        // A real clickable, so the ripple shows from touch-down.
+                        .combinedClickable(
+                            onClickLabel = editHint,
+                            role = Role.Button,
+                            onLongClickLabel = deleteLabel.takeIf { canDelete },
+                            onLongClick = if (canDelete) {
+                                {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    menuOpen = true
                                 }
-                            )
-                        }
+                            } else {
+                                null
+                            },
+                            onClick = { currentOnExpandedChange(!currentExpanded) }
+                        )
                         .semantics {
-                            role = Role.Button
                             contentDescription = rowDescription
                             stateDescription = if (expanded) "▲" else "▼"
-                            onClick(label = editHint) {
-                                currentOnExpandedChange(!currentExpanded)
-                                true
-                            }
                             if (canDelete) {
                                 customActions = listOf(
                                     CustomAccessibilityAction(deleteActionLabel) {
@@ -567,10 +592,12 @@ internal fun EditableSetRow(
                     )
                     summaryBadge?.invoke()
                     Icon(
-                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        imageVector = Icons.Default.ExpandMore,
                         contentDescription = null,
                         tint = secondary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(chevronRotation)
                     )
                 }
                 DropdownMenu(expanded = menuOpen && canDelete, onDismissRequest = { menuOpen = false }) {
@@ -585,14 +612,23 @@ internal fun EditableSetRow(
             }
             trailing?.invoke()
         }
-        if (expanded) {
-            editor()
+        AnimatedVisibility(
+            visible = expanded,
+            enter = gymExpandVertically(reduceMotion),
+            exit = gymShrinkVertically(reduceMotion)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                editor()
+            }
         }
     }
 }
 
 /** Height of every capsule in the set editor (the trash beside them is a 40dp button with a 48dp touch target). */
-internal val SetEditorCapsuleHeight = 44.dp
+internal val SetEditorCapsuleHeight = GymSpacing.MinimumTouch
 /** Step buttons are this wide whenever the value fits and give way down to the minimum when it does not. */
 private val SetEditorStepButtonWidth = 36.dp
 private val SetEditorStepButtonMinWidth = 28.dp
@@ -858,13 +894,9 @@ internal fun RecordedSetRow(
             .fillMaxWidth()
             .padding(vertical = PlainSetRowPadding)
             .then(modifier)
-            .pointerInput(canAct) {
-                if (canAct) {
-                    detectTapGestures(onLongPress = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        menuOpen = true
-                    })
-                }
+            .longPressRipple(enabled = canAct) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                menuOpen = true
             }
     ) {
         AdaptiveTrailingRow(
@@ -877,7 +909,7 @@ internal fun RecordedSetRow(
                     Row(
                         modifier = Modifier
                             .weight(1f, fill = false)
-                            .heightIn(min = 44.dp)
+                            .heightIn(min = GymSpacing.MinimumTouch)
                             .clearAndSetSemantics {
                                 contentDescription = description
                                 if (canAct) {
@@ -1201,7 +1233,7 @@ internal fun SetStepCapsules(
 }
 
 /**
- * Slim (34dp) capsule with a step button at each end (each a full 44dp target) and a small
+ * Slim (34dp) capsule with a step button at each end (each a full 48dp target) and a small
  * centre label. The whole capsule is one accessibility element with increase/decrease actions.
  */
 @Composable
@@ -1224,7 +1256,7 @@ internal fun StepCapsule(
 ) {
     Box(
         modifier = modifier
-            .heightIn(min = 44.dp)
+            .heightIn(min = GymSpacing.MinimumTouch)
             .clearAndSetSemantics {
                 contentDescription = label
                 stateDescription = value
@@ -1281,6 +1313,12 @@ internal fun StepCapsule(
     }
 }
 
+/**
+ * One step button of a weight/reps stepper. A tap is one step ([onClick], which already clamps to the
+ * allowed range and weights). Holding it repeats [onClick] on the [StepperHoldRepeat] schedule and
+ * releasing stops at once; the click that follows a hold that repeated is dropped, so the release is
+ * not an extra step. Every step ticks (`SEGMENT_TICK`, `SEGMENT_FREQUENT_TICK` while repeating).
+ */
 @Composable
 internal fun StepButton(
     icon: ImageVector?,
@@ -1288,14 +1326,56 @@ internal fun StepButton(
     enabled: Boolean,
     onClick: () -> Unit,
     description: String? = null,
-    minWidth: Dp = 44.dp,
-    minHeight: Dp = 44.dp
+    minWidth: Dp = GymSpacing.MinimumTouch,
+    minHeight: Dp = GymSpacing.MinimumTouch
 ) {
     val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.38f)
+    val haptics = rememberGymHaptics()
+    // The latest step function: after each repeat the caller recomposes with the next target.
+    val currentOnClick by rememberUpdatedState(onClick)
+    val interactionSource = remember { MutableInteractionSource() }
+    var heldAndRepeated by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .defaultMinSize(minWidth = minWidth, minHeight = minHeight)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .pressScale(interactionSource)
+            .pointerInput(enabled) {
+                heldAndRepeated = false
+                if (!enabled) return@pointerInput
+                // Watches the press without consuming it, so the clickable below keeps tap, ripple and semantics.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    heldAndRepeated = false
+                    var elapsedMs = 0.0
+                    var nextStepAtMs = StepperHoldRepeat.nextStepAtMs(null)
+                    while (true) {
+                        val wait = (nextStepAtMs - elapsedMs).roundToLong().coerceAtLeast(1L)
+                        // null: still held when the wait ran out; 1: lifted; 2: cancelled (scroll, left the button).
+                        val ended = withTimeoutOrNull(wait) { if (waitForUpOrCancellation() != null) 1 else 2 }
+                        if (ended == 2) heldAndRepeated = false
+                        if (ended != null) break
+                        elapsedMs = nextStepAtMs
+                        nextStepAtMs = StepperHoldRepeat.nextStepAtMs(nextStepAtMs)
+                        heldAndRepeated = true
+                        haptics.stepperTick(repeating = true)
+                        currentOnClick()
+                    }
+                }
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = {
+                    if (heldAndRepeated) {
+                        heldAndRepeated = false
+                    } else {
+                        haptics.stepperTick(repeating = false)
+                        currentOnClick()
+                    }
+                }
+            )
             .then(
                 if (description != null) {
                     Modifier.semantics { contentDescription = description }

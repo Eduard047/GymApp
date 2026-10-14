@@ -169,6 +169,7 @@ struct ActiveWorkoutView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
@@ -229,6 +230,13 @@ struct ActiveWorkoutView: View {
     /// when its exercise list changes). Records are derived from the draft.
     @State private var personalRecordBaselines: [UUID: PersonalRecordBaseline] = [:]
     @State private var personalRecordFeedbackTrigger = 0
+    /// Haptic triggers (DESIGN.md `haptics`). Each is bumped in the same state
+    /// change that updates the screen, so feedback lands with the visual.
+    @State private var recordFeedbackTrigger = 0
+    @State private var undoFeedbackTrigger = 0
+    @State private var deleteFeedbackTrigger = 0
+    @State private var errorFeedbackTrigger = 0
+    @State private var restEndFeedbackTrigger = 0
 
     /// - `requesting`: `start()` is awaiting speech/mic authorization; the UI
     ///   stays in its normal (idle) look until this resolves.
@@ -341,6 +349,10 @@ struct ActiveWorkoutView: View {
 
                             if let recordedSetConfirmation {
                                 recordedSetConfirmationBanner(recordedSetConfirmation)
+                                    .transition(GymMotion.transition(
+                                        .opacity.combined(with: .move(edge: .top)),
+                                        reduceMotion: reduceMotion
+                                    ))
                             }
 
                             if let batch = recordedBatchUndo, batch.isCurrent(for: draft) {
@@ -439,6 +451,14 @@ struct ActiveWorkoutView: View {
             recordedBatchUndo = nil
         }
         .sensoryFeedback(.success, trigger: personalRecordFeedbackTrigger)
+        .sensoryFeedback(.impact(weight: .medium), trigger: recordFeedbackTrigger)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: undoFeedbackTrigger)
+        .sensoryFeedback(.warning, trigger: deleteFeedbackTrigger)
+        .sensoryFeedback(.error, trigger: errorFeedbackTrigger)
+        .sensoryFeedback(.warning, trigger: restEndFeedbackTrigger)
+        .task(id: currentDraft?.timing?.restingUntil) {
+            await fireRestEndFeedback()
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(
@@ -779,10 +799,16 @@ struct ActiveWorkoutView: View {
                                 )
                                 .stroke(GymTheme.heroAccent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
+                                .animation(reduceMotion ? nil : .smooth(duration: 0.4), value: draft.completedSetCount)
                             VStack(spacing: 1) {
                                 Text("\(draft.completedSetCount)/\(draft.plannedSetCount)")
                                     .font(.headline.monospacedDigit())
                                     .foregroundStyle(GymTheme.onHero)
+                                    .contentTransition(reduceMotion ? .identity : .numericText())
+                                    .animation(
+                                        reduceMotion ? nil : GymMotion.standard,
+                                        value: draft.completedSetCount
+                                    )
                                 Text(
                                     gymText(
                                         "sets",
@@ -1499,10 +1525,13 @@ struct ActiveWorkoutView: View {
                 exerciseName: exerciseName,
                 draft: draft
             )
+            .transition(.opacity)
         } else if isCurrent {
             currentSetRow(set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
+                .transition(.opacity)
         } else {
             upcomingSetRow(set, position: position, exercise: exercise, exerciseName: exerciseName, draft: draft)
+                .transition(.opacity)
         }
     }
 
@@ -1985,12 +2014,9 @@ struct ActiveWorkoutView: View {
         disabled: Bool
     ) -> some View {
         GymWeightStepCapsule(
-            weight: set.weight,
+            weight: weightBinding(setID: set.id),
             allowedWeights: workoutStore.exercise(id: exercise.exerciseID)?.machineLoadProfile?.allowedWeightsKg ?? [],
-            disabled: disabled,
-            onChange: { newWeight in
-                updateSet(draft: draft, setID: set.id, weight: newWeight, reps: set.reps)
-            }
+            disabled: disabled
         )
     }
 
@@ -2093,7 +2119,7 @@ struct ActiveWorkoutView: View {
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GymPressableStyle())
         .disabled(draft.commitIntent != nil)
         .accessibilityLabel(logSetAccessibilityLabel(position: position))
     }
@@ -2206,7 +2232,7 @@ struct ActiveWorkoutView: View {
                 action: {
                     undoLatestSet(set, draft: draft)
                     if recordedSetConfirmation?.setID == set.id {
-                        recordedSetConfirmation = nil
+                        dismissRecordedSetConfirmation()
                     }
                 }
             )
@@ -2214,13 +2240,19 @@ struct ActiveWorkoutView: View {
 
         let content = Group {
             if isLatestCompleted, let deadline = draft.timing?.restingUntil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let remaining = max(0, Int(ceil(deadline.timeIntervalSince(context.date))))
+                // Ticks on the deadline's own second boundaries, so the digits
+                // change exactly when the second does.
+                TimelineView(GymRestCountdownSchedule(deadline: deadline)) { context in
+                    let remaining = GymRestCountdownSchedule.remainingSeconds(deadline: deadline, at: context.date)
                     compactCompletedRow(
                         set: set,
                         draft: draft,
                         isPersonalRecord: isPersonalRecord,
                         remainingRestSeconds: remaining > 0 ? remaining : nil,
+                        restEndHighlighted: GymRestCountdownSchedule.isEndHighlighted(
+                            deadline: deadline,
+                            at: context.date
+                        ),
                         undo: rowUndo
                     )
                 }
@@ -2288,6 +2320,7 @@ struct ActiveWorkoutView: View {
         draft: ActiveWorkoutDraft,
         isPersonalRecord: Bool,
         remainingRestSeconds: Int?,
+        restEndHighlighted: Bool = false,
         undo: CompletedSetRowUndo?
     ) -> some View {
         let summary = GymCompletedSetSummary(
@@ -2303,49 +2336,58 @@ struct ActiveWorkoutView: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GymPressableStyle())
             .foregroundStyle(GymTheme.primary)
             .accessibilityLabel(undo.accessibilityLabel)
         }
 
+        // The countdown pill outlives the 0 mark by the end highlight (0.6 s)
+        // while the -15/+15/stop capsules fade out.
+        let showsRest = remainingRestSeconds != nil || restEndHighlighted
+        let restPhase = remainingRestSeconds != nil ? 1 : (restEndHighlighted ? 2 : 0)
+
         return Group {
-            if let remainingRestSeconds {
-                let controls = compactRestControls(draft: draft, remainingSeconds: remainingRestSeconds)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        summary
-                        Spacer(minLength: 8)
-                        if let undoButton { undoButton }
-                        controls
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            summary
-                            Spacer(minLength: 8)
-                            if let undoButton { undoButton }
-                        }
-                        controls
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        summary
-                        if let undoButton { undoButton }
-                        controls
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    summary
+                    Spacer(minLength: 8)
+                    if let undoButton { undoButton }
+                    if showsRest {
+                        compactRestControls(
+                            draft: draft,
+                            remainingSeconds: remainingRestSeconds ?? 0,
+                            isEnded: remainingRestSeconds == nil
+                        )
                     }
                 }
-            } else {
-                ViewThatFits(in: .horizontal) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         summary
                         Spacer(minLength: 8)
                         if let undoButton { undoButton }
                     }
-                    VStack(alignment: .leading, spacing: 6) {
-                        summary
-                        if let undoButton { undoButton }
+                    if showsRest {
+                        compactRestControls(
+                            draft: draft,
+                            remainingSeconds: remainingRestSeconds ?? 0,
+                            isEnded: remainingRestSeconds == nil
+                        )
+                    }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    summary
+                    if let undoButton { undoButton }
+                    if showsRest {
+                        compactRestControls(
+                            draft: draft,
+                            remainingSeconds: remainingRestSeconds ?? 0,
+                            isEnded: remainingRestSeconds == nil
+                        )
                     }
                 }
             }
         }
+        .animation(GymMotion.fade, value: restPhase)
     }
 
     private func loadPersonalRecordBaselines() {
@@ -2367,7 +2409,11 @@ struct ActiveWorkoutView: View {
     /// what lets `ViewThatFits` in `compactCompletedRow` correctly detect an
     /// overflow and fall back to the two-line layout, instead of everything
     /// silently shrinking to fit and defeating that measurement.
-    private func compactRestControls(draft: ActiveWorkoutDraft, remainingSeconds: Int) -> some View {
+    private func compactRestControls(
+        draft: ActiveWorkoutDraft,
+        remainingSeconds: Int,
+        isEnded: Bool = false
+    ) -> some View {
         let locked = draft.commitIntent != nil
         return HStack(spacing: 6) {
             Text(Self.clock(TimeInterval(remainingSeconds)))
@@ -2376,6 +2422,30 @@ struct ActiveWorkoutView: View {
                 .lineLimit(1)
                 .fixedSize()
                 .accessibilityHidden(true)
+                // Rest-end highlight: a brief accent tint behind the readout
+                // (nothing behind it while resting). Reduce Motion: no fade.
+                .background {
+                    Capsule()
+                        .fill(isEnded ? GymTheme.primary.opacity(0.16) : Color.clear)
+                        .padding(.horizontal, -8)
+                        .padding(.vertical, -4)
+                        .animation(reduceMotion ? nil : GymMotion.fade, value: isEnded)
+                }
+            if !isEnded {
+                restAdjustmentCapsules(draft: draft, locked: locked)
+                    .transition(.opacity)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            gymText("Rest timer", "Таймер відпочинку", "Таймер отдыха", languageCode: gymCurrentLanguageCode())
+        )
+        .accessibilityValue(Self.clock(TimeInterval(remainingSeconds)))
+    }
+
+    /// The −15 / +15 / stop capsules of `compactRestControls`.
+    private func restAdjustmentCapsules(draft: ActiveWorkoutDraft, locked: Bool) -> some View {
+        HStack(spacing: 6) {
             compactRestCapsuleButton(
                 title: "−15",
                 accessibilityLabel: gymText(
@@ -2410,11 +2480,6 @@ struct ActiveWorkoutView: View {
                 stopManualRest()
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(
-            gymText("Rest timer", "Таймер відпочинку", "Таймер отдыха", languageCode: gymCurrentLanguageCode())
-        )
-        .accessibilityValue(Self.clock(TimeInterval(remainingSeconds)))
     }
 
     /// One capsule button: ~32pt visual height, at least a 44×44 tap target
@@ -2445,7 +2510,7 @@ struct ActiveWorkoutView: View {
             .padding(.horizontal, 10)
             .frame(minWidth: 44, minHeight: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GymPressableStyle(highlight: GymPressHighlight(color: GymTheme.surfaceVariant, height: 32)))
         .foregroundStyle(GymTheme.primary)
         .background(alignment: .center) {
             Capsule().fill(GymTheme.surface).frame(height: 32)
@@ -2649,6 +2714,19 @@ struct ActiveWorkoutView: View {
         exerciseName: String,
         draft: ActiveWorkoutDraft
     ) {
+        // One animation transaction for the whole state change: the row swap,
+        // the next set expanding, the progress ring and the "Recorded" banner.
+        withAnimation(GymMotion.animation(reduceMotion: reduceMotion)) {
+            performRecordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)
+        }
+    }
+
+    private func performRecordSet(
+        _ set: ActiveWorkoutSet,
+        exercise: ActiveWorkoutExercise,
+        exerciseName: String,
+        draft: ActiveWorkoutDraft
+    ) {
         let restSeconds = restDurationSeconds(for: exercise)
         var liveQueueFailureMessage: String?
         do {
@@ -2725,8 +2803,11 @@ struct ActiveWorkoutView: View {
                 message: recordedSetConfirmationMessage(weight: set.weight, reps: set.reps),
                 setID: set.id
             )
+            // A personal record plays `.success` instead of the plain record impact.
             if LivePersonalRecords.recordSetIDs(in: updated, baselines: personalRecordBaselines).contains(set.id) {
                 personalRecordFeedbackTrigger &+= 1
+            } else {
+                recordFeedbackTrigger &+= 1
             }
             // The banner itself drops the rest duration (the compact rest
             // row already shows a live countdown), but the announcement
@@ -2739,6 +2820,32 @@ struct ActiveWorkoutView: View {
         } catch {
             showActionFailure(error, liveQueueFailure: liveQueueFailureMessage)
         }
+    }
+
+    /// Hides the "Recorded" banner with the same animation as its entrance.
+    private func dismissRecordedSetConfirmation() {
+        withAnimation(GymMotion.animation(reduceMotion: reduceMotion)) {
+            recordedSetConfirmation = nil
+        }
+    }
+
+    /// Rest-end feedback (DESIGN.md `haptics.rest-end`): one `.warning` haptic
+    /// when the rest countdown reaches 0 while this screen is on screen. Restarts
+    /// whenever the deadline changes (±15, new set) and does nothing for a rest
+    /// that already ended, was stopped, or ended while the app was in the
+    /// background (the local notification covers that case; while the app is
+    /// foregrounded `NativePushAppDelegate.willPresent` suppresses its banner
+    /// and sound, so there is no duplicate).
+    private func fireRestEndFeedback() async {
+        guard let deadline = currentDraft?.timing?.restingUntil else { return }
+        let wait = deadline.timeIntervalSinceNow
+        guard wait > 0 else { return }
+        try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+        guard !Task.isCancelled,
+              scenePhase == .active,
+              currentDraft?.timing?.restingUntil == deadline,
+              Date().timeIntervalSince(deadline) < 1.5 else { return }
+        restEndFeedbackTrigger &+= 1
     }
 
     /// "Записано: 40 кг × 10" — shared by the "Log set" button and every
@@ -2848,7 +2955,8 @@ struct ActiveWorkoutView: View {
             } else {
                 statusMessage = nil
             }
-            recordedSetConfirmation = nil
+            dismissRecordedSetConfirmation()
+            recordFeedbackTrigger &+= 1
             if let settled = activeWorkoutStore.draft, settled.id == draft.id {
                 recordedBatchUndo = RecordedBatchUndo(
                     draftID: settled.id,
@@ -2883,6 +2991,7 @@ struct ActiveWorkoutView: View {
                 setID: set.id,
                 expectedRevision: draft.revision
             )
+            undoFeedbackTrigger &+= 1
             do {
                 try liveWorkoutCoordinator.localSetWasUndone(localSetID: set.id)
             } catch {
@@ -2894,7 +3003,7 @@ struct ActiveWorkoutView: View {
                 reportStatus(message, true)
             }
             if recordedSetConfirmation?.setID == set.id {
-                recordedSetConfirmation = nil
+                dismissRecordedSetConfirmation()
             }
             guard isLatest else {
                 applyActiveWorkoutActionStatus(
@@ -2953,6 +3062,7 @@ struct ActiveWorkoutView: View {
                 restoringUndoableSetID: batch.restoringUndoableSetID,
                 expectedRevision: draft.revision
             )
+            undoFeedbackTrigger &+= 1
             do {
                 try liveWorkoutCoordinator.localSetsWereUndone(localSetIDs: reversedSetIDs)
             } catch {
@@ -3516,6 +3626,7 @@ struct ActiveWorkoutView: View {
     /// updates (the Live Activity follows the draft publisher).
     private func deleteSet(_ set: ActiveWorkoutSet, draft: ActiveWorkoutDraft) {
         guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
+            errorFeedbackTrigger &+= 1
             show(LiveWorkoutSidecarError.invalidState)
             return
         }
@@ -3527,6 +3638,7 @@ struct ActiveWorkoutView: View {
                 isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
             )
             forgetTransientState(forSetIDs: [set.id])
+            deleteFeedbackTrigger &+= 1
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
                 draft: updated,
                 store: activeWorkoutStore,
@@ -3561,6 +3673,7 @@ struct ActiveWorkoutView: View {
                 isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
             )
             collapsedExerciseIDs.remove(exercise.id)
+            deleteFeedbackTrigger &+= 1
             if pendingFinishExerciseID == exercise.id { pendingFinishExerciseID = nil }
             forgetTransientState(forSetIDs: Set(exercise.sets.map(\.id)))
             let restOutcome = try ActiveWorkoutRestReconciler.reconcile(
@@ -3595,7 +3708,7 @@ struct ActiveWorkoutView: View {
         if let focused = focusedWeightSetID, ids.contains(focused) { focusedWeightSetID = nil }
         if let voiceID = voiceCommandSetID, ids.contains(voiceID) { cancelVoiceCommand() }
         if let confirmation = recordedSetConfirmation, ids.contains(confirmation.setID) {
-            recordedSetConfirmation = nil
+            dismissRecordedSetConfirmation()
         }
     }
 
@@ -3721,6 +3834,7 @@ struct ActiveWorkoutView: View {
         _ error: Error,
         liveQueueFailure: String?
     ) {
+        errorFeedbackTrigger &+= 1
         guard let liveQueueFailure else {
             show(error)
             return
@@ -3771,7 +3885,7 @@ struct ActiveWorkoutView: View {
     /// "Записано: 80 кг × 8" with an "Отменить" action wired to the same
     /// undo path as a completed row's long-press "Отменить подход".
     private func recordedSetConfirmationBanner(_ confirmation: (message: String, setID: UUID)) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(GymTheme.primary)
                 .accessibilityHidden(true)
@@ -3785,15 +3899,19 @@ struct ActiveWorkoutView: View {
                 if let draft = currentDraft, let set = activeSet(id: confirmation.setID) {
                     undoLatestSet(set, draft: draft)
                 }
-                recordedSetConfirmation = nil
+                dismissRecordedSetConfirmation()
             } label: {
                 Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
                     .font(.subheadline.weight(.semibold))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GymPressableStyle())
             .foregroundStyle(GymTheme.primary)
         }
-        .padding(12)
+        // The Undo target is 44pt tall, so the banner needs little vertical padding.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
@@ -3812,7 +3930,7 @@ struct ActiveWorkoutView: View {
         _ batch: RecordedBatchUndo,
         draft: ActiveWorkoutDraft
     ) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(GymTheme.primary)
                 .accessibilityHidden(true)
@@ -3827,11 +3945,15 @@ struct ActiveWorkoutView: View {
             } label: {
                 Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
                     .font(.subheadline.weight(.semibold))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GymPressableStyle())
             .foregroundStyle(GymTheme.primary)
         }
-        .padding(12)
+        // The Undo target is 44pt tall, so the banner needs little vertical padding.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
@@ -3875,7 +3997,7 @@ struct ActiveWorkoutView: View {
         draft: ActiveWorkoutDraft
     ) {
         cancelVoiceCommand()
-        recordedSetConfirmation = nil
+        dismissRecordedSetConfirmation()
         let language = gymCurrentLanguageCode()
         guard case .available = voiceTranscriptionService.availability(languageCode: language) else {
             voiceCommandSetID = set.id

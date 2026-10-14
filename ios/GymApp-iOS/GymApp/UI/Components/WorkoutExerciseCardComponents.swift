@@ -372,6 +372,136 @@ extension View {
 
 // MARK: - Steppers
 
+/// Timing for hold-to-repeat steppers (DESIGN.md Components > Steppers). Times are
+/// seconds since press-down. Pure, so the schedule is unit-testable.
+enum GymStepRepeatSchedule {
+    /// First repeat after the press has been held this long.
+    static let initialDelay: TimeInterval = 0.35
+    /// 8 steps/s from the first repeat.
+    static let slowInterval: TimeInterval = 1.0 / 8.0
+    /// 16 steps/s once the press has been held this long.
+    static let accelerationAfter: TimeInterval = 1.5
+    static let fastInterval: TimeInterval = 1.0 / 16.0
+    /// Selection haptic cap: at most 10 per second while repeating.
+    static let minHapticInterval: TimeInterval = 0.1
+
+    /// Press-relative time of the repeat step after the one at `previous`
+    /// (`nil` = no repeat yet, so the first one).
+    static func nextStepTime(after previous: TimeInterval?) -> TimeInterval {
+        guard let previous else { return initialDelay }
+        return previous + (previous >= accelerationAfter ? fastInterval : slowInterval)
+    }
+
+    /// How many repeat steps have fired once the press has been held `elapsed`.
+    static func repeatStepCount(heldFor elapsed: TimeInterval) -> Int {
+        var count = 0
+        var time = nextStepTime(after: nil)
+        while time <= elapsed {
+            count += 1
+            time = nextStepTime(after: time)
+        }
+        return count
+    }
+
+    /// Haptic throttle: a tick is allowed when none has played within `minHapticInterval`.
+    static func shouldEmitHaptic(lastEmittedAt: TimeInterval?, at time: TimeInterval) -> Bool {
+        guard let lastEmittedAt else { return true }
+        return time - lastEmittedAt >= minHapticInterval - 0.000_001
+    }
+}
+
+/// Drives the repeat loop of one step button. Holds the latest step closure so the
+/// loop never replays a stale one, and stops as soon as the button is disabled
+/// (min/max reached) or released.
+@MainActor
+private final class GymStepRepeatDriver {
+    var step: () -> Void = {}
+    var haptic: () -> Void = {}
+    var isDisabled = false
+    private var task: Task<Void, Never>?
+    private var staleClear: Task<Void, Never>?
+    private var lastHapticAt: TimeInterval?
+    /// True once a repeat fired during the current press, so the Button's release
+    /// action does not add one more step.
+    private var repeated = false
+
+    func pressChanged(_ pressed: Bool) {
+        task?.cancel()
+        task = nil
+        if !pressed {
+            // A cancelled hold (scroll) never runs the action; do not let the flag
+            // swallow a later accessibility activation.
+            if repeated {
+                staleClear = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    if !Task.isCancelled { self?.repeated = false }
+                }
+            }
+            return
+        }
+        staleClear?.cancel()
+        repeated = false
+        lastHapticAt = nil
+        let clock = ContinuousClock()
+        let start = clock.now
+        task = Task { [weak self] in
+            var previous: TimeInterval?
+            while !Task.isCancelled {
+                let due = GymStepRepeatSchedule.nextStepTime(after: previous)
+                try? await Task.sleep(until: start + .seconds(due), clock: clock)
+                guard !Task.isCancelled, let self, !self.isDisabled else { return }
+                self.repeated = true
+                self.fire(at: due)
+                previous = due
+            }
+        }
+    }
+
+    /// Release action of the Button: one step unless the hold already repeated.
+    func tap() {
+        if repeated {
+            repeated = false
+            return
+        }
+        lastHapticAt = nil
+        fire(at: 0)
+    }
+
+    private func fire(at time: TimeInterval) {
+        step()
+        if GymStepRepeatSchedule.shouldEmitHaptic(lastEmittedAt: lastHapticAt, at: time) {
+            lastHapticAt = time
+            haptic()
+        }
+    }
+}
+
+/// Step button: a tap is one step; holding repeats (see `GymStepRepeatSchedule`)
+/// and releasing stops at once. `step` must apply exactly what a single tap does
+/// (same min/max and allowed-weight rules). Each applied step plays the selection
+/// haptic in the same update as the value change.
+private struct GymRepeatStepButton<Label: View>: View {
+    let isDisabled: Bool
+    /// Pressed fill for the capsule half this button covers.
+    var highlight: GymPressHighlight?
+    let step: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    @State private var driver = GymStepRepeatDriver()
+    @State private var hapticTick = 0
+
+    var body: some View {
+        // The repeat loop outlives this render; keep it pointed at the latest closure.
+        driver.step = step
+        driver.isDisabled = isDisabled
+        driver.haptic = { hapticTick &+= 1 }
+        return Button(action: driver.tap, label: label)
+            .buttonStyle(GymPressableStyle(highlight: highlight, onPressChange: { driver.pressChanged($0) }))
+            .disabled(isDisabled)
+            .sensoryFeedback(.selection, trigger: hapticTick)
+    }
+}
+
 /// One slim, equal-height pill shared by the weight and reps rows: a step
 /// button at each end (44pt tap target via a larger button frame), a tiny
 /// center label, and a 32–36pt-tall visual capsule centered within that larger
@@ -391,7 +521,11 @@ struct GymStepCapsule: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: minusAction) {
+            GymRepeatStepButton(
+                isDisabled: minusDisabled,
+                highlight: GymPressHighlight(side: .leading, color: GymTheme.surfaceVariant, height: 34),
+                step: minusAction
+            ) {
                 Group {
                     if useSymbolGlyphs {
                         Image(systemName: minusLabel)
@@ -402,14 +536,17 @@ struct GymStepCapsule: View {
                 .font(useSymbolGlyphs ? .body.weight(.semibold) : .caption2.weight(.bold))
                 .frame(minWidth: 44, minHeight: 44)
             }
-            .disabled(minusDisabled)
 
             Text(centerLabel)
                 .font(.caption2)
                 .foregroundStyle(GymTheme.textSecondary)
                 .frame(maxWidth: .infinity)
 
-            Button(action: plusAction) {
+            GymRepeatStepButton(
+                isDisabled: plusDisabled,
+                highlight: GymPressHighlight(side: .trailing, color: GymTheme.surfaceVariant, height: 34),
+                step: plusAction
+            ) {
                 Group {
                     if useSymbolGlyphs {
                         Image(systemName: plusLabel)
@@ -420,9 +557,7 @@ struct GymStepCapsule: View {
                 .font(useSymbolGlyphs ? .body.weight(.semibold) : .caption2.weight(.bold))
                 .frame(minWidth: 44, minHeight: 44)
             }
-            .disabled(plusDisabled)
         }
-        .buttonStyle(.plain)
         .foregroundStyle(GymTheme.primary)
         .background(alignment: .center) {
             Capsule().fill(GymTheme.surface).frame(height: 34)
@@ -441,10 +576,15 @@ struct GymStepCapsule: View {
 /// "−2,5   вес   +2,5" capsule: honors a machine's allowed weights and shows
 /// the nominal step even when that direction is blocked.
 struct GymWeightStepCapsule: View {
-    let weight: Double
+    @Binding var weight: Double
     var allowedWeights: [Double] = []
     var disabled = false
-    let onChange: (Double) -> Void
+
+    /// One step, computed from the current weight at call time so hold-to-repeat
+    /// never replays a stale value.
+    private func step(_ direction: Int) {
+        weight = TrainingTools.stepWeight(weight, direction: direction, allowed: allowedWeights)
+    }
 
     var body: some View {
         // Nominal step shown even when that direction is blocked (e.g. at
@@ -468,17 +608,17 @@ struct GymWeightStepCapsule: View {
         return GymStepCapsule(
             minusLabel: "−" + minusText,
             minusDisabled: disabled || !minusCanMove,
-            minusAction: { onChange(minusWeight) },
+            minusAction: { step(-1) },
             centerLabel: gymText("weight", "вага", "вес", languageCode: gymCurrentLanguageCode()),
             plusLabel: "+" + plusText,
             plusDisabled: disabled || !plusCanMove,
-            plusAction: { onChange(plusWeight) },
+            plusAction: { step(1) },
             accessibilityLabelText: gymText("Weight", "Вага", "Вес", languageCode: gymCurrentLanguageCode()),
             accessibilityValueText: "\(weight.formatted(.number.locale(gymAppLocale()))) \(gymLocalized("kg"))",
             adjustableAction: { direction in
                 switch direction {
-                case .increment: if plusCanMove { onChange(plusWeight) }
-                case .decrement: if minusCanMove { onChange(minusWeight) }
+                case .increment: if plusCanMove { step(1) }
+                case .decrement: if minusCanMove { step(-1) }
                 @unknown default: break
                 }
             }
@@ -556,7 +696,7 @@ struct GymSetDeleteButton: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GymPressableStyle())
         .disabled(disabled)
         .accessibilityLabel(accessibilityLabelText)
     }
@@ -631,7 +771,7 @@ struct GymSetEditorCapsules: View {
         return GymSetValueCapsule(
             minusSystemImage: "minus",
             minusDisabled: disabled || !minusCanMove,
-            minusAction: { weight = targets.minus },
+            minusAction: { weight = gymWeightStepTargets(weight: weight, allowedWeights: allowedWeights).minus },
             minusAccessibilityLabel: gymText(
                 "Decrease weight by \(minusText) \(kg)",
                 "Зменшити вагу на \(minusText) \(kg)",
@@ -640,7 +780,7 @@ struct GymSetEditorCapsules: View {
             ),
             plusSystemImage: "plus",
             plusDisabled: disabled || !plusCanMove,
-            plusAction: { weight = targets.plus },
+            plusAction: { weight = gymWeightStepTargets(weight: weight, allowedWeights: allowedWeights).plus },
             plusAccessibilityLabel: gymText(
                 "Increase weight by \(plusText) \(kg)",
                 "Збільшити вагу на \(plusText) \(kg)",
@@ -831,6 +971,7 @@ private struct GymSetValueCapsule<Center: View>: View {
     var body: some View {
         GymSetValueCapsuleLayout {
             stepButton(
+                side: .leading,
                 systemImage: minusSystemImage,
                 disabled: minusDisabled,
                 label: minusAccessibilityLabel,
@@ -838,6 +979,7 @@ private struct GymSetValueCapsule<Center: View>: View {
             )
             center()
             stepButton(
+                side: .trailing,
                 systemImage: plusSystemImage,
                 disabled: plusDisabled,
                 label: plusAccessibilityLabel,
@@ -858,20 +1000,26 @@ private struct GymSetValueCapsule<Center: View>: View {
     }
 
     private func stepButton(
+        side: GymPressHighlight.Side,
         systemImage: String,
         disabled: Bool,
         label: String,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        // The capsule is already `surfaceVariant`, so the pressed half gets a primary wash.
+        GymRepeatStepButton(
+            isDisabled: disabled,
+            highlight: GymPressHighlight(
+                side: side, color: GymTheme.primary.opacity(0.14), height: gymSetEditorCapsuleHeight, inset: 2
+            ),
+            step: action
+        ) {
             Image(systemName: systemImage)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(GymTheme.primary.opacity(disabled ? 0.38 : 1))
                 .frame(maxWidth: .infinity, minHeight: gymSetEditorCapsuleHeight, maxHeight: .infinity)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .disabled(disabled)
         .accessibilityLabel(label)
     }
 }
