@@ -160,6 +160,10 @@ html.frame-blocked body {
 
 * { box-sizing: border-box; }
 
+html {
+  touch-action: manipulation;
+}
+
 html,
 body {
   height: 100%;
@@ -547,8 +551,11 @@ a:focus-visible,
   cursor: pointer;
 }
 
-.exercise-filter-option:hover,
 .exercise-filter-option:focus-visible { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .exercise-filter-option:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+}
 .exercise-filter-option svg { flex: 0 0 auto; width: 20px; height: 20px; }
 
 .exercise-filter-check {
@@ -870,9 +877,11 @@ a:focus-visible,
   cursor: pointer;
 }
 
-.theme-option:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--sage) 8%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .theme-option:hover {
+    color: var(--text);
+    background: color-mix(in srgb, var(--sage) 8%, transparent);
+  }
 }
 
 .theme-option.selected {
@@ -926,9 +935,14 @@ a:focus-visible,
   cursor: pointer;
 }
 
-.icon-button:active,
-.icon-button:hover {
+.icon-button:active {
   background: color-mix(in srgb, var(--sage) 10%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .icon-button:hover {
+    background: color-mix(in srgb, var(--sage) 10%, transparent);
+  }
 }
 
 .topbar-action {
@@ -2053,9 +2067,14 @@ svg.filled-icon.small-icon {
 
 .hero-icon-button { color: var(--hero-action-label); }
 
-.hero-icon-button:hover,
 .hero-icon-button:active {
   background: color-mix(in srgb, var(--hero-action) 12%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hero-icon-button:hover {
+    background: color-mix(in srgb, var(--hero-action) 12%, transparent);
+  }
 }
 
 .section-title,
@@ -2392,10 +2411,16 @@ svg.filled-icon.small-icon {
   text-decoration: none;
 }
 
-.store-download-link:hover,
 .store-download-link:focus-visible {
   border-color: color-mix(in srgb, var(--sage) 54%, var(--outline));
   background: color-mix(in srgb, var(--sage) 8%, var(--surface-strong));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .store-download-link:hover {
+    border-color: color-mix(in srgb, var(--sage) 54%, var(--outline));
+    background: color-mix(in srgb, var(--sage) 8%, var(--surface-strong));
+  }
 }
 
 .store-download-icon {
@@ -2641,7 +2666,7 @@ svg.filled-icon.small-icon {
   font-weight: 500;
   line-height: 20px;
   cursor: pointer;
-  transition: transform 120ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .button.secondary {
@@ -2673,11 +2698,46 @@ svg.filled-icon.small-icon {
   font-size: 13px;
 }
 
-.button:not(:disabled):hover {
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--sage) 16%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .button:not(:disabled):hover {
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--sage) 16%, transparent);
+  }
 }
 
-.button:not(:disabled):active { transform: translateY(1px); }
+/* Press feedback (DESIGN.md motion.press): scale .97 in 100ms, ~200ms ease-out release; the tab icon scales .92. */
+.icon-button,
+.tab-button .tab-icon,
+.active-set-step,
+.set-editor-step,
+.active-set-rest-pill,
+.active-set-confirmation-undo,
+.active-set-log-compact {
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.active-set-step,
+.set-editor-step {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.button:not(:disabled):active,
+.buttonlike:active,
+.icon-button:active,
+.active-set-step:not(:disabled):active,
+.set-editor-step:not(:disabled):active,
+.active-set-rest-pill:not(:disabled):active,
+.active-set-confirmation-undo:active,
+.active-set-log-compact:not(:disabled):active {
+  transform: scale(0.97);
+  transition: transform 100ms ease-out;
+}
+
+.tab-button:active .tab-icon {
+  transform: scale(0.92);
+  transition: transform 100ms ease-out;
+}
 
 .button.full,
 .full { width: 100%; }
@@ -2813,10 +2873,16 @@ button.leaderboard-row {
   cursor: pointer;
 }
 
-.social-friend-row:hover,
 .social-friend-row:focus-visible {
   border-color: color-mix(in srgb, var(--sage) 60%, var(--outline-variant));
   background: var(--surface-highlight);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .social-friend-row:hover {
+    border-color: color-mix(in srgb, var(--sage) 60%, var(--outline-variant));
+    background: var(--surface-highlight);
+  }
 }
 
 .profile-hub-passport {
@@ -3238,10 +3304,16 @@ button.leaderboard-row {
 .friend-workout-choice > span { min-width: 0; display: grid; gap: 3px; }
 .friend-workout-choice small { color: var(--muted); }
 .friend-workout-choice b { color: var(--sage); font-size: 12px; }
-.friend-workout-choice:hover,
 .friend-workout-choice:focus-visible {
   border-color: color-mix(in srgb, var(--sage) 58%, var(--outline-variant));
   background: var(--surface-highlight);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .friend-workout-choice:hover {
+    border-color: color-mix(in srgb, var(--sage) 58%, var(--outline-variant));
+    background: var(--surface-highlight);
+  }
 }
 
 .rank-place {
@@ -3901,7 +3973,9 @@ button.leaderboard-row {
   font-weight: 700;
   cursor: pointer;
 }
-.focus-lens-action:hover { background: color-mix(in srgb, var(--hero-action) 88%, var(--hero-text)); }
+@media (hover: hover) and (pointer: fine) {
+  .focus-lens-action:hover { background: color-mix(in srgb, var(--hero-action) 88%, var(--hero-text)); }
+}
 .focus-lens-action:active { transform: scale(0.98); }
 .focus-lens-action.secondary {
   color: var(--hero-action-label);
@@ -4110,7 +4184,9 @@ button.leaderboard-row {
   font-weight: 700;
   cursor: pointer;
 }
-.focus-lens-action:hover { background: color-mix(in srgb, var(--hero-action) 88%, var(--hero-text)); }
+@media (hover: hover) and (pointer: fine) {
+  .focus-lens-action:hover { background: color-mix(in srgb, var(--hero-action) 88%, var(--hero-text)); }
+}
 .focus-lens-action:active { transform: scale(0.98); }
 .focus-lens-action.secondary {
   color: var(--hero-action-label);
@@ -4299,8 +4375,11 @@ button.leaderboard-row {
   cursor: pointer;
 }
 
-.focus-lens-edit:hover,
 .focus-lens-edit:focus-visible { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
+
+@media (hover: hover) and (pointer: fine) {
+  .focus-lens-edit:hover { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
+}
 
 
 .focus-lens-discard {
@@ -4505,10 +4584,8 @@ button.leaderboard-row {
   min-height: 44px;
   padding-inline: 12px;
   cursor: pointer;
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 120ms ease;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-
-.buttonlike:active { transform: translateY(1px); }
 
 label {
   display: grid;
@@ -4703,8 +4780,11 @@ textarea:focus {
 }
 
 .plan-menu-option.danger { color: var(--danger, #c0392b); }
-.plan-menu-option:hover,
 .plan-menu-option:focus-visible { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .plan-menu-option:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+}
 .plan-menu-option svg { flex: 0 0 auto; width: 20px; height: 20px; }
 
 .active-workout-hero,
@@ -4763,7 +4843,8 @@ textarea:focus {
   font-size: 11px;
 }
 
-.active-live-participant-panel:not([hidden]) {
+/* One-shot: app.js emits data-enter only on the render that follows a participant tab switch. */
+.active-live-participant-panel[data-enter]:not([hidden]) {
   animation: active-live-panel-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -4899,6 +4980,19 @@ textarea:focus {
   background: var(--surface);
 }
 
+/* One-shot enter (data-enter set once per confirmation by activeSetConfirmationMarkup). */
+.active-set-confirmation[data-enter] { animation: active-enter-drop 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+@keyframes active-enter-drop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes active-enter-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .active-set-confirmation-icon { display: grid; flex: 0 0 auto; color: var(--primary); }
 .active-set-confirmation-icon svg { width: 20px; height: 20px; }
 
@@ -4957,6 +5051,22 @@ textarea:focus {
 }
 
 .active-set-rest[hidden] { display: none; }
+
+/* Rest ran out: the timer is highlighted for ~600ms while the pills fade out over 150ms, then app.js hides the group. */
+.active-set-rest-pill { transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), opacity 150ms cubic-bezier(0.22, 1, 0.36, 1); }
+.active-set-rest.rest-ended .active-set-rest-pill { opacity: 0; pointer-events: none; }
+.active-set-rest.rest-ended .active-set-rest-time {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  animation: active-rest-ended 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes active-rest-ended {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
 
 .active-set-rest-time {
   margin-right: 4px;
@@ -5107,6 +5217,15 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 .active-set-check svg { width: 16px; height: 16px; }
+
+/* One-shot set-completion motion: data-enter is emitted only on the render right after a record. */
+.active-set-check[data-enter] { animation: active-set-check-pop 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.active-set-row.current[data-enter] { animation: active-live-panel-enter 150ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+@keyframes active-set-check-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
 .active-set-chevron { margin-left: auto; display: grid; color: var(--muted); }
 .active-set-chevron svg { width: 16px; height: 16px; }
 .active-set-details[open] .active-set-chevron { transform: rotate(180deg); }
@@ -5885,16 +6004,31 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .body-region.heat-3 { fill: var(--heat-3); }
 .body-region.heat-4 { fill: var(--heat-4); }
 
-.body-region.heat-0[data-action]:hover,
 .body-region.heat-0.selected { stroke: var(--heat-text-0); stroke-width: 0.34; }
-.body-region.heat-1[data-action]:hover,
+
+@media (hover: hover) and (pointer: fine) {
+  .body-region.heat-0[data-action]:hover { stroke: var(--heat-text-0); stroke-width: 0.34; }
+}
 .body-region.heat-1.selected { stroke: var(--heat-text-1); stroke-width: 0.34; }
-.body-region.heat-2[data-action]:hover,
+
+@media (hover: hover) and (pointer: fine) {
+  .body-region.heat-1[data-action]:hover { stroke: var(--heat-text-1); stroke-width: 0.34; }
+}
 .body-region.heat-2.selected { stroke: var(--heat-text-2); stroke-width: 0.34; }
-.body-region.heat-3[data-action]:hover,
+
+@media (hover: hover) and (pointer: fine) {
+  .body-region.heat-2[data-action]:hover { stroke: var(--heat-text-2); stroke-width: 0.34; }
+}
 .body-region.heat-3.selected { stroke: var(--heat-text-3); stroke-width: 0.34; }
-.body-region.heat-4[data-action]:hover,
+
+@media (hover: hover) and (pointer: fine) {
+  .body-region.heat-3[data-action]:hover { stroke: var(--heat-text-3); stroke-width: 0.34; }
+}
 .body-region.heat-4.selected { stroke: var(--heat-text-4); stroke-width: 0.34; }
+
+@media (hover: hover) and (pointer: fine) {
+  .body-region.heat-4[data-action]:hover { stroke: var(--heat-text-4); stroke-width: 0.34; }
+}
 
 .body-labels {
   display: flex;
@@ -7086,9 +7220,28 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
   .focus-lens-action { transition: none; }
   .focus-lens-action:active { transform: none; }
+  .button:not(:disabled):active,
+  .buttonlike:active,
+  .icon-button:active,
+  .active-set-step:not(:disabled):active,
+  .set-editor-step:not(:disabled):active,
+  .active-set-rest-pill:not(:disabled):active,
+  .active-set-confirmation-undo:active,
+  .active-set-log-compact:not(:disabled):active,
+  .tab-button:active .tab-icon {
+    transform: none;
+    opacity: 0.7;
+  }
   .onboarding-spotlight { transition: none; }
   .social-push-target { animation: none; }
-  .active-live-participant-panel { animation: none; }
+  /* Opacity-only entries; the highlight stays but does not move; the ring jumps. */
+  .active-live-participant-panel[data-enter]:not([hidden]),
+  .active-set-row.current[data-enter] { animation: active-enter-fade 150ms linear !important; }
+  .active-set-confirmation[data-enter],
+  .active-set-check[data-enter] { animation: active-enter-fade 150ms linear !important; }
+  .active-set-rest.rest-ended .active-set-rest-time { animation: none; }
+  .active-set-rest-pill { transition: opacity 150ms linear !important; }
+  .active-hero-ring-arc { transition: none !important; }
 }
 
 .training-week-review { display: grid; gap: 12px; }
@@ -7244,10 +7397,16 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   background: color-mix(in srgb, var(--hero-action) 12%, var(--hero-tile));
 }
 
-.today-friend-pill:hover,
 .today-friend-pill:focus-visible { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
-.today-friend-pill.invite:hover,
+
+@media (hover: hover) and (pointer: fine) {
+  .today-friend-pill:hover { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
+}
 .today-friend-pill.invite:focus-visible { background: color-mix(in srgb, var(--hero-action) 18%, var(--hero-tile)); }
+
+@media (hover: hover) and (pointer: fine) {
+  .today-friend-pill.invite:hover { background: color-mix(in srgb, var(--hero-action) 18%, var(--hero-tile)); }
+}
 
 .today-friend-badge {
   min-width: 22px;
@@ -7641,8 +7800,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   font-weight: 600;
   cursor: pointer;
 }
-.topbar-text-action:active,
-.topbar-text-action:hover { background: color-mix(in srgb, var(--brand-fill) 10%, transparent); }
+.topbar-text-action:active { background: color-mix(in srgb, var(--brand-fill) 10%, transparent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .topbar-text-action:hover { background: color-mix(in srgb, var(--brand-fill) 10%, transparent); }
+}
 
 .active-workout-hero {
   gap: 10px;
@@ -7701,7 +7863,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 .active-hero-ring svg { display: block; width: 68px; height: 68px; }
 .active-hero-ring-track { stroke: var(--hero-track); }
-.active-hero-ring-arc { stroke: var(--hero-accent); }
+.active-hero-ring-arc { stroke: var(--hero-accent); transition: stroke-dasharray 300ms cubic-bezier(0.22, 1, 0.36, 1); }
 .active-hero-ring-text {
   position: absolute;
   inset: 0;
@@ -8064,9 +8226,14 @@ button.workout-template-row small {
   font-size: 12px;
 }
 
-button.workout-template-row:hover,
 button.workout-template-row:focus-visible {
   border-color: color-mix(in srgb, var(--sage) 60%, var(--outline-variant));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.workout-template-row:hover {
+    border-color: color-mix(in srgb, var(--sage) 60%, var(--outline-variant));
+  }
 }
 
 /* Muscle map tiles and period chips stay whole at 390px: one-line chips, labels that fit without clipping. */

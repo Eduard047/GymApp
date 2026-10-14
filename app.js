@@ -11992,7 +11992,19 @@ function render() {
     }
   } finally {
     renderDateFormatters = previousDateFormatters;
+    const settledRing = pendingEnterAnimation?.kind === "set-record" ? pendingEnterAnimation : null;
+    pendingEnterAnimation = null;
+    if (settledRing) requestAnimationFrame(() => requestAnimationFrame(settleActiveRingProgress));
   }
+}
+
+// The ring is rebuilt on every render, so after a record it starts at the previous arc and moves to the
+// new one on a later frame; the CSS transition does the rest.
+function settleActiveRingProgress() {
+  document.querySelectorAll?.("[data-ring-to]").forEach(arc => {
+    arc.style.strokeDasharray = arc.getAttribute("data-ring-to");
+    arc.removeAttribute("data-ring-to");
+  });
 }
 
 function pendingActivationScreen() {
@@ -13059,12 +13071,77 @@ function personalRecordSetIds(workout = activeWorkout, sessions = state.sessions
   return records;
 }
 
-// A newly logged record gets a short vibration where the browser supports it;
+// Haptics (DESIGN.md): one helper, Vibration API only (Android Chrome). iOS Safari/PWA has none, so every
+// haptic is paired with a visual change and this stays a silent no-op there. Haptics are not motion, so
+// prefers-reduced-motion does not mute them.
+const HAPTIC_PATTERNS = Object.freeze({
+  record: 15,
+  pr: Object.freeze([20, 40, 20]),
+  undo: 8,
+  tick: 6,
+  destructive: 30,
+  error: Object.freeze([30, 50, 30]),
+  restEnd: Object.freeze([60, 80, 60])
+});
+
+// One-shot entry animations. render() rebuilds the whole tree, so a plain CSS animation would replay on
+// every render. A caller arms the marker right before the one render that introduces the element, the
+// markup emits data-enter only while it is armed, and render()'s finally clears it. CSS animates only
+// [data-enter].
+let pendingEnterAnimation = null;
+
+function armEnterAnimation(kind, details = {}) {
+  pendingEnterAnimation = { kind, ...details };
+}
+
+function enterAnimationFor(kind) {
+  return pendingEnterAnimation?.kind === kind ? pendingEnterAnimation : null;
+}
+
+// Rest timer ticks land on the whole-second boundary of the nearest running rest deadline (so the digits
+// change when the rest actually crosses a second); with no rest running, every 1000ms for the elapsed clock.
+function msUntilNextTimerTick(now, deadlines) {
+  const remainders = (deadlines || [])
+    .filter(deadline => Number.isFinite(deadline) && deadline > now)
+    .map(deadline => (deadline - now) % 1000 || 1000);
+  const next = remainders.length ? Math.min(...remainders) : 1000;
+  return Math.max(20, next);
+}
+const HAPTIC_TICK_MIN_INTERVAL_MS = 100; // stepper ticks stay at or below 10 per second
+let lastHapticTickAt = -Infinity;
+// A recorded set arms this; render() turns it into the PR pattern when the set is a new record, otherwise
+// the caller fires the plain record-set pattern after render. Never both.
+let recordSetHapticPending = false;
+
+function haptic(kind) {
+  const pattern = HAPTIC_PATTERNS[kind];
+  if (pattern === undefined) return false;
+  try {
+    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return false;
+    if (kind === "tick") {
+      const now = Date.now();
+      if (now >= lastHapticTickAt && now - lastHapticTickAt < HAPTIC_TICK_MIN_INTERVAL_MS) return false;
+      lastHapticTickAt = now;
+    }
+    return navigator.vibrate(Array.isArray(pattern) ? [...pattern] : pattern) === true;
+  } catch {
+    return false; // Vibration is optional.
+  }
+}
+
+function flushRecordSetHaptic() {
+  if (!recordSetHapticPending) return;
+  recordSetHapticPending = false;
+  haptic("record");
+}
+
+// A newly logged record gets the PR vibration where the browser supports it;
 // opening a workout that already holds records does not.
 function notifyNewPersonalRecords(workout, ids) {
   const known = knownPersonalRecords.workoutId === workout.id ? knownPersonalRecords.ids : null;
   if (known && [...ids].some(id => !known.has(id))) {
-    try { navigator.vibrate?.(40); } catch { /* Vibration is optional. */ }
+    recordSetHapticPending = false;
+    haptic("pr");
   }
   knownPersonalRecords = { workoutId: workout.id, ids };
 }
@@ -13411,7 +13488,10 @@ function activeSetConfirmationMarkup(workout, undoableSetId) {
   // The polite live region speaks once per confirmation: later renders keep the region but leave it empty.
   const announcement = confirmation.announced ? "" : confirmation.announcement;
   confirmation.announced = true;
-  return `<div class="active-set-confirmation" data-active-set-confirmation="${setId}"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" aria-hidden="true">${escapeHtml(confirmation.message)}</span><span class="sr-only" role="status" aria-live="polite">${escapeHtml(announcement)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-set" data-id="${setId}">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-set-confirmation" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
+  // Enter animation plays once per confirmation, like the announcement.
+  const enter = confirmation.entered ? "" : " data-enter";
+  confirmation.entered = true;
+  return `<div class="active-set-confirmation"${enter} data-active-set-confirmation="${setId}"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" aria-hidden="true">${escapeHtml(confirmation.message)}</span><span class="sr-only" role="status" aria-live="polite">${escapeHtml(announcement)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-set" data-id="${setId}">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-set-confirmation" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
 }
 
 function trackActiveSetMutation(pending) {
@@ -13583,6 +13663,7 @@ function beginActiveSetLongPress(event) {
 }
 
 let activeSetLongPressSwallowClick = false;
+let stepperHoldGesturesBound = false;
 
 // Called first by the delegated click handler (preventDefault also stops a <summary> toggle): eats exactly the click that follows a long-press that opened a row menu.
 function swallowActiveSetLongPressClick(event) {
@@ -13599,7 +13680,121 @@ function moveActiveSetLongPress(event) {
   }
 }
 
+// Hold-to-repeat on the weight/reps steppers (DESIGN.md Steppers). A tap is still the click (one step); a hold
+// steps from 350 ms, 8 steps/s, then 16 steps/s once 1.5 s have passed. Steps update the capsules in place
+// (no re-render), so the pressed button survives; if a render replaces it anyway the hold re-acquires it.
+const STEPPER_HOLD_SCHEDULE = Object.freeze({
+  firstRepeatMs: 350,
+  slowIntervalMs: 125, // 8 steps/s
+  fastAfterMs: 1500,
+  fastIntervalMs: 62.5 // 16 steps/s
+});
+const STEPPER_HOLD_CLICK_GRACE_MS = 500;
+const STEPPER_HOLD_ACTION = /^(active|saved|draft)-step-(weight|reps)$/;
+
+// Pure: time (ms since press) of the next repeat step after the one at `previousAtMs` (null = none yet).
+function stepperRepeatNextAtMs(previousAtMs = null, schedule = STEPPER_HOLD_SCHEDULE) {
+  if (previousAtMs == null) return schedule.firstRepeatMs;
+  return previousAtMs + (previousAtMs < schedule.fastAfterMs ? schedule.slowIntervalMs : schedule.fastIntervalMs);
+}
+
+function stepperStepFeedback(moved) {
+  if (moved) haptic("tick");
+  return moved;
+}
+
+let stepperHold = null;
+let stepperHoldSwallowClickUntil = 0;
+
+function stepperHoldKey(button) {
+  const data = button.dataset || {};
+  return { action: data.action, dir: data.dir, id: data.id, block: data.block, set: data.set };
+}
+
+function reacquireStepperButton(key) {
+  for (const candidate of app.querySelectorAll(`button[data-action="${key.action}"]`)) {
+    const data = candidate.dataset || {};
+    if (data.dir === key.dir && data.id === key.id && data.block === key.block && data.set === key.set) return candidate;
+  }
+  return null;
+}
+
+function endStepperHold(clickFollows = false) {
+  const hold = stepperHold;
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  stepperHold = null;
+  if (clickFollows && hold.repeated) stepperHoldSwallowClickUntil = Date.now() + STEPPER_HOLD_CLICK_GRACE_MS;
+}
+
+function stepperHoldTick() {
+  const hold = stepperHold;
+  if (!hold) return;
+  if (!hold.button?.isConnected) hold.button = reacquireStepperButton(hold.key);
+  const button = hold.button;
+  if (!button || button.disabled) return endStepperHold(false);
+  hold.repeated = true;
+  let moved = false;
+  try {
+    moved = handleStepperAction(button.dataset.action, button);
+  } catch { moved = false; }
+  if (!moved) {
+    // Limit reached: stop repeating, but still swallow the click that follows the release.
+    clearTimeout(hold.timer);
+    hold.timer = null;
+    return;
+  }
+  hold.nextAtMs = stepperRepeatNextAtMs(hold.nextAtMs);
+  hold.timer = setTimeout(stepperHoldTick, Math.max(0, hold.nextAtMs - (Date.now() - hold.startedAt)));
+}
+
+function handleStepperAction(action, el) {
+  const field = action.endsWith("-weight") ? "weight" : "reps";
+  const dir = Number(el.dataset.dir);
+  if (action.startsWith("draft-")) return stepperStepFeedback(applyDraftStep(Number(el.dataset.block), Number(el.dataset.set), field, dir));
+  if (action.startsWith("saved-")) return stepperStepFeedback(applySavedStep(Number(el.dataset.id), field, dir));
+  return stepperStepFeedback(applyActiveStep(Number(el.dataset.id), field, dir));
+}
+
+function beginStepperHold(event) {
+  if (event.isPrimary === false || event.button > 0) return;
+  const target = eventTargetElement(event);
+  const button = target?.closest?.("button.active-set-step, button.set-editor-step");
+  if (!button || button.disabled || !STEPPER_HOLD_ACTION.test(button.dataset?.action || "")) return;
+  endStepperHold(false);
+  stepperHoldSwallowClickUntil = 0;
+  try { button.setPointerCapture?.(event.pointerId); } catch { /* Capture is optional. */ }
+  const startedAt = Date.now();
+  stepperHold = {
+    button,
+    key: stepperHoldKey(button),
+    startedAt,
+    nextAtMs: stepperRepeatNextAtMs(null),
+    repeated: false,
+    timer: null
+  };
+  stepperHold.timer = setTimeout(stepperHoldTick, STEPPER_HOLD_SCHEDULE.firstRepeatMs);
+}
+
+// The release after a repeating hold still produces a click; eat it so the hold is not one step too many.
+function swallowStepperHoldClick(event) {
+  if (!stepperHoldSwallowClickUntil) return false;
+  const swallow = Date.now() <= stepperHoldSwallowClickUntil &&
+    Boolean(eventTargetElement(event)?.closest?.("button.active-set-step, button.set-editor-step"));
+  stepperHoldSwallowClickUntil = 0;
+  if (swallow) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+  }
+  return swallow;
+}
+
 function handleActiveSetContextMenu(event) {
+  if (stepperHold) {
+    // Long-pressing a stepper must not open the row's delete menu (or the native menu) mid-hold.
+    event.preventDefault();
+    return;
+  }
   const target = eventTargetElement(event);
   const menu = activeSetRowMenuTarget(target);
   if (!menu || target.closest("input, textarea")) return;
@@ -13629,7 +13824,8 @@ function activeWorkoutScreen() {
     ? `id="active-live-panel-self" role="tabpanel" aria-labelledby="active-live-tab-self" tabindex="${selfPanelHidden ? "-1" : "0"}" ${selfPanelHidden ? "hidden" : ""}`
     : "";
   const statusMessage = activeWorkoutStatusText();
-  return `${liveTabs}<div class="active-live-participant-panel" ${selfPanelAttributes}><section class="hero-panel active-workout-hero">
+  const panelEnter = enterAnimationFor("live-panel")?.participant === "self" ? " data-enter" : "";
+  return `${liveTabs}<div class="active-live-participant-panel"${panelEnter} ${selfPanelAttributes}><section class="hero-panel active-workout-hero">
       ${activeWorkoutHeroMarkup(workout, counts)}
       ${workout.note ? `<p class="active-workout-note"><strong>${t("note")}:</strong> ${escapeHtml(workout.note)}</p>` : ""}
     </section>
@@ -13675,8 +13871,14 @@ function activeWorkoutHeroMarkup(workout, counts) {
   const radius = 30.5;
   const circumference = 2 * Math.PI * radius;
   const ratio = Math.min(1, counts.completed / Math.max(1, counts.total));
+  const dash = value => `${(circumference * value).toFixed(2)} ${circumference.toFixed(2)}`;
+  // After a record the arc is drawn at the previous value and settles to the new one on a later frame.
+  const recorded = enterAnimationFor("set-record");
+  const from = recorded && recorded.previousCompleted !== counts.completed
+    ? Math.min(1, recorded.previousCompleted / Math.max(1, counts.total))
+    : null;
   const arc = ratio > 0
-    ? `<circle class="active-hero-ring-arc" cx="34" cy="34" r="${radius}" fill="none" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(circumference * ratio).toFixed(2)} ${circumference.toFixed(2)}" transform="rotate(-90 34 34)"/>`
+    ? `<circle class="active-hero-ring-arc" cx="34" cy="34" r="${radius}" fill="none" stroke-width="7" stroke-linecap="round" stroke-dasharray="${from === null ? dash(ratio) : dash(Math.max(0.0005, from))}"${from === null ? "" : ` data-ring-to="${dash(ratio)}"`} transform="rotate(-90 34 34)"/>`
     : "";
   return `<div class="active-hero-main" role="img" data-active-workout-hero aria-label="${escapeAttr(activeWorkoutHeroLabel(elapsedText, counts, exerciseName))}">
         <div class="active-hero-copy" aria-hidden="true">
@@ -13744,7 +13946,8 @@ function activeLivePeerWorkoutMarkup(workout = activeWorkout) {
     }).join("")}</div></section>`;
   }).join("");
   const hidden = activeLiveParticipantView !== "peer";
-  return `<section id="active-live-panel-peer" class="active-peer-view active-live-participant-panel" role="tabpanel" aria-labelledby="active-live-tab-peer" tabindex="${hidden ? "-1" : "0"}" ${hidden ? "hidden" : ""}>${exercises}</section>`;
+  const panelEnter = enterAnimationFor("live-panel")?.participant === "peer" ? " data-enter" : "";
+  return `<section id="active-live-panel-peer" class="active-peer-view active-live-participant-panel"${panelEnter} role="tabpanel" aria-labelledby="active-live-tab-peer" tabindex="${hidden ? "-1" : "0"}" ${hidden ? "hidden" : ""}>${exercises}</section>`;
 }
 
 function activeLiveWorkoutMarkup(workout = activeWorkout) {
@@ -14920,7 +15123,7 @@ function activeCompletedSetMarkup(set, setIndex, options) {
   const undo = undoable
     ? `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${setId}" aria-label="${escapeAttr(`${tx3("Undo set", "Скасувати підхід", "Отменить подход")} ${number}`)}">${tx3("Undo", "Скасувати", "Отменить")}</button>`
     : "";
-  return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""}${undoAny ? ` data-active-set-undo-any="${setId}" tabindex="0"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${undo}${restControls}</div></div>`;
+  return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""}${undoAny ? ` data-active-set-undo-any="${setId}" tabindex="0"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check"${String(enterAnimationFor("set-record")?.setId) === String(set.id) ? " data-enter" : ""} aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${undo}${restControls}</div></div>`;
 }
 
 // Every unrecorded row can be logged out of order; the first unrecorded set only keeps the "current" emphasis.
@@ -14971,7 +15174,7 @@ function activeCurrentSetMarkup(set, setIndex, options) {
   const deleteKey = canDelete
     ? setDeleteIconMarkup("delete-active-set", set.id, savedSetDeleteLabel(number, block ? exerciseDisplayName(block) : ""))
     : "";
-  return `<div class="active-set-row current" data-active-set-row="${setId}"${canDelete ? ` data-active-set-deletable="${setId}"` : ""} data-voice-phase="${activeSetVoicePhase(set.id)}" role="group" aria-label="${escapeAttr(label)}"><div class="active-set-current-head"><strong class="active-set-title">${tx3("Set", "Підхід", "Подход")} ${number}</strong>${plateCalculatorMarkup(plateWeight)}${previous}</div><div class="active-set-value-line">${activeSetInputMarkup(set, "weight", "active-set-weight-input", activeSetWeightLabel(number), ` size="5" placeholder="0"`)}<span class="active-set-unit">${tx3("kg", "кг", "кг")}</span><span class="active-set-times" aria-hidden="true">×</span><span class="active-set-reps-value" data-active-reps-display="${setId}" aria-hidden="true">${escapeHtml(repsText)}</span>${activeSetInputMarkup(set, "reps", "active-set-reps-input", activeSetRepsLabel(number), ` tabindex="-1"`)}</div><div class="active-set-stepper-row">${activeStepperMarkup(set.id, activeStepperState(block, weightText, repsText))}${deleteKey}</div>${activeSetVoiceContainerMarkup(setId)}</div>`;
+  return `<div class="active-set-row current"${enterAnimationFor("set-record") ? " data-enter" : ""} data-active-set-row="${setId}"${canDelete ? ` data-active-set-deletable="${setId}"` : ""} data-voice-phase="${activeSetVoicePhase(set.id)}" role="group" aria-label="${escapeAttr(label)}"><div class="active-set-current-head"><strong class="active-set-title">${tx3("Set", "Підхід", "Подход")} ${number}</strong>${plateCalculatorMarkup(plateWeight)}${previous}</div><div class="active-set-value-line">${activeSetInputMarkup(set, "weight", "active-set-weight-input", activeSetWeightLabel(number), ` size="5" placeholder="0"`)}<span class="active-set-unit">${tx3("kg", "кг", "кг")}</span><span class="active-set-times" aria-hidden="true">×</span><span class="active-set-reps-value" data-active-reps-display="${setId}" aria-hidden="true">${escapeHtml(repsText)}</span>${activeSetInputMarkup(set, "reps", "active-set-reps-input", activeSetRepsLabel(number), ` tabindex="-1"`)}</div><div class="active-set-stepper-row">${activeStepperMarkup(set.id, activeStepperState(block, weightText, repsText))}${deleteKey}</div>${activeSetVoiceContainerMarkup(setId)}</div>`;
 }
 
 function activeWorkoutSetMarkup(set, setIndex, options) {
@@ -26469,6 +26672,16 @@ function resolveModalDescendantFocus(modalElement, descriptor) {
   return null;
 }
 
+// Confirm taps of the active-workout deletes; the haptic fires only once the action was accepted (not on false).
+const HAPTIC_DESTRUCTIVE_ACTIONS = new Set([
+  "delete-active-set",
+  "confirm-delete-active-set",
+  "confirm-remove-active-exercise",
+  "confirm-discard-active",
+  "confirm-delete-set",
+  "confirm-remove-saved-exercise"
+]);
+
 async function handleAppActionClick(ev, el) {
   ev.stopPropagation();
   try {
@@ -26479,13 +26692,15 @@ async function handleAppActionClick(ev, el) {
     const invokedReturnFocus = stableActionReturnFocus(el.dataset.action, el);
     const actionGeneration = ++modalActionGeneration;
     const actionPromise = handleAction(el.dataset.action, el);
+    const destructiveHaptic = HAPTIC_DESTRUCTIVE_ACTIONS.has(el.dataset.action);
     const closedSynchronously = Boolean(previousModal && !modal);
     if (closedSynchronously) {
       restoreModalActionFocus(inheritedReturnFocus, invokedReturnFocus);
     } else {
       attachReturnFocusToOpenedModal(previousModal, inheritedReturnFocus, invokedReturnFocus);
     }
-    await actionPromise;
+    const actionResult = await actionPromise;
+    if (destructiveHaptic && actionResult !== false) haptic("destructive");
     if (actionGeneration === modalActionGeneration) {
       if (!closedSynchronously && previousModal && !modal) {
         restoreModalActionFocus(inheritedReturnFocus, invokedReturnFocus);
@@ -26506,6 +26721,7 @@ async function handleDelegatedAppClick(event) {
     swallowActiveSetLongPressClick(event);
     return false;
   }
+  if (swallowStepperHoldClick(event)) return false;
   const target = typeof event.target?.closest === "function"
     ? event.target
     : event.target?.parentElement;
@@ -26576,6 +26792,14 @@ function bindEvents(preservedModalFocus = null) {
     app.addEventListener("pointercancel", cancelActiveSetLongPress, { passive: true });
     app.addEventListener("contextmenu", handleActiveSetContextMenu);
     activeSetUndoGesturesBound = true;
+  }
+  if (!stepperHoldGesturesBound && typeof app.addEventListener === "function") {
+    app.addEventListener("pointerdown", beginStepperHold, { passive: true });
+    app.addEventListener("pointerup", () => endStepperHold(true), { passive: true });
+    app.addEventListener("pointercancel", () => endStepperHold(false), { passive: true });
+    app.addEventListener("lostpointercapture", () => endStepperHold(false), { passive: true });
+    window.addEventListener?.("blur", () => endStepperHold(false));
+    stepperHoldGesturesBound = true;
   }
   // DOM-light test hosts and older embedded shells without a stable event target
   // retain the direct binding path. Real browsers bind one click listener to
@@ -27174,6 +27398,7 @@ async function handleAction(action, el) {
     if (route().name !== "active" || !activeLiveParticipants()) return false;
     const participant = el.dataset.participant;
     if (!['self', 'peer'].includes(participant)) return false;
+    if (participant !== activeLiveParticipantView) armEnterAnimation("live-panel", { participant });
     activeLiveParticipantView = participant;
     return render();
   }
@@ -27623,7 +27848,7 @@ async function handleAction(action, el) {
   if (action === "plus-set") { addToDraftSetWeight(Number(el.dataset.block), Number(el.dataset.set), 2.5); persistWorkoutDraft(); return render(); }
   if (action === "prev-set") { copyPreviousDraftSet(Number(el.dataset.block), Number(el.dataset.set)); persistWorkoutDraft(); return render(); }
   if (action === "draft-step-weight" || action === "draft-step-reps") {
-    return applyDraftStep(Number(el.dataset.block), Number(el.dataset.set), action === "draft-step-weight" ? "weight" : "reps", Number(el.dataset.dir));
+    return stepperStepFeedback(applyDraftStep(Number(el.dataset.block), Number(el.dataset.set), action === "draft-step-weight" ? "weight" : "reps", Number(el.dataset.dir)));
   }
   if (action === "reps-step") {
     const input = el.parentElement?.querySelector?.('input[data-field="reps"]');
@@ -27663,7 +27888,7 @@ async function handleAction(action, el) {
   if (action === "training-adapt-apply") return applyTrainingAdaptation();
   if (action === "active-repeat-previous") return applyActiveRepeatPrevious(Number(el.dataset.id));
   if (action === "active-step-weight" || action === "active-step-reps") {
-    return applyActiveStep(Number(el.dataset.id), action === "active-step-weight" ? "weight" : "reps", Number(el.dataset.dir));
+    return stepperStepFeedback(applyActiveStep(Number(el.dataset.id), action === "active-step-weight" ? "weight" : "reps", Number(el.dataset.dir)));
   }
   if (action === "add-active-set") return addActiveWorkoutSet(Number(el.dataset.blockId));
   if (action === "save-active-exercise") return beginFinishActiveExercise(Number(el.dataset.blockId), el);
@@ -27679,11 +27904,17 @@ async function handleAction(action, el) {
     if (route().name !== "active" || !Number.isSafeInteger(setId) || setId <= 0) return false;
     if (modal?.type === "active-set-undo") modal = null;
     clearActiveSetConfirmation();
-    return trackActiveSetMutation(undoLatestActiveSet(setId));
+    return trackActiveSetMutation(undoLatestActiveSet(setId).then(undone => {
+      if (undone === true) haptic("undo");
+      return undone;
+    }));
   }
   if (action === "undo-active-batch") {
     if (route().name !== "active") return false;
-    return trackActiveSetMutation(undoActiveSetBatch());
+    return trackActiveSetMutation(undoActiveSetBatch().then(undone => {
+      if (undone === true) haptic("undo");
+      return undone;
+    }));
   }
   if (action === "dismiss-active-batch-undo") {
     clearActiveBatchUndo();
@@ -27760,7 +27991,7 @@ async function handleAction(action, el) {
     ? addSavedWorkoutSet(Number(el.dataset.session), el.dataset.name)
     : false;
   if (action === "saved-step-weight" || action === "saved-step-reps") {
-    return applySavedStep(Number(el.dataset.id), action === "saved-step-weight" ? "weight" : "reps", Number(el.dataset.dir));
+    return stepperStepFeedback(applySavedStep(Number(el.dataset.id), action === "saved-step-weight" ? "weight" : "reps", Number(el.dataset.dir)));
   }
   if (action === "save-saved-set") return saveSavedSet(Number(el.dataset.id), Number(el.dataset.session));
   if (action === "save-saved-details") return saveSavedWorkoutDetails(Number(el.dataset.session));
@@ -30962,7 +31193,9 @@ async function recordAllActiveSets() {
     } else {
       clearActiveBatchUndo();
     }
+    recordSetHapticPending = true;
     render();
+    flushRecordSetHaptic();
     return true;
   });
   if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
@@ -30993,6 +31226,7 @@ async function recordActiveSet(setId) {
   const limits = window.GymStateContract.LIMITS;
   if (!repsText || !Number.isFinite(weight) || weight < 0 ||
       weight > limits.weightMax || !Number.isInteger(reps) || reps < 1 || reps > limits.repsMax) {
+    haptic("error");
     showToast(tx(
       "Enter whole-number reps. Weight can stay empty and will be recorded as 0.",
       "Введи цілу кількість повторів. Порожня вага буде записана як 0."
@@ -31110,7 +31344,13 @@ async function recordActiveSet(setId) {
     } else {
       activeSetConfirmation = null;
     }
+    recordSetHapticPending = true;
+    armEnterAnimation("set-record", {
+      setId,
+      previousCompleted: loaded.workout.blocks.reduce((sum, block) => sum + block.sets.filter(item => item.completed).length, 0)
+    });
     render();
+    flushRecordSetHaptic();
     if (!storedUndo || !timerStarted) {
       showToast(!storedUndo
         ? tx(
@@ -33173,11 +33413,44 @@ function timerRemaining(key) {
 }
 
 function startTimerTicker() {
-  clearInterval(timerInterval);
+  clearTimeout(timerInterval);
+  timerInterval = null;
   if (document.querySelector("[data-active-workout-elapsed]") ||
       Object.values(currentExerciseRestTimers()).some(target => target > Date.now())) {
-    timerInterval = setInterval(updateTimerDisplays, 1000);
+    scheduleTimerTick();
   }
+}
+
+// Not a free-running 1s interval: each tick lands on the next whole-second boundary of the rest deadline.
+function scheduleTimerTick() {
+  clearTimeout(timerInterval);
+  timerInterval = setTimeout(() => {
+    timerInterval = null;
+    if (updateTimerDisplays()) scheduleTimerTick();
+  }, msUntilNextTimerTick(Date.now(), Object.values(currentExerciseRestTimers())));
+}
+
+const REST_END_HIGHLIGHT_MS = 600; // timer highlight when a rest runs out; pills fade out in the first 150ms
+const REST_END_STALE_MS = 2000; // a rest that ended while the page was away does not buzz or highlight late
+const restLastDeadline = new Map();
+
+// True once, when a rest we were counting down has just reached its deadline. A stop happens before the
+// deadline, and the expired target is already pruned from the ledger, so the last seen deadline is the proof.
+function restEndedNow(key) {
+  const deadline = restLastDeadline.get(key);
+  restLastDeadline.delete(key);
+  const now = Date.now();
+  return Number.isFinite(deadline) && now >= deadline && now - deadline <= REST_END_STALE_MS;
+}
+
+function finishRestControls(restControls, display) {
+  if (display) display.textContent = formatTimer(0);
+  haptic("restEnd");
+  restControls.classList?.add("rest-ended");
+  setTimeout(() => {
+    restControls.hidden = true;
+    restControls.classList?.remove("rest-ended");
+  }, REST_END_HIGHLIGHT_MS);
 }
 
 function updateTimerDisplays() {
@@ -33197,9 +33470,16 @@ function updateTimerDisplays() {
     hasActiveTimer ||= remaining > 0;
     const restControls = display.closest?.("[data-active-rest-controls]");
     if (restControls) {
-      // The compact rest controls disappear at zero instead of showing "Ready".
-      restControls.hidden = remaining <= 0;
-      if (remaining > 0) display.textContent = formatTimer(remaining);
+      // The compact rest controls disappear at zero instead of showing "Ready"; a natural end highlights
+      // the timer briefly and fades the pills out first (haptic once) rather than snapping hidden.
+      if (remaining > 0) {
+        restControls.hidden = false;
+        display.textContent = formatTimer(remaining);
+        restLastDeadline.set(key, currentExerciseRestTimers()[key]);
+      } else if (!restControls.hidden && !restControls.classList?.contains("rest-ended")) {
+        if (restEndedNow(key)) finishRestControls(restControls, display);
+        else restControls.hidden = true;
+      }
     } else {
       display.textContent = remaining > 0 ? formatTimer(remaining) : tx("Ready", "Готово");
     }
@@ -33207,7 +33487,11 @@ function updateTimerDisplays() {
       control.disabled = remaining <= 0;
     });
   });
-  if (!hasActiveTimer) clearInterval(timerInterval);
+  if (!hasActiveTimer) {
+    clearTimeout(timerInterval);
+    timerInterval = null;
+  }
+  return hasActiveTimer;
 }
 
 function formatTimer(seconds) {
