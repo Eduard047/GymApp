@@ -232,12 +232,13 @@ const icons = {
   waveform: "M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4",
   arrowUp: "M12 19V5M5 12l7-7 7 7",
   arrowDown: "M12 5v14M5 12l7 7 7-7",
+  grip: "M9 4.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM15 4.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM15 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 16.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM15 16.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z",
   chevronDown: "M6 9l6 6 6-6",
   weightlifter: "M1.5 2h2v5.6h-2zM20.5 2h2v5.6h-2zM3.5 3.9h17v1.7h-17zM6 5.6h1.7L10 10H8.3zM18 5.6h-1.7L14 10h1.7zM12 6.6a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM9.5 10h5v6h-5zM9.5 16h2.3l-.8 6H8.6zM12.2 16h2.3l.9 6H13z"
 };
 
 const filledIcons = new Set([
-  "add", "back", "calendarFilled", "checkCircle", "emojiEvents", "fitness", "group", "heartFilled", "lang", "listFilled", "moon", "more", "person", "remove", "showChart", "sun", "weightlifter"
+  "add", "back", "calendarFilled", "checkCircle", "emojiEvents", "fitness", "grip", "group", "heartFilled", "lang", "listFilled", "moon", "more", "person", "remove", "showChart", "sun", "weightlifter"
 ]);
 
 function boundedLocationParameters(rawValue, maximumLength, maximumPairs = 32) {
@@ -1367,6 +1368,8 @@ let liveWorkoutRequestController = null;
 let liveWorkoutRequestId = 0;
 let liveWorkoutMutationInProgress = false;
 let workoutDraftLiveSendInProgress = false;
+let exerciseDrag = null;
+let exerciseReorderBound = false;
 let liveWorkoutAcceptReservationInProgress = null;
 let liveWorkoutOperationDrain = null;
 let liveWorkoutContextGeneration = 0;
@@ -11898,6 +11901,8 @@ function finishOnboardingTour(status) {
 }
 
 function render() {
+  // A drag in progress owns the exercise list DOM: any other update waits until the drop (or snap-back).
+  if (exerciseDragDefersRender()) return;
   const previousDateFormatters = renderDateFormatters;
   renderDateFormatters = new Map();
   try {
@@ -13080,6 +13085,7 @@ const HAPTIC_PATTERNS = Object.freeze({
   pr: Object.freeze([20, 40, 20]),
   undo: 8,
   tick: 6,
+  pickup: 10,
   destructive: 30,
   error: Object.freeze([30, 50, 30]),
   restEnd: Object.freeze([60, 80, 60])
@@ -14003,6 +14009,7 @@ function activeWorkoutBlockMarkup(
   const exerciseMenu = canRemoveExercise
     ? `<button class="icon-button active-exercise-menu" type="button" data-action="open-active-exercise-more" data-block-id="${escapeAttr(String(block.id))}" aria-haspopup="dialog" aria-label="${escapeAttr(exerciseMenuLabel)}">${svg("more")}</button>`
     : "";
+  const reorderable = !liveLocked && activeWorkout.blocks.length > 1;
   return `<section class="panel highlighted active-workout-exercise ${fullyCompleted ? "completed" : current ? "current" : "upcoming"}"><details data-active-block-details="${escapeAttr(String(block.id))}" ${expanded ? "open" : ""}><summary class="detail-summary active-workout-exercise-summary">${exerciseMediaThumbnail(block, { className: "compact" })}<div class="active-workout-exercise-copy"><h2>${escapeHtml(exerciseDisplayName(block))}</h2><p class="active-exercise-open-line">${escapeHtml(openSubtitle)}</p><p class="active-exercise-collapsed-line"><span class="active-exercise-progress${fullyCompleted ? " done" : ""}">${progressIcon}${completed} / ${totalSets}</span>${collapsedStatus ? `<span class="active-exercise-status">${escapeHtml(collapsedStatus)}</span>` : ""}</p>${friendGhostMarkup(block)}</div></summary>
     <div class="active-set-list">${block.sets.map((set, setIndex) => activeWorkoutSetMarkup(set, setIndex, {
       liveLocked,
@@ -14016,7 +14023,7 @@ function activeWorkoutBlockMarkup(
       remaining: set.id === latestCompletedSetId ? remaining : 0
     })).join("")}</div>
     ${liveLocked ? "" : `<div class="active-exercise-actions"><button class="button active-exercise-add" type="button" data-action="add-active-set" data-block-id="${block.id}" aria-label="${escapeAttr(tx3("Add set", "Додати підхід", "Добавить подход"))}">${tx3("+ Set", "+ Підхід", "+ Подход")}</button><button class="button active-exercise-finish" type="button" data-action="save-active-exercise" data-block-id="${block.id}" aria-label="${escapeAttr(tx3("Save exercise", "Зберегти вправу", "Сохранить упражнение"))}">${tx3("Finish", "Завершити", "Завершить")}</button></div>`}
-  </details>${exerciseMenu}</section>`;
+  </details>${reorderable ? exerciseDragHandleMarkup("active", block.id, "active-exercise-drag-handle") : ""}${exerciseMenu}</section>`;
 }
 
 function activeLiveDraftInputValue(set, field) {
@@ -15375,26 +15382,40 @@ function moveExerciseDownLabel() {
   return tx3("Move down", "Перемістити нижче", "Переместить ниже");
 }
 
-// Plan editor: swaps a draft exercise with its neighbour (offset -1 up, +1 down). Blocks are addressed by array
-// index like the other draft menu actions. At an edge or for an unknown index nothing changes (no render, no haptic).
-function moveDraftBlock(index, offset) {
+// Plan editor: moves a draft exercise from one index to another (a drag drops several slots at once; the menu
+// moves by one). Blocks are addressed by array index like the other draft menu actions. The same index, an
+// out-of-range index or a non-integer is a no-op (no persist, no render, no haptic).
+function moveDraftBlockTo(from, to, { restoreFocus = false, silent = false } = {}) {
   if (!workoutDraft || !Array.isArray(workoutDraft.blocks)) return false;
-  if (!Number.isInteger(index) || (offset !== -1 && offset !== 1)) return false;
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return false;
   const count = workoutDraft.blocks.length;
-  const target = index + offset;
-  if (index < 0 || index >= count || target < 0 || target >= count) return false;
+  if (from < 0 || from >= count || to < 0 || to >= count) return false;
   smartGeneratedPlan = null;
-  const [moved] = workoutDraft.blocks.splice(index, 1);
-  workoutDraft.blocks.splice(target, 0, moved);
+  const [moved] = workoutDraft.blocks.splice(from, 1);
+  workoutDraft.blocks.splice(to, 0, moved);
   persistWorkoutDraft();
   render();
-  haptic("tick");
-  requestAnimationFrame(() => {
-    const key = `block-${target}`;
-    [...(app.querySelectorAll?.('[data-action="toggle-plan-menu"]') || [])]
-      .find(trigger => trigger.dataset?.menu === key)?.focus?.();
-  });
+  if (!silent) haptic("tick"); // a drag already ticked per slot change and on pickup: no extra buzz on drop
+  if (restoreFocus) {
+    requestAnimationFrame(() => {
+      const key = `block-${to}`;
+      [...(app.querySelectorAll?.('[data-action="toggle-plan-menu"]') || [])]
+        .find(trigger => trigger.dataset?.menu === key)?.focus?.();
+    });
+  }
   return true;
+}
+
+// Menu entry point: swaps with the neighbour (offset -1 up, +1 down) and returns focus to that exercise's menu button.
+function moveDraftBlock(index, offset) {
+  if (!Number.isInteger(index) || (offset !== -1 && offset !== 1)) return false;
+  return moveDraftBlockTo(index, index + offset, { restoreFocus: true });
+}
+
+// Drag handle at the leading edge of an exercise card header. Pointer-only: hidden from assistive tech and not
+// focusable, because keyboard and screen-reader users have the Move up / Move down items.
+function exerciseDragHandleMarkup(kind, key, extraClass = "") {
+  return `<span class="exercise-drag-handle${extraClass ? ` ${extraClass}` : ""}" data-reorder-handle="${escapeAttr(kind)}" data-reorder-key="${escapeAttr(String(key))}" aria-hidden="true">${svg("grip")}</span>`;
 }
 
 function draftBlock(block, blockIndex) {
@@ -15421,7 +15442,8 @@ function draftBlock(block, blockIndex) {
   const lastLogged = lastWeight != null
     ? `<p class="muted draft-last-logged">${tx3("Last logged", "Остання вага", "Последний вес")}: ${escapeHtml(formatLocalizedSetWeight(lastWeight))}</p>`
     : "";
-  return `<section class="draft-exercise panel highlighted active-workout-exercise"><div class="draft-exercise-head">${block.exerciseName ? exerciseMediaThumbnail(block, { blockIndex }) : ""}<div class="draft-exercise-title"><h2>${escapeHtml(title)}</h2>${lastLogged}</div><div class="plan-menu-wrap">${planMenuTriggerMarkup(menuKey, menuLabel, "icon-button")}${planMenuMarkup(menuKey, menuLabel, menuItems)}</div></div>
+  const reorderable = draftBlockCount > 1;
+  return `<section class="draft-exercise panel highlighted active-workout-exercise"><div class="draft-exercise-head">${reorderable ? exerciseDragHandleMarkup("draft", blockIndex) : ""}${block.exerciseName ? exerciseMediaThumbnail(block, { blockIndex }) : ""}<div class="draft-exercise-title"><h2>${escapeHtml(title)}</h2>${lastLogged}</div><div class="plan-menu-wrap">${planMenuTriggerMarkup(menuKey, menuLabel, "icon-button")}${planMenuMarkup(menuKey, menuLabel, menuItems)}</div></div>
     ${block.exerciseName ? "" : `<div class="workout-exercise-choice"><button class="button ghost full draft-dashed-button" data-action="open-workout-exercise-picker" data-picker-target="draft-replace" data-block="${blockIndex}">${svg("list", "small-icon")}${tx("Choose exercise", "Обрати вправу")}</button></div>`}
     ${storedExercise ? `<div class="row-line">${loadProfile ? `<span class="muted">${tx("Configured machine weights", "Налаштовані ваги тренажера")}: ${loadProfile.allowedWeightsKg.length}</span>` : ""}<button class="button ghost mini" data-action="configure-load-profile" data-id="${escapeAttr(String(storedExercise.id))}">${tx("Machine weights", "Ваги тренажера")}</button></div>` : ""}
     ${rec ? smartPanel(rec, blockIndex) : ""}
@@ -26832,6 +26854,13 @@ function bindEvents(preservedModalFocus = null) {
     app.addEventListener("contextmenu", handleActiveSetContextMenu);
     activeSetUndoGesturesBound = true;
   }
+  if (!exerciseReorderBound && typeof app.addEventListener === "function") {
+    app.addEventListener("pointerdown", beginExerciseDrag);
+    app.addEventListener("contextmenu", event => {
+      if (event.target?.closest?.("[data-reorder-handle]")) event.preventDefault();
+    });
+    exerciseReorderBound = true;
+  }
   if (!stepperHoldGesturesBound && typeof app.addEventListener === "function") {
     app.addEventListener("pointerdown", beginStepperHold, { passive: true });
     app.addEventListener("pointerup", () => endStepperHold(true), { passive: true });
@@ -30808,14 +30837,22 @@ function openActiveExerciseMoreMenu(blockId, returnFocus = null) {
   return true;
 }
 
+// Source and target index of moving a block to an arbitrary slot, or null for an unknown block, the same slot
+// or an out-of-range / non-integer slot. Blocks are addressed by their stable id, never by position.
+function activeExerciseMoveToIndex(workout, blockId, toIndex) {
+  if (!workout || !Array.isArray(workout.blocks) || !Number.isInteger(toIndex)) return null;
+  const from = workout.blocks.findIndex(block => block.id === blockId);
+  if (from < 0 || toIndex < 0 || toIndex >= workout.blocks.length || toIndex === from) return null;
+  return { from, to: toIndex };
+}
+
 // Source and target index of moving a block by one position, or null at the list edge, for an unknown block
-// or for an offset other than +/-1. Blocks are addressed by their stable id, never by position.
+// or for an offset other than +/-1.
 function activeExerciseMoveTarget(workout, blockId, offset) {
   if (!workout || !Array.isArray(workout.blocks) || (offset !== -1 && offset !== 1)) return null;
   const from = workout.blocks.findIndex(block => block.id === blockId);
-  const to = from + offset;
-  if (from < 0 || to < 0 || to >= workout.blocks.length) return null;
-  return { from, to };
+  if (from < 0) return null;
+  return activeExerciseMoveToIndex(workout, blockId, from + offset);
 }
 
 // "Move up" / "Move down" in the exercise options sheet. The sheet only opens with several exercises outside a
@@ -30969,11 +31006,12 @@ async function removeActiveWorkoutExercise(blockId, expectedRaw = activeWorkoutS
   return result.value === true;
 }
 
-// Moves one exercise one position up (-1) or down (+1). Blocks, sets and ids are untouched, so the undo target and
-// every rest timer survive. An edge, an unknown block and a live room are refused without a write.
-async function moveActiveWorkoutExercise(blockId, offset, expectedRaw = activeWorkoutStorageRaw) {
+// Moves one exercise to slot `toIndex` (a drag can jump several positions). Blocks, sets and ids are untouched, so
+// the undo target and every rest timer survive. The same slot, an out-of-range slot, an unknown block and a live
+// room are refused without a write; a stale in-memory raw (CAS) is refused after reloading the stored record.
+async function moveActiveWorkoutExerciseTo(blockId, toIndex, expectedRaw = activeWorkoutStorageRaw, { silent = false } = {}) {
   if (!activeWorkout || liveWorkoutBinding?.localWorkoutId === activeWorkout.id) return false;
-  if (!Number.isSafeInteger(blockId) || blockId <= 0 || (offset !== -1 && offset !== 1)) return false;
+  if (!Number.isSafeInteger(blockId) || blockId <= 0 || !Number.isInteger(toIndex)) return false;
   const mutationContext = activeWorkoutMutationContext();
   if (!mutationContext) return activeWorkoutMutationUnavailable(null);
   const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
@@ -30993,7 +31031,7 @@ async function moveActiveWorkoutExercise(blockId, offset, expectedRaw = activeWo
       showActiveWorkoutChangedToast();
       return false;
     }
-    const target = activeExerciseMoveTarget(loaded.workout, blockId, offset);
+    const target = activeExerciseMoveToIndex(loaded.workout, blockId, toIndex);
     if (!target || liveWorkoutBinding?.localWorkoutId === loaded.workout.id) {
       render();
       return false;
@@ -31027,21 +31065,364 @@ async function moveActiveWorkoutExercise(blockId, offset, expectedRaw = activeWo
     );
     activeWorkoutUi = activeWorkoutStatus();
     render();
-    haptic("tick");
+    if (!silent) haptic("tick");
     return true;
   });
   if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
   return result.value === true;
 }
 
-async function requestMoveActiveExercise(blockId, offset) {
+// Moves one exercise one position up (-1) or down (+1); an edge or an offset other than +/-1 is refused without a write.
+async function moveActiveWorkoutExercise(blockId, offset, expectedRaw = activeWorkoutStorageRaw) {
+  if (!activeWorkout || liveWorkoutBinding?.localWorkoutId === activeWorkout.id) return false;
+  const target = activeExerciseMoveTarget(activeWorkout, blockId, offset);
+  if (!target) return false;
+  return moveActiveWorkoutExerciseTo(blockId, target.to, expectedRaw);
+}
+
+async function runActiveExerciseMoveRequest(blockId, move) {
   if (route().name !== "active" || !activeWorkout || !activeWorkoutStorageRaw ||
       activeSetMutationsInFlight > 0 || !Number.isSafeInteger(blockId) || blockId <= 0 ||
       (modal && modal.type !== "active-exercise-more")) return false;
   if (modal?.type === "active-exercise-more") modal = null;
-  const ok = await trackActiveSetMutation(moveActiveWorkoutExercise(blockId, offset));
+  const ok = await trackActiveSetMutation(move());
   if (!ok) render();
   return ok;
+}
+
+async function requestMoveActiveExercise(blockId, offset) {
+  return runActiveExerciseMoveRequest(blockId, () => moveActiveWorkoutExercise(blockId, offset));
+}
+
+// Drag drop: one write for the whole gesture, however many slots the exercise travelled.
+async function requestMoveActiveExerciseTo(blockId, toIndex) {
+  return runActiveExerciseMoveRequest(blockId, () => moveActiveWorkoutExerciseTo(blockId, toIndex, activeWorkoutStorageRaw, { silent: true }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Drag to reorder exercises (plan editor and running workout). Pointer Events on a pointer-only handle; the card
+// follows the finger, neighbours shift by CSS transform, and the drop commits ONE write through the same paths as
+// Move up / Move down (moveDraftBlockTo, requestMoveActiveExerciseTo). While a drag is armed render() is deferred
+// (exerciseDragDefersRender) so a timer, sync or storage update cannot rebuild the list under the finger.
+// ---------------------------------------------------------------------------------------------------------------
+const REORDER_LIFT_THRESHOLD_PX = 4;
+const REORDER_EDGE_GUTTER_PX = 16;
+const REORDER_AUTOSCROLL_ZONE_PX = 64;
+const REORDER_AUTOSCROLL_MAX_PX = 12;
+const REORDER_LIFT_SCALE = 1.02;
+const REORDER_DROP_MS = 350;
+const REORDER_LIFT_MS = 140;
+
+// Slot the dragged card occupies for its current centre: the number of other cards whose midpoint it has passed.
+function reorderTargetIndex(fromIndex, draggedCentre, midpoints) {
+  let target = 0;
+  midpoints.forEach((mid, index) => {
+    if (index !== fromIndex && mid < draggedCentre) target += 1;
+  });
+  return target;
+}
+
+// Translation (px) of a non-dragged card while the dragged one hovers over slot `to`: cards between the two slots
+// part by one dragged-card step (height plus gap) toward the slot the dragged card left.
+function reorderNeighbourShift(index, from, to, step) {
+  if (index === from) return 0;
+  if (from < to && index > from && index <= to) return -step;
+  if (to < from && index >= to && index < from) return step;
+  return 0;
+}
+
+// Where the dragged card rests once dropped on slot `to`, relative to its own natural position.
+function reorderDropOffset(from, to, rects) {
+  if (to > from) return rects[to].bottom - rects[from].bottom;
+  if (to < from) return rects[to].top - rects[from].top;
+  return 0;
+}
+
+// Scroll speed (px per frame, negative = up) while the finger is within `zone` px of the visible list edge,
+// proportional to how deep it is and capped; a finger beyond the edge scrolls at the cap.
+function reorderAutoScrollDelta(pointerY, top, bottom, zone = REORDER_AUTOSCROLL_ZONE_PX, max = REORDER_AUTOSCROLL_MAX_PX) {
+  if (!Number.isFinite(pointerY) || !(bottom - top > 2 * zone)) return 0;
+  if (pointerY < top + zone) return -Math.min(max, max * (top + zone - pointerY) / zone);
+  if (pointerY > bottom - zone) return Math.min(max, max * (pointerY - (bottom - zone)) / zone);
+  return 0;
+}
+
+function exerciseDragReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+}
+
+// True while a drag owns the list DOM, so render() must wait. A live room appearing under an active-workout
+// drag cancels it instead (the list is frozen there), and the render proceeds.
+function exerciseDragDefersRender() {
+  const drag = exerciseDrag;
+  if (!drag) return false;
+  if (drag.kind === "active" && activeWorkout && liveWorkoutBinding?.localWorkoutId === activeWorkout.id) {
+    cancelExerciseDrag({ immediate: true, flushRender: false });
+    return false;
+  }
+  drag.renderDeferred = true;
+  return true;
+}
+
+// The data the drag started from is still the data on screen: same draft block object / same stored active
+// record, and no live room. A change under the drag cancels it rather than reordering something stale.
+function exerciseDragStillValid(drag) {
+  if (drag.kind === "draft") {
+    const blocks = workoutDraft?.blocks;
+    return Array.isArray(blocks) && blocks.length === drag.cards.length && blocks[drag.from] === drag.blockRef;
+  }
+  return Boolean(activeWorkout) && liveWorkoutBinding?.localWorkoutId !== activeWorkout.id &&
+    activeWorkoutStorageRaw === drag.expectedRaw &&
+    activeWorkout.blocks.length === drag.cards.length && activeWorkout.blocks[drag.from]?.id === drag.key;
+}
+
+function beginExerciseDrag(event) {
+  if (exerciseDrag || event.isPrimary === false) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const handle = event.target?.closest?.("[data-reorder-handle]");
+  const kind = handle?.dataset?.reorderHandle;
+  const card = handle?.closest?.(".draft-exercise, .active-workout-exercise");
+  const list = card?.parentElement;
+  if (!list || (kind !== "draft" && kind !== "active")) return;
+  const cards = [...list.children].filter(child => child.querySelector?.(`[data-reorder-handle="${kind}"]`));
+  const from = cards.indexOf(card);
+  if (from < 0 || cards.length < 2) return;
+  // Custom drags stay clear of the screen edges so they never fight the system back gesture.
+  if (event.clientX < REORDER_EDGE_GUTTER_PX || event.clientX > window.innerWidth - REORDER_EDGE_GUTTER_PX) return;
+  let key = from;
+  let blockRef = null;
+  if (kind === "draft") {
+    blockRef = workoutDraft?.blocks?.[from] || null;
+    if (!blockRef || workoutDraft.blocks.length !== cards.length || Number(handle.dataset.reorderKey) !== from) return;
+  } else {
+    if (!activeWorkout || !activeWorkoutStorageRaw || liveWorkoutBinding?.localWorkoutId === activeWorkout.id ||
+        activeWorkout.blocks.length !== cards.length) return;
+    key = activeWorkout.blocks[from]?.id;
+    if (!Number.isSafeInteger(key) || String(key) !== handle.dataset.reorderKey) return;
+  }
+  const natural = cards.map(element => {
+    const rect = element.getBoundingClientRect();
+    return { top: rect.top, bottom: rect.bottom, mid: rect.top + rect.height / 2 };
+  });
+  const height = natural[from].bottom - natural[from].top;
+  const gap = from < cards.length - 1
+    ? natural[from + 1].top - natural[from].bottom
+    : natural[from].top - natural[from - 1].bottom;
+  const scroller = list.closest("main") || document.scrollingElement || document.documentElement;
+  exerciseDrag = {
+    kind, key, from, to: from, handle, cards, list, scroller, natural, blockRef,
+    pointerId: event.pointerId,
+    step: height + Math.max(0, gap),
+    startY: event.clientY,
+    y: event.clientY,
+    startScroll: scroller.scrollTop,
+    expectedRaw: kind === "active" ? activeWorkoutStorageRaw : null,
+    reducedMotion: exerciseDragReducedMotion(),
+    phase: "pending",
+    renderDeferred: false,
+    raf: 0,
+    timers: [],
+    finish: null
+  };
+  try { handle.setPointerCapture?.(event.pointerId); } catch { /* capture is best effort */ }
+  handle.addEventListener("pointermove", onExerciseDragMove);
+  handle.addEventListener("pointerup", onExerciseDragUp);
+  handle.addEventListener("pointercancel", onExerciseDragCancel);
+  handle.addEventListener("lostpointercapture", onExerciseDragCancel);
+  document.addEventListener("visibilitychange", onExerciseDragVisibility);
+  document.addEventListener("keydown", onExerciseDragKey);
+  event.preventDefault();
+}
+
+function onExerciseDragMove(event) {
+  const drag = exerciseDrag;
+  if (!drag || event.pointerId !== drag.pointerId || drag.phase === "dropping") return;
+  drag.y = event.clientY;
+  if (drag.phase === "pending") {
+    if (Math.abs(drag.y - drag.startY) < REORDER_LIFT_THRESHOLD_PX) return;
+    liftExerciseDrag(drag);
+  }
+  event.preventDefault?.();
+  updateExerciseDragLayout();
+}
+
+function liftExerciseDrag(drag) {
+  drag.phase = "lifted";
+  drag.list.classList.add("reorder-active");
+  const card = drag.cards[drag.from];
+  card.classList.add("is-dragging");
+  if (!drag.reducedMotion) {
+    card.style.transition = `transform ${REORDER_LIFT_MS}ms cubic-bezier(0.2, 0.9, 0.1, 1), box-shadow 160ms ease`;
+    drag.timers.push(setTimeout(() => { card.style.transition = "box-shadow 160ms ease"; }, REORDER_LIFT_MS + 10));
+  }
+  haptic("pickup");
+  drag.raf = requestAnimationFrame(exerciseDragFrame);
+}
+
+function exerciseDragOffset(drag) {
+  const scrolled = drag.scroller.scrollTop - drag.startScroll;
+  const raw = drag.y - drag.startY + scrolled;
+  const min = drag.natural[0].top - drag.natural[drag.from].top;
+  const max = drag.natural[drag.natural.length - 1].bottom - drag.natural[drag.from].bottom;
+  return Math.min(max, Math.max(min, raw));
+}
+
+function updateExerciseDragLayout() {
+  const drag = exerciseDrag;
+  if (!drag || drag.phase !== "lifted") return;
+  const offset = exerciseDragOffset(drag);
+  const card = drag.cards[drag.from];
+  card.style.transform = `translateY(${offset}px)${drag.reducedMotion ? "" : ` scale(${REORDER_LIFT_SCALE})`}`;
+  const to = reorderTargetIndex(drag.from, drag.natural[drag.from].mid + offset, drag.natural.map(item => item.mid));
+  if (to === drag.to) return;
+  drag.to = to;
+  drag.cards.forEach((element, index) => {
+    if (index === drag.from) return;
+    const shift = reorderNeighbourShift(index, drag.from, to, drag.step);
+    element.style.transform = shift ? `translateY(${shift}px)` : "";
+  });
+  haptic("tick");
+}
+
+// Auto-scroll while the finger sits near the visible top/bottom of the scroll container.
+function exerciseDragFrame() {
+  const drag = exerciseDrag;
+  if (!drag || drag.phase !== "lifted") return;
+  const rect = drag.scroller.getBoundingClientRect();
+  const top = Math.max(0, rect.top);
+  const bottom = Math.min(window.innerHeight, rect.bottom);
+  const delta = reorderAutoScrollDelta(drag.y, top, bottom);
+  if (delta) {
+    const before = drag.scroller.scrollTop;
+    drag.scroller.scrollTop = before + Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta)));
+    if (drag.scroller.scrollTop !== before) updateExerciseDragLayout();
+  }
+  drag.raf = requestAnimationFrame(exerciseDragFrame);
+}
+
+function onExerciseDragUp(event) {
+  const drag = exerciseDrag;
+  if (!drag || event.pointerId !== drag.pointerId || drag.phase === "dropping") return;
+  if (drag.phase === "pending") {
+    // A tap on the handle moves nothing.
+    finishExerciseDrag(drag, { commit: false });
+    return;
+  }
+  drag.y = event.clientY;
+  updateExerciseDragLayout();
+  if (drag.to === drag.from || !exerciseDragStillValid(drag)) {
+    cancelExerciseDrag({});
+    return;
+  }
+  settleExerciseDrag(drag, reorderDropOffset(drag.from, drag.to, drag.natural), true);
+}
+
+function onExerciseDragCancel(event) {
+  const drag = exerciseDrag;
+  if (!drag || event.pointerId !== drag.pointerId || drag.phase === "dropping") return;
+  cancelExerciseDrag({});
+}
+
+function onExerciseDragVisibility() {
+  const drag = exerciseDrag;
+  if (!drag || document.visibilityState !== "hidden") return;
+  if (drag.phase === "dropping") drag.finish?.();
+  else cancelExerciseDrag({ immediate: true });
+}
+
+function onExerciseDragKey(event) {
+  if (event.key === "Escape" && exerciseDrag && exerciseDrag.phase !== "dropping") cancelExerciseDrag({});
+}
+
+// Animates the dragged card to its resting offset with a spring-like overshoot, then runs finish(commit).
+function settleExerciseDrag(drag, offset, commit) {
+  drag.phase = "dropping";
+  if (drag.raf) cancelAnimationFrame(drag.raf);
+  drag.raf = 0;
+  const card = drag.cards[drag.from];
+  let done = false;
+  drag.finish = () => {
+    if (done) return;
+    done = true;
+    card.removeEventListener("transitionend", onEnd);
+    finishExerciseDrag(drag, { commit });
+  };
+  function onEnd(event) {
+    if (event.target === card && event.propertyName === "transform") drag.finish();
+  }
+  if (drag.reducedMotion) {
+    drag.finish();
+    return;
+  }
+  card.classList.add("is-dropping");
+  card.style.transition = `transform ${REORDER_DROP_MS}ms cubic-bezier(0.34, 1.3, 0.64, 1), box-shadow 200ms ease`;
+  card.style.transform = `translateY(${offset}px)`;
+  if (!commit) drag.cards.forEach((element, index) => { if (index !== drag.from) element.style.transform = ""; });
+  card.addEventListener("transitionend", onEnd);
+  drag.timers.push(setTimeout(drag.finish, REORDER_DROP_MS + 80));
+}
+
+// Snap back: no write, no drop haptic. immediate (app hidden, live room appeared) skips the animation.
+function cancelExerciseDrag({ immediate = false, flushRender = true } = {}) {
+  const drag = exerciseDrag;
+  if (!drag) return;
+  if (immediate || drag.phase !== "lifted" || drag.reducedMotion) {
+    finishExerciseDrag(drag, { commit: false, flushRender });
+    return;
+  }
+  settleExerciseDrag(drag, 0, false);
+}
+
+function releaseExerciseDrag(drag) {
+  if (drag.raf) cancelAnimationFrame(drag.raf);
+  drag.raf = 0;
+  drag.timers.forEach(timer => clearTimeout(timer));
+  drag.timers = [];
+  drag.handle.removeEventListener("pointermove", onExerciseDragMove);
+  drag.handle.removeEventListener("pointerup", onExerciseDragUp);
+  drag.handle.removeEventListener("pointercancel", onExerciseDragCancel);
+  drag.handle.removeEventListener("lostpointercapture", onExerciseDragCancel);
+  document.removeEventListener("visibilitychange", onExerciseDragVisibility);
+  document.removeEventListener("keydown", onExerciseDragKey);
+  try { drag.handle.releasePointerCapture?.(drag.pointerId); } catch { /* already released */ }
+}
+
+function clearExerciseDragStyles(drag) {
+  drag.list.classList.remove("reorder-active");
+  drag.cards.forEach(element => {
+    element.classList.remove("is-dragging", "is-dropping");
+    element.style.transform = "";
+    element.style.transition = "";
+  });
+}
+
+// End of the gesture. With commit the order change is persisted once (the write re-renders the list, so the
+// drag styles are left for that render to replace); otherwise styles are cleared and any render that was
+// deferred during the drag runs now.
+function finishExerciseDrag(drag, { commit, flushRender = true }) {
+  if (exerciseDrag !== drag) return;
+  releaseExerciseDrag(drag);
+  exerciseDrag = null;
+  if (commit && exerciseDragStillValid(drag)) {
+    void commitExerciseDrag(drag);
+    return;
+  }
+  clearExerciseDragStyles(drag);
+  if (flushRender && drag.renderDeferred) render();
+}
+
+async function commitExerciseDrag(drag) {
+  let moved = false;
+  try {
+    moved = drag.kind === "draft"
+      ? moveDraftBlockTo(drag.from, drag.to, { silent: true })
+      : await requestMoveActiveExerciseTo(drag.key, drag.to);
+  } finally {
+    if (!moved) {
+      clearExerciseDragStyles(drag);
+      render();
+    }
+  }
 }
 
 async function saveActiveWorkoutExercise(blockId) {
