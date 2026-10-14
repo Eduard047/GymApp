@@ -231,6 +231,7 @@ const icons = {
   grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
   waveform: "M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4",
   arrowUp: "M12 19V5M5 12l7-7 7 7",
+  arrowDown: "M12 5v14M5 12l7 7 7-7",
   chevronDown: "M6 9l6 6 6-6",
   weightlifter: "M1.5 2h2v5.6h-2zM20.5 2h2v5.6h-2zM3.5 3.9h17v1.7h-17zM6 5.6h1.7L10 10H8.3zM18 5.6h-1.7L14 10h1.7zM12 6.6a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM9.5 10h5v6h-5zM9.5 16h2.3l-.8 6H8.6zM12.2 16h2.3l.9 6H13z"
 };
@@ -11606,7 +11607,7 @@ function dismissPlanEditorMenu(restoreFocus = false) {
 
 function planMenuMarkup(key, label, items) {
   if (planEditorMenu !== key || !items.length) return "";
-  return `<div class="plan-menu" role="menu" aria-label="${escapeAttr(label)}">${items.map(item => `<button type="button" class="plan-menu-option${item.danger ? " danger" : ""}" role="menuitem" data-action="${item.action}"${item.attrs || ""}>${svg(item.icon, "small-icon")}<span>${escapeHtml(item.label)}</span></button>`).join("")}</div>`;
+  return `<div class="plan-menu" role="menu" aria-label="${escapeAttr(label)}">${items.map(item => `<button type="button" class="plan-menu-option${item.danger ? " danger" : ""}" role="menuitem" data-action="${item.action}"${item.attrs || ""}${item.disabled ? ` disabled aria-disabled="true"` : ""}>${svg(item.icon, "small-icon")}<span>${escapeHtml(item.label)}</span></button>`).join("")}</div>`;
 }
 
 function planMenuTriggerMarkup(key, label, cls = "") {
@@ -15366,6 +15367,36 @@ function draftSetRowMarkup(block, blockIndex, set, setIndex, lastWeight) {
     <div class="set-chips" role="group" aria-label="${escapeAttr(`${tx3("Set", "Підхід", "Подход")} ${i + 1}`)}">${chip("apply-last", tx3("Last", "Ост. вага", "Посл. вес"), tx3("Last weight", "Остання вага", "Последний вес"), lastWeight == null)}${chip("prev-set", tx3("Prev.", "Попер.", "Пред."), tx3("Previous set", "Попередній підхід", "Предыдущий подход"), i === 0)}${chip("copy-set", tx3("Copy", "Копія", "Копия"), tx3("Copy set", "Копіювати підхід", "Копировать подход"))}</div></div>`;
 }
 
+function moveExerciseUpLabel() {
+  return tx3("Move up", "Перемістити вище", "Переместить выше");
+}
+
+function moveExerciseDownLabel() {
+  return tx3("Move down", "Перемістити нижче", "Переместить ниже");
+}
+
+// Plan editor: swaps a draft exercise with its neighbour (offset -1 up, +1 down). Blocks are addressed by array
+// index like the other draft menu actions. At an edge or for an unknown index nothing changes (no render, no haptic).
+function moveDraftBlock(index, offset) {
+  if (!workoutDraft || !Array.isArray(workoutDraft.blocks)) return false;
+  if (!Number.isInteger(index) || (offset !== -1 && offset !== 1)) return false;
+  const count = workoutDraft.blocks.length;
+  const target = index + offset;
+  if (index < 0 || index >= count || target < 0 || target >= count) return false;
+  smartGeneratedPlan = null;
+  const [moved] = workoutDraft.blocks.splice(index, 1);
+  workoutDraft.blocks.splice(target, 0, moved);
+  persistWorkoutDraft();
+  render();
+  haptic("tick");
+  requestAnimationFrame(() => {
+    const key = `block-${target}`;
+    [...(app.querySelectorAll?.('[data-action="toggle-plan-menu"]') || [])]
+      .find(trigger => trigger.dataset?.menu === key)?.focus?.();
+  });
+  return true;
+}
+
 function draftBlock(block, blockIndex) {
   const lastWeight = lastWeightFor(block.exerciseName);
   const rec = block.exerciseName ? smartRecommendationForBlock(block) : null;
@@ -15375,6 +15406,14 @@ function draftBlock(block, blockIndex) {
   const menuKey = `block-${blockIndex}`;
   const menuLabel = `${tx3("Exercise actions for", "Дії для", "Действия для")} ${title}`;
   const menuItems = [];
+  // A lone exercise cannot move either way: no move items at all. At the first/last position the matching item stays but is disabled.
+  const draftBlockCount = workoutDraft?.blocks?.length || 0;
+  if (draftBlockCount > 1) {
+    menuItems.push(
+      { action: "move-block-up", icon: "arrowUp", label: moveExerciseUpLabel(), disabled: blockIndex <= 0, attrs: ` data-block="${blockIndex}"` },
+      { action: "move-block-down", icon: "arrowDown", label: moveExerciseDownLabel(), disabled: blockIndex >= draftBlockCount - 1, attrs: ` data-block="${blockIndex}"` }
+    );
+  }
   if (block.smartGenerated === true && storedExercise) {
     menuItems.push({ action: "smart-alternatives", icon: "copy", label: tx3("Replace with similar", "Замінити схожою", "Заменить похожим"), attrs: ` data-block="${blockIndex}" data-exercise-id="${escapeAttr(String(storedExercise.id))}"` });
   }
@@ -27246,7 +27285,7 @@ async function handleAction(action, el) {
     render();
     requestAnimationFrame(() => {
       const target = planEditorMenu
-        ? app.querySelector(".plan-menu [role=\"menuitem\"]")
+        ? app.querySelector(".plan-menu [role=\"menuitem\"]:not([disabled])")
         : [...app.querySelectorAll('[data-action="toggle-plan-menu"]')].find(item => item.dataset.menu === key);
       target?.focus?.({ preventScroll: true });
     });
@@ -27795,6 +27834,9 @@ async function handleAction(action, el) {
     persistWorkoutDraft();
     return render();
   }
+  if (action === "move-block-up" || action === "move-block-down") {
+    return moveDraftBlock(Number(el.dataset.block), action === "move-block-up" ? -1 : 1);
+  }
   if (action === "open-voice-workout" || action.startsWith("voice-workout-")) return handleVoiceWorkoutAction(action, el);
   if (action === "clear-plan") {
     if (!workoutDraftHasContent()) return false;
@@ -27934,6 +27976,9 @@ async function handleAction(action, el) {
     const blockId = Number(el.dataset.blockId);
     const returnFocus = modal?.type === "active-exercise-more" ? modal.returnFocus : null;
     return requestRemoveActiveExercise(blockId, returnFocus);
+  }
+  if (action === "move-active-exercise-up" || action === "move-active-exercise-down") {
+    return requestMoveActiveExercise(Number(el.dataset.blockId), action === "move-active-exercise-up" ? -1 : 1);
   }
   if (action === "confirm-remove-active-exercise") return confirmRemoveActiveExercise();
   if (action === "request-delete-active-set") {
@@ -30763,10 +30808,28 @@ function openActiveExerciseMoreMenu(blockId, returnFocus = null) {
   return true;
 }
 
+// Source and target index of moving a block by one position, or null at the list edge, for an unknown block
+// or for an offset other than +/-1. Blocks are addressed by their stable id, never by position.
+function activeExerciseMoveTarget(workout, blockId, offset) {
+  if (!workout || !Array.isArray(workout.blocks) || (offset !== -1 && offset !== 1)) return null;
+  const from = workout.blocks.findIndex(block => block.id === blockId);
+  const to = from + offset;
+  if (from < 0 || to < 0 || to >= workout.blocks.length) return null;
+  return { from, to };
+}
+
+// "Move up" / "Move down" in the exercise options sheet. The sheet only opens with several exercises outside a
+// live room, so the items are always offered there; the one that cannot apply at the first/last position is disabled.
+function activeExerciseMoveButtonsMarkup(blockId) {
+  const idAttr = escapeAttr(String(blockId));
+  const button = (action, icon, label, offset) => `<button class="button secondary full" type="button" data-action="${action}" data-block-id="${idAttr}"${activeExerciseMoveTarget(activeWorkout, blockId, offset) ? "" : ` disabled aria-disabled="true"`}>${svg(icon, "small-icon")}${escapeHtml(label)}</button>`;
+  return `${button("move-active-exercise-up", "arrowUp", moveExerciseUpLabel(), -1)}${button("move-active-exercise-down", "arrowDown", moveExerciseDownLabel(), 1)}`;
+}
+
 function activeExerciseMoreSheetMarkup(blockId) {
   const block = activeWorkout?.blocks.find(candidate => candidate.id === blockId);
   if (!block || !canRemoveActiveExercise(activeWorkout, blockId)) return "";
-  return `<div class="exercise-more-sheet active-exercise-more-sheet"><span class="eyebrow">${tx3("Exercise options", "Дії з вправою", "Действия с упражнением")}</span><h2 id="active-exercise-more-title">${escapeHtml(exerciseDisplayName(block))}</h2><div class="exercise-more-actions"><button class="button danger full" type="button" data-action="remove-active-exercise" data-block-id="${escapeAttr(String(blockId))}">${tx3("Remove exercise", "Видалити вправу", "Удалить упражнение")}</button></div></div>`;
+  return `<div class="exercise-more-sheet active-exercise-more-sheet"><span class="eyebrow">${tx3("Exercise options", "Дії з вправою", "Действия с упражнением")}</span><h2 id="active-exercise-more-title">${escapeHtml(exerciseDisplayName(block))}</h2><div class="exercise-more-actions">${activeExerciseMoveButtonsMarkup(blockId)}<button class="button danger full" type="button" data-action="remove-active-exercise" data-block-id="${escapeAttr(String(blockId))}">${tx3("Remove exercise", "Видалити вправу", "Удалить упражнение")}</button></div></div>`;
 }
 
 function activeRemoveExerciseBodyText(recordedCount) {
@@ -30904,6 +30967,81 @@ async function removeActiveWorkoutExercise(blockId, expectedRaw = activeWorkoutS
   });
   if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
   return result.value === true;
+}
+
+// Moves one exercise one position up (-1) or down (+1). Blocks, sets and ids are untouched, so the undo target and
+// every rest timer survive. An edge, an unknown block and a live room are refused without a write.
+async function moveActiveWorkoutExercise(blockId, offset, expectedRaw = activeWorkoutStorageRaw) {
+  if (!activeWorkout || liveWorkoutBinding?.localWorkoutId === activeWorkout.id) return false;
+  if (!Number.isSafeInteger(blockId) || blockId <= 0 || (offset !== -1 && offset !== 1)) return false;
+  const mutationContext = activeWorkoutMutationContext();
+  if (!mutationContext) return activeWorkoutMutationUnavailable(null);
+  const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
+    if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
+    const loaded = loadActiveWorkoutRecord(mutationContext.account);
+    const reconciliationNow = Math.max(Date.now(), loaded.workout?.updatedAt || 0);
+    if (!loaded.workout ||
+        !reconcileActiveWorkoutRestTransition(loaded.workout, mutationContext.account, reconciliationNow) ||
+        !reconcileActiveWorkoutBulkCleanupIntent(loaded.workout, mutationContext.account, reconciliationNow)) {
+      reloadActiveWorkoutContext(mutationContext.account);
+      render();
+      return false;
+    }
+    if (loaded.raw !== expectedRaw || loaded.workout.revision >= Number.MAX_SAFE_INTEGER) {
+      reloadActiveWorkoutContext(mutationContext.account);
+      render();
+      showActiveWorkoutChangedToast();
+      return false;
+    }
+    const target = activeExerciseMoveTarget(loaded.workout, blockId, offset);
+    if (!target || liveWorkoutBinding?.localWorkoutId === loaded.workout.id) {
+      render();
+      return false;
+    }
+    const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
+    const blocks = [...loaded.workout.blocks];
+    const [moved] = blocks.splice(target.from, 1);
+    blocks.splice(target.to, 0, moved);
+    const now = Math.max(Date.now(), loaded.workout.updatedAt + 1);
+    const next = {
+      ...loaded.workout,
+      updatedAt: now,
+      revision: loaded.workout.revision + 1,
+      blocks
+    };
+    const stored = persistActiveWorkoutRecord(next, mutationContext.account, loaded.raw);
+    if (!stored || !activeWorkoutMutationContextIsCurrent(mutationContext)) {
+      reloadActiveWorkoutContext(mutationContext.account);
+      render();
+      showActiveWorkoutChangedToast();
+      return false;
+    }
+    activeWorkout = stored.workout;
+    activeWorkoutStorageRaw = stored.raw;
+    reconcileActiveWorkoutInputDraft(stored.workout, mutationContext.account);
+    carryActiveWorkoutUndoMarker(
+      stored.workout,
+      loadedUndo,
+      loadedUndo.marker?.setId ?? null,
+      mutationContext.account
+    );
+    activeWorkoutUi = activeWorkoutStatus();
+    render();
+    haptic("tick");
+    return true;
+  });
+  if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
+  return result.value === true;
+}
+
+async function requestMoveActiveExercise(blockId, offset) {
+  if (route().name !== "active" || !activeWorkout || !activeWorkoutStorageRaw ||
+      activeSetMutationsInFlight > 0 || !Number.isSafeInteger(blockId) || blockId <= 0 ||
+      (modal && modal.type !== "active-exercise-more")) return false;
+  if (modal?.type === "active-exercise-more") modal = null;
+  const ok = await trackActiveSetMutation(moveActiveWorkoutExercise(blockId, offset));
+  if (!ok) render();
+  return ok;
 }
 
 async function saveActiveWorkoutExercise(blockId) {
