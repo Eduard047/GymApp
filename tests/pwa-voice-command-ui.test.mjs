@@ -75,9 +75,12 @@ test("no innerHTML assignment embeds a raw (unescaped) voice transcript", () => 
 });
 
 test("showToast (used for all voice command feedback) assigns textContent, not innerHTML", () => {
-  const toastBody = extractFunction("showToast");
+  // showToast only normalises into the toast host; toastRender is the one place that writes the text, via textContent.
+  const toastBody = extractFunction("toastRender");
   assert.match(toastBody, /\.textContent\s*=/);
-  assert.doesNotMatch(toastBody, /\.innerHTML\s*=/);
+  for (const name of ["showToast", "toastRender", "toastBindElement", "toastNormalize"]) {
+    assert.doesNotMatch(extractFunction(name), /\.innerHTML\s*=|insertAdjacentHTML/);
+  }
 });
 
 test("the voice transcript is never written to localStorage, IndexedDB, or logged", () => {

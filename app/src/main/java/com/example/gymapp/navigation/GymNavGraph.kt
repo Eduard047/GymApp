@@ -43,10 +43,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +51,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -127,6 +126,10 @@ import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.components.ActiveWorkoutDiscardDialog
 import com.example.gymapp.ui.components.ContinueWorkoutBar
+import com.example.gymapp.ui.components.GymToastDuration
+import com.example.gymapp.ui.components.GymToastHost
+import com.example.gymapp.ui.components.GymToastResult
+import com.example.gymapp.ui.components.LocalGymToastController
 import com.example.gymapp.ui.components.shouldShowContinueWorkoutBar
 import com.example.gymapp.ui.screens.ActiveWorkoutOverflowMenu
 import com.example.gymapp.ui.screens.ActiveWorkoutScreen
@@ -939,7 +942,12 @@ internal fun GymAppRoot(
             hasSavedLiveWorkoutDraftTarget = true
         }
     }
-    val snackbarHostState = key(uiIsolationKey) { remember { SnackbarHostState() } }
+    // One app-level toast queue (owned by the Application so the Activity can post to it too). A new
+    // account identity starts without the previous account's toast.
+    val toastController = gymApplication.toastController
+    DisposableEffect(uiIsolationKey) { onDispose { toastController.clear() } }
+    // Height of the floating tab bar (including its insets), so the toast host sits above it.
+    var tabBarHeightPx by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -958,12 +966,12 @@ internal fun GymAppRoot(
     ) {
         val pending = pendingSharedWorkout ?: return@LaunchedEffect
         if (authState.session == null || activeWorkout == null) return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
+        val result = toastController.show(
             message = activeWorkoutBlocksSharedImport,
             actionLabel = discardSharedLinkLabel,
-            duration = SnackbarDuration.Indefinite
+            duration = GymToastDuration.Indefinite
         )
-        if (result == SnackbarResult.ActionPerformed) {
+        if (result == GymToastResult.ActionPerformed) {
             sharedWorkoutInbox.consume(pending.id)
         }
     }
@@ -2195,6 +2203,7 @@ internal fun GymAppRoot(
     val activeWorkoutToolbarState = remember { ActiveWorkoutToolbarState() }
     val isActiveWorkoutRoute = currentRoute == AppDestination.ActiveWorkout.route
 
+    CompositionLocalProvider(LocalGymToastController provides toastController) {
     key(uiIsolationKey, selectedLanguage) {
         GymBackground {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -2340,7 +2349,7 @@ internal fun GymAppRoot(
             ) {
                 if (signedInMessage == null) {
                     cloudSyncRetryMode = null
-                    snackbarHostState.currentSnackbarData?.dismiss()
+                    toastController.dismissCurrent()
                     return@LaunchedEffect
                 }
                 val retryMode = cloudSyncRetryMode
@@ -2348,7 +2357,7 @@ internal fun GymAppRoot(
                     currentRoute == AppDestination.Profile.route &&
                         authState.message?.resourceId == R.string.cloud_sync_conflict
                 if (conflictShownInProfile) {
-                    snackbarHostState.currentSnackbarData?.dismiss()
+                    toastController.dismissCurrent()
                     return@LaunchedEffect
                 }
                 val resolvableConflict =
@@ -2356,7 +2365,7 @@ internal fun GymAppRoot(
                         cloudSyncConflict != null
                 val retryable = retryMode != null &&
                     isRetryableCloudSyncMessage(authState.message)
-                val result = snackbarHostState.showSnackbar(
+                val result = toastController.show(
                     message = signedInMessage,
                     actionLabel = when {
                         resolvableConflict -> resolveLabel
@@ -2365,12 +2374,12 @@ internal fun GymAppRoot(
                         else -> null
                     },
                     duration = if (authState.messageIsError) {
-                        SnackbarDuration.Indefinite
+                        GymToastDuration.Indefinite
                     } else {
-                        SnackbarDuration.Short
+                        GymToastDuration.Auto
                     }
                 )
-                if (result == SnackbarResult.ActionPerformed) {
+                if (result == GymToastResult.ActionPerformed) {
                     if (resolvableConflict) {
                         showCloudSyncConflictDialog = true
                         return@LaunchedEffect
@@ -2404,7 +2413,7 @@ internal fun GymAppRoot(
                         if (discarded) {
                             runCatching { restTimerController.stop() }
                         } else {
-                            snackbarHostState.showSnackbar(discardActiveWorkoutFailed)
+                            toastController.show(discardActiveWorkoutFailed)
                         }
                     }
                 }
@@ -2437,7 +2446,6 @@ internal fun GymAppRoot(
                     },
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onBackground,
-                snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                 topBar = {
                     AppTopBar(
                         titleRes = titleRes,
@@ -2476,6 +2484,7 @@ internal fun GymAppRoot(
                     if (isBottomTabRoute) {
                         Box(
                             modifier = Modifier
+                                .onSizeChanged { tabBarHeightPx = it.height }
                                 .fillMaxWidth()
                                 .navigationBarsPadding()
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -2855,7 +2864,7 @@ internal fun GymAppRoot(
                                         }
                                     } else if (action == TodayFriendTapAction.BlockedBySoloWorkout) {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(R.string.today_friend_hint_blocked)
                                             )
                                         }
@@ -2868,12 +2877,12 @@ internal fun GymAppRoot(
                                     val session = cloudSession
                                     when {
                                         activeWorkout != null -> coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(R.string.live_workout_active_blocked)
                                             )
                                         }
                                         session == null || friend == null -> coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(R.string.live_workout_start_failed)
                                             )
                                         }
@@ -3096,14 +3105,14 @@ internal fun GymAppRoot(
                                         workoutInviteSendProfileId = null
                                         preferredShareFriendProfileId = null
                                         friendsViewModel?.clearMessages()
-                                        snackbarHostState.showSnackbar(
+                                        toastController.show(
                                             workoutInviteNotice ?: workoutInviteSent
                                         )
                                     }
                                     WorkoutInviteSendFeedback.Failed -> {
                                         workoutInviteSendProfileId = null
                                         friendsViewModel?.clearMessages()
-                                        snackbarHostState.showSnackbar(
+                                        toastController.show(
                                             workoutInviteError ?: workoutInviteSendFailed
                                         )
                                     }
@@ -3161,13 +3170,13 @@ internal fun GymAppRoot(
                                         launchSingleTop = true
                                     }
                                     coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(message)
+                                        toastController.show(message)
                                     }
                                     return@LaunchedEffect
                                 }
                                 liveWorkoutInviteSendProfileId = null
                                 liveWorkoutDraftSendSnapshot = null
-                                snackbarHostState.showSnackbar(message)
+                                toastController.show(message)
                                 liveWorkoutViewModel?.clearMessages()
                             }
 
@@ -3176,7 +3185,7 @@ internal fun GymAppRoot(
                                 val applied = viewModel.applySharedWorkoutPlan(pending.plan)
                                 sharedWorkoutInbox.consume(pending.id)
                                 approvedSharedWorkoutId = null
-                                snackbarHostState.showSnackbar(
+                                toastController.show(
                                     if (applied) {
                                         sharedWorkoutImported
                                     } else {
@@ -3192,7 +3201,7 @@ internal fun GymAppRoot(
                                 if (shouldConsumeAcceptedSocialWorkout(applied)) {
                                     friendsViewModel?.consumeAcceptedWorkout(accepted.inviteId)
                                 }
-                                snackbarHostState.showSnackbar(
+                                toastController.show(
                                     if (applied) sharedWorkoutImported else sharedWorkoutImportFailed
                                 )
                             }
@@ -3256,7 +3265,7 @@ internal fun GymAppRoot(
                                     val plan = viewModel.prepareSharedWorkoutPlan()
                                     if (plan == null) {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                            toastController.show(shareWorkoutFailed)
                                         }
                                     } else {
                                         workoutPlanToShare = plan
@@ -3283,7 +3292,7 @@ internal fun GymAppRoot(
                                         liveWorkoutInviteValidationProfileId != null ||
                                             liveWorkoutInviteSendProfileId != null -> Unit
                                         activeWorkout != null -> coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(
                                                     R.string.live_workout_active_blocked
                                                 )
@@ -3291,7 +3300,7 @@ internal fun GymAppRoot(
                                         }
                                         liveViewModel == null || expectedSession == null ->
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     liveWorkoutInviteSendFailed
                                                 )
                                             }
@@ -3337,7 +3346,7 @@ internal fun GymAppRoot(
                                                         activeWorkout != null ||
                                                         authoritativeFriend == null
                                                     ) {
-                                                        snackbarHostState.showSnackbar(
+                                                        toastController.show(
                                                             liveWorkoutInviteSendFailed
                                                         )
                                                         return@launch
@@ -3345,7 +3354,7 @@ internal fun GymAppRoot(
                                                     val plan = viewModel
                                                         .prepareSharedWorkoutPlan()
                                                     if (plan == null) {
-                                                        snackbarHostState.showSnackbar(
+                                                        toastController.show(
                                                             shareWorkoutFailed
                                                         )
                                                         return@launch
@@ -3374,7 +3383,7 @@ internal fun GymAppRoot(
                                                 } catch (_: Throwable) {
                                                     liveWorkoutDraftSendSnapshot = null
                                                     liveWorkoutInviteSendProfileId = null
-                                                    snackbarHostState.showSnackbar(
+                                                    toastController.show(
                                                         liveWorkoutInviteSendFailed
                                                     )
                                                 } finally {
@@ -3425,7 +3434,7 @@ internal fun GymAppRoot(
                                             workoutPlanToShare = null
                                         } else {
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                                toastController.show(shareWorkoutFailed)
                                             }
                                         }
                                     },
@@ -3433,7 +3442,7 @@ internal fun GymAppRoot(
                                         val socialViewModel = friendsViewModel
                                         if (socialViewModel == null) {
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     workoutInviteSendFailed
                                                 )
                                             }
@@ -3447,7 +3456,7 @@ internal fun GymAppRoot(
                                         val liveViewModel = liveWorkoutViewModel
                                         if (liveViewModel == null) {
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     workoutInviteSendFailed
                                                 )
                                             }
@@ -3547,7 +3556,6 @@ internal fun GymAppRoot(
                                 onFinishWorkout = viewModel::finishWorkout,
                                 onDiscardWorkout = viewModel::discardWorkout,
                                 onDismissMessage = viewModel::dismissMessage,
-                                voiceCommandSnackbarHostState = snackbarHostState,
                                 friendGhosts = friendGhosts,
                                 toolbarState = activeWorkoutToolbarState,
                                 modifier = Modifier.fillMaxSize()
@@ -3665,14 +3673,14 @@ internal fun GymAppRoot(
                                         workoutInviteSendProfileId = null
                                         preferredShareFriendProfileId = null
                                         friendsViewModel?.clearMessages()
-                                        snackbarHostState.showSnackbar(
+                                        toastController.show(
                                             workoutInviteNotice ?: workoutInviteSent
                                         )
                                     }
                                     WorkoutInviteSendFeedback.Failed -> {
                                         workoutInviteSendProfileId = null
                                         friendsViewModel?.clearMessages()
-                                        snackbarHostState.showSnackbar(
+                                        toastController.show(
                                             workoutInviteError ?: workoutInviteSendFailed
                                         )
                                     }
@@ -3698,7 +3706,7 @@ internal fun GymAppRoot(
                                     preferredShareFriendProfileId = null
                                 }
                                 liveWorkoutInviteSendProfileId = null
-                                snackbarHostState.showSnackbar(message)
+                                toastController.show(message)
                                 liveWorkoutViewModel?.clearMessages()
                             }
 
@@ -3739,7 +3747,7 @@ internal fun GymAppRoot(
                                             workoutPlanToShare = null
                                         } else {
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                                toastController.show(shareWorkoutFailed)
                                             }
                                         }
                                     },
@@ -3747,7 +3755,7 @@ internal fun GymAppRoot(
                                         val socialViewModel = friendsViewModel
                                         if (socialViewModel == null) {
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     workoutInviteSendFailed
                                                 )
                                             }
@@ -3761,7 +3769,7 @@ internal fun GymAppRoot(
                                         val liveViewModel = liveWorkoutViewModel
                                         if (liveViewModel == null) {
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     workoutInviteSendFailed
                                                 )
                                             }
@@ -3933,7 +3941,7 @@ internal fun GymAppRoot(
                                 onAcceptWorkoutInvite = { invite ->
                                     if (!canAcceptSocialWorkoutInvite(activeWorkout != null)) {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(
                                                     R.string.workout_invite_active_blocked
                                                 )
@@ -3949,7 +3957,7 @@ internal fun GymAppRoot(
                                 onReuseWorkoutInvite = { invite ->
                                     if (!canAcceptSocialWorkoutInvite(activeWorkout != null)) {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(
                                                     R.string.workout_invite_active_blocked
                                                 )
@@ -3976,7 +3984,7 @@ internal fun GymAppRoot(
                                         liveWorkoutViewModel?.acceptInvitation(invitation)
                                     } else {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(
                                                     R.string.live_workout_active_blocked
                                                 )
@@ -4053,7 +4061,7 @@ internal fun GymAppRoot(
                                         }
                                     } else {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(
                                                     R.string.tutorial_replay_unavailable
                                                 )
@@ -4430,14 +4438,14 @@ internal fun GymAppRoot(
                                         workoutPlanToShare = null
                                         workoutInviteSendProfileId = null
                                         friendsViewModel?.clearMessages()
-                                        snackbarHostState.showSnackbar(
+                                        toastController.show(
                                             workoutInviteNotice ?: workoutInviteSent
                                         )
                                     }
                                     WorkoutInviteSendFeedback.Failed -> {
                                         workoutInviteSendProfileId = null
                                         friendsViewModel?.clearMessages()
-                                        snackbarHostState.showSnackbar(
+                                        toastController.show(
                                             workoutInviteError ?: workoutInviteSendFailed
                                         )
                                     }
@@ -4463,7 +4471,7 @@ internal fun GymAppRoot(
                                     workoutPlanToShare = null
                                 }
                                 liveWorkoutInviteSendProfileId = null
-                                snackbarHostState.showSnackbar(message)
+                                toastController.show(message)
                                 liveWorkoutViewModel?.clearMessages()
                             }
                             DisposableEffect(profileId) {
@@ -4506,14 +4514,14 @@ internal fun GymAppRoot(
                                         workoutPlanToShare = null
                                     } else {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                            toastController.show(shareWorkoutFailed)
                                         }
                                     }
                                 },
                                 onBuildLiveWorkout = {
                                     when {
                                         activeWorkout != null -> coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            toastController.show(
                                                 applicationContext.getString(
                                                     R.string.live_workout_active_blocked
                                                 )
@@ -4521,7 +4529,7 @@ internal fun GymAppRoot(
                                         }
                                         currentFriendShareBinding == null || friend == null ->
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(shareWorkoutFailed)
+                                                toastController.show(shareWorkoutFailed)
                                             }
                                         else -> {
                                             setLiveWorkoutDraftTarget(LiveWorkoutDraftTarget(
@@ -4584,7 +4592,7 @@ internal fun GymAppRoot(
                                                 friendShareBinding = null
                                                 workoutPlanToShare = null
                                                 coroutineScope.launch {
-                                                    snackbarHostState.showSnackbar(
+                                                    toastController.show(
                                                         shareWorkoutFailed
                                                     )
                                                 }
@@ -4642,7 +4650,7 @@ internal fun GymAppRoot(
                                                             authManager.authState.value.session
                                                         )
                                                     ) {
-                                                        snackbarHostState.showSnackbar(
+                                                        toastController.show(
                                                             shareWorkoutFailed
                                                         )
                                                     }
@@ -4681,7 +4689,7 @@ internal fun GymAppRoot(
                                             workoutPlanToShare = null
                                         } else {
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     shareWorkoutFailed
                                                 )
                                             }
@@ -4713,7 +4721,7 @@ internal fun GymAppRoot(
                                             friendShareBinding = null
                                             workoutPlanToShare = null
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     shareWorkoutFailed
                                                 )
                                             }
@@ -4752,7 +4760,7 @@ internal fun GymAppRoot(
                                             friendShareBinding = null
                                             workoutPlanToShare = null
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                toastController.show(
                                                     shareWorkoutFailed
                                                 )
                                             }
@@ -4832,7 +4840,7 @@ internal fun GymAppRoot(
                                 sharedWorkoutInbox.consume(pending.id)
                             } else {
                                 coroutineScope.launch {
-                                    snackbarHostState.showSnackbar(
+                                    toastController.show(
                                         message = applicationContext.getString(
                                             R.string.message_shared_workout_open_web_failed
                                         )
@@ -4872,7 +4880,20 @@ internal fun GymAppRoot(
                 )
             }
             }
+            // Mounted once, last: above content, the tab bar and the intro/tutorial layers. Sheets host
+            // their own copy (GymModalBottomSheet) because they render in a separate window.
+            val density = LocalDensity.current
+            GymToastHost(
+                controller = toastController,
+                bottomOffset = if (isBottomTabRoute) {
+                    with(density) { tabBarHeightPx.toDp() } + 8.dp
+                } else {
+                    0.dp
+                },
+                modifier = if (isBottomTabRoute) Modifier else Modifier.navigationBarsPadding().padding(bottom = 16.dp)
+            )
         }
+    }
     }
 }
 

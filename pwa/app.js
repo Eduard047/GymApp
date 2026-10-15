@@ -1314,7 +1314,6 @@ let smartPlanStale = false;
 let activationDraft = null;
 let activationOptionsOpen = false;
 let pendingActivationPlan = null;
-let toastTimer = null;
 const monthOffsets = { workouts: 0, progress: 0 };
 let workoutWeekOffset = 0;
 let workoutHistoryPeriod = "week";
@@ -8719,7 +8718,7 @@ function handleRemoteSaveError(error) {
   const conflict = /changed on another client|revision|stale account session/i.test(String(error?.message || ""));
   showToast(conflict
     ? tx("Cloud sync conflicted. Reload before saving again.", "Хмарні зміни конфліктують. Онови дані перед повторним збереженням.")
-    : tx("Cloud sync failed. Your latest changes remain saved in this browser.", "Хмарна синхронізація не вдалася. Останні зміни збережено в цьому браузері."));
+    : tx("Cloud sync failed. Your latest changes remain saved in this browser.", "Хмарна синхронізація не вдалася. Останні зміни збережено в цьому браузері."), { kind: "error" });
 }
 
 async function saveRemoteState({ expectedEpoch = accountEpoch, expectedUserId = activeAccount?.userId } = {}) {
@@ -11502,7 +11501,6 @@ function loginScreen() {
       ${storeDownloadPanel()}
       <section class="panel auth-legal-card"><p>${tx("Workout data is handled under the Privacy Policy.", "Дані тренувань обробляються відповідно до Політики конфіденційності.")}</p><nav class="auth-links" aria-label="${txAttr("GymApp links", "Посилання GymApp")}"><a class="auth-link" href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${svg("privacy", "small-icon")}<span>${tx3("Privacy Policy", "Політика конфіденційності", "Политика конфиденциальности")}</span></a><a class="auth-link" href="${SUPPORT_URL}" target="_blank" rel="noopener noreferrer">${svg("help", "small-icon")}<span>${tx3("Support", "Підтримка", "Поддержка")}</span></a></nav></section>
       ${modal ? modalMarkup() : ""}
-      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
 }
@@ -11942,6 +11940,8 @@ function render() {
   // A sheet drag owns the sheet DOM until release; sheetEngineBeforeRender() starts the exit of a closing sheet.
   if (sheetDragDefersRender()) return;
   sheetEngineBeforeRender();
+  toastReconcileAccount();
+  const leavingBanners = bannerExitCapture();
   const previousDateFormatters = renderDateFormatters;
   renderDateFormatters = new Map();
   try {
@@ -12015,7 +12015,6 @@ function render() {
       ${isRootRoute(current.name) ? bottomNav() : ""}
       ${modal ? modalMarkup() : ""}
       ${onboardingTour ? onboardingTourMarkup() : ""}
-      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     `;
     hydrateRecommendationText();
     bindEvents(preservedModalFocus);
@@ -12037,6 +12036,7 @@ function render() {
     }
   } finally {
     renderDateFormatters = previousDateFormatters;
+    bannerExitAfterRender(leavingBanners);
     const settledRing = pendingEnterAnimation?.kind === "set-record" ? pendingEnterAnimation : null;
     pendingEnterAnimation = null;
     if (settledRing) requestAnimationFrame(() => requestAnimationFrame(settleActiveRingProgress));
@@ -12057,7 +12057,6 @@ function pendingActivationScreen() {
     <main class="screen auth-screen" data-scroll-key="cloud-activation">
       <section class="hero-panel auth-hero"><h1>${tx("Finishing cloud sign-in", "Завершуємо хмарний вхід")}</h1><p>${tx("Your email is already verified. GymApp is loading cloud data with the saved session; no new email is needed.", "Електронну пошту вже підтверджено. GymApp завантажує хмарні дані зі збереженою сесією; новий лист не потрібен.")}</p></section>
       <section class="panel highlighted auth-panel"><div class="actions vertical"><button class="button full" data-action="retry-cloud-activation" ${authRequestInProgress ? "disabled" : ""}>${tx("Retry cloud loading", "Повторити завантаження з хмари")}</button><button class="button ghost full" data-action="logout-account" ${authRequestInProgress ? "disabled" : ""}>${tx("Sign out", "Вийти")}</button></div></section>
-      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
 }
@@ -12068,7 +12067,6 @@ function cloudSyncConflictScreen() {
       <section class="hero-panel auth-hero"><h1>${tx("Cloud sync needs your choice", "Хмарна синхронізація потребує твого вибору")}</h1><p>${tx("This browser and the cloud both changed since their last confirmed sync. GymApp kept the browser copy and did not overwrite either version.", "Цей браузер і хмара змінилися після останньої підтвердженої синхронізації. GymApp зберіг копію браузера й не перезаписав жодну версію.")}</p></section>
       <section class="panel highlighted auth-panel"><p>${tx("Download a backup first, then explicitly choose which version should continue.", "Спочатку завантаж резервну копію, а потім явно вибери версію для продовження.")}</p><div class="actions vertical"><button class="button secondary full" data-action="export-sync-conflict-local">${tx("Download browser backup", "Завантажити резервну копію браузера")}</button><button class="button full" data-action="resolve-sync-conflict-local">${tx("Keep browser version", "Зберегти версію браузера")}</button><button class="button danger full" data-action="resolve-sync-conflict-cloud">${tx("Use cloud version", "Використати хмарну версію")}</button><button class="button ghost full" data-action="logout-account">${tx("Sign out without changes", "Вийти без змін")}</button></div></section>
       ${modal?.type === "confirm-sheet" ? modalMarkup() : ""}
-      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
 }
@@ -12078,7 +12076,6 @@ function passwordUpdateScreen() {
     <main class="screen auth-screen" data-scroll-key="password-update">
       <section class="hero-panel auth-hero"><h1>${tx("Choose a new password", "Вибери новий пароль")}</h1><p>${tx("Your reset link was verified. Set a new password before continuing to your cloud account.", "Посилання для скидання перевірено. Встанови новий пароль, перш ніж продовжити роботу з хмарним акаунтом.")}</p></section>
       <section class="panel highlighted auth-panel"><div class="field-stack"><label>${tx("New password", "Новий пароль")}<input id="recovery-new-password" type="password" autocomplete="new-password" minlength="6" maxlength="72"></label><label>${tx("Repeat new password", "Повтори новий пароль")}<input id="recovery-repeat-password" type="password" autocomplete="new-password" minlength="6" maxlength="72"></label></div><p class="muted">${tx("Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8).")}</p><div class="actions vertical"><button class="button full" data-action="complete-password-recovery" ${authRequestInProgress ? "disabled" : ""}>${tx("Save new password", "Зберегти новий пароль")}</button><button class="button ghost full" data-action="logout-account" ${authRequestInProgress ? "disabled" : ""}>${tx("Cancel and sign out", "Скасувати й вийти")}</button></div></section>
-      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
 }
@@ -12089,7 +12086,6 @@ function cloudRecoveryScreen() {
       <section class="hero-panel auth-hero"><h1>${tx("Cloud data recovery", "Відновлення хмарних даних")}</h1><p>${tx("Your authenticated cloud row uses a legacy or invalid format. It was not loaded into the app and cannot sync until you choose a recovery action.", "Твій автентифікований хмарний запис має застарілий або некоректний формат. Його не завантажено в застосунок, і синхронізація заблокована, доки не вибереш спосіб відновлення.")}</p></section>
       <section class="panel highlighted auth-panel"><h2>${escapeHtml(activeAccount?.name || tx("Cloud account", "Хмарний акаунт"))}</h2><p>${tx("First download the untouched private JSON for offline recovery. Replacing it with an empty valid state is permanent and uses the exact server revision so another device's newer update cannot be overwritten.", "Спочатку завантаж незмінений приватний JSON для офлайн-відновлення. Заміна на порожній коректний стан незворотна й використовує точну ревізію сервера, тому новіші зміни з іншого пристрою не будуть перезаписані.")}</p><div class="actions vertical"><button class="button secondary full" data-action="export-cloud-recovery">${tx("Download original private JSON", "Завантажити оригінальний приватний JSON")}</button><button class="button full" data-action="reset-cloud-recovery">${tx("Replace cloud data with empty state", "Замінити хмарні дані порожнім станом")}</button><button class="button ghost full" data-action="logout-account">${tx("Sign out without changes", "Вийти без змін")}</button></div></section>
       ${modal?.type === "confirm-sheet" ? modalMarkup() : ""}
-      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
 }
@@ -13446,12 +13442,130 @@ function activeSetUndoAllowed(workout, setId, options = {}) {
   return markerSetId === setId || liveUndoAnySet === true;
 }
 
+// ---- Inline banner exit --------------------------------------------------------------------------
+// The set-recorded banner and the "All sets saved" batch-undo banner leave smoothly instead of vanishing: the old node is
+// wrapped in an in-flow `.banner-exit` placeholder whose height collapses over BANNER_EXIT_COLLAPSE_MS (WAAPI, so it survives
+// render()) while the node itself fades out over BANNER_EXIT_OPACITY_MS. Content below slides up with it, so nothing jumps.
+// render() captures the live banners before #app is rebuilt and, afterwards, re-inserts a placeholder where a banner was
+// dropped (and re-attaches placeholders that are still collapsing). Replacing a banner by another of the same kind, leaving the
+// screen, switching account and reduced motion all skip the exit and behave as before. There are no inline sync/offline banners
+// in the PWA (cloud sync state is status text only), so only these two kinds exist.
+const BANNER_EXIT_OPACITY_MS = 90;
+const BANNER_EXIT_COLLAPSE_MS = 200;
+const BANNER_EXIT_ANCHOR = ".active-workout-list";
+const bannerExits = new Map(); // placeholder element -> { kind }
+const bannerExitState = { accountKey: null };
+
+// Pure: null means "remove at once" (reduced motion or nothing to collapse).
+function bannerExitPlan({ reduced = false, height = 0, gap = 0 } = {}) {
+  const h = Number(height);
+  const g = Number(gap);
+  if (reduced || !Number.isFinite(h) || h <= 0) return null;
+  const spacing = Number.isFinite(g) && g > 0 ? g : 0;
+  return {
+    opacityMs: BANNER_EXIT_OPACITY_MS,
+    collapseMs: BANNER_EXIT_COLLAPSE_MS,
+    from: { height: `${h}px`, marginBottom: "0px" },
+    // The parent's row gap would otherwise linger until the placeholder is removed: cancel it while collapsing.
+    to: { height: "0px", marginBottom: `${-spacing}px` }
+  };
+}
+
+function bannerExitEnd(placeholder) {
+  const entry = bannerExits.get(placeholder);
+  bannerExits.delete(placeholder);
+  if (entry?.timer) clearTimeout(entry.timer);
+  try { placeholder.getAnimations?.({ subtree: true }).forEach(animation => animation.cancel()); } catch { /* best effort */ }
+  placeholder.remove?.();
+}
+
+// Wraps `node` in a collapsing placeholder. In place (no anchorParent) the placeholder takes the node's spot; after a render it is
+// inserted into anchorParent before anchorBefore. Falls back to removing the node.
+function bannerExitBegin({ node, kind, height = undefined, anchorParent = null, anchorBefore = null }) {
+  try {
+    if (!node) return false;
+    const parent = anchorParent || node.parentNode;
+    const plan = parent && typeof document?.createElement === "function" && typeof node.animate === "function"
+      ? bannerExitPlan({
+          reduced: sheetPrefersReducedMotion(),
+          height: height ?? node.offsetHeight,
+          gap: Number.parseFloat(window.getComputedStyle?.(parent)?.rowGap) || 0
+        })
+      : null;
+    if (!plan) {
+      if (!anchorParent) node.remove?.();
+      return false;
+    }
+    // The leaving copy keeps its look but is inert and invisible to assistive tech and to the banner queries.
+    ["data-active-set-confirmation", "data-active-batch-undo", "data-banner-kind", "data-enter"].forEach(name => node.removeAttribute(name));
+    node.querySelectorAll?.("[id]").forEach(child => child.removeAttribute("id"));
+    node.querySelectorAll?.("[role]").forEach(child => child.removeAttribute("role"));
+    node.querySelectorAll?.("[aria-live]").forEach(child => child.removeAttribute("aria-live"));
+    node.setAttribute("aria-hidden", "true");
+    node.inert = true;
+    const placeholder = document.createElement("div");
+    placeholder.className = "banner-exit";
+    placeholder.setAttribute("aria-hidden", "true");
+    if (anchorParent) {
+      placeholder.appendChild(node);
+      parent.insertBefore(placeholder, anchorBefore);
+    } else {
+      parent.insertBefore(placeholder, node);
+      placeholder.appendChild(node);
+    }
+    placeholder.animate(
+      [{ height: plan.from.height, marginBottom: plan.from.marginBottom }, { height: plan.to.height, marginBottom: plan.to.marginBottom }],
+      { duration: plan.collapseMs, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" }
+    );
+    node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: plan.opacityMs, easing: "linear", fill: "forwards" });
+    const entry = { kind, timer: setTimeout(() => bannerExitEnd(placeholder), plan.collapseMs + 120) };
+    bannerExits.set(placeholder, entry);
+    return true;
+  } catch {
+    if (!anchorParent) node?.remove?.();
+    return false;
+  }
+}
+
+// Called by render() before #app is rebuilt: remembers the live banners and their heights.
+function bannerExitCapture() {
+  const accountKey = sheetAccountKey();
+  const accountChanged = bannerExitState.accountKey !== null && bannerExitState.accountKey !== accountKey;
+  bannerExitState.accountKey = accountKey;
+  const banners = [];
+  try {
+    if (typeof app?.querySelectorAll === "function") {
+      app.querySelectorAll("[data-banner-kind]").forEach(node => banners.push({ node, kind: node.dataset?.bannerKind, height: node.offsetHeight }));
+    }
+  } catch { /* nothing to animate */ }
+  return { banners, accountChanged };
+}
+
+// Called by render() once #app holds the new tree.
+function bannerExitAfterRender(captured) {
+  try {
+    const list = typeof app?.querySelector === "function" ? app.querySelector(BANNER_EXIT_ANCHOR) : null;
+    const hasKind = kind => Boolean(app.querySelector(`[data-banner-kind="${kind}"]`));
+    for (const [placeholder, entry] of [...bannerExits]) {
+      if (!list || captured?.accountChanged || hasKind(entry.kind)) bannerExitEnd(placeholder);
+      else if (placeholder.parentNode !== list.parentNode) list.parentNode.insertBefore(placeholder, list);
+    }
+    for (const item of captured?.banners || []) {
+      if (!item.node || item.node.isConnected !== false) continue; // still in the document: not replaced
+      if (bannerExits.has(item.node.parentNode)) continue; // already collapsing
+      if (!list || captured.accountChanged || hasKind(item.kind)) continue;
+      bannerExitBegin({ node: item.node, kind: item.kind, height: item.height, anchorParent: list.parentNode, anchorBefore: list });
+    }
+  } catch { /* banners then simply disappear, as before */ }
+}
+
 function clearActiveBatchUndo() {
   activeBatchUndo = null;
   clearTimeout(activeBatchUndoTimer);
   activeBatchUndoTimer = null;
   try {
-    app?.querySelector?.("[data-active-batch-undo]")?.remove?.();
+    const node = app?.querySelector?.("[data-active-batch-undo]");
+    if (node) bannerExitBegin({ node, kind: "batch" });
   } catch { /* The next render drops the banner anyway. */ }
 }
 
@@ -13502,13 +13616,14 @@ function activeBatchUndoMarkup(workout) {
     return "";
   }
   const message = tx3("All sets saved.", "Усі підходи збережено.", "Все подходы сохранены.");
-  return `<div class="active-set-confirmation" data-active-batch-undo="1"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" role="status" aria-live="polite">${escapeHtml(message)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-batch">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-batch-undo" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
+  return `<div class="active-set-confirmation" data-banner-kind="batch" data-active-batch-undo="1"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" role="status" aria-live="polite">${escapeHtml(message)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-batch">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-batch-undo" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
 }
 
 function clearActiveSetConfirmation() {
   activeSetConfirmation = null;
   try {
-    app?.querySelector?.("[data-active-set-confirmation]")?.remove?.();
+    const node = app?.querySelector?.("[data-active-set-confirmation]");
+    if (node) bannerExitBegin({ node, kind: "set" });
   } catch { /* The next render drops the banner anyway. */ }
 }
 
@@ -13539,7 +13654,7 @@ function activeSetConfirmationMarkup(workout, undoableSetId) {
   // Enter animation plays once per confirmation, like the announcement.
   const enter = confirmation.entered ? "" : " data-enter";
   confirmation.entered = true;
-  return `<div class="active-set-confirmation"${enter} data-active-set-confirmation="${setId}"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" aria-hidden="true">${escapeHtml(confirmation.message)}</span><span class="sr-only" role="status" aria-live="polite">${escapeHtml(announcement)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-set" data-id="${setId}">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-set-confirmation" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
+  return `<div class="active-set-confirmation"${enter} data-banner-kind="set" data-active-set-confirmation="${setId}"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" aria-hidden="true">${escapeHtml(confirmation.message)}</span><span class="sr-only" role="status" aria-live="polite">${escapeHtml(announcement)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-set" data-id="${setId}">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-set-confirmation" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
 }
 
 function trackActiveSetMutation(pending) {
@@ -28047,8 +28162,7 @@ async function handleAction(action, el) {
     resetSocialContext();
     resetGarminProfileContext();
     webPushState = { status: "idle", source: null, error: "" };
-    if (toastTimer) window.clearTimeout(toastTimer);
-    toastTimer = null;
+    toastClearAll();
     saveState();
     syncWebPushIfEnabled();
     return render();
@@ -34890,15 +35004,339 @@ function scrubServiceWorkerRefreshParameter() {
   }
 }
 
-function showToast(message) {
-  clearTimeout(toastTimer);
-  requestAnimationFrame(() => {
-    const toast = document.querySelector("#toast");
-    if (!toast) return;
-    toast.textContent = message;
-    toast.classList.remove("hidden");
-    toastTimer = setTimeout(() => toast.classList.add("hidden"), 2400);
+// ---- Persistent toast host -----------------------------------------------------------------------
+// ONE polite live region (#toast-region) is appended to <body>, outside #app, so render() never rebuilds it.
+// A toast is a one-line chip capsule with an optional trailing action. A new toast replaces the current one (cross-fade, never a stack).
+// Duration by kind: info 4 s, info with an action 6 s, plain error 6 s, error WITH an action stays until dismissed. Paused while pressed / hovered / focused. Tap dismisses; a swipe down or sideways dismisses by distance or velocity.
+// It sits above the sheet engine's .modal (z-index 60 vs 20), still at the bottom safe area. Required decisions never use a toast.
+// The reducer below is pure: all timing is passed in as `now`, so queue/replace/timeout/pause behaviour is unit-tested without a DOM.
+const TOAST_DURATION_MS = 4000;
+const TOAST_ACTION_DURATION_MS = 6000;
+const TOAST_MAX_TEXT = 300;
+const TOAST_MAX_ACTION_LABEL = 40;
+const TOAST_EXPIRE_TOLERANCE_MS = 2;
+const TOAST_EXIT_MS = 240;
+const TOAST_FADE_OUT_MS = 90;
+const TOAST_SWIPE_SLOP = 6;
+const TOAST_SWIPE_DISMISS_Y = 40;
+const TOAST_SWIPE_DISMISS_X = 72;
+const TOAST_SWIPE_VELOCITY = 0.5; // px per ms
+const TOAST_RUBBER_BAND_MAX = 12;
+
+// A toast needs visible text; an action needs a label and a handler. Anything else is dropped.
+function toastNormalize(message, action, kind) {
+  const text = String(message ?? "").replace(/\s+/g, " ").trim().slice(0, TOAST_MAX_TEXT);
+  if (!text) return null;
+  const label = typeof action?.label === "string" ? action.label.replace(/\s+/g, " ").trim().slice(0, TOAST_MAX_ACTION_LABEL) : "";
+  const validAction = label && typeof action.onAction === "function" ? { label, onAction: action.onAction } : null;
+  return { text, action: validAction, kind: kind === "error" ? "error" : "info" };
+}
+
+// Infinity = stays until dismissed (an error that offers an action must not time out under the user's finger).
+function toastDurationMs(toast) {
+  if (toast?.kind === "error") return toast.action ? Infinity : TOAST_ACTION_DURATION_MS;
+  return toast?.action ? TOAST_ACTION_DURATION_MS : TOAST_DURATION_MS;
+}
+
+function toastInitialState(sequence = 0) {
+  return { current: null, remaining: 0, startedAt: null, pauses: [], sequence };
+}
+
+// Events: show {message, action, now} | pause {reason, now} | resume {reason, now} | expire {now} | dismiss {id?} | clear.
+function toastReduce(state, event) {
+  const now = Number.isFinite(event?.now) ? event.now : 0;
+  switch (event?.type) {
+    case "show": {
+      const toast = toastNormalize(event.message, event.action, event.kind);
+      if (!toast) return state;
+      const sequence = state.sequence + 1;
+      // Always a new toast: it replaces the current one, restarts the timer and starts unpaused.
+      return { current: { ...toast, id: sequence }, remaining: toastDurationMs(toast), startedAt: now, pauses: [], sequence };
+    }
+    case "pause": {
+      if (!state.current || typeof event.reason !== "string" || state.pauses.includes(event.reason)) return state;
+      const pauses = [...state.pauses, event.reason];
+      if (state.startedAt === null) return { ...state, pauses };
+      return { ...state, pauses, remaining: Math.max(0, state.remaining - Math.max(0, now - state.startedAt)), startedAt: null };
+    }
+    case "resume": {
+      if (!state.current || !state.pauses.includes(event.reason)) return state;
+      const pauses = state.pauses.filter(reason => reason !== event.reason);
+      return { ...state, pauses, startedAt: pauses.length === 0 ? now : state.startedAt };
+    }
+    case "expire": {
+      if (!state.current || state.startedAt === null) return state;
+      return state.remaining - Math.max(0, now - state.startedAt) <= TOAST_EXPIRE_TOLERANCE_MS ? toastInitialState(state.sequence) : state;
+    }
+    case "dismiss":
+      if (!state.current || (event.id !== undefined && event.id !== state.current.id)) return state;
+      return toastInitialState(state.sequence);
+    case "clear":
+      return state.current ? toastInitialState(state.sequence) : state;
+    default:
+      return state;
+  }
+}
+
+// Milliseconds until the current toast expires, or null while nothing shows, it is paused, or it persists until dismissed.
+function toastDeadlineMs(state, now) {
+  if (!state?.current || state.startedAt === null || !Number.isFinite(state.remaining)) return null;
+  return Math.max(0, state.remaining - Math.max(0, now - state.startedAt));
+}
+
+function toastSwipeAxis(dx, dy) {
+  const x = Number(dx) || 0;
+  const y = Number(dy) || 0;
+  if (Math.max(Math.abs(x), Math.abs(y)) < TOAST_SWIPE_SLOP) return null;
+  return Math.abs(y) >= Math.abs(x) ? "y" : "x";
+}
+
+// The toast follows the finger 1:1 down or sideways along the locked axis; upward pulls rubber-band.
+function toastSwipeOffset({ axis, dx = 0, dy = 0 } = {}) {
+  if (axis === "x") return { x: Number(dx) || 0, y: 0 };
+  if (axis !== "y") return { x: 0, y: 0 };
+  const y = Number(dy) || 0;
+  if (y >= 0) return { x: 0, y };
+  return { x: 0, y: -(TOAST_RUBBER_BAND_MAX * (1 - 1 / ((-y) * 0.55 / TOAST_RUBBER_BAND_MAX + 1))) };
+}
+
+// distance and velocity are signed along the axis (down / right positive).
+function toastSwipeDecision({ axis, distance = 0, velocity = 0 } = {}) {
+  const d = Number(distance) || 0;
+  const v = Number(velocity) || 0;
+  if (axis === "y") return d >= TOAST_SWIPE_DISMISS_Y || v > TOAST_SWIPE_VELOCITY ? "dismiss" : "restore";
+  if (axis === "x") return Math.abs(d) >= TOAST_SWIPE_DISMISS_X || Math.abs(v) > TOAST_SWIPE_VELOCITY ? "dismiss" : "restore";
+  return "restore";
+}
+
+// Plan for the leaving toast: [{ property keyframes, duration }]; opacity-only under reduced motion.
+function toastExitPlan({ reduced = false, axis = null, x = 0, y = 0 } = {}) {
+  if (reduced) return { transform: null, opacityMs: TOAST_FADE_OUT_MS, transformMs: 0 };
+  if (axis === "x") {
+    const sign = x < 0 ? -1 : 1;
+    return { transform: [`translate3d(${x}px, 0, 0)`, `translate3d(${x + sign * 120}px, 0, 0)`], opacityMs: TOAST_FADE_OUT_MS, transformMs: 180 };
+  }
+  const from = Math.max(0, Number(y) || 0);
+  return { transform: [`translate3d(0, ${from}px, 0)`, `translate3d(0, ${from + 16}px, 0)`], opacityMs: TOAST_FADE_OUT_MS, transformMs: TOAST_EXIT_MS };
+}
+
+const toastHost = {
+  state: toastInitialState(),
+  region: null,
+  element: null,
+  timer: null,
+  accountKey: null,
+  drag: null,
+  suppressClick: false,
+  exitHint: null
+};
+
+function toastRegion() {
+  if (typeof document?.createElement !== "function" || !document.body?.appendChild) return null;
+  if (toastHost.region && toastHost.region.isConnected !== false) return toastHost.region;
+  const region = document.createElement("div");
+  region.id = "toast-region";
+  region.className = "toast-region";
+  region.setAttribute("role", "status");
+  region.setAttribute("aria-live", "polite");
+  region.setAttribute("aria-atomic", "true");
+  document.body.appendChild(region);
+  toastHost.region = region;
+  return region;
+}
+
+function toastRearm() {
+  clearTimeout(toastHost.timer);
+  toastHost.timer = null;
+  const wait = toastDeadlineMs(toastHost.state, Date.now());
+  if (wait === null) return;
+  toastHost.timer = setTimeout(() => toastDispatch({ type: "expire" }), wait);
+}
+
+function toastDispatch(event) {
+  const previous = toastHost.state;
+  const next = toastReduce(previous, { ...event, now: Date.now() });
+  if (next === previous) return;
+  toastHost.state = next;
+  toastRearm();
+  if (next.current?.id !== previous.current?.id) {
+    try { toastRender(next.current); } catch { /* the host is best effort */ }
+  }
+}
+
+function toastRunAction(toast) {
+  try { toast?.action?.onAction(); } catch { /* an action failure must not leave the toast stuck */ }
+}
+
+function toastRender(toast) {
+  const leaving = toastHost.element;
+  toastHost.element = null;
+  const hint = toastHost.exitHint;
+  toastHost.exitHint = null;
+  toastCancelDrag();
+  if (leaving) toastLeave(leaving, hint || {});
+  if (!toast) return;
+  const region = toastRegion();
+  if (!region) return;
+  const element = document.createElement("div");
+  element.className = "toast";
+  element.dataset.toastId = String(toast.id);
+  element.dataset.toastKind = toast.kind;
+  const text = document.createElement("span");
+  text.className = "toast-text";
+  text.textContent = toast.text;
+  element.appendChild(text);
+  if (toast.action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toast-action";
+    button.textContent = toast.action.label;
+    element.appendChild(button);
+  }
+  toastBindElement(element, toast.id);
+  region.appendChild(element);
+  toastHost.element = element;
+}
+
+function toastBindElement(element, id) {
+  element.addEventListener("click", event => {
+    if (toastHost.suppressClick) return;
+    if (toastHost.state.current?.id !== id) return;
+    if (event.target?.closest?.(".toast-action")) toastRunAction(toastHost.state.current);
+    toastDispatch({ type: "dismiss", id });
   });
+  element.addEventListener("keydown", event => {
+    if (event.key === "Escape") toastDispatch({ type: "dismiss", id });
+  });
+  element.addEventListener("pointerenter", event => {
+    if (event.pointerType === "mouse") toastDispatch({ type: "pause", reason: "hover" });
+  });
+  element.addEventListener("pointerleave", event => {
+    if (event.pointerType === "mouse") toastDispatch({ type: "resume", reason: "hover" });
+  });
+  element.addEventListener("focusin", () => toastDispatch({ type: "pause", reason: "focus" }));
+  element.addEventListener("focusout", event => {
+    if (!element.contains?.(event.relatedTarget)) toastDispatch({ type: "resume", reason: "focus" });
+  });
+  element.addEventListener("pointerdown", event => toastPointerDown(event, element, id));
+  element.addEventListener("pointermove", event => toastPointerMove(event));
+  element.addEventListener("pointerup", event => toastPointerEnd(event, false));
+  element.addEventListener("pointercancel", event => toastPointerEnd(event, true));
+}
+
+function toastPointerDown(event, element, id) {
+  if (toastHost.drag || event.isPrimary === false || (event.pointerType === "mouse" && event.button !== 0)) return;
+  if (event.target?.closest?.(".toast-action")) return;
+  toastHost.drag = { pointerId: event.pointerId, element, id, startX: event.clientX, startY: event.clientY, axis: null, moved: false, samples: [{ t: event.timeStamp, x: event.clientX, y: event.clientY }] };
+  toastDispatch({ type: "pause", reason: "press" });
+  try { element.setPointerCapture?.(event.pointerId); } catch { /* capture is optional */ }
+}
+
+function toastPointerMove(event) {
+  const drag = toastHost.drag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  const dx = event.clientX - drag.startX;
+  const dy = event.clientY - drag.startY;
+  if (!drag.axis) {
+    drag.axis = toastSwipeAxis(dx, dy);
+    if (!drag.axis) return;
+    drag.moved = true;
+  }
+  drag.samples.push({ t: event.timeStamp, x: event.clientX, y: event.clientY });
+  if (drag.samples.length > 8) drag.samples.shift();
+  const offset = toastSwipeOffset({ axis: drag.axis, dx, dy });
+  drag.offset = offset;
+  drag.element.style.transform = `translate3d(${offset.x}px, ${offset.y}px, 0)`;
+  const travel = drag.axis === "x" ? Math.abs(offset.x) / 160 : Math.max(0, offset.y) / 80;
+  drag.element.style.opacity = String(Math.max(0.4, 1 - travel * 0.6));
+}
+
+function toastPointerEnd(event, cancelled) {
+  const drag = toastHost.drag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  toastHost.drag = null;
+  try { drag.element.releasePointerCapture?.(drag.pointerId); } catch { /* already released */ }
+  if (drag.moved) {
+    toastHost.suppressClick = true;
+    setTimeout(() => { toastHost.suppressClick = false; }, 50);
+  }
+  const offset = drag.offset || { x: 0, y: 0 };
+  const velocity = toastDragVelocity(drag);
+  const decision = cancelled || !drag.axis ? "restore" : toastSwipeDecision({
+    axis: drag.axis,
+    distance: drag.axis === "x" ? offset.x : offset.y,
+    velocity
+  });
+  if (decision === "dismiss") {
+    toastHost.exitHint = { axis: drag.axis, x: offset.x, y: offset.y };
+    toastDispatch({ type: "dismiss", id: drag.id });
+    toastDispatch({ type: "resume", reason: "press" });
+    return;
+  }
+  const element = drag.element;
+  if (drag.moved && typeof element.animate === "function" && !sheetPrefersReducedMotion()) {
+    try {
+      element.animate([{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0)`, opacity: element.style.opacity || "1" }, { transform: "translate3d(0, 0, 0)", opacity: "1" }], { duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+    } catch { /* snap back instead */ }
+  }
+  element.style.transform = "";
+  element.style.opacity = "";
+  toastDispatch({ type: "resume", reason: "press" });
+}
+
+// Velocity (px per ms, positive = down / right) over the last 100 ms of the drag.
+function toastDragVelocity(drag) {
+  const key = drag.axis === "x" ? "x" : "y";
+  const samples = drag.samples.map(sample => ({ t: sample.t, y: sample[key] }));
+  return typeof sheetDragVelocity === "function" ? sheetDragVelocity(samples) : 0;
+}
+
+function toastCancelDrag() {
+  const drag = toastHost.drag;
+  toastHost.drag = null;
+  if (!drag) return;
+  try { drag.element.releasePointerCapture?.(drag.pointerId); } catch { /* already released */ }
+}
+
+// The leaving toast is detached from interaction and animated on its own (WAAPI), then removed; a timeout is the fallback.
+function toastLeave(element, hint = {}) {
+  try {
+    element.setAttribute("aria-hidden", "true");
+    element.inert = true;
+    element.classList.add("toast-leaving");
+    const plan = toastExitPlan({ reduced: sheetPrefersReducedMotion(), axis: hint.axis || null, x: hint.x || 0, y: hint.y || 0 });
+    if (typeof element.animate !== "function") { element.remove(); return; }
+    const duration = Math.max(plan.opacityMs, plan.transformMs);
+    if (plan.transform) element.animate({ transform: plan.transform }, { duration: plan.transformMs, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" });
+    element.animate({ opacity: [element.style.opacity || "1", "0"] }, { duration: plan.opacityMs, easing: "linear", fill: "forwards" });
+    setTimeout(() => element.remove?.(), duration + 120);
+  } catch {
+    element.remove?.();
+  }
+}
+
+// Removes every toast at once (no motion): used when the account/profile changes or the language switches.
+function toastClearAll() {
+  toastCancelDrag();
+  toastHost.exitHint = null;
+  clearTimeout(toastHost.timer);
+  toastHost.timer = null;
+  toastHost.state = toastReduce(toastHost.state, { type: "clear" });
+  toastHost.element = null;
+  try { toastHost.region?.querySelectorAll?.(".toast").forEach(element => element.remove()); } catch { /* best effort */ }
+}
+
+// Pending toasts never carry one profile's content into another: reconcile on every show and render.
+function toastReconcileAccount() {
+  const key = sheetAccountKey();
+  if (toastHost.accountKey !== null && key !== toastHost.accountKey) toastClearAll();
+  toastHost.accountKey = key;
+}
+
+// showToast(message, { kind: "info" | "error", action: { label, onAction } }). The message is assigned as textContent only.
+function showToast(message, options = {}) {
+  toastReconcileAccount();
+  toastDispatch({ type: "show", message, action: options?.action, kind: options?.kind });
 }
 
 const BOOT_SPLASH_VISIBLE_MS = 1400;

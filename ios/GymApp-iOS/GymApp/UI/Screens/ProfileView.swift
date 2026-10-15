@@ -21,12 +21,10 @@ struct ProfileView: View {
 
     private enum ActiveAlert: Identifiable {
         case importBackup
-        case error(String)
 
         var id: String {
             switch self {
             case .importBackup: "import-backup"
-            case let .error(message): "error-\(message)"
             }
         }
     }
@@ -50,7 +48,6 @@ struct ProfileView: View {
     @State private var exportDocument: ProfileExportDocument?
     @State private var exportContentType: UTType = .json
     @State private var exportFilename = "GymApp-backup"
-    @State private var resultMessage: String?
     @State private var fulfilledNativePushRequestID: UUID?
     @State private var requestedNativePushAccessibilityTarget: NativePushProfileFocus?
     @State private var selectedSection: ProfileSection = .friends
@@ -99,10 +96,6 @@ struct ProfileView: View {
                             sectionPicker
                         }
 
-                        if let resultMessage {
-                            GymStatusBanner(message: resultMessage, isError: false)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
                         if selectedSection == .friends && isCloudAccount {
                             FriendsView(
                                 appState: appState,
@@ -930,12 +923,6 @@ struct ProfileView: View {
                     pendingImportData = nil
                 }
             )
-        case let .error(message):
-            return Alert(
-                title: Text("Couldn’t complete the action"),
-                message: Text(gymLocalized(message)),
-                dismissButton: .default(Text("OK"))
-            )
         }
     }
 
@@ -967,7 +954,7 @@ struct ProfileView: View {
             exportFilename = "GymApp-backup"
             showsExporter = true
         } catch {
-            activeAlert = .error(gymErrorMessage(error))
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 
@@ -982,7 +969,7 @@ struct ProfileView: View {
             exportFilename = "GymApp-diagnostics"
             showsExporter = true
         } catch {
-            activeAlert = .error(gymErrorMessage(error))
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 
@@ -1024,7 +1011,7 @@ struct ProfileView: View {
             exportFilename = "GymApp-diagnostics"
             showsExporter = true
         } catch {
-            activeAlert = .error(gymErrorMessage(error))
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 
@@ -1046,7 +1033,7 @@ struct ProfileView: View {
             )
             activeAlert = .importBackup
         } catch {
-            activeAlert = .error(gymErrorMessage(error))
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 
@@ -1055,9 +1042,9 @@ struct ProfileView: View {
         pendingImportData = nil
         do {
             let result = try appState.importBackup(data)
-            resultMessage = importSummary(result)
+            appState.show(message: importSummary(result), isError: false)
         } catch {
-            activeAlert = .error(gymErrorMessage(error))
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 
@@ -1065,9 +1052,9 @@ struct ProfileView: View {
         exportDocument = nil
         switch result {
         case .success:
-            resultMessage = "Export saved."
+            appState.show(message: "Export saved.", isError: false)
         case let .failure(error):
-            activeAlert = .error(gymErrorMessage(error))
+            appState.show(message: gymErrorMessage(error), isError: true)
         }
     }
 

@@ -4234,9 +4234,8 @@ struct ActiveWorkoutView: View {
                 "Не понял: «\(rawTranscript)»",
                 languageCode: gymCurrentLanguageCode()
             )
-            statusMessage = message
-            statusIsError = true
-            announce(message)
+            // A transient hint: the toast host shows it and announces it politely.
+            reportStatus(message, true)
         }
     }
 
@@ -4267,9 +4266,8 @@ struct ActiveWorkoutView: View {
                 "Запись заблокирована, пока подтверждается завершение.",
                 languageCode: gymCurrentLanguageCode()
             )
-            statusMessage = message
-            statusIsError = true
-            announce(message)
+            // A transient hint: the toast host shows it and announces it politely.
+            reportStatus(message, true)
             return
         }
         let resolvedWeight = weightKg ?? liveSet.weight
@@ -4308,9 +4306,8 @@ struct ActiveWorkoutView: View {
                 "Нет предыдущего подхода",
                 languageCode: gymCurrentLanguageCode()
             )
-            statusMessage = message
-            statusIsError = true
-            announce(message)
+            // A transient hint: the toast host shows it and announces it politely.
+            reportStatus(message, true)
             return
         }
         performVoiceLogSet(weightKg: repeatWeight, reps: repeatReps, set: set, exercise: exercise, exerciseName: exerciseName, draft: draft)
@@ -4326,9 +4323,8 @@ struct ActiveWorkoutView: View {
                 "Нет активного отдыха",
                 languageCode: gymCurrentLanguageCode()
             )
-            statusMessage = message
-            statusIsError = true
-            announce(message)
+            // A transient hint: the toast host shows it and announces it politely.
+            reportStatus(message, true)
             return
         }
         stopManualRest()

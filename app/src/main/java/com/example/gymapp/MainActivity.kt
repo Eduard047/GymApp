@@ -5,7 +5,6 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
@@ -96,11 +95,8 @@ class MainActivity : AppCompatActivity() {
                 IncomingSharedWorkoutUrl.NotSharedWorkout -> Unit
                 IncomingSharedWorkoutUrl.InvalidSharedWorkout -> {
                     intent.data = null
-                    Toast.makeText(
-                        this,
-                        getString(R.string.message_shared_workout_invalid),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    (application as GymApplication).toastController
+                        .post(getString(R.string.message_shared_workout_invalid))
                     return
                 }
                 is IncomingSharedWorkoutUrl.Valid -> {
@@ -142,11 +138,7 @@ class MainActivity : AppCompatActivity() {
                     AuthCallbackKind.EmailConfirmation ->
                         R.string.auth_message_email_confirmed
                 }
-                Toast.makeText(
-                    this@MainActivity,
-                    getString(messageResource),
-                    Toast.LENGTH_LONG
-                ).show()
+                app.toastController.post(getString(messageResource))
             }.onFailure { throwable ->
                 app.cloudAuthManager.setMessage(
                     authErrorText(throwable, R.string.auth_message_callback_failed)

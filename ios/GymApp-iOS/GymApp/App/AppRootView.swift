@@ -11,6 +11,7 @@ struct AppRootView: View {
 
     @Binding private var showsIntro: Bool
     @State private var showsPasswordUpdate = false
+    @State private var toastContentBottomInset: CGFloat = 0
 
     init(appState: AppState, nativePush: NativePushManager, showsIntro: Binding<Bool>) {
         self._showsIntro = showsIntro
@@ -54,6 +55,13 @@ struct AppRootView: View {
         // active workout surfaces observe the same AppStorage value and redraw in place.
         .environment(\.locale, AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en"))
         .allowsHitTesting(!appState.isSigningOut)
+        .onPreferenceChange(GymToastContentInsetKey.self) { toastContentBottomInset = $0 }
+        // The one app-level toast host: above the tab bar and the content. Sheets and
+        // the active-workout cover are separate presentations, so each carries its
+        // own host (see `gymToastHost()`); the topmost one draws the toast.
+        .overlay(alignment: .bottom) {
+            GymToastHost(hostID: .root, contentBottomInset: toastContentBottomInset)
+        }
         .overlay {
             if appState.isSigningOut {
                 ZStack {
@@ -573,21 +581,25 @@ private struct MainTabShell: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             workoutsTab
+                .gymToastReportsBottomInset()
                 .tabItem { Label(Tab.workouts.title(languageCode), systemImage: Tab.workouts.icon) }
                 .tag(Tab.workouts)
                 .accessibilityIdentifier("tab-workouts")
 
             exercisesTab
+                .gymToastReportsBottomInset()
                 .tabItem { Label(Tab.exercises.title(languageCode), systemImage: Tab.exercises.icon) }
                 .tag(Tab.exercises)
                 .accessibilityIdentifier("tab-exercises")
 
             progressTab
+                .gymToastReportsBottomInset()
                 .tabItem { Label(Tab.progress.title(languageCode), systemImage: Tab.progress.icon) }
                 .tag(Tab.progress)
                 .accessibilityIdentifier("tab-progress")
 
             profileTab
+                .gymToastReportsBottomInset()
                 .tabItem { Label(Tab.profile.title(languageCode), systemImage: Tab.profile.icon) }
                 .badge(
                     (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0) +
@@ -756,30 +768,10 @@ private struct MainTabShell: View {
             .environmentObject(appState)
             .environmentObject(auth)
             .environmentObject(store)
+            .gymToastHost()
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
-                if let message = appState.statusMessage {
-                    Button {
-                        withAnimation { appState.clearStatus() }
-                    } label: {
-                        GymStatusBanner(message: message, isError: appState.statusIsError)
-                            .frame(maxWidth: 560)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, GymTheme.screenHorizontalInset)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial)
-                    .accessibilityHint(
-                        gymText(
-                            "Double tap to dismiss",
-                            "Торкнися двічі, щоб закрити",
-                            "Коснись дважды, чтобы закрыть",
-                            languageCode: languageCode
-                        )
-                    )
-                }
-
                 if (appState.socialWorkoutInbox?.pendingIncomingCount ?? 0) > 0,
                    selectedTab != .profile {
                     Button {

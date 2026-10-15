@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.dp
  * animator duration scale, so "remove animations" already removes the slide. On top of that, with
  * reduced motion the sheet cross-fades in over [GymMotion.FadeInMillis]. Back and predictive back
  * dismiss through [onDismissRequest]. Every sheet's content must still show its own visible
- * Close/Done/Cancel control for non-gesture users.
+ * Close/Done/Cancel control for non-gesture users. The sheet also hosts the app toast ([GymToastSheetHost]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +72,8 @@ fun GymModalBottomSheet(
         scrimColor = gymSheetScrimColor(isDark = colors.background.luminance() < 0.5f),
         dragHandle = { GymSheetDragHandle() }
     ) {
+        // Toasts raised while a sheet is open draw above it (the sheet is its own window over the root host).
+        GymToastSheetHost()
         content()
     }
 }

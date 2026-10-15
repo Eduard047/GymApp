@@ -117,12 +117,9 @@ final class AppState: ObservableObject {
     /// in the background to run an intent.
     let liveActivityController = WorkoutLiveActivityController()
     private var liveActivityDraftSubscription: AnyCancellable?
-    @Published var statusMessage: String?
-    @Published var statusIsError = false
-    /// Informational banners dismiss themselves after this delay; errors stay until tapped.
-    static let defaultStatusAutoDismissDelay: Duration = .seconds(4)
-    var statusAutoDismissDelay = AppState.defaultStatusAutoDismissDelay
-    private var statusDismissTask: Task<Void, Never>?
+    /// The one app-level toast controller. Every transient message goes through
+    /// `show(message:isError:)` (or `toasts` directly for an action toast).
+    let toasts = GymToastCenter()
     @Published private(set) var isPreparingAccount = false
     @Published private(set) var activeAccountStorageKey: String?
     @Published private(set) var accountPreparationError: String?
@@ -279,13 +276,17 @@ final class AppState: ObservableObject {
         bindLiveActivityController()
 
         if openedStore.quarantinedFileURL != nil {
-            statusMessage = gymText(
-                "A damaged local data file was preserved for recovery. Cloud data will restore after sign-in; offline profiles should contact support before deleting the app.",
-                "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку.",
-                "Повреждённый локальный файл сохранён для восстановления. Облачные данные восстановятся после входа; для офлайн-профиля обратись в поддержку перед удалением приложения.",
-                languageCode: gymCurrentLanguageCode(defaults: defaults)
+            // Raised while the intro is still on screen, so it stays up longer.
+            toasts.show(
+                gymText(
+                    "A damaged local data file was preserved for recovery. Cloud data will restore after sign-in; offline profiles should contact support before deleting the app.",
+                    "Пошкоджений локальний файл збережено для відновлення. Хмарні дані відновляться після входу; для офлайн-профілю звернися до підтримки перед видаленням застосунку.",
+                    "Повреждённый локальный файл сохранён для восстановления. Облачные данные восстановятся после входа; для офлайн-профиля обратись в поддержку перед удалением приложения.",
+                    languageCode: gymCurrentLanguageCode(defaults: defaults)
+                ),
+                kind: .error,
+                duration: 12
             )
-            statusIsError = true
         }
 
         sessionSubscription = auth.$session
@@ -2700,7 +2701,7 @@ final class AppState: ObservableObject {
         }
         auth.pendingAccountDeletionStateDidChange()
         defaults.removeObject(forKey: Self.legacyPendingDeletionGarminUserIDKey)
-        if deletingSessionIsStillCurrent { statusMessage = nil }
+        if deletingSessionIsStillCurrent { clearStatus() }
     }
 
     private func ensureDeletionTargetIsCurrent(
@@ -2826,25 +2827,14 @@ final class AppState: ObservableObject {
         show(message: gymErrorMessage(error), isError: true)
     }
 
+    /// Routes a transient message to the persistent toast host (one at a time;
+    /// a newer message replaces the current one).
     func show(message: String, isError: Bool) {
-        statusDismissTask?.cancel()
-        statusDismissTask = nil
-        statusMessage = message
-        statusIsError = isError
-        guard !isError else { return }
-        let delay = statusAutoDismissDelay
-        statusDismissTask = Task { [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self,
-                  self.statusMessage == message, !self.statusIsError else { return }
-            withAnimation { self.clearStatus() }
-        }
+        toasts.show(message, kind: isError ? .error : .info)
     }
 
     func clearStatus() {
-        statusDismissTask?.cancel()
-        statusDismissTask = nil
-        statusMessage = nil
+        toasts.dismiss()
     }
 
     /// Re-attaches `liveActivityController` to the current `activeWorkoutStore`

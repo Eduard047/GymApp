@@ -34,6 +34,9 @@ private struct GymSheetPresentationModifier: ViewModifier {
             .presentationDetents(size.detents)
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(GymSheetStyle.topCornerRadius)
+            // A sheet is a separate presentation, so the root toast host cannot draw
+            // above it; each sheet carries a host and the topmost one shows the toast.
+            .gymToastHost()
     }
 }
 
@@ -41,7 +44,8 @@ extension View {
     /// Applies the shared bottom-sheet contract to the root of a sheet's content:
     /// detents, visible drag handle and 32pt top radius. The background stays the
     /// system sheet material (DESIGN.md: system sheets keep their own), which
-    /// already honours Reduce Transparency. Alerts and confirmation dialogs are
+    /// already honours Reduce Transparency. Also mounts a toast host inside the
+    /// sheet so toasts raised while it is open stay visible above it. Alerts and confirmation dialogs are
     /// not sheets and do not use this.
     func gymSheetPresentation(_ size: GymSheetSize = .standard) -> some View {
         modifier(GymSheetPresentationModifier(size: size))

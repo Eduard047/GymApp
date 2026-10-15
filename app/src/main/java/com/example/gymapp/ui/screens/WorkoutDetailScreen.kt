@@ -61,9 +61,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -93,6 +90,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.components.LocalGymToastController
 import com.example.gymapp.data.entity.ExerciseEntity
 import com.example.gymapp.data.entity.SetEntryEntity
 import com.example.gymapp.data.repository.defaultContributionsForExercise
@@ -236,7 +234,7 @@ internal fun WorkoutDetailScreen(
     onEditModeChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val snackbarHostState = remember { SnackbarHostState() }
+    val toastController = LocalGymToastController.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var exerciseToRemoveId by remember { mutableStateOf<Long?>(null) }
@@ -254,23 +252,20 @@ internal fun WorkoutDetailScreen(
         events.collect { event ->
             when (event) {
                 WorkoutDetailEvent.AddSetFailed -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_add_set_failed),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_add_set_failed)
                     )
                 }
 
                 WorkoutDetailEvent.AddExerciseFailed -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_add_exercise_failed),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_add_exercise_failed)
                     )
                 }
 
                 WorkoutDetailEvent.SetDeleted -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_set_deleted),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_set_deleted)
                     )
                 }
 
@@ -279,58 +274,50 @@ internal fun WorkoutDetailScreen(
                 }
 
                 WorkoutDetailEvent.InvalidInput -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_invalid_set_input),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_invalid_set_input)
                     )
                 }
 
                 WorkoutDetailEvent.DeleteTargetChanged -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_delete_target_changed),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_delete_target_changed)
                     )
                 }
 
                 WorkoutDetailEvent.ExerciseRemoved -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_exercise_removed),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_exercise_removed)
                     )
                 }
 
                 WorkoutDetailEvent.RemoveExerciseFailed -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_remove_exercise_failed),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_remove_exercise_failed)
                     )
                 }
 
                 WorkoutDetailEvent.DetailsSaved -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_workout_details_saved),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_workout_details_saved)
                     )
                 }
 
                 WorkoutDetailEvent.DetailsInvalid -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_workout_details_invalid),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_workout_details_invalid)
                     )
                 }
 
                 WorkoutDetailEvent.DetailsSaveFailed -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_workout_details_failed),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_workout_details_failed)
                     )
                 }
 
                 WorkoutDetailEvent.DeleteFailed -> {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.message_delete_failed),
-                        duration = SnackbarDuration.Short
+                    toastController.show(
+                        message = context.getString(R.string.message_delete_failed)
                     )
                 }
             }
@@ -385,9 +372,8 @@ internal fun WorkoutDetailScreen(
                     }
                 }.onFailure {
                     coroutineScope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = context.getString(R.string.message_share_workout_failed),
-                            duration = SnackbarDuration.Short
+                        toastController.show(
+                            message = context.getString(R.string.message_share_workout_failed)
                         )
                     }
                 }
@@ -547,13 +533,6 @@ internal fun WorkoutDetailScreen(
                 }
             }
         }
-
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(12.dp)
-        )
     }
 
     val currentSessionId = uiState.sessionDetails?.session?.id

@@ -202,14 +202,11 @@ struct ExercisesView: View {
 
     private enum ActiveAlert: Identifiable {
         case delete(ExerciseLibraryDeletionTarget)
-        case error(String)
 
         var id: String {
             switch self {
             case let .delete(target):
                 return "delete-\(target.id.uuidString)"
-            case let .error(message):
-                return "error-\(message)"
             }
         }
     }
@@ -224,19 +221,12 @@ struct ExercisesView: View {
     @State private var sortMode: ExerciseSortMode = .name
     @State private var presentedSheet: PresentedSheet?
     @State private var activeAlert: ActiveAlert?
-    @State private var resultMessage: String?
-    @State private var resultIsError = false
 
     var body: some View {
         GymBackground {
             ScrollView {
                 LazyVStack(spacing: GymTheme.contentSpacing) {
                     header
-
-                    if let resultMessage {
-                        GymStatusBanner(message: resultMessage, isError: resultIsError)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
 
                     exerciseLibrary
                 }
@@ -572,7 +562,7 @@ struct ExercisesView: View {
             do {
                 _ = try store.toggleExerciseFavorite(id: exercise.id)
             } catch {
-                activeAlert = .error(errorMessage(error))
+                appState.show(message: errorMessage(error), isError: true)
             }
         } label: {
             Image(systemName: exercise.isFavorite ? "heart.fill" : "heart")
@@ -670,8 +660,7 @@ struct ExercisesView: View {
                         name: draft.name,
                         machineLoadProfile: draft.machineLoadProfile
                     )
-                    resultMessage = "Exercise added."
-                    resultIsError = false
+                    appState.show(message: "Exercise added.", isError: false)
                 }
             }
             .gymSheetPresentation(.full)
@@ -696,8 +685,7 @@ struct ExercisesView: View {
                         id: exercise.id,
                         machineLoadProfile: draft.machineLoadProfile
                     )
-                    resultMessage = "Exercise updated."
-                    resultIsError = false
+                    appState.show(message: "Exercise updated.", isError: false)
                 }
             }
             .gymSheetPresentation(.full)
@@ -722,10 +710,12 @@ struct ExercisesView: View {
                         exerciseName: exercise.name,
                         muscleIDs: Array(selection)
                     )
-                    resultMessage = selection.isEmpty
-                        ? "Automatic muscle mapping restored."
-                        : "Muscle groups saved."
-                    resultIsError = false
+                    appState.show(
+                        message: selection.isEmpty
+                            ? "Automatic muscle mapping restored."
+                            : "Muscle groups saved.",
+                        isError: false
+                    )
                 }
             }
             .gymSheetPresentation(.standard)
@@ -753,33 +743,30 @@ struct ExercisesView: View {
                         activeAccountStorageKey: appState.activeAccountStorageKey,
                         isAccountReady: appState.isAccountReady
                     ) else {
-                        resultMessage = gymLocalized(
-                            "The exercise or its linked workout data changed before deletion. Review it and try again.",
-                            languageCode: languageCode
+                        appState.show(
+                            message: gymLocalized(
+                                "The exercise or its linked workout data changed before deletion. Review it and try again.",
+                                languageCode: languageCode
+                            ),
+                            isError: true
                         )
-                        resultIsError = true
                         return
                     }
                     do {
                         try store.deleteExercise(id: target.exerciseID, cascadeFromWorkouts: true)
                         target.restTimerIDs.forEach { appState.restTimers.cancel(id: $0) }
-                        resultMessage = gymLocalized(
-                            "Exercise and linked workout entries deleted.",
-                            languageCode: languageCode
+                        appState.show(
+                            message: gymLocalized(
+                                "Exercise and linked workout entries deleted.",
+                                languageCode: languageCode
+                            ),
+                            isError: false
                         )
-                        resultIsError = false
                     } catch {
-                        activeAlert = .error(errorMessage(error))
+                        appState.show(message: errorMessage(error), isError: true)
                     }
                 },
                 secondaryButton: .cancel(Text(gymLocalized("Cancel", languageCode: languageCode)))
-            )
-
-        case let .error(message):
-            return Alert(
-                title: Text("Couldn’t complete the action"),
-                message: Text(gymLocalized(message)),
-                dismissButton: .default(Text("OK"))
             )
         }
     }

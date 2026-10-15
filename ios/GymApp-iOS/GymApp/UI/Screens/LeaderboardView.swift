@@ -166,7 +166,6 @@ struct FriendsView: View {
 
     @State private var friendCode = ""
     @State private var errorMessage: String?
-    @State private var statusMessage: String?
     @State private var isLoading = false
     @State private var activeActionID: String?
     @State private var privacyDraft: SocialPrivacy?
@@ -206,9 +205,6 @@ struct FriendsView: View {
             } else {
                 if let errorMessage {
                     refreshErrorPanel(errorMessage)
-                }
-                if let statusMessage {
-                    GymStatusBanner(message: statusMessage, isError: false)
                 }
 
                 if let dashboard = appState.socialDashboard {
@@ -418,7 +414,7 @@ struct FriendsView: View {
                     Spacer(minLength: 4)
                     Button {
                         UIPasteboard.general.string = displayCode
-                        statusMessage = t("Friend code copied.", "Код друга скопійовано.", "Код друга скопирован.")
+                        showStatus(t("Friend code copied.", "Код друга скопійовано.", "Код друга скопирован."))
                     } label: {
                         Image(systemName: "doc.on.doc")
                     }
@@ -1246,24 +1242,24 @@ struct FriendsView: View {
             )
             switch outcome {
             case .active:
-                statusMessage = t(
+                showStatus(t(
                     "Live workout started.",
                     "Спільне тренування почалося.",
                     "Совместная тренировка началась."
-                )
+                ))
                 onOpenLiveWorkout()
             case .confirmedRestoring:
-                statusMessage = t(
+                showStatus(t(
                     "Acceptance confirmed. Restoring the started workout…",
                     "Прийняття підтверджено. Відновлюємо розпочате тренування…",
                     "Принятие подтверждено. Восстанавливаем начатую тренировку…"
-                )
+                ))
             case .declined:
-                statusMessage = t(
+                showStatus(t(
                     "Live invitation declined.",
                     "Живе запрошення відхилено.",
                     "Живое приглашение отклонено."
-                )
+                ))
             }
         } catch {
             errorMessage = gymSafeEnglishErrorMessage(error)
@@ -1312,29 +1308,29 @@ struct FriendsView: View {
         await perform(id: "send-friend") {
             try await appState.sendFriendRequest(friendCode: code)
             friendCode = ""
-            statusMessage = confirmedSocialStatus(t(
+            showStatus(confirmedSocialStatus(t(
                 "Request submitted if this code can receive requests.",
                 "Запит надіслано, якщо цей код може приймати запити.",
                 "Запрос отправлен, если этот код может принимать запросы."
-            ))
+            )))
         }
     }
 
     private func respond(_ request: SocialFriendRequest, accept: Bool) async {
         await perform(id: request.friendshipID) {
             try await appState.respondFriendRequest(request, accept: accept)
-            statusMessage = confirmedSocialStatus(accept
+            showStatus(confirmedSocialStatus(accept
                 ? t("Friend added.", "Друга додано.", "Друг добавлен.")
-                : t("Request declined.", "Запит відхилено.", "Запрос отклонён."))
+                : t("Request declined.", "Запит відхилено.", "Запрос отклонён.")))
         }
     }
 
     private func cancel(_ request: SocialFriendRequest) async {
         await perform(id: request.friendshipID) {
             try await appState.cancelFriendRequest(request)
-            statusMessage = confirmedSocialStatus(
+            showStatus(confirmedSocialStatus(
                 t("Request cancelled.", "Запит скасовано.", "Запрос отменён.")
-            )
+            ))
         }
     }
 
@@ -1390,11 +1386,11 @@ struct FriendsView: View {
                     preparation.invite,
                     replacingPendingSharedWorkoutID: preparation.pendingID
                 )
-                statusMessage = t(
+                showStatus(t(
                     "Accepted workout reopened as a local preview.",
                     "Прийняте тренування знову відкрито в локальному перегляді.",
                     "Принятая тренировка снова открыта в локальном просмотре."
-                )
+                ))
             }
         }
     }
@@ -1410,18 +1406,18 @@ struct FriendsView: View {
                 accept: accept,
                 replacingPendingSharedWorkoutID: replacingPendingID
             )
-            statusMessage = confirmedSocialStatus(accept
+            showStatus(confirmedSocialStatus(accept
                 ? t("Workout copied to a local preview.", "Тренування скопійовано в локальний перегляд.", "Тренировка скопирована в локальный просмотр.")
-                : t("Workout invitation declined.", "Запрошення на тренування відхилено.", "Приглашение на тренировку отклонено."))
+                : t("Workout invitation declined.", "Запрошення на тренування відхилено.", "Приглашение на тренировку отклонено.")))
         }
     }
 
     private func cancelWorkoutInvite(_ invite: SocialWorkoutInvite) async {
         await perform(id: invite.inviteID) {
             try await appState.cancelWorkoutInvite(invite)
-            statusMessage = confirmedSocialStatus(
+            showStatus(confirmedSocialStatus(
                 t("Workout invitation cancelled.", "Запрошення на тренування скасовано.", "Приглашение на тренировку отменено.")
-            )
+            ))
         }
     }
 
@@ -1434,11 +1430,11 @@ struct FriendsView: View {
     private func block(_ request: SocialFriendRequest) async {
         await perform(id: request.profileID) {
             try await appState.blockSocialProfile(profileID: request.profileID)
-            statusMessage = confirmedSocialStatus(t(
+            showStatus(confirmedSocialStatus(t(
                 "Request sender blocked.",
                 "Відправника запиту заблоковано.",
                 "Отправитель запроса заблокирован."
-            ))
+            )))
         }
     }
 
@@ -1516,13 +1512,13 @@ struct FriendsView: View {
                 }
             } catch {
                 if generalPrivacyWasConfirmed {
-                    statusMessage = confirmedSocialStatus(
+                    showStatus(confirmedSocialStatus(
                         t(
                             "Main privacy settings saved. The exact-workout-details setting was not changed; refresh and retry it.",
                             "Основні налаштування приватності збережено. Налаштування точних деталей тренувань не змінено — онови дані й повтори його.",
                             "Основные настройки приватности сохранены. Настройка точных деталей тренировок не изменена — обнови данные и повтори её."
                         )
-                    )
+                    ))
                     errorMessage = t(
                         "One privacy setting still needs attention.",
                         "Одне налаштування приватності ще потребує уваги.",
@@ -1532,19 +1528,24 @@ struct FriendsView: View {
                 }
                 throw error
             }
-            statusMessage = confirmedSocialStatus(
+            showStatus(confirmedSocialStatus(
                 t("Privacy updated.", "Приватність оновлено.", "Приватность обновлена.")
-            )
+            ))
         }
     }
 
     private func unblock(_ profile: SocialBlockedProfile) async {
         await perform(id: profile.profileID) {
             try await appState.unblockSocialProfile(profileID: profile.profileID)
-            statusMessage = confirmedSocialStatus(
+            showStatus(confirmedSocialStatus(
                 t("Person unblocked.", "Користувача розблоковано.", "Пользователь разблокирован.")
-            )
+            ))
         }
+    }
+
+    /// Confirmations go to the app's persistent toast host.
+    private func showStatus(_ message: String) {
+        appState.show(message: message, isError: false)
     }
 
     private func confirmedSocialStatus(_ confirmedMessage: String) -> String {
@@ -1560,7 +1561,6 @@ struct FriendsView: View {
         guard activeActionID == nil else { return }
         activeActionID = id
         errorMessage = nil
-        statusMessage = nil
         defer { activeActionID = nil }
         do {
             try await action()

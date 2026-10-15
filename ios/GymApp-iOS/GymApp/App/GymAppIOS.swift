@@ -70,6 +70,7 @@ struct GymAppIOS: App {
                         .environmentObject(appState.workoutStore)
                         .environmentObject(bootstrap.auth)
                         .environmentObject(bootstrap.nativePush)
+                        .environment(appState.toasts)
                         .onOpenURL { url in
                             if !appState.handleSharedWorkoutURL(url),
                                !appState.garminPhoneSync.handleOpenURL(url) {

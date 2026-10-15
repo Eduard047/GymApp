@@ -101,8 +101,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
+import com.example.gymapp.ui.components.GymToastResult
+import com.example.gymapp.ui.components.LocalGymToastController
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
@@ -242,7 +242,6 @@ fun ActiveWorkoutScreen(
     onPreviewAdaptation: (String, Int, Long?) -> Unit = { _, _, _ -> },
     onApplyAdaptation: () -> Unit = {},
     onDismissAdaptation: () -> Unit = {},
-    voiceCommandSnackbarHostState: SnackbarHostState? = null,
     friendGhosts: Map<String, FriendGhost> = emptyMap(),
     toolbarState: ActiveWorkoutToolbarState? = null,
     modifier: Modifier = Modifier
@@ -330,12 +329,12 @@ fun ActiveWorkoutScreen(
     val reduceMotion = rememberReduceMotion()
     val voiceCommandScope = rememberCoroutineScope()
     // Feedback channel for the in-workout voice mic (LogSet/RepeatPrevious/SkipRest/
-    // Unknown): a Snackbar with an optional action (e.g. "Отменить" after LogSet).
-    val onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = feedback@{ message, actionLabel, onAction ->
-        val hostState = voiceCommandSnackbarHostState ?: return@feedback
+    // Unknown): an app toast with an optional action (e.g. "Отменить" after LogSet).
+    val toastController = LocalGymToastController.current
+    val onVoiceCommandFeedback: (String, String?, (() -> Unit)?) -> Unit = { message, actionLabel, onAction ->
         voiceCommandScope.launch {
-            val result = hostState.showSnackbar(message = message, actionLabel = actionLabel, withDismissAction = actionLabel == null)
-            if (result == SnackbarResult.ActionPerformed) onAction?.invoke()
+            val result = toastController.show(message = message, actionLabel = actionLabel)
+            if (result == GymToastResult.ActionPerformed) onAction?.invoke()
         }
     }
     // The one confirmation banner for a recorded set (visible Log button and the voice commands).

@@ -17,7 +17,8 @@ function fixture() {
     app: { classList: { toggle() {} } }, document: { documentElement: {} },
     rememberVisibleScroll() {}, bindEvents() {}, requestAnimationFrame() {},
     restoreVisibleScroll() {}, pendingEnterAnimation: null, settleActiveRingProgress() {}, exerciseDragDefersRender: () => false,
-    sheetDragDefersRender: () => false, sheetEngineBeforeRender() {}
+    sheetDragDefersRender: () => false, sheetEngineBeforeRender() {},
+    toastReconcileAccount() {}, bannerExitCapture: () => null, bannerExitAfterRender() {}
   });
   vm.runInContext(`${dates}\n${render}`, context);
   return { context, constructions: () => constructions };

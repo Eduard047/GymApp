@@ -54,10 +54,6 @@ struct AccountSettingsView: View {
         GymBackground {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: GymTheme.contentSpacing) {
-                    if let message = appState.statusMessage {
-                        GymStatusBanner(message: message, isError: appState.statusIsError)
-                    }
-
                     accountDetailsCard
                     if isCloudAccount {
                         syncCard

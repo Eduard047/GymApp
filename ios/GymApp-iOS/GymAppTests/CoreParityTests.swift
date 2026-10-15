@@ -6389,68 +6389,28 @@ final class CoreParityTests: XCTestCase {
         )
     }
 
-    private func makeStatusAppState(named name: String, delay: Duration) throws -> AppState {
+    private func makeStatusAppState(named name: String) throws -> AppState {
         let defaults = temporaryDefaults(named: name)
-        let appState = try AppState(
+        return try AppState(
             auth: AuthService(keychain: InMemoryKeychainStore(), defaults: defaults),
             defaults: defaults,
             workoutDirectoryURL: try temporaryDirectory(named: name)
         )
-        appState.statusAutoDismissDelay = delay
-        return appState
     }
 
-    func testStatusMessageDefaultAutoDismissDelayIsFourSeconds() {
-        XCTAssertEqual(AppState.defaultStatusAutoDismissDelay, .seconds(4))
-    }
-
-    func testInformationalStatusMessageClearsAfterDelay() async throws {
-        let appState = try makeStatusAppState(named: "status-auto-dismiss", delay: .milliseconds(80))
+    func testStatusMessagesRouteToTheToastHost() throws {
+        let appState = try makeStatusAppState(named: "status-toast-route")
 
         appState.show(message: "Saved.", isError: false)
-        XCTAssertEqual(appState.statusMessage, "Saved.")
-        let cleared = await waitUntil { appState.statusMessage == nil }
-        XCTAssertTrue(cleared)
-    }
-
-    func testErrorStatusMessageStaysUntilDismissed() async throws {
-        let appState = try makeStatusAppState(named: "status-error-sticky", delay: .milliseconds(40))
+        XCTAssertEqual(appState.toasts.current?.message, "Saved.")
+        XCTAssertEqual(appState.toasts.current?.kind, .info)
 
         appState.show(message: "Failed.", isError: true)
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(appState.statusMessage, "Failed.")
-        XCTAssertTrue(appState.statusIsError)
+        XCTAssertEqual(appState.toasts.current?.message, "Failed.")
+        XCTAssertEqual(appState.toasts.current?.kind, .error)
+
         appState.clearStatus()
-        XCTAssertNil(appState.statusMessage)
-    }
-
-    func testNewerStatusMessageIsNotClearedByOlderTimer() async throws {
-        let appState = try makeStatusAppState(named: "status-newer-message", delay: .milliseconds(150))
-
-        appState.show(message: "First.", isError: false)
-        try await Task.sleep(for: .milliseconds(100))
-        appState.show(message: "Second.", isError: false)
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertEqual(appState.statusMessage, "Second.")
-        let cleared = await waitUntil { appState.statusMessage == nil }
-        XCTAssertTrue(cleared)
-
-        appState.show(message: "Early.", isError: false)
-        appState.show(message: "Sticky error.", isError: true)
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(appState.statusMessage, "Sticky error.")
-        XCTAssertTrue(appState.statusIsError)
-    }
-
-    func testClearStatusCancelsPendingAutoDismiss() async throws {
-        let appState = try makeStatusAppState(named: "status-clear-cancels", delay: .milliseconds(120))
-
-        appState.show(message: "Saved.", isError: false)
-        appState.clearStatus()
-        appState.statusMessage = "Set directly."
-        appState.statusIsError = false
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(appState.statusMessage, "Set directly.")
+        XCTAssertNil(appState.toasts.current)
     }
 
     func testSmartPlanRotatesOneTrunkSlotInEveryWorkout() {
@@ -12117,8 +12077,8 @@ final class CoreParityTests: XCTestCase {
             directoryURL: directory
         )
         XCTAssertTrue(customExerciseNames(in: retainedStore).contains("Unsynced logout edit"))
-        XCTAssertFalse(appState.statusIsError)
-        XCTAssertNotNil(appState.statusMessage)
+        XCTAssertNotEqual(appState.toasts.current?.kind, .error)
+        XCTAssertNotNil(appState.toasts.current)
         let finalRequests = Array(recorder.requests.dropFirst(baselineRequestCount))
         let failedStateWrites = finalRequests.filter {
             $0.url?.path == "/rest/v1/user_states" && $0.httpMethod == "PATCH"
@@ -12547,7 +12507,7 @@ final class CoreParityTests: XCTestCase {
             ["Persisted Private Exercise"]
         )
         XCTAssertTrue(appState.isCloudWritePaused)
-        XCTAssertTrue(appState.statusIsError)
+        XCTAssertEqual(appState.toasts.current?.kind, .error)
     }
 
     func testAccountActivationHidesPriorStoreAndDiscardsLateOwnerlessRestore() async throws {

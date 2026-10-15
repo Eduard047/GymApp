@@ -623,13 +623,11 @@ test("Account ID copy confirms in place, then reverts, and reports clipboard fai
     { id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 },
     { clipboard: { writeText: async () => { throw new Error("denied"); } } }
   );
-  const toast = { textContent: "", classList: { add() {}, remove() {} } };
-  const baseQuery = failing.document.querySelector;
-  failing.document.querySelector = selector => selector === "#toast" ? toast : baseQuery(selector);
   failing.copyButton = { isConnected: true, textContent: "Copy", dataset: {}, classList: { add() {}, remove() {} } };
   assert.equal(await vm.runInContext("copyAccountId(copyButton)", failing), false);
   assert.equal(failing.copyButton.textContent, "Copy");
-  assert.match(toast.textContent, /Clipboard write failed/);
+  // The persistent toast host holds the message in its state (it has no DOM in this fake context).
+  assert.match(vm.runInContext("toastHost.state.current.text", failing), /Clipboard write failed/);
 });
 
 test("Garmin store link opens our public listing and isolates the new tab", () => {

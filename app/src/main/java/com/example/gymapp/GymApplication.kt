@@ -20,6 +20,7 @@ import com.example.gymapp.push.PushNavigationInbox
 import com.example.gymapp.sync.CloudSyncBaselineStore
 import com.example.gymapp.sync.WorkoutCloudSyncStateStore
 import com.example.gymapp.sync.CloudSyncStatusStore
+import com.example.gymapp.ui.components.GymToastController
 import com.example.gymapp.ui.media.ExerciseMediaStore
 import com.example.gymapp.ui.screens.clearPrivateBackupShareArtifacts
 import com.example.gymapp.util.LanguageManager
@@ -55,6 +56,8 @@ class GymApplication : Application() {
     val restTimerController: RestTimerController by lazy { RestTimerController(this) }
     val garminSyncManager: GarminSyncManager by lazy { GarminSyncManager(this) }
     internal val sharedWorkoutInbox = SharedWorkoutInbox()
+    /** App-level toast queue; the Activity posts to it and the root `GymToastHost` draws it. */
+    internal val toastController = GymToastController()
     internal val pushNavigationInbox = PushNavigationInbox()
     internal val pushManager: AndroidPushManager by lazy {
         AndroidPushManager(this, cloudAuthManager, pushNavigationInbox)
