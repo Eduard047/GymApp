@@ -137,7 +137,7 @@ public struct AuthView: View {
                         Text(item.title(languageCode: languageCode)).tag(item)
                     }
                 }
-                .pickerStyle(.segmented)
+                .gymSegmentedPicker()
                 .accessibilityHint("Switch between signing in and creating an account")
 
                 VStack(alignment: .leading, spacing: 13) {

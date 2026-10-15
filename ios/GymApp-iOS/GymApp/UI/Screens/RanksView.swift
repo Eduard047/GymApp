@@ -94,7 +94,7 @@ struct RanksView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(unlocked ? GymTheme.primary : GymTheme.textSecondary)
             }
-            .frame(width: 36, height: 36)
+            .gymScaledFrame(width: 36, height: 36, relativeTo: .subheadline, maxScale: 1.6)
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {

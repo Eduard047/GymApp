@@ -148,6 +148,7 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
     var onMoveDown: (() -> Void)?
     /// Drag-to-reorder grip at the leading edge of the header; nil = no handle.
     var reorderHandle: GymReorderHandleSource?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ViewBuilder let media: () -> Media
     @ViewBuilder let info: () -> Info
     @ViewBuilder let overflow: () -> Overflow
@@ -156,38 +157,58 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
     var body: some View {
         GymPanel(highlighted: highlighted) {
             VStack(alignment: .leading, spacing: contentSpacing) {
-                HStack(spacing: 10) {
-                    if let reorderHandle {
-                        GymExerciseDragHandle(source: reorderHandle)
-                    }
-                    media()
-                    if collapsible {
-                        Button(action: onToggle) {
-                            HStack(spacing: 8) {
-                                titleBlock
-                                Spacer(minLength: 8)
-                                Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
-                                    .foregroundStyle(GymTheme.textSecondary)
+                if dynamicTypeSize.isAccessibilitySize {
+                    // Media, grip and menu share one row; the name gets the full
+                    // width below instead of breaking mid-word beside them.
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            if let reorderHandle {
+                                GymExerciseDragHandle(source: reorderHandle)
                             }
-                            .contentShape(Rectangle())
+                            media()
+                            Spacer(minLength: 8)
+                            overflow()
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(accessibilityLabelText ?? name)
-                        .accessibilityValue(accessibilityValueText)
-                        .accessibilityHint(accessibilityHintText ?? "")
-                        .gymExerciseMoveAccessibilityActions(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
-                    } else {
-                        titleBlock
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityAddTraits(.isHeader)
-                            .gymExerciseMoveAccessibilityActions(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
+                        headerTitle
                     }
-
-                    overflow()
+                } else {
+                    HStack(spacing: 10) {
+                        if let reorderHandle {
+                            GymExerciseDragHandle(source: reorderHandle)
+                        }
+                        media()
+                        headerTitle
+                        overflow()
+                    }
                 }
                 content()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var headerTitle: some View {
+        if collapsible {
+            Button(action: onToggle) {
+                HStack(spacing: 8) {
+                    titleBlock
+                    Spacer(minLength: 8)
+                    Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
+                        .foregroundStyle(GymTheme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityLabelText ?? name)
+            .accessibilityValue(accessibilityValueText)
+            .accessibilityHint(accessibilityHintText ?? "")
+            .gymExerciseMoveAccessibilityActions(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
+        } else {
+            titleBlock
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+                .gymExerciseMoveAccessibilityActions(onMoveUp: onMoveUp, onMoveDown: onMoveDown)
         }
     }
 
@@ -309,7 +330,7 @@ struct GymCompletedSetSummary: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.subheadline)
                 .foregroundStyle(GymTheme.secondary)
-                .frame(width: 22, height: 22)
+                .gymScaledFrame(width: 22, height: 22, relativeTo: .subheadline)
                 .background(GymTheme.secondary.opacity(0.18), in: Circle())
             Text(summary)
                 .font(.subheadline.weight(.semibold))
@@ -349,7 +370,7 @@ struct GymSetNumberBadge: View {
         Text("\(position + 1)")
             .font(.caption.weight(.bold).monospacedDigit())
             .foregroundStyle(GymTheme.textSecondary)
-            .frame(width: 22, height: 22)
+            .gymScaledFrame(width: 22, height: 22, relativeTo: .caption)
             .overlay(
                 Circle().strokeBorder(GymTheme.outlineSoft, lineWidth: 1.5)
             )
@@ -577,12 +598,18 @@ struct GymStepCapsule: View {
     let accessibilityValueText: String
     var useSymbolGlyphs = false
     let adjustableAction: (AccessibilityAdjustmentDirection) -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .caption2) private var scaledCapsuleHeight: CGFloat = 34
+
+    /// Visual capsule height: follows the step labels up to ~1.6x so larger
+    /// text stays inside the pill without it dwarfing the row.
+    private var capsuleHeight: CGFloat { min(scaledCapsuleHeight, 34 * 1.6) }
 
     var body: some View {
         HStack(spacing: 0) {
             GymRepeatStepButton(
                 isDisabled: minusDisabled,
-                highlight: GymPressHighlight(side: .leading, color: GymTheme.surfaceVariant, height: 34),
+                highlight: GymPressHighlight(side: .leading, color: GymTheme.surfaceVariant, height: capsuleHeight),
                 step: minusAction
             ) {
                 Group {
@@ -603,7 +630,7 @@ struct GymStepCapsule: View {
 
             GymRepeatStepButton(
                 isDisabled: plusDisabled,
-                highlight: GymPressHighlight(side: .trailing, color: GymTheme.surfaceVariant, height: 34),
+                highlight: GymPressHighlight(side: .trailing, color: GymTheme.surfaceVariant, height: capsuleHeight),
                 step: plusAction
             ) {
                 Group {
@@ -618,8 +645,9 @@ struct GymStepCapsule: View {
             }
         }
         .foregroundStyle(GymTheme.primary)
+        .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 10 : 0)
         .background(alignment: .center) {
-            Capsule().fill(GymTheme.surface).frame(height: 34)
+            Capsule().fill(GymTheme.surface).frame(height: capsuleHeight)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
@@ -856,7 +884,7 @@ struct GymSetEditorCapsules: View {
                 )
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
-                .font(.system(size: weightValueFontSize, weight: .semibold).monospacedDigit())
+                .gymScaledFont(size: weightValueFontSize, weight: .semibold, monospacedDigit: true, maxScale: 1.6)
                 .foregroundStyle(GymTheme.textPrimary)
                 .focused($weightFieldFocused)
                 .fixedSize()
@@ -899,7 +927,7 @@ struct GymSetEditorCapsules: View {
             isInvalid: repsInvalid
         ) {
             Text(reps.formatted(.number.locale(gymAppLocale())))
-                .font(.system(size: 17, weight: .semibold).monospacedDigit())
+                .gymScaledFont(size: 17, weight: .semibold, monospacedDigit: true, maxScale: 1.6)
                 .foregroundStyle(GymTheme.textPrimary)
                 .lineLimit(1)
                 // The capsule layout narrows the step buttons first; shrinking

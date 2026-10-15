@@ -127,15 +127,15 @@ struct AccountSettingsView: View {
     /// Icon column width shared by every compact row on this screen, so
     /// titles line up regardless of which SF Symbol a row uses. Mirrors
     /// `ProfileView.settingsRowIconWidth`.
-    private static let rowIconWidth: CGFloat = 28
+    @ScaledMetric(relativeTo: .title3) private var rowIconWidth: CGFloat = 28
     /// Divider leading inset = icon width + the row's icon/text spacing, so
     /// the divider starts under the title, not under the icon.
-    private static let rowDividerInset: CGFloat = rowIconWidth + 12
+    private var rowDividerInset: CGFloat { rowIconWidth + 12 }
 
     private var rowDivider: some View {
         Divider()
             .overlay(GymTheme.outlineSoft)
-            .padding(.leading, Self.rowDividerInset)
+            .padding(.leading, rowDividerInset)
     }
 
     private var accountDetailsCard: some View {
@@ -251,7 +251,7 @@ struct AccountSettingsView: View {
                     Image(systemName: "externaldrive")
                         .font(.title3)
                         .foregroundStyle(GymTheme.primary)
-                        .frame(width: Self.rowIconWidth)
+                        .frame(width: rowIconWidth)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(
@@ -463,7 +463,7 @@ struct AccountSettingsView: View {
                 Image(systemName: systemImage)
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: Self.rowIconWidth)
+                    .frame(width: rowIconWidth)
                     .accessibilityHidden(true)
                 Text(gymLocalized(title))
                     .font(.body.weight(.semibold))
@@ -528,7 +528,7 @@ struct AccountSettingsView: View {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: Self.rowIconWidth)
+                    .frame(width: rowIconWidth)
                     .padding(.top, 2)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {

@@ -312,9 +312,9 @@ struct ProfileView: View {
         return GymPanel(highlighted: true) {
             HStack(spacing: 12) {
                 Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 30, weight: .semibold))
+                    .gymScaledFont(size: 30, weight: .semibold, relativeTo: .title3, maxScale: 1.6)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: 48, height: 48)
+                    .gymScaledFrame(width: 48, height: 48, relativeTo: .title3, maxScale: 1.6)
                     .background(GymTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 16))
                     .accessibilityHidden(true)
 
@@ -440,15 +440,15 @@ struct ProfileView: View {
 
     /// Icon column width shared by every row in `settingsGroup`, so titles
     /// line up regardless of which SF Symbol a row uses.
-    private static let settingsRowIconWidth: CGFloat = 28
+    @ScaledMetric(relativeTo: .title3) private var settingsRowIconWidth: CGFloat = 28
     /// Divider leading inset = icon width + the row's icon/text spacing, so
     /// the divider starts under the title, not under the icon.
-    private static let settingsRowDividerInset: CGFloat = settingsRowIconWidth + 12
+    private var settingsRowDividerInset: CGFloat { settingsRowIconWidth + 12 }
 
     private var settingsRowDivider: some View {
         Divider()
             .overlay(GymTheme.outlineSoft)
-            .padding(.leading, Self.settingsRowDividerInset)
+            .padding(.leading, settingsRowDividerInset)
     }
 
     private var friendsCloudUpgradeRow: some View {
@@ -459,7 +459,7 @@ struct ProfileView: View {
                 Image(systemName: "person.2.slash")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: Self.settingsRowIconWidth)
+                    .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode))
@@ -502,7 +502,7 @@ struct ProfileView: View {
                 Image(systemName: isCloudAccount ? "person.crop.circle.badge.checkmark" : "iphone")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: Self.settingsRowIconWidth)
+                    .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gymText("Account", "Акаунт", "Аккаунт", languageCode: languageCode))
@@ -543,7 +543,7 @@ struct ProfileView: View {
             Image(systemName: "globe")
                 .font(.title3)
                 .foregroundStyle(GymTheme.primary)
-                .frame(width: Self.settingsRowIconWidth)
+                .frame(width: settingsRowIconWidth)
                 .accessibilityHidden(true)
             Text(gymText("Language", "Мова", "Язык", languageCode: languageCode))
                 .font(.body.weight(.semibold))
@@ -564,7 +564,7 @@ struct ProfileView: View {
                 Image(systemName: "questionmark.circle.fill")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: Self.settingsRowIconWidth)
+                    .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gymText("Help", "Допомога", "Помощь", languageCode: languageCode))
@@ -603,7 +603,7 @@ struct ProfileView: View {
                 Image(systemName: "target")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: Self.settingsRowIconWidth)
+                    .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gymText(
@@ -723,7 +723,7 @@ struct ProfileView: View {
             Image(systemName: "applewatch")
                 .font(.title2)
                 .foregroundStyle(connected ? GymTheme.primary : GymTheme.textSecondary)
-                .frame(width: 30)
+                .gymScaledFrame(width: 30, relativeTo: .title2)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
@@ -843,7 +843,7 @@ struct ProfileView: View {
                 Image(systemName: "tray.and.arrow.down.fill")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: Self.settingsRowIconWidth)
+                    .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gymText(

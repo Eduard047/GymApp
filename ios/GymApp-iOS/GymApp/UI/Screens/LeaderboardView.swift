@@ -26,7 +26,7 @@ private struct FinishedLiveWorkoutView: View {
                                 Text(current.profile.displayName).tag(false)
                                 Text(peer.profile.displayName).tag(true)
                             }
-                            .pickerStyle(.segmented)
+                            .gymSegmentedPicker()
                             Text(t("Live progress · Read only", "Live-прогрес · Лише перегляд", "Live-прогресс · Только просмотр"))
                                 .font(.subheadline)
                                 .foregroundStyle(GymTheme.textSecondary)
@@ -1708,7 +1708,7 @@ private struct FriendDetailView: View {
                             Text(t("Records", "Рекорди", "Рекорды"))
                                 .tag(ActivitySection.records)
                         }
-                        .pickerStyle(.segmented)
+                        .gymSegmentedPicker()
                         if activitySection == .workouts {
                             recentWorkoutsCard(details)
                         } else {

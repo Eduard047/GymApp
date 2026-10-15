@@ -399,6 +399,7 @@ public struct WorkoutsView: View {
     @Environment(\.calendar) private var calendar
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var store: WorkoutStore
     @StateObject private var projectionCache = TodayScreenProjectionCache()
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
@@ -747,6 +748,7 @@ public struct WorkoutsView: View {
                                 .font(.headline)
                                 .foregroundStyle(GymTheme.heroActionLabel)
                                 .frame(maxWidth: .infinity, minHeight: 48)
+                                .gymAccessibilityVerticalPadding()
                             }
                             .buttonStyle(.plain)
                         }
@@ -767,6 +769,7 @@ public struct WorkoutsView: View {
                     .font(.headline)
                     .foregroundStyle(GymTheme.onPrimary)
                     .frame(maxWidth: .infinity, minHeight: 54)
+                    .gymAccessibilityVerticalPadding()
                     .background(GymTheme.brandFill, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1198,6 +1201,7 @@ public struct WorkoutsView: View {
                 .font(.subheadline.bold())
                 .foregroundStyle(GymTheme.onPrimary)
                 .frame(maxWidth: .infinity, minHeight: 54)
+                .gymAccessibilityVerticalPadding()
             }
             .buttonStyle(.plain)
             .background(GymTheme.brandFill, in: Capsule())
@@ -1229,6 +1233,7 @@ public struct WorkoutsView: View {
                     .font(.subheadline.bold())
                     .foregroundStyle(GymTheme.error)
                     .frame(maxWidth: .infinity, minHeight: 48)
+                    .gymAccessibilityVerticalPadding()
                 }
                 .buttonStyle(.plain)
                 .background(GymTheme.heroTile, in: Capsule())
@@ -1271,6 +1276,7 @@ public struct WorkoutsView: View {
             .foregroundStyle(GymTheme.heroActionLabel)
             .padding(.horizontal, 18)
             .frame(maxWidth: .infinity, minHeight: 48)
+            .gymAccessibilityVerticalPadding()
         }
         .buttonStyle(.plain)
         .background(GymTheme.heroTile, in: Capsule())
@@ -1388,7 +1394,7 @@ public struct WorkoutsView: View {
         let totalVolume = historyPeriod == .week ? weekly.totalVolume : monthly.totalVolume
         return GymPanel {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 10) {
+                GymAdaptiveStack(rowAlignment: .center, spacing: 10, columnSpacing: 8) {
                     Text(gymText(
                         "Training history",
                         "Історія тренувань",
@@ -1396,10 +1402,10 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(GymTheme.TypeScale.sectionTitle)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     .minimumScaleFactor(0.85)
                     .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 8)
+                    GymAdaptiveSpacer(minLength: 8)
                     GymInfoPill(
                         historyPeriod == .week
                             ? gymText(
@@ -1455,7 +1461,7 @@ public struct WorkoutsView: View {
                     Text(gymText("Month", "Місяць", "Месяц", languageCode: languageCode))
                         .tag(TrainingHistoryPeriod.month)
                 }
-                .pickerStyle(.segmented)
+                .gymSegmentedPicker()
 
                 HStack(spacing: 8) {
                     weekNavigationButton(
@@ -1509,7 +1515,7 @@ public struct WorkoutsView: View {
                     monthlyTrainingCalendar(monthly)
                 }
 
-                HStack(alignment: .top, spacing: 8) {
+                GymAdaptiveStack(rowAlignment: .top, spacing: 8) {
                     weeklyTrainingMetric(
                         value: completedSessionCount.formatted(.number.locale(gymAppLocale())),
                         label: gymText(
@@ -1783,18 +1789,19 @@ public struct WorkoutsView: View {
             historyReturnWorkoutID = workout.workoutID
             onOpenWorkout(workout.workoutID)
         } label: {
-            HStack(spacing: 10) {
+            GymAdaptiveStack(rowAlignment: .center, spacing: 10, columnSpacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gymShortDate(workout.date, calendar: calendar, languageCode: languageCode))
                     .font(.subheadline.bold())
                     .foregroundStyle(GymTheme.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     Text(supporting)
                         .font(.caption)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 }
-                Spacer(minLength: 4)
+                GymAdaptiveSpacer(minLength: 4)
+                HStack(spacing: 10) {
                 Text(
                     activityOnly
                         ? compactHistoryDuration(workout.durationSeconds ?? 0)
@@ -1810,6 +1817,7 @@ public struct WorkoutsView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.bold())
                     .foregroundStyle(GymTheme.textSecondary)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
             .contentShape(Rectangle())
@@ -2360,6 +2368,7 @@ public struct WorkoutsView: View {
                 )
                 .padding(.horizontal, 18)
                 .frame(maxWidth: .infinity, minHeight: primary ? 54 : 48)
+                .gymAccessibilityVerticalPadding()
         }
         .buttonStyle(.plain)
         .accessibilityHint(accessibilityHint)
@@ -2420,6 +2429,7 @@ public struct WorkoutsView: View {
                 .foregroundStyle(GymTheme.heroActionLabel)
                 .padding(.horizontal, 18)
                 .frame(maxWidth: .infinity, minHeight: 48)
+                .gymAccessibilityVerticalPadding()
             }
             .buttonStyle(.plain)
             .background(GymTheme.heroTile, in: Capsule())

@@ -168,6 +168,7 @@ private enum LiveParticipantSelection: String {
 struct ActiveWorkoutView: View {
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .caption) private var compactCapsuleHeight: CGFloat = 32
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var workoutStore: WorkoutStore
@@ -780,7 +781,9 @@ struct ActiveWorkoutView: View {
                             .foregroundStyle(GymTheme.onHeroSecondary)
 
                             Text(Self.clock(elapsed))
-                                .font(.system(size: 36, weight: .semibold).monospacedDigit())
+                                .gymScaledFont(size: 36, weight: .semibold, relativeTo: .largeTitle, monospacedDigit: true, maxScale: 1.6)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
                                 .foregroundStyle(GymTheme.onHero)
 
                             if let exerciseName {
@@ -814,6 +817,8 @@ struct ActiveWorkoutView: View {
                             VStack(spacing: 1) {
                                 Text("\(draft.completedSetCount)/\(draft.plannedSetCount)")
                                     .font(.headline.monospacedDigit())
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.6)
                                     .foregroundStyle(GymTheme.onHero)
                                     .contentTransition(reduceMotion ? .identity : .numericText())
                                     .animation(
@@ -828,11 +833,11 @@ struct ActiveWorkoutView: View {
                                         languageCode: gymCurrentLanguageCode()
                                     )
                                 )
-                                .font(.system(size: 10))
+                                .gymScaledFont(size: 10, relativeTo: .caption2)
                                 .foregroundStyle(GymTheme.onHeroSecondary)
                             }
                         }
-                        .frame(width: 68, height: 68)
+                        .gymScaledFrame(width: 68, height: 68, relativeTo: .headline, maxScale: 1.3)
                         .accessibilityHidden(true)
                     }
                     .accessibilityElement(children: .ignore)
@@ -1059,7 +1064,7 @@ struct ActiveWorkoutView: View {
             Text(selfName).tag(LiveParticipantSelection.current)
             Text(peerName).tag(LiveParticipantSelection.peer)
         }
-        .pickerStyle(.segmented)
+        .gymSegmentedPicker()
         .accessibilityValue(
             liveParticipantSelection == .current ? selfName : peerName
         )
@@ -1285,7 +1290,7 @@ struct ActiveWorkoutView: View {
                                 .foregroundStyle(GymTheme.textSecondary)
                         }
                     }
-                    .frame(width: 28, height: 25)
+                    .gymScaledFrame(width: 28, height: 25, relativeTo: .caption2)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(
                         gymText(
@@ -1678,7 +1683,7 @@ struct ActiveWorkoutView: View {
                 )
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
-                .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                .gymScaledFont(size: 30, weight: .semibold, relativeTo: .title, monospacedDigit: true, maxScale: 1.5)
                 .foregroundStyle(GymTheme.textPrimary)
                 .fixedSize()
                 .disabled(fieldsDisabled)
@@ -1691,16 +1696,16 @@ struct ActiveWorkoutView: View {
                 .accessibilityLabel(weightAccessibilityLabel(position: position))
 
                 Text(gymLocalized("kg"))
-                    .font(.system(size: 15))
+                    .gymScaledFont(size: 15, relativeTo: .subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
 
                 Text(verbatim: "×")
-                    .font(.system(size: 30, weight: .semibold))
+                    .gymScaledFont(size: 30, weight: .semibold, relativeTo: .title, maxScale: 1.5)
                     .foregroundStyle(GymTheme.textSecondary)
                     .accessibilityHidden(true)
 
                 Text(set.reps.formatted(.number.locale(gymAppLocale())))
-                    .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                    .gymScaledFont(size: 30, weight: .semibold, relativeTo: .title, monospacedDigit: true, maxScale: 1.5)
                     .foregroundStyle(GymTheme.textPrimary)
                     .accessibilityHidden(true)
                 Spacer(minLength: 0)
@@ -2540,15 +2545,15 @@ struct ActiveWorkoutView: View {
             .padding(.horizontal, 10)
             .frame(minWidth: 44, minHeight: 44)
         }
-        .buttonStyle(GymPressableStyle(highlight: GymPressHighlight(color: GymTheme.surfaceVariant, height: 32)))
+        .buttonStyle(GymPressableStyle(highlight: GymPressHighlight(color: GymTheme.surfaceVariant, height: compactCapsuleHeight)))
         .foregroundStyle(GymTheme.primary)
         .background(alignment: .center) {
-            Capsule().fill(GymTheme.surface).frame(height: 32)
+            Capsule().fill(GymTheme.surface).frame(height: compactCapsuleHeight)
         }
         .overlay(alignment: .center) {
             Capsule()
                 .strokeBorder(GymTheme.outlineSoft, lineWidth: GymTheme.hairlineWidth)
-                .frame(height: 32)
+                .frame(height: compactCapsuleHeight)
         }
         .disabled(disabled)
         .accessibilityLabel(accessibilityLabel)

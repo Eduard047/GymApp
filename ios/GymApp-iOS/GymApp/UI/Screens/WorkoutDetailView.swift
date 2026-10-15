@@ -1873,7 +1873,7 @@ struct WorkoutDetailView: View {
                         Image(systemName: "applewatch")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(GymTheme.primary)
-                            .frame(width: 34, height: 34)
+                            .gymScaledFrame(width: 34, height: 34, relativeTo: .title3, maxScale: 1.6)
                             .background(GymTheme.primary.opacity(0.1), in: Circle())
 
                         VStack(alignment: .leading, spacing: 2) {
@@ -2788,7 +2788,7 @@ private struct SavedWorkoutShareChooser: View {
 
     /// Icon column width shared by the "Train together" row so it lines up
     /// with `ProfileView`'s settings rows.
-    private static let rowIconWidth: CGFloat = 28
+    @ScaledMetric(relativeTo: .title3) private var rowIconWidth: CGFloat = 28
 
     private var shareURL: URL? {
         try? SharedWorkoutLinkEncoder.makeURL(plan: plan)
@@ -2941,7 +2941,7 @@ private struct SavedWorkoutShareChooser: View {
             Image(systemName: "person.2")
                 .font(.title3)
                 .foregroundStyle(GymTheme.primary)
-                .frame(width: Self.rowIconWidth)
+                .frame(width: rowIconWidth)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(t("Train together", "Тренуватися разом", "Тренироваться вместе"))

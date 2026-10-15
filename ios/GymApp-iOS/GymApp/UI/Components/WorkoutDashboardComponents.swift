@@ -875,8 +875,7 @@ struct WorkoutActivityHeatmap: View {
     private func heatmapCell(_ day: WorkoutActivityHeatmapDay) -> some View {
         let step = GymTheme.heatStep(intensity: day.intensity)
         return Text(day.isInMonth ? calendar.component(.day, from: day.date).formatted(.number.locale(gymAppLocale())) : "")
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .monospacedDigit()
+            .gymScaledFont(size: 12, weight: .semibold, design: .rounded, relativeTo: .caption, monospacedDigit: true, maxScale: 1.4)
             .foregroundStyle(GymTheme.heatText(step: step))
             .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
             .background {
@@ -964,7 +963,7 @@ struct WorkoutMuscleLoadCard: View {
                         Text(option.title).tag(option)
                     }
                 }
-                .pickerStyle(.segmented)
+                .gymSegmentedPicker()
 
                 HStack(spacing: 8) {
                     GymMetricTile(
@@ -1292,6 +1291,8 @@ struct GymBadgeRingTile: View {
     var unlocked: Bool = true
     var progress: Double = 1
 
+    @ScaledMetric(relativeTo: .footnote) private var lockOffset: CGFloat = 18
+
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
@@ -1305,21 +1306,21 @@ struct GymBadgeRingTile: View {
                     )
                     .rotationEffect(.degrees(-90))
                 Image(systemName: systemImage)
-                    .font(.system(size: 22, weight: .semibold))
+                    .gymScaledFont(size: 22, weight: .semibold, relativeTo: .footnote, maxScale: 1.6)
                     .foregroundStyle(unlocked ? accent : GymTheme.textSecondary)
                     .opacity(unlocked ? 1 : 0.4)
 
                 if !unlocked {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .gymScaledFont(size: 10, weight: .bold, relativeTo: .footnote, maxScale: 1.6)
                         .foregroundStyle(GymTheme.textSecondary)
                         .padding(3)
                         .background(GymTheme.surface, in: Circle())
                         .overlay(Circle().strokeBorder(GymTheme.outlineSoft, lineWidth: 1))
-                        .offset(x: 18, y: 18)
+                        .offset(x: min(lockOffset, 18 * 1.6), y: min(lockOffset, 18 * 1.6))
                 }
             }
-            .frame(width: 60, height: 60)
+            .gymScaledFrame(width: 60, height: 60, relativeTo: .footnote, maxScale: 1.6)
 
             Text(title)
                 .font(.footnote.weight(.semibold))
@@ -1472,10 +1473,10 @@ struct AchievementGallery: View {
                         Circle()
                             .fill((achievement.unlocked ? accent : GymTheme.textSecondary).opacity(0.12))
                         Image(systemName: AchievementIconCatalog.icon(forID: achievement.id))
-                            .font(.system(size: 34, weight: .semibold))
+                            .gymScaledFont(size: 34, weight: .semibold, relativeTo: .title, maxScale: 1.6)
                             .foregroundStyle(achievement.unlocked ? accent : GymTheme.textSecondary)
                     }
-                    .frame(width: 84, height: 84)
+                    .gymScaledFrame(width: 84, height: 84, relativeTo: .title, maxScale: 1.6)
                     .accessibilityHidden(true)
 
                     Text(name)

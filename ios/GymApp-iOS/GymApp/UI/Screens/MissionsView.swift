@@ -137,7 +137,7 @@ struct MissionsView: View {
                 Image(systemName: "trophy.fill")
                     .font(.title3)
                     .foregroundStyle(GymTheme.primary)
-                    .frame(width: 28)
+                    .gymScaledFrame(width: 28, relativeTo: .title3)
                     .accessibilityHidden(true)
 
                 Text(levelSummaryText)
@@ -186,7 +186,7 @@ struct MissionsView: View {
                     Image(systemName: mission.completed ? "checkmark.seal.fill" : mission.systemImage)
                         .font(.title3)
                         .foregroundStyle(GymTheme.primary)
-                        .frame(width: 28)
+                        .gymScaledFrame(width: 28, relativeTo: .title3)
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 4) {
