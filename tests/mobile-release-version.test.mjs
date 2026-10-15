@@ -8,11 +8,11 @@ const expected = Object.freeze({
   iosMarketingVersion: "4.1.0",
   iosBuildNumber: "53",
   garminVersion: "4.1.0",
-  pwaBundle: "app.v128.js",
-  pwaStyleBundle: "styles.v98.css",
+  pwaBundle: "app.v129.js",
+  pwaStyleBundle: "styles.v99.css",
   pwaRussianBundle: "russian-text.v91.js",
   pwaLiveWorkoutBundle: "live-workout.v3.js",
-  pwaCache: "gym-pwa-v173",
+  pwaCache: "gym-pwa-v174",
 });
 
 const [

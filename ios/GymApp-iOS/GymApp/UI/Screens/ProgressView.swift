@@ -1066,8 +1066,7 @@ private struct ProgressExerciseSelectorSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .gymSheetPresentation()
     }
 
     private func exerciseRow(_ exercise: Exercise) -> some View {

@@ -62,7 +62,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymSheetTitleRow
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -891,10 +892,8 @@ fun AddWorkoutScreen(
     }
 
     if (uiState.isTemplatePickerOpen && !editorInteractionsLocked) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = onCloseTemplatePicker,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             WorkoutTemplatePickerContent(
                 templates = uiState.workoutTemplates,
@@ -905,10 +904,8 @@ fun AddWorkoutScreen(
     }
 
     uiState.smartAlternativePicker?.takeUnless { editorInteractionsLocked }?.let { picker ->
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = onCloseSmartAlternatives,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             SmartWorkoutAlternativePickerContent(
                 currentExerciseName = uiState.exercises
@@ -1825,10 +1822,8 @@ private fun ExerciseSelector(
     }
 
     if (expanded) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = { expanded = false },
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             Column(
                 modifier = Modifier
@@ -1836,9 +1831,9 @@ private fun ExerciseSelector(
                     .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.action_add_exercise),
-                    style = MaterialTheme.typography.headlineSmall
+                GymSheetTitleRow(
+                    title = stringResource(R.string.action_add_exercise),
+                    onClose = { expanded = false }
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(

@@ -58,7 +58,8 @@ import com.example.gymapp.ui.viewmodel.tapAction
 import com.example.gymapp.ui.viewmodel.TodayFriendTapAction
 import com.example.gymapp.ui.viewmodel.TodayFriendEntryState
 import com.example.gymapp.ui.viewmodel.TodayFriendChoice
-import androidx.compose.material3.ModalBottomSheet
+import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymSheetCloseRow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -1876,7 +1877,8 @@ private fun TrainWithFriendPicker(
     onPick: (TodayFriendChoice) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    GymModalBottomSheet(onDismissRequest = onDismiss) {
+        GymSheetCloseRow(onClose = onDismiss, modifier = Modifier.padding(horizontal = 12.dp))
         Column(
             modifier = Modifier
                 .fillMaxWidth()

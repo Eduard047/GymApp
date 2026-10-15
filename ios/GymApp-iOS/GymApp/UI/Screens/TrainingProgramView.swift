@@ -57,6 +57,7 @@ struct TrainingProgramView: View {
                     }
                 }
             )
+            .gymSheetPresentation(.full)
         }
         .sheet(item: $selectedSlot) { slot in
             ProgramSlotDetailView(
@@ -65,6 +66,7 @@ struct TrainingProgramView: View {
                 store: store,
                 onPrepareNow: onPrepare
             )
+            .gymSheetPresentation()
         }
         .alert(t("Finish this program?", "Завершити програму?", "Завершить программу?"), isPresented: $showsFinish) {
             Button(t("Finish program", "Завершити програму", "Завершить программу")) {
@@ -339,6 +341,7 @@ private struct ProgramSlotDetailView: View {
                         dismiss()
                     }
                 )
+                .gymSheetPresentation(.full)
             }
         }
     }

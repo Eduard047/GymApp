@@ -2473,7 +2473,7 @@ test("account transitions clear timers while durable Garmin revocation stays exp
     logoutSource,
     /promoteGarminCreateRequestToCleanup[\s\S]*revokeGarminDeviceById[\s\S]*forgetGarminPendingRevocation/
   );
-  assert.match(unpairSource, /window\.confirm\(warning\)[\s\S]*await revokeGarminBinding\(session\)/);
+  assert.match(unpairSource, /await confirmSheet\(\{[\s\S]*?body: warning[\s\S]*await revokeGarminBinding\(session\)/);
   assert.match(logoutSource, /clearRemoteSession\(\)/);
   assert.match(
     logoutSource,
@@ -2484,7 +2484,7 @@ test("account transitions clear timers while durable Garmin revocation stays exp
   assert.match(appSource, /storageNeedsRewrite \|\|= Boolean\([\s\S]*Object\.hasOwn\(value, "deviceToken"\)\)/);
   assert.doesNotMatch(appSource, /bindings\[binding\.userId\] = binding/);
   assert.doesNotMatch(appSource, /navigator\.clipboard\?\.writeText\(device\.device_token\)/);
-  assert.match(appSource, /window\.confirm\(pairingWarning\)/);
+  assert.match(appSource, /await confirmSheet\(\{[\s\S]*?body: pairingWarning/);
   assert.match(appSource, /window\.prompt\(tokenPrompt, device\.device_token\)/);
   assert.match(appSource, /await revokeGarminDeviceById\(session, device\.id\)/);
 });
@@ -2497,7 +2497,7 @@ test("ordinary sign-out preserves a working Garmin device identity for the next 
   });
   const deviceId = "00000000-0000-4000-8000-000000000077";
   let confirmations = 0;
-  context.window.confirm = () => {
+  context.confirmSheet = async () => {
     confirmations += 1;
     return false;
   };
@@ -2568,7 +2568,7 @@ test("remote sign-out without a Garmin binding does not require a cloud request"
     throw new Error("network must not be used during ordinary sign-out");
   });
   let confirmations = 0;
-  context.window.confirm = () => {
+  context.confirmSheet = async () => {
     confirmations += 1;
     return false;
   };
@@ -2698,7 +2698,7 @@ test("explicit Garmin unpair revokes the server device but keeps the cloud login
     });
   });
   const deviceId = "00000000-0000-4000-8000-000000000078";
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   vm.runInContext(`
     saveGarminBinding({ version: 3, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
   `, context);
@@ -2720,11 +2720,11 @@ test("failed or cancelled explicit Garmin unpair preserves the working binding",
     saveGarminBinding({ version: 3, userId: activeAccount.userId, deviceId: ${JSON.stringify(deviceId)} });
   `, context);
 
-  context.window.confirm = () => false;
+  context.confirmSheet = async () => false;
   await vm.runInContext("unpairGarmin()", context);
   assert.equal(vm.runInContext(`garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)}).deviceId`, context), deviceId);
 
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   await vm.runInContext("unpairGarmin()", context);
   assert.equal(vm.runInContext(`garminBindingForUser(${JSON.stringify(ACTIVE_USER_ID)}).deviceId`, context), deviceId);
   assert.equal(vm.runInContext("loadRemoteSession().user.id", context), ACTIVE_USER_ID);
@@ -3066,7 +3066,7 @@ test("cloud recovery reset is explicit and uses the quarantined row revision as 
     return new Response(null, { status: 204 });
   });
   let confirmations = 0;
-  context.window.confirm = () => {
+  context.confirmSheet = async () => {
     confirmations += 1;
     return true;
   };
@@ -3118,7 +3118,7 @@ test("Garmin binding is persisted before the one-time token is shown", async () 
     });
   });
   let promptCalls = 0;
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = (_message, shownToken) => {
     promptCalls += 1;
     assert.equal(shownToken, token);
@@ -3171,7 +3171,7 @@ test("Garmin storage failure revokes the unseen token before any prompt", async 
     originalSetItem(key, value);
   };
   let promptCalls = 0;
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => {
     promptCalls += 1;
     return "saved";
@@ -3208,7 +3208,7 @@ test("cancelled Garmin token prompt stays recoverable when revocation fails", as
     }
     throw new Error("revocation offline");
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => null;
 
   await assert.rejects(
@@ -3263,7 +3263,7 @@ test("lost browser binding recovers an existing watch by rotating its token with
       }
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = (_message, shownToken) => {
     assert.equal(shownToken, replacementCapability);
     const binding = JSON.parse(context.localStorage.getItem("gym-pwa-garmin-device-bindings-v2"));
@@ -3308,7 +3308,7 @@ test("Garmin v3 create rejects a capability bound to another account", async () 
       headers: { "Content-Type": "application/json" }
     });
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => {
     promptCalls += 1;
     return "saved";
@@ -3417,7 +3417,7 @@ test("lost Garmin rotation response remains retryable for the same UUID", async 
       }
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = (_message, shownToken) => {
     assert.equal(
       shownToken,
@@ -3487,7 +3487,7 @@ test("outcome-unknown Garmin rotation accepts exact already_rotated replay", asy
       }
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = (_message, shownToken) => {
     promptCalls += 1;
     assert.equal(
@@ -3542,7 +3542,7 @@ test("stale account transition never reveals a rotated Garmin token", async () =
       }
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => {
     promptCalls += 1;
     return "saved";
@@ -3572,7 +3572,7 @@ test("stale account after device listing cannot prompt, create, or rotate", asyn
       headers: { "Content-Type": "application/json" }
     });
   });
-  context.window.confirm = () => {
+  context.confirmSheet = async () => {
     promptCalls += 1;
     return true;
   };
@@ -3621,7 +3621,7 @@ test("Garmin token revision conflict refreshes metadata and fails closed", async
       tokenRevision: 10
     }), { status: 409, headers: { "Content-Type": "application/json" } });
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => {
     promptCalls += 1;
     return "saved";
@@ -3690,7 +3690,7 @@ test("concurrent Garmin sync clicks run one list-create-queue path", async () =>
       exercises: [{ name: "Squat", sets: [{ reps: 5, weight: 100, orderIndex: 0 }] }]
     })
   };
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => "saved";
   vm.runInContext("workoutDraft = { blocks: [{ exerciseName: 'Squat', sets: [{ reps: 5, weight: 100 }] }] };", context);
 
@@ -3757,7 +3757,7 @@ test("a shared Web Lock allows only one cross-tab Garmin create and enqueue path
       ...context.window.GymGarminCloud,
       draftToGarminPlan: () => validGarminPlan()
     };
-    context.window.confirm = () => true;
+    context.confirmSheet = async () => true;
     context.window.prompt = () => "saved";
     vm.runInContext("workoutDraft = { blocks: [{ exerciseName: 'Squat', sets: [{ reps: 5, weight: 100 }] }] };", context);
   }
@@ -3862,7 +3862,7 @@ test("Garmin enqueue conflict requires explicit approval before minting a new re
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   const expression = `enqueueGarminPlan(loadRemoteSession(), { version: 2, userId: ${JSON.stringify(ACTIVE_USER_ID)}, deviceId: ${JSON.stringify(deviceId)} }, ${JSON.stringify(validGarminPlan())})`;
-  context.window.confirm = () => false;
+  context.confirmSheet = async () => false;
 
   await assert.rejects(vm.runInContext(expression, context), /conflicted with different server content/);
   const conflicted = JSON.parse(context.localStorage.getItem("gym-pwa-garmin-enqueue-requests-v1"));
@@ -3872,7 +3872,7 @@ test("Garmin enqueue conflict requires explicit approval before minting a new re
   await assert.rejects(vm.runInContext(expression, context), /pending review/);
   assert.equal(bodies.length, 1, "conflict must not automatically send or mint another request");
 
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   returnConflict = false;
   await vm.runInContext(expression, context);
   assert.equal(bodies.length, 2);
@@ -3895,7 +3895,7 @@ test("invalid Garmin recovery metadata fails closed before create or rotation", 
       }]
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
 
   await assert.rejects(
     vm.runInContext("ensureGarminDeviceBinding(loadRemoteSession())", context),
@@ -4633,7 +4633,7 @@ test("mandatory password update and cloud deletion validate Supabase responses b
   assert.equal(vm.runInContext("loadRemoteSession().password_update_required", context), undefined);
   assert.deepEqual(JSON.parse(requests[0].options.body), { password: "StrongPass123!" });
 
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   const deletionPrompts = ["DELETE", "CurrentPassword123!"];
   context.window.prompt = () => deletionPrompts.shift();
   await vm.runInContext("deleteCloudAccount()", context);
@@ -4681,7 +4681,7 @@ test("an expanded deletion response is outcome-unknown and clears local private 
     saveAccountList([activeAccount]);
     saveState({ queueRemote: false });
   `, context);
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   const deletionPrompts = ["DELETE", "CurrentPassword123!"];
   context.window.prompt = () => deletionPrompts.shift();
 
@@ -4724,7 +4724,7 @@ test("deterministic cloud deletion rejection disarms the journal and preserves t
     saveState({ queueRemote: false });
   `, context);
   const sessionBefore = context.sessionStorage.getItem("gym-pwa-supabase-session-v1");
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   const deletionPrompts = ["DELETE", "CurrentPassword123!"];
   context.window.prompt = () => deletionPrompts.shift();
 
@@ -4923,7 +4923,7 @@ test("local account deletion removes only the confirmed local profile", async ()
   await vm.runInContext("loginAccount('Local Owner')", context);
   const localId = vm.runInContext("activeAccount.id", context);
   const localKey = `gym-pwa-account:${localId}`;
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => "DELETE";
 
   await vm.runInContext("deleteLocalAccount()", context);

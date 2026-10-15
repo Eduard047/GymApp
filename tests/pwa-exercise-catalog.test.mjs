@@ -4656,7 +4656,7 @@ test("live accept asks once, mutates only after consent, and never overwrites a 
       confirmCount = 0;
       serverMutationCount = 0;
       localStartCount = 0;
-      window.confirm = () => { confirmCount += 1; return ${confirmResult}; };
+      confirmSheet = async () => { confirmCount += 1; return ${confirmResult}; };
       liveGateway = async () => testWaitingSnapshot;
       executeLiveWorkoutMutation = async () => {
         serverMutationCount += 1;
@@ -6558,7 +6558,7 @@ test("lost remove and block responses immediately hide cached friend data", asyn
         error: ""
       };
       modal = { type: "friend-detail", profileId: "p_22222222222222222222222222222222" };
-      window.confirm = () => true;
+      confirmSheet = async () => true;
       socialRpc = async () => { throw new Error("response lost after commit"); };
       let privacyRefreshAfterLoss = 0;
       refreshSocialData = async () => { privacyRefreshAfterLoss += 1; };
@@ -6602,7 +6602,7 @@ test("remove and block preserve the social mutation mutex", async () => {
     socialMutationInProgress = true;
     let concurrentMutationRpcCalls = 0;
     socialRpc = async () => { concurrentMutationRpcCalls += 1; return null; };
-    window.confirm = () => true;
+    confirmSheet = async () => true;
   `, context);
 
   await vm.runInContext(`removeFriend({ dataset: {

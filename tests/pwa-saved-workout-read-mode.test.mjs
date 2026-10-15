@@ -885,7 +885,7 @@ test("Garmin profile card never shows a primary button; unpairing is destructive
   for (const button of buttons) assert.match(button, /button (?:ghost|danger) /, button);
   assert.match(panel, /button danger full garmin-unpair" data-action="unpair-garmin"/);
   const unpair = appSource.slice(appSource.indexOf("async function unpairGarmin()"));
-  assert.match(unpair.slice(0, 2500), /window\.confirm\(warning\)/);
+  assert.match(unpair.slice(0, 3500), /await confirmSheet\(\{[\s\S]*?body: warning[\s\S]*?destructive: true/);
 });
 
 test("count nouns pick plural forms through Intl.PluralRules", () => {

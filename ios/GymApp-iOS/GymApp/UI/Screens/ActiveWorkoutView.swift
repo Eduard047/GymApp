@@ -440,7 +440,7 @@ struct ActiveWorkoutView: View {
         .sheet(item: $adaptationRequest) { request in
             WorkoutAdaptationSheet(request: request, workoutStore: workoutStore, activeStore: activeWorkoutStore,
                 coordinator: liveWorkoutCoordinator)
-                .presentationDetents([.medium, .large])
+                .gymSheetPresentation()
         }
         .navigationTitle(
             gymText(
@@ -658,7 +658,7 @@ struct ActiveWorkoutView: View {
                 onSelect: addExercise,
                 onCreate: { name in try workoutStore.addExercise(name: name) }
             )
-            .presentationDetents([.large])
+            .gymSheetPresentation(.full)
         }
         .alert(
             gymText(

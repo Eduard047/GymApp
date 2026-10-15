@@ -23,7 +23,6 @@ import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -259,7 +258,8 @@ private fun ExerciseMediaSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    GymModalBottomSheet(onDismissRequest = onDismiss) {
+        GymSheetCloseRow(onClose = onDismiss, modifier = Modifier.padding(horizontal = 12.dp))
         Column(
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp)
         ) {

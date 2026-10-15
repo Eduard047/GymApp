@@ -31,7 +31,7 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = NightSurfaceAlt,
     // Dialogs, menus and date pickers read these roles; keep them on the GymApp inner-tile
     // colour instead of the stock Material violet-grey container.
-    // ModalBottomSheet defaults to surfaceContainerLow; keep sheets on the screen background.
+    // Sheets use GymModalBottomSheet (solid surface container); these roles stay on the screen background.
     surfaceContainerLow = Night,
     surfaceContainer = HeroTileNight,
     surfaceContainerHigh = HeroTileNight,
@@ -62,7 +62,7 @@ private val LightColorScheme = lightColorScheme(
     surfaceVariant = Mist,
     // Dialogs, menus and date pickers read these roles; keep them on the GymApp inner-tile
     // colour instead of the stock Material violet-grey container.
-    // ModalBottomSheet defaults to surfaceContainerLow; keep sheets on the screen background.
+    // Sheets use GymModalBottomSheet (solid surface container); these roles stay on the screen background.
     surfaceContainerLow = Canvas,
     surfaceContainer = HeroTile,
     surfaceContainerHigh = HeroTile,

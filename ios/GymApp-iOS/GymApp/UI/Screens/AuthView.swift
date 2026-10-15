@@ -51,8 +51,7 @@ public struct AuthView: View {
         }
         .sheet(isPresented: $showOfflineSheet) {
             offlineSheet
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+                .gymSheetPresentation()
         }
         .onChange(of: mode) { _, _ in
             clearSensitiveDrafts()

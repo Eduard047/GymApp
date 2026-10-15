@@ -128,6 +128,7 @@ struct WeeklyReviewCard: View {
                 }.navigationTitle(t("Comparison", "Порівняння", "Сравнение"))
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button(t("Done", "Готово", "Готово")) { evidence = nil } } }
             }
+            .gymSheetPresentation()
         }
     }
 }

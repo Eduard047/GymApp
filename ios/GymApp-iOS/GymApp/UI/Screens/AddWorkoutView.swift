@@ -558,7 +558,7 @@ struct AddWorkoutView: View {
                 languageCode: gymCurrentLanguageCode(),
                 onApply: applyVoiceWorkoutDraft
             )
-            .presentationDetents([.medium, .large])
+            .gymSheetPresentation()
         }
         .sheet(isPresented: $showingExercisePicker) {
             ExercisePickerSheet(
@@ -570,7 +570,7 @@ struct AddWorkoutView: View {
                 onSelect: addExercise,
                 onCreate: { try store.addExercise(name: $0) }
             )
-            .presentationDetents([.medium, .large])
+            .gymSheetPresentation()
         }
         .sheet(isPresented: $showingPreviousPicker) {
             PreviousWorkoutPicker(
@@ -578,7 +578,7 @@ struct AddWorkoutView: View {
                 exerciseName: exerciseName,
                 onSelect: applyPreviousWorkout
             )
-            .presentationDetents([.medium, .large])
+            .gymSheetPresentation()
         }
         .sheet(item: $replacementRequest) { request in
             SmartExerciseAlternativesSheet(
@@ -586,11 +586,11 @@ struct AddWorkoutView: View {
                 exerciseMediaOwnerKey: store.accountStorageKey,
                 onSelect: { applyAlternative($0, request: request) }
             )
-            .presentationDetents([.medium, .large])
+            .gymSheetPresentation()
         }
         .sheet(isPresented: $showingShareChooser) {
             workoutShareChooser
-                .presentationDetents([.medium, .large])
+                .gymSheetPresentation()
         }
         .onChange(of: profile) { _, newProfile in
             smartPlanIsStale = smartPlanIsStale || !smartGeneratedDraftIDs.isEmpty

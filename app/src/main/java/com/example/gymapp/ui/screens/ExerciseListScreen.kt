@@ -51,7 +51,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymSheetCloseRow
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -178,10 +179,8 @@ internal fun AccountBackupSheets(
 ) {
     val backupJson = uiState.backupJson
     if (backupJson != null) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = onClearBackup,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             BackupJsonBottomSheetContent(
                 json = backupJson,
@@ -193,10 +192,8 @@ internal fun AccountBackupSheets(
     }
 
     if (uiState.isImportOpen) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = onCloseImport,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             ImportBackupBottomSheetContent(
                 importJson = uiState.importJson,
@@ -1335,14 +1332,19 @@ fun ExerciseListScreen(
     }
 
     if (isAddExerciseOpen) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = {
                 isAddExerciseOpen = false
                 pendingAddedName = null
-            },
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
+            }
         ) {
+            GymSheetCloseRow(
+                onClose = {
+                    isAddExerciseOpen = false
+                    pendingAddedName = null
+                },
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
             AddExerciseBottomSheetContent(
                 exerciseName = uiState.newExerciseName,
                 hasInputError = uiState.hasInputError,
@@ -1357,10 +1359,8 @@ fun ExerciseListScreen(
 
     val editingExercise = uiState.editingExercise
     if (editingExercise != null) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = onDismissRenameExercise,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             RenameExerciseBottomSheetContent(
                 exerciseName = uiState.editingExerciseName,
@@ -1376,11 +1376,10 @@ fun ExerciseListScreen(
     val selectedExerciseId = uiState.selectedExerciseId
     val selectedExerciseName = uiState.selectedExerciseName
     if (selectedExerciseId != null && selectedExerciseName != null) {
-        ModalBottomSheet(
-            onDismissRequest = onDismissHistory,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
+        GymModalBottomSheet(
+            onDismissRequest = onDismissHistory
         ) {
+            GymSheetCloseRow(onClose = onDismissHistory, modifier = Modifier.padding(horizontal = 12.dp))
             ExerciseHistoryBottomSheetContent(
                 exerciseId = selectedExerciseId,
                 exerciseName = selectedExerciseName,
@@ -1396,10 +1395,8 @@ fun ExerciseListScreen(
 
     val mappingExerciseName = uiState.mappingEditorExerciseName
     if (mappingExerciseName != null) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = onDismissExerciseMapping,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             ExerciseMappingBottomSheetContent(
                 exerciseName = mappingExerciseName,
@@ -1414,10 +1411,8 @@ fun ExerciseListScreen(
 
     val loadEditorExercise = uiState.loadEditorExercise
     if (loadEditorExercise != null) {
-        ModalBottomSheet(
+        GymModalBottomSheet(
             onDismissRequest = onDismissExerciseLoadProfile,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             ExerciseLoadProfileBottomSheetContent(
                 exerciseName = loadEditorExercise.name,

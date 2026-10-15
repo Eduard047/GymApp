@@ -400,8 +400,7 @@ struct WorkoutDraftExerciseCard: View {
                 ownerKey: exerciseMediaOwnerKey,
                 editable: ExerciseMediaPresentation.isEditable(on: .editor)
             )
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            .gymSheetPresentation()
         }
         .onChange(of: showingMedia) { _, isShowing in
             if !isShowing { mediaReloadToken &+= 1 }
@@ -622,8 +621,7 @@ struct ExerciseMediaButton: View {
                 ownerKey: ownerKey,
                 editable: editable
             )
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            .gymSheetPresentation()
         }
         .onChange(of: showingMedia) { _, isShowing in
             if !isShowing { mediaReloadToken &+= 1 }

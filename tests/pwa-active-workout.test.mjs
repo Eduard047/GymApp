@@ -2363,7 +2363,7 @@ test("Finish materializes destructive history changes before retiring the ledger
   await vm.runInContext(`recordActiveSet(${workoutSetId})`, workoutRuntime.context);
   await vm.runInContext("finishActiveWorkout()", workoutRuntime.context);
   const workoutId = vm.runInContext("state.sessions[0].id", workoutRuntime.context);
-  workoutRuntime.context.window.confirm = () => true;
+  workoutRuntime.context.confirmSheet = async () => true;
   await vm.runInContext(`deleteSession(${workoutId})`, workoutRuntime.context);
   assert.equal(
     workoutRuntime.localStorage.getItem(vm.runInContext("activeWorkoutAccountDescriptor().commitKey", workoutRuntime.context)),
@@ -2574,7 +2574,7 @@ test("account deletion serialized ahead of a record cannot leave an orphan draft
   })`, recorder.context), true);
   recorder.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="weight"]`, { value: "100" });
   recorder.runtimeNodes.set(`[data-active-set-id="${setId}"][data-active-field="reps"]`, { value: "2" });
-  deleter.context.window.confirm = () => true;
+  deleter.context.confirmSheet = async () => true;
   deleter.context.window.prompt = () => "DELETE";
 
   const deletion = vm.runInContext("deleteLocalAccount()", deleter.context);
@@ -2728,7 +2728,7 @@ test("active parser rejects wrong owners, non-finite values, oversized rows, and
   localStorage.setItem(restTransitionKey, "pending-account-bound-cleanup");
   localStorage.setItem(bulkCleanupKey, "pending-bulk-cleanup");
 
-  context.window.confirm = () => true;
+  context.confirmSheet = async () => true;
   context.window.prompt = () => "DELETE";
   await vm.runInContext("deleteLocalAccount()", context);
   assert.equal(localStorage.getItem(key), null);

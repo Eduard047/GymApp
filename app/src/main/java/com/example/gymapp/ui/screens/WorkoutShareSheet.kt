@@ -16,7 +16,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymSheetCloseRow
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,10 +58,8 @@ internal fun WorkoutShareSheet(
 ) {
     val isWorkoutInviteSending = actionsInFlight.any { it.startsWith("send-workout-") }
     val isLiveInviteSending = liveActionsInFlight.any { it.startsWith("send-") }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground
+    GymModalBottomSheet(
+        onDismissRequest = onDismiss
     ) {
         // Same structure and order as the iPhone chooser: title, hero, "Use another app",
         // "Copy or live", then the privacy caption. The list scrolls so nothing is clipped.
@@ -69,6 +68,9 @@ internal fun WorkoutShareSheet(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                GymSheetCloseRow(onClose = onDismiss)
+            }
             item {
                 Text(
                     stringResource(R.string.workout_share_sheet_title),

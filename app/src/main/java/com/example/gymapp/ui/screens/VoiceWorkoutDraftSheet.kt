@@ -41,12 +41,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.example.gymapp.ui.components.GymModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -314,12 +313,12 @@ internal fun VoiceWorkoutDraftSheet(
         }
     }
 
-    ModalBottomSheet(
+    GymModalBottomSheet(
         onDismissRequest = {
             transcriber.stop()
             onDismiss()
         },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        skipPartiallyExpanded = true,
         modifier = Modifier.testTag("voice_workout_sheet")
     ) {
         LazyColumn(

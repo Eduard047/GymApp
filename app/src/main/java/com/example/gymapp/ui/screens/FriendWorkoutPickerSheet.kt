@@ -15,7 +15,8 @@ import com.example.gymapp.ui.theme.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymSheetCloseRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -57,10 +58,8 @@ internal fun FriendWorkoutPickerSheet(
 ) {
     val availableSessions = remember(sessions) { friendWorkoutPickerSessions(sessions) }
     val isBusy = inFlightSessionId != null
-    ModalBottomSheet(
+    GymModalBottomSheet(
         onDismissRequest = { if (!isBusy) onDismiss() },
-        containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground,
         modifier = Modifier.testTag("friend_workout_picker")
     ) {
         LazyColumn(
@@ -75,6 +74,9 @@ internal fun FriendWorkoutPickerSheet(
             ),
             verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
         ) {
+            item {
+                GymSheetCloseRow(onClose = { if (!isBusy) onDismiss() })
+            }
             item {
                 ScreenHeader(
                     title = stringResource(R.string.friend_workout_picker_title, friendName),

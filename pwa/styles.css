@@ -6,6 +6,7 @@
   --surface-2: #eaf2ff;
   --surface-3: #dce9fb;
   --surface-strong: #ffffff;
+  --scrim: rgba(7, 19, 33, 0.4);
   --topbar-surface: rgba(247, 250, 255, 0.82);
   --nav-surface: rgba(255, 255, 255, 0.78);
   --surface-overlay: transparent;
@@ -108,6 +109,7 @@ html.frame-blocked body {
   --surface-2: #142a43;
   --surface-3: #1a3553;
   --surface-strong: #0d1d30;
+  --scrim: rgba(0, 0, 0, 0.56);
   --topbar-surface: rgba(7, 19, 33, 0.8);
   --nav-surface: rgba(13, 29, 48, 0.78);
   --surface-overlay: transparent;
@@ -6474,7 +6476,18 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   display: grid;
   place-items: end center;
   padding: 0;
-  background: rgba(0, 0, 0, 0.58);
+  background: transparent;
+  overscroll-behavior: contain;
+}
+
+/* Scrim: its opacity follows the drag progress (--sheet-progress is set from JS while dragging). */
+.sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  opacity: calc(1 - var(--sheet-progress, 0));
+  overscroll-behavior: contain;
+  touch-action: none;
 }
 
 .modal-panel {
@@ -6482,18 +6495,114 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   width: min(720px, 100%);
   max-height: min(88dvh, 820px);
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 18px 18px calc(28px + env(safe-area-inset-bottom));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--surface-strong);
+  /* Fills the strip an upward rubber-band drag would otherwise open under the sheet (off-screen at rest). */
+  box-shadow: 0 24px 0 0 var(--surface-strong);
 }
 
-.sheet-handle {
-  width: 52px;
-  height: 5px;
-  margin: 0 auto 14px;
-  border-radius: 999px;
-  background: rgba(232, 238, 242, 0.22);
+/* Sheet material (DESIGN.md materials.sheet): translucent fill + blur; solid fallbacks follow. */
+.modal-panel {
+  background: color-mix(in srgb, var(--surface-strong) 86%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
 }
+
+:root[data-theme="dark"] .modal-panel {
+  background: color-mix(in srgb, var(--surface-strong) 84%, transparent);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .modal-panel,
+  :root[data-theme="dark"] .modal-panel { background: var(--surface-strong); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .modal-panel,
+  :root[data-theme="dark"] .modal-panel {
+    background: var(--surface-strong);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* DESIGN: at most two live blur layers. While a sheet is open the sheet and its scrim keep theirs; the top bar and tab bar drop theirs (class set on #app by the sheet engine). */
+.sheet-open .topbar,
+.sheet-open .bottom-nav {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.confirm-sheet-body { white-space: pre-line; overflow-wrap: anywhere; }
+
+/* Grab area: the full-width top strip; the visible 36x5 pill sits 8px from the top. Content still starts 37px down. */
+.sheet-handle {
+  position: relative;
+  height: 37px;
+  margin: -18px -18px 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sheet-handle::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 24%, transparent);
+}
+
+/* Set by the sheet engine: the first heading is part of the grab area; short sheets can be pulled from anywhere by touch. */
+.sheet-drag-zone { touch-action: none; cursor: grab; }
+.modal-panel.sheet-fits:not(:has(textarea)) { touch-action: none; }
+
+/* A closing sheet is animated from JS on a detached copy that must never take input. */
+.sheet-ghost { pointer-events: none; }
+
+/* Enter: slide up (300ms, spring-standard-like curve) with the scrim fading in over 150ms. A re-render mid-enter resumes via --sheet-enter-skip. */
+@keyframes sheet-rise {
+  from { transform: translate3d(0, 100%, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes sheet-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal.sheet-enter .modal-panel {
+  animation: sheet-rise 300ms cubic-bezier(0.2, 0.9, 0.1, 1) var(--sheet-enter-skip, 0ms) backwards;
+}
+
+.modal.sheet-enter .sheet-scrim {
+  animation: sheet-fade-in 150ms linear var(--sheet-enter-skip, 0ms) backwards;
+}
+
+/* Reduced motion: no slide; 150ms cross-fade in (the global reduced-motion rule would otherwise cut it to 0.01ms). */
+@media (prefers-reduced-motion: reduce) {
+  .modal.sheet-enter .modal-panel {
+    animation: sheet-fade-in 150ms linear var(--sheet-enter-skip, 0ms) backwards !important;
+  }
+
+  .modal.sheet-enter .sheet-scrim {
+    animation: sheet-fade-in 150ms linear var(--sheet-enter-skip, 0ms) backwards !important;
+  }
+}
+
+/* While dragging, the finger owns the transform and scrim: any still-running enter animation must not fight it (placed after the enter rules on purpose). */
+.modal.sheet-dragging .modal-panel {
+  animation: none !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.modal.sheet-dragging .sheet-scrim { animation: none !important; }
 
 .sheet-close {
   position: absolute;

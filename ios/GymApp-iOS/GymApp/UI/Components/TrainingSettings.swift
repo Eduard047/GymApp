@@ -182,7 +182,7 @@ struct TrainingSettingsSheet: View {
                 onChange: onChange
             )
         }
-        .presentationDetents([.large])
+        .gymSheetPresentation(.full)
     }
 }
 

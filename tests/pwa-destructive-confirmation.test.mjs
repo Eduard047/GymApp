@@ -1109,7 +1109,7 @@ test("set deletion is bound to its session when imported set IDs collide", () =>
 
 test("deleting a saved workout asks in the in-page sheet and deletes only after confirmation", async () => {
   const context = loadContext();
-  context.window.confirm = () => { throw new Error("browser dialogs must not be used"); };
+  context.confirmSheet = async () => { throw new Error("browser dialogs must not be used"); };
   vm.runInContext(`
     state.sessions = [
       { id: 8901, startedAt: 1760000000000, note: "Keep", sets: [{ id: 8911, exerciseName: "Squat", weight: 100, reps: 5, orderIndex: 0 }] },
@@ -1164,7 +1164,7 @@ test("same-account state saved by another tab invalidates an open confirmation",
 test("duplicate exercise and session IDs fail closed without deleting several rows", () => {
   const context = loadContext();
   let confirmCalls = 0;
-  context.window.confirm = () => {
+  context.confirmSheet = async () => {
     confirmCalls += 1;
     return true;
   };

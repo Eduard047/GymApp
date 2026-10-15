@@ -53,7 +53,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -649,7 +648,8 @@ fun AchievementPreviewCard(
     }
 
     if (selected != null) {
-        ModalBottomSheet(onDismissRequest = { selectedId = null }) {
+        GymModalBottomSheet(onDismissRequest = { selectedId = null }) {
+            GymSheetCloseRow(onClose = { selectedId = null }, modifier = Modifier.padding(horizontal = 12.dp))
             AchievementDetailsContent(achievement = selected, locale = locale)
         }
     }

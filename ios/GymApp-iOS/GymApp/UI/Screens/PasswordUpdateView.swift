@@ -208,7 +208,20 @@ struct PasswordUpdateView: View {
             }
             .navigationTitle(mode.navigationTitle(languageCode: languageCode))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Recovery is mandatory (the sheet cannot be dismissed); a signed-in
+                // password change always offers a visible way out.
+                if mode != .recovery {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(gymText("Cancel", "Скасувати", "Отмена", languageCode: languageCode)) {
+                            onDone()
+                        }
+                        .disabled(auth.isLoading)
+                    }
+                }
+            }
         }
+        .gymSheetPresentation(.full)
         .interactiveDismissDisabled(auth.needsPasswordUpdate)
         .onDisappear(perform: clearSensitiveDrafts)
     }

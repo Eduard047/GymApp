@@ -1523,7 +1523,7 @@ struct WorkoutDetailView: View {
                 onSelect: addExercise,
                 onCreate: createExerciseForEditing
             )
-            .presentationDetents([.large])
+            .gymSheetPresentation(.full)
         }
         .sheet(item: $shareChooserPayload) { payload in
             SavedWorkoutShareChooser(
@@ -1544,8 +1544,7 @@ struct WorkoutDetailView: View {
                     Task { await sendWorkoutInvite(to: friend, live: true) }
                 }
             )
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            .gymSheetPresentation()
         }
         .alert(item: $activeAlert, content: makeAlert)
         .safeAreaInset(edge: .bottom) {
@@ -2772,6 +2771,8 @@ struct WorkoutDetailView: View {
 }
 
 private struct SavedWorkoutShareChooser: View {
+    @Environment(\.dismiss) private var dismiss
+
     let date: Date
     let plan: SharedWorkoutPlan
     let friends: [SocialFriendSummary]
@@ -2922,6 +2923,11 @@ private struct SavedWorkoutShareChooser: View {
             }
             .navigationTitle(t("Share workout", "Поділитися", "Поделиться"))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(t("Done", "Готово", "Готово")) { dismiss() }
+                }
+            }
         }
     }
 

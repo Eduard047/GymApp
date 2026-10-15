@@ -6,7 +6,7 @@ import vm from "node:vm";
 
 const appSource = await readFile("pwa/app.js", "utf8");
 const functionStart = appSource.indexOf("function downloadJson(");
-const functionEnd = appSource.indexOf("\nfunction printReport(", functionStart);
+const functionEnd = appSource.indexOf("\nasync function printReport(", functionStart);
 assert.ok(functionStart >= 0 && functionEnd > functionStart, "downloadJson source must remain discoverable");
 const downloadJsonSource = appSource.slice(functionStart, functionEnd);
 

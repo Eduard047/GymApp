@@ -555,6 +555,7 @@ public struct WorkoutsView: View {
         }
         .sheet(isPresented: $showsFriendPicker) {
             friendPickerSheet
+                .gymSheetPresentation()
         }
         .onAppear { referenceDate = Date() }
         .onReceive(store.objectWillChange) { _ in referenceDate = Date() }

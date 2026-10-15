@@ -52,7 +52,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.example.gymapp.ui.components.GymModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -614,7 +614,7 @@ fun AuthScreen(
     }
 
     if (showOfflineSheet) {
-        ModalBottomSheet(onDismissRequest = { showOfflineSheet = false }) {
+        GymModalBottomSheet(onDismissRequest = { showOfflineSheet = false }) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

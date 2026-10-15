@@ -17,8 +17,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
+import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymSheetTitleRow
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -133,8 +133,8 @@ internal fun ExerciseCatalogSelector(
     }
 
     if (expanded) {
-        ModalBottomSheet(
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        GymModalBottomSheet(
+            skipPartiallyExpanded = true,
             onDismissRequest = closePicker
         ) {
             Column(
@@ -146,11 +146,11 @@ internal fun ExerciseCatalogSelector(
                     .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = stringResource(
+                GymSheetTitleRow(
+                    title = stringResource(
                         if (isChooseMode) R.string.progress_choose_exercise else R.string.action_add_exercise
                     ),
-                    style = androidx.compose.material3.MaterialTheme.typography.headlineSmall
+                    onClose = closePicker
                 )
                 if (!isChooseMode) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ExerciseMuscleChip(

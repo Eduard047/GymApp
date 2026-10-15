@@ -1418,8 +1418,18 @@ struct AchievementGallery: View {
         }
 #endif
         .sheet(item: $selectedAchievement) { achievement in
-            achievementDetailSheet(achievement)
-                .presentationDetents([.medium])
+            NavigationStack {
+                achievementDetailSheet(achievement)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(gymLocalized("Done", languageCode: languageCode)) {
+                                selectedAchievement = nil
+                            }
+                        }
+                    }
+            }
+            .gymSheetPresentation(.compact)
         }
     }
 

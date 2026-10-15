@@ -9530,14 +9530,21 @@ async function rotateGarminDeviceToken(session, device) {
   return rotated;
 }
 
-function chooseGarminDeviceForRecovery(devices) {
+async function chooseGarminDeviceForRecovery(devices) {
   if (!devices.length) return null;
   if (devices.length === 1) {
     const warning = tx(
       `Restore the existing Garmin pairing “${devices[0].displayName}”? Its old token will stop immediately, and a replacement token for the same watch identity will be shown once. Cancel keeps the current token working.`,
       `Відновити наявне сполучення Garmin «${devices[0].displayName}»? Старий токен одразу перестане працювати, а новий токен для того самого годинника буде показано один раз. «Скасувати» збереже чинний токен.`
     );
-    return typeof window.confirm === "function" && window.confirm(warning) ? devices[0] : null;
+    const approved = await confirmSheet({
+      title: tx3("Restore Garmin pairing?", "Відновити сполучення Garmin?", "Восстановить сопряжение Garmin?"),
+      body: warning,
+      confirmLabel: tx3("Restore pairing", "Відновити сполучення", "Восстановить сопряжение"),
+      cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+      destructive: false
+    });
+    return approved ? devices[0] : null;
   }
   if (typeof window.prompt !== "function") return null;
   const options = devices.map((device, index) =>
@@ -9616,7 +9623,8 @@ async function ensureGarminDeviceBinding(session) {
       );
       forgetGarminPendingRevocation(userId, pendingCleanup.deviceId);
     } else {
-      const selectedDevice = chooseGarminDeviceForRecovery(recoveryDevices);
+      const selectedDevice = await chooseGarminDeviceForRecovery(recoveryDevices);
+      assertCurrentAccount();
       if (!selectedDevice) {
         throw userVisibleError(
           "An older Garmin creation still needs recovery. Select the existing watch before creating another one.",
@@ -9683,7 +9691,15 @@ async function ensureGarminDeviceBinding(session) {
       "Finish the pending Garmin recovery? This rotates a replacement token for the same watch identity and shows it once. Cancel leaves the current server token unchanged.",
       "Завершити незакінчене відновлення Garmin? Буде створено новий токен для того самого ідентифікатора годинника й показано один раз. «Скасувати» не змінить чинний серверний токен."
     );
-    if (typeof window.confirm !== "function" || !window.confirm(retryWarning)) {
+    const retryApproved = await confirmSheet({
+      title: tx3("Finish Garmin recovery?", "Завершити відновлення Garmin?", "Завершить восстановление Garmin?"),
+      body: retryWarning,
+      confirmLabel: tx3("Finish recovery", "Завершити відновлення", "Завершить восстановление"),
+      cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+      destructive: false
+    });
+    assertCurrentAccount();
+    if (!retryApproved) {
       throw userVisibleError(
         "Pending Garmin recovery was not changed.",
         "Незавершене відновлення Garmin не змінено."
@@ -9702,7 +9718,8 @@ async function ensureGarminDeviceBinding(session) {
     // A response-lost legacy create is recovered through the server list and
     // token rotation, so its temporary client secret must not be retained.
     removeGarminCreateRequestForUser(userId);
-    const selectedDevice = chooseGarminDeviceForRecovery(existingDevices);
+    const selectedDevice = await chooseGarminDeviceForRecovery(existingDevices);
+    assertCurrentAccount();
     if (!selectedDevice) {
       throw userVisibleError(
         "Existing Garmin recovery was cancelled. No new device identity was created.",
@@ -9728,7 +9745,15 @@ async function ensureGarminDeviceBinding(session) {
     "A one-time Garmin token will be shown. It works like a password: paste it only into this watch's Connect IQ settings. GymApp temporarily keeps account-bound retry material in this browser until pairing is recovered, then removes it. Continue?",
     "Буде показано одноразовий токен Garmin. Він працює як пароль: встав його лише в налаштування Connect IQ цього годинника. GymApp тимчасово зберігає в цьому браузері прив’язані до акаунта дані повтору до відновлення сполучення, а потім видаляє їх. Продовжити?"
   );
-  if (typeof window.confirm !== "function" || !window.confirm(pairingWarning)) {
+  const pairingApproved = await confirmSheet({
+    title: tx3("Show one-time Garmin token?", "Показати одноразовий токен Garmin?", "Показать одноразовый токен Garmin?"),
+    body: pairingWarning,
+    confirmLabel: tx3("Continue", "Продовжити", "Продолжить"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: false
+  });
+  assertCurrentAccount();
+  if (!pairingApproved) {
     throw userVisibleError("Garmin pairing was cancelled.", "Сполучення Garmin скасовано.");
   }
   const creation = prepareGarminCreateRequest(userId, "Garmin watch");
@@ -9958,11 +9983,11 @@ function clearGarminEnqueueRequest(userId, requestId) {
   saveGarminEnqueueRequests(requests);
 }
 
-function prepareGarminEnqueueRequest(userId, deviceId, candidatePlan) {
+async function prepareGarminEnqueueRequest(userId, deviceId, candidatePlan) {
   const validation = window.GymGarminCloud.validateGarminPlan(candidatePlan);
   if (!validation?.ok) throw new Error("Garmin plan is invalid.");
   const candidateLogicalJson = garminLogicalPlanJson(validation.plan);
-  const requests = loadGarminEnqueueRequests();
+  let requests = loadGarminEnqueueRequests();
   const existing = requests[userId];
   const sameLogicalRequest = existing?.deviceId === deviceId &&
     existing.logicalPlanJson === candidateLogicalJson;
@@ -9979,7 +10004,18 @@ function prepareGarminEnqueueRequest(userId, deviceId, candidatePlan) {
           "A previous Garmin queue result is still unknown. Start a different logical submission anyway? It may create a second plan if the earlier request succeeded. Cancel is recommended.",
           "Результат попереднього Garmin-запиту ще невідомий. Усе одно почати інше надсилання? Якщо попередній запит спрацював, може з’явитися другий план. Рекомендовано скасувати."
         );
-    if (typeof window.confirm !== "function" || !window.confirm(warning)) {
+    const approved = await confirmSheet({
+      title: existing.conflict === true
+        ? tx3("Start a new Garmin request?", "Створити новий запит Garmin?", "Создать новый запрос Garmin?")
+        : tx3("Submit a different Garmin plan?", "Надіслати інший план Garmin?", "Отправить другой план Garmin?"),
+      body: warning,
+      confirmLabel: tx3("Start new request", "Створити новий запит", "Создать новый запрос"),
+      cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+      destructive: false
+    });
+    // The sheet can stay open while the account or the stored retry record changes; never overwrite a record the user did not review.
+    requests = loadGarminEnqueueRequests();
+    if (!approved || activeAccount?.userId !== userId || requests[userId]?.requestId !== existing.requestId) {
       throw userVisibleError(
         "Garmin queue retry remains pending review.",
         "Повторне надсилання в чергу Garmin залишається на перевірці."
@@ -10012,7 +10048,7 @@ async function enqueueGarminPlan(session, binding, candidatePlan) {
       !UUID_PATTERN.test(binding.deviceId || "")) {
     throw new Error("Garmin enqueue belongs to another account or device.");
   }
-  const { record, plan } = prepareGarminEnqueueRequest(userId, binding.deviceId, candidatePlan);
+  const { record, plan } = await prepareGarminEnqueueRequest(userId, binding.deviceId, candidatePlan);
   const requestBody = JSON.stringify({
     p_device_id: binding.deviceId,
     p_plan: plan,
@@ -11903,6 +11939,9 @@ function finishOnboardingTour(status) {
 function render() {
   // A drag in progress owns the exercise list DOM: any other update waits until the drop (or snap-back).
   if (exerciseDragDefersRender()) return;
+  // A sheet drag owns the sheet DOM until release; sheetEngineBeforeRender() starts the exit of a closing sheet.
+  if (sheetDragDefersRender()) return;
+  sheetEngineBeforeRender();
   const previousDateFormatters = renderDateFormatters;
   renderDateFormatters = new Map();
   try {
@@ -12028,6 +12067,7 @@ function cloudSyncConflictScreen() {
     <main class="screen auth-screen" data-scroll-key="cloud-conflict">
       <section class="hero-panel auth-hero"><h1>${tx("Cloud sync needs your choice", "Хмарна синхронізація потребує твого вибору")}</h1><p>${tx("This browser and the cloud both changed since their last confirmed sync. GymApp kept the browser copy and did not overwrite either version.", "Цей браузер і хмара змінилися після останньої підтвердженої синхронізації. GymApp зберіг копію браузера й не перезаписав жодну версію.")}</p></section>
       <section class="panel highlighted auth-panel"><p>${tx("Download a backup first, then explicitly choose which version should continue.", "Спочатку завантаж резервну копію, а потім явно вибери версію для продовження.")}</p><div class="actions vertical"><button class="button secondary full" data-action="export-sync-conflict-local">${tx("Download browser backup", "Завантажити резервну копію браузера")}</button><button class="button full" data-action="resolve-sync-conflict-local">${tx("Keep browser version", "Зберегти версію браузера")}</button><button class="button danger full" data-action="resolve-sync-conflict-cloud">${tx("Use cloud version", "Використати хмарну версію")}</button><button class="button ghost full" data-action="logout-account">${tx("Sign out without changes", "Вийти без змін")}</button></div></section>
+      ${modal?.type === "confirm-sheet" ? modalMarkup() : ""}
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
@@ -12048,6 +12088,7 @@ function cloudRecoveryScreen() {
     <main class="screen auth-screen" data-scroll-key="cloud-recovery">
       <section class="hero-panel auth-hero"><h1>${tx("Cloud data recovery", "Відновлення хмарних даних")}</h1><p>${tx("Your authenticated cloud row uses a legacy or invalid format. It was not loaded into the app and cannot sync until you choose a recovery action.", "Твій автентифікований хмарний запис має застарілий або некоректний формат. Його не завантажено в застосунок, і синхронізація заблокована, доки не вибереш спосіб відновлення.")}</p></section>
       <section class="panel highlighted auth-panel"><h2>${escapeHtml(activeAccount?.name || tx("Cloud account", "Хмарний акаунт"))}</h2><p>${tx("First download the untouched private JSON for offline recovery. Replacing it with an empty valid state is permanent and uses the exact server revision so another device's newer update cannot be overwritten.", "Спочатку завантаж незмінений приватний JSON для офлайн-відновлення. Заміна на порожній коректний стан незворотна й використовує точну ревізію сервера, тому новіші зміни з іншого пристрою не будуть перезаписані.")}</p><div class="actions vertical"><button class="button secondary full" data-action="export-cloud-recovery">${tx("Download original private JSON", "Завантажити оригінальний приватний JSON")}</button><button class="button full" data-action="reset-cloud-recovery">${tx("Replace cloud data with empty state", "Замінити хмарні дані порожнім станом")}</button><button class="button ghost full" data-action="logout-account">${tx("Sign out without changes", "Вийти без змін")}</button></div></section>
+      ${modal?.type === "confirm-sheet" ? modalMarkup() : ""}
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </main>
   </div>`;
@@ -18503,7 +18544,16 @@ async function resolveSyncConflictWithLocal() {
     "Replace the conflicting cloud version with this browser version? Download a backup first. The revision check will stop if the cloud changes again.",
     "Замінити конфліктну хмарну версію версією з цього браузера? Спочатку завантаж резервну копію. Перевірка ревізії зупинить дію, якщо хмара знову зміниться."
   );
-  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  const approved = await confirmSheet({
+    title: tx3("Keep browser version?", "Зберегти версію браузера?", "Сохранить версию браузера?"),
+    body: warning,
+    confirmLabel: tx3("Keep browser version", "Зберегти версію браузера", "Сохранить версию браузера"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: true
+  });
+  // The sheet can outlive the conflict (another tab, sign-out, a different profile): act only on the same, current conflict.
+  if (!approved || cloudSyncConflict !== conflict || conflict.userId !== activeAccount?.userId ||
+      loadRemoteSession()?.user?.id !== conflict.userId) return;
   authRequestInProgress = true;
   render();
   try {
@@ -18540,7 +18590,15 @@ async function resolveSyncConflictWithCloud() {
     "Discard this browser's conflicting changes and use the cloud version? Download a browser backup first. This cannot be undone in GymApp.",
     "Відкинути конфліктні зміни цього браузера й використати хмарну версію? Спочатку завантаж резервну копію браузера. У GymApp це неможливо скасувати."
   );
-  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  const approved = await confirmSheet({
+    title: tx3("Use cloud version?", "Використати хмарну версію?", "Использовать облачную версию?"),
+    body: warning,
+    confirmLabel: tx3("Use cloud version", "Використати хмарну версію", "Использовать облачную версию"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: true
+  });
+  if (!approved || cloudSyncConflict !== conflict || conflict.userId !== activeAccount?.userId ||
+      loadRemoteSession()?.user?.id !== conflict.userId) return;
   const mutationContext = activeWorkoutMutationContext();
   if (!mutationContext) return showDestructiveSaveFailure();
   const result = await withActiveWorkoutDeletionLock(mutationContext.descriptor, () => {
@@ -18599,7 +18657,19 @@ async function resetCloudRecovery() {
     "Permanently replace the quarantined cloud row with an empty GymApp state? Download the original JSON first if you may need its private workout history. Cancel is the safe default.",
     "Незворотно замінити карантинний хмарний запис порожнім станом GymApp? Спочатку завантаж оригінальний JSON, якщо може знадобитися приватна історія тренувань. «Скасувати» — безпечний вибір за замовчування."
   );
-  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  const approvedEpoch = accountEpoch;
+  const approved = await confirmSheet({
+    title: tx3("Replace cloud data?", "Замінити хмарні дані?", "Заменить облачные данные?"),
+    body: warning,
+    confirmLabel: tx3("Replace with empty state", "Замінити порожнім станом", "Заменить пустым состоянием"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: true
+  });
+  // Re-validate the exact quarantined row the user was shown before anything is replaced.
+  const currentSession = loadRemoteSession();
+  if (!approved || cloudRecoveryInProgress || approvedEpoch !== accountEpoch || cloudStateRecovery !== recovery ||
+      recovery.userId !== activeAccount?.userId || currentSession?.user?.id !== recovery.userId ||
+      remoteStateSync.userId !== recovery.userId || remoteStateSync.revision !== recovery.revision) return;
 
   const expectedEpoch = accountEpoch;
   const expectedUserId = recovery.userId;
@@ -18994,7 +19064,19 @@ async function deleteCloudAccount() {
     "Permanently delete this cloud account, its workouts, profile and connected devices? This cannot be undone. Export a backup first if you need it.",
     "Назавжди видалити цей хмарний акаунт, тренування, профіль і підключені пристрої? Це неможливо скасувати. Спочатку експортуй резервну копію, якщо вона потрібна."
   );
-  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  const approvedEpoch = accountEpoch;
+  const approved = await confirmSheet({
+    title: tx3("Delete cloud account?", "Видалити хмарний акаунт?", "Удалить облачный аккаунт?"),
+    body: warning,
+    confirmLabel: tx3("Continue", "Продовжити", "Продолжить"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: true
+  });
+  // The sheet can outlive the profile it was opened for: continue only for the same signed-in cloud account.
+  const approvedAccount = normalizeStoredAccount(activeAccount);
+  if (!approved || accountTransitionInProgress || authRequestInProgress || approvedEpoch !== accountEpoch ||
+      approvedAccount?.remote !== "supabase" || approvedAccount.userId !== account.userId ||
+      loadRemoteSession()?.user?.id !== account.userId) return;
   const typed = typeof window.prompt === "function"
     ? window.prompt(tx("Type DELETE to permanently delete the cloud account.", "Введи DELETE, щоб назавжди видалити хмарний акаунт."), "")
     : null;
@@ -19443,7 +19525,18 @@ async function unpairGarmin() {
     "Permanently revoke this Garmin pairing? Cloud sync on the current watch will stop. Before pairing it again, reset or reinstall GymApp on the watch so it forgets the old device identity. Cancel keeps the working pairing.",
     "Назавжди відкликати це сполучення Garmin? Хмарна синхронізація на поточному годиннику припиниться. Перед повторним сполученням скинь або перевстанови GymApp на годиннику, щоб він забув старий ідентифікатор пристрою. «Скасувати» збереже робоче сполучення."
   );
-  if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+  const approvedEpoch = accountEpoch;
+  const approved = await confirmSheet({
+    title: tx3("Unpair Garmin?", "Від’єднати Garmin?", "Отвязать Garmin?"),
+    body: warning,
+    confirmLabel: tx3("Unpair", "Від’єднати", "Отвязать"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: true
+  });
+  // Re-validate everything that could change while the sheet was open: account, session, sync state and the exact pairing.
+  if (!approved || accountTransitionInProgress || garminSyncInProgress || approvedEpoch !== accountEpoch ||
+      activeAccount?.remote !== "supabase" || activeAccount.userId !== userId ||
+      loadRemoteSession()?.user?.id !== userId || garminBindingForUser(userId)?.deviceId !== binding.deviceId) return;
 
   accountTransitionInProgress = true;
   try {
@@ -23013,10 +23106,18 @@ async function removeFriend(element) {
   const friendshipId = element.dataset.friendshipId;
   const revision = Number(element.dataset.revision);
   if (!SOCIAL_FRIENDSHIP_ID_PATTERN.test(friendshipId || "") || !Number.isSafeInteger(revision)) return;
-  if (typeof window.confirm === "function" && !window.confirm(tx(
-    "Remove this friend? Their progress and workout activity will disappear immediately.",
-    "Видалити цього друга? Його прогрес і тренування одразу зникнуть."
-  ))) return;
+  const accountSnapshot = confirmAccountSnapshot();
+  const approved = await confirmSheet({
+    title: tx3("Remove friend?", "Видалити друга?", "Удалить друга?"),
+    body: tx(
+      "Remove this friend? Their progress and workout activity will disappear immediately.",
+      "Видалити цього друга? Його прогрес і тренування одразу зникнуть."
+    ),
+    confirmLabel: tx3("Remove", "Видалити", "Удалить"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: true
+  });
+  if (!approved || socialMutationInProgress || !confirmAccountIsCurrent(accountSnapshot)) return;
   failCloseSocialPrivateCache();
   const result = await executeSocialMutation(
     "social_remove_friend",
@@ -23037,10 +23138,20 @@ async function removeFriend(element) {
 async function changeFriendBlock(profileId, blocked) {
   if (socialMutationInProgress) return;
   if (!SOCIAL_PROFILE_ID_PATTERN.test(profileId || "")) return;
-  if (blocked && typeof window.confirm === "function" && !window.confirm(tx(
-    "Block this profile? Friendship, pending requests, and workout invitations will be closed.",
-    "Заблокувати цей профіль? Дружбу, запити й запрошення на тренування буде закрито."
-  ))) return;
+  const accountSnapshot = confirmAccountSnapshot();
+  if (blocked) {
+    const approved = await confirmSheet({
+      title: tx3("Block profile?", "Заблокувати профіль?", "Заблокировать профиль?"),
+      body: tx(
+        "Block this profile? Friendship, pending requests, and workout invitations will be closed.",
+        "Заблокувати цей профіль? Дружбу, запити й запрошення на тренування буде закрито."
+      ),
+      confirmLabel: tx3("Block", "Заблокувати", "Заблокировать"),
+      cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+      destructive: true
+    });
+    if (!approved || socialMutationInProgress || !confirmAccountIsCurrent(accountSnapshot)) return;
+  }
   if (blocked) failCloseSocialPrivateCache();
   const result = await executeSocialMutation(
     blocked ? "social_block_profile" : "social_unblock_profile",
@@ -23654,10 +23765,23 @@ async function respondLiveWorkoutInvite(element) {
   }
   if (decision === "accept" && !await preflightLiveWorkoutInvitation(invite)) return false;
   const replacingDraft = decision === "accept" && workoutDraftHasContent();
-  if (replacingDraft && typeof window.confirm === "function" && !window.confirm(tx(
-    "Start together now? The frozen live plan will replace your current unsaved draft.",
-    "Почати разом зараз? Зафіксований live-план замінить поточну незбережену чернетку."
-  ))) return false;
+  if (replacingDraft) {
+    const accountSnapshot = confirmAccountSnapshot();
+    const approved = await confirmSheet({
+      title: tx3("Replace your draft?", "Замінити чернетку?", "Заменить черновик?"),
+      body: tx(
+        "Start together now? The frozen live plan will replace your current unsaved draft.",
+        "Почати разом зараз? Зафіксований live-план замінить поточну незбережену чернетку."
+      ),
+      confirmLabel: tx3("Start together", "Почати разом", "Начать вместе"),
+      cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+      destructive: true
+    });
+    // Re-validate the invitation, the account and the draft that the consent was given for.
+    const currentInvite = liveWorkoutState.inbox?.invitations.find(row => row.roomId === roomId);
+    if (!approved || !confirmAccountIsCurrent(accountSnapshot) || activeWorkout ||
+        !currentInvite || currentInvite.roomRevision !== roomRevision || !workoutDraftHasContent()) return false;
+  }
   const identity = decision === "accept" ? liveSessionIdentity() : null;
   const replacementConsent = decision === "accept"
     ? prepareLiveDraftReplacementConsent(roomId, identity, replacingDraft)
@@ -24062,7 +24186,7 @@ async function ensureLiveWorkoutAttached(snapshot, requestedByUser = false) {
     ));
     return false;
   }
-  if (workoutDraftHasContent() && typeof window.confirm === "function") {
+  if (workoutDraftHasContent()) {
     let samePlan = false;
     try {
       samePlan = canonicalValueFingerprint(normalizeSocialWorkoutPlan(sharedWorkoutPlanFromDraft(workoutDraft))) ===
@@ -24070,10 +24194,23 @@ async function ensureLiveWorkoutAttached(snapshot, requestedByUser = false) {
     } catch {
       samePlan = false;
     }
-    if (!samePlan && replacementConsentResult !== "approved" && !window.confirm(tx(
-      "Open the frozen live plan and replace your current unsaved draft?",
-      "Відкрити зафіксований live-план і замінити поточну незбережену чернетку?"
-    ))) return false;
+    if (!samePlan && replacementConsentResult !== "approved") {
+      const expectedEpoch = accountEpoch;
+      const draftBeforeConfirm = workoutDraft;
+      const approved = await confirmSheet({
+        title: tx3("Replace your draft?", "Замінити чернетку?", "Заменить черновик?"),
+        body: tx(
+          "Open the frozen live plan and replace your current unsaved draft?",
+          "Відкрити зафіксований live-план і замінити поточну незбережену чернетку?"
+        ),
+        confirmLabel: tx3("Open live plan", "Відкрити live-план", "Открыть live-план"),
+        cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+        destructive: true
+      });
+      // Re-validate identity, active workout and the exact draft the consent covers.
+      if (!approved || !liveIdentityIsCurrent(expectedEpoch, identity) || activeWorkout ||
+          workoutDraft !== draftBeforeConfirm || !workoutDraftHasContent()) return false;
+    }
   }
   workoutDraft = draft;
   smartGeneratedPlan = null;
@@ -26466,6 +26603,7 @@ function templatePickerNames(session) {
 }
 
 function modalMarkup() {
+  if (modal.type === "confirm-sheet") return confirmSheetMarkup(modal);
   if (modal.type === "training-adapt") return bottomSheet(trainingAdaptationSheet());
   if (modal.type === "offline-account") return bottomSheet(offlineAccountSheetMarkup());
   if (modal.type === "change-password") return bottomSheet(`<h2>${tx("Change password", "Змінити пароль")}</h2>${modal.reauthRequired ? `<p class="muted">${tx("A verification code was sent to your email. Enter it together with the new password.", "Код підтвердження надіслано на твою електронну пошту. Введи його разом із новим паролем.")}</p>` : ""}<div class="field-stack"><label>${tx("Current password", "Поточний пароль")}<input id="change-current-password" type="password" autocomplete="current-password" maxlength="1024"></label>${modal.reauthRequired ? `<label>${tx("Verification code", "Код підтвердження")}<input id="change-password-nonce" autocomplete="one-time-code" inputmode="numeric" maxlength="8"></label>` : ""}<label>${tx("New password", "Новий пароль")}<input id="change-new-password" type="password" autocomplete="new-password" minlength="6" maxlength="72"></label><label>${tx("Repeat new password", "Повтори новий пароль")}<input id="change-repeat-password" type="password" autocomplete="new-password" minlength="6" maxlength="72"></label></div><p class="muted">${tx("Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8).")}</p><button class="button full" data-action="submit-password-change" ${authRequestInProgress ? "disabled" : ""}>${tx("Change password", "Змінити пароль")}</button>`);
@@ -26596,6 +26734,399 @@ function modalMarkup() {
   return "";
 }
 
+// ---- Shared sheet engine -------------------------------------------------------------------------
+// Every bottom sheet is rendered by bottomSheet() inside the render() model (the whole #app subtree is rebuilt on each render).
+// Enter: CSS keyframes on the freshly created element (no flicker); a re-render mid-enter resumes the keyframes.
+// Exit: when render() runs with `modal === null` the old .modal node is moved to <body> as a "ghost", animated out via WAAPI and removed on finish
+//   (timeout fallback), so state changes and focus restore stay immediate while the sheet still leaves smoothly.
+// Drag: Pointer Events + setPointerCapture on the handle, the first heading, or (scrolled to top) the sheet body.
+// Confirm sheets reuse all of this: they are ordinary `modal` states rendered through bottomSheet(); a gesture/Esc/scrim dismissal calls dismissSheet() === closeModal() only.
+const SHEET_ENTER_MS = 300;
+const SHEET_EXIT_MS = 240;
+const SHEET_SCRIM_IN_MS = 150;
+const SHEET_SCRIM_OUT_MS = 90;
+const SHEET_FADE_IN_MS = 150;
+const SHEET_FADE_OUT_MS = 90;
+const SHEET_RESTORE_MS = 350;
+const SHEET_DISMISS_VELOCITY = 0.5; // px per ms downward (~500 px/s)
+const SHEET_DISMISS_FRACTION = 0.4;
+const SHEET_RUBBER_BAND_MAX = 16;
+const SHEET_DRAG_SLOP = 6;
+const SHEET_VELOCITY_WINDOW_MS = 100;
+
+const sheetEngine = {
+  enterStart: null,
+  ghost: null,
+  ghostTimer: null,
+  accountKey: "",
+  drag: null,
+  deferredRender: false,
+  exitHint: null
+};
+
+function sheetDismissDecision({ distance, height, velocity } = {}) {
+  const d = Number(distance);
+  const h = Number(height);
+  const v = Number(velocity);
+  if (Number.isFinite(v) && v > SHEET_DISMISS_VELOCITY) return "dismiss";
+  if (Number.isFinite(d) && Number.isFinite(h) && h > 0 && d > h * SHEET_DISMISS_FRACTION) return "dismiss";
+  return "restore";
+}
+
+// Downward drags track 1:1; upward drags rubber-band towards SHEET_RUBBER_BAND_MAX.
+function sheetDragOffset(dy) {
+  const value = Number(dy);
+  if (!Number.isFinite(value) || value === 0) return 0;
+  if (value > 0) return value;
+  const pull = -value;
+  return -(SHEET_RUBBER_BAND_MAX * (1 - 1 / (pull * 0.55 / SHEET_RUBBER_BAND_MAX + 1)));
+}
+
+// samples: [{ t (ms), y (px) }] oldest first; returns px per ms over the last SHEET_VELOCITY_WINDOW_MS (positive = downward).
+function sheetDragVelocity(samples) {
+  if (!Array.isArray(samples) || samples.length < 2) return 0;
+  const last = samples[samples.length - 1];
+  let first = last;
+  for (let index = samples.length - 2; index >= 0; index -= 1) {
+    if (last.t - samples[index].t > SHEET_VELOCITY_WINDOW_MS) break;
+    first = samples[index];
+  }
+  const dt = last.t - first.t;
+  if (!(dt > 0)) return 0;
+  const velocity = (last.y - first.y) / dt;
+  return Number.isFinite(velocity) ? velocity : 0;
+}
+
+function sheetScrimProgress(offset, height) {
+  const o = Number(offset);
+  const h = Number(height);
+  if (!Number.isFinite(o) || !Number.isFinite(h) || h <= 0) return 0;
+  return Math.min(1, Math.max(0, o / h));
+}
+
+// Exit duration: 240 ms from rest, shorter when the sheet is already partway down or flung quickly; 90 ms fade under reduced motion.
+function sheetExitDurationMs({ offset = 0, height = 0, velocity = 0, reduced = false } = {}) {
+  if (reduced) return SHEET_FADE_OUT_MS;
+  let duration = SHEET_EXIT_MS;
+  if (offset > 0 && height > 0) {
+    duration *= Math.min(1, Math.max(0.35, 1 - offset / height));
+    if (velocity > SHEET_DISMISS_VELOCITY) {
+      duration = Math.min(duration, Math.max(120, (height - offset) / velocity));
+    }
+  }
+  return Math.round(Math.max(90, duration));
+}
+
+function sheetPrefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+}
+
+function sheetEnterActive() {
+  return sheetEngine.enterStart !== null && Date.now() - sheetEngine.enterStart < SHEET_ENTER_MS;
+}
+
+function sheetAccountKey() {
+  return String(activeAccount?.id ?? activeAccount?.userId ?? activeAccount?.name ?? "");
+}
+
+function sheetDragDefersRender() {
+  if (sheetEngine.drag?.active !== true) return false;
+  sheetEngine.deferredRender = true;
+  return true;
+}
+
+function sheetRemoveGhost() {
+  if (sheetEngine.ghostTimer) clearTimeout(sheetEngine.ghostTimer);
+  sheetEngine.ghostTimer = null;
+  const ghost = sheetEngine.ghost;
+  sheetEngine.ghost = null;
+  try { ghost?.getAnimations?.({ subtree: true }).forEach(animation => animation.cancel()); } catch { /* best effort */ }
+  ghost?.remove?.();
+}
+
+// Called at the top of render(), before #app is rebuilt.
+function sheetEngineBeforeRender() {
+  // Settle a confirm sheet that was torn down by whatever changed `modal` or the account since the last render.
+  confirmSheetReconcile();
+  const accountKey = sheetAccountKey();
+  const accountChanged = accountKey !== sheetEngine.accountKey;
+  sheetEngine.accountKey = accountKey;
+  // DESIGN: at most two live blur layers, so the topbar and bottom nav drop their blur while a sheet is open.
+  app.classList?.toggle("sheet-open", Boolean(modal));
+  // An account/profile switch never leaves another profile's sheet content lingering.
+  if (accountChanged || !activeAccount) sheetRemoveGhost();
+  const present = typeof app?.querySelector === "function" ? app.querySelector(".modal") : null;
+  if (modal) {
+    // A sheet that opens while another is still leaving replaces it at once.
+    if (!present) {
+      sheetRemoveGhost();
+      sheetEngine.enterStart = Date.now();
+    }
+    return;
+  }
+  sheetEngine.enterStart = null;
+  if (present) {
+    if (accountChanged || !activeAccount) present.remove?.();
+    else sheetDetachToGhost(present);
+  }
+  sheetEngine.exitHint = null;
+}
+
+function sheetDetachToGhost(element) {
+  const panel = element.querySelector?.(".modal-panel");
+  const scrim = element.querySelector?.(".sheet-scrim");
+  if (!panel || typeof panel.animate !== "function" || !document.body?.appendChild) return;
+  sheetRemoveGhost();
+  const hint = sheetEngine.exitHint || {};
+  const reduced = sheetPrefersReducedMotion();
+  let offset = 0;
+  let scrimOpacity = 1;
+  try {
+    const matrix = window.getComputedStyle(panel).transform;
+    const match = /matrix\(([^)]*)\)/.exec(matrix || "");
+    const match3d = /matrix3d\(([^)]*)\)/.exec(matrix || "");
+    if (match) offset = Number(match[1].split(",")[5]) || 0;
+    else if (match3d) offset = Number(match3d[1].split(",")[13]) || 0;
+    const opacity = Number.parseFloat(window.getComputedStyle(scrim).opacity);
+    if (Number.isFinite(opacity)) scrimOpacity = opacity;
+  } catch { /* computed style unavailable */ }
+  const height = panel.offsetHeight || hint.height || 0;
+  const duration = sheetExitDurationMs({ offset, height, velocity: hint.velocity || 0, reduced });
+  element.classList.remove("sheet-enter");
+  element.remove?.();
+  element.querySelectorAll?.("[id]").forEach(node => node.removeAttribute("id"));
+  ["role", "aria-modal", "aria-labelledby", "aria-describedby", "aria-label"].forEach(name => element.removeAttribute(name));
+  element.setAttribute("aria-hidden", "true");
+  element.inert = true;
+  element.classList.add("sheet-ghost");
+  document.body.appendChild(element);
+  sheetEngine.ghost = element;
+  try {
+    if (reduced) {
+      panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration, easing: "linear", fill: "forwards" });
+    } else {
+      panel.animate(
+        [{ transform: `translate3d(0, ${offset}px, 0)` }, { transform: "translate3d(0, 100%, 0)" }],
+        { duration, easing: hint.velocity > SHEET_DISMISS_VELOCITY ? "cubic-bezier(0.25, 0.5, 0.5, 1)" : "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" }
+      );
+    }
+    scrim?.animate?.([{ opacity: scrimOpacity }, { opacity: 0 }], { duration: Math.min(duration, SHEET_SCRIM_OUT_MS), easing: "linear", fill: "forwards" });
+  } catch {
+    sheetRemoveGhost();
+    return;
+  }
+  sheetEngine.ghostTimer = setTimeout(sheetRemoveGhost, duration + 120);
+}
+
+// ---- In-app confirm sheet ------------------------------------------------------------------------
+// confirmSheet() replaces the native browser dialog: it resolves true only from the confirm button and false on EVERY other teardown.
+// The teardown hook is confirmSheetReconcile(): render() runs it first, and closeModal()/dismissModalAfterExternalUpdate() run it
+// right after they change `modal`, so a pending promise never outlives its sheet (cancel, Esc, scrim, drag-dismiss, external
+// dismissal, account/profile switch, sign-out, popstate, or another modal replacing it).
+let confirmSheetPending = null;
+let confirmSheetSequence = 0;
+
+function confirmSheetIsOpen(pending = confirmSheetPending) {
+  return Boolean(pending) && modal?.type === "confirm-sheet" && modal.confirmId === pending.id &&
+    pending.accountKey === sheetAccountKey();
+}
+
+function confirmSheetSettle(result) {
+  const pending = confirmSheetPending;
+  if (!pending) return;
+  confirmSheetPending = null;
+  pending.resolve(result === true);
+}
+
+function confirmSheetReconcile() {
+  const pending = confirmSheetPending;
+  if (!pending || confirmSheetIsOpen(pending)) return;
+  // The sheet's own state must not outlive a sign-out or profile switch either.
+  if (modal?.type === "confirm-sheet" && modal.confirmId === pending.id) modal = null;
+  confirmSheetSettle(false);
+}
+
+function confirmSheet({ title = "", body = "", confirmLabel = "", cancelLabel = "", destructive = false } = {}) {
+  // Only one confirm sheet at a time: a second call resolves the first with false.
+  confirmSheetSettle(false);
+  return new Promise(resolve => {
+    const id = ++confirmSheetSequence;
+    const previous = modal;
+    const returnModal = previous?.type === "confirm-sheet" ? previous.returnModal || null : previous || null;
+    modal = {
+      type: "confirm-sheet",
+      confirmId: id,
+      title: String(title ?? ""),
+      body: String(body ?? ""),
+      confirmLabel: String(confirmLabel ?? ""),
+      cancelLabel: String(cancelLabel ?? ""),
+      destructive: destructive === true,
+      returnModal
+    };
+    confirmSheetPending = { id, resolve, accountKey: sheetAccountKey() };
+    render();
+  });
+}
+
+// Snapshot taken before awaiting confirmSheet(); a sheet can stay open across sign-out, a profile switch or another tab's update.
+function confirmAccountSnapshot() {
+  return { epoch: accountEpoch, key: sheetAccountKey() };
+}
+
+function confirmAccountIsCurrent(snapshot) {
+  return Boolean(activeAccount) && snapshot?.epoch === accountEpoch && snapshot.key === sheetAccountKey();
+}
+
+function acceptConfirmSheet() {
+  const pending = confirmSheetPending;
+  if (!pending || !confirmSheetIsOpen(pending)) return false;
+  const returnModal = modal.returnModal || null;
+  confirmSheetSettle(true);
+  modal = returnModal;
+  render();
+  return true;
+}
+
+function confirmSheetMarkup(sheet) {
+  const destructive = sheet.destructive === true;
+  const title = sheet.title || tx3("Please confirm", "Підтвердь дію", "Подтверди действие");
+  const cancel = sheet.cancelLabel || tx3("Cancel", "Скасувати", "Отмена");
+  const confirm = sheet.confirmLabel || (destructive ? tx3("Delete", "Видалити", "Удалить") : tx3("Continue", "Продовжити", "Продолжить"));
+  const cancelButton = `<button class="button ghost full" data-action="cancel-destructive"${destructive ? " data-modal-initial-focus" : ""}>${escapeHtml(cancel)}</button>`;
+  const confirmButton = `<button class="button ${destructive ? "danger " : ""}full" data-action="confirm-sheet-accept"${destructive ? "" : " data-modal-initial-focus"}>${escapeHtml(confirm)}</button>`;
+  return bottomSheet(`<h2 id="confirm-sheet-title">${escapeHtml(title)}</h2>${sheet.body ? `<p class="muted confirm-sheet-body" id="confirm-sheet-description">${escapeHtml(sheet.body)}</p>` : ""}<div class="actions vertical">${cancelButton}${confirmButton}</div>`, "confirm-sheet-title", "alertdialog", sheet.body ? "confirm-sheet-description" : "");
+}
+
+// Single dismissal entry point for gestures, Esc and the scrim: identical to the sheet's Close/Cancel (never confirms anything).
+function dismissSheet() {
+  closeModal();
+}
+
+
+// Runs from bindEvents() once the new .modal exists.
+function sheetBindPresented(modalElement) {
+  if (modalElement.classList?.contains("sheet-enter") && sheetEngine.enterStart !== null) {
+    const elapsed = Math.max(0, Date.now() - sheetEngine.enterStart);
+    if (elapsed > 16) modalElement.style?.setProperty?.("--sheet-enter-skip", `-${Math.min(elapsed, SHEET_ENTER_MS)}ms`);
+  }
+  requestAnimationFrame(() => {
+    const panel = modalElement.querySelector?.(".modal-panel");
+    if (!panel || panel.isConnected === false || !panel.classList) return;
+    // Only content that does not scroll is draggable by touch from anywhere; scrollable sheets drag by the handle and heading.
+    if (panel.scrollHeight <= panel.clientHeight + 1) panel.classList.add("sheet-fits");
+    const heading = panel.querySelector?.("h2");
+    if (heading?.getBoundingClientRect && heading.getBoundingClientRect().top - panel.getBoundingClientRect().top < 96) {
+      heading.classList.add("sheet-drag-zone");
+    }
+  });
+}
+
+function sheetBindGestures() {
+  if (sheetEngine.gesturesBound || typeof app.addEventListener !== "function") return;
+  sheetEngine.gesturesBound = true;
+  app.addEventListener("pointerdown", beginSheetDrag);
+  app.addEventListener("pointermove", moveSheetDrag);
+  app.addEventListener("pointerup", event => endSheetDrag(event, false));
+  app.addEventListener("pointercancel", event => endSheetDrag(event, true));
+  app.addEventListener("lostpointercapture", event => endSheetDrag(event, true));
+}
+
+function beginSheetDrag(event) {
+  if (sheetEngine.drag || event.isPrimary === false || (event.pointerType === "mouse" && event.button !== 0)) return;
+  const target = event.target;
+  const panel = target?.closest?.(".modal-panel");
+  const modalElement = panel?.closest?.(".modal");
+  if (!panel || !modalElement) return;
+  const grab = Boolean(target.closest(".sheet-handle, .sheet-drag-zone"));
+  if (!grab) {
+    if (panel.scrollTop > 0) return;
+    if (target.closest('button, a, input, select, textarea, label, summary, [role="button"], [contenteditable], [data-no-sheet-drag]')) return;
+  }
+  sheetEngine.drag = {
+    id: event.pointerId, startX: event.clientX, startY: event.clientY, grab, active: false,
+    panel, modalElement, height: 0, offset: 0, samples: [{ t: event.timeStamp, y: event.clientY }]
+  };
+}
+
+function moveSheetDrag(event) {
+  const drag = sheetEngine.drag;
+  if (!drag || drag.id !== event.pointerId) return;
+  const dy = event.clientY - drag.startY;
+  const dx = event.clientX - drag.startX;
+  if (!drag.active) {
+    if (Math.abs(dy) < SHEET_DRAG_SLOP && Math.abs(dx) < SHEET_DRAG_SLOP) return;
+    // Horizontal or (for body drags) upward movement belongs to the content, not to the sheet.
+    if (Math.abs(dx) > Math.abs(dy) || (!drag.grab && dy < 0)) { sheetEngine.drag = null; return; }
+    drag.active = true;
+    drag.height = drag.panel.offsetHeight || drag.panel.getBoundingClientRect().height || 0;
+    try { drag.panel.setPointerCapture(event.pointerId); } catch { /* capture is best effort */ }
+    drag.modalElement.classList.add("sheet-dragging");
+    drag.panel.getAnimations?.().forEach(animation => animation.cancel());
+  }
+  drag.samples.push({ t: event.timeStamp, y: event.clientY });
+  if (drag.samples.length > 12) drag.samples.shift();
+  drag.offset = sheetDragOffset(dy);
+  drag.panel.style.transform = `translate3d(0, ${drag.offset}px, 0)`;
+  drag.modalElement.style.setProperty("--sheet-progress", String(sheetScrimProgress(drag.offset, drag.height)));
+  event.preventDefault?.();
+}
+
+function endSheetDrag(event, cancelled) {
+  const drag = sheetEngine.drag;
+  if (!drag || drag.id !== event.pointerId) return;
+  sheetEngine.drag = null;
+  if (!drag.active) return;
+  try { drag.panel.releasePointerCapture?.(event.pointerId); } catch { /* already released */ }
+  // The click that follows a drag must not reach the controls under the finger.
+  const swallowClick = clickEvent => { clickEvent.stopPropagation(); clickEvent.preventDefault(); };
+  document.addEventListener("click", swallowClick, { capture: true, once: true });
+  setTimeout(() => document.removeEventListener("click", swallowClick, true), 80);
+  // The release itself is the final sample, so a pause before lifting the finger reads as ~0 velocity.
+  if (!cancelled) drag.samples.push({ t: event.timeStamp, y: event.clientY });
+  const velocity = cancelled ? 0 : sheetDragVelocity(drag.samples);
+  const decision = cancelled ? "restore" : sheetDismissDecision({ distance: drag.offset, height: drag.height, velocity });
+  if (decision === "dismiss") {
+    sheetEngine.exitHint = { height: drag.height, velocity };
+    sheetEngine.deferredRender = false;
+    dismissSheet();
+    return;
+  }
+  sheetRestoreDrag(drag);
+}
+
+function sheetRestoreDrag(drag) {
+  const { panel, modalElement } = drag;
+  const finish = () => {
+    panel.style.transform = "";
+    modalElement.style.removeProperty("--sheet-progress");
+    modalElement.classList.remove("sheet-dragging");
+    if (sheetEngine.deferredRender) {
+      sheetEngine.deferredRender = false;
+      render();
+    }
+  };
+  if (sheetPrefersReducedMotion() || typeof panel.animate !== "function" || drag.offset === 0) {
+    finish();
+    return;
+  }
+  try {
+    const from = `translate3d(0, ${drag.offset}px, 0)`;
+    panel.style.transform = "translate3d(0, 0, 0)";
+    modalElement.style.setProperty("--sheet-progress", "0");
+    const animation = panel.animate([{ transform: from }, { transform: "translate3d(0, 0, 0)" }], {
+      duration: SHEET_RESTORE_MS, easing: "cubic-bezier(0.3, 1.25, 0.5, 1)"
+    });
+    animation.onfinish = finish;
+    animation.oncancel = finish;
+    modalElement.querySelector(".sheet-scrim")?.animate?.(
+      [{ opacity: 1 - sheetScrimProgress(drag.offset, drag.height) }, { opacity: 1 }],
+      { duration: SHEET_RESTORE_MS, easing: "ease-out" }
+    );
+  } catch {
+    finish();
+  }
+}
+
 function bottomSheet(content, labelledBy = "", requestedRole = "dialog", describedBy = "") {
   const headingId = labelledBy || String(content).match(/<h2\b[^>]*?\sid="([^"]+)"/)?.[1] || "";
   const accessibleName = headingId
@@ -26608,7 +27139,7 @@ function bottomSheet(content, labelledBy = "", requestedRole = "dialog", describ
   const closeButton = hasOwnDismiss
     ? ""
     : `<button class="icon-button sheet-close" data-action="close-modal" aria-label="${txAttr("Close dialog", "Закрити діалог")}">${svg("close")}</button>`;
-  return `<div class="modal" role="${role}" aria-modal="true" ${accessibleName}${accessibleDescription}><section class="modal-panel${hasOwnDismiss ? " no-sheet-close" : ""}"><div class="sheet-handle"></div>${closeButton}${content}</section></div>`;
+  return `<div class="modal${sheetEnterActive() ? " sheet-enter" : ""}" role="${role}" aria-modal="true" ${accessibleName}${accessibleDescription}><div class="sheet-scrim" aria-hidden="true"></div><section class="modal-panel${hasOwnDismiss ? " no-sheet-close" : ""}"><div class="sheet-handle"></div>${closeButton}${content}</section></div>`;
 }
 
 function handleDestructiveModalKeydown(modalElement, event) {
@@ -26899,8 +27430,10 @@ function bindEvents(preservedModalFocus = null) {
   const modalElement = app.querySelector(".modal");
   if (modalElement) {
     inertModalBackground(modalElement);
+    sheetBindGestures();
+    sheetBindPresented(modalElement);
     modalElement.addEventListener("click", event => {
-      if (event.target === modalElement) closeModal();
+      if (event.target === modalElement || event.target?.classList?.contains("sheet-scrim")) dismissSheet();
     });
     modalElement.addEventListener("keydown", event => handleDestructiveModalKeydown(modalElement, event));
     const restoredModalFocus = resolveModalDescendantFocus(modalElement, preservedModalFocus);
@@ -28169,6 +28702,7 @@ async function handleAction(action, el) {
   if (action === "import-json") { modal = { type: "import" }; return render(); }
   if (action === "apply-import") return applyImport(destructiveReturnFocus("import-json"));
   if (action === "confirm-import") return confirmImport();
+  if (action === "confirm-sheet-accept") return acceptConfirmSheet();
   if (action === "cancel-destructive") return closeModal();
   if (action === "copy-json") return copyExportJson();
   if (action === "download-json") return downloadJson(modal.json, modal.diagnostics);
@@ -28633,6 +29167,7 @@ function closeModal() {
     : modal?.returnFocus;
   const returnModal = modal?.returnModal || null;
   modal = returnModal;
+  confirmSheetReconcile();
   render();
   if (focusTarget) restoreStableActionFocus(focusTarget);
   else if (!returnModal) focusStableScreenContext();
@@ -28643,6 +29178,7 @@ function dismissModalAfterExternalUpdate() {
   modalActionGeneration += 1;
   clearSensitiveAuthDrafts();
   modal = null;
+  confirmSheetReconcile();
   render();
   restoreModalActionFocus(focusTarget, null);
 }
@@ -33792,15 +34328,26 @@ async function copyExportJson() {
   if (!modal?.json || !navigator.clipboard?.writeText) {
     return showToast(tx("Clipboard access is unavailable.", "Доступ до буфера обміну недоступний."));
   }
-  if (!modal.diagnostics) {
+  const exportModal = modal;
+  const exportJson = exportModal.json;
+  if (!exportModal.diagnostics) {
     const warning = tx(
       "This full backup contains private workout history and account metadata. Copy it to the system clipboard? Other apps may be able to read it.",
       "Повна резервна копія містить приватну історію тренувань і дані акаунта. Скопіювати її в системний буфер? Інші програми можуть мати до неї доступ."
     );
-    if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+    const accountSnapshot = confirmAccountSnapshot();
+    const approved = await confirmSheet({
+      title: tx3("Copy full backup?", "Скопіювати повну копію?", "Скопировать полную копию?"),
+      body: warning,
+      confirmLabel: tx3("Copy", "Скопіювати", "Скопировать"),
+      cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+      destructive: false
+    });
+    // The backup sheet is restored when the confirm closes; if it (or the account) changed meanwhile, copy nothing.
+    if (!approved || modal !== exportModal || !confirmAccountIsCurrent(accountSnapshot)) return;
   }
   try {
-    await navigator.clipboard.writeText(modal.json);
+    await navigator.clipboard.writeText(exportJson);
     showToast(tx("JSON copied.", "JSON скопійовано."));
   } catch {
     showToast(tx("Clipboard write failed.", "Не вдалося записати в буфер обміну."));
@@ -33826,14 +34373,24 @@ function downloadJson(json, diagnostics = false) {
   }
 }
 
-function printReport() {
+async function printReport() {
   if (!modal?.json) return;
-  if (!modal.diagnostics) {
+  const reportModal = modal;
+  if (!reportModal.diagnostics) {
     const warning = tx(
       "This report will include the full private backup. Continue to the print dialog?",
       "Звіт міститиме повну приватну резервну копію. Перейти до діалогу друку?"
     );
-    if (typeof window.confirm !== "function" || !window.confirm(warning)) return;
+    const accountSnapshot = confirmAccountSnapshot();
+    const approved = await confirmSheet({
+      title: tx3("Print full backup?", "Друкувати повну копію?", "Печатать полную копию?"),
+      body: warning,
+      confirmLabel: tx3("Continue", "Продовжити", "Продолжить"),
+      cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+      destructive: false
+    });
+    // The backup sheet is restored when the confirm closes; if it (or the account) changed meanwhile, print nothing.
+    if (!approved || modal !== reportModal || !confirmAccountIsCurrent(accountSnapshot)) return;
   }
   const win = window.open("", "_blank");
   if (!win) return showToast(tx("The report window was blocked.", "Вікно звіту заблоковано."));
@@ -34634,6 +35191,14 @@ document.addEventListener?.("keydown", event => {
   if (event.key === "Escape") dismissLanguageMenu(true);
   if (event.key === "Escape") dismissExerciseFilterMenu(true);
   if (event.key === "Escape") dismissPlanEditorMenu(true);
+});
+
+// Esc closes the open sheet even when focus sits outside it (the sheet's own keydown handler already ran, and called preventDefault, when focus is inside).
+document.addEventListener?.("keydown", event => {
+  if (event.key === "Escape" && !event.defaultPrevented && modal && app.querySelector?.(".modal")) {
+    event.preventDefault();
+    dismissSheet();
+  }
 });
 
 // Capture phase: data-action handlers stop propagation, so a bubbling listener would miss them.

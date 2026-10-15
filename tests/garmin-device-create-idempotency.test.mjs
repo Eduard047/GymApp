@@ -557,8 +557,10 @@ test("PWA legacy response correlates server cleanup to raw request across delete
       currentBinding = structuredClone(binding);
     },
     tx: (english) => english,
+    tx3: (english) => english,
     userVisibleError: (english) => new Error(english),
-    window: { confirm: () => true, prompt: () => "confirmed" },
+    confirmSheet: async () => true,
+    window: { prompt: () => "confirmed" },
     requestGarminDeviceCreation: async (_session, creation) => {
       const requests = context.loadGarminCreateRequests();
       requests[record.userId] = {

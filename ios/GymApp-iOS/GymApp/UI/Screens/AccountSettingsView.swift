@@ -117,6 +117,7 @@ struct AccountSettingsView: View {
                 }
             }
             .environmentObject(appState)
+            .gymSheetPresentation(.full)
         }
         .fileExporter(
             isPresented: $showsBackupExporter,
@@ -1005,6 +1006,7 @@ private struct GarminSettingsCard: View {
                     onClose: { tokenPresentation = nil }
                 )
             }
+            .gymSheetPresentation()
         }
         .alert("Revoke selected Garmin watch?", isPresented: $showsRevokeConfirmation) {
             Button("Revoke", role: .destructive) {

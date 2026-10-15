@@ -264,6 +264,7 @@ struct FriendsView: View {
         )) {
             if let roomID = readOnlyLiveRoomID {
                 FinishedLiveWorkoutView(coordinator: liveWorkoutCoordinator, roomID: roomID)
+                    .gymSheetPresentation()
             }
         }
         .sheet(isPresented: $showsAddFriend) {
@@ -364,7 +365,7 @@ struct FriendsView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .gymSheetPresentation()
     }
 
     private var localAccountState: some View {
@@ -1759,7 +1760,7 @@ private struct FriendDetailView: View {
                     Task { await share(workout, mode: mode) }
                 }
             )
-            .presentationDetents([.medium, .large])
+            .gymSheetPresentation()
         }
         .sheet(
             isPresented: Binding(
@@ -1777,7 +1778,7 @@ private struct FriendDetailView: View {
                         languageCode: languageCode
                     )
                 }
-                .presentationDetents([.large])
+                .gymSheetPresentation(.full)
             }
         }
         .alert(item: $confirmation) { confirmation in

@@ -163,6 +163,7 @@ struct ProfileView: View {
             }
             .environmentObject(appState)
             .environmentObject(auth)
+            .gymSheetPresentation(.full)
         }
         .alert(item: $activeAlert, content: makeAlert)
         .fileImporter(

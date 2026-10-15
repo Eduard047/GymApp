@@ -674,6 +674,7 @@ struct ExercisesView: View {
                     resultIsError = false
                 }
             }
+            .gymSheetPresentation(.full)
 
         case let .editExercise(exercise):
             NavigationStack {
@@ -699,6 +700,7 @@ struct ExercisesView: View {
                     resultIsError = false
                 }
             }
+            .gymSheetPresentation(.full)
 
         case let .history(exercise):
             NavigationStack {
@@ -708,6 +710,7 @@ struct ExercisesView: View {
                     stats: store.progressStats(exerciseID: exercise.id)
                 )
             }
+            .gymSheetPresentation(.standard)
 
         case let .muscles(exercise):
             NavigationStack {
@@ -725,6 +728,7 @@ struct ExercisesView: View {
                     resultIsError = false
                 }
             }
+            .gymSheetPresentation(.standard)
         }
     }
 

@@ -20,10 +20,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,12 +72,12 @@ fun TrainingSettingsSheet(
             scrollState.animateScrollTo(workoutsPerWeekTop)
         }
     }
-    ModalBottomSheet(
+    GymModalBottomSheet(
         onDismissRequest = onDismiss,
         // The fully expanded sheet is as tall as the edge-to-edge window; keep its top edge below
         // the status bar. Bottom insets are applied to the content by the sheet itself.
         modifier = Modifier.statusBarsPadding(),
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        skipPartiallyExpanded = true
     ) {
         // The title row stays pinned; only the options below it scroll.
         Row(

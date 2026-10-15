@@ -675,6 +675,7 @@ private struct MainTabShell: View {
             .environmentObject(appState)
             .environmentObject(auth)
             .environmentObject(store)
+            .gymSheetPresentation(.full)
         }
         .sheet(
             isPresented: $showsSharedWorkoutPreview,
@@ -2104,6 +2105,6 @@ private struct SharedWorkoutPreviewView: View {
             )
             .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.medium, .large])
+        .gymSheetPresentation()
     }
 }
