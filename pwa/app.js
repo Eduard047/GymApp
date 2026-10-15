@@ -10692,6 +10692,8 @@ function validatedHistoryNav(value) {
 }
 
 function push(name, params = {}) {
+  // The screen that is leaving stays tappable until the view-transition callback swaps it, so a second tap is ignored.
+  if (routeTransition.pending) return;
   if (name === "add" && !workoutDraft) {
     routeScrollPositions.delete("add:root");
     workoutDraft = createDraft();
@@ -10707,6 +10709,7 @@ function push(name, params = {}) {
 }
 
 function goRoot(name) {
+  if (routeTransition.pending) return false;
   const leavingAdd = route().name === "add";
   if (leavingAdd && workoutDraft) persistWorkoutDraft();
   nav = [{ name }];
@@ -10720,6 +10723,7 @@ function goRoot(name) {
 }
 
 function back() {
+  if (routeTransition.pending) return false;
   if (workoutDraftLiveSendInProgress && route().name === "add") return false;
   if (modal) {
     languageMenuOpen = false;
@@ -11994,6 +11998,8 @@ function routeTransitionFlush() {
 // render() for a route change. Same-route updates, drags, sheets, the tour, login/recovery screens and unsupported
 // or hidden documents render directly. afterRender runs once the new screen is in the DOM.
 function renderRoute(afterRender) {
+  // Every navigation path renders the deferred screen before its own, so afterRender callbacks never run out of order.
+  if (routeTransition.pending) routeTransitionFlush();
   const root = document.documentElement;
   const from = typeof document.startViewTransition === "function" && document.visibilityState !== "hidden" &&
     activeAccount && !routeTransition.pending && !exerciseDrag && sheetEngine.drag?.active !== true &&
@@ -35664,6 +35670,8 @@ window.addEventListener("storage", event => {
 });
 
 window.addEventListener("popstate", event => {
+  // The browser's own Back/Forward is never dropped: finish the pending route change first, then apply this one.
+  if (routeTransition.pending) routeTransitionFlush();
   if (workoutDraftLiveSendInProgress && route().name === "add") {
     pushNavigationHistory();
     return;
