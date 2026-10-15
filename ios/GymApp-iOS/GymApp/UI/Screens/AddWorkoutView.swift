@@ -422,7 +422,7 @@ struct AddWorkoutView: View {
                 .onChange(of: lastInsertedDraftID) { _, newID in
                     guard let newID else { return }
                     DispatchQueue.main.async {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                             scrollProxy.scrollTo(newID, anchor: .center)
                         }
                     }
@@ -436,7 +436,7 @@ struct AddWorkoutView: View {
                 .onChange(of: invalidScrollToken) { _, _ in
                     guard let target = invalidScrollTargetID else { return }
                     DispatchQueue.main.async {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                             scrollProxy.scrollTo(target, anchor: .center)
                         }
                     }
@@ -444,7 +444,7 @@ struct AddWorkoutView: View {
                 .onChange(of: drafts.isEmpty) { _, isEmpty in
                     guard isEmpty else { return }
                     DispatchQueue.main.async {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                             scrollProxy.scrollTo("workout-plan-editor-top", anchor: .top)
                         }
                     }
@@ -874,7 +874,7 @@ struct AddWorkoutView: View {
     private var smartCoachHeader: some View {
         let languageCode = gymCurrentLanguageCode()
         let toggle = {
-            withAnimation(.easeInOut(duration: 0.2)) { smartCoachExpanded.toggle() }
+            withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) { smartCoachExpanded.toggle() }
         }
         return HStack(spacing: 6) {
             Button(action: toggle) {

@@ -1326,6 +1326,7 @@ struct WorkoutDetailView: View {
     }
 
     @ObservedObject private var store: WorkoutStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var date: Date
     @State private var note: String
     @State private var isEditing = false
@@ -1864,7 +1865,7 @@ struct WorkoutDetailView: View {
         GymPanel(highlighted: true) {
             VStack(alignment: .leading, spacing: showsWatchMetrics ? 12 : 0) {
                 Button {
-                    withAnimation(.snappy(duration: 0.25)) {
+                    withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                         showsWatchMetrics.toggle()
                     }
                 } label: {
@@ -2157,7 +2158,7 @@ struct WorkoutDetailView: View {
                 languageCode: gymCurrentLanguageCode()
             ),
             onToggle: {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                     collapsedExerciseIDs = WorkoutDetailDisclosurePolicy.toggledCollapsed(
                         collapsedExerciseIDs,
                         tapped: block.id
@@ -2276,7 +2277,7 @@ struct WorkoutDetailView: View {
                     languageCode: languageCode
                 ),
                 onToggle: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                         if isExpanded { expandedSetIDs.remove(set.id) } else { expandedSetIDs.insert(set.id) }
                     }
                 },
@@ -2502,7 +2503,7 @@ struct WorkoutDetailView: View {
                 weight: weight,
                 reps: reps
             )
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                 _ = expandedSetIDs.remove(set.id)
             }
         } catch {

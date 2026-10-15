@@ -97,7 +97,7 @@ struct GymAppIOS: App {
                             \.locale,
                             AppLanguage(rawValue: languageCode)?.locale ?? Locale(identifier: "en")
                         )
-                        .transition(.opacity.combined(with: .scale(scale: 1.015)))
+                        .gymTransition(.opacity.combined(with: .scale(scale: 1.015)))
                         .zIndex(20)
                 }
             }

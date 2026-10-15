@@ -15,9 +15,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 
 /**
@@ -35,6 +38,10 @@ internal object GymMotion {
     /** `spring-snappy`: press release, toggles, chevrons. */
     fun <T> snappySpring(visibilityThreshold: T? = null): SpringSpec<T> =
         spring(dampingRatio = 1f, stiffness = 1000f, visibilityThreshold = visibilityThreshold)
+
+    /** `spring-soft`: slow progress sweeps such as the workout ring. */
+    fun <T> softSpring(visibilityThreshold: T? = null): SpringSpec<T> =
+        spring(dampingRatio = 1f, stiffness = 300f, visibilityThreshold = visibilityThreshold)
 
     fun <T> fadeInSpec(): TweenSpec<T> = tween(durationMillis = FadeInMillis, easing = FastOutSlowInEasing)
 
@@ -82,4 +89,44 @@ internal fun gymShrinkHorizontally(reduceMotion: Boolean): ExitTransition =
         fadeOut(GymMotion.fadeOutSpec())
     } else {
         fadeOut(GymMotion.fadeOutSpec()) + shrinkHorizontally(GymMotion.standardSpring(IntSize.VisibilityThreshold))
+    }
+
+/** Switching between bottom tabs is a crossfade: the destination fades in over the one fading out. */
+internal fun gymTabEnter(): EnterTransition = fadeIn(GymMotion.fadeInSpec())
+
+/** The outgoing half of [gymTabEnter]. */
+internal fun gymTabExit(): ExitTransition = fadeOut(GymMotion.fadeOutSpec())
+
+/** A pushed screen slides in from the end edge with `spring-standard`; reduced motion is the fade alone. */
+internal fun gymDrillEnter(reduceMotion: Boolean): EnterTransition =
+    if (reduceMotion) {
+        fadeIn(GymMotion.fadeInSpec())
+    } else {
+        fadeIn(GymMotion.fadeInSpec()) +
+            slideInHorizontally(GymMotion.standardSpring(IntOffset.VisibilityThreshold)) { it }
+    }
+
+/** The screen underneath a pushed one drifts back a quarter of its width; it stays opaque so no gap opens behind the slide. */
+internal fun gymDrillExit(reduceMotion: Boolean): ExitTransition =
+    if (reduceMotion) {
+        fadeOut(GymMotion.fadeOutSpec())
+    } else {
+        slideOutHorizontally(GymMotion.standardSpring(IntOffset.VisibilityThreshold)) { -it / 4 }
+    }
+
+/** The mirror of [gymDrillExit]: the screen underneath returns from the parallax offset on back. */
+internal fun gymDrillPopEnter(reduceMotion: Boolean): EnterTransition =
+    if (reduceMotion) {
+        fadeIn(GymMotion.fadeInSpec())
+    } else {
+        fadeIn(GymMotion.fadeInSpec()) +
+            slideInHorizontally(GymMotion.standardSpring(IntOffset.VisibilityThreshold)) { -it / 4 }
+    }
+
+/** The mirror of [gymDrillEnter]: the popped screen leaves through the end edge. */
+internal fun gymDrillPopExit(reduceMotion: Boolean): ExitTransition =
+    if (reduceMotion) {
+        fadeOut(GymMotion.fadeOutSpec())
+    } else {
+        slideOutHorizontally(GymMotion.standardSpring(IntOffset.VisibilityThreshold)) { it }
     }

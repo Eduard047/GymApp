@@ -83,6 +83,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -129,6 +130,13 @@ import com.example.gymapp.ui.components.ContinueWorkoutBar
 import com.example.gymapp.ui.components.GymToastDuration
 import com.example.gymapp.ui.components.GymToastHost
 import com.example.gymapp.ui.components.GymToastResult
+import com.example.gymapp.ui.components.gymDrillEnter
+import com.example.gymapp.ui.components.gymDrillExit
+import com.example.gymapp.ui.components.gymDrillPopEnter
+import com.example.gymapp.ui.components.gymDrillPopExit
+import com.example.gymapp.ui.components.gymTabEnter
+import com.example.gymapp.ui.components.gymTabExit
+import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.LocalGymToastController
 import com.example.gymapp.ui.components.shouldShowContinueWorkoutBar
 import com.example.gymapp.ui.screens.ActiveWorkoutOverflowMenu
@@ -2647,11 +2655,29 @@ internal fun GymAppRoot(
                         )
                     }
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    val reduceNavMotion = rememberReduceMotion()
+                    // Switching between bottom tabs crossfades; a screen pushed from a tab (or popped back) slides.
+                    val isTabSwitch: (NavBackStackEntry, NavBackStackEntry) -> Boolean = { from, to ->
+                        val tabRoutes = AppDestination.bottomTabs.map { it.route }
+                        from.destination.route in tabRoutes && to.destination.route in tabRoutes
+                    }
                     NavHost(
                         navController = navController,
                         startDestination = AppDestination.Workouts.route,
                         route = rootGraphRoute,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        enterTransition = {
+                            if (isTabSwitch(initialState, targetState)) gymTabEnter() else gymDrillEnter(reduceNavMotion)
+                        },
+                        exitTransition = {
+                            if (isTabSwitch(initialState, targetState)) gymTabExit() else gymDrillExit(reduceNavMotion)
+                        },
+                        popEnterTransition = {
+                            if (isTabSwitch(initialState, targetState)) gymTabEnter() else gymDrillPopEnter(reduceNavMotion)
+                        },
+                        popExitTransition = {
+                            if (isTabSwitch(initialState, targetState)) gymTabExit() else gymDrillPopExit(reduceNavMotion)
+                        }
                     ) {
                         composable(route = AppDestination.Workouts.route) { backStackEntry ->
                             val application = applicationContext.gymApplication

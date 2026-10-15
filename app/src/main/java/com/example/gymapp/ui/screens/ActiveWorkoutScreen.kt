@@ -6,7 +6,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.mutableIntStateOf
@@ -1007,7 +1006,7 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
     // The ring sweeps to the new fraction (spring, no bounce); reduced motion snaps. The count text never animates.
     val fraction by animateFloatAsState(
         targetValue = targetFraction,
-        animationSpec = if (reduceMotion) snap() else spring(dampingRatio = 1f, stiffness = 300f),
+        animationSpec = if (reduceMotion) snap() else GymMotion.softSpring(),
         label = "workoutProgressRing"
     )
     val titleColor = HeroTone.title

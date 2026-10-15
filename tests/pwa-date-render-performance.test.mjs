@@ -13,7 +13,7 @@ function fixture() {
       constructions += 1;
       return new target(...args);
     } }) },
-    Date, Map, JSON, state: { language: "en" }, modal: null, activeAccount: null,
+    Date, Map, JSON, routeTransition: { pending: false }, state: { language: "en" }, modal: null, activeAccount: null,
     app: { classList: { toggle() {} } }, document: { documentElement: {} },
     rememberVisibleScroll() {}, bindEvents() {}, requestAnimationFrame() {},
     restoreVisibleScroll() {}, pendingEnterAnimation: null, settleActiveRingProgress() {}, exerciseDragDefersRender: () => false,

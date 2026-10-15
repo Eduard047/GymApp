@@ -810,7 +810,7 @@ struct ActiveWorkoutView: View {
                                 )
                                 .stroke(GymTheme.heroAccent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
-                                .animation(reduceMotion ? nil : .smooth(duration: 0.4), value: draft.completedSetCount)
+                                .animation(reduceMotion ? nil : GymMotion.gentle, value: draft.completedSetCount)
                             VStack(spacing: 1) {
                                 Text("\(draft.completedSetCount)/\(draft.plannedSetCount)")
                                     .font(.headline.monospacedDigit())
@@ -1358,7 +1358,7 @@ struct ActiveWorkoutView: View {
             isCollapsed: isCollapsed,
             accessibilityValueText: "\(completedCount) / \(exercise.sets.count)",
             onToggle: {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                     if isCollapsed { collapsedExerciseIDs.remove(exercise.id) }
                     else { collapsedExerciseIDs.insert(exercise.id) }
                 }
@@ -2089,7 +2089,7 @@ struct ActiveWorkoutView: View {
                 languageCode: gymCurrentLanguageCode()
             ),
             onToggle: {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                     if isExpanded { expandedSetIDs.remove(set.id) } else { expandedSetIDs.insert(set.id) }
                 }
             },
@@ -2417,7 +2417,7 @@ struct ActiveWorkoutView: View {
                 }
             }
         }
-        .animation(GymMotion.fade, value: restPhase)
+        .animation(reduceMotion ? nil : GymMotion.fade, value: restPhase)
     }
 
     private func loadPersonalRecordBaselines() {
@@ -2790,7 +2790,7 @@ struct ActiveWorkoutView: View {
             )
             if let updatedExercise = updated.exercises.first(where: { $0.id == exercise.id }),
                updatedExercise.sets.allSatisfy(\.isCompleted) {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                     // Keep the latest completed row expanded so its rest and undo
                     // controls remain immediately reachable.
                     collapsedExerciseIDs.remove(exercise.id)
@@ -2951,7 +2951,7 @@ struct ActiveWorkoutView: View {
                 title: currentRestExerciseName(updated)
             )
             let restCleanupSucceeded = restOutcome == .synchronized
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                 collapsedExerciseIDs.formUnion(
                     updated.exercises.compactMap { exercise in
                         exercise.sets.allSatisfy(\.isCompleted) ? exercise.id : nil
@@ -3110,7 +3110,7 @@ struct ActiveWorkoutView: View {
                 title: currentRestExerciseName(updated)
             )
             let batchSetIDs = Set(batch.setIDs)
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                 collapsedExerciseIDs.subtract(
                     updated.exercises.compactMap { exercise in
                         exercise.sets.contains(where: { batchSetIDs.contains($0.id) })
@@ -3427,7 +3427,7 @@ struct ActiveWorkoutView: View {
                 manager: restTimers,
                 title: currentRestExerciseName(updated)
             )
-            _ = withAnimation(.easeInOut(duration: 0.2)) {
+            _ = withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                 collapsedExerciseIDs.insert(exercise.id)
             }
             applyActiveWorkoutActionStatus(
@@ -3469,7 +3469,7 @@ struct ActiveWorkoutView: View {
                 manager: restTimers,
                 title: currentRestExerciseName(updated)
             )
-            _ = withAnimation(.easeInOut(duration: 0.2)) {
+            _ = withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                 collapsedExerciseIDs.insert(exercise.id)
             }
             applyActiveWorkoutActionStatus(

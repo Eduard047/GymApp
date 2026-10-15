@@ -398,6 +398,7 @@ final class TodayScreenProjectionCache: ObservableObject {
 public struct WorkoutsView: View {
     @Environment(\.calendar) private var calendar
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var store: WorkoutStore
     @StateObject private var projectionCache = TodayScreenProjectionCache()
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
@@ -671,7 +672,7 @@ public struct WorkoutsView: View {
                         Spacer(minLength: 8)
 
                         Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                                 showsActivationOptions.toggle()
                             }
                         } label: {
@@ -752,7 +753,7 @@ public struct WorkoutsView: View {
                         .padding(.top, 8)
                         .tint(GymTheme.heroActionLabel)
                         .foregroundStyle(GymTheme.onHero)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(GymMotion.transition(.opacity.combined(with: .move(edge: .top)), reduceMotion: reduceMotion))
                     }
                 }
 
@@ -1232,7 +1233,7 @@ public struct WorkoutsView: View {
                 .buttonStyle(.plain)
                 .background(GymTheme.heroTile, in: Capsule())
                 .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(GymMotion.transition(.opacity.combined(with: .move(edge: .top)), reduceMotion: reduceMotion))
             }
         }
         .padding(22)
@@ -1250,7 +1251,7 @@ public struct WorkoutsView: View {
     /// a `DisclosureGroup` would announce.
     private var moreWorkoutOptionsPill: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) {
                 showsActiveMoreActions.toggle()
             }
         } label: {

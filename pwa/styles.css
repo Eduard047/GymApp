@@ -80,6 +80,11 @@
   --bottom-nav-height: 72px;
   --bottom-nav-offset: 10px;
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + var(--bottom-nav-offset) + 34px + env(safe-area-inset-bottom));
+  /* Motion tokens used by the route view transitions: a screen fades in over --motion-fade-in, the leaving one over --motion-fade-out, and a drill-in slides over --motion-standard. */
+  --motion-fade-in: 150ms;
+  --motion-fade-out: 90ms;
+  --motion-standard: 300ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
 }
 
@@ -8573,4 +8578,42 @@ button.workout-template-row:focus-visible {
 .reorder-active > :is(.draft-exercise, .active-workout-exercise).is-dragging.is-dropping { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) {
   .reorder-active > :is(.draft-exercise, .active-workout-exercise) { transition: none; }
+}
+
+/* Route view transitions: render() sets :root[data-nav-transition] to "tab" (cross-fade), "push" (drill-in slides in from the right, the old screen drifts left and dims) or "pop" (mirrored) while document.startViewTransition runs. The toast host and, on tab switches, the bottom bar keep their own layer so they neither slide nor flicker. */
+:root[data-nav-transition] .toast-region { view-transition-name: toast-region; }
+:root[data-nav-transition="tab"] .bottom-nav { view-transition-name: bottom-nav; }
+::view-transition-group(toast-region),
+::view-transition-group(bottom-nav) { animation-duration: 0s; }
+::view-transition-old(bottom-nav),
+::view-transition-new(bottom-nav) { animation-duration: var(--motion-fade-in); animation-timing-function: var(--ease-standard); }
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-timing-function: var(--ease-standard);
+  animation-fill-mode: both;
+}
+
+/* The old screen stays opaque until the new one covers it, then fades, so a cross-fade never dips through the background. */
+:root[data-nav-transition="tab"]::view-transition-old(root) { animation-name: nav-fade-out; animation-duration: var(--motion-fade-out); animation-delay: calc(var(--motion-fade-in) - var(--motion-fade-out)); }
+:root[data-nav-transition="tab"]::view-transition-new(root) { animation-name: nav-fade-in; animation-duration: var(--motion-fade-in); }
+
+:root[data-nav-transition="push"]::view-transition-old(root) { animation-name: nav-drift-out-left; animation-duration: var(--motion-standard); }
+:root[data-nav-transition="push"]::view-transition-new(root) { animation-name: nav-slide-in-right; animation-duration: var(--motion-standard); }
+
+:root[data-nav-transition="pop"]::view-transition-old(root) { z-index: 1; animation-name: nav-slide-out-right; animation-duration: var(--motion-standard); }
+:root[data-nav-transition="pop"]::view-transition-new(root) { animation-name: nav-drift-in-left; animation-duration: var(--motion-standard); }
+
+@keyframes nav-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes nav-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes nav-slide-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes nav-slide-out-right { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes nav-drift-out-left { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-28%); opacity: 0.4; } }
+@keyframes nav-drift-in-left { from { transform: translateX(-28%); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
+
+/* Reduced motion: no slide or drift; every route change is the 150ms cross-fade (the global reduced-motion rule above does not reach view-transition pseudo-elements). */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-nav-transition]::view-transition-old(root) { z-index: auto; animation-name: nav-fade-out; animation-duration: var(--motion-fade-out); animation-delay: calc(var(--motion-fade-in) - var(--motion-fade-out)); }
+  :root[data-nav-transition]::view-transition-new(root) { animation-name: nav-fade-in; animation-duration: var(--motion-fade-in); }
 }

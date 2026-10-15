@@ -53,7 +53,7 @@ public struct IntroSplashView: View {
                                 .controlSize(.regular)
                                 .tint(GymTheme.primary)
                                 .accessibilityLabel("Preparing your session")
-                                .transition(.opacity)
+                                .transition(GymMotion.transition(.opacity, reduceMotion: reduceMotion))
                         }
                     }
                     .padding(.horizontal, 32)
@@ -74,7 +74,7 @@ public struct IntroSplashView: View {
             if reduceMotion {
                 textVisible = true
             } else {
-                withAnimation(.easeOut(duration: 0.25)) {
+                withAnimation(GymMotion.intro) {
                     textVisible = true
                 }
             }
@@ -88,7 +88,7 @@ public struct IntroSplashView: View {
             if reduceMotion {
                 spinnerVisible = true
             } else {
-                withAnimation(.easeOut(duration: 0.25)) {
+                withAnimation(GymMotion.intro) {
                     spinnerVisible = true
                 }
             }

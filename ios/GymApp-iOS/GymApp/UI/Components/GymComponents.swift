@@ -472,19 +472,47 @@ public extension View {
 }
 
 /// Shared motion tokens (DESIGN.md `motion`). `standard` is the critically damped
-/// default for layout and state changes; `fade` is the opacity-only 150 ms
-/// ease-out, which is also what Reduce Motion falls back to.
+/// default for layout and state changes; `quick` is the shorter spring for
+/// small toggles (disclosure, expand/collapse); `gentle` is the softer spring for
+/// content that changes in place (progress arcs, image frames); `intro` is the
+/// splash fade. `fade` is the opacity-only 150 ms ease-out, which is also what
+/// Reduce Motion falls back to.
 enum GymMotion {
     static let standard: Animation = .snappy(duration: 0.3)
+    static let quick: Animation = .snappy(duration: 0.2)
+    static let gentle: Animation = .smooth(duration: 0.35)
+    static let intro: Animation = .easeOut(duration: 0.25)
     static let fade: Animation = .easeOut(duration: 0.15)
 
     static func animation(reduceMotion: Bool) -> Animation {
         reduceMotion ? fade : standard
     }
 
+    /// `animation` as is, or the opacity fade under Reduce Motion.
+    static func animation(_ animation: Animation, reduceMotion: Bool) -> Animation {
+        reduceMotion ? fade : animation
+    }
+
     /// `transition` as is, or a plain opacity fade under Reduce Motion.
     static func transition(_ transition: AnyTransition, reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : transition
+    }
+}
+
+/// Applies `GymMotion.transition` using the view's own Reduce Motion setting, for
+/// call sites (like the `App` body) that cannot hold the environment value.
+private struct GymReduceMotionTransition: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let transition: AnyTransition
+
+    func body(content: Content) -> some View {
+        content.transition(GymMotion.transition(transition, reduceMotion: reduceMotion))
+    }
+}
+
+extension View {
+    func gymTransition(_ transition: AnyTransition) -> some View {
+        modifier(GymReduceMotionTransition(transition: transition))
     }
 }
 

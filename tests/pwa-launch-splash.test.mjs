@@ -3,11 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 
-const [appSource, stylesSource, indexSource, iosSplash] = await Promise.all([
+const [appSource, stylesSource, indexSource, iosSplash, iosMotion] = await Promise.all([
   readFile("pwa/app.js", "utf8"),
   readFile("pwa/styles.css", "utf8"),
   readFile("pwa/index.html", "utf8"),
-  readFile("ios/GymApp-iOS/GymApp/UI/Screens/IntroSplashView.swift", "utf8")
+  readFile("ios/GymApp-iOS/GymApp/UI/Screens/IntroSplashView.swift", "utf8"),
+  readFile("ios/GymApp-iOS/GymApp/UI/Components/GymComponents.swift", "utf8")
 ]);
 
 function block(selector) {
@@ -130,7 +131,8 @@ test("splash text is anchored below the mark's own centre so lower content never
   assert.match(block(".boot-splash-title"), /font-weight:\s*700/);
   assert.match(iosSplash, /iconSize: CGFloat = 120/);
   assert.match(iosSplash, /Spacing\.xLarge/);
-  assert.match(iosSplash, /duration: 0\.25/);
+  assert.match(iosSplash, /withAnimation\(GymMotion\.intro\)/);
+  assert.match(iosMotion, /static let intro: Animation = \.easeOut\(duration: 0\.25\)/);
 });
 
 test("the splash dismisses with a 280ms fade and 1.015 scale, honours reduced motion, and has a CSS failsafe", () => {

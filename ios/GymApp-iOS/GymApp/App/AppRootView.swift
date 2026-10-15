@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 @MainActor
 struct AppRootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
     @ObservedObject private var appState: AppState
     @ObservedObject private var auth: AuthService
@@ -114,7 +115,7 @@ struct AppRootView: View {
             }
             showsPasswordUpdate = auth.needsPasswordUpdate
             try? await Task.sleep(for: .milliseconds(1_400))
-            withAnimation(.easeOut(duration: 0.28)) {
+            withAnimation(GymMotion.animation(GymMotion.intro, reduceMotion: reduceMotion)) {
                 showsIntro = false
             }
         }

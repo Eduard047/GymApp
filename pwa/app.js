@@ -10703,7 +10703,7 @@ function push(name, params = {}) {
   languageMenuOpen = false;
   exerciseFilterMenuOpen = false;
   planEditorMenu = null;
-  render();
+  renderRoute();
 }
 
 function goRoot(name) {
@@ -10716,8 +10716,7 @@ function goRoot(name) {
   languageMenuOpen = false;
   exerciseFilterMenuOpen = false;
   planEditorMenu = null;
-  render();
-  if (leavingAdd) routeScrollPositions.delete("add:root");
+  renderRoute(() => { if (leavingAdd) routeScrollPositions.delete("add:root"); });
 }
 
 function back() {
@@ -10742,8 +10741,7 @@ function back() {
   languageMenuOpen = false;
   exerciseFilterMenuOpen = false;
   planEditorMenu = null;
-  render();
-  if (leavingAdd) routeScrollPositions.delete("add:root");
+  renderRoute(() => { if (leavingAdd) routeScrollPositions.delete("add:root"); });
 }
 
 function svg(name, cls = "") {
@@ -11934,9 +11932,107 @@ function finishOnboardingTour(status) {
   return true;
 }
 
+// Route changes (tab switch, drill-in, back) animate through document.startViewTransition where the browser has it.
+// The DOM swap itself runs inside the transition callback, which the browser calls on the next frame; render() then
+// builds from whatever state is current, so a render requested in between is already covered by it.
+const routeTransition = { pending: false, id: 0, focusAfter: false, timer: null, afterRender: null };
+
+// The route render() is about to show, after its own redirects, without applying them.
+function routeTransitionTarget() {
+  const current = route();
+  let name = current.name;
+  let depth = nav.length;
+  if (name === "missions") { name = "progress"; depth = 1; }
+  if (activeWorkout && name === "add") name = "active";
+  else if (!activeWorkout && name === "active") { name = "workouts"; depth = 1; }
+  const id = name === current.name ? current.id : undefined;
+  return { key: `${name}:${id ?? "root"}`, root: isRootRoute(name), depth };
+}
+
+// The route currently on screen, read from the DOM render() produced; null on login/recovery screens and before the first render.
+function routeTransitionSource() {
+  const main = app.querySelector?.("main[data-scroll-key][data-nav-depth]");
+  const depth = Number(main?.dataset.navDepth);
+  if (!main || !Number.isSafeInteger(depth)) return null;
+  return { key: main.dataset.scrollKey, root: app.classList?.contains("root-route-shell") === true, depth };
+}
+
+function routeTransitionKind(from, to) {
+  if (from.root && to.root) return "tab";
+  if (to.depth > from.depth) return "push";
+  if (to.depth < from.depth) return "pop";
+  return "tab";
+}
+
+// focusStableScreenContext() asks this first: a route change still waiting for its callback focuses the new screen afterwards.
+function routeTransitionFocusStable() {
+  if (!routeTransition.pending) return false;
+  routeTransition.focusAfter = true;
+  return true;
+}
+
+function routeTransitionFlush() {
+  if (!routeTransition.pending) return;
+  clearTimeout(routeTransition.timer);
+  routeTransition.timer = null;
+  routeTransition.pending = false;
+  const afterRender = routeTransition.afterRender;
+  routeTransition.afterRender = null;
+  try {
+    render();
+    afterRender?.();
+  } catch (error) {
+    // The view transition would swallow this into a rejected promise; surface it as a direct render() always did.
+    setTimeout(() => { throw error; });
+  }
+  if (routeTransition.focusAfter) {
+    routeTransition.focusAfter = false;
+    focusStableScreenContext();
+  }
+}
+
+// render() for a route change. Same-route updates, drags, sheets, the tour, login/recovery screens and unsupported
+// or hidden documents render directly. afterRender runs once the new screen is in the DOM.
+function renderRoute(afterRender) {
+  const root = document.documentElement;
+  const from = typeof document.startViewTransition === "function" && document.visibilityState !== "hidden" &&
+    activeAccount && !routeTransition.pending && !exerciseDrag && sheetEngine.drag?.active !== true &&
+    !modal && !onboardingTour && !app.querySelector?.(".modal") ? routeTransitionSource() : null;
+  const to = from ? routeTransitionTarget() : null;
+  if (!from || (to.key === from.key && to.depth === from.depth)) {
+    render();
+    afterRender?.();
+    return;
+  }
+  const id = ++routeTransition.id;
+  routeTransition.pending = true;
+  routeTransition.focusAfter = false;
+  routeTransition.afterRender = afterRender || null;
+  root.dataset.navTransition = routeTransitionKind(from, to);
+  try {
+    const transition = document.startViewTransition(routeTransitionFlush);
+    const clear = () => {
+      if (routeTransition.id === id) delete root.dataset.navTransition;
+    };
+    transition.finished.then(clear, clear);
+    // Frames stop in a hidden page and finished then never settles; the marker must not outlive the animation.
+    setTimeout(clear, 1500);
+    // A rejected ready/updateCallbackDone only reports a skipped animation; the render itself is handled in the flush.
+    transition.ready.catch(() => {});
+    transition.updateCallbackDone.catch(() => {});
+    // A callback that never arrives must not leave the screen unrendered.
+    routeTransition.timer = setTimeout(routeTransitionFlush, 600);
+  } catch {
+    delete root.dataset.navTransition;
+    routeTransitionFlush();
+  }
+}
+
 function render() {
   // A drag in progress owns the exercise list DOM: any other update waits until the drop (or snap-back).
   if (exerciseDragDefersRender()) return;
+  // A route change waiting for its view-transition callback renders from the then-current state in that callback.
+  if (routeTransition.pending) return;
   // A sheet drag owns the sheet DOM until release; sheetEngineBeforeRender() starts the exit of a closing sheet.
   if (sheetDragDefersRender()) return;
   sheetEngineBeforeRender();
@@ -12011,7 +12107,7 @@ function render() {
         <h1>${titleForRoute(current)}</h1>
         ${current.name === "active" ? activeWorkoutMoreButtonMarkup() : `<span class="topbar-slot" aria-hidden="true"></span>`}
       </header>
-      <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}"${current.name === "add" && workoutDraftLiveSendInProgress ? ` inert aria-busy="true"` : ""}>${continueWorkoutBar(current)}${liveWorkoutBanner()}${socialWorkoutInviteBanner()}${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
+      <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}" data-nav-depth="${nav.length}"${current.name === "add" && workoutDraftLiveSendInProgress ? ` inert aria-busy="true"` : ""}>${continueWorkoutBar(current)}${liveWorkoutBanner()}${socialWorkoutInviteBanner()}${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
       ${isRootRoute(current.name) ? bottomNav() : ""}
       ${modal ? modalMarkup() : ""}
       ${onboardingTour ? onboardingTourMarkup() : ""}
@@ -27943,6 +28039,8 @@ function closeExerciseFilterMenuAfterChange() {
 }
 
 function focusStableScreenContext() {
+  // A route change still waiting for its view-transition callback focuses the new screen once it exists.
+  if (routeTransitionFocusStable()) return;
   requestAnimationFrame(() => {
     const main = visibleScrollContainer() || app.querySelector("main");
     const target = main?.querySelector?.("h2") || main;
@@ -35581,8 +35679,7 @@ window.addEventListener("popstate", event => {
   modalActionGeneration += 1;
   modal = null;
   languageMenuOpen = false;
-  render();
-  if (leavingAdd) routeScrollPositions.delete("add:root");
+  renderRoute(() => { if (leavingAdd) routeScrollPositions.delete("add:root"); });
 });
 
 window.addEventListener("resize", () => {

@@ -798,7 +798,7 @@ struct ExerciseMediaSheet: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 240)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: frameIndex)
+                .animation(reduceMotion ? nil : GymMotion.gentle, value: frameIndex)
                 .accessibilityLabel(
                     gymText(
                         "Exercise preview",

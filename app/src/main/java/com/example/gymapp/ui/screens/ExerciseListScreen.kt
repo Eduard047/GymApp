@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.text.format.DateFormat as AndroidDateFormat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
@@ -52,6 +53,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.example.gymapp.ui.components.GymModalBottomSheet
+import com.example.gymapp.ui.components.GymMotion
+import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.GymSheetCloseRow
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -2038,8 +2041,11 @@ internal fun BackupToolsSettingsRow(
     onOpenImport: () -> Unit
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    val reduceMotion = rememberReduceMotion()
+    // The chevron turns with spring-snappy; reduced motion turns it at once.
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
+        animationSpec = if (reduceMotion) snap() else GymMotion.snappySpring(),
         label = "backupToolsChevron"
     )
     Column {
