@@ -188,7 +188,8 @@ body {
 body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  padding: env(safe-area-inset-top) 0 0;
+  /* Landscape: keep content clear of the notch and rounded corners; the insets are 0 in portrait. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   font-size: 14px;
   line-height: 20px;
 }
@@ -282,8 +283,8 @@ a:focus-visible,
   padding: 0 12px;
   border-bottom: 1px solid var(--line);
   background: var(--topbar-surface);
-  -webkit-backdrop-filter: saturate(150%) blur(18px);
-  backdrop-filter: saturate(150%) blur(18px);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
   transition: margin-top 180ms ease, opacity 140ms ease;
 }
 
@@ -2773,8 +2774,8 @@ button:disabled {
   border: 1px solid var(--nav-outline);
   border-radius: var(--radius-lg);
   background: var(--nav-surface);
-  -webkit-backdrop-filter: saturate(160%) blur(22px);
-  backdrop-filter: saturate(160%) blur(22px);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
 }
 
 .tab-button {
@@ -6480,7 +6481,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   z-index: 20;
   display: grid;
   place-items: end center;
-  padding: 0;
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
   background: transparent;
   overscroll-behavior: contain;
 }
@@ -6643,8 +6644,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
    Toasts overlap in one grid cell so a replacement cross-fades instead of stacking. */
 .toast-region {
   position: fixed;
-  left: 16px;
-  right: 16px;
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
   bottom: calc(104px + env(safe-area-inset-bottom));
   z-index: 60;
   display: grid;
@@ -6711,6 +6712,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   }
 
   :root[data-theme="dark"] .toast { background: color-mix(in srgb, var(--surface-strong) 66%, transparent); }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .toast,
+  :root[data-theme="dark"] .toast { background: var(--surface-strong); }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -7384,6 +7390,12 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   }
 
   .focus-lens-copy h2 { font-size: 38px; }
+}
+
+/* Bar material (DESIGN.md materials.bar): solid fallbacks keep the 1px hairline edges (.topbar border-bottom, .bottom-nav border). */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar { background: var(--background); }
+  .bottom-nav { background: var(--surface); }
 }
 
 @media (prefers-reduced-transparency: reduce) {
