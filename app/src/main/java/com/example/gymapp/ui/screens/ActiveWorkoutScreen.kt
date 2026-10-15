@@ -117,9 +117,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -191,6 +189,7 @@ import com.example.gymapp.ui.viewmodel.ActiveWorkoutAddExerciseCatalog
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutExerciseUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutSetUiState
 import com.example.gymapp.ui.viewmodel.ActiveWorkoutUiState
+import com.example.gymapp.ui.viewmodel.DeletedPendingSet
 import com.example.gymapp.ui.viewmodel.activeWorkoutOperationInProgress
 import com.example.gymapp.ui.viewmodel.parseActiveWorkoutSetInput
 import com.example.gymapp.ui.viewmodel.LiveConnectionMode
@@ -224,6 +223,9 @@ fun ActiveWorkoutScreen(
     onAddSet: (String) -> Unit,
     onSkipRemainingSets: (String) -> Unit = {},
     onDeleteSet: (String) -> Unit = {},
+    /** The Undo of a pending-set delete puts that set back; [onDeletedPendingSetOffered] takes the one-time offer. */
+    onRestoreDeletedSet: (DeletedPendingSet) -> Unit = {},
+    onDeletedPendingSetOffered: (Long) -> Unit = {},
     onRemoveExercise: (String) -> Unit = {},
     onMoveExercise: (String, Int) -> Unit = { _, _ -> },
     onMoveExerciseTo: (String, Int) -> Unit = { _, _ -> },
@@ -246,7 +248,6 @@ fun ActiveWorkoutScreen(
     modifier: Modifier = Modifier
 ) {
     val screenHorizontalPadding = adaptiveScreenHorizontalPadding()
-    val haptics = LocalHapticFeedback.current
     val gymHaptics = rememberGymHaptics()
     val recordSetIds = uiState.exercises.asSequence()
         .flatMap { exercise -> exercise.sets.asSequence() }
@@ -279,7 +280,7 @@ fun ActiveWorkoutScreen(
         )
         knownRecordSetIds = recordSetIds
         when (outcome) {
-            RecordHaptic.PersonalRecord -> haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            RecordHaptic.PersonalRecord -> gymHaptics.perform(GymHapticEvent.PersonalRecord)
             RecordHaptic.Record -> gymHaptics.perform(GymHapticEvent.RecordSet)
             RecordHaptic.Rejected -> gymHaptics.perform(GymHapticEvent.Error)
             RecordHaptic.None -> Unit
@@ -334,6 +335,23 @@ fun ActiveWorkoutScreen(
         voiceCommandScope.launch {
             val result = toastController.show(message = message, actionLabel = actionLabel)
             if (result == GymToastResult.ActionPerformed) onAction?.invoke()
+        }
+    }
+    // Deleting a pending set is immediate; the same toast pattern as a recorded set's Undo offers it back.
+    val deletedPendingSet = uiState.deletedPendingSet
+    val setDeletedMessage = stringResource(R.string.message_set_deleted)
+    val setDeletedUndoLabel = stringResource(R.string.voice_command_undo)
+    val currentOnRestoreDeletedSet by rememberUpdatedState(onRestoreDeletedSet)
+    LaunchedEffect(deletedPendingSet?.token) {
+        val deleted = deletedPendingSet ?: return@LaunchedEffect
+        onDeletedPendingSetOffered(deleted.token)
+        // Its own scope: taking the offer clears the state this effect is keyed on.
+        voiceCommandScope.launch {
+            val result = toastController.show(message = setDeletedMessage, actionLabel = setDeletedUndoLabel)
+            if (result == GymToastResult.ActionPerformed) {
+                gymHaptics.perform(GymHapticEvent.Undo)
+                currentOnRestoreDeletedSet(deleted)
+            }
         }
     }
     // The one confirmation banner for a recorded set (visible Log button and the voice commands).
@@ -2133,7 +2151,7 @@ private fun CurrentSetCard(
     onDelete: () -> Unit = {}
 ) {
     var deleteMenuOpen by remember { mutableStateOf(false) }
-    val deleteHaptics = LocalHapticFeedback.current
+    val deleteHaptics = rememberGymHaptics()
     val deleteLabel = stringResource(R.string.active_workout_delete_set)
     val deleteDescription = stringResource(
         R.string.cd_delete_set_named,
@@ -2169,7 +2187,7 @@ private fun CurrentSetCard(
             )
             // Long-press on an empty part of the card; its buttons and fields consume their own presses.
             .longPressRipple(enabled = canDelete) {
-                deleteHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                deleteHaptics.perform(GymHapticEvent.LongPress)
                 deleteMenuOpen = true
             }
             .padding(10.dp)
@@ -2843,7 +2861,7 @@ private fun VoiceTypedActionRow(voice: SetVoiceCommand) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
-                    .padding(start = 14.dp, end = 44.dp)
+                    .padding(start = 14.dp, end = 48.dp)
                     .semantics { contentDescription = fieldLabel },
                 decorationBox = { innerTextField ->
                     Box(contentAlignment = Alignment.CenterStart) {
@@ -2858,26 +2876,32 @@ private fun VoiceTypedActionRow(voice: SetVoiceCommand) {
                     }
                 }
             )
+            // A 36dp key inside a full 48dp touch target.
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 6.dp)
-                    .size(36.dp)
-                    .background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = if (isEmpty) 0.4f else 1f),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .clip(RoundedCornerShape(10.dp))
+                    .size(GymSpacing.MinimumTouch)
+                    .clip(RoundedCornerShape(12.dp))
                     .clickable(enabled = !isEmpty, role = Role.Button, onClick = voice.onSubmit)
                     .semantics { contentDescription = sendDescription },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.ArrowUpward,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = if (isEmpty) 0.4f else 1f),
+                            RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowUpward,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

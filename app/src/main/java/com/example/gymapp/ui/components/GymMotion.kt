@@ -39,6 +39,10 @@ internal object GymMotion {
     fun <T> snappySpring(visibilityThreshold: T? = null): SpringSpec<T> =
         spring(dampingRatio = 1f, stiffness = 1000f, visibilityThreshold = visibilityThreshold)
 
+    /** `spring-momentum`: only after a flick or drag release (damping 0.8, stiffness 320). */
+    fun <T> momentumSpring(visibilityThreshold: T? = null): SpringSpec<T> =
+        spring(dampingRatio = 0.8f, stiffness = 320f, visibilityThreshold = visibilityThreshold)
+
     /** `spring-soft`: slow progress sweeps such as the workout ring. */
     fun <T> softSpring(visibilityThreshold: T? = null): SpringSpec<T> =
         spring(dampingRatio = 1f, stiffness = 300f, visibilityThreshold = visibilityThreshold)

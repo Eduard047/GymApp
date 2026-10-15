@@ -62,6 +62,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetTitleRow
 import androidx.compose.material3.OutlinedButton
@@ -339,6 +340,7 @@ fun AddWorkoutScreen(
                         contentColor = MaterialTheme.colorScheme.primary
                     ),
                     modifier = Modifier
+                        .minimumInteractiveComponentSize()
                         .size(44.dp)
                         .testTag("voice_workout_open")
                         .semantics { contentDescription = voiceLabel }
@@ -349,7 +351,7 @@ fun AddWorkoutScreen(
                     FilledIconButton(
                         onClick = openAddExercisePicker,
                         colors = primaryFilledIconButtonColors(),
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.minimumInteractiveComponentSize().size(44.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -365,6 +367,7 @@ fun AddWorkoutScreen(
                                 contentColor = MaterialTheme.colorScheme.primary
                             ),
                             modifier = Modifier
+                                .minimumInteractiveComponentSize()
                                 .size(44.dp)
                                 .testTag("workout_plan_exercises_menu")
                         ) {

@@ -1121,6 +1121,7 @@
     <string name="set_weight_reps_value">%1$s кг × %2$s</string>
 
     <string name="language_button">Мова</string>
+    <string name="settings_haptics_title">Тактильний відгук</string>
     <string name="language_name_english">English</string>
     <string name="language_name_ukrainian">Українська</string>
     <string name="language_name_russian">Русский</string>

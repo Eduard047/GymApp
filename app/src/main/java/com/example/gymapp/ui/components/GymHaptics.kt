@@ -6,6 +6,8 @@ import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
+import com.example.gymapp.util.HapticsGate
+import com.example.gymapp.util.gymHapticAllowed
 
 /**
  * The haptic events of the active-workout core loop. Each one is paired with a visual change at the
@@ -22,7 +24,10 @@ internal enum class GymHapticEvent {
     Error,
     RestEnd,
     Reorder,
-    ReorderPickup
+    ReorderPickup,
+    /** A long-press that opens a menu. */
+    LongPress,
+    PersonalRecord
 }
 
 /** The [HapticFeedbackConstants] value for [event] on a device running [sdkInt]. */
@@ -46,7 +51,8 @@ internal fun gymHapticConstant(event: GymHapticEvent, sdkInt: Int): Int = when (
         } else {
             HapticFeedbackConstants.LONG_PRESS
         }
-    GymHapticEvent.DestructiveConfirm -> HapticFeedbackConstants.LONG_PRESS
+    GymHapticEvent.DestructiveConfirm, GymHapticEvent.LongPress, GymHapticEvent.PersonalRecord ->
+        HapticFeedbackConstants.LONG_PRESS
     // The foreground rest-end buzz; a notification channel owns the background one, so no Vibrator here.
     GymHapticEvent.RestEnd ->
         if (sdkInt >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.LONG_PRESS
@@ -74,17 +80,20 @@ internal class GymHaptics(private val view: View) {
     private val reorderThrottle = HapticThrottle()
 
     fun perform(event: GymHapticEvent) {
+        if (!gymHapticAllowed(HapticsGate.enabled)) return
         view.performHapticFeedback(gymHapticConstant(event, Build.VERSION.SDK_INT))
     }
 
     /** A stepper step; [repeating] while a held button auto-repeats. Throttled to 10 per second. */
     fun stepperTick(repeating: Boolean) {
+        if (!gymHapticAllowed(HapticsGate.enabled)) return
         if (!stepperThrottle.tryAcquire(android.os.SystemClock.uptimeMillis())) return
         perform(if (repeating) GymHapticEvent.StepperRepeatTick else GymHapticEvent.StepperTick)
     }
 
     /** A drag-to-reorder slot change. Throttled to 10 per second. */
     fun reorderTick() {
+        if (!gymHapticAllowed(HapticsGate.enabled)) return
         if (!reorderThrottle.tryAcquire(android.os.SystemClock.uptimeMillis())) return
         perform(GymHapticEvent.Reorder)
     }

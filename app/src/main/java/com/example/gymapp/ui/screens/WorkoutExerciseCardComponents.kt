@@ -72,13 +72,11 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -115,6 +113,7 @@ import com.example.gymapp.ui.components.gymShrinkVertically
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.longPressRipple
 import com.example.gymapp.ui.components.pressScale
+import com.example.gymapp.ui.components.GymHapticEvent
 import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.theme.GymSpacing
@@ -552,7 +551,7 @@ internal fun EditableSetRow(
     editor: @Composable ColumnScope.() -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberGymHaptics()
     val currentExpanded by rememberUpdatedState(expanded)
     val currentOnExpandedChange by rememberUpdatedState(onExpandedChange)
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
@@ -590,7 +589,7 @@ internal fun EditableSetRow(
                             onLongClickLabel = deleteLabel.takeIf { canDelete },
                             onLongClick = if (canDelete) {
                                 {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    haptics.perform(GymHapticEvent.LongPress)
                                     menuOpen = true
                                 }
                             } else {
@@ -660,19 +659,19 @@ internal fun EditableSetRow(
     }
 }
 
-/** Height of every capsule in the set editor (the trash beside them is a 40dp button with a 48dp touch target). */
+/** Height of every capsule in the set editor (the trash beside them is a full 48dp target). */
 internal val SetEditorCapsuleHeight = GymSpacing.MinimumTouch
 /** Step buttons are this wide whenever the value fits and give way down to the minimum when it does not. */
 private val SetEditorStepButtonWidth = 36.dp
 private val SetEditorStepButtonMinWidth = 28.dp
-private val SetEditorTrashSize = 40.dp
+private val SetEditorTrashSize = GymSpacing.MinimumTouch
 /** The weight capsule gets this share against 1 for reps so "102.5 kg" fits at 360dp. */
 private const val SetEditorWeightCapsuleShare = 1.4f
 private val SetEditorValueFontSize = 17.sp
 
 /**
  * The one set editor: a `− 12 kg +` weight capsule and a `− 4 +` reps capsule, equal width, same
- * height and style, side by side, with an optional trash button at the end (40dp, 48dp touch target,
+ * height and style, side by side, with an optional trash button at the end (a 48dp target,
  * error tint). The weight value is tappable for keyboard entry; the step comes from [weightStepPlan]
  * ([allowedWeights] empty means the default 2.5 kg). At large font scales the capsules stack and
  * the trash button stays beside them. Used by the active workout's upcoming sets and the saved
@@ -823,6 +822,13 @@ private fun SetValueCapsule(
                 }
             ),
         content = {
+            // The value comes first so the step buttons sit above it: where a wide value reaches under a
+            // button's 48dp target, the button wins the edge and the value keeps its centre.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
+                content = content
+            )
             StepButton(
                 icon = Icons.Default.Remove,
                 text = null,
@@ -830,12 +836,8 @@ private fun SetValueCapsule(
                 onClick = onMinus,
                 description = minusDescription,
                 minWidth = SetEditorStepButtonMinWidth,
-                minHeight = SetEditorCapsuleHeight
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
-                content = content
+                minHeight = SetEditorCapsuleHeight,
+                edge = StepButtonEdge.Start
             )
             StepButton(
                 icon = Icons.Default.Add,
@@ -844,33 +846,48 @@ private fun SetValueCapsule(
                 onClick = onPlus,
                 description = plusDescription,
                 minWidth = SetEditorStepButtonMinWidth,
-                minHeight = SetEditorCapsuleHeight
+                minHeight = SetEditorCapsuleHeight,
+                edge = StepButtonEdge.End
             )
         }
     ) { measurables, constraints ->
         val minStep = SetEditorStepButtonMinWidth.roundToPx()
         val maxStep = SetEditorStepButtonWidth.roundToPx()
         val total = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE / 2
-        val value = measurables[1].measure(
+        val value = measurables[0].measure(
             Constraints(maxWidth = (total - 2 * minStep).coerceAtLeast(0))
         )
+        // The visible end zone, as before: 28 to 36dp, giving way to the value. It sizes the value's room only.
         val step = ((total - value.width) / 2).coerceIn(minStep, maxStep)
         val height = maxOf(SetEditorCapsuleHeight.roundToPx(), value.height)
             .coerceIn(constraints.minHeight, constraints.maxHeight.coerceAtLeast(constraints.minHeight))
-        val stepConstraints = Constraints.fixed(step, height)
-        val minus = measurables[0].measure(stepConstraints)
+        // The touch target is a full 48dp wide (never more than half the capsule), whatever the visible zone is.
+        val touch = setEditorStepTouchWidthPx(
+            total = total,
+            targetPx = GymSpacing.MinimumTouch.roundToPx(),
+            visiblePx = step
+        )
+        val stepConstraints = Constraints.fixed(touch, height)
+        val minus = measurables[1].measure(stepConstraints)
         val plus = measurables[2].measure(stepConstraints)
         val width = if (constraints.hasBoundedWidth) constraints.maxWidth else 2 * step + value.width
         layout(width, height) {
-            minus.placeRelative(0, 0)
             value.placeRelative(
                 step + (width - 2 * step - value.width) / 2,
                 (height - value.height) / 2
             )
-            plus.placeRelative(width - step, 0)
+            minus.placeRelative(0, 0)
+            plus.placeRelative(width - touch, 0)
         }
     }
 }
+
+/**
+ * The width of one end step button of a set editor capsule: the full [targetPx] (48dp) touch target,
+ * at least the [visiblePx] zone, never more than half of [total] so the two buttons never overlap.
+ */
+internal fun setEditorStepTouchWidthPx(total: Int, targetPx: Int, visiblePx: Int): Int =
+    maxOf(targetPx, visiblePx).coerceAtMost((total / 2).coerceAtLeast(0))
 
 /** Visible delete for a set: error-tinted trash in a 48dp target, named for TalkBack. */
 @Composable
@@ -883,7 +900,6 @@ private fun SetEditorDeleteButton(
     IconButton(
         onClick = onClick,
         enabled = enabled,
-        // 40dp in layout; IconButton still reserves its 48dp touch target around it.
         modifier = Modifier.size(SetEditorTrashSize)
     ) {
         Icon(
@@ -920,7 +936,7 @@ internal fun RecordedSetRow(
     trailing: (@Composable () -> Unit)? = null
 ) {
     val canAct = actions.isNotEmpty()
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberGymHaptics()
     var menuOpen by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
@@ -928,7 +944,7 @@ internal fun RecordedSetRow(
             .padding(vertical = PlainSetRowPadding)
             .then(modifier)
             .longPressRipple(enabled = canAct) {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                haptics.perform(GymHapticEvent.LongPress)
                 menuOpen = true
             }
     ) {
@@ -1360,7 +1376,8 @@ internal fun StepButton(
     onClick: () -> Unit,
     description: String? = null,
     minWidth: Dp = GymSpacing.MinimumTouch,
-    minHeight: Dp = GymSpacing.MinimumTouch
+    minHeight: Dp = GymSpacing.MinimumTouch,
+    edge: StepButtonEdge = StepButtonEdge.Center
 ) {
     val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.38f)
     val haptics = rememberGymHaptics()
@@ -1372,6 +1389,8 @@ internal fun StepButton(
         modifier = Modifier
             .defaultMinSize(minWidth = minWidth, minHeight = minHeight)
             .pressScale(interactionSource)
+            // An end button of a capsule: a round press area that matches the capsule's end cap.
+            .then(if (edge == StepButtonEdge.Center) Modifier else Modifier.clip(CircleShape))
             .pointerInput(enabled) {
                 heldAndRepeated = false
                 if (!enabled) return@pointerInput
@@ -1416,21 +1435,44 @@ internal fun StepButton(
                     Modifier
                 }
             ),
-        contentAlignment = Alignment.Center
+        contentAlignment = when (edge) {
+            StepButtonEdge.Center -> Alignment.Center
+            StepButtonEdge.Start -> Alignment.CenterStart
+            StepButtonEdge.End -> Alignment.CenterEnd
+        }
     ) {
+        // The glyph keeps the place it had in the old narrow button: near the capsule's outer edge.
+        val glyphInset = when (edge) {
+            StepButtonEdge.Center -> Modifier
+            StepButtonEdge.Start -> Modifier.padding(start = StepButtonGlyphInset)
+            StepButtonEdge.End -> Modifier.padding(end = StepButtonGlyphInset)
+        }
         if (icon != null) {
-            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = glyphInset.size(20.dp)
+            )
         } else if (text != null) {
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = tint,
                 maxLines = 1,
-                modifier = Modifier.padding(horizontal = 4.dp)
+                modifier = glyphInset.padding(horizontal = 4.dp)
             )
         }
     }
 }
+
+/**
+ * Where a [StepButton] sits in its capsule. [Center] is a free-standing button; [Start] and [End] are the
+ * capsule's end buttons, whose glyph stays near the outer edge while the touch target is a full 48dp.
+ */
+internal enum class StepButtonEdge { Center, Start, End }
+
+private val StepButtonGlyphInset = 6.dp
 
 @Composable
 internal fun PersonalRecordBadge() {

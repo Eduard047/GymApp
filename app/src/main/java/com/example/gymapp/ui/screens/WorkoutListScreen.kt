@@ -16,7 +16,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
@@ -81,9 +80,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -107,6 +106,7 @@ import com.example.gymapp.data.repository.WeeklyTrainingDecision
 import com.example.gymapp.data.entity.WorkoutSessionSummary
 import com.example.gymapp.ui.components.ActivityHeatmapCard
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.rememberGymTrackedSwipe
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.HeroPanel
 import com.example.gymapp.ui.components.ActiveWorkoutDiscardDialog
@@ -150,7 +150,6 @@ import java.text.NumberFormat
 import java.time.format.TextStyle
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.abs
 
 @Composable
 fun WorkoutListScreen(
@@ -959,43 +958,24 @@ private fun TrainingHistoryPanel(
     val completedWorkoutCount = remember(completedWorkoutCountValue, locale) {
         formatTodayHeroCount(completedWorkoutCountValue, locale)
     }
+    // Week and month navigation follow the finger (rubber-banded at the current period); the chevrons stay.
+    val isWeekPeriod = period == TrainingHistoryPeriod.Week
+    val swipe = rememberGymTrackedSwipe(
+        canPrevious = true,
+        canNext = if (isWeekPeriod) weekOffset < 0 else monthOffset < 0,
+        onPrevious = if (isWeekPeriod) onPreviousWeek else onPreviousMonth,
+        onNext = if (isWeekPeriod) onNextWeek else onNextMonth,
+        key = period
+    )
     AppPanel(
         modifier = modifier
             .fillMaxWidth()
-            .pointerInput(period, weekOffset, monthOffset) {
-                var horizontalDrag = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { horizontalDrag = 0f },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        horizontalDrag += dragAmount
-                    },
-                    onDragEnd = {
-                        if (abs(horizontalDrag) >= 80f) {
-                            if (horizontalDrag > 0f) {
-                                if (period == TrainingHistoryPeriod.Week) {
-                                    onPreviousWeek()
-                                } else {
-                                    onPreviousMonth()
-                                }
-                            } else if (
-                                (period == TrainingHistoryPeriod.Week && weekOffset < 0) ||
-                                (period == TrainingHistoryPeriod.Month && monthOffset < 0)
-                            ) {
-                                if (period == TrainingHistoryPeriod.Week) {
-                                    onNextWeek()
-                                } else {
-                                    onNextMonth()
-                                }
-                            }
-                        }
-                    },
-                    onDragCancel = { horizontalDrag = 0f }
-                )
-            }
+            .then(swipe.gesture)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .graphicsLayer { translationX = swipe.offset }
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Row(

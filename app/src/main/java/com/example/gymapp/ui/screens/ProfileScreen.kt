@@ -33,6 +33,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GroupOff
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.runtime.Composable
@@ -56,6 +58,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.semantics.Role
+import com.example.gymapp.util.rememberHapticsPreference
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -664,6 +670,8 @@ private fun LazyListScope.profileSettingsContent(
                 selectedLanguage = selectedLanguage,
                 onLanguageSelected = onLanguageSelected
             )
+            SettingsRowDivider()
+            ProfileHapticsRow()
             if (trainingProfile != null) {
                 SettingsRowDivider()
                 SettingsRow(
@@ -698,6 +706,27 @@ private fun LazyListScope.profileSettingsContent(
             onResetGarminPairing = onResetGarminPairing
         )
     }
+}
+
+/**
+ * Haptics row: one in-app switch (default on) for every haptic the app generates. The whole row is the
+ * toggle; the OS touch-feedback setting still applies on top of it.
+ */
+@Composable
+private fun ProfileHapticsRow() {
+    val preference = rememberHapticsPreference()
+    val enabled by preference.enabled.collectAsState()
+    SettingsRow(
+        icon = Icons.Default.Vibration,
+        title = stringResource(R.string.settings_haptics_title),
+        modifier = Modifier.toggleable(
+            value = enabled,
+            role = Role.Switch,
+            onValueChange = preference::setEnabled
+        ),
+        trailing = SettingsRowTrailing.None,
+        trailingContent = { Switch(checked = enabled, onCheckedChange = null) }
+    )
 }
 
 /**

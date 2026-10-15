@@ -293,4 +293,47 @@ class ActiveWorkoutEditPolicyTest {
             activeWorkoutExerciseMoveToBlock(null, "e0", 2, false, false)
         )
     }
+
+    @Test
+    fun deletedPendingSetKeepsIdValuesAndPosition() {
+        val details = workout(listOf(true, false, false))
+        val deleted = activeWorkoutDeletedPendingSet(details, "e0-s1", null, null, token = 7L)!!
+        assertEquals("e0", deleted.exerciseId)
+        assertEquals("e0-s1", deleted.set.id)
+        assertEquals(1, deleted.index)
+        assertEquals(10.0, deleted.set.weight, 0.0)
+        assertEquals(5, deleted.set.reps)
+        assertEquals(7L, deleted.token)
+    }
+
+    @Test
+    fun deletedPendingSetUsesTheTypedValuesWhenTheyParse() {
+        val details = workout(listOf(false, false))
+        val typed = activeWorkoutDeletedPendingSet(details, "e0-s1", "62.5", "8", token = 1L)!!
+        assertEquals(62.5, typed.set.weight, 0.0)
+        assertEquals(8, typed.set.reps)
+        val garbage = activeWorkoutDeletedPendingSet(details, "e0-s1", "abc", "8", token = 2L)!!
+        assertEquals(10.0, garbage.set.weight, 0.0)
+        assertEquals(5, garbage.set.reps)
+    }
+
+    @Test
+    fun recordedOrMissingSetsOfferNoUndo() {
+        val details = workout(listOf(true, false))
+        assertNull(activeWorkoutDeletedPendingSet(details, "e0-s0", null, null, token = 1L))
+        assertNull(activeWorkoutDeletedPendingSet(details, "nope", null, null, token = 1L))
+    }
+
+    @Test
+    fun restoredSetPositionClampsIntoTheCurrentSetCount() {
+        assertEquals(0, com.example.gymapp.data.repository.restoredSetPosition(-3, 4))
+        assertEquals(2, com.example.gymapp.data.repository.restoredSetPosition(2, 4))
+        assertEquals(4, com.example.gymapp.data.repository.restoredSetPosition(9, 4))
+    }
+
+    @Test
+    fun stepButtonTouchTargetIsAtLeast48dpAndNeverOverlapsItsPair() {
+        assertEquals(144, com.example.gymapp.ui.screens.setEditorStepTouchWidthPx(total = 400, targetPx = 144, visiblePx = 84))
+        assertEquals(100, com.example.gymapp.ui.screens.setEditorStepTouchWidthPx(total = 200, targetPx = 144, visiblePx = 84))
+    }
 }

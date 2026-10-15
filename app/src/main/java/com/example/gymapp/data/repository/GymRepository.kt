@@ -142,6 +142,15 @@ sealed interface DeleteActiveWorkoutSetResult {
     data object LivePlanFrozen : DeleteActiveWorkoutSetResult
 }
 
+sealed interface RestoreActiveWorkoutSetResult {
+    data class Restored(val revision: Long) : RestoreActiveWorkoutSetResult
+    data object Missing : RestoreActiveWorkoutSetResult
+    data object Stale : RestoreActiveWorkoutSetResult
+    data object TargetChanged : RestoreActiveWorkoutSetResult
+    data object LimitReached : RestoreActiveWorkoutSetResult
+    data object LivePlanFrozen : RestoreActiveWorkoutSetResult
+}
+
 sealed interface RemoveActiveWorkoutExerciseResult {
     /** [removedRecordedSets] recorded sets went away with the exercise; [clearedUndo] when the undo target was one of them. */
     data class Removed(
@@ -2666,6 +2675,54 @@ class GymRepository(
     }
 
     /**
+     * The Undo of a pending-set delete: puts [set] (same id and values) back into [exerciseId] at
+     * [index], clamped to the current set count, and renumbers the sets after it. Refused for a
+     * recorded set, an id that is already present, a missing exercise, the per-exercise limit, a stale
+     * revision and a plan frozen by a live room. The undo target and any running rest are untouched.
+     */
+    suspend fun restoreDeletedPendingActiveWorkoutSet(
+        exerciseId: String,
+        set: ActiveWorkoutSetEntity,
+        index: Int,
+        expectedRevision: Long
+    ): RestoreActiveWorkoutSetResult = activeWorkoutMutationMutex.withLock {
+        require(isStableActiveWorkoutId(exerciseId) && isStableActiveWorkoutId(set.id))
+        require(expectedRevision in 0 until Long.MAX_VALUE)
+        database.withTransaction {
+            val details = activeWorkoutDao.getSnapshot(ACTIVE_WORKOUT_ID)
+                ?.sortedActiveWorkout()
+                ?: return@withTransaction RestoreActiveWorkoutSetResult.Missing
+            requireValidStoredActiveWorkout(details)
+            if (details.activeWorkout.revision != expectedRevision) {
+                return@withTransaction RestoreActiveWorkoutSetResult.Stale
+            }
+            if (activeWorkoutPlanIsLiveFrozen(details.activeWorkout.startedAt)) {
+                return@withTransaction RestoreActiveWorkoutSetResult.LivePlanFrozen
+            }
+            val target = details.exercises.firstOrNull { it.activeWorkoutExercise.id == exerciseId }
+                ?: return@withTransaction RestoreActiveWorkoutSetResult.TargetChanged
+            if (set.completedAt != null || details.exercises.any { block -> block.sets.any { it.id == set.id } }) {
+                return@withTransaction RestoreActiveWorkoutSetResult.TargetChanged
+            }
+            if (target.sets.size >= WorkoutDataLimits.MAX_SETS_PER_EXERCISE) {
+                return@withTransaction RestoreActiveWorkoutSetResult.LimitReached
+            }
+            val position = restoredSetPosition(index, target.sets.size)
+            check(activeWorkoutDao.advanceRevisionKeepingUndoable(ACTIVE_WORKOUT_ID, expectedRevision) == 1)
+            // Descending one-by-one renumbering keeps the unique (exercise, orderIndex) index valid.
+            target.sets.filter { it.orderIndex >= position }
+                .sortedByDescending { it.orderIndex }
+                .forEach { existing ->
+                    check(activeWorkoutDao.updateSetOrderIndex(existing.id, exerciseId, existing.orderIndex + 1) == 1)
+                }
+            activeWorkoutDao.insertSets(
+                listOf(set.copy(activeWorkoutExerciseId = exerciseId, orderIndex = position, completedAt = null))
+            )
+            RestoreActiveWorkoutSetResult.Restored(expectedRevision + 1L)
+        }
+    }
+
+    /**
      * Removes a whole exercise (with any recorded sets) from the running workout and renumbers the
      * remaining exercises. The workout must keep at least one exercise. Undo is kept unless the
      * undo target was one of the removed sets.
@@ -4413,3 +4470,6 @@ private fun exerciseBackupJson(
 
 /** Trimmed note, or null when blank: the shape every saved workout note is stored in. */
 internal fun normalizedWorkoutNote(raw: String?): String? = raw?.trim()?.takeIf { it.isNotEmpty() }
+
+/** Where a restored pending set goes: its old [index], clamped into `0..setCount`. */
+internal fun restoredSetPosition(index: Int, setCount: Int): Int = index.coerceIn(0, setCount.coerceAtLeast(0))

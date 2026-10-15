@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.gymapp.R
 import com.example.gymapp.data.catalog.BuiltInExerciseCatalog
 import com.example.gymapp.data.entity.ActiveWorkoutDetails
+import com.example.gymapp.data.entity.ActiveWorkoutSetEntity
 import com.example.gymapp.auth.FriendGhosts
 import com.example.gymapp.auth.LIVE_UNDO_ANY_SET_ENABLED
 import com.example.gymapp.data.repository.ApplyActiveWorkoutAdaptationResult
@@ -23,6 +24,7 @@ import com.example.gymapp.data.repository.AddActiveWorkoutSetResult
 import com.example.gymapp.data.repository.defaultContributionsForExercise
 import com.example.gymapp.data.repository.normalizedExerciseName
 import com.example.gymapp.data.repository.DeleteActiveWorkoutSetResult
+import com.example.gymapp.data.repository.RestoreActiveWorkoutSetResult
 import com.example.gymapp.data.repository.DiscardActiveWorkoutResult
 import com.example.gymapp.data.repository.FinishActiveWorkoutResult
 import com.example.gymapp.data.repository.GymRepository
@@ -134,6 +136,8 @@ data class ActiveWorkoutUiState(
     val isRecordingAll: Boolean = false,
     val isFinishing: Boolean = false,
     val isDiscarding: Boolean = false,
+    /** A pending set was just deleted: the screen offers one "Set deleted" toast with Undo for it. */
+    val deletedPendingSet: DeletedPendingSet? = null,
     val message: LocalizedText? = null,
     val messageSetId: String? = null,
     val finishedSessionId: Long? = null,
@@ -208,6 +212,42 @@ internal enum class ActiveWorkoutEditBlock {
     LastSet,
     LastExercise,
     AtEdge
+}
+
+/**
+ * What the Undo of a pending-set delete needs: the exercise, the set exactly as it was (id and the
+ * values on screen) and its position. [token] tells one deletion's toast from the next.
+ */
+data class DeletedPendingSet(
+    val exerciseId: String,
+    val set: ActiveWorkoutSetEntity,
+    val index: Int,
+    val token: Long
+)
+
+/** The set to bring back for an Undo: the pending [setId] of [details], with the on-screen typed values when they parse. */
+internal fun activeWorkoutDeletedPendingSet(
+    details: ActiveWorkoutDetails,
+    setId: String,
+    typedWeight: String?,
+    typedReps: String?,
+    token: Long
+): DeletedPendingSet? {
+    val block = details.exercises.firstOrNull { b -> b.sets.any { it.id == setId } } ?: return null
+    val set = block.sets.first { it.id == setId }
+    if (set.completedAt != null) return null
+    val parsed = if (typedWeight != null && typedReps != null) {
+        parseActiveWorkoutSetInput(typedWeight, typedReps)
+    } else {
+        null
+    }
+    val restored = if (parsed == null) set else set.copy(weight = parsed.weight, reps = parsed.reps)
+    return DeletedPendingSet(
+        exerciseId = block.activeWorkoutExercise.id,
+        set = restored,
+        index = block.sets.indexOfFirst { it.id == setId },
+        token = token
+    )
 }
 
 /** A set (pending or recorded) can be deleted unless a live room owns the plan or it is the exercise's last set. */
@@ -364,6 +404,7 @@ private data class ActiveWorkoutOperationState(
     val isFinishing: Boolean = false,
     val isDiscarding: Boolean = false,
     val undoingSetId: String? = null,
+    val deletedPendingSet: DeletedPendingSet? = null,
     val message: LocalizedText? = null,
     val messageSetId: String? = null,
     val finishedSessionId: Long? = null,
@@ -851,6 +892,7 @@ class ActiveWorkoutViewModel(
             isRecordingAll = operation.isRecordingAll,
             isFinishing = operation.isFinishing,
             isDiscarding = operation.isDiscarding,
+            deletedPendingSet = operation.deletedPendingSet,
             message = operation.message,
             messageSetId = operation.messageSetId,
             finishedSessionId = operation.finishedSessionId,
@@ -1375,6 +1417,14 @@ class ActiveWorkoutViewModel(
         val workout = checkNotNull(snapshot)
         val revision = workout.activeWorkout.revision
         val startedAt = workout.activeWorkout.startedAt
+        val typed = inputs.value[setId]
+        val deletedPending = activeWorkoutDeletedPendingSet(
+            details = workout,
+            setId = setId,
+            typedWeight = typed?.weight,
+            typedReps = typed?.reps,
+            token = nextDeletedSetToken++
+        )
         // The rest timer belongs to the undo target; it only stops when that set is deleted.
         val ownsRest = workout.activeWorkout.undoableSetId == setId
         operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
@@ -1401,7 +1451,55 @@ class ActiveWorkoutViewModel(
                 }
                 it.copy(
                     isRecordingAll = false,
+                    // A pending set deletes at once and offers one toast with Undo; a recorded one does not.
+                    deletedPendingSet = if (outcome?.repositoryResult is DeleteActiveWorkoutSetResult.Deleted) {
+                        deletedPending
+                    } else {
+                        it.deletedPendingSet
+                    },
                     message = message?.let { id -> LocalizedText(id) },
+                    messageSetId = null
+                )
+            }
+        }
+    }
+
+    private var nextDeletedSetToken = 1L
+
+    /** The screen has taken the pending-set Undo offer (shown its toast); it is offered once. */
+    fun consumeDeletedPendingSet(token: Long) {
+        operationState.update {
+            if (it.deletedPendingSet?.token == token) it.copy(deletedPendingSet = null) else it
+        }
+    }
+
+    /**
+     * The Undo of a pending-set delete: the same set (id and values) goes back at its old position.
+     * Refused quietly when the workout moved on (stale revision, frozen plan, duplicate, limit).
+     */
+    fun restoreDeletedPendingSet(deleted: DeletedPendingSet) {
+        if (isInLiveRoom()) return
+        val snapshot = details.value ?: return
+        if (activeWorkoutOperationInProgress()) return
+        val revision = snapshot.activeWorkout.revision
+        operationState.update { it.copy(isRecordingAll = true, message = null, messageSetId = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                repository.restoreDeletedPendingActiveWorkoutSet(
+                    exerciseId = deleted.exerciseId,
+                    set = deleted.set,
+                    index = deleted.index,
+                    expectedRevision = revision
+                )
+            }.getOrNull()
+            operationState.update {
+                it.copy(
+                    isRecordingAll = false,
+                    message = if (result is RestoreActiveWorkoutSetResult.Restored) {
+                        null
+                    } else {
+                        LocalizedText(R.string.active_workout_changed)
+                    },
                     messageSetId = null
                 )
             }

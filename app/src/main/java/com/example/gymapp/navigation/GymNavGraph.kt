@@ -2625,7 +2625,7 @@ internal fun GymAppRoot(
                                                             style = MaterialTheme.typography.labelSmall.copy(
                                                                 fontSize = 12.sp,
                                                                 lineHeight = 14.sp,
-                                                                letterSpacing = 0.sp
+                                                                letterSpacing = 0.2.sp
                                                             ),
                                                             modifier = Modifier.fillMaxWidth(),
                                                             textAlign = TextAlign.Center,
@@ -3581,6 +3581,8 @@ internal fun GymAppRoot(
                                 onAddSet = viewModel::addSet,
                                 onSkipRemainingSets = viewModel::skipRemainingSets,
                                 onDeleteSet = viewModel::deleteSet,
+                                onRestoreDeletedSet = viewModel::restoreDeletedPendingSet,
+                                onDeletedPendingSetOffered = viewModel::consumeDeletedPendingSet,
                                 onRemoveExercise = viewModel::removeExercise,
                                 onMoveExercise = viewModel::moveExercise,
                                 onMoveExerciseTo = viewModel::moveExerciseTo,
