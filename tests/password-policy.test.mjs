@@ -5,7 +5,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 const appSources = await Promise.all(
-  ["app.js", "app.v134.js", "app.v133.js", "app.v132.js", "app.v131.js", "app.v130.js", "app.v129.js", "app.v128.js", "app.v127.js", "app.v126.js", "app.v125.js", "app.v124.js", "app.v123.js", "app.v122.js", "app.v121.js", "app.v120.js", "app.v119.js", "app.v118.js", "app.v117.js", "app.v116.js", "app.v115.js", "app.v114.js", "app.v113.js", "app.v112.js"].map(async filename => ({
+  ["app.js", "app.v135.js", "app.v134.js", "app.v133.js", "app.v132.js", "app.v131.js", "app.v130.js", "app.v129.js", "app.v128.js", "app.v127.js", "app.v126.js", "app.v125.js", "app.v124.js", "app.v123.js", "app.v122.js", "app.v121.js", "app.v120.js", "app.v119.js", "app.v118.js", "app.v117.js", "app.v116.js", "app.v115.js", "app.v114.js", "app.v113.js", "app.v112.js"].map(async filename => ({
     filename,
     source: await readFile(new URL(`../pwa/${filename}`, import.meta.url), "utf8")
   }))

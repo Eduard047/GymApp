@@ -139,7 +139,7 @@ test("Today exposes one bounded week or month history surface on every full clie
   assert.match(pwaSource, /data-action="\$\{period\}-current"/);
   assert.match(pwaSource, /data-action="\$\{period\}-next"/);
   assert.match(pwaSource, /Math\.max\(-5200, workoutWeekOffset - 1\)/);
-  assert.match(pwaSource, /Math\.max\(-1200, monthOffsets\.workouts - 1\)/);
+  assert.match(pwaSource, /const oldest = month \? -1200 : -5200;/);
   assert.match(pwaSource, /training-history-list/);
   assert.match(pwaSource, /training-history-row/);
 

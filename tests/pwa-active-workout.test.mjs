@@ -168,7 +168,7 @@ function loadContext({
     saveAccountList([activeAccount]);
     saveState({ queueRemote: false, markDirty: false });
     render = () => {};
-    showToast = message => { globalThis.lastToast = message; };
+    showToast = (message, options) => { globalThis.lastToast = message; globalThis.lastToastOptions = options; };
   `, context);
   localStorage.writes.length = 0;
   return {
@@ -4011,12 +4011,57 @@ test("deleting a pending set renumbers the exercise, bumps the revision, persist
   const markup = vm.runInContext("activeWorkoutScreen()", context);
   assert.doesNotMatch(markup, new RegExp(`data-id="${second}"`));
   assert.match(markup, new RegExp(`aria-label="Log set 2"|aria-label="Weight for set 2"`));
-  assert.equal(vm.runInContext("typeof lastToast", context), "undefined", "success is silent");
+  assert.equal(context.lastToast, "Set deleted", "a deleted pending set offers an Undo toast");
+  assert.equal(context.lastToastOptions.action.label, "Undo");
   assert.equal(vm.runInContext("activeWorkoutStatusText()", context), "");
   // "N sets left" follows the new set count.
   assert.equal(vm.runInContext("activeWorkoutSetCounts(activeWorkout).total", context), 3);
   // Undo still works against the surviving marker.
   assert.equal(await vm.runInContext(`undoLatestActiveSet(${first})`, context), true);
+});
+
+test("Undo of a pending-set delete restores the same set at its old index and refuses stale restores", async () => {
+  const { context, localStorage, runtimeNodes } = loadContext();
+  await startFinishWorkout(context);
+  const [first, second, third] = blockSetIds(context, 0);
+  assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, first, 80, 8), true);
+  const deleted = JSON.parse(vm.runInContext(`JSON.stringify(activeSetLocation(${second}).set)`, context));
+  assert.equal(await vm.runInContext(`deleteActiveWorkoutSet(${second})`, context), true);
+  assert.deepEqual(blockSetIds(context, 0), [first, third]);
+  const revisionAfterDelete = vm.runInContext("activeWorkout.revision", context);
+  context.lastToastOptions.action.onAction();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.deepEqual(blockSetIds(context, 0), [first, second, third], "restored at the old index");
+  assert.deepEqual(JSON.parse(vm.runInContext(`JSON.stringify(activeSetLocation(${second}).set)`, context)), deleted);
+  assert.equal(vm.runInContext("activeWorkout.revision", context), revisionAfterDelete + 1);
+  assert.equal(JSON.parse(localStorage.getItem(activeStorageKey(context))).blocks[0].sets.length, 3);
+  assert.equal(undoMarkerSetId(context), first, "the undo target is untouched");
+  // A second Undo is a duplicate id and is refused without changing the workout.
+  const raw = localStorage.getItem(activeStorageKey(context));
+  context.lastToastOptions.action.onAction();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(localStorage.getItem(activeStorageKey(context)), raw);
+  assert.equal(context.lastToast, "Set could not be restored.");
+});
+
+test("restoredPendingSetWorkout enforces every restore guard", () => {
+  const { context } = loadContext();
+  const limits = { setsPerExercise: 3, exercisesPerSession: 2, weightMax: 1000, repsMax: 100 };
+  context.__limits = limits;
+  const run = code => JSON.parse(vm.runInContext(`JSON.stringify(${code})`, context));
+  const base = `{ id: 9, blocks: [{ id: 1, sets: [{ id: 11, weight: 50, reps: 5, completed: false }, { id: 12, weight: 50, reps: 5, completed: false }] }, { id: 2, sets: [] }] }`;
+  const snap = (extra = "") => `{ workoutId: 9, blockId: 1, index: 1, set: { id: 20, weight: 60, reps: 6, completed: false }${extra} }`;
+  const ids = out => out?.blocks[0].sets.map(set => set.id);
+  assert.deepEqual(ids(run(`restoredPendingSetWorkout(${base}, ${snap()}, __limits)`)), [11, 20, 12]);
+  assert.deepEqual(ids(run(`restoredPendingSetWorkout(${base}, ${snap().replace("index: 1", "index: 99")}, __limits)`)), [11, 12, 20], "index is clamped");
+  assert.deepEqual(ids(run(`restoredPendingSetWorkout(${base}, ${snap().replace("index: 1", "index: -4")}, __limits)`)), [20, 11, 12]);
+  assert.equal(run(`restoredPendingSetWorkout(${base}, ${snap()}, __limits, true)`), null, "live room frozen plan");
+  assert.equal(run(`restoredPendingSetWorkout(${base}, ${snap().replace("workoutId: 9", "workoutId: 8")}, __limits)`), null, "other workout");
+  assert.equal(run(`restoredPendingSetWorkout(${base}, ${snap().replace("completed: false", "completed: true")}, __limits)`), null, "recorded set");
+  assert.equal(run(`restoredPendingSetWorkout(${base}, ${snap().replace("id: 20", "id: 11")}, __limits)`), null, "duplicate id");
+  assert.equal(run(`restoredPendingSetWorkout(${base}, ${snap().replace("blockId: 1", "blockId: 7")}, __limits)`), null, "exercise missing");
+  assert.equal(run(`restoredPendingSetWorkout(${base}, ${snap().replace("reps: 6", "reps: 0")}, __limits)`), null, "invalid reps");
+  assert.equal(run(`restoredPendingSetWorkout(${base}, ${snap()}, { ...__limits, setsPerExercise: 2 })`), null, "set limit");
 });
 
 test("delete set refuses recorded sets, the last set, a live room, a stale tab and an unknown id", async () => {
