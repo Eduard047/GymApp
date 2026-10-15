@@ -1301,6 +1301,7 @@ let nav = [{ name: "workouts" }];
 let modal = null;
 let modalActionGeneration = 0;
 let appClickDelegationBound = false;
+let appAuthSubmitDelegationBound = false;
 let appWeeklySwipeDelegationBound = false;
 let weeklySwipeStart = null;
 const initialWorkoutDraftRecord = reconcileWorkoutDraftAtStartup(activeWorkout, activeAccount);
@@ -2228,9 +2229,34 @@ function ru(value) {
   return window.GymRussianText?.translate(value) || String(value);
 }
 
+// First-run language: the first browser-preferred language the app supports (uk, ru), else
+// English. Same rule as the iOS and Android clients; only applies when nothing is saved,
+// because a stored state always carries its own language.
+function firstRunLanguageFromLocales(locales) {
+  if (!Array.isArray(locales)) return "en";
+  for (const identifier of locales) {
+    if (typeof identifier !== "string") continue;
+    const code = identifier.trim().toLowerCase().split(/[-_]/)[0];
+    if (code === "uk" || code === "ru" || code === "en") return code;
+  }
+  return "en";
+}
+
+function detectFirstRunLanguage() {
+  try {
+    const browser = typeof navigator === "object" && navigator ? navigator : null;
+    const locales = Array.isArray(browser?.languages) && browser.languages.length
+      ? Array.from(browser.languages)
+      : [browser?.language];
+    return firstRunLanguageFromLocales(locales);
+  } catch {
+    return "en";
+  }
+}
+
 function defaultAppState() {
   return {
-    language: "en",
+    language: detectFirstRunLanguage(),
     catalogSeedVersion: CATALOG_SEED_VERSION,
     exercises: builtInExerciseCatalog.map((exercise, index) => ({
       id: index + 1,
@@ -11493,9 +11519,10 @@ function loginScreen() {
     const showRepeat = tx3("Show repeat password", "Показати поле «повтори пароль»", "Показать поле «повторите пароль»");
     const hideRepeat = tx3("Hide repeat password", "Сховати поле «повтори пароль»", "Скрыть поле «повторите пароль»");
     remotePanel = `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Welcome back", "З поверненням", "С возвращением")}</h2>
-      <div class="segmented auth-mode-switch" role="radiogroup" aria-label="${escapeAttr(tx3("Account action", "Дія з акаунтом", "Действие с аккаунтом"))}">${modeTab("login", tx3("Sign in", "Увійти", "Войти"))}${modeTab("signup", tx3("Sign up", "Зареєструватися", "Регистрация"))}</div><div class="field-stack">
-      ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label>${passwordFieldMarkup({ id: "signup-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.password)}">` })}${passwordFieldMarkup({ id: "signup-password-confirm", label: tx("Repeat password", "Повтори пароль"), showLabel: showRepeat, hideLabel: hideRepeat, input: `<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.passwordConfirm)}">` })}<p id="signup-password-requirements" class="muted contextual-field-help">${tx("Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8).")}</p><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.login.email)}"></label>${passwordFieldMarkup({ id: "login-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" maxlength="1024" placeholder="${tx3("Password", "Пароль", "Пароль")}" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.login.password)}">` })}`}
-      </div>${authNoticeMarkup}<div class="auth-actions stacked"><button class="button full" data-action="${isSignUp ? "remote-signup" : "remote-login"}" ${authDisabled}>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Sign in", "Увійти", "Войти")}</button>${isSignUp ? "" : `<button type="button" class="auth-quiet-link auth-forgot-link" data-action="auth-mode" data-mode="forgot" ${authDisabled}>${tx("Forgot password?", "Забули пароль?")}</button>`}</div>${offlineLinkMarkup(true)}</section>`;
+      <div class="segmented auth-mode-switch" role="radiogroup" aria-label="${escapeAttr(tx3("Account action", "Дія з акаунтом", "Действие с аккаунтом"))}">${modeTab("login", tx3("Sign in", "Увійти", "Войти"))}${modeTab("signup", tx3("Sign up", "Зареєструватися", "Регистрация"))}</div><form id="auth-form" class="auth-form" data-auth-form="${isSignUp ? "signup" : "login"}" novalidate>
+      <div class="field-stack">
+      ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" name="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label>${passwordFieldMarkup({ id: "signup-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.password)}">` })}${passwordFieldMarkup({ id: "signup-password-confirm", label: tx("Repeat password", "Повтори пароль"), showLabel: showRepeat, hideLabel: hideRepeat, input: `<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.passwordConfirm)}">` })}<p id="signup-password-requirements" class="muted contextual-field-help">${tx("Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8).")}</p><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="username" name="username" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.login.email)}"></label>${passwordFieldMarkup({ id: "login-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" maxlength="1024" placeholder="${tx3("Password", "Пароль", "Пароль")}" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.login.password)}">` })}`}
+      </div>${authNoticeMarkup}<div class="auth-actions stacked"><button type="submit" class="button full" data-action="${isSignUp ? "remote-signup" : "remote-login"}" ${authDisabled}>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Sign in", "Увійти", "Войти")}</button>${isSignUp ? "" : `<button type="button" class="auth-quiet-link auth-forgot-link" data-action="auth-mode" data-mode="forgot" ${authDisabled}>${tx("Forgot password?", "Забули пароль?")}</button>`}</div></form>${offlineLinkMarkup(true)}</section>`;
   }
   return `<div class="app-shell auth-shell">
     <main class="screen auth-screen" data-scroll-key="auth">
@@ -27542,6 +27569,9 @@ async function handleDelegatedAppClick(event) {
     ? event.target
     : event.target?.parentElement;
   const actionElement = target?.closest?.("[data-action]");
+  // The sign-in/sign-up submit buttons are handled by the form submit event so Enter and
+  // password managers share one path; the click only triggers that submission.
+  if (actionElement?.type === "submit" && actionElement.form?.dataset?.authForm) return false;
   if (actionElement) return handleAppActionClick(event, actionElement);
   const routeElement = target?.closest?.("[data-route]");
   if (routeElement) return goRoot(routeElement.dataset.route);
@@ -27590,10 +27620,53 @@ function inertModalBackground(modalElement) {
   }
 }
 
+// Sign-in / sign-up submit. The form has no action (CSP form-action is 'none'); the default
+// navigation is always cancelled and the existing handlers read the fields themselves.
+async function handleAuthFormSubmit(event) {
+  const form = event?.target;
+  if (!form?.dataset?.authForm) return false;
+  event.preventDefault();
+  const button = form.querySelector?.('[data-action="remote-login"],[data-action="remote-signup"]');
+  if (!button || button.disabled || authRequestInProgress) return false;
+  return handleAppActionClick(event, button);
+}
+
+// Browser page translators must not rewrite numbers, units, user-entered exercise names or the
+// account email. The guard runs after every render so the render helpers stay free of
+// per-call attributes; the app translates its own UI text itself.
+const NO_TRANSLATE_SELECTORS = Object.freeze([
+  ".metric-grid strong",
+  ".summary-hero-stats strong",
+  ".weekly-summary-metrics strong",
+  ".active-set-summary-text",
+  ".active-set-rest-time",
+  ".active-peer-set strong",
+  ".exercise-name",
+  ".exercise-history-heading h2",
+  ".friend-record-row h3",
+  "#pending-confirmation-email"
+]);
+
+function applyTranslateGuards(root) {
+  if (typeof root?.querySelectorAll !== "function") return 0;
+  let marked = 0;
+  root.querySelectorAll(NO_TRANSLATE_SELECTORS.join(",")).forEach(element => {
+    if (element.getAttribute?.("translate") === "no") return;
+    element.setAttribute("translate", "no");
+    marked += 1;
+  });
+  return marked;
+}
+
 function bindEvents(preservedModalFocus = null) {
+  applyTranslateGuards(app);
   if (!appClickDelegationBound && typeof app.addEventListener === "function") {
     app.addEventListener("click", event => void handleDelegatedAppClick(event));
     appClickDelegationBound = true;
+  }
+  if (!appAuthSubmitDelegationBound && typeof app.addEventListener === "function") {
+    app.addEventListener("submit", event => void handleAuthFormSubmit(event));
+    appAuthSubmitDelegationBound = true;
   }
   if (!appWeeklySwipeDelegationBound && typeof app.addEventListener === "function") {
     app.addEventListener("pointerdown", beginWeeklySummarySwipe, { passive: true });
@@ -27694,10 +27767,6 @@ function bindEvents(preservedModalFocus = null) {
   const offlineProfileName = app.querySelector("#offline-profile-name");
   if (offlineProfileName) offlineProfileName.addEventListener("keydown", ev => {
     if (ev.key === "Enter") loginAccount(offlineProfileName.value.trim() || "Local", { createOnly: true });
-  });
-  const loginPassword = app.querySelector("#login-password");
-  if (loginPassword) loginPassword.addEventListener("keydown", ev => {
-    if (ev.key === "Enter") remoteLogin(false);
   });
   const forgotEmail = app.querySelector("#forgot-email");
   if (forgotEmail) forgotEmail.addEventListener("keydown", ev => {

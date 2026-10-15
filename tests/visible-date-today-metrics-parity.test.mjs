@@ -24,8 +24,8 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/live-workout.js", "utf8"),
     readFile("pwa/index.html", "utf8"),
     readFile("pwa/sw.js", "utf8"),
-    readFile("pwa/app.v133.js", "utf8"),
-    readFile("pwa/styles.v102.css", "utf8"),
+    readFile("pwa/app.v134.js", "utf8"),
+    readFile("pwa/styles.v103.css", "utf8"),
     readFile("pwa/russian-text.v91.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
   ]);
@@ -266,19 +266,19 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.match(pwaStyles, /\.focus-lens-plan-metrics span \{[\s\S]*-webkit-line-clamp: 2/);
 
   assert.deepEqual(contract.pwaReleaseCoupling, {
-    appBundle: "app.v133.js",
-    styleBundle: "styles.v102.css",
+    appBundle: "app.v134.js",
+    styleBundle: "styles.v103.css",
     russianBundle: "russian-text.v91.js",
     liveWorkoutBundle: "live-workout.v3.js",
-    serviceWorkerCache: "gym-pwa-v179"
+    serviceWorkerCache: "gym-pwa-v180"
   });
-  assert.match(pwaIndex, /src="\.\/app\.v133\.js"/);
-  assert.match(pwaIndex, /href="\.\/styles\.v102\.css"/);
+  assert.match(pwaIndex, /src="\.\/app\.v134\.js"/);
+  assert.match(pwaIndex, /href="\.\/styles\.v103\.css"/);
   assert.match(pwaIndex, /src="\.\/russian-text\.v91\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
-  assert.match(pwaServiceWorker, /CACHE_VERSION = "v179"/);
-  assert.match(pwaServiceWorker, /"\.\/app\.v133\.js"/);
-  assert.match(pwaServiceWorker, /"\.\/styles\.v102\.css"/);
+  assert.match(pwaServiceWorker, /CACHE_VERSION = "v180"/);
+  assert.match(pwaServiceWorker, /"\.\/app\.v134\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/styles\.v103\.css"/);
   assert.match(pwaServiceWorker, /"\.\/russian-text\.v91\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
   assert.equal(pwaAppBundle, pwaApp);

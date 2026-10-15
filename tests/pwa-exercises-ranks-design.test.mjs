@@ -278,7 +278,7 @@ test("first-plan metric labels grow to two lines instead of being clipped", () =
 
 test("exercise history keeps stat values and the muscle groups button on one line", () => {
   assert.match(appSource, /<div class="metric-grid three exercise-history-metrics"><div><span>\$\{tx\("Sessions"/);
-  assert.match(stylesSource, /\.exercise-history-metrics span\s*\{[^}]*font-size:\s*12px;[^}]*white-space:\s*normal;/);
+  assert.match(stylesSource, /\.exercise-history-metrics span\s*\{[^}]*font-size:\s*0.75rem;[^}]*white-space:\s*normal;/);
   assert.match(stylesSource, /\.exercise-history-metrics strong\s*\{[^}]*white-space:\s*nowrap;/);
   assert.match(stylesSource, /\.button\.mini\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/);
   assert.match(stylesSource, /\.exercise-muscle-map > \.row-head\s*\{[^}]*flex-wrap:\s*wrap;/);

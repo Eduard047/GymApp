@@ -72,7 +72,7 @@ test("auth header is a compact flat tonal identity strip", () => {
   assert.doesNotMatch(panel, /gradient/i);
   assert.match(block(".auth-brand-mark"), /width:\s*48px;[\s\S]*height:\s*48px;/);
   assert.match(appSource, /class="auth-brand-mark" src="\.\/icon-192\.png" width="48" height="48"/);
-  assert.match(block(".auth-wordmark"), /font-size:\s*22px;\s*font-weight:\s*700;\s*line-height:\s*28px;/);
+  assert.match(block(".auth-wordmark"), /font-size:\s*1.375rem;\s*font-weight:\s*700;\s*line-height:\s*1.75rem;/);
 });
 
 test("auth primary actions use the brand fill with white text in both themes", () => {
@@ -183,7 +183,7 @@ test("continue offline and forgot password are quiet text links, not buttons", (
   const forgot = block(".auth-quiet-link.auth-forgot-link");
   assert.match(forgot, /color:\s*var\(--sage\);/);
   assert.match(forgot, /font-weight:\s*500;/);
-  assert.match(quiet, /font-size:\s*15px;/);
+  assert.match(quiet, /font-size:\s*0.9375rem;/);
   // Without cloud auth the offline link still renders, standalone.
   context.remoteAuthEnabled = () => false;
   const offlineOnly = vm.runInContext("loginScreen()", context);

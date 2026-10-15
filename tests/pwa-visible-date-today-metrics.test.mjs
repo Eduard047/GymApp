@@ -205,7 +205,7 @@ test("Today plan metrics are history-only, finite, bounded, zero-safe, and order
 test("Today keeps plan metrics separate and renders one compact training history surface", () => {
   assert.match(stylesSource, /\.focus-lens-plan-metrics \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.match(stylesSource, /\.focus-lens-plan-metrics strong \{[\s\S]*white-space: nowrap/);
-  assert.match(stylesSource, /\.focus-lens-plan-metrics span \{[\s\S]*font-size: 12px[\s\S]*-webkit-line-clamp: 2/);
+  assert.match(stylesSource, /\.focus-lens-plan-metrics span \{[\s\S]*font-size: 0.75rem[\s\S]*-webkit-line-clamp: 2/);
   const focus = appSource.indexOf("function focusLensCard(");
   const focusEnd = appSource.indexOf("\nasync function startPreparedSmartWorkout", focus);
   const focusBody = appSource.slice(focus, focusEnd);
@@ -889,7 +889,7 @@ test("Progress overview uses the shared inline navigator, compact hero, and life
   const lifetime = run("ru", "return lifetimeProgressCard();");
   assert.match(lifetime, /Прогресс за всё время[\s\S]*Тренировки[\s\S]*Серия недель[\s\S]*Объём/);
   assert.match(appSource, /<strong\$\{value\.length > 8 \? ' class="long-value"' : ""\}>/);
-  assert.match(stylesSource, /\.metric-grid\.tile-emphasized strong\.long-value\s*\{[^}]*font-size:\s*14px;[^}]*white-space:\s*nowrap;/);
+  assert.match(stylesSource, /\.metric-grid\.tile-emphasized strong\.long-value\s*\{[^}]*font-size:\s*0.875rem;[^}]*white-space:\s*nowrap;/);
 
   const heatmap = run("en", "return activityHeatmapCard();");
   assert.match(heatmap, /<h2>Activity heatmap<\/h2><div class="month-navigator-inline">/);

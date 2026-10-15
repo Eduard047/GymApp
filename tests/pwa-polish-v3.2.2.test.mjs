@@ -15,7 +15,7 @@ test("root routes reserve real mobile navigation clearance and use a desktop sid
   assert.match(styles, /\.workouts-scroll\s*\{[\s\S]*?padding:\s*0 12px var\(--bottom-nav-clearance\);[\s\S]*?\}/);
   assert.match(styles, /\.screen-workouts\s*\{[\s\S]*?padding:\s*0;[\s\S]*?\}/);
   assert.match(styles, /@media \(min-width: 900px\)[\s\S]*?\.root-route-shell \.bottom-nav\s*\{[\s\S]*?grid-template-columns:\s*1fr;[\s\S]*?transform:\s*translateY\(-50%\);/);
-  assert.match(styles, /html\[lang="ru"\] \.root-route-shell \.tab-button > span:last-child\s*\{[\s\S]*?font-size:\s*11px;[\s\S]*?overflow:\s*visible;[\s\S]*?text-overflow:\s*clip;/);
+  assert.match(styles, /html\[lang="ru"\] \.root-route-shell \.tab-button > span:last-child\s*\{[\s\S]*?font-size:\s*0.6875rem;[\s\S]*?overflow:\s*visible;[\s\S]*?text-overflow:\s*clip;/);
   assert.match(styles, /\.root-route-shell \.screen\s*\{[\s\S]*?width:\s*min\(calc\(100% - 144px\), 1180px\);/);
   assert.match(app, /classList\?\.toggle\("root-route-shell", isRootRoute\(current\.name\)\)/);
 });
@@ -76,9 +76,9 @@ test("install metadata and immutable PWA entrypoints are one coherent GymApp rel
   assert.equal(Object.hasOwn(manifest, "orientation"), false);
   assert.match(index, /<title>GymApp — Workout Tracker<\/title>/);
   assert.match(index, /apple-mobile-web-app-title" content="GymApp"/);
-  for (const asset of ["styles.v102.css", "russian-text.v91.js", "app.v133.js"]) {
+  for (const asset of ["styles.v103.css", "russian-text.v91.js", "app.v134.js"]) {
     assert.ok(index.includes(`./${asset}`), `index references ${asset}`);
     assert.ok(worker.includes(`"./${asset}"`), `service worker caches ${asset}`);
   }
-  assert.match(worker, /const CACHE_VERSION = "v179";/);
+  assert.match(worker, /const CACHE_VERSION = "v180";/);
 });

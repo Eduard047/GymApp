@@ -1,8 +1,8 @@
 "use strict";
 
 const CACHE_PREFIX = "gym-pwa-";
-const CACHE_VERSION = "v179";
-// v179 ships app.v133, styles.v102 and russian-text.v91; v178 shipped app.v133 and styles.v101; v177 shipped app.v132 and styles.v101; v176 shipped app.v131 and styles.v101; v175 shipped app.v130 and styles.v100; v174 shipped app.v129 and styles.v99; v173 shipped app.v128 and styles.v98; v172 shipped app.v128 and styles.v97; v171 shipped app.v127 and styles.v96; v170 shipped app.v126 and styles.v96; v169 shipped app.v125 and styles.v95; v168 shipped app.v124 and styles.v94; v167 shipped app.v123 and styles.v94; v166 shipped app.v122 and styles.v93; v165 shipped app.v121 and styles.v93; v164 shipped app.v120 and styles.v92; v163 shipped app.v119 and styles.v92; v162 shipped app.v119 and styles.v91; v161 shipped app.v118 and styles.v90; v160 let saved and active workouts be edited set by set.
+const CACHE_VERSION = "v180";
+// v180 ships app.v134, styles.v103 and russian-text.v91; v179 shipped app.v133 and styles.v102; v178 shipped app.v133 and styles.v101; v177 shipped app.v132 and styles.v101; v176 shipped app.v131 and styles.v101; v175 shipped app.v130 and styles.v100; v174 shipped app.v129 and styles.v99; v173 shipped app.v128 and styles.v98; v172 shipped app.v128 and styles.v97; v171 shipped app.v127 and styles.v96; v170 shipped app.v126 and styles.v96; v169 shipped app.v125 and styles.v95; v168 shipped app.v124 and styles.v94; v167 shipped app.v123 and styles.v94; v166 shipped app.v122 and styles.v93; v165 shipped app.v121 and styles.v93; v164 shipped app.v120 and styles.v92; v163 shipped app.v119 and styles.v92; v162 shipped app.v119 and styles.v91; v161 shipped app.v118 and styles.v90; v160 let saved and active workouts be edited set by set.
 // Stable media remains isolated from the immutable application shell.
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MEDIA_CACHE_VERSION = "v1-a93d1c50c244";
@@ -48,7 +48,7 @@ const SHELL_ASSETS = [
   "./auth/native-auth-callback.v1.js",
   "./frame-guard.v56.js",
   "./theme.v56.js",
-  "./styles.v102.css",
+  "./styles.v103.css",
   "./muscle-regions.v56.js",
   "./supabase-config.v58.js",
   "./state-contract.v73.js",
@@ -62,7 +62,7 @@ const SHELL_ASSETS = [
   "./russian-text.v91.js",
   "./exercise-search-vocabulary.v1.js",
   "./voice-workout.v2.js",
-  "./app.v133.js",
+  "./app.v134.js",
   "./workout/index.html",
   "./workout/landing.v2.css",
   "./workout/landing.v4.js",
