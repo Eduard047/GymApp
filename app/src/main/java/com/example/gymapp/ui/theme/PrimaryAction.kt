@@ -24,6 +24,14 @@ import androidx.compose.ui.graphics.Shape
  * `onPrimary` (`#216BD7` with white, 5.1:1) unchanged.
  */
 
+/**
+ * DESIGN.md `accent-mark`: chart lines, rings, today marks and progress fills. Light equals
+ * `colorScheme.primary`; dark is `#7FB2FF` (the pale `colorScheme.primary` `#8BB9FF` stays for text and icons).
+ */
+@Composable
+fun accentMarkColor(): Color =
+    if (isSystemInDarkTheme()) AccentMarkNight else MaterialTheme.colorScheme.primary
+
 /** Container of a solid primary control (button, FAB). */
 @Composable
 fun primaryActionContainerColor(): Color =
@@ -67,7 +75,7 @@ fun Button(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = ButtonDefaults.shape,
+    shape: Shape = GymCapsuleShape,
     colors: ButtonColors = primaryButtonColors(),
     elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
     border: BorderStroke? = null,

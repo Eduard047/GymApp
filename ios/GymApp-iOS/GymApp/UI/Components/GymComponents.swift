@@ -594,6 +594,7 @@ struct GymPressableStyle: ButtonStyle {
     }
 }
 
+/// Solid `accent-fill` capsule (radius 999 per DESIGN.md); carries white text.
 public struct GymPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -612,7 +613,7 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(
-                RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                Capsule()
                     .fill(fillColor)
                     .brightness(configuration.isPressed ? -0.055 : 0)
             )
@@ -622,6 +623,7 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Outline capsule: `surface` fill, 1px accent (or error) at 40%, accent text.
 public struct GymSecondaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -639,11 +641,11 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(
-                RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                Capsule()
                     .fill(configuration.isPressed ? GymTheme.surfaceVariant : GymTheme.surface)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
+                Capsule()
                     .strokeBorder((isDestructive ? GymTheme.error : GymTheme.primary).opacity(0.4), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.48)

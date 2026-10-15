@@ -1330,7 +1330,7 @@ private struct AccountDeletionConfirmationView: View {
                         HStack(spacing: 9) {
                             if isDeleting {
                                 ProgressView()
-                                    .tint(.white)
+                                    .tint(GymTheme.onError)
                             } else {
                                 Image(systemName: "trash")
                                     .accessibilityHidden(true)
@@ -1338,14 +1338,11 @@ private struct AccountDeletionConfirmationView: View {
                             Text(gymLocalized(isDeleting ? "Deleting…" : finalButtonTitle))
                         }
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(GymTheme.onError)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 13)
                         .frame(maxWidth: .infinity)
-                        .background(
-                            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                                .fill(GymTheme.error)
-                        )
+                        .background(Capsule().fill(GymTheme.error))
                     }
                     .buttonStyle(.plain)
                     .disabled(!deletionInputIsValid || isDeleting)

@@ -118,6 +118,7 @@ import com.example.gymapp.ui.components.pressScale
 import com.example.gymapp.ui.components.rememberGymHaptics
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.theme.GymSpacing
+import com.example.gymapp.ui.theme.GymCapsuleShape
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import kotlin.math.roundToLong
@@ -447,7 +448,7 @@ internal fun WorkoutFooterButton(
     val borderColor = primary.copy(alpha = if (dashed) 0.5f else 0.7f).let {
         if (enabled) it else it.copy(alpha = it.alpha * 0.5f)
     }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = GymCapsuleShape
     val density = LocalDensity.current
     Box(
         modifier = modifier
@@ -466,7 +467,7 @@ internal fun WorkoutFooterButton(
                     color = borderColor,
                     topLeft = Offset(inset, inset),
                     size = Size(size.width - strokeWidth, size.height - strokeWidth),
-                    cornerRadius = CornerRadius(with(density) { 12.dp.toPx() } - inset),
+                    cornerRadius = CornerRadius(size.height / 2f - inset),
                     style = Stroke(
                         width = strokeWidth,
                         pathEffect = if (dashed) {

@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.theme.accentMarkColor
 import com.example.gymapp.ui.viewmodel.ExerciseProgressSpotlightUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseTrendChartPointUiModel
 import com.example.gymapp.ui.viewmodel.ExerciseTrendChartUiModel
@@ -200,8 +201,8 @@ private fun ChartSection(
 
 @Composable
 private fun WeightTrendChart(points: List<ExerciseTrendChartPointUiModel>) {
-    val lineColor = MaterialTheme.colorScheme.primary
-    val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    val lineColor = accentMarkColor()
+    val fillColor = lineColor.copy(alpha = 0.12f)
     val guideColor = MaterialTheme.colorScheme.outlineVariant
     val latestPointColor = MaterialTheme.colorScheme.tertiary
 

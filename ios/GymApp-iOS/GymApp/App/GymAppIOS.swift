@@ -100,6 +100,9 @@ struct GymAppIOS: App {
                         .zIndex(20)
                 }
             }
+            // DESIGN.md: every button is a capsule; this covers the system
+            // `.bordered` / `.borderedProminent` buttons (sheets inherit it too).
+            .buttonBorderShape(.capsule)
             .task { await bootstrap.startIfNeeded() }
             .onChange(of: bootstrap.hasAttemptedStart) { _, attempted in
                 if attempted, bootstrap.appState == nil { showsIntro = false }

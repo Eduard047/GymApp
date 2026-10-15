@@ -134,7 +134,6 @@ import com.example.gymapp.ui.viewmodel.isValidRepsInput
 import com.example.gymapp.ui.viewmodel.isValidWeightInput
 import com.example.gymapp.ui.viewmodel.SmartWorkoutPlanSummaryUiModel
 import com.example.gymapp.ui.viewmodel.WorkoutTemplatePreviewUiModel
-import com.example.gymapp.ui.theme.GymControlShape
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.util.CalorieMode
 import com.example.gymapp.util.DateTimeUtils
@@ -626,8 +625,7 @@ fun AddWorkoutScreen(
                                 onSelectedEpochDay = onWorkoutDateSelected
                             )
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = GymControlShape
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
                             imageVector = Icons.Default.CalendarMonth,

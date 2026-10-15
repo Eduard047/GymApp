@@ -8,6 +8,8 @@ import androidx.compose.ui.unit.dp
 val GymPanelShape = RoundedCornerShape(26.dp)
 val GymCompactShape = RoundedCornerShape(20.dp)
 val GymControlShape = RoundedCornerShape(18.dp)
+// DESIGN.md `capsule` (999): every button, chip, segment and badge. Cards, panels, fields and tiles keep their radii.
+val GymCapsuleShape = RoundedCornerShape(percent = 50)
 
 val Shapes = Shapes(
     extraSmall = GymControlShape,

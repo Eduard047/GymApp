@@ -27,6 +27,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.example.gymapp.ui.theme.GymCapsuleShape
+import com.example.gymapp.ui.theme.accentMarkColor
 import com.example.gymapp.ui.theme.HeatStepColors
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -159,7 +161,7 @@ fun SoloProgressHero(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(GymCapsuleShape)
                     .background(HeroTone.tile)
                     .clickable(role = Role.Button, onClick = onOpenRanks)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -700,7 +702,7 @@ internal fun AchievementRingTile(
     onClick: (() -> Unit)? = null
 ) {
     val accent = achievementAccent(rarity)
-    val ringColor = if (unlocked) accent else MaterialTheme.colorScheme.primary
+    val ringColor = if (unlocked) accent else accentMarkColor()
     val fraction = progressFraction
         .takeIf(Float::isFinite)
         ?.coerceIn(0f, 1f)
@@ -856,7 +858,7 @@ private fun AchievementDetailsContent(
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(MaterialTheme.shapes.small),
-                color = if (unlocked) accent else MaterialTheme.colorScheme.primary,
+                color = if (unlocked) accent else accentMarkColor(),
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             Row(

@@ -143,8 +143,9 @@ internal object ActiveWorkoutNotifier {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // Not colorized: a solid blue banner is retired (DESIGN.md); the accent only tints the small icon and actions.
             .setColor(ContextCompat.getColor(context, R.color.active_workout_notification))
-            .setColorized(true)
+            .setColorized(false)
             .setProgress(content.totalSets.coerceAtLeast(1), content.completedSets, false)
             .setContentIntent(openAppIntent(context))
         if (restEndsAt != null) {

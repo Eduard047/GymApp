@@ -184,7 +184,7 @@ struct PostWorkoutSummaryView: View {
                         }
                         actions
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.vertical, 12)
                     .padding(.bottom, 30)
                 }
@@ -730,17 +730,11 @@ private struct WorkoutFeedbackButtonStyle: ButtonStyle {
             .background(
                 (selected ? GymTheme.primary : GymTheme.surfaceVariant)
                     .opacity(configuration.isPressed ? 0.72 : 1),
-                in: RoundedRectangle(
-                    cornerRadius: GymTheme.controlCornerRadius,
-                    style: .continuous
-                )
+                in: Capsule()
             )
             .overlay {
-                RoundedRectangle(
-                    cornerRadius: GymTheme.controlCornerRadius,
-                    style: .continuous
-                )
-                .strokeBorder(selected ? GymTheme.primary : GymTheme.outlineSoft, lineWidth: 1)
+                Capsule()
+                    .strokeBorder(selected ? GymTheme.primary : GymTheme.outlineSoft, lineWidth: 1)
             }
     }
 }

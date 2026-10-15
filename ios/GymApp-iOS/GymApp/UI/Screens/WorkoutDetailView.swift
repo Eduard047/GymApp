@@ -1467,7 +1467,7 @@ struct WorkoutDetailView: View {
                             exerciseSection(workout)
                         }
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.vertical, 12)
                     .padding(.bottom, 32)
                 }
@@ -2916,7 +2916,7 @@ private struct SavedWorkoutShareChooser: View {
                             .foregroundStyle(GymTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(14)
+                    .padding(GymTheme.screenHorizontalInset)
                     .padding(.bottom, 20)
                 }
             }

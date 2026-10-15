@@ -61,9 +61,12 @@
   /* Brand fill family for first-plan style cards: white text stays >=4.5:1 at the base, >=3:1 at the bright end. */
   --brand-fill: #216bd7;
   --brand-fill-bright: #3a8dff;
-  --shadow: 0 12px 32px rgba(34, 78, 138, 0.13);
+  /* DESIGN.md elevation: flat by default; shadows only for floating menus/toasts and reorder drag-lift. */
+  --shadow-floating: 0 6px 18px rgba(16, 35, 63, 0.12);
   --reorder-lift-shadow: 0 8px 20px rgba(16, 35, 63, 0.16);
   --radius-xs: 14px;
+  /* DESIGN.md radii.capsule: every button, chip and toast. */
+  --radius-capsule: 999px;
   --radius-sm: 18px;
   --radius-md: 20px;
   --radius-lg: 26px;
@@ -126,11 +129,11 @@ html.frame-blocked body {
   --heat-ring: #7fb2ff;
   --heat-stroke: rgba(167, 182, 203, 0.45);
   --clay: #ff9d94;
-  --blue: #79afff;
+  --blue: #7fb2ff;
   --violet: #b4a6ff;
   --mint: #77ddb7;
   --rose: #ff8fa9;
-  --gold: #f2bf5b;
+  --gold: #ffc56b;
   --danger: #ffb4ab;
   --on-danger: #690005;
   --on-primary: #ffffff;
@@ -150,13 +153,13 @@ html.frame-blocked body {
   --hero-tile: #172c47;
   --hero-action: #2e72d2;
   --hero-on-action: #ffffff;
-  --hero-action-label: #8ab8ff;
+  --hero-action-label: #7fb2ff;
   --hero-track: #22395a;
   --hero-accent: #7fb2ff;
   --hero-accent-text: #7fb2ff;
   --brand-fill: #2e72d2;
   --brand-fill-bright: #3f84e5;
-  --shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  --shadow-floating: 0 6px 18px rgba(0, 0, 0, 0.36);
   --reorder-lift-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
@@ -528,7 +531,7 @@ a:focus-visible,
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-md);
   background: var(--surface-strong);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-floating);
 }
 
 .exercise-filter-heading {
@@ -809,7 +812,7 @@ a:focus-visible,
   background: rgba(255, 255, 255, 0.9);
   font-size: 0.75rem;
   font-weight: 700;
-  box-shadow: 0 6px 18px rgba(16, 35, 63, 0.14);
+  box-shadow: var(--shadow-floating);
 }
 
 .exercise-media-file-label { cursor: pointer; }
@@ -890,7 +893,6 @@ a:focus-visible,
   border-color: color-mix(in srgb, var(--sage) 22%, var(--outline-variant));
   color: var(--text);
   background: var(--surface-strong);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--text) 10%, transparent);
 }
 
 .filter-scroll {
@@ -983,7 +985,7 @@ a:focus-visible,
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-xs);
   background: var(--surface-strong);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-floating);
 }
 
 .language-option {
@@ -1051,7 +1053,6 @@ svg.filled-icon.small-icon {
 .mission-row,
 .modal-panel {
   background: var(--surface);
-  box-shadow: 0 5px 18px rgba(34, 78, 138, 0.055);
 }
 
 .panel {
@@ -1601,8 +1602,9 @@ svg.filled-icon.small-icon {
   fill: var(--clay);
 }
 
+/* DESIGN.md charts: bars use accent-mark (--hero-accent). */
 .chart-bar {
-  fill: var(--blue);
+  fill: var(--hero-accent);
 }
 
 .chart-bar.latest { fill: var(--clay); }
@@ -1740,7 +1742,7 @@ svg.filled-icon.small-icon {
 }
 
 .summary-rewards-heading .eyebrow {
-  color: var(--blue);
+  color: var(--sage);
 }
 
 .summary-rewards-heading h2,
@@ -1914,7 +1916,7 @@ svg.filled-icon.small-icon {
   width: 100%;
   min-height: 44px;
   padding: 10px 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-capsule);
   color: var(--hero-action-label);
   background: var(--hero-tile);
   font-size: 15px;
@@ -2185,7 +2187,6 @@ svg.filled-icon.small-icon {
   height: 48px;
   display: block;
   border-radius: 22%;
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--brand-fill) 24%, transparent);
 }
 
 /* Quiet text-level affordance: forgot password, continue offline, sheet Cancel. */
@@ -2249,7 +2250,6 @@ svg.filled-icon.small-icon {
   color: var(--text);
   background: var(--surface);
   border-color: color-mix(in srgb, var(--outline-variant) 72%, transparent);
-  box-shadow: 0 2px 7px rgba(34, 78, 138, 0.08);
 }
 
 .password-field {
@@ -2567,7 +2567,6 @@ svg.filled-icon.small-icon {
   background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--sage) 38%, transparent);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
 }
 
 .auth-callback-icon {
@@ -2661,14 +2660,14 @@ svg.filled-icon.small-icon {
   gap: 8px;
   min-height: 48px;
   padding: 0 24px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-capsule);
   color: var(--on-accent);
   background: var(--brand-fill);
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
   cursor: pointer;
-  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease, border-color 160ms ease;
 }
 
 .button.secondary {
@@ -2698,12 +2697,6 @@ svg.filled-icon.small-icon {
   min-height: 44px;
   padding: 0 10px;
   font-size: 13px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .button:not(:disabled):hover {
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--sage) 16%, transparent);
-  }
 }
 
 /* Press feedback (DESIGN.md motion.press): scale .97 in 100ms, ~200ms ease-out release; the tab icon scales .92. */
@@ -2773,7 +2766,6 @@ button:disabled {
   border: 1px solid var(--nav-outline);
   border-radius: var(--radius-lg);
   background: var(--nav-surface);
-  box-shadow: var(--shadow);
   -webkit-backdrop-filter: saturate(160%) blur(22px);
   backdrop-filter: saturate(160%) blur(22px);
 }
@@ -3035,7 +3027,6 @@ button.leaderboard-row {
   border-color: color-mix(in srgb, var(--sage) 22%, var(--outline-variant));
   color: var(--sage);
   background: var(--surface);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 8%, transparent);
 }
 .profile-urgent-stack {
   display: grid;
@@ -3339,12 +3330,12 @@ button.leaderboard-row {
   gap: 8px;
   min-height: 56px;
   padding: 0 16px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-capsule);
   color: var(--on-accent);
   background: var(--brand-fill);
   font-size: 14px;
   font-weight: 500;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-floating);
 }
 
 .finish-fab {
@@ -3413,7 +3404,6 @@ button.leaderboard-row {
   color: var(--on-accent);
   background: var(--brand-fill);
   border-color: var(--brand-fill);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--sage) 20%, transparent);
 }
 
 .metric-grid {
@@ -3452,7 +3442,6 @@ button.leaderboard-row {
   color: var(--text);
   background: var(--surface);
   border-color: color-mix(in srgb, var(--outline-variant) 72%, transparent);
-  box-shadow: 0 2px 7px rgba(34, 78, 138, 0.06);
 }
 
 .workouts-scroll {
@@ -4136,7 +4125,7 @@ button.leaderboard-row {
   min-height: 44px;
   padding: 8px;
   border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-capsule);
   color: var(--text);
   background: var(--surface-2);
   font-size: 15px;
@@ -4341,6 +4330,7 @@ button.leaderboard-row {
 }
 .workout-feedback-options button {
   min-height: 44px;
+  border-radius: var(--radius-capsule);
   padding: 8px;
   text-align: center;
   white-space: nowrap;
@@ -4573,7 +4563,7 @@ button.leaderboard-row {
   min-height: 32px;
   padding: 0 9px;
   border: 1px solid color-mix(in srgb, var(--sage) 16%, transparent);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-capsule);
   color: var(--sage);
   background: color-mix(in srgb, var(--sage) 10%, transparent);
   font-size: 13px;
@@ -4710,7 +4700,7 @@ textarea:focus {
   min-height: 48px;
   padding: 0 12px;
   border: 1px dashed color-mix(in srgb, var(--brand-fill) 50%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-capsule);
   color: var(--primary);
   background: transparent;
   font-size: 15px;
@@ -4764,7 +4754,7 @@ textarea:focus {
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-md);
   background: var(--surface-strong);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-floating);
 }
 
 .plan-menu-option {
@@ -4830,7 +4820,6 @@ textarea:focus {
   border-color: color-mix(in srgb, var(--sage) 24%, var(--outline-variant));
   color: var(--text);
   background: var(--surface-strong);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .active-live-tabs button:focus-visible {
@@ -5627,7 +5616,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-exercise-actions .button {
   min-height: 44px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-capsule);
   color: var(--primary);
   background: transparent;
   font-size: 15px;
@@ -6432,7 +6421,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   border-radius: var(--radius-lg);
   color: var(--text);
   background: var(--surface);
-  box-shadow: 0 20px 60px rgba(4, 20, 46, 0.32);
+  box-shadow: var(--shadow-floating);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -6496,7 +6485,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   padding: 18px 18px calc(28px + env(safe-area-inset-bottom));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--surface-strong);
-  box-shadow: var(--shadow);
 }
 
 .sheet-handle {
@@ -6546,11 +6534,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   max-width: 560px;
   margin: 0 auto;
   padding: 12px 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-capsule);
   color: var(--on-accent);
   background: var(--sage);
   font-weight: 500;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-floating);
 }
 
 .hidden { display: none !important; }
@@ -6717,21 +6705,21 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .saved-workout-add-exercise {
   min-height: 48px;
   border: 1px dashed color-mix(in srgb, var(--brand-fill) 50%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-capsule);
   color: var(--primary);
   background: transparent;
   font-size: 15px;
   font-weight: 600;
 }
 
-/* Active and saved screens share one footer/add-exercise rhythm: 48px targets, 12px radius, 12px above the footer. */
+/* Active and saved screens share one footer/add-exercise rhythm: 48px targets, capsule radius, 12px above the footer. */
 .active-exercise-actions,
 .saved-exercise-actions { margin-top: 12px; }
 .active-exercise-actions .button,
 .saved-workout-add-exercise,
 .active-workout-add-exercise {
   min-height: 48px;
-  border-radius: 12px;
+  border-radius: var(--radius-capsule);
 }
 .active-workout-add-exercise { margin: 0 0 12px; }
 .active-set-row.completed { min-height: 44px; }
@@ -7357,7 +7345,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-sm);
   background: var(--surface-overlay);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-floating);
   font-variant-numeric: tabular-nums;
 }
 
@@ -7794,7 +7782,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 44px;
   padding: 0 10px;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--radius-capsule);
   background: transparent;
   color: color-mix(in srgb, var(--brand-fill) 72%, var(--text));
   font: inherit;

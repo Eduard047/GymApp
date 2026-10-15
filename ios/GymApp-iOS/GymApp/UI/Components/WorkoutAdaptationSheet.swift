@@ -93,7 +93,7 @@ struct WorkoutAdaptationSheet: View {
                         }
                         if alternatives.isEmpty { Text(t("No similar exercise available.", "Схожої вправи немає.", "Нет доступного похожего упражнения.")) }
                     }
-                    if let error { Text(error).foregroundStyle(.red) }
+                    if let error { Text(error).foregroundStyle(GymTheme.error) }
                 }.padding()
             }.navigationTitle(WorkoutAdaptationRequest.title(request.reason))
                 .navigationBarTitleDisplayMode(.inline)

@@ -101,7 +101,7 @@ test("root restores the installable first-party workout application", () => {
   assert.ok(scripts.includes("./live-workout.v3.js"));
   assert.match(rootHtml, /rel="manifest" href="\.\/manifest\.webmanifest"/);
   assert.match(rootHtml, /apple-mobile-web-app-capable/);
-  assert.match(rootHtml, /styles\.v97\.css/);
+  assert.match(rootHtml, /styles\.v98\.css/);
   assert.match(rootHtml, /connect-src 'self' https:\/\/owrcbsrectdgaotndtxy\.supabase\.co/);
   assert.doesNotMatch(rootHtml, /retirement\.v1\.(?:js|css)/);
 });
@@ -334,7 +334,7 @@ test("push unsubscribe failure cannot preserve the exact retired worker or touch
 test("active worker replaces the retirement worker without touching workout storage", () => {
   assert.match(workerSource, /self\.skipWaiting\(\)/);
   assert.match(workerSource, /caches\.open\(CACHE_NAME\)/);
-  assert.match(workerSource, /CACHE_VERSION = "v172"/);
+  assert.match(workerSource, /CACHE_VERSION = "v173"/);
   assert.match(workerSource, /\.\/app\.v128\.js/);
   assert.match(workerSource, /\.\/manifest\.webmanifest/);
   assert.match(workerSource, /\.\/confirmed\.html/);

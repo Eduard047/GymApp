@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.BackHand
 import com.example.gymapp.ui.theme.Button
+import com.example.gymapp.ui.theme.GymCapsuleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -486,7 +487,7 @@ fun AuthScreen(
                             }
                         },
                         enabled = !uiState.isLoading,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = GymCapsuleShape,
                         colors = brandButtonColors(),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -527,7 +528,7 @@ fun AuthScreen(
                                 }
                             },
                             enabled = !uiState.isLoading,
-                            shape = RoundedCornerShape(16.dp),
+                            shape = GymCapsuleShape,
                             colors = ButtonDefaults.textButtonColors(
                                 contentColor = MaterialTheme.colorScheme.primary
                             ),
@@ -552,7 +553,7 @@ fun AuthScreen(
                         },
                         enabled = !uiState.isLoading,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = GymCapsuleShape,
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -663,7 +664,7 @@ fun AuthScreen(
                     },
                     enabled = !uiState.isLoading,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = GymCapsuleShape,
                     colors = brandButtonColors()
                 ) {
                     Text(stringResource(R.string.auth_continue_offline))
@@ -671,7 +672,7 @@ fun AuthScreen(
                 TextButton(
                     onClick = { showOfflineSheet = false },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = GymCapsuleShape,
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -691,7 +692,7 @@ fun AuthScreen(
                             onClick = { onContinueLocal(savedProfile.id, true) },
                             enabled = !uiState.isLoading,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                            shape = RoundedCornerShape(16.dp)
+                            shape = GymCapsuleShape
                         ) {
                             Text(
                                 savedProfile.displayName,
@@ -885,7 +886,7 @@ private fun EmailConfirmationCard(
         Button(
             onClick = onOpenEmail,
             enabled = !isLoading,
-            shape = RoundedCornerShape(16.dp),
+            shape = GymCapsuleShape,
             modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
         ) {
             Text(stringResource(R.string.auth_confirmation_open_email))
@@ -893,7 +894,7 @@ private fun EmailConfirmationCard(
         OutlinedButton(
             onClick = onResend,
             enabled = !isLoading,
-            shape = RoundedCornerShape(16.dp),
+            shape = GymCapsuleShape,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
         ) {
             Text(stringResource(R.string.auth_confirmation_resend))
@@ -1034,7 +1035,7 @@ fun PasswordUpdateScreen(
                             }
                         },
                         enabled = !uiState.isLoading,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = GymCapsuleShape,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 50.dp)
@@ -1064,7 +1065,7 @@ fun PasswordUpdateScreen(
                     TextButton(
                         onClick = onCancel,
                         enabled = !uiState.isLoading,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = GymCapsuleShape,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)

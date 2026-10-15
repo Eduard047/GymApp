@@ -2514,7 +2514,7 @@ private struct FriendWorkoutPickerSheet: View {
                             }
                         }
                     }
-                    .padding(14)
+                    .padding(GymTheme.screenHorizontalInset)
                     .padding(.bottom, 20)
                 }
             }

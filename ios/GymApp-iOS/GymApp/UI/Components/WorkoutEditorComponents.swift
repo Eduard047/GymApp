@@ -536,7 +536,7 @@ struct SmartExerciseAlternativesSheet: View {
                             }
                         }
                     }
-                    .padding(14)
+                    .padding(GymTheme.screenHorizontalInset)
                 }
             }
             .navigationTitle("Similar exercises")
@@ -821,7 +821,7 @@ struct ExerciseMediaSheet: View {
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(GymTheme.error)
                 }
 
                 if editable {

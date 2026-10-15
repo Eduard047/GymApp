@@ -406,7 +406,7 @@ struct AddWorkoutView: View {
                         primaryWorkoutAction
                         secondaryOptions
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.vertical, 12)
                     .padding(.bottom, 28)
                 }
@@ -767,7 +767,7 @@ struct AddWorkoutView: View {
                                     selectedEffort == effort
                                         ? GymTheme.primary
                                         : GymTheme.primary.opacity(0.1),
-                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    in: Capsule()
                                 )
                         }
                         .buttonStyle(.plain)
@@ -1459,7 +1459,7 @@ struct AddWorkoutView: View {
                         .foregroundStyle(GymTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.vertical, 12)
                     .padding(.bottom, 24)
                 }

@@ -848,8 +848,7 @@ private fun GarminDeviceCard(
             if (state.sdkReady) {
                 OutlinedButton(
                     onClick = onOpenGarminApp,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.small
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(stringResource(R.string.garmin_open_app))
                 }
@@ -857,7 +856,6 @@ private fun GarminDeviceCard(
             OutlinedButton(
                 onClick = onResetGarminPairing,
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.error
                 ),

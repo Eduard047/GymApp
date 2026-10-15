@@ -49,6 +49,11 @@ public enum GymTheme {
     public static let outline = adaptive(light: 0xB7C4D7, dark: 0x49617D)
     public static let outlineSoft = adaptive(light: 0xDCE5F2, dark: 0x263E59)
     public static let error = adaptive(light: 0xB42318, dark: 0xFFB4AC)
+    /// Text/icons on a solid `error` fill (`on-destructive` in DESIGN.md): white on
+    /// light #B42318, deep red #690005 on the pale dark-mode #FFB4AC.
+    public static let onError = adaptive(light: 0xFFFFFF, dark: 0x690005)
+    /// Caution (`warning` in DESIGN.md): light #C87908, dark #FFC56B.
+    public static let warning = adaptive(light: 0xC87908, dark: 0xFFC56B)
 
     /// Flat tonal hero/brand surface (no gradient): light #EEF4FF, dark #10233A.
     public static let heroSurface = adaptive(light: 0xEEF4FF, dark: 0x10233A)
@@ -68,8 +73,9 @@ public enum GymTheme {
     /// #1F64C9 is 5.11:1 on #EEF4FF (same hue as #216BD7, darker only).
     public static let heroAccentText = adaptive(light: 0x1F64C9, dark: 0x7FB2FF)
     /// Secondary action label on `heroSurface` / `heroTile`, >= 5.0:1 on both
-    /// (light #1F64C9 is 5.11:1 on #EEF4FF).
-    public static let heroActionLabel = adaptive(light: 0x1F64C9, dark: 0x8AB8FF)
+    /// (light #1F64C9 is 5.11:1 on #EEF4FF). Dark is the shared `accent-text`
+    /// #8BB9FF (the former #8AB8FF collapsed into it).
+    public static let heroActionLabel = adaptive(light: 0x1F64C9, dark: 0x7FB2FF)
 
     // MARK: One blue heat scale (activity heatmap and muscle map)
     // Five opaque steps on `heroSurface`: 0 = empty, 1...4 = load. Single hue,
@@ -113,7 +119,7 @@ public enum GymTheme {
     public static let panelCornerRadius: CGFloat = 26
     public static let compactCornerRadius: CGFloat = 20
     public static let controlCornerRadius: CGFloat = 18
-    public static let screenHorizontalInset: CGFloat = 14
+    public static let screenHorizontalInset: CGFloat = 16
     public static let screenVerticalInset: CGFloat = 10
     public static let screenBottomInset: CGFloat = 28
     public static let contentSpacing: CGFloat = 14

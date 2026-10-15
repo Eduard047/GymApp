@@ -239,7 +239,7 @@ private struct CloudSyncConflictView: View {
                                 .frame(maxWidth: .infinity, minHeight: 52)
                             }
                             .buttonStyle(.bordered)
-                            .tint(.red)
+                            .tint(GymTheme.error)
                             .disabled(isWorking)
 
                             Button(action: prepareBackup) {
@@ -766,7 +766,7 @@ private struct MainTabShell: View {
                             .frame(maxWidth: 560)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, GymTheme.screenHorizontalInset)
                     .padding(.vertical, 6)
                     .background(.ultraThinMaterial)
                     .accessibilityHint(

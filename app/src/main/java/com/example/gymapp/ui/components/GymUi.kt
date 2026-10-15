@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import com.example.gymapp.R
 import com.example.gymapp.ui.theme.BrandFill
 import com.example.gymapp.ui.theme.BrandFillNight
+import com.example.gymapp.ui.theme.accentMarkColor
 import com.example.gymapp.ui.theme.HeroAccent
 import com.example.gymapp.ui.theme.HeroAccentText
 import com.example.gymapp.ui.theme.HeroActionLabel
@@ -301,7 +302,7 @@ internal fun sectionTitleShowsEyebrow(eyebrow: String): Boolean = eyebrow.isNotB
 fun GymProgressBar(
     progress: () -> Float,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary,
+    color: Color = accentMarkColor(),
     trackColor: Color = MaterialTheme.colorScheme.surfaceVariant
 ) {
     LinearProgressIndicator(

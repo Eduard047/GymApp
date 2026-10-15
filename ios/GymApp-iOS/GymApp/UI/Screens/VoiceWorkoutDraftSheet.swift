@@ -31,7 +31,7 @@ struct VoiceWorkoutDraftSheet: View {
                 if let errorMessage {
                     Section {
                         Label(errorMessage, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(GymTheme.error)
                             .accessibilityIdentifier("voiceWorkout.error")
                     }
                 }
@@ -51,7 +51,7 @@ struct VoiceWorkoutDraftSheet: View {
                     Section {
                         ForEach(notices, id: \.self) { notice in
                             Label(notice, systemImage: "exclamationmark.circle")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(GymTheme.warning)
                         }
                     }
                     .accessibilityIdentifier("voiceWorkout.notices")
@@ -245,7 +245,7 @@ struct VoiceWorkoutDraftSheet: View {
             if let issue = block.issue {
                 Label(issueText(issue, block: block), systemImage: "exclamationmark.circle")
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(GymTheme.error)
                     .accessibilityIdentifier("voiceWorkout.preview.\(blockID.uuidString).issue")
             }
 

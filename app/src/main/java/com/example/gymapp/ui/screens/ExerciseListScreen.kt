@@ -1873,8 +1873,7 @@ private fun AddExerciseBottomSheetContent(
             onClick = onAdd,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp),
-            shape = MaterialTheme.shapes.small
+                .heightIn(min = 52.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Add,

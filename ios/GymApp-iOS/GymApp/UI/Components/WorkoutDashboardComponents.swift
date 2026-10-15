@@ -495,9 +495,9 @@ struct WorkoutProgressHero: View {
                         .padding(.vertical, 10)
                         .frame(maxWidth: .infinity)
                         .foregroundStyle(GymTheme.heroActionLabel)
-                        .background(GymTheme.heroTile, in: RoundedRectangle(cornerRadius: 14))
+                        .background(GymTheme.heroTile, in: Capsule())
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14)
+                            Capsule()
                                 .strokeBorder(GymTheme.heroOutline, lineWidth: GymTheme.hairlineWidth)
                         }
                 }

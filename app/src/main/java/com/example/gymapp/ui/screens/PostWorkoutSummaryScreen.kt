@@ -61,7 +61,7 @@ import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.achievementGridColumns
 import com.example.gymapp.ui.components.achievementRarityLabel
 import com.example.gymapp.ui.components.tabularDigits
-import com.example.gymapp.ui.theme.GymControlShape
+import com.example.gymapp.ui.theme.GymCapsuleShape
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
@@ -310,7 +310,7 @@ private fun FeedbackChip(
         modifier = modifier
             .heightIn(min = 44.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
-        shape = GymControlShape,
+        shape = GymCapsuleShape,
         color = if (selected) {
             MaterialTheme.colorScheme.primary
         } else {

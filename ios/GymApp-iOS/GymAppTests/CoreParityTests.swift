@@ -13009,7 +13009,7 @@ final class CoreParityTests: XCTestCase {
         XCTAssertFalse(editorSource.contains("private var hero: some View"))
         let editorStack = try XCTUnwrap(
             editorSource.split(separator: "LazyVStack(spacing: 14) {", maxSplits: 1).last?
-                .split(separator: ".padding(.horizontal, 14)", maxSplits: 1).first
+                .split(separator: ".padding(.horizontal, GymTheme.screenHorizontalInset)", maxSplits: 1).first
         )
         XCTAssertFalse(editorStack.contains("hero"))
         XCTAssertTrue(editorSource.contains("ScrollViewReader { scrollProxy in"))

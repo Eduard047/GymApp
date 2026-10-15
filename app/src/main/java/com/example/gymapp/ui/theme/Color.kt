@@ -22,6 +22,12 @@ val Frost = Color(0xFFF4F8FF)
 val FrostMuted = Color(0xFFAABBD1)
 val CobaltNight = Color(0xFF8BB9FF)
 val AmberNight = Color(0xFFFFC56B)
+// DESIGN.md `destructive` / `on-destructive` (dark), and `accent-mark` (dark): chart lines, rings and
+// progress fills. `accent-mark` light is Cobalt; `accent-text` per appearance is colorScheme.primary.
+val DestructiveLight = Color(0xFFB42318)
+val DestructiveNight = Color(0xFFFFB4AC)
+val OnDestructiveNight = Color(0xFF690005)
+val AccentMarkNight = Color(0xFF7FB2FF)
 
 // Brand fill shared with iOS: the solid primary-action blue per appearance.
 val BrandFill = Color(0xFF216BD7)
@@ -46,4 +52,5 @@ val HeroAccent = Cobalt
 val HeroActionLabel = Color(0xFF1F64C9)
 val HeroAccentText = Color(0xFF1F64C9)
 val HeroAccentNight = Color(0xFF7FB2FF)
-val HeroActionLabelNight = Color(0xFF8AB8FF)
+// Action labels on the tonal hero are `accent-text-hero` (same colour as the emphasised value).
+val HeroActionLabelNight = HeroAccentNight

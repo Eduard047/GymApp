@@ -1500,7 +1500,7 @@ struct ActiveWorkoutView: View {
                         }
                         .buttonStyle(.plain)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            Capsule()
                                 .strokeBorder(GymTheme.primary.opacity(0.7), lineWidth: 1)
                         )
                         .accessibilityLabel(

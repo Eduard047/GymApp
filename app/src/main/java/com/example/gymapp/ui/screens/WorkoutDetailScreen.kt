@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import com.example.gymapp.ui.theme.Button
+import com.example.gymapp.ui.theme.accentMarkColor
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -1185,7 +1186,7 @@ private fun GarminSetHeartRateOverview(points: List<GarminSetHeartRateChartPoint
         chartMinimum = (chartMaximum - 20).coerceAtLeast(1)
     }
 
-    val startColor = MaterialTheme.colorScheme.primary
+    val startColor = accentMarkColor()
     val peakColor = MaterialTheme.colorScheme.tertiary
     val endColor = MaterialTheme.colorScheme.secondary
     val rangeColor = MaterialTheme.colorScheme.outline
@@ -1386,7 +1387,7 @@ private fun GarminWorkoutRhythmVisual(
     val intervals = metrics.setIntervals
     val finalEnd = intervals.lastOrNull()?.endOffsetSeconds ?: return
     val scaleSeconds = maxOf(metrics.durationSeconds ?: finalEnd, finalEnd).coerceAtLeast(1L)
-    val activeColor = MaterialTheme.colorScheme.primary
+    val activeColor = accentMarkColor()
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
     val timelineDescription = stringResource(
         R.string.garmin_timeline_accessibility,
@@ -1762,7 +1763,7 @@ private fun GarminSetHeartRateMarkers(
     }
     if (availableReadings.isEmpty()) return
     val chartDescription = availableReadings.joinToString { (_, label, value) -> "$label $value" }
-    val lineColor = MaterialTheme.colorScheme.primary
+    val lineColor = accentMarkColor()
     val pointColor = MaterialTheme.colorScheme.tertiary
     val trackColor = MaterialTheme.colorScheme.outlineVariant
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1873,7 +1874,7 @@ private fun GarminHeartRateVisual(metrics: GarminWorkoutMetrics) {
     val average = metrics.averageHeartRate
     val maximum = metrics.maximumHeartRate
     val trackColor = MaterialTheme.colorScheme.outlineVariant
-    val rangeColor = MaterialTheme.colorScheme.primary
+    val rangeColor = accentMarkColor()
     val averageColor = MaterialTheme.colorScheme.secondary
     val maximumColor = MaterialTheme.colorScheme.tertiary
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

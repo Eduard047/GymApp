@@ -270,7 +270,7 @@ struct GymDashedAddButton: View {
         }
         .buttonStyle(.plain)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            Capsule()
                 .strokeBorder(GymTheme.primary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         )
         .accessibilityLabel(accessibilityLabelText)

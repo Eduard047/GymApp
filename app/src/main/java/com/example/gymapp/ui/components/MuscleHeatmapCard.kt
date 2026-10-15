@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.gymapp.R
+import com.example.gymapp.ui.theme.GymCapsuleShape
 import com.example.gymapp.ui.theme.HeatStepColors
 import com.example.gymapp.data.repository.MUSCLE_DEFINITIONS
 import com.example.gymapp.ui.util.currentAppLanguageTag
@@ -208,7 +209,7 @@ private fun MusclePeriodSelector(
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant
                 },
-                shape = MaterialTheme.shapes.small
+                shape = GymCapsuleShape
             ) {
                 Text(
                     text = option.label,
@@ -785,7 +786,7 @@ private fun ManualMappingEditor(
                             } else {
                                 MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
                             },
-                            shape = MaterialTheme.shapes.small,
+                            shape = GymCapsuleShape,
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
                                 if (selected) {

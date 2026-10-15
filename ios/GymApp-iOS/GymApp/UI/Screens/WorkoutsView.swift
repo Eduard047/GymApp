@@ -765,10 +765,7 @@ public struct WorkoutsView: View {
                     .font(.headline)
                     .foregroundStyle(GymTheme.onPrimary)
                     .frame(maxWidth: .infinity, minHeight: 54)
-                    .background(
-                        GymTheme.brandFill,
-                        in: RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius)
-                    )
+                    .background(GymTheme.brandFill, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .appTutorialPrimaryActionTarget()

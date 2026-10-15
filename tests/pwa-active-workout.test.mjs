@@ -3395,7 +3395,7 @@ test("the exercise footer is two equal columns: dashed + Set leads, solid Finish
   assert.match(styles, /\.active-exercise-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(styles, /\.active-exercise-add\s*\{\s*border:\s*1px dashed color-mix\(in srgb, var\(--brand-fill\) 50%/);
   assert.match(styles, /\.active-exercise-finish\s*\{\s*border:\s*1px solid color-mix\(in srgb, var\(--brand-fill\) 70%/);
-  assert.match(styles, /\.active-exercise-actions \.button\s*\{[^}]*min-height:\s*44px;[^}]*border-radius:\s*12px/);
+  assert.match(styles, /\.active-exercise-actions \.button\s*\{[^}]*min-height:\s*44px;[^}]*border-radius:\s*var\(--radius-capsule\)/);
   assert.doesNotMatch(styles, /\.timer-row\b|\.active-set-action\s*\{/, "dead rules are gone");
 });
 
