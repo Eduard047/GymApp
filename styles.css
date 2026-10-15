@@ -6557,6 +6557,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 .confirm-sheet-body { white-space: pre-line; overflow-wrap: anywhere; }
+.confirm-sheet-form { display: grid; gap: 12px; }
+.confirm-sheet-fields { margin-block-start: 4px; }
+.confirm-sheet-fields input[readonly] { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-overflow: ellipsis; }
+.confirm-sheet-fields input[aria-invalid="true"] { border-color: var(--danger); }
+.confirm-sheet-error { margin: 0; color: var(--danger); font-size: 0.875rem; overflow-wrap: anywhere; }
 
 /* Grab area: the full-width top strip; the visible 36x5 pill sits 8px from the top. Content still starts 37px down. */
 .sheet-handle {
