@@ -127,15 +127,20 @@ import com.example.gymapp.ui.components.tutorialAnchor
 import com.example.gymapp.ui.screens.AddWorkoutScreen
 import com.example.gymapp.ui.components.ActiveWorkoutDiscardDialog
 import com.example.gymapp.ui.components.ContinueWorkoutBar
+import com.example.gymapp.ui.components.GymGlassMaterial
 import com.example.gymapp.ui.components.GymToastDuration
 import com.example.gymapp.ui.components.GymToastHost
 import com.example.gymapp.ui.components.GymToastResult
 import com.example.gymapp.ui.components.gymDrillEnter
+import com.example.gymapp.ui.components.gymGlass
+import com.example.gymapp.ui.components.gymGlassSource
 import com.example.gymapp.ui.components.gymDrillExit
 import com.example.gymapp.ui.components.gymDrillPopEnter
 import com.example.gymapp.ui.components.gymDrillPopExit
 import com.example.gymapp.ui.components.gymTabEnter
 import com.example.gymapp.ui.components.gymTabExit
+import com.example.gymapp.ui.components.rememberGymGlassActive
+import com.example.gymapp.ui.components.rememberGymHazeState
 import com.example.gymapp.ui.components.rememberReduceMotion
 import com.example.gymapp.ui.components.LocalGymToastController
 import com.example.gymapp.ui.components.shouldShowContinueWorkoutBar
@@ -956,6 +961,8 @@ internal fun GymAppRoot(
     DisposableEffect(uiIsolationKey) { onDispose { toastController.clear() } }
     // Height of the floating tab bar (including its insets), so the toast host sits above it.
     var tabBarHeightPx by remember { mutableIntStateOf(0) }
+    // The blur source for the glass tab bar and toast: the app content behind them.
+    val glassState = rememberGymHazeState()
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -2437,6 +2444,8 @@ internal fun GymAppRoot(
                 if (!showsContinueWorkoutBar) showContinueBarDiscardConfirmation = false
             }
 
+            // The Exercises list draws under the floating tab bar and pads its last item instead.
+            val scrollsUnderTabBar = currentRoute == AppDestination.Exercises.route
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2498,11 +2507,19 @@ internal fun GymAppRoot(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             contentAlignment = Alignment.BottomCenter
                         ) {
+                            // Glass only where content really scrolls under the bar; everywhere else (and
+                            // below API 31 or with battery saver) it stays the solid surface with its shadow.
+                            val barGlass = scrollsUnderTabBar && rememberGymGlassActive(glassState)
                             Surface(
-                                color = MaterialTheme.colorScheme.surface,
+                                modifier = Modifier.gymGlass(
+                                    state = if (scrollsUnderTabBar) glassState else null,
+                                    material = GymGlassMaterial.Bar,
+                                    shape = MaterialTheme.shapes.extraLarge
+                                ),
+                                color = if (barGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
                                 shape = MaterialTheme.shapes.extraLarge,
                                 tonalElevation = 0.dp,
-                                shadowElevation = 4.dp,
+                                shadowElevation = if (barGlass) 0.dp else 4.dp,
                                 border = BorderStroke(
                                     1.dp,
                                     MaterialTheme.colorScheme.outlineVariant.copy(
@@ -2627,13 +2644,12 @@ internal fun GymAppRoot(
                     }
                 }
             ) { innerPadding ->
-                // The Exercises list draws under the floating tab bar and pads its last item instead.
-                val scrollsUnderTabBar = currentRoute == AppDestination.Exercises.route
                 val layoutDirection = LocalLayoutDirection.current
                 val tabBarInset = innerPadding.calculateBottomPadding()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .gymGlassSource(glassState)
                         .padding(
                             start = innerPadding.calculateStartPadding(layoutDirection),
                             top = innerPadding.calculateTopPadding(),
@@ -4916,7 +4932,8 @@ internal fun GymAppRoot(
                 } else {
                     0.dp
                 },
-                modifier = if (isBottomTabRoute) Modifier else Modifier.navigationBarsPadding().padding(bottom = 16.dp)
+                modifier = if (isBottomTabRoute) Modifier else Modifier.navigationBarsPadding().padding(bottom = 16.dp),
+                glass = glassState
             )
         }
     }

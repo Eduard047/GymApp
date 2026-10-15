@@ -2363,8 +2363,7 @@ struct WorkoutDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial)
-        .overlay(alignment: .top) { Divider() }
+        .gymGlassBackground(.bar, material: .regularMaterial, edge: .top)
         .accessibilityElement(children: .contain)
     }
 

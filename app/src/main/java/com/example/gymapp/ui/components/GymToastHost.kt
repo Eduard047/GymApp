@@ -78,6 +78,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberUpdatedState
 import com.example.gymapp.R
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -103,7 +104,8 @@ private val GymToastEnterOffset: Dp = 14.dp
 fun GymToastHost(
     controller: GymToastController,
     modifier: Modifier = Modifier,
-    bottomOffset: Dp = 0.dp
+    bottomOffset: Dp = 0.dp,
+    glass: HazeState? = null
 ) {
     val state by controller.state.collectAsState()
     GymToastCountdown(controller, state)
@@ -114,7 +116,7 @@ fun GymToastHost(
                 .padding(bottom = bottomOffset),
             contentAlignment = Alignment.BottomCenter
         ) {
-            GymToastLayer(controller, state)
+            GymToastLayer(controller, state, glass)
         }
     }
 }
@@ -153,7 +155,8 @@ fun GymToastSheetHost() {
             clippingEnabled = false
         )
     ) {
-        GymToastLayer(controller, state)
+        // The sheet is its own window: the app content cannot be blurred behind it, so the toast stays solid.
+        GymToastLayer(controller, state, glass = null)
     }
 }
 
@@ -193,7 +196,7 @@ private fun GymToastCountdown(controller: GymToastController, state: GymToastUiS
 
 /** The animated slot for the toast: replacement cross-fades and slides, never stacks. */
 @Composable
-private fun GymToastLayer(controller: GymToastController, state: GymToastUiState) {
+private fun GymToastLayer(controller: GymToastController, state: GymToastUiState, glass: HazeState?) {
     val reduceMotion = rememberReduceMotion()
     val enterOffsetPx = with(LocalDensity.current) { GymToastEnterOffset.roundToPx() }
     AnimatedContent(
@@ -206,6 +209,7 @@ private fun GymToastLayer(controller: GymToastController, state: GymToastUiState
         if (toast != null) {
             GymToastCapsule(
                 toast = toast,
+                glass = glass,
                 onTap = { controller.dismiss(toast.id) },
                 onAction = { controller.performAction(toast.id) },
                 onDismissed = { controller.dismiss(toast.id) },
@@ -241,6 +245,7 @@ internal fun AnimatedContentTransitionScope<*>.gymToastTransition(reduceMotion: 
 @Composable
 private fun GymToastCapsule(
     toast: GymToast,
+    glass: HazeState?,
     onTap: () -> Unit,
     onAction: () -> Unit,
     onDismissed: () -> Unit,
@@ -262,8 +267,10 @@ private fun GymToastCapsule(
     val density = LocalDensity.current
     val velocityThresholdPx = with(density) { GymToastDismissVelocity.toPx() }
 
+    // Chip glass blurs the app content behind it (no shadow, hairline kept); otherwise the solid surface.
+    val glassActive = rememberGymGlassActive(glass)
     Surface(
-        color = colors.surface,
+        color = if (glassActive) Color.Transparent else colors.surface,
         contentColor = colors.onSurface,
         shape = CircleShape,
         tonalElevation = 0.dp,
@@ -276,13 +283,20 @@ private fun GymToastCapsule(
                 translationY = settle.value.y
                 alpha = 1f - 0.5f * fadeProgress
             }
-            .shadow(
-                elevation = 6.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.12f),
-                spotColor = Color.Black.copy(alpha = 0.24f)
+            .then(
+                if (glassActive) {
+                    Modifier
+                } else {
+                    Modifier.shadow(
+                        elevation = 6.dp,
+                        shape = CircleShape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.12f),
+                        spotColor = Color.Black.copy(alpha = 0.24f)
+                    )
+                }
             )
+            .gymGlass(glass, GymGlassMaterial.Chip, CircleShape)
             .onSizeChanged { sizePx = it }
             // Holding a finger on the toast holds its countdown; the pass is Initial so drags still reach draggable2D.
             .pointerInput(toast.id) {

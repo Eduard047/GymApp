@@ -66,8 +66,8 @@ struct AppRootView: View {
         .overlay {
             if appState.isSigningOut {
                 ZStack {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
+                    Color.clear
+                        .gymGlassBackground(.scrim, material: .ultraThinMaterial)
                         .ignoresSafeArea()
                     ProgressView()
                         .controlSize(.large)
@@ -809,8 +809,7 @@ private struct MainTabShell: View {
                         }
                         .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity, minHeight: 58)
-                        .background(.regularMaterial)
-                        .overlay(alignment: .bottom) { Divider() }
+                        .gymGlassBackground(.bar, material: .regularMaterial, edge: .bottom)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint(
@@ -858,8 +857,7 @@ private struct MainTabShell: View {
                         }
                         .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity, minHeight: 58)
-                        .background(.regularMaterial)
-                        .overlay(alignment: .bottom) { Divider() }
+                        .gymGlassBackground(.bar, material: .regularMaterial, edge: .bottom)
                     }
                     .buttonStyle(.plain)
                 }

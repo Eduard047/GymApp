@@ -328,7 +328,7 @@ struct ActiveWorkoutView: View {
             .frame(minHeight: 44)
         }
         .padding(.horizontal, GymTheme.screenHorizontalInset)
-        .background(.bar)
+        .gymGlassBackground(.bar, material: .bar, edge: .top)
     }
 
     var body: some View {
