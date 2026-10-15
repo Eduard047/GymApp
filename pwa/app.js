@@ -10722,6 +10722,13 @@ function goRoot(name) {
   renderRoute(() => { if (leavingAdd) routeScrollPositions.delete("add:root"); });
 }
 
+// Programmatic root navigation that must happen after async work or a state replacement (backup import): a pending
+// view transition is finished first instead of silently dropping the navigation. User taps keep the goRoot() guard.
+function goRootAfterStateChange(name) {
+  routeTransitionFlush();
+  return goRoot(name);
+}
+
 function back() {
   if (routeTransition.pending) return false;
   if (workoutDraftLiveSendInProgress && route().name === "add") return false;
@@ -34537,7 +34544,7 @@ async function confirmImport() {
   });
   if (!result.acquired || result.value !== true) return showDestructiveSaveFailure();
   modal = null;
-  goRoot("workouts");
+  goRootAfterStateChange("workouts");
   focusStableScreenContext();
   showToast(tx("Backup imported.", "Резервну копію імпортовано."));
 }

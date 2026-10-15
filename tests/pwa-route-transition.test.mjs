@@ -99,3 +99,29 @@ test("without startViewTransition a route change renders directly", () => {
 test("popstate finishes a pending route change before applying the browser navigation", () => {
   assert.match(source, /addEventListener\("popstate", event => \{\s*(?:\/\/[^\n]*\n\s*)*if \(routeTransition\.pending\) routeTransitionFlush\(\);/);
 });
+
+test("a programmatic root navigation after a state change finishes a pending transition instead of being dropped", () => {
+  const { context, calls } = fixture();
+  run(context, 'push("detail", { id: 7 })');
+  assert.equal(run(context, "routeTransition.pending"), true);
+  assert.equal(run(context, "nav.length"), 2);
+
+  // A plain second user navigation is still ignored while the transition is pending.
+  run(context, 'push("ranks")');
+  assert.equal(run(context, "nav.length"), 2);
+  assert.equal(run(context, 'goRoot("workouts")'), false);
+  assert.equal(run(context, "route().name"), "detail");
+
+  // Backup import replaces state, then navigates: the pending transition is flushed and the root route wins.
+  run(context, 'goRootAfterStateChange("workouts")');
+  assert.equal(run(context, "route().name"), "workouts");
+  assert.equal(run(context, "nav.length"), 1);
+  assert.ok(calls.render >= 1, "the pending screen swap ran before the navigation");
+
+  calls.callbacks.at(-1)();
+  assert.equal(run(context, "routeTransition.pending"), false);
+  assert.equal(run(context, "route().name"), "workouts");
+  assert.equal(run(context, "nav.length"), 1);
+
+  assert.match(source, /modal = null;\s*goRootAfterStateChange\("workouts"\);\s*focusStableScreenContext\(\);\s*showToast\(tx\("Backup imported\./);
+});
