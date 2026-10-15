@@ -58,7 +58,7 @@ test("text inputs, selects and textareas never compute below 16px", () => {
   assert.match(base, /font-size:\s*max\(1rem,\s*1em\)/);
   // Every rule that resets the font on an input-like element restores the floor.
   for (const selector of [".exercise-search-field input[type=\"search\"]", ".voice-workout-dictation textarea"]) {
-    const body = new RegExp(`${selector.replace(/[.[\]"]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    const body = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\"]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
     assert.match(body, /font:\s*inherit;[\s\S]*font-size:\s*max\(1rem,\s*1em\)/, selector);
   }
   // Any explicit size on an input-like selector is at least 1rem.
