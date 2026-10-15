@@ -33,7 +33,7 @@ function atRuleBodies(source, header) {
 }
 
 function hasSolidFallback(bodies, selector, property) {
-  const rule = new RegExp(`(?:^|[\\s,}])${selector.replace(/[.\[\]]/g, "\\$&")}\\b[^{}]*\\{[^}]*${property}:\\s*var\\(--[a-z-]+\\)`);
+  const rule = new RegExp(`(?:^|[\\s,}])${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b[^{}]*\\{[^}]*${property}:\\s*var\\(--[a-z-]+\\)`);
   return bodies.some(body => rule.test(body));
 }
 
