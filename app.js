@@ -1301,8 +1301,8 @@ let nav = [{ name: "workouts" }];
 let modal = null;
 let modalActionGeneration = 0;
 let appClickDelegationBound = false;
+let appAuthSubmitDelegationBound = false;
 let appWeeklySwipeDelegationBound = false;
-let weeklySwipeStart = null;
 const initialWorkoutDraftRecord = reconcileWorkoutDraftAtStartup(activeWorkout, activeAccount);
 let workoutDraft = initialWorkoutDraftRecord?.draft || null;
 let workoutDraftLiveRecipient = initialWorkoutDraftRecord?.liveRecipient || null;
@@ -2228,9 +2228,34 @@ function ru(value) {
   return window.GymRussianText?.translate(value) || String(value);
 }
 
+// First-run language: the first browser-preferred language the app supports (uk, ru), else
+// English. Same rule as the iOS and Android clients; only applies when nothing is saved,
+// because a stored state always carries its own language.
+function firstRunLanguageFromLocales(locales) {
+  if (!Array.isArray(locales)) return "en";
+  for (const identifier of locales) {
+    if (typeof identifier !== "string") continue;
+    const code = identifier.trim().toLowerCase().split(/[-_]/)[0];
+    if (code === "uk" || code === "ru" || code === "en") return code;
+  }
+  return "en";
+}
+
+function detectFirstRunLanguage() {
+  try {
+    const browser = typeof navigator === "object" && navigator ? navigator : null;
+    const locales = Array.isArray(browser?.languages) && browser.languages.length
+      ? Array.from(browser.languages)
+      : [browser?.language];
+    return firstRunLanguageFromLocales(locales);
+  } catch {
+    return "en";
+  }
+}
+
 function defaultAppState() {
   return {
-    language: "en",
+    language: detectFirstRunLanguage(),
     catalogSeedVersion: CATALOG_SEED_VERSION,
     exercises: builtInExerciseCatalog.map((exercise, index) => ({
       id: index + 1,
@@ -11493,9 +11518,10 @@ function loginScreen() {
     const showRepeat = tx3("Show repeat password", "Показати поле «повтори пароль»", "Показать поле «повторите пароль»");
     const hideRepeat = tx3("Hide repeat password", "Сховати поле «повтори пароль»", "Скрыть поле «повторите пароль»");
     remotePanel = `<section class="panel highlighted auth-panel"><h2>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Welcome back", "З поверненням", "С возвращением")}</h2>
-      <div class="segmented auth-mode-switch" role="radiogroup" aria-label="${escapeAttr(tx3("Account action", "Дія з акаунтом", "Действие с аккаунтом"))}">${modeTab("login", tx3("Sign in", "Увійти", "Войти"))}${modeTab("signup", tx3("Sign up", "Зареєструватися", "Регистрация"))}</div><div class="field-stack">
-      ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label>${passwordFieldMarkup({ id: "signup-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.password)}">` })}${passwordFieldMarkup({ id: "signup-password-confirm", label: tx("Repeat password", "Повтори пароль"), showLabel: showRepeat, hideLabel: hideRepeat, input: `<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.passwordConfirm)}">` })}<p id="signup-password-requirements" class="muted contextual-field-help">${tx("Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8).")}</p><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.login.email)}"></label>${passwordFieldMarkup({ id: "login-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" maxlength="1024" placeholder="${tx3("Password", "Пароль", "Пароль")}" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.login.password)}">` })}`}
-      </div>${authNoticeMarkup}<div class="auth-actions stacked"><button class="button full" data-action="${isSignUp ? "remote-signup" : "remote-login"}" ${authDisabled}>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Sign in", "Увійти", "Войти")}</button>${isSignUp ? "" : `<button type="button" class="auth-quiet-link auth-forgot-link" data-action="auth-mode" data-mode="forgot" ${authDisabled}>${tx("Forgot password?", "Забули пароль?")}</button>`}</div>${offlineLinkMarkup(true)}</section>`;
+      <div class="segmented auth-mode-switch" role="radiogroup" aria-label="${escapeAttr(tx3("Account action", "Дія з акаунтом", "Действие с аккаунтом"))}">${modeTab("login", tx3("Sign in", "Увійти", "Войти"))}${modeTab("signup", tx3("Sign up", "Зареєструватися", "Регистрация"))}</div><form id="auth-form" class="auth-form" data-auth-form="${isSignUp ? "signup" : "login"}" novalidate>
+      <div class="field-stack">
+      ${isSignUp ? `<label>${tx("Email", "Email")}<input id="signup-email" data-auth-mode="signup" data-auth-field="email" autocomplete="email" name="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.email)}"></label><label>${tx("Repeat email", "Повтори адресу електронної пошти")}<input id="signup-email-confirm" data-auth-mode="signup" data-auth-field="emailConfirm" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.signup.emailConfirm)}"></label>${passwordFieldMarkup({ id: "signup-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="signup-password" data-auth-mode="signup" data-auth-field="password" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.password)}">` })}${passwordFieldMarkup({ id: "signup-password-confirm", label: tx("Repeat password", "Повтори пароль"), showLabel: showRepeat, hideLabel: hideRepeat, input: `<input id="signup-password-confirm" data-auth-mode="signup" data-auth-field="passwordConfirm" autocomplete="new-password" type="password" minlength="6" maxlength="72" aria-describedby="signup-password-requirements" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.signup.passwordConfirm)}">` })}<p id="signup-password-requirements" class="muted contextual-field-help">${tx("Use at least 6 characters (up to 72 UTF-8 bytes).", "Використай щонайменше 6 символів (до 72 байтів UTF-8).")}</p><label>${tx("Display name", "Ім’я профілю")}<input id="signup-name" data-auth-mode="signup" data-auth-field="name" autocomplete="name" maxlength="32" value="${escapeAttr(authDrafts.signup.name)}"></label>` : `<label>${tx("Email", "Email")}<input id="login-email" data-auth-mode="login" data-auth-field="email" autocomplete="username" name="username" inputmode="email" placeholder="you@example.com" value="${escapeAttr(authDrafts.login.email)}"></label>${passwordFieldMarkup({ id: "login-password", label: tx("Password", "Пароль"), showLabel: showPassword, hideLabel: hidePassword, input: `<input id="login-password" data-auth-mode="login" data-auth-field="password" autocomplete="current-password" type="password" maxlength="1024" placeholder="${tx3("Password", "Пароль", "Пароль")}" autocapitalize="none" autocorrect="off" spellcheck="false" value="${escapeAttr(authDrafts.login.password)}">` })}`}
+      </div>${authNoticeMarkup}<div class="auth-actions stacked"><button type="submit" class="button full" data-action="${isSignUp ? "remote-signup" : "remote-login"}" ${authDisabled}>${isSignUp ? tx("Create account", "Створити акаунт") : tx3("Sign in", "Увійти", "Войти")}</button>${isSignUp ? "" : `<button type="button" class="auth-quiet-link auth-forgot-link" data-action="auth-mode" data-mode="forgot" ${authDisabled}>${tx("Forgot password?", "Забули пароль?")}</button>`}</div></form>${offlineLinkMarkup(true)}</section>`;
   }
   return `<div class="app-shell auth-shell">
     <main class="screen auth-screen" data-scroll-key="auth">
@@ -13266,9 +13292,37 @@ let lastHapticTickAt = -Infinity;
 // the caller fires the plain record-set pattern after render. Never both.
 let recordSetHapticPending = false;
 
+// In-app Haptics switch (Profile > Account): device-local, never synced or exported, default on. Only an
+// explicit "off" turns it off, so a missing or unreadable value keeps haptics on.
+const HAPTICS_PREFERENCE_KEY = "gym-pwa-haptics-v1";
+let hapticsEnabledCache = null;
+
+function hapticsEnabledFromStored(raw) {
+  return raw !== "off";
+}
+
+function hapticsEnabled() {
+  if (hapticsEnabledCache === null) {
+    let raw = null;
+    try { raw = localStorage.getItem(HAPTICS_PREFERENCE_KEY); } catch { raw = null; }
+    hapticsEnabledCache = hapticsEnabledFromStored(raw);
+  }
+  return hapticsEnabledCache;
+}
+
+function setHapticsEnabled(enabled) {
+  hapticsEnabledCache = enabled === true;
+  try {
+    if (hapticsEnabledCache) localStorage.removeItem(HAPTICS_PREFERENCE_KEY);
+    else localStorage.setItem(HAPTICS_PREFERENCE_KEY, "off");
+  } catch { /* the choice still applies for this session */ }
+  return hapticsEnabledCache;
+}
+
 function haptic(kind) {
   const pattern = HAPTIC_PATTERNS[kind];
   if (pattern === undefined) return false;
+  if (!hapticsEnabled()) return false;
   try {
     if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return false;
     if (kind === "tick") {
@@ -19864,6 +19918,18 @@ function accountDisplayEmail() {
   return typeof sessionEmail === "string" ? sessionEmail.trim() : "";
 }
 
+// In-app Haptics switch: a native button with role="switch" so keyboard and screen readers get the on/off state.
+function profileHapticsRow() {
+  const on = hapticsEnabled();
+  return settingsRowMarkup({
+    icon: "phone",
+    title: tx3("Haptics", "Тактильний відгук", "Тактильный отклик"),
+    trailing: `<span class="settings-switch${on ? " on" : ""}"><i></i></span>`,
+    action: "toggle-haptics",
+    attrs: `role="switch" aria-checked="${on}"`
+  });
+}
+
 function accountIdentityValue() {
   return activeAccount?.remote ? String(activeAccount.userId || "") : String(activeAccount?.id || "");
 }
@@ -22830,7 +22896,7 @@ function friendsProfileScreen() {
   const cloudLabel = remote ? tx("Cloud protected", "Захищено хмарою") : tx3("Stored on this device", "Збережено на цьому пристрої", "Хранится на этом устройстве");
   const trainingSelected = profileHubSection === "training";
   const trainingPanel = remote ? friendsPanel() : "";
-  const settingsPanel = `${settingsPanelMarkup([remote ? "" : profileFriendsNeedCloudRow(), accountPanel(), profileLanguageRow(), trainingSettingsProfilePanel(), profileDataPanel()], "profile-settings-list")}${garminProfilePanel()}${themePreferencePanel()}`;
+  const settingsPanel = `${settingsPanelMarkup([remote ? "" : profileFriendsNeedCloudRow(), accountPanel(), profileLanguageRow(), profileHapticsRow(), trainingSettingsProfilePanel(), profileDataPanel()], "profile-settings-list")}${garminProfilePanel()}${themePreferencePanel()}`;
   const pendingLabel = `${tx3("Waiting for you", "Очікує на тебе", "Ждёт тебя")}: ${pendingCount}`;
   const unreadPill = pendingCount ? `<strong class="profile-unread-pill" role="img" aria-label="${escapeAttr(pendingLabel)}">${Math.min(pendingCount, 99)}</strong>` : "";
   const passport = `<section class="profile-hub-passport" data-coach-target="profile-hub"><div class="profile-hub-avatar" aria-hidden="true">${svg("person")}</div><div class="profile-hub-identity"><h2>${escapeHtml(accountLabel)}</h2><p>${escapeHtml(remote ? `${cloudLabel} · ${countNoun(friendCount, "friends")}` : cloudLabel)}</p></div>${unreadPill}</section>`;
@@ -27542,40 +27608,240 @@ async function handleDelegatedAppClick(event) {
     ? event.target
     : event.target?.parentElement;
   const actionElement = target?.closest?.("[data-action]");
+  // The sign-in/sign-up submit buttons are handled by the form submit event so Enter and
+  // password managers share one path; the click only triggers that submission.
+  if (actionElement?.type === "submit" && actionElement.form?.dataset?.authForm) return false;
   if (actionElement) return handleAppActionClick(event, actionElement);
   const routeElement = target?.closest?.("[data-route]");
   if (routeElement) return goRoot(routeElement.dataset.route);
   return false;
 }
 
-function beginWeeklySummarySwipe(event) {
+// Tracked page swipe for the Training history panel (week / month). The panel follows the pointer
+// (transform only, touch-action: pan-y keeps vertical scrolling), locks to the horizontal axis, rubber-bands
+// where there is no further page and commits on enough travel or a flick. Swiping right shows the previous
+// (older) page, swiping left the next. Reduce Motion swaps the slide for a fade without tracking. The
+// previous/next buttons stay the accessible alternative. Pure decisions first so they can be tested.
+const PAGE_SWIPE_LOCK_SLOP = 8;
+const PAGE_SWIPE_AXIS_BIAS = 1.2;
+const PAGE_SWIPE_COMMIT_FRACTION = 0.4;
+const PAGE_SWIPE_COMMIT_VELOCITY = 0.5; // px per ms
+const PAGE_SWIPE_RUBBER_BAND = 0.55;
+const PAGE_SWIPE_EDGE_INSET = 16;
+const PAGE_SWIPE_VELOCITY_WINDOW_MS = 100;
+const PAGE_SWIPE_EXIT_MS = 180;
+const PAGE_SWIPE_SETTLE_MS = 300; // --motion-standard
+const PAGE_SWIPE_FADE_OUT_MS = 90; // --motion-fade-out
+const PAGE_SWIPE_FADE_IN_MS = 150; // --motion-fade-in
+
+function pageSwipeLockAxis(dx, dy) {
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  if (!(Math.max(ax, ay) >= PAGE_SWIPE_LOCK_SLOP)) return null;
+  return ax > ay * PAGE_SWIPE_AXIS_BIAS ? "x" : "y";
+}
+
+function pageSwipeDirection(translation) {
+  if (translation > 0) return "previous";
+  if (translation < 0) return "next";
+  return null;
+}
+
+// On-screen offset for a pointer translation: 1:1 toward an available page, damped where there is none.
+function pageSwipeDisplacement(translation, width, canPrevious, canNext) {
+  const direction = pageSwipeDirection(translation);
+  if (!(width > 0) || !direction) return 0;
+  const available = direction === "previous" ? canPrevious : canNext;
+  const distance = Math.abs(translation);
+  const magnitude = available
+    ? Math.min(distance, width)
+    : (1 - 1 / (distance * PAGE_SWIPE_RUBBER_BAND / width + 1)) * width;
+  return translation < 0 ? -magnitude : magnitude;
+}
+
+// The page change a release commits, or null to settle back. A flick against the drag never commits.
+function pageSwipeCommitDirection(translation, velocity, width, canPrevious, canNext) {
+  const direction = pageSwipeDirection(translation);
+  if (!(width > 0) || !direction) return null;
+  if (!(direction === "previous" ? canPrevious : canNext)) return null;
+  const fast = Math.abs(velocity) > PAGE_SWIPE_COMMIT_VELOCITY;
+  const withDrag = fast && (velocity > 0) === (translation > 0);
+  if (fast && !withDrag) return null;
+  return Math.abs(translation) / width >= PAGE_SWIPE_COMMIT_FRACTION || withDrag ? direction : null;
+}
+
+function pageSwipeVelocity(samples, now) {
+  const recent = (samples || []).filter(sample => now - sample.t <= PAGE_SWIPE_VELOCITY_WINDOW_MS);
+  if (recent.length < 2) return 0;
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  const elapsed = last.t - first.t;
+  return elapsed > 0 ? (last.x - first.x) / elapsed : 0;
+}
+
+function historyPageBounds() {
+  const month = workoutHistoryPeriod === "month";
+  const offset = month ? monthOffsets.workouts : workoutWeekOffset;
+  const oldest = month ? -1200 : -5200;
+  return { canPrevious: offset > oldest, canNext: offset < 0 };
+}
+
+function applyHistoryPageStep(direction) {
+  const { canPrevious, canNext } = historyPageBounds();
+  if (direction === "previous" ? !canPrevious : !canNext) return false;
+  const delta = direction === "previous" ? -1 : 1;
+  if (workoutHistoryPeriod === "month") monthOffsets.workouts += delta;
+  else workoutWeekOffset += delta;
+  return true;
+}
+
+let historySwipe = null;
+let historySwipePending = null;
+
+function historySwipeReducedMotion() {
+  try {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  } catch {
+    return false;
+  }
+}
+
+function historySwipeResetCard(card) {
+  if (!card) return;
+  card.classList.remove("swiping");
+  card.style.transition = "";
+  card.style.transform = "";
+  card.style.opacity = "";
+}
+
+function historySwipePose(card, x, width) {
+  const dim = 1 - 0.3 * Math.min(1, Math.abs(x) / Math.max(width, 1));
+  card.style.transition = "none";
+  card.style.transform = `translate3d(${x}px, 0, 0)`;
+  card.style.opacity = String(dim);
+}
+
+function historySwipeSettle(card, reduced) {
+  if (!card?.isConnected) return;
+  card.classList.remove("swiping");
+  card.style.transition = reduced
+    ? `opacity ${PAGE_SWIPE_FADE_IN_MS}ms var(--ease-standard)`
+    : `transform ${PAGE_SWIPE_SETTLE_MS}ms var(--ease-standard), opacity ${PAGE_SWIPE_SETTLE_MS}ms var(--ease-standard)`;
+  card.style.transform = "";
+  card.style.opacity = "";
+  setTimeout(() => {
+    if (card.isConnected && !card.classList.contains("swiping")) card.style.transition = "";
+  }, PAGE_SWIPE_SETTLE_MS + 40);
+}
+
+// Swaps the page and brings the new one in from the opposite side (or fades it in under Reduce Motion).
+// Safe to call twice: only the first call acts, so an interrupting touch can finish it early.
+function finishHistorySwipePending() {
+  const pending = historySwipePending;
+  if (!pending) return;
+  historySwipePending = null;
+  clearTimeout(pending.timer);
+  if (!applyHistoryPageStep(pending.direction)) {
+    historySwipeResetCard(pending.card);
+    return;
+  }
+  render();
+  const card = app.querySelector?.(".training-history");
+  if (!card) return;
+  const width = pending.width;
+  if (pending.reduced) {
+    card.style.transition = "none";
+    card.style.opacity = "0";
+  } else {
+    card.style.transition = "none";
+    card.style.transform = `translate3d(${pending.direction === "previous" ? -width : width}px, 0, 0)`;
+  }
+  void card.offsetWidth;
+  historySwipeSettle(card, pending.reduced);
+}
+
+function beginHistorySwipe(event) {
   if (event.isPrimary === false || event.button > 0) return;
   const target = typeof event.target?.closest === "function" ? event.target : event.target?.parentElement;
-  const card = target?.closest?.(".training-history");
-  if (!card || target?.closest?.("button, a, input, select, textarea, [role='button']")) return;
-  weeklySwipeStart = {
+  let card = target?.closest?.(".training-history");
+  if (!card || target?.closest?.("input, select, textarea")) return;
+  if (event.clientX < PAGE_SWIPE_EDGE_INSET) return;
+  if (historySwipePending) {
+    finishHistorySwipePending();
+    card = app.querySelector?.(".training-history");
+    if (!card) return;
+  }
+  const rect = card.getBoundingClientRect();
+  historySwipe = {
     pointerId: event.pointerId,
-    x: event.clientX,
-    y: event.clientY,
-    card
+    startX: event.clientX,
+    startY: event.clientY,
+    card,
+    width: rect.width,
+    axis: null,
+    samples: [],
+    reduced: historySwipeReducedMotion()
   };
 }
 
-function finishWeeklySummarySwipe(event) {
-  const start = weeklySwipeStart;
-  weeklySwipeStart = null;
-  if (!start || start.pointerId !== event.pointerId || !start.card?.isConnected) return;
-  const deltaX = event.clientX - start.x;
-  const deltaY = event.clientY - start.y;
-  if (Math.abs(deltaX) < 72 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.25) return;
-  if (workoutHistoryPeriod === "month") {
-    if (deltaX > 0) monthOffsets.workouts = Math.max(-1200, monthOffsets.workouts - 1);
-    else if (monthOffsets.workouts < 0) monthOffsets.workouts = Math.min(0, monthOffsets.workouts + 1);
-    else return;
-  } else if (deltaX > 0) workoutWeekOffset = Math.max(-5200, workoutWeekOffset - 1);
-  else if (workoutWeekOffset < 0) workoutWeekOffset = Math.min(0, workoutWeekOffset + 1);
-  else return;
-  render();
+function moveHistorySwipe(event) {
+  const swipe = historySwipe;
+  if (!swipe || swipe.pointerId !== event.pointerId) return;
+  if (!swipe.card.isConnected) {
+    historySwipe = null;
+    return;
+  }
+  const dx = event.clientX - swipe.startX;
+  const dy = event.clientY - swipe.startY;
+  if (!swipe.axis) {
+    const axis = pageSwipeLockAxis(dx, dy);
+    if (!axis) return;
+    swipe.axis = axis;
+    if (axis === "x") {
+      swipe.card.classList.add("swiping");
+      try { swipe.card.setPointerCapture(event.pointerId); } catch { /* capture is best effort */ }
+      try { window.getSelection?.()?.removeAllRanges(); } catch { /* optional */ }
+      swipe.card.style.transition = "none";
+    }
+  }
+  if (swipe.axis !== "x") return;
+  const now = performance.now();
+  swipe.samples.push({ t: now, x: event.clientX });
+  if (swipe.samples.length > 8) swipe.samples.shift();
+  if (swipe.reduced) return;
+  const { canPrevious, canNext } = historyPageBounds();
+  historySwipePose(swipe.card, pageSwipeDisplacement(dx, swipe.width, canPrevious, canNext), swipe.width);
+}
+
+function endHistorySwipe(event, cancelled) {
+  const swipe = historySwipe;
+  if (!swipe || swipe.pointerId !== event.pointerId) return;
+  historySwipe = null;
+  try { swipe.card.releasePointerCapture?.(event.pointerId); } catch { /* already released */ }
+  if (swipe.axis !== "x") return;
+  const card = swipe.card;
+  if (!card.isConnected) return;
+  const dx = event.clientX - swipe.startX;
+  const velocity = pageSwipeVelocity(swipe.samples, performance.now());
+  const { canPrevious, canNext } = historyPageBounds();
+  const direction = cancelled ? null : pageSwipeCommitDirection(dx, velocity, swipe.width, canPrevious, canNext);
+  if (!direction) {
+    historySwipeSettle(card, swipe.reduced);
+    return;
+  }
+  const pending = { direction, card, width: swipe.width, reduced: swipe.reduced, timer: null };
+  historySwipePending = pending;
+  if (swipe.reduced) {
+    card.style.transition = `opacity ${PAGE_SWIPE_FADE_OUT_MS}ms var(--ease-standard)`;
+    card.style.opacity = "0";
+    pending.timer = setTimeout(finishHistorySwipePending, PAGE_SWIPE_FADE_OUT_MS);
+  } else {
+    const exit = direction === "previous" ? swipe.width : -swipe.width;
+    card.style.transition = `transform ${PAGE_SWIPE_EXIT_MS}ms var(--ease-standard), opacity ${PAGE_SWIPE_EXIT_MS}ms var(--ease-standard)`;
+    card.style.transform = `translate3d(${exit}px, 0, 0)`;
+    card.style.opacity = "0.7";
+    pending.timer = setTimeout(finishHistorySwipePending, PAGE_SWIPE_EXIT_MS);
+  }
 }
 
 function inertModalBackground(modalElement) {
@@ -27590,15 +27856,59 @@ function inertModalBackground(modalElement) {
   }
 }
 
+// Sign-in / sign-up submit. The form has no action (CSP form-action is 'none'); the default
+// navigation is always cancelled and the existing handlers read the fields themselves.
+async function handleAuthFormSubmit(event) {
+  const form = event?.target;
+  if (!form?.dataset?.authForm) return false;
+  event.preventDefault();
+  const button = form.querySelector?.('[data-action="remote-login"],[data-action="remote-signup"]');
+  if (!button || button.disabled || authRequestInProgress) return false;
+  return handleAppActionClick(event, button);
+}
+
+// Browser page translators must not rewrite numbers, units, user-entered exercise names or the
+// account email. The guard runs after every render so the render helpers stay free of
+// per-call attributes; the app translates its own UI text itself.
+const NO_TRANSLATE_SELECTORS = Object.freeze([
+  ".metric-grid strong",
+  ".summary-hero-stats strong",
+  ".weekly-summary-metrics strong",
+  ".active-set-summary-text",
+  ".active-set-rest-time",
+  ".active-peer-set strong",
+  ".exercise-name",
+  ".exercise-history-heading h2",
+  ".friend-record-row h3",
+  "#pending-confirmation-email"
+]);
+
+function applyTranslateGuards(root) {
+  if (typeof root?.querySelectorAll !== "function") return 0;
+  let marked = 0;
+  root.querySelectorAll(NO_TRANSLATE_SELECTORS.join(",")).forEach(element => {
+    if (element.getAttribute?.("translate") === "no") return;
+    element.setAttribute("translate", "no");
+    marked += 1;
+  });
+  return marked;
+}
+
 function bindEvents(preservedModalFocus = null) {
+  applyTranslateGuards(app);
   if (!appClickDelegationBound && typeof app.addEventListener === "function") {
     app.addEventListener("click", event => void handleDelegatedAppClick(event));
     appClickDelegationBound = true;
   }
+  if (!appAuthSubmitDelegationBound && typeof app.addEventListener === "function") {
+    app.addEventListener("submit", event => void handleAuthFormSubmit(event));
+    appAuthSubmitDelegationBound = true;
+  }
   if (!appWeeklySwipeDelegationBound && typeof app.addEventListener === "function") {
-    app.addEventListener("pointerdown", beginWeeklySummarySwipe, { passive: true });
-    app.addEventListener("pointerup", finishWeeklySummarySwipe, { passive: true });
-    app.addEventListener("pointercancel", () => { weeklySwipeStart = null; }, { passive: true });
+    app.addEventListener("pointerdown", beginHistorySwipe, { passive: true });
+    app.addEventListener("pointermove", moveHistorySwipe, { passive: true });
+    app.addEventListener("pointerup", event => endHistorySwipe(event, false), { passive: true });
+    app.addEventListener("pointercancel", event => endHistorySwipe(event, true), { passive: true });
     appWeeklySwipeDelegationBound = true;
   }
   if (!activeSetUndoGesturesBound && typeof app.addEventListener === "function") {
@@ -27694,10 +28004,6 @@ function bindEvents(preservedModalFocus = null) {
   const offlineProfileName = app.querySelector("#offline-profile-name");
   if (offlineProfileName) offlineProfileName.addEventListener("keydown", ev => {
     if (ev.key === "Enter") loginAccount(offlineProfileName.value.trim() || "Local", { createOnly: true });
-  });
-  const loginPassword = app.querySelector("#login-password");
-  if (loginPassword) loginPassword.addEventListener("keydown", ev => {
-    if (ev.key === "Enter") remoteLogin(false);
   });
   const forgotEmail = app.querySelector("#forgot-email");
   if (forgotEmail) forgotEmail.addEventListener("keydown", ev => {
@@ -28249,6 +28555,13 @@ async function handleAction(action, el) {
   }
   if (action === "back") return back();
   if (action === "language-menu") { languageMenuOpen = !languageMenuOpen; return render(); }
+  if (action === "toggle-haptics") {
+    const enabled = setHapticsEnabled(!hapticsEnabled());
+    render();
+    app.querySelector('[data-action="toggle-haptics"]')?.focus();
+    if (enabled) haptic("record");
+    return true;
+  }
   if (action === "set-theme") {
     if (!applyThemePreference(el.dataset.theme)) return;
     return render();
@@ -31514,7 +31827,9 @@ async function deleteActiveWorkoutSet(setId, expectedRaw = activeWorkoutStorageR
   if (!Number.isSafeInteger(setId) || setId <= 0) return false;
   const mutationContext = activeWorkoutMutationContext();
   if (!mutationContext) return activeWorkoutMutationUnavailable(null);
+  let deletedPendingSet = null;
   const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
+    deletedPendingSet = null;
     if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
     const loaded = loadActiveWorkoutRecord(mutationContext.account);
     const reconciliationNow = Math.max(Date.now(), loaded.workout?.updatedAt || 0);
@@ -31545,6 +31860,14 @@ async function deleteActiveWorkoutSet(setId, expectedRaw = activeWorkoutStorageR
     const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
     const undoTargetDeleted = location.set.completed && loadedUndo.marker?.setId === setId;
     const timerKey = `${loaded.workout.id}:${location.block.exerciseName}`;
+    if (!location.set.completed) {
+      deletedPendingSet = {
+        workoutId: loaded.workout.id,
+        blockId: location.block.id,
+        set: { ...location.set },
+        index: location.setIndex
+      };
+    }
     const now = Math.max(Date.now(), loaded.workout.updatedAt + 1);
     const next = {
       ...loaded.workout,
@@ -31581,7 +31904,88 @@ async function deleteActiveWorkoutSet(setId, expectedRaw = activeWorkoutStorageR
     return true;
   });
   if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
+  if (result.value === true && deletedPendingSet) offerPendingSetUndo(deletedPendingSet);
   return result.value === true;
+}
+
+// Pure guard + result of putting a just-deleted pending set back (the Undo of a pending-set delete): the same
+// set (id and values) at its old index, clamped to the current count. Returns the new workout, or null when
+// refused: another workout, a recorded set, a duplicate id, a missing exercise, the set limits, invalid
+// values, or a plan frozen by a live room.
+function restoredPendingSetWorkout(workout, snapshot, limits, frozen = false) {
+  if (!workout || !snapshot || frozen || workout.id !== snapshot.workoutId) return null;
+  const set = snapshot.set;
+  if (!set || set.completed || !Number.isSafeInteger(set.id) || set.id <= 0) return null;
+  const blockIndex = workout.blocks.findIndex(block => block.id === snapshot.blockId);
+  if (blockIndex < 0) return null;
+  if (workout.blocks.some(block => block.sets.some(existing => existing.id === set.id))) return null;
+  const block = workout.blocks[blockIndex];
+  const total = workout.blocks.reduce((sum, candidate) => sum + candidate.sets.length, 0);
+  if (block.sets.length >= limits.setsPerExercise ||
+      total >= limits.exercisesPerSession * limits.setsPerExercise) return null;
+  const weight = Number(set.weight);
+  const reps = Number(set.reps);
+  if (!Number.isFinite(weight) || weight < 0 || weight > limits.weightMax ||
+      !Number.isInteger(reps) || reps < 1 || reps > limits.repsMax) return null;
+  const position = Math.min(Math.max(0, Number.isInteger(snapshot.index) ? snapshot.index : 0), block.sets.length);
+  const sets = [...block.sets];
+  sets.splice(position, 0, { ...set });
+  return {
+    ...workout,
+    blocks: workout.blocks.map((candidate, candidateIndex) => candidateIndex === blockIndex ? { ...candidate, sets } : candidate)
+  };
+}
+
+// "Set deleted" + Undo toast for a deleted pending set (6 s, one toast at a time via the toast host).
+function offerPendingSetUndo(snapshot) {
+  showToast(tx3("Set deleted", "Підхід видалено", "Подход удалён"), {
+    action: {
+      label: tx3("Undo", "Скасувати", "Отменить"),
+      onAction: () => { void trackActiveSetMutation(restoreDeletedPendingSet(snapshot)); }
+    }
+  });
+}
+
+async function restoreDeletedPendingSet(snapshot) {
+  const fail = () => {
+    showToast(tx3("Set could not be restored.", "Не вдалося повернути підхід.", "Не удалось вернуть подход."), { kind: "error" });
+    return false;
+  };
+  if (!activeWorkout || activeWorkout.id !== snapshot.workoutId) return fail();
+  const mutationContext = activeWorkoutMutationContext();
+  if (!mutationContext) return activeWorkoutMutationUnavailable(null);
+  const result = await withActiveWorkoutMutationLock(mutationContext.descriptor, () => {
+    if (!activeWorkoutMutationContextIsCurrent(mutationContext)) return false;
+    const loaded = loadActiveWorkoutRecord(mutationContext.account);
+    if (!loaded.workout || loaded.workout.id !== snapshot.workoutId ||
+        loaded.workout.revision >= Number.MAX_SAFE_INTEGER) return false;
+    const frozen = liveWorkoutBinding?.localWorkoutId === loaded.workout.id;
+    const restored = restoredPendingSetWorkout(loaded.workout, snapshot, window.GymStateContract.LIMITS, frozen);
+    if (!restored) return false;
+    const loadedUndo = loadActiveWorkoutUndoRecord(loaded.workout, mutationContext.account);
+    const next = {
+      ...restored,
+      updatedAt: Math.max(Date.now(), loaded.workout.updatedAt + 1),
+      revision: loaded.workout.revision + 1
+    };
+    const stored = persistActiveWorkoutRecord(next, mutationContext.account, loaded.raw);
+    if (!stored || !activeWorkoutMutationContextIsCurrent(mutationContext)) {
+      reloadActiveWorkoutContext(mutationContext.account);
+      render();
+      return false;
+    }
+    activeWorkout = stored.workout;
+    activeWorkoutStorageRaw = stored.raw;
+    reconcileActiveWorkoutInputDraft(stored.workout, mutationContext.account);
+    carryActiveWorkoutUndoMarker(stored.workout, loadedUndo, loadedUndo.marker?.setId ?? null, mutationContext.account);
+    activeWorkoutUi = activeWorkoutStatus();
+    render();
+    return true;
+  });
+  if (!result.acquired) return activeWorkoutMutationUnavailable(mutationContext);
+  if (result.value !== true) return fail();
+  haptic("undo");
+  return true;
 }
 
 function canRemoveActiveExercise(workout, blockId) {
