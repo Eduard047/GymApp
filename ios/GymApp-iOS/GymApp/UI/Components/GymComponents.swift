@@ -482,7 +482,8 @@ enum GymMotion {
     static let quick: Animation = .snappy(duration: 0.2)
     static let gentle: Animation = .smooth(duration: 0.35)
     static let intro: Animation = .easeOut(duration: 0.25)
-    static let fade: Animation = .easeOut(duration: 0.15)
+    static let fadeDuration: TimeInterval = 0.15
+    static let fade: Animation = .easeOut(duration: fadeDuration)
 
     static func animation(reduceMotion: Bool) -> Animation {
         reduceMotion ? fade : standard

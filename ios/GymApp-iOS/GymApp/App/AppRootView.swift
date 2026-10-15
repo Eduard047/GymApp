@@ -612,6 +612,7 @@ private struct MainTabShell: View {
         .tint(GymTheme.primary)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
+        .gymTabTransition()
         .task(id: FriendGhostLoader.Key(
             draftID: activeWorkoutStore.draft?.id,
             accountStorageKey: store.accountStorageKey,
