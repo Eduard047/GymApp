@@ -171,6 +171,7 @@ struct ActiveWorkoutView: View {
     @ScaledMetric(relativeTo: .caption) private var compactCapsuleHeight: CGFloat = 32
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(GymToastCenter.self) private var toasts: GymToastCenter?
     @ObservedObject private var workoutStore: WorkoutStore
     @ObservedObject private var activeWorkoutStore: ActiveWorkoutStore
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
@@ -461,13 +462,13 @@ struct ActiveWorkoutView: View {
             guard !Task.isCancelled, recordedBatchUndo?.id == id else { return }
             recordedBatchUndo = nil
         }
-        .sensoryFeedback(.success, trigger: personalRecordFeedbackTrigger)
-        .sensoryFeedback(.impact(weight: .medium), trigger: recordFeedbackTrigger)
-        .sensoryFeedback(.impact(flexibility: .soft), trigger: undoFeedbackTrigger)
-        .sensoryFeedback(.warning, trigger: deleteFeedbackTrigger)
-        .sensoryFeedback(.selection, trigger: moveExerciseFeedbackTrigger)
-        .sensoryFeedback(.error, trigger: errorFeedbackTrigger)
-        .sensoryFeedback(.warning, trigger: restEndFeedbackTrigger)
+        .gymSensoryFeedback(.success, trigger: personalRecordFeedbackTrigger)
+        .gymSensoryFeedback(.impact(weight: .medium), trigger: recordFeedbackTrigger)
+        .gymSensoryFeedback(.impact(flexibility: .soft), trigger: undoFeedbackTrigger)
+        .gymSensoryFeedback(.warning, trigger: deleteFeedbackTrigger)
+        .gymSensoryFeedback(.selection, trigger: moveExerciseFeedbackTrigger)
+        .gymSensoryFeedback(.error, trigger: errorFeedbackTrigger)
+        .gymSensoryFeedback(.warning, trigger: restEndFeedbackTrigger)
         .task(id: currentDraft?.timing?.restingUntil) {
             await fireRestEndFeedback()
         }
@@ -3715,14 +3716,20 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    /// Deletes one set (pending or recorded). Success is silent: the list simply
-    /// updates (the Live Activity follows the draft publisher).
+    /// Deletes one set (pending or recorded). A recorded set is confirmed first and
+    /// the list simply updates; a pending set deletes at once and offers a toast
+    /// with Undo that puts it back in the same position (the Live Activity follows
+    /// the draft publisher).
     private func deleteSet(_ set: ActiveWorkoutSet, draft: ActiveWorkoutDraft) {
         guard !liveWorkoutCoordinator.planIsFrozenForCurrentDraft else {
             errorFeedbackTrigger &+= 1
             show(LiveWorkoutSidecarError.invalidState)
             return
         }
+        let location = draft.exercises.lazy.compactMap { exercise -> (blockID: UUID, index: Int)? in
+            guard let index = exercise.sets.firstIndex(where: { $0.id == set.id }) else { return nil }
+            return (exercise.id, index)
+        }.first
         do {
             let updated = try activeWorkoutStore.deleteSet(
                 draftID: draft.id,
@@ -3744,6 +3751,51 @@ struct ActiveWorkoutView: View {
             } else {
                 showRestProjectionWarning(restCleanupWarning)
             }
+            if !set.isCompleted, let location {
+                offerPendingSetUndo(set, blockID: location.blockID, index: location.index, draftID: draft.id)
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    /// "Set deleted" + Undo toast for a deleted pending set. Undo restores the
+    /// same set (id and values) at its old position; it is refused quietly when
+    /// the workout moved on (another draft, a frozen plan, a duplicate).
+    private func offerPendingSetUndo(
+        _ set: ActiveWorkoutSet,
+        blockID: UUID,
+        index: Int,
+        draftID: UUID
+    ) {
+        let languageCode = gymCurrentLanguageCode()
+        toasts?.show(
+            gymText("Set deleted", "Підхід видалено", "Подход удалён", languageCode: languageCode),
+            action: GymToast.Action(
+                title: gymText("Undo", "Скасувати", "Отменить", languageCode: languageCode)
+            ) {
+                restoreDeletedPendingSet(set, blockID: blockID, index: index, draftID: draftID)
+            }
+        )
+    }
+
+    private func restoreDeletedPendingSet(
+        _ set: ActiveWorkoutSet,
+        blockID: UUID,
+        index: Int,
+        draftID: UUID
+    ) {
+        guard let draft = currentDraft, draft.id == draftID else { return }
+        do {
+            _ = try activeWorkoutStore.restoreDeletedPendingSet(
+                draftID: draft.id,
+                exerciseBlockID: blockID,
+                set: set,
+                at: index,
+                expectedRevision: draft.revision,
+                isSolo: { !liveWorkoutCoordinator.planIsFrozenForCurrentDraft }
+            )
+            undoFeedbackTrigger &+= 1
         } catch {
             show(error)
         }

@@ -1509,74 +1509,73 @@ public struct WorkoutsView: View {
                     )
                 }
 
-                if historyPeriod == .week {
-                    weeklyTrainingDayStrip(weekly)
-                } else {
-                    monthlyTrainingCalendar(monthly)
-                }
+                VStack(alignment: .leading, spacing: 14) {
+                    if historyPeriod == .week {
+                        weeklyTrainingDayStrip(weekly)
+                    } else {
+                        monthlyTrainingCalendar(monthly)
+                    }
 
-                GymAdaptiveStack(rowAlignment: .top, spacing: 8) {
-                    weeklyTrainingMetric(
-                        value: completedSessionCount.formatted(.number.locale(gymAppLocale())),
-                        label: gymText(
-                            "Workouts", "Тренування", "Тренировки",
-                            languageCode: languageCode
+                    GymAdaptiveStack(rowAlignment: .top, spacing: 8) {
+                        weeklyTrainingMetric(
+                            value: completedSessionCount.formatted(.number.locale(gymAppLocale())),
+                            label: gymText(
+                                "Workouts", "Тренування", "Тренировки",
+                                languageCode: languageCode
+                            )
                         )
-                    )
-                    weeklyTrainingMetric(
-                        value: totalMinutes.formatted(.number.locale(gymAppLocale())),
-                        label: gymText(
-                            "Minutes", "Хвилини", "Минуты",
-                            languageCode: languageCode
+                        weeklyTrainingMetric(
+                            value: totalMinutes.formatted(.number.locale(gymAppLocale())),
+                            label: gymText(
+                                "Minutes", "Хвилини", "Минуты",
+                                languageCode: languageCode
+                            )
                         )
-                    )
-                    weeklyTrainingMetric(
-                        value: formattedTodayHeroVolumeWithUnit(totalVolume),
-                        label: gymText(
-                            "Volume", "Обсяг", "Объём",
-                            languageCode: languageCode
+                        weeklyTrainingMetric(
+                            value: formattedTodayHeroVolumeWithUnit(totalVolume),
+                            label: gymText(
+                                "Volume", "Обсяг", "Объём",
+                                languageCode: languageCode
+                            )
                         )
-                    )
-                }
+                    }
 
-                Divider().overlay(GymTheme.outlineSoft)
-                if workouts.isEmpty {
-                    Text(historyPeriod == .week
-                        ? gymText(
-                            "No workouts in this week yet.",
-                            "Цього тижня тренувань поки немає.",
-                            "На этой неделе тренировок пока нет.",
-                            languageCode: languageCode
-                        )
-                        : gymText(
-                            "No workouts in this month yet.",
-                            "Цього місяця тренувань поки немає.",
-                            "В этом месяце тренировок пока нет.",
-                            languageCode: languageCode
-                        ))
-                    .font(.subheadline)
-                    .foregroundStyle(GymTheme.textSecondary)
-                } else {
-                    ForEach(Array(workouts.enumerated()), id: \.element.id) { index, workout in
-                        if index > 0 { Divider().overlay(GymTheme.outlineSoft) }
-                        trainingHistoryRow(workout)
+                    Divider().overlay(GymTheme.outlineSoft)
+                    if workouts.isEmpty {
+                        Text(historyPeriod == .week
+                            ? gymText(
+                                "No workouts in this week yet.",
+                                "Цього тижня тренувань поки немає.",
+                                "На этой неделе тренировок пока нет.",
+                                languageCode: languageCode
+                            )
+                            : gymText(
+                                "No workouts in this month yet.",
+                                "Цього місяця тренувань поки немає.",
+                                "В этом месяце тренировок пока нет.",
+                                languageCode: languageCode
+                            ))
+                        .font(.subheadline)
+                        .foregroundStyle(GymTheme.textSecondary)
+                    } else {
+                        ForEach(Array(workouts.enumerated()), id: \.element.id) { index, workout in
+                            if index > 0 { Divider().overlay(GymTheme.outlineSoft) }
+                            trainingHistoryRow(workout)
+                        }
+                    }
+                }
+                .gymTrackedPageSwipe(
+                    canGoPrevious: historyPeriod == .week ? weekOffset > -5_200 : monthOffset > -1_200,
+                    canGoNext: selectedHistoryOffset < 0
+                ) { direction in
+                    switch direction {
+                    case .previous: moveHistoryBackward()
+                    case .next: moveHistoryForward()
                     }
                 }
             }
         }
         .id("workout-history")
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 40).onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else {
-                    return
-                }
-                if value.translation.width < 0, selectedHistoryOffset < 0 {
-                    moveHistoryForward()
-                } else if value.translation.width > 0 {
-                    moveHistoryBackward()
-                }
-            }
-        )
     }
 
     private var selectedHistoryOffset: Int {

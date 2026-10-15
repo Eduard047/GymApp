@@ -578,7 +578,7 @@ private struct GymRepeatStepButton<Label: View>: View {
         return Button(action: driver.tap, label: label)
             .buttonStyle(GymPressableStyle(highlight: highlight, onPressChange: { driver.pressChanged($0) }))
             .disabled(isDisabled)
-            .sensoryFeedback(.selection, trigger: hapticTick)
+            .gymSensoryFeedback(.selection, trigger: hapticTick)
     }
 }
 

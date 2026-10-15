@@ -481,6 +481,8 @@ enum GymMotion {
     static let standard: Animation = .snappy(duration: 0.3)
     static let quick: Animation = .snappy(duration: 0.2)
     static let gentle: Animation = .smooth(duration: 0.35)
+    /// spring-momentum: only after a flick or drag release.
+    static let momentum: Animation = .spring(response: 0.35, dampingFraction: 0.8)
     static let intro: Animation = .easeOut(duration: 0.25)
     static let fadeDuration: TimeInterval = 0.15
     static let fade: Animation = .easeOut(duration: fadeDuration)

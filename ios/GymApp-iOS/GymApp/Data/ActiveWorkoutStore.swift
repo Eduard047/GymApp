@@ -688,6 +688,48 @@ final class ActiveWorkoutStore: ObservableObject {
         }
     }
 
+    /// Puts a just-deleted pending set back (the Undo of a pending-set delete): same
+    /// id and values, at its old position in its exercise (clamped to the current
+    /// count). Refused unchanged for a recorded set, a set id already present, a
+    /// missing exercise, the set limits, a stale revision, a finishing workout and a
+    /// plan frozen by a live room. The undo target and any running rest are untouched.
+    @discardableResult
+    func restoreDeletedPendingSet(
+        draftID: UUID,
+        exerciseBlockID: UUID,
+        set: ActiveWorkoutSet,
+        at index: Int,
+        expectedRevision: UInt64,
+        isSolo: () -> Bool,
+        now: Date = Date()
+    ) throws -> ActiveWorkoutDraft {
+        try assertStructuralChangeAllowed(isSolo: isSolo)
+        return try mutate(
+            draftID: draftID,
+            expectedRevision: expectedRevision,
+            now: now
+        ) { candidate in
+            guard !set.isCompleted else { throw ActiveWorkoutStoreError.setAlreadyCompleted }
+            guard let exerciseIndex = candidate.exercises.firstIndex(where: {
+                $0.id == exerciseBlockID
+            }) else {
+                throw ActiveWorkoutStoreError.exerciseUnavailable
+            }
+            guard !candidate.exercises.contains(where: { block in
+                block.sets.contains { $0.id == set.id }
+            }) else {
+                throw ActiveWorkoutStoreError.invalidDraft
+            }
+            guard candidate.exercises[exerciseIndex].sets.count < Self.maximumSetsPerExercise,
+                  candidate.plannedSetCount < Self.maximumTotalSets else {
+                throw ActiveWorkoutStoreError.limitExceeded
+            }
+            try Self.validate(weight: set.weight, reps: set.reps)
+            let position = min(max(0, index), candidate.exercises[exerciseIndex].sets.count)
+            candidate.exercises[exerciseIndex].sets.insert(set, at: position)
+        }
+    }
+
     /// Sets an exercise added mid-workout starts with, and the weight/reps used
     /// when the exercise has no usable history.
     static let addedExerciseSetCount = 3

@@ -602,7 +602,7 @@ struct AddWorkoutView: View {
         .onChange(of: currentEditorDraftState) { _, draft in
             onDraftChange(draft)
         }
-        .sensoryFeedback(.selection, trigger: moveExerciseFeedbackTrigger)
+        .gymSensoryFeedback(.selection, trigger: moveExerciseFeedbackTrigger)
         .onAppear {
             onDraftChange(currentEditorDraftState)
 #if DEBUG

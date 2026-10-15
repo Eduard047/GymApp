@@ -2312,6 +2312,69 @@ final class ActiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(reopened.draft?.undoableSetID, sets[0].id)
     }
 
+    func testRestoreDeletedPendingSetPutsItBackAtItsPositionAndKeepsRest() throws {
+        let context = try makeContext(account: "active-restore-set")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sets = [
+            ActiveWorkoutSet(weight: 60, reps: 8),
+            ActiveWorkoutSet(weight: 62.5, reps: 9),
+            ActiveWorkoutSet(weight: 65, reps: 10)
+        ]
+        let started = try startSets(context, sets: sets, now: now)
+        let recorded = try context.active.recordSet(
+            draftID: started.id, setID: sets[0].id, expectedRevision: started.revision,
+            restSeconds: 60, now: now.addingTimeInterval(10)
+        )
+        let blockID = try XCTUnwrap(recorded.exercises.first).id
+        let deleted = try context.active.deleteSet(
+            draftID: recorded.id, setID: sets[1].id, expectedRevision: recorded.revision,
+            isSolo: { true }, now: now.addingTimeInterval(20)
+        )
+
+        let restored = try context.active.restoreDeletedPendingSet(
+            draftID: deleted.id, exerciseBlockID: blockID, set: sets[1], at: 1,
+            expectedRevision: deleted.revision, isSolo: { true }, now: now.addingTimeInterval(25)
+        )
+        XCTAssertEqual(restored.exercises.first?.sets, sets.enumerated().map { index, set in
+            index == 0 ? recorded.exercises[0].sets[0] : set
+        })
+        XCTAssertEqual(restored.undoableSetID, sets[0].id)
+        XCTAssertEqual(restored.timing?.restingUntil, recorded.timing?.restingUntil)
+
+        // A second restore of the same id, a recorded set and a frozen plan are refused.
+        XCTAssertThrowsError(try context.active.restoreDeletedPendingSet(
+            draftID: restored.id, exerciseBlockID: blockID, set: sets[1], at: 1,
+            expectedRevision: restored.revision, isSolo: { true }
+        ))
+        var recordedCopy = ActiveWorkoutSet(weight: 50, reps: 5)
+        recordedCopy.completedAt = now
+        XCTAssertThrowsError(try context.active.restoreDeletedPendingSet(
+            draftID: restored.id, exerciseBlockID: blockID, set: recordedCopy, at: 0,
+            expectedRevision: restored.revision, isSolo: { true }
+        ))
+        XCTAssertThrowsError(try context.active.restoreDeletedPendingSet(
+            draftID: restored.id, exerciseBlockID: blockID, set: ActiveWorkoutSet(weight: 50, reps: 5), at: 0,
+            expectedRevision: restored.revision, isSolo: { false }
+        ))
+    }
+
+    func testRestoreDeletedPendingSetClampsAnOutOfRangePosition() throws {
+        let context = try makeContext(account: "active-restore-set-clamp")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sets = [ActiveWorkoutSet(weight: 60, reps: 8), ActiveWorkoutSet(weight: 60, reps: 9)]
+        let started = try startSets(context, sets: sets, now: now)
+        let blockID = try XCTUnwrap(started.exercises.first).id
+        let deleted = try context.active.deleteSet(
+            draftID: started.id, setID: sets[1].id, expectedRevision: started.revision, isSolo: { true },
+            now: now.addingTimeInterval(5)
+        )
+        let restored = try context.active.restoreDeletedPendingSet(
+            draftID: deleted.id, exerciseBlockID: blockID, set: sets[1], at: 9,
+            expectedRevision: deleted.revision, isSolo: { true }, now: now.addingTimeInterval(8)
+        )
+        XCTAssertEqual(restored.exercises.first?.sets.map(\.id), sets.map(\.id))
+    }
+
     func testDeleteSetRefusesLastFrozenStaleAndUnknownWithoutMutation() throws {
         let context = try makeContext(account: "active-delete-set-guards")
         let now = Date(timeIntervalSince1970: 1_800_000_000)

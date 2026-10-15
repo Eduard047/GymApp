@@ -518,8 +518,8 @@ private struct GymReorderContainerModifier: ViewModifier {
             .onChange(of: reduceMotion, initial: true) { _, value in
                 coordinator.reduceMotion = value
             }
-            .sensoryFeedback(.impact(flexibility: .rigid), trigger: coordinator.pickupTick)
-            .sensoryFeedback(.selection, trigger: coordinator.slotTick)
+            .gymSensoryFeedback(.impact(flexibility: .rigid), trigger: coordinator.pickupTick)
+            .gymSensoryFeedback(.selection, trigger: coordinator.slotTick)
     }
 }
 

@@ -36,6 +36,7 @@ struct ProfileView: View {
     @ObservedObject private var garminPhoneSync: GarminPhoneSyncService
     @ObservedObject private var liveWorkoutCoordinator: LiveWorkoutCoordinator
     @AppStorage("app-language") private var languageCode = AppLanguage.firstRunDefault.rawValue
+    @AppStorage(GymHaptics.preferenceKey) private var hapticsEnabled = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var focusedProfilePushTarget: NativePushProfileFocus?
@@ -426,6 +427,8 @@ struct ProfileView: View {
                 settingsRowDivider
                 languageRow
                 settingsRowDivider
+                hapticsRow
+                settingsRowDivider
                 trainingSettingsRow
                 settingsRowDivider
                 backupRow
@@ -550,6 +553,26 @@ struct ProfileView: View {
                 .foregroundStyle(GymTheme.textPrimary)
             Spacer(minLength: 6)
             AppLanguageMenu(style: .inline)
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: 48)
+    }
+
+    /// In-app Haptics switch (DESIGN.md "Feedback and haptics"): gates every
+    /// haptic the app plays; stored on this device only.
+    private var hapticsRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "iphone.radiowaves.left.and.right")
+                .font(.title3)
+                .foregroundStyle(GymTheme.primary)
+                .frame(width: settingsRowIconWidth)
+                .accessibilityHidden(true)
+            Toggle(isOn: $hapticsEnabled) {
+                Text(gymText("Haptics", "Тактильний відгук", "Тактильный отклик", languageCode: languageCode))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(GymTheme.textPrimary)
+            }
+            .tint(GymTheme.primary)
         }
         .padding(.vertical, 12)
         .frame(minHeight: 48)

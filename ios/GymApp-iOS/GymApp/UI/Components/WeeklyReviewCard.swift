@@ -38,49 +38,57 @@ struct WeeklyReviewCard: View {
                     Button { offset = min(0, offset + 1) } label: { Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44) }
                         .disabled(offset == 0).accessibilityLabel(t("Next week", "Наступний тиждень", "Следующая неделя"))
                 }
-                if review.partial { Text(t("Week in progress", "Тиждень триває", "Неделя ещё идёт")).font(.caption).foregroundStyle(GymTheme.textSecondary) }
-                Text(t(
-                    "\(review.trainingDays) of \(target) \(targetNoun)",
-                    "\(review.trainingDays) з \(target) \(targetNoun)",
-                    "\(review.trainingDays) из \(target) \(targetNoun)"
-                )).font(.headline)
-                Button {
-                    showsWeeklyTargetEditor = true
-                } label: {
-                    Text(t("Training settings", "Налаштування тренувань", "Настройки тренировок") + " · " + t("edit", "змінити", "изменить"))
-                        .font(.caption)
-                        .foregroundStyle(GymTheme.primary)
-                        .frame(minHeight: 44, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                ForEach(review.insights) { insight in
-                    Button { evidence = insight } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(gymExerciseName(insight.current.exerciseName)).font(.headline)
-                            Text("\(gymWeightText(insight.current.weight)) · \(insight.previous.reps) → \(insight.current.reps) " + gymPlural(
-                                insight.current.reps,
-                                en: ("rep", "reps"),
-                                uk: ("повтор", "повтори", "повторів"),
-                                ru: ("повторение", "повторения", "повторений")
-                            ))
-                        }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                    }.buttonStyle(GymSecondaryButtonStyle())
-                }
-                if review.insights.isEmpty {
-                    Text(review.comparableCount == 0
-                         ? t(
-                             "Comparison with previous weeks appears after a couple of weeks of training.",
-                             "Порівняння з минулими тижнями з'явиться після кількох тижнів тренувань.",
-                             "Сравнение с прошлыми неделями появится после пары недель тренировок."
-                           )
-                         : t("Best reps at matching weights are unchanged.", "Найкращі повтори з тією самою вагою не змінилися.", "Лучшие повторы с тем же весом не изменились."))
-                        .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
-                }
-                DisclosureGroup(t("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")) {
-                    ForEach(review.sessions, id: \.workoutID) { entry in
-                        NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID) } label: {
-                            Text(gymShortDateTime(entry.sessionDate)).frame(minHeight: 44)
+                VStack(alignment: .leading, spacing: 12) {
+                    if review.partial { Text(t("Week in progress", "Тиждень триває", "Неделя ещё идёт")).font(.caption).foregroundStyle(GymTheme.textSecondary) }
+                    Text(t(
+                        "\(review.trainingDays) of \(target) \(targetNoun)",
+                        "\(review.trainingDays) з \(target) \(targetNoun)",
+                        "\(review.trainingDays) из \(target) \(targetNoun)"
+                    )).font(.headline)
+                    Button {
+                        showsWeeklyTargetEditor = true
+                    } label: {
+                        Text(t("Training settings", "Налаштування тренувань", "Настройки тренировок") + " · " + t("edit", "змінити", "изменить"))
+                            .font(.caption)
+                            .foregroundStyle(GymTheme.primary)
+                            .frame(minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    ForEach(review.insights) { insight in
+                        Button { evidence = insight } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(gymExerciseName(insight.current.exerciseName)).font(.headline)
+                                Text("\(gymWeightText(insight.current.weight)) · \(insight.previous.reps) → \(insight.current.reps) " + gymPlural(
+                                    insight.current.reps,
+                                    en: ("rep", "reps"),
+                                    uk: ("повтор", "повтори", "повторів"),
+                                    ru: ("повторение", "повторения", "повторений")
+                                ))
+                            }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        }.buttonStyle(GymSecondaryButtonStyle())
+                    }
+                    if review.insights.isEmpty {
+                        Text(review.comparableCount == 0
+                             ? t(
+                                 "Comparison with previous weeks appears after a couple of weeks of training.",
+                                 "Порівняння з минулими тижнями з'явиться після кількох тижнів тренувань.",
+                                 "Сравнение с прошлыми неделями появится после пары недель тренировок."
+                               )
+                             : t("Best reps at matching weights are unchanged.", "Найкращі повтори з тією самою вагою не змінилися.", "Лучшие повторы с тем же весом не изменились."))
+                            .font(.subheadline).foregroundStyle(GymTheme.textSecondary)
+                    }
+                    DisclosureGroup(t("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")) {
+                        ForEach(review.sessions, id: \.workoutID) { entry in
+                            NavigationLink { WorkoutDetailView(store: store, workoutID: entry.workoutID) } label: {
+                                Text(gymShortDateTime(entry.sessionDate)).frame(minHeight: 44)
+                            }
                         }
+                    }
+                }
+                .gymTrackedPageSwipe(canGoPrevious: offset > -520, canGoNext: offset < 0) { direction in
+                    switch direction {
+                    case .previous: offset = max(-520, offset - 1)
+                    case .next: offset = min(0, offset + 1)
                     }
                 }
             }
