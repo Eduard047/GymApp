@@ -2485,7 +2485,7 @@ test("account transitions clear timers while durable Garmin revocation stays exp
   assert.doesNotMatch(appSource, /bindings\[binding\.userId\] = binding/);
   assert.doesNotMatch(appSource, /navigator\.clipboard\?\.writeText\(device\.device_token\)/);
   assert.match(appSource, /await confirmSheet\(\{[\s\S]*?body: pairingWarning/);
-  assert.match(appSource, /window\.prompt\(tokenPrompt, device\.device_token\)/);
+  assert.match(appSource, /await promptSheet\(\{[\s\S]*?body: tokenPrompt[\s\S]*?displayValue: device\.device_token/);
   assert.match(appSource, /await revokeGarminDeviceById\(session, device\.id\)/);
 });
 
@@ -3119,14 +3119,15 @@ test("Garmin binding is persisted before the one-time token is shown", async () 
   });
   let promptCalls = 0;
   context.confirmSheet = async () => true;
-  context.window.prompt = (_message, shownToken) => {
+  context.promptSheet = async sheet => {
+    const shownToken = sheet.fields[0].displayValue;
     promptCalls += 1;
     assert.equal(shownToken, token);
     const bindings = JSON.parse(context.localStorage.getItem("gym-pwa-garmin-device-bindings-v2"));
     assert.equal(bindings[ACTIVE_USER_ID].deviceId, deviceId);
     assert.equal(bindings[ACTIVE_USER_ID].recoveryPending, true);
     assert.equal(Object.hasOwn(bindings[ACTIVE_USER_ID], "deviceToken"), false);
-    return "saved";
+    return {};
   };
 
   const result = await vm.runInContext("ensureGarminDeviceBinding(loadRemoteSession())", context);
@@ -3172,9 +3173,9 @@ test("Garmin storage failure revokes the unseen token before any prompt", async 
   };
   let promptCalls = 0;
   context.confirmSheet = async () => true;
-  context.window.prompt = () => {
+  context.promptSheet = async () => {
     promptCalls += 1;
-    return "saved";
+    return {};
   };
 
   await assert.rejects(
@@ -3209,7 +3210,7 @@ test("cancelled Garmin token prompt stays recoverable when revocation fails", as
     throw new Error("revocation offline");
   });
   context.confirmSheet = async () => true;
-  context.window.prompt = () => null;
+  context.promptSheet = async () => null;
 
   await assert.rejects(
     vm.runInContext("ensureGarminDeviceBinding(loadRemoteSession())", context),
@@ -3264,14 +3265,15 @@ test("lost browser binding recovers an existing watch by rotating its token with
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   context.confirmSheet = async () => true;
-  context.window.prompt = (_message, shownToken) => {
+  context.promptSheet = async sheet => {
+    const shownToken = sheet.fields[0].displayValue;
     assert.equal(shownToken, replacementCapability);
     const binding = JSON.parse(context.localStorage.getItem("gym-pwa-garmin-device-bindings-v2"));
     assert.equal(binding[ACTIVE_USER_ID].deviceId, deviceId, "stable UUID must be durable before token rotation is revealed");
     assert.equal(binding[ACTIVE_USER_ID].recoveryPending, true);
     assert.equal(JSON.stringify(binding).includes(replacementCapability), false);
     assert.equal(JSON.stringify(binding).includes(replacementNonce), false);
-    return "saved";
+    return {};
   };
 
   const result = await vm.runInContext("ensureGarminDeviceBinding(loadRemoteSession())", context);
@@ -3309,9 +3311,9 @@ test("Garmin v3 create rejects a capability bound to another account", async () 
     });
   });
   context.confirmSheet = async () => true;
-  context.window.prompt = () => {
+  context.promptSheet = async () => {
     promptCalls += 1;
-    return "saved";
+    return {};
   };
 
   await assert.rejects(
@@ -3418,12 +3420,13 @@ test("lost Garmin rotation response remains retryable for the same UUID", async 
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   context.confirmSheet = async () => true;
-  context.window.prompt = (_message, shownToken) => {
+  context.promptSheet = async sheet => {
+    const shownToken = sheet.fields[0].displayValue;
     assert.equal(
       shownToken,
       garminTestCapability(deviceId, rotationBodies[2].replacementNonce),
     );
-    return "saved";
+    return {};
   };
 
   await assert.rejects(
@@ -3488,13 +3491,14 @@ test("outcome-unknown Garmin rotation accepts exact already_rotated replay", asy
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   context.confirmSheet = async () => true;
-  context.window.prompt = (_message, shownToken) => {
+  context.promptSheet = async sheet => {
+    const shownToken = sheet.fields[0].displayValue;
     promptCalls += 1;
     assert.equal(
       shownToken,
       garminTestCapability(deviceId, rotationBodies[0].replacementNonce),
     );
-    return "saved";
+    return {};
   };
 
   const result = await vm.runInContext("ensureGarminDeviceBinding(loadRemoteSession())", context);
@@ -3543,9 +3547,9 @@ test("stale account transition never reveals a rotated Garmin token", async () =
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   context.confirmSheet = async () => true;
-  context.window.prompt = () => {
+  context.promptSheet = async () => {
     promptCalls += 1;
-    return "saved";
+    return {};
   };
 
   await assert.rejects(
@@ -3576,9 +3580,9 @@ test("stale account after device listing cannot prompt, create, or rotate", asyn
     promptCalls += 1;
     return true;
   };
-  context.window.prompt = () => {
+  context.promptSheet = async () => {
     promptCalls += 1;
-    return "saved";
+    return {};
   };
 
   await assert.rejects(
@@ -3622,9 +3626,9 @@ test("Garmin token revision conflict refreshes metadata and fails closed", async
     }), { status: 409, headers: { "Content-Type": "application/json" } });
   });
   context.confirmSheet = async () => true;
-  context.window.prompt = () => {
+  context.promptSheet = async () => {
     promptCalls += 1;
-    return "saved";
+    return {};
   };
 
   await assert.rejects(
@@ -3691,7 +3695,7 @@ test("concurrent Garmin sync clicks run one list-create-queue path", async () =>
     })
   };
   context.confirmSheet = async () => true;
-  context.window.prompt = () => "saved";
+  context.promptSheet = async () => ({});
   vm.runInContext("workoutDraft = { blocks: [{ exerciseName: 'Squat', sets: [{ reps: 5, weight: 100 }] }] };", context);
 
   const first = vm.runInContext("queueGarminPlanFromDraft()", context);
@@ -3758,7 +3762,7 @@ test("a shared Web Lock allows only one cross-tab Garmin create and enqueue path
       draftToGarminPlan: () => validGarminPlan()
     };
     context.confirmSheet = async () => true;
-    context.window.prompt = () => "saved";
+    context.promptSheet = async () => ({});
     vm.runInContext("workoutDraft = { blocks: [{ exerciseName: 'Squat', sets: [{ reps: 5, weight: 100 }] }] };", context);
   }
 
@@ -4634,8 +4638,7 @@ test("mandatory password update and cloud deletion validate Supabase responses b
   assert.deepEqual(JSON.parse(requests[0].options.body), { password: "StrongPass123!" });
 
   context.confirmSheet = async () => true;
-  const deletionPrompts = ["DELETE", "CurrentPassword123!"];
-  context.window.prompt = () => deletionPrompts.shift();
+  context.promptSheet = async () => ({ confirmation: "DELETE", password: "CurrentPassword123!" });
   await vm.runInContext("deleteCloudAccount()", context);
   const reauthenticationRequest = requests.find(request => request.url.endsWith("/auth/v1/token?grant_type=password"));
   assert.deepEqual(JSON.parse(reauthenticationRequest.options.body), {
@@ -4682,8 +4685,7 @@ test("an expanded deletion response is outcome-unknown and clears local private 
     saveState({ queueRemote: false });
   `, context);
   context.confirmSheet = async () => true;
-  const deletionPrompts = ["DELETE", "CurrentPassword123!"];
-  context.window.prompt = () => deletionPrompts.shift();
+  context.promptSheet = async () => ({ confirmation: "DELETE", password: "CurrentPassword123!" });
 
   await vm.runInContext("deleteCloudAccount()", context);
 
@@ -4725,8 +4727,7 @@ test("deterministic cloud deletion rejection disarms the journal and preserves t
   `, context);
   const sessionBefore = context.sessionStorage.getItem("gym-pwa-supabase-session-v1");
   context.confirmSheet = async () => true;
-  const deletionPrompts = ["DELETE", "CurrentPassword123!"];
-  context.window.prompt = () => deletionPrompts.shift();
+  context.promptSheet = async () => ({ confirmation: "DELETE", password: "CurrentPassword123!" });
 
   await vm.runInContext("deleteCloudAccount()", context);
 

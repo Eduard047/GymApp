@@ -560,7 +560,7 @@ test("PWA legacy response correlates server cleanup to raw request across delete
     tx3: (english) => english,
     userVisibleError: (english) => new Error(english),
     confirmSheet: async () => true,
-    window: { prompt: () => "confirmed" },
+    promptSheet: async () => ({}),
     requestGarminDeviceCreation: async (_session, creation) => {
       const requests = context.loadGarminCreateRequests();
       requests[record.userId] = {

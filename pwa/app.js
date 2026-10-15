@@ -1302,6 +1302,7 @@ let modal = null;
 let modalActionGeneration = 0;
 let appClickDelegationBound = false;
 let appAuthSubmitDelegationBound = false;
+let appSheetSubmitDelegationBound = false;
 let appWeeklySwipeDelegationBound = false;
 const initialWorkoutDraftRecord = reconcileWorkoutDraftAtStartup(activeWorkout, activeAccount);
 let workoutDraft = initialWorkoutDraftRecord?.draft || null;
@@ -1444,7 +1445,8 @@ function clearSensitiveAuthDrafts() {
     "#change-current-password",
     "#change-password-nonce",
     "#change-new-password",
-    "#change-repeat-password"
+    "#change-repeat-password",
+    "#confirm-sheet-field-password"
   ]) {
     const input = document.querySelector(selector);
     if (input) input.value = "";
@@ -9570,16 +9572,24 @@ async function chooseGarminDeviceForRecovery(devices) {
     });
     return approved ? devices[0] : null;
   }
-  if (typeof window.prompt !== "function") return null;
-  const options = devices.map((device, index) =>
-    `${index + 1}. ${device.displayName.replace(/[\u0000-\u001f\u007f]+/g, " ")} (${device.id.slice(0, 8)})`
-  ).join("\n");
-  const selected = window.prompt(tx(
-    `Choose the existing Garmin watch to restore (1-${devices.length}). Rotating its token preserves the watch identity:\n${options}`,
-    `Обери наявний годинник Garmin для відновлення (1-${devices.length}). Ротація токена збереже ідентифікатор годинника:\n${options}`
-  ), "1");
-  if (selected === null || !/^[1-5]$/.test(selected.trim())) return null;
-  return devices[Number(selected.trim()) - 1] || null;
+  const choices = devices.slice(0, 5).map((device, index) => ({
+    value: String(index),
+    label: `${index + 1}. ${String(device.displayName).replace(/[\u0000-\u001f\u007f]+/g, " ")} (${device.id.slice(0, 8)})`
+  }));
+  const selected = await promptSheet({
+    title: tx3("Choose Garmin watch", "Обери годинник Garmin", "Выбери часы Garmin"),
+    body: tx3(
+      "Choose the existing Garmin watch to restore. Rotating its token preserves the watch identity.",
+      "Обери наявний годинник Garmin для відновлення. Ротація токена збереже ідентифікатор годинника.",
+      "Выбери существующие часы Garmin для восстановления. Ротация токена сохранит идентификатор часов."
+    ),
+    confirmLabel: tx3("Restore pairing", "Відновити сполучення", "Восстановить сопряжение"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: false,
+    fields: [{ name: "device", kind: "choice", label: tx3("Garmin watch", "Годинник Garmin", "Часы Garmin"), options: choices }]
+  });
+  if (!selected || !/^[0-4]$/.test(selected.device)) return null;
+  return devices[Number(selected.device)] || null;
 }
 
 async function recoverGarminDeviceBinding(session, device) {
@@ -9608,9 +9618,14 @@ async function recoverGarminDeviceBinding(session, device) {
     "Paste this replacement token into the same watch's Connect IQ settings now. The old token has stopped working. This token will not be stored or shown again.",
     "Встав цей новий токен у налаштування Connect IQ того самого годинника. Старий токен уже не працює. Новий токен не зберігатиметься й більше не показуватиметься."
   );
-  const acknowledged = typeof window.prompt === "function"
-    ? window.prompt(tokenPrompt, rawToken)
-    : null;
+  const acknowledged = await promptSheet({
+    title: tx3("Replacement Garmin token", "Новий токен Garmin", "Новый токен Garmin"),
+    body: tokenPrompt,
+    confirmLabel: tx3("Done", "Готово", "Готово"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: false,
+    fields: [{ name: "token", kind: "display", label: tx3("Replacement token", "Новий токен", "Новый токен"), displayValue: rawToken }]
+  });
   rawToken = null;
   if (acknowledged === null) {
     throw userVisibleError(
@@ -9863,9 +9878,14 @@ async function ensureGarminDeviceBinding(session) {
     "Copy this Garmin pairing token into Connect IQ settings now. Treat it as a password. Temporary retry material has been removed and the token will not be shown again. Choose Cancel to revoke it.",
     "Зараз скопіюй цей токен сполучення Garmin у налаштування Connect IQ. Стався до нього як до пароля. Тимчасові дані повтору вже видалені, і токен більше не буде показано. Натисни «Скасувати», щоб відкликати його."
   );
-  const acknowledged = typeof window.prompt === "function"
-    ? window.prompt(tokenPrompt, device.device_token)
-    : null;
+  const acknowledged = await promptSheet({
+    title: tx3("Garmin pairing token", "Токен сполучення Garmin", "Токен сопряжения Garmin"),
+    body: tokenPrompt,
+    confirmLabel: tx3("Done", "Готово", "Готово"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: false,
+    fields: [{ name: "token", kind: "display", label: tx3("Pairing token", "Токен сполучення", "Токен сопряжения"), displayValue: device.device_token }]
+  });
   if (acknowledged === null) {
     try {
       await revokeGarminDeviceById(session, device.id);
@@ -19355,15 +19375,52 @@ async function deleteCloudAccount() {
   if (!approved || accountTransitionInProgress || authRequestInProgress || approvedEpoch !== accountEpoch ||
       approvedAccount?.remote !== "supabase" || approvedAccount.userId !== account.userId ||
       loadRemoteSession()?.user?.id !== account.userId) return;
-  const typed = typeof window.prompt === "function"
-    ? window.prompt(tx("Type DELETE to permanently delete the cloud account.", "Введи DELETE, щоб назавжди видалити хмарний акаунт."), "")
-    : null;
-  if (typed !== "DELETE") return showToast(tx("Account deletion cancelled.", "Видалення акаунта скасовано."));
-  const currentPassword = typeof window.prompt === "function"
-    ? window.prompt(tx("Enter your current password.", "Введи поточний пароль."), "")
-    : null;
+  // The typed DELETE and the current password are collected by one masked field sheet. The password exists only in the
+  // resolved object and in `currentPassword`; both are emptied as soon as the re-authentication request is issued.
+  const entry = await promptSheet({
+    title: tx3("Delete cloud account?", "Видалити хмарний акаунт?", "Удалить облачный аккаунт?"),
+    body: tx("Type DELETE to permanently delete the cloud account.", "Введи DELETE, щоб назавжди видалити хмарний акаунт."),
+    confirmLabel: tx3("Delete account", "Видалити акаунт", "Удалить аккаунт"),
+    cancelLabel: tx3("Cancel", "Скасувати", "Отмена"),
+    destructive: true,
+    fields: [
+      {
+        name: "confirmation",
+        kind: "text",
+        label: tx3("Type DELETE to confirm", "Введи DELETE, щоб підтвердити", "Введи DELETE, чтобы подтвердить"),
+        exact: "DELETE",
+        exactMessage: tx3("Type DELETE exactly to confirm.", "Введи DELETE точно так, щоб підтвердити.", "Введи DELETE точно так, чтобы подтвердить."),
+        maxLength: 32
+      },
+      {
+        name: "password",
+        kind: "password",
+        label: tx("Current password", "Поточний пароль"),
+        required: true,
+        requiredMessage: tx("Enter your current password.", "Введи поточний пароль."),
+        maxBytes: 1_024,
+        maxBytesMessage: tx("Current password is too long.", "Поточний пароль задовгий.")
+      }
+    ]
+  });
+  const typed = entry?.confirmation;
+  let currentPassword = typeof entry?.password === "string" ? entry.password : "";
+  if (entry) entry.password = "";
+  // The sheet can outlive the profile it was opened for: continue only for the same signed-in cloud account.
+  const deletionAccount = normalizeStoredAccount(activeAccount);
+  if (accountTransitionInProgress || authRequestInProgress || approvedEpoch !== accountEpoch ||
+      deletionAccount?.remote !== "supabase" || deletionAccount.userId !== account.userId ||
+      loadRemoteSession()?.user?.id !== account.userId) {
+    currentPassword = "";
+    return;
+  }
+  if (typed !== "DELETE") {
+    currentPassword = "";
+    return showToast(tx("Account deletion cancelled.", "Видалення акаунта скасовано."));
+  }
   if (!currentPassword) return showToast(tx("Account deletion cancelled.", "Видалення акаунта скасовано."));
   if (new TextEncoder().encode(currentPassword).byteLength > 1_024) {
+    currentPassword = "";
     return showToast(tx("Current password is too long.", "Поточний пароль задовгий."));
   }
 
@@ -19373,12 +19430,14 @@ async function deleteCloudAccount() {
   remoteSaveTimer = null;
   let journalRecord = null;
   try {
-    const reauthenticated = await supabaseRequest("/auth/v1/token?grant_type=password", {
+    const reauthentication = supabaseRequest("/auth/v1/token?grant_type=password", {
       method: "POST",
       anonymous: true,
       maxResponseBytes: MAX_REMOTE_AUTH_RESPONSE_BYTES,
       body: JSON.stringify({ email: session.user.email, password: currentPassword })
     });
+    currentPassword = "";
+    const reauthenticated = await reauthentication;
     if (!validRemoteSession(reauthenticated) ||
         reauthenticated.user.id !== account.userId ||
         normalizeAuthEmail(reauthenticated.user.email) !== normalizeAuthEmail(session.user.email)) {
@@ -27225,7 +27284,15 @@ function confirmSheetSettle(result) {
   const pending = confirmSheetPending;
   if (!pending) return;
   confirmSheetPending = null;
-  pending.resolve(result === true);
+  // A token shown for copying must not stay reachable from the modal state once its sheet settles.
+  if (modal?.type === "confirm-sheet" && modal.confirmId === pending.id && Array.isArray(modal.fields)) {
+    for (const field of modal.fields) {
+      if (field.kind === "display") field.displayValue = "";
+    }
+  }
+  // A field sheet resolves with the collected values, or null on every teardown that is not a valid submit.
+  if (pending.form === true) pending.resolve(result && typeof result === "object" ? result : null);
+  else pending.resolve(result === true);
 }
 
 function confirmSheetReconcile() {
@@ -27236,13 +27303,66 @@ function confirmSheetReconcile() {
   confirmSheetSettle(false);
 }
 
+// Focus target handed from a confirm sheet that was just accepted to the next sheet opened by the same flow.
+let confirmSheetFocusCarry = null;
+
 function confirmSheet({ title = "", body = "", confirmLabel = "", cancelLabel = "", destructive = false } = {}) {
+  return openConfirmSheet({ title, body, confirmLabel, cancelLabel, destructive }, null);
+}
+
+// promptSheet() is confirmSheet() with input fields: it resolves { [field name]: value } only from a valid submit and null on
+// EVERY other teardown. Field kinds: "text", "password" (masked, current-password), "display" (read-only text shown for the user
+// to copy; never returned) and "choice" (a select that returns the chosen option value). Values live only in the inputs and in
+// the resolved object; the modal state keeps descriptors, never what the user typed.
+function promptSheet({ title = "", body = "", confirmLabel = "", cancelLabel = "", destructive = false, fields = [] } = {}) {
+  return openConfirmSheet({ title, body, confirmLabel, cancelLabel, destructive }, normalizeSheetFields(fields));
+}
+
+const SHEET_FIELD_KINDS = new Set(["text", "password", "display", "choice"]);
+const SHEET_FIELD_NAME_PATTERN = /^[a-z][A-Za-z0-9]{0,23}$/;
+const SHEET_MAX_FIELDS = 3;
+const SHEET_MAX_CHOICES = 5;
+
+function normalizeSheetFields(fields) {
+  const normalized = [];
+  const seen = new Set();
+  for (const field of Array.isArray(fields) ? fields.slice(0, 12) : []) {
+    if (normalized.length >= SHEET_MAX_FIELDS) break;
+    const name = String(field?.name ?? "");
+    const kind = String(field?.kind ?? "text");
+    if (!SHEET_FIELD_NAME_PATTERN.test(name) || seen.has(name) || !SHEET_FIELD_KINDS.has(kind)) continue;
+    seen.add(name);
+    const entry = { name, kind, label: String(field.label ?? "") };
+    if (kind === "text" || kind === "password") {
+      entry.maxLength = Number.isSafeInteger(field.maxLength) ? Math.min(Math.max(field.maxLength, 1), 1_024) : 1_024;
+      if (typeof field.exact === "string") entry.exact = field.exact.slice(0, 64);
+      if (typeof field.exactMessage === "string") entry.exactMessage = field.exactMessage;
+      if (field.required === true) entry.required = true;
+      if (typeof field.requiredMessage === "string") entry.requiredMessage = field.requiredMessage;
+      if (Number.isSafeInteger(field.maxBytes) && field.maxBytes > 0) entry.maxBytes = field.maxBytes;
+      if (typeof field.maxBytesMessage === "string") entry.maxBytesMessage = field.maxBytesMessage;
+    } else if (kind === "display") {
+      entry.displayValue = String(field.displayValue ?? "");
+    } else {
+      entry.options = (Array.isArray(field.options) ? field.options.slice(0, SHEET_MAX_CHOICES) : [])
+        .map(option => ({ value: String(option?.value ?? ""), label: String(option?.label ?? "") }))
+        .filter(option => option.value !== "");
+      if (!entry.options.length) continue;
+    }
+    normalized.push(entry);
+  }
+  return normalized;
+}
+
+function openConfirmSheet({ title, body, confirmLabel, cancelLabel, destructive }, fields) {
   // Only one confirm sheet at a time: a second call resolves the first with false.
   confirmSheetSettle(false);
   return new Promise(resolve => {
     const id = ++confirmSheetSequence;
     const previous = modal;
     const returnModal = previous?.type === "confirm-sheet" ? previous.returnModal || null : previous || null;
+    const carried = confirmSheetFocusCarry;
+    confirmSheetFocusCarry = null;
     modal = {
       type: "confirm-sheet",
       confirmId: id,
@@ -27253,7 +27373,9 @@ function confirmSheet({ title = "", body = "", confirmLabel = "", cancelLabel = 
       destructive: destructive === true,
       returnModal
     };
-    confirmSheetPending = { id, resolve, accountKey: sheetAccountKey() };
+    if (fields) modal.fields = fields;
+    if (carried && !previous && normalizedStableActionReturnFocus(carried)) modal.returnFocus = carried;
+    confirmSheetPending = { id, resolve, accountKey: sheetAccountKey(), form: Boolean(fields), submitted: false };
     render();
   });
 }
@@ -27267,17 +27389,66 @@ function confirmAccountIsCurrent(snapshot) {
   return Boolean(activeAccount) && snapshot?.epoch === accountEpoch && snapshot.key === sheetAccountKey();
 }
 
+function confirmSheetCarryFocus(returnFocus) {
+  const focus = normalizedStableActionReturnFocus(returnFocus);
+  if (!focus) return;
+  confirmSheetFocusCarry = focus;
+  // Only the next sheet opened in the same turn inherits it.
+  setTimeout(() => { if (confirmSheetFocusCarry === focus) confirmSheetFocusCarry = null; }, 0);
+}
+
 function acceptConfirmSheet() {
   const pending = confirmSheetPending;
-  if (!pending || !confirmSheetIsOpen(pending)) return false;
+  if (!pending || pending.form === true || !confirmSheetIsOpen(pending)) return false;
   const returnModal = modal.returnModal || null;
+  confirmSheetCarryFocus(modal.returnFocus);
   confirmSheetSettle(true);
   modal = returnModal;
   render();
   return true;
 }
 
+function confirmSheetFieldMarkup(field, index) {
+  const name = escapeAttr(field.name);
+  const id = `confirm-sheet-field-${name}`;
+  const label = escapeHtml(field.label);
+  const focus = index === 0 ? " data-modal-initial-focus" : "";
+  const describedBy = ' aria-describedby="confirm-sheet-error"';
+  if (field.kind === "password") {
+    return passwordFieldMarkup({
+      id,
+      label,
+      showLabel: tx3("Show password", "Показати поле «пароль»", "Показать поле «пароль»"),
+      hideLabel: tx3("Hide password", "Сховати поле «пароль»", "Скрыть поле «пароль»"),
+      input: `<input id="${id}" type="password" data-sheet-field="${name}" data-sheet-secret autocomplete="current-password" maxlength="${Number(field.maxLength) || 1024}" autocapitalize="none" autocorrect="off" spellcheck="false"${focus}${describedBy}>`
+    });
+  }
+  if (field.kind === "display") {
+    return `<label for="${id}">${label}</label><input id="${id}" readonly data-sheet-display="${name}" data-sheet-secret autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"${focus}>`;
+  }
+  if (field.kind === "choice") {
+    const options = field.options.map((option, optionIndex) => `<option value="${escapeAttr(option.value)}"${optionIndex === 0 ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
+    return `<label for="${id}">${label}</label><select id="${id}" data-sheet-field="${name}"${focus}>${options}</select>`;
+  }
+  return `<label for="${id}">${label}</label><input id="${id}" data-sheet-field="${name}" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="${Number(field.maxLength) || 1024}"${focus}${describedBy}>`;
+}
+
+function confirmSheetFormMarkup(sheet) {
+  const destructive = sheet.destructive === true;
+  const title = sheet.title || tx3("Please confirm", "Підтвердь дію", "Подтверди действие");
+  const cancel = sheet.cancelLabel || tx3("Cancel", "Скасувати", "Отмена");
+  const confirm = sheet.confirmLabel || (destructive ? tx3("Delete", "Видалити", "Удалить") : tx3("Continue", "Продовжити", "Продолжить"));
+  const fields = sheet.fields.map(confirmSheetFieldMarkup).join("");
+  const hasValidatedField = sheet.fields.some(field => field.kind === "text" || field.kind === "password" || field.kind === "choice");
+  const error = hasValidatedField ? `<p class="confirm-sheet-error" id="confirm-sheet-error" role="alert" hidden></p>` : "";
+  const cancelButton = `<button type="button" class="button ghost full" data-action="cancel-destructive">${escapeHtml(cancel)}</button>`;
+  const confirmButton = `<button type="submit" class="button ${destructive ? "danger " : ""}full" data-sheet-submit>${escapeHtml(confirm)}</button>`;
+  // No action attribute: the form never navigates (CSP form-action is 'none'); the submit handler reads the fields.
+  return bottomSheet(`<h2 id="confirm-sheet-title">${escapeHtml(title)}</h2>${sheet.body ? `<p class="muted confirm-sheet-body" id="confirm-sheet-description">${escapeHtml(sheet.body)}</p>` : ""}<form class="confirm-sheet-form" data-sheet-form="true" novalidate><div class="field-stack confirm-sheet-fields">${fields}</div>${error}<div class="actions vertical">${cancelButton}${confirmButton}</div></form>`, "confirm-sheet-title", "alertdialog", sheet.body ? "confirm-sheet-description" : "");
+}
+
 function confirmSheetMarkup(sheet) {
+  if (Array.isArray(sheet.fields) && sheet.fields.length) return confirmSheetFormMarkup(sheet);
   const destructive = sheet.destructive === true;
   const title = sheet.title || tx3("Please confirm", "Підтвердь дію", "Подтверди действие");
   const cancel = sheet.cancelLabel || tx3("Cancel", "Скасувати", "Отмена");
@@ -27285,6 +27456,92 @@ function confirmSheetMarkup(sheet) {
   const cancelButton = `<button class="button ghost full" data-action="cancel-destructive"${destructive ? " data-modal-initial-focus" : ""}>${escapeHtml(cancel)}</button>`;
   const confirmButton = `<button class="button ${destructive ? "danger " : ""}full" data-action="confirm-sheet-accept"${destructive ? "" : " data-modal-initial-focus"}>${escapeHtml(confirm)}</button>`;
   return bottomSheet(`<h2 id="confirm-sheet-title">${escapeHtml(title)}</h2>${sheet.body ? `<p class="muted confirm-sheet-body" id="confirm-sheet-description">${escapeHtml(sheet.body)}</p>` : ""}<div class="actions vertical">${cancelButton}${confirmButton}</div>`, "confirm-sheet-title", "alertdialog", sheet.body ? "confirm-sheet-description" : "");
+}
+
+function confirmSheetShowError(form, field, message) {
+  const error = form.querySelector?.("#confirm-sheet-error") || document.getElementById?.("confirm-sheet-error");
+  if (error) {
+    error.textContent = message;
+    error.hidden = false;
+  }
+  const input = form.querySelector?.(`[data-sheet-field="${field.name}"]`);
+  if (input) {
+    input.setAttribute?.("aria-invalid", "true");
+    input.focus?.({ preventScroll: true });
+  }
+}
+
+// Validates and reads the field sheet. Returns { values } or { field, message }. Messages never contain what was typed.
+function confirmSheetReadFields(form, fields) {
+  const values = {};
+  for (const field of fields) {
+    if (field.kind === "display") continue;
+    const input = form.querySelector?.(`[data-sheet-field="${field.name}"]`);
+    const value = typeof input?.value === "string" ? input.value : "";
+    if (field.kind === "choice") {
+      if (!field.options.some(option => option.value === value)) {
+        return { field, message: tx3("Choose an option.", "Вибери варіант.", "Выбери вариант.") };
+      }
+    } else if (typeof field.exact === "string") {
+      if (value !== field.exact) return { field, message: field.exactMessage || tx3("Check this field.", "Перевір це поле.", "Проверь это поле.") };
+    } else if (field.required === true && value === "") {
+      return { field, message: field.requiredMessage || tx3("Fill in this field.", "Заповни це поле.", "Заполни это поле.") };
+    }
+    if (field.maxBytes && new TextEncoder().encode(value).byteLength > field.maxBytes) {
+      return { field, message: field.maxBytesMessage || tx3("This value is too long.", "Це значення задовге.", "Это значение слишком длинное.") };
+    }
+    values[field.name] = value;
+  }
+  return { values };
+}
+
+function submitPromptSheet(form) {
+  const pending = confirmSheetPending;
+  // One submit per sheet: once accepted the pending promise is settled and the sheet is gone.
+  if (!pending || pending.form !== true || pending.submitted === true || !confirmSheetIsOpen(pending) ||
+      !Array.isArray(modal.fields)) return false;
+  const staleError = form.querySelector?.("#confirm-sheet-error");
+  if (staleError) {
+    staleError.textContent = "";
+    staleError.hidden = true;
+  }
+  form.querySelectorAll?.("[aria-invalid]").forEach(input => input.removeAttribute("aria-invalid"));
+  const read = confirmSheetReadFields(form, modal.fields);
+  if (!read.values) {
+    confirmSheetShowError(form, read.field, read.message);
+    return false;
+  }
+  pending.submitted = true;
+  form.querySelector?.("[data-sheet-submit]")?.setAttribute?.("disabled", "");
+  const returnFocus = modal.returnFocus;
+  const returnModal = modal.returnModal || null;
+  // The values now live only in `read.values`; empty every input before the sheet is torn down.
+  form.querySelectorAll?.("input").forEach(input => { input.value = ""; });
+  confirmSheetSettle(read.values);
+  modal = returnModal;
+  render();
+  if (!modal) restoreModalActionFocus(returnFocus, null);
+  return true;
+}
+
+// Field-sheet submit (button or Enter). The form has no action; the default navigation is always cancelled.
+function handleSheetFormSubmit(event) {
+  const form = event?.target;
+  if (!form?.dataset?.sheetForm) return false;
+  event.preventDefault();
+  return submitPromptSheet(form);
+}
+
+// Fills the read-only display inputs after render so a shown token never sits in the markup string.
+function confirmSheetFillDisplayFields(modalElement) {
+  if (modal?.type !== "confirm-sheet" || !Array.isArray(modal.fields)) return;
+  for (const field of modal.fields) {
+    if (field.kind !== "display") continue;
+    const input = modalElement.querySelector?.(`[data-sheet-display="${field.name}"]`);
+    if (!input) continue;
+    input.value = field.displayValue || "";
+    input.addEventListener?.("focus", () => input.select?.());
+  }
 }
 
 // Single dismissal entry point for gestures, Esc and the scrim: identical to the sheet's Close/Cancel (never confirms anything).
@@ -27904,6 +28161,10 @@ function bindEvents(preservedModalFocus = null) {
     app.addEventListener("submit", event => void handleAuthFormSubmit(event));
     appAuthSubmitDelegationBound = true;
   }
+  if (!appSheetSubmitDelegationBound && typeof app.addEventListener === "function") {
+    app.addEventListener("submit", event => void handleSheetFormSubmit(event));
+    appSheetSubmitDelegationBound = true;
+  }
   if (!appWeeklySwipeDelegationBound && typeof app.addEventListener === "function") {
     app.addEventListener("pointerdown", beginHistorySwipe, { passive: true });
     app.addEventListener("pointermove", moveHistorySwipe, { passive: true });
@@ -27966,6 +28227,7 @@ function bindEvents(preservedModalFocus = null) {
     inertModalBackground(modalElement);
     sheetBindGestures();
     sheetBindPresented(modalElement);
+    confirmSheetFillDisplayFields(modalElement);
     modalElement.addEventListener("click", event => {
       if (event.target === modalElement || event.target?.classList?.contains("sheet-scrim")) dismissSheet();
     });
