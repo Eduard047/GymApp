@@ -225,8 +225,10 @@ test("accepting live starts one room and all clients render exactly two particip
   assert.match(androidActive, /LiveParticipantTab\.Self/);
   assert.match(androidActive, /LiveParticipantTab\.Peer/);
   assert.match(androidActive, /LivePeerExerciseCard/);
-  assert.match(iosActive, /Text\(selfName\)\.tag\(LiveParticipantSelection\.current\)/);
-  assert.match(iosActive, /Text\(peerName\)\.tag\(LiveParticipantSelection\.peer\)/);
+  assert.match(
+    iosActive,
+    /GymSegmentedControl\([\s\S]*?selection: \$liveParticipantSelection,\s*options: \[\s*\(\.current, selfName\),\s*\(\.peer, peerName\)\s*\]\s*\)/
+  );
   assert.match(iosActive, /livePeerExercisePanel/);
   const webTabs = jsFunction("activeLiveParticipantTabsMarkup");
   assert.equal((webTabs.match(/role="tab"/g) || []).length, 2);
