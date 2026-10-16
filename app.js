@@ -10873,29 +10873,18 @@ function fmtCompactDuration(seconds) {
   return parts.join(" ");
 }
 
-// Compact range like "Sep 21 – 27" / "21–27 вер." / "21—27 сент." (same month) or
-// "Sep 28 – Oct 4" (across months). The year appears only when the end date's year
-// differs from the current year. Intl already matches the iOS interval formatter for
-// English and Ukrainian; Russian needs an em dash and no repeated "г." on the first date.
-function fmtDateRange(start, end, now = Date.now()) {
+// The one week range, used on Today and in the Weekly review: "Oct 12 – Oct 18" /
+// "12 жовт. – 18 жовт." / "12 окт. – 18 окт." (day and short month on both ends, en dash).
+// The year is added to both ends only when either end falls outside the current year.
+function fmtWeekRange(start, end, now = Date.now()) {
   const from = new Date(start);
   const to = new Date(end);
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) return "";
-  const options = to.getFullYear() === new Date(now).getFullYear()
+  const currentYear = new Date(now).getFullYear();
+  const options = from.getFullYear() === currentYear && to.getFullYear() === currentYear
     ? { day: "numeric", month: "short" }
     : { day: "numeric", month: "short", year: "numeric" };
-  const locale = displayLocale();
-  const key = renderDateFormatters ? JSON.stringify(["range", locale, options]) : null;
-  let formatter = renderDateFormatters?.get(key);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat(locale, options);
-    if (renderDateFormatters && renderDateFormatters.size < 16) renderDateFormatters.set(key, formatter);
-  }
-  const text = formatter.formatRange(from, to);
-  if (state.language !== "ru") return text;
-  return text
-    .replace(/ г\.(?=\s*–)/u, "")
-    .replace(/–/gu, "—");
+  return `${fmtDate(from, options)} \u2013 ${fmtDate(to, options)}`;
 }
 
 function localDateInputValue(timestamp = Date.now()) {
@@ -11220,7 +11209,7 @@ function trainingHistoryMarkup() {
   const firstDay = summary.days[0]?.timestamp;
   const lastDay = summary.days.at(-1)?.timestamp;
   const range = weekMode && Number.isSafeInteger(firstDay) && Number.isSafeInteger(lastDay)
-    ? `${fmtDate(firstDay, { day: "numeric", month: "short" })} – ${fmtDate(lastDay, { day: "numeric", month: "short" })}`
+    ? fmtWeekRange(firstDay, lastDay)
     : fmtDate(monthDate("workouts").getTime(), { month: "long", year: "numeric" });
   const periodState = offset === 0
     ? (weekMode ? tx3("This week", "Цього тижня", "На этой неделе") : tx3("Current month", "Поточний місяць", "Текущий месяц"))
@@ -26025,7 +26014,7 @@ function weeklyReviewTitle(completed, target) {
 function trainingWeeklyReviewMarkup() {
   const review = trainingWeeklyReview(state.sessions, trainingReviewOffset);
   const insights = review.insights.map(item => `<details class="training-week-insight"><summary>${escapeHtml(exerciseDisplayName(item.current))}<br><strong>${escapeHtml(formatSetWeight(item.current.weight))} ${tx3("kg", "кг", "кг")} · ${item.previous.reps} → ${item.current.reps} ${tx3("reps", "повторів", "повторений")}</strong></summary><div class="actions">${[item.previous, item.current].map(row => `<button class="button secondary" data-action="open-detail" data-id="${row.session.id}">${escapeHtml(fmtLongDate(row.session.startedAt))} · ${row.reps}</button>`).join("")}</div></details>`).join("");
-  return `<section class="panel training-week-review"><h2>${tx3("Weekly review", "Підсумок тижня", "Итог недели")}</h2><div class="training-week-navigation"><button class="icon-button" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset - 1}" aria-label="${escapeAttr(tx3("Previous week", "Попередній тиждень", "Предыдущая неделя"))}" ${trainingReviewOffset <= -520 ? "disabled" : ""}>${svg("back")}</button><p>${escapeHtml(fmtDateRange(review.start, review.end))}</p><button class="icon-button rotate-180" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset + 1}" aria-label="${escapeAttr(tx3("Next week", "Наступний тиждень", "Следующая неделя"))}" ${trainingReviewOffset === 0 ? "disabled" : ""}>${svg("back")}</button></div>${review.partial ? `<small class="training-week-status">${tx3("Week in progress", "Тиждень триває", "Неделя ещё идёт")}</small>` : ""}<h3>${escapeHtml(weeklyReviewTitle(review.trainingDays, profileWeeklyTarget()))}</h3><button type="button" class="training-settings-link" data-action="open-training-settings" data-section="workouts-per-week">${tx3("Training settings", "Налаштування тренувань", "Настройки тренировок")} · ${tx3("edit", "змінити", "изменить")}</button>${insights || `<p>${review.comparableCount ? tx3("Best reps at matching weights are unchanged.", "Найкращі повтори з тією самою вагою не змінилися.", "Лучшие повторы с тем же весом не изменились.") : tx3("Comparison with previous weeks appears after a couple of weeks of training.", "Порівняння з минулими тижнями з'явиться після кількох тижнів тренувань.", "Сравнение с прошлыми неделями появится после пары недель тренировок.")}</p>`}<details class="training-week-sessions"><summary><span>${tx3("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")}</span>${svg("chevronRight", "training-week-sessions-chevron")}</summary>${review.sessions.map(row => `<button class="button ghost full" data-action="open-detail" data-id="${row.id}">${escapeHtml(fmtLongDate(row.startedAt))}</button>`).join("")}</details></section>`;
+  return `<section class="panel training-week-review"><h2>${tx3("Weekly review", "Підсумок тижня", "Итог недели")}</h2><div class="training-week-navigation"><button class="icon-button" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset - 1}" aria-label="${escapeAttr(tx3("Previous week", "Попередній тиждень", "Предыдущая неделя"))}" ${trainingReviewOffset <= -520 ? "disabled" : ""}>${svg("back")}</button><p>${escapeHtml(fmtWeekRange(review.start, review.end))}</p><button class="icon-button rotate-180" type="button" data-action="training-review-week" data-offset="${trainingReviewOffset + 1}" aria-label="${escapeAttr(tx3("Next week", "Наступний тиждень", "Следующая неделя"))}" ${trainingReviewOffset === 0 ? "disabled" : ""}>${svg("back")}</button></div>${review.partial ? `<small class="training-week-status">${tx3("Week in progress", "Тиждень триває", "Неделя ещё идёт")}</small>` : ""}<h3>${escapeHtml(weeklyReviewTitle(review.trainingDays, profileWeeklyTarget()))}</h3><button type="button" class="training-settings-link" data-action="open-training-settings" data-section="workouts-per-week">${tx3("Training settings", "Налаштування тренувань", "Настройки тренировок")} · ${tx3("edit", "змінити", "изменить")}</button>${insights || `<p>${review.comparableCount ? tx3("Best reps at matching weights are unchanged.", "Найкращі повтори з тією самою вагою не змінилися.", "Лучшие повторы с тем же весом не изменились.") : tx3("Comparison with previous weeks appears after a couple of weeks of training.", "Порівняння з минулими тижнями з'явиться після кількох тижнів тренувань.", "Сравнение с прошлыми неделями появится после пары недель тренировок.")}</p>`}<details class="training-week-sessions"><summary><span>${tx3("Workouts this week", "Тренування цього тижня", "Тренировки этой недели")}</span>${svg("chevronRight", "training-week-sessions-chevron")}</summary>${review.sessions.map(row => `<button class="button ghost full" data-action="open-detail" data-id="${row.id}">${escapeHtml(fmtLongDate(row.startedAt))}</button>`).join("")}</details></section>`;
 }
 
 function progressScreen() {

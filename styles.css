@@ -885,25 +885,27 @@ a:focus-visible,
   padding: 8px 6px;
   border: 1px solid transparent;
   border-radius: 14px;
-  color: var(--muted);
+  color: var(--text);
   background: transparent;
   font: inherit;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.125rem;
   cursor: pointer;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .theme-option:hover {
+  .theme-option:not(.selected):hover {
     color: var(--text);
     background: color-mix(in srgb, var(--sage) 8%, transparent);
   }
 }
 
 .theme-option.selected {
-  border-color: color-mix(in srgb, var(--sage) 22%, var(--outline-variant));
-  color: var(--text);
-  background: var(--surface-strong);
+  color: var(--on-accent);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
 
 .filter-scroll {
@@ -2282,10 +2284,14 @@ svg.filled-icon.small-icon {
 }
 
 .auth-mode-switch button.selected {
-  color: var(--text);
-  background: var(--surface);
-  border-color: color-mix(in srgb, var(--outline-variant) 72%, transparent);
+  color: var(--on-accent);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
+
+.auth-mode-switch button.selected strong { font-weight: 600; }
 
 .password-field {
   display: grid;
@@ -3053,9 +3059,9 @@ button.leaderboard-row {
   padding: 8px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--muted);
+  color: var(--text);
   background: transparent;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -3067,9 +3073,11 @@ button.leaderboard-row {
 }
 
 .progress-hub-switch button.selected {
-  border-color: color-mix(in srgb, var(--sage) 22%, var(--outline-variant));
-  color: var(--sage);
-  background: var(--surface);
+  color: var(--on-accent);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
 .profile-urgent-stack {
   display: grid;
@@ -3438,15 +3446,22 @@ button.leaderboard-row {
 
 .segmented .selected,
 .period-tabs .selected {
-  color: var(--sage);
-  background: color-mix(in srgb, var(--sage) 12%, transparent);
-  border-color: color-mix(in srgb, var(--sage) 24%, transparent);
+  color: var(--on-accent);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
+
+.segmented button.selected span,
+.period-tabs button.selected span { color: inherit; }
 
 .chip.selected {
   color: var(--on-accent);
   background: var(--brand-fill);
   border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
 
 .metric-grid {
@@ -3482,9 +3497,11 @@ button.leaderboard-row {
 }
 
 .workouts-controls .segmented .selected {
-  color: var(--text);
-  background: var(--surface);
-  border-color: color-mix(in srgb, var(--outline-variant) 72%, transparent);
+  color: var(--on-accent);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
 
 .workouts-scroll {
@@ -4892,9 +4909,11 @@ textarea:focus {
 }
 
 .active-live-tabs button.selected {
-  border-color: color-mix(in srgb, var(--sage) 24%, var(--outline-variant));
-  color: var(--text);
-  background: var(--surface-strong);
+  color: var(--on-accent);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
 
 .active-live-tabs button:focus-visible {
@@ -5840,9 +5859,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 
 .smart-effort-chips .chip.selected {
-  border-color: color-mix(in srgb, var(--brand-fill) 58%, transparent);
   color: var(--on-accent);
   background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  box-shadow: none;
+  font-weight: 600;
 }
 
 .smart-plan-status {
@@ -8620,7 +8641,7 @@ button.workout-template-row:focus-visible {
   min-width: 0;
 }
 
-/* Muscle group mapping: flat tonal selected chip (tint fill and border, no glow) with a check so selection is not colour only. */
+/* Muscle group mapping: the shared selected chip (accent fill, on-accent text) plus a check so selection is not colour only. */
 .mapping-grid .mapping-chip {
   justify-content: center;
 }
@@ -8631,9 +8652,9 @@ button.workout-template-row:focus-visible {
 }
 
 .mapping-grid .mapping-chip.selected {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
-  border-color: var(--primary);
+  color: var(--on-accent);
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
   box-shadow: none;
   font-weight: 600;
 }
@@ -8814,3 +8835,60 @@ button.workout-template-row:focus-visible {
 .panel.compact.workout-feedback h2 { margin: 0 0 12px; }
 .panel.compact.workout-feedback .segmented.workout-feedback-options { gap: 6px; padding: 0; }
 .panel.compact.workout-feedback .segmented.workout-feedback-options button { padding-inline: 4px; }
+
+/* One selected treatment for every segmented control and chip group (DESIGN.md Chips and segments):
+   selected = accent fill + on-accent semibold text, unselected = surface-strong (--surface-2) + primary text. */
+.segmented.panel.compact,
+.progress-hub-switch,
+.auth-mode-switch,
+.theme-options { background: var(--surface-2); }
+
+.period-tabs button:not(.selected),
+.training-history-period button:not(.selected),
+.exercise-muscle-chips .chip:not(.selected),
+.muscle-map-selector .chip:not(.selected),
+.smart-effort-chips .chip:not(.selected),
+.mapping-grid .mapping-chip:not(.selected),
+.training-profile-panel > .chip-row .chip:not(.selected) {
+  color: var(--text);
+  border-color: transparent;
+  background: var(--surface-2);
+}
+
+.training-history-period button.selected {
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.muscle-map-selector .chip.selected small { color: var(--on-accent); }
+
+/* Progress is always the accent mark; a finished mission shows a success-coloured check and nothing else green. */
+.progress span,
+.bar-fill { background: var(--hero-accent); }
+.mission-row .progress span,
+.mission-row.highlighted .progress span { background: var(--hero-accent); }
+.mission-row.highlighted .mission-card-icon,
+.mission-completed-pill .small-icon { color: var(--mint); }
+.mission-completed-pill {
+  color: var(--text);
+  border-color: var(--outline-variant);
+  background: var(--surface-2);
+}
+
+/* Weekly review rhythm: 12 between rows, 16 before the workouts disclosure, 44px targets without extra visual gaps. */
+.training-week-review > p { margin: 0; }
+.training-week-review > .training-settings-link { margin-block: -14px; }
+.training-week-sessions { margin-top: 4px; border-top: 1px solid var(--outline-variant); }
+
+/* Desktop content width (DESIGN.md Layout): lists, forms and settings 640, dashboards 960, centred, one left edge per tab. */
+@media (min-width: 900px) {
+  .root-route-shell .screen-exercises,
+  .root-route-shell .screen-leaderboard { width: min(calc(100% - 144px), 640px); }
+
+  .root-route-shell .screen-workouts,
+  .root-route-shell .screen-progress { width: min(calc(100% - 144px), 960px); }
+
+  .screen-leaderboard > * { max-width: none; }
+
+  .root-route-shell .screen-exercises .exercise-list { grid-template-columns: minmax(0, 1fr); }
+}
