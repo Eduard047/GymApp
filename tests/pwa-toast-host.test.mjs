@@ -277,7 +277,7 @@ test("the CSP-safe toast code never writes style attributes or inline style mark
 test("both banners carry a kind marker, and their removal goes through the exit placeholder", () => {
   assert.match(appSource, /data-banner-kind="set" data-active-set-confirmation=/);
   assert.match(appSource, /data-banner-kind="batch" data-active-batch-undo=/);
-  assert.match(appSource, /bannerExitBegin\(\{ node, kind: "set" \}\)/);
+  assert.match(appSource, /bannerExitBegin\(\{ node, kind: "set", onEnd: /);
   assert.match(appSource, /bannerExitBegin\(\{ node, kind: "batch" \}\)/);
 });
 
