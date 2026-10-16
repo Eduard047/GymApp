@@ -9,6 +9,7 @@ FORM: User-selected Focus Lens from Fluid Focus; seed af1a1dee. Android structur
 */
 
 import com.example.gymapp.util.TrainingProfile
+import com.example.gymapp.ui.components.FitMetricValue
 import com.example.gymapp.ui.components.TrainingSettingsSummaryRow
 import com.example.gymapp.ui.components.TrainingSettingsSheet
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -1464,13 +1465,7 @@ private fun WeeklyTrainingMetric(
             .clearAndSetSemantics { contentDescription = "$label, $value" },
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        FitMetricValue(text = value)
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -1547,14 +1542,7 @@ private fun TodayHeroMetric(
             .clearAndSetSemantics { contentDescription = "$label, $accessibilityValue" },
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = HeroTone.title,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        FitMetricValue(text = value, color = HeroTone.title)
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,

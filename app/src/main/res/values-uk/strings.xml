@@ -838,6 +838,8 @@
         <item quantity="many">%1$d вправ</item>
         <item quantity="other">%1$d вправи</item>
     </plurals>
+    <string name="progress_empty_title">Прогрес починається з першого збереженого підходу</string>
+    <string name="progress_empty_text">Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.</string>
     <string name="progress_empty_month_title">Немає прогресу за цей місяць</string>
     <string name="progress_empty_month_text">Додай підходи для вибраної вправи, щоб відкрити тренди.</string>
     <string name="progress_spotlight_subtitle">%1$s у вибраному місяці.</string>
@@ -1468,7 +1470,7 @@
     <string name="progress_section_exercises">Вправи</string>
     <string name="progress_section_goals">Цілі</string>
     <string name="profile_help_title">Допомога</string>
-    <string name="profile_help_replay_tour">Повтори короткий огляд GymApp.</string>
+    <string name="profile_help_replay_tour">Повтори короткий огляд GymApp</string>
     <string name="profile_friends_live_title">Друзі та live</string>
     <string name="profile_friends_live_requires_cloud">Потрібен хмарний акаунт</string>
     <string name="profile_support_action">Підтримка</string>

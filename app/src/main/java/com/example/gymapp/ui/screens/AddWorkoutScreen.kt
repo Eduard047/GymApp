@@ -61,6 +61,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import com.example.gymapp.ui.components.GymModalBottomSheet
@@ -148,7 +149,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 import androidx.compose.material3.LocalContentColor
-import com.example.gymapp.ui.theme.primaryFilledIconButtonColors
 
 /** Lazy items (coach panel, exercises header) that precede the exercise cards in the plan editor. */
 private const val PLAN_EDITOR_LEADING_ITEM_COUNT = 2
@@ -348,9 +348,12 @@ fun AddWorkoutScreen(
                     Icon(imageVector = Icons.Default.Mic, contentDescription = null)
                 }
                 if (uiState.exerciseDrafts.isNotEmpty()) {
-                    FilledIconButton(
+                    // Outlined, so the bottom "Start workout" stays the only filled primary on this screen.
+                    OutlinedIconButton(
                         onClick = openAddExercisePicker,
-                        colors = primaryFilledIconButtonColors(),
+                        colors = IconButtonDefaults.outlinedIconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
                         modifier = Modifier.minimumInteractiveComponentSize().size(44.dp)
                     ) {
                         Icon(
@@ -414,7 +417,7 @@ fun AddWorkoutScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Button(
+                    OutlinedButton(
                         onClick = openAddExercisePicker,
                         modifier = Modifier.fillMaxWidth()
                     ) {

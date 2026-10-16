@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /** Icon column shared by every [SettingsRow], so titles line up whichever glyph a row uses. */
@@ -67,8 +66,8 @@ fun SettingsRowDivider(modifier: Modifier = Modifier) {
 }
 
 /**
- * Compact settings row: brand-tinted icon column, one-line semibold title, optional secondary
- * subtitle that wraps to two lines. The whole row is the tap target when [onClick] is set.
+ * Compact settings row: brand-tinted icon column, semibold title, optional secondary subtitle.
+ * Title and subtitle wrap at spaces at large font sizes instead of being cut off. The whole row is the tap target when [onClick] is set.
  */
 @Composable
 fun SettingsRow(
@@ -120,17 +119,13 @@ fun SettingsRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = titleColor.copy(alpha = titleColor.alpha * dimmed),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                color = titleColor.copy(alpha = titleColor.alpha * dimmed)
             )
             if (subtitle != null) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = dimmed),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = dimmed)
                 )
             }
         }

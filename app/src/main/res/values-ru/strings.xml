@@ -455,7 +455,7 @@
     <string name="training_profile_decrease_days">Уменьшить количество тренировок в неделю</string>
     <string name="training_profile_increase_days">Увеличить количество тренировок в неделю</string>
     <string name="training_split_upper_lower">Верх/низ</string>
-    <string name="training_split_full_body">Все тело</string>
+    <string name="training_split_full_body">Всё тело</string>
     <string name="training_split_push_pull_legs">Жим/тяга/ноги</string>
     <string name="training_split_custom">Своя</string>
     <string name="training_goal_aesthetic_fat_loss">Эстетика/сушка</string>
@@ -717,7 +717,7 @@
     <string name="kpi_streak">Серия</string>
     <string name="kpi_streak_value">%1$d дн</string>
     <string name="kpi_streak_weekly_value">%1$d нед</string>
-    <string name="kpi_total_volume">Общий объем</string>
+    <string name="kpi_total_volume">Общий объём</string>
     <string name="kpi_volume_value">%1$.0f кг</string>
     <string name="kpi_avg_intensity">Среднее / подход</string>
     <string name="kpi_avg_intensity_value">%1$.1f</string>
@@ -838,6 +838,8 @@
         <item quantity="many">%1$d упражнений</item>
         <item quantity="other">%1$d упражнения</item>
     </plurals>
+    <string name="progress_empty_title">Прогресс начинается с первого сохранённого подхода</string>
+    <string name="progress_empty_text">Заверши тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.</string>
     <string name="progress_empty_month_title">В этом месяце прогресса пока нет</string>
     <string name="progress_empty_month_text">Запиши подходы выбранного упражнения, чтобы открыть тренды.</string>
     <string name="progress_spotlight_subtitle">%1$s в выбранном месяце.</string>
@@ -1041,7 +1043,7 @@
     <string name="progress_stat_best_weight">Лучший вес</string>
     <string name="progress_stat_avg_weight">Средний максимум</string>
     <string name="progress_stat_total_reps">Всего повторений</string>
-    <string name="progress_stat_total_volume">Общий объем</string>
+    <string name="progress_stat_total_volume">Общий объём</string>
     <string name="progress_spotlight_all_time_best">Лучший результат</string>
     <string name="progress_spotlight_consistency">Регулярность</string>
     <string name="progress_peak_weight">Пиковый вес</string>
@@ -1057,7 +1059,7 @@
 
     <string name="exercise_history_sessions">Сессии</string>
     <string name="exercise_history_max_weight">Максимальный вес</string>
-    <string name="exercise_history_volume">Общий объем</string>
+    <string name="exercise_history_volume">Общий объём</string>
     <string name="exercise_history_empty">Для этого упражнения ещё нет истории.</string>
     <string name="exercise_history_empty_supporting">Запиши это упражнение в тренировке, и оно появится здесь.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>
@@ -1468,7 +1470,7 @@
     <string name="progress_section_exercises">Упражнения</string>
     <string name="progress_section_goals">Цели</string>
     <string name="profile_help_title">Помощь</string>
-    <string name="profile_help_replay_tour">Повтори короткий обзор GymApp.</string>
+    <string name="profile_help_replay_tour">Повтори короткий обзор GymApp</string>
     <string name="profile_friends_live_title">Друзья и live</string>
     <string name="profile_friends_live_requires_cloud">Нужен облачный аккаунт</string>
     <string name="profile_support_action">Поддержка</string>

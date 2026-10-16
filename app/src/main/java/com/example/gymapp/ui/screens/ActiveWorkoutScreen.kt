@@ -1078,14 +1078,16 @@ private fun ActiveWorkoutHero(uiState: ActiveWorkoutUiState) {
                         text = stringResource(R.string.active_workout_now, currentExerciseName),
                         style = MaterialTheme.typography.labelMedium,
                         color = softColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        // Wraps at spaces at large font sizes; the name is never cut mid-word.
+                        maxLines = 4
                     )
                 }
             }
+            // The ring grows with the font size so the "done/total" count keeps fitting inside it.
+            val ringSize = 68.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
             Box(
                 modifier = Modifier
-                    .size(68.dp)
+                    .size(ringSize)
                     .testTag(ACTIVE_WORKOUT_COMPLETED_METRIC_TAG),
                 contentAlignment = Alignment.Center
             ) {

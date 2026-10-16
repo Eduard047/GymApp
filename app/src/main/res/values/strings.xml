@@ -808,6 +808,8 @@
         <item quantity="one">%1$d exercise</item>
         <item quantity="other">%1$d exercises</item>
     </plurals>
+    <string name="progress_empty_title">Progress starts with your first saved set</string>
+    <string name="progress_empty_text">Finish a workout to unlock your calendar, muscle map, and exercise trends.</string>
     <string name="progress_empty_month_title">No progress this month</string>
     <string name="progress_empty_month_text">Log sets for the selected exercise to unlock trends.</string>
     <string name="progress_spotlight_subtitle">%1$s in the selected month.</string>
@@ -1428,7 +1430,7 @@
     <string name="progress_section_exercises">Exercises</string>
     <string name="progress_section_goals">Goals</string>
     <string name="profile_help_title">Help</string>
-    <string name="profile_help_replay_tour">Replay the quick GymApp tour.</string>
+    <string name="profile_help_replay_tour">Replay the quick GymApp tour</string>
     <string name="profile_friends_live_title">Friends &amp; live</string>
     <string name="profile_friends_live_requires_cloud">Requires a cloud account</string>
     <string name="profile_support_action">Support</string>

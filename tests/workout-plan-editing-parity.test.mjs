@@ -916,7 +916,7 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   assert.doesNotMatch(androidEmpty, /R\.string\.action_generate_smart_workout/);
   assert.match(
     androidEditor,
-    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,1500}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{\s*FilledIconButton\(\s*onClick = openAddExercisePicker/
+    /title = stringResource\(R\.string\.title_exercises\)[\s\S]{0,1500}if \(uiState\.exerciseDrafts\.isNotEmpty\(\)\) \{(?:\s*\/\/[^\n]*)*\s*OutlinedIconButton\(\s*onClick = openAddExercisePicker/
   );
   // Add buttons open the exercise picker; a card is appended (and revealed) only once an exercise is chosen.
   assert.match(
@@ -930,7 +930,7 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   // DESIGN.md "Workout plan editor": Clear lives in the "⋯" menu after mic and "+".
   assert.match(
     androidEditor,
-    /FilledIconButton\(\s*onClick = openAddExercisePicker[\s\S]{0,1600}Icons\.Default\.MoreHoriz[\s\S]{0,600}DropdownMenu\([\s\S]{0,1500}showClearConfirmation = true/
+    /OutlinedIconButton\(\s*onClick = openAddExercisePicker[\s\S]{0,1600}Icons\.Default\.MoreHoriz[\s\S]{0,600}DropdownMenu\([\s\S]{0,1500}showClearConfirmation = true/
   );
   assert.match(
     androidEditor,

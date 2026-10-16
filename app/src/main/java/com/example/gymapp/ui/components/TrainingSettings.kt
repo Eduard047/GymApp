@@ -150,7 +150,7 @@ fun TrainingSettingsSheet(
                                 .heightIn(min = 48.dp)
                                 .background(
                                     color = if (selected) {
-                                        MaterialTheme.colorScheme.primary
+                                        brandFillColor()
                                     } else {
                                         MaterialTheme.colorScheme.surfaceVariant
                                     },
@@ -168,7 +168,7 @@ fun TrainingSettingsSheet(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = if (selected) {
-                                    MaterialTheme.colorScheme.onPrimary
+                                    Color.White
                                 } else {
                                     MaterialTheme.colorScheme.onSurface
                                 }

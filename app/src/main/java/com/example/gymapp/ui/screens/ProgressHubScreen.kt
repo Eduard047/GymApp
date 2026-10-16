@@ -84,6 +84,7 @@ internal fun ProgressHubScreen(
     programProfile: com.example.gymapp.util.TrainingProfile = com.example.gymapp.util.TrainingProfile(),
     onPrepareProgramWorkout: () -> Unit = {},
     onRetryOverviewLoad: () -> Unit = {},
+    onStartWorkout: () -> Unit = {},
     initialSection: ProgressHubSection = ProgressHubSection.Overview,
     modifier: Modifier = Modifier
 ) {
@@ -155,6 +156,18 @@ internal fun ProgressHubScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
                 ) {
+                    if (overviewState.todayHeroMetrics.totalWorkouts == 0 && weeklyHistory.isEmpty()) {
+                        // Nothing is saved yet: one message and one action instead of a wall of zeros.
+                        item {
+                            EmptyStatePanel(
+                                title = stringResource(R.string.progress_empty_title),
+                                supporting = stringResource(R.string.progress_empty_text),
+                                actionLabel = stringResource(R.string.action_start_workout),
+                                onAction = onStartWorkout
+                            )
+                        }
+                        return@LazyColumn
+                    }
                     item {
                         com.example.gymapp.ui.components.WeeklyReviewCard(
                             history = weeklyHistory,

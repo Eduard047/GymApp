@@ -53,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -2621,19 +2622,30 @@ internal fun GymAppRoot(
                                                         }
                                                     },
                                                     label = {
-                                                        Text(
-                                                            text = stringResource(tab.labelRes),
-                                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                                fontSize = 12.sp,
-                                                                lineHeight = 14.sp,
-                                                                letterSpacing = 0.2.sp
-                                                            ),
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            textAlign = TextAlign.Center,
-                                                            maxLines = 2,
-                                                            softWrap = true,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
+                                                        // Four tabs share the bar width, so the label keeps one line and
+                                                        // its text scale is capped: it never breaks mid-word at large
+                                                        // font sizes (the icon and the selected state carry the tab).
+                                                        val barDensity = LocalDensity.current
+                                                        CompositionLocalProvider(
+                                                            LocalDensity provides Density(
+                                                                density = barDensity.density,
+                                                                fontScale = minOf(barDensity.fontScale, 1.15f)
+                                                            )
+                                                        ) {
+                                                            Text(
+                                                                text = stringResource(tab.labelRes),
+                                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                                    fontSize = 12.sp,
+                                                                    lineHeight = 14.sp,
+                                                                    letterSpacing = 0.2.sp
+                                                                ),
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                textAlign = TextAlign.Center,
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
                                                     }
                                                 )
                                             }
@@ -3922,6 +3934,11 @@ internal fun GymAppRoot(
                                     navController.navigate(AppDestination.Ranks.route)
                                 },
                                 onRetryOverviewLoad = overviewViewModel::retryLoad,
+                                onStartWorkout = {
+                                    navController.navigate(
+                                        if (activeWorkout != null) AppDestination.ActiveWorkout.route else AppDestination.AddWorkout.route
+                                    )
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
