@@ -20256,7 +20256,7 @@ function profileDataPanel() {
   const help = settingsRowMarkup({
     icon: "help",
     title: tx3("Help", "Допомога", "Помощь"),
-    subtitle: tx3("Replay the quick GymApp tour.", "Повтори короткий огляд GymApp.", "Повтори короткий обзор GymApp."),
+    subtitle: tx3("Replay the quick GymApp tour", "Повтори короткий огляд GymApp", "Повтори короткий обзор GymApp"),
     action: "replay-onboarding"
   });
   return `${backup}${help}`;

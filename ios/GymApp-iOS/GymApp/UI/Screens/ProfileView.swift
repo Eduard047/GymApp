@@ -610,9 +610,9 @@ struct ProfileView: View {
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
                     Text(gymText(
-                        "Replay the quick GymApp tour.",
-                        "Повтори короткий огляд GymApp.",
-                        "Повтори короткий обзор GymApp.",
+                        "Replay the quick GymApp tour",
+                        "Повтори короткий огляд GymApp",
+                        "Повтори короткий обзор GymApp",
                         languageCode: languageCode
                     ))
                     .font(.subheadline)

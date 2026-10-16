@@ -298,8 +298,8 @@ test("first-entry app tour is account-bound, accessible, deferrable, and replaya
   assert.match(tour, /belowTop \+ coachRect\.height <= viewportHeight - margin/);
   assert.doesNotMatch(finish, /nav\s*=/);
   assert.match(profileData, /icon: "help"[\s\S]*action: "replay-onboarding"/);
-  assert.match(profileData, /Replay the quick GymApp tour\./);
-  assert.match(profileData, /Повтори короткий огляд GymApp\./);
+  assert.match(profileData, /Replay the quick GymApp tour/);
+  assert.match(profileData, /Повтори короткий огляд GymApp/);
   assert.match(deletion, /onboardingDescriptor\.storageKey/);
   assert.match(stylesSource, /\.onboarding-spotlight[\s\S]*box-shadow:\s*0 0 0 9999px/);
   assert.match(stylesSource, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.onboarding-spotlight\s*\{\s*transition:\s*none;/);
