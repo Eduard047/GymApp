@@ -3135,10 +3135,12 @@ test("metric values shrink to fit their tile instead of wrapping", () => {
   const tile = naturalWidth => ({
     clientWidth: 100,
     style: { fontSize: "" },
+    textContent: "",
+    classList: { add() {}, remove() {} },
     get scrollWidth() { return Math.ceil(naturalWidth * (parseFloat(this.style.fontSize) || 22) / 22); }
   });
   const values = [tile(160), tile(90), tile(400)];
-  appNode.querySelectorAll = selector => selector === ".metric-grid strong, .weekly-summary-metrics strong" ? values : [];
+  appNode.querySelectorAll = selector => selector === ".metric-grid strong, .weekly-summary-metrics strong, .summary-hero-stats strong" ? values : [];
   vm.runInContext("window", context).getComputedStyle = () => ({ fontSize: "22px" });
   vm.runInContext("fitMetricTileValues()", context);
   assert.equal(values[0].style.fontSize, "13.4px");
@@ -3151,9 +3153,11 @@ test("metric values refit when the window narrows without a new render", async (
   const value = {
     clientWidth: 200,
     style: { fontSize: "" },
+    textContent: "",
+    classList: { add() {}, remove() {} },
     get scrollWidth() { return Math.ceil(150 * (parseFloat(this.style.fontSize) || 22) / 22); }
   };
-  appNode.querySelectorAll = selector => selector === ".metric-grid strong, .weekly-summary-metrics strong" ? [value] : [];
+  appNode.querySelectorAll = selector => selector === ".metric-grid strong, .weekly-summary-metrics strong, .summary-hero-stats strong" ? [value] : [];
   const windowObject = vm.runInContext("window", context);
   windowObject.getComputedStyle = () => ({ fontSize: "22px" });
   let onResize = null;

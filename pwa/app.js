@@ -12505,13 +12505,20 @@ function observeMetricTileResize() {
     });
   });
   metricTileResizeObserver.observe(app);
+  // Webfont/system-font swaps change value widths without resizing the app, so refit once fonts settle.
+  try { document.fonts?.ready?.then(() => requestAnimationFrame(fitMetricTileValues)); } catch (_) { /* fonts API unavailable */ }
 }
+
+const METRIC_TILE_VALUE_SELECTOR = ".metric-grid strong, .weekly-summary-metrics strong, .summary-hero-stats strong";
 
 function fitMetricTileValues() {
   if (typeof app?.querySelectorAll !== "function") return;
   observeMetricTileResize();
-  app.querySelectorAll(".metric-grid strong, .weekly-summary-metrics strong").forEach(value => {
+  // Each tile grid is observed too, so a value refits when its own tile changes width (tour overlay, text size, rotation).
+  if (metricTileResizeObserver) app.querySelectorAll(".metric-grid, .weekly-summary-metrics, .summary-hero-stats").forEach(grid => metricTileResizeObserver.observe(grid));
+  app.querySelectorAll(METRIC_TILE_VALUE_SELECTOR).forEach(value => {
     value.style.fontSize = "";
+    value.classList.remove("fit-wrap");
     const available = value.clientWidth;
     const needed = value.scrollWidth;
     if (!(available > 0) || needed <= available) return;
@@ -12525,6 +12532,11 @@ function fitMetricTileValues() {
     for (let attempt = 0; attempt < 4 && value.scrollWidth > value.clientWidth && size - 0.5 >= floor; attempt += 1) {
       size -= 0.5;
       value.style.fontSize = `${size}px`;
+    }
+    // Still too wide at the floor (large text sizes): wrap the unit onto a second line at spaces rather than clip it.
+    if (value.scrollWidth > value.clientWidth && /\s/.test(value.textContent.trim())) {
+      value.classList.add("fit-wrap");
+      value.style.fontSize = `${Math.floor(baseSize * 0.8 * 10) / 10}px`;
     }
   });
   fitSoloIdentityRows();

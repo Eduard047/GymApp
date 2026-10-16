@@ -76,9 +76,9 @@ test("install metadata and immutable PWA entrypoints are one coherent GymApp rel
   assert.equal(Object.hasOwn(manifest, "orientation"), false);
   assert.match(index, /<title>GymApp — Workout Tracker<\/title>/);
   assert.match(index, /apple-mobile-web-app-title" content="GymApp"/);
-  for (const asset of ["styles.v109.css", "russian-text.v91.js", "app.v141.js"]) {
+  for (const asset of ["styles.v110.css", "russian-text.v91.js", "app.v142.js"]) {
     assert.ok(index.includes(`./${asset}`), `index references ${asset}`);
     assert.ok(worker.includes(`"./${asset}"`), `service worker caches ${asset}`);
   }
-  assert.match(worker, /const CACHE_VERSION = "v187";/);
+  assert.match(worker, /const CACHE_VERSION = "v188";/);
 });

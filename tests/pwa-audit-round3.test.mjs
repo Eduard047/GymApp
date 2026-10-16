@@ -5,8 +5,8 @@ import test from "node:test";
 const [styles, app, appBundle, stylesBundle] = await Promise.all([
   readFile("pwa/styles.css", "utf8"),
   readFile("pwa/app.js", "utf8"),
-  readFile("pwa/app.v141.js", "utf8"),
-  readFile("pwa/styles.v109.css", "utf8")
+  readFile("pwa/app.v142.js", "utf8"),
+  readFile("pwa/styles.v110.css", "utf8")
 ]);
 
 function rules(selector) {
@@ -27,7 +27,7 @@ function functionSource(name) {
   throw new Error(`${name} is unterminated`);
 }
 
-test("the shipped v141 bundles are byte copies of the working files", () => {
+test("the shipped v142 bundles are byte copies of the working files", () => {
   assert.equal(appBundle, app);
   assert.equal(stylesBundle, styles);
 });

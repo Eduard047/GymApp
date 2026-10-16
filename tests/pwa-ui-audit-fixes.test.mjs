@@ -142,7 +142,7 @@ test("muscle chips show the value only and expose the unit through the accessibl
 });
 
 test("metric values on Today fit through the shared fitter", () => {
-  assert.match(appSource, /querySelectorAll\("\.metric-grid strong, \.weekly-summary-metrics strong"\)/);
+  assert.match(appSource, /METRIC_TILE_VALUE_SELECTOR = "\.metric-grid strong, \.weekly-summary-metrics strong, \.summary-hero-stats strong"/);
   assert.match(stylesSource, /\.weekly-summary-metrics strong \{[^}]*white-space: nowrap/);
 });
 
