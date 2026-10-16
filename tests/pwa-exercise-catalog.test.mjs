@@ -1535,7 +1535,7 @@ test("Local profile has no tabs or friends panel and opens on the settings row f
   assert.match(vm.runInContext("friendsProfileScreen()", ru), /Друзья и live<\/strong><small>Нужен облачный аккаунт/);
   const uk = profileScreenContext({ id: "local-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name: "Owner", localIdVersion: 2 }, "uk");
   assert.match(vm.runInContext("friendsProfileScreen()", uk), /Бекап і діагностика<\/strong>/);
-  assert.match(vm.runInContext("friendsProfileScreen()", ru), /Бэкап и диагностика<\/strong>/);
+  assert.match(vm.runInContext("friendsProfileScreen()", ru), /Резервная копия и диагностика<\/strong>/);
   assert.match(vm.runInContext("friendsProfileScreen()", context), /Backup &amp; diagnostics<\/strong>/);
   assert.match(vm.runInContext("friendsProfileScreen()", uk), /Друзі та live<\/strong><small>Потрібен хмарний акаунт/);
 });

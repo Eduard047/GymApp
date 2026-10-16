@@ -3208,9 +3208,9 @@ test("training settings live in one sheet and other screens show a summary", () 
     });
   })()`, context));
 
-  assert.match(result.en, /Strength · Maintenance · 5 workouts a week<\/span><strong>edit/);
-  assert.match(result.ru, /5 тренировок в неделю<\/span><strong>изменить/);
-  assert.match(result.uk, /5 тренувань на тиждень<\/span><strong>змінити/);
+  assert.match(result.en, /Strength · Maintenance · 5\u00a0workouts a week<\/span><strong>edit/);
+  assert.match(result.ru, /5\u00a0тренировок в неделю<\/span><strong>изменить/);
+  assert.match(result.uk, /5\u00a0тренувань на тиждень<\/span><strong>змінити/);
   assert.deepEqual(result.profile, { split: "Push Pull Legs", days: 3, goal: "Muscle Gain", calories: "Maintenance" });
   assert.match(result.sheet, /data-field="goal" data-value="Muscle Gain" aria-pressed="true"/);
   assert.match(result.sheet, /data-field="days" data-value="3" aria-pressed="true"/);

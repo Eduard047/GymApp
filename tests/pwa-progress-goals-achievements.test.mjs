@@ -152,7 +152,7 @@ test("Progress picker sheet is a title, a short search and tappable session rows
     progressExerciseSearchQuery = "";
   `, sandbox);
   const sheet = vm.runInContext("progressExercisePickerSheetMarkup()", sandbox);
-  assert.match(sheet, /<h2 id="progress-picker-sheet-title">Выберите упражнение<\/h2>/);
+  assert.match(sheet, /<h2 id="progress-picker-sheet-title">Выбери упражнение<\/h2>/);
   assert.match(sheet, /placeholder="Поиск упражнений"/);
   assert.doesNotMatch(sheet, /<label|eyebrow|class="muted"|Выбрано|data-action="select-progress-exercise"[^>]*disabled/);
   assert.equal((sheet.match(/data-action="select-progress-exercise"/g) || []).length, 2);

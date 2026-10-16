@@ -226,7 +226,7 @@ test("first-workout activation keeps matching saved settings, derives the rest, 
   assert.equal(skipped.secondDismissed, false);
   // Goal and weekly target are one summary line that opens the single Training settings editor.
   assert.match(skipped.secondMarkup, /data-action="open-training-settings"/);
-  assert.match(skipped.secondMarkup, /4 workouts a week/);
+  assert.match(skipped.secondMarkup, /4\u00a0workouts a week/);
 });
 
 test("activation guidance failure leaves the profile, local state, and remote queue untouched", () => {
@@ -975,4 +975,9 @@ test("first-plan card keeps adjust options behind a 44pt toggle beside the title
   assert.match(appSource, /if \(action === "activation-options-toggle"\) \{[\s\S]*?activationOptionsOpen = !activationOptionsOpen;[\s\S]*?restoreStableActionFocus\(focusTarget\)/);
   assert.match(appSource, /const STABLE_FOCUS_ACTIONS = new Set\(\[[^\]]*"activation-options-toggle"/);
   assert.match(appSource, /activationDraft = null;\s+activationOptionsOpen = false;/);
+});
+
+test("live room status is a localized label, never the raw server enum", () => {
+  assert.match(appSource, /function liveRoomStatusLabel\(status\) \{\s*if \(status === "active"\) return "LIVE";\s*if \(status === "waiting"\) return tx3\("Waiting", "Очікує", "Ожидает"\);\s*if \(status === "ready"\) return tx3\("Ready", "Готово", "Готово"\);/);
+  assert.doesNotMatch(appSource, /escapeHtml\((room|roomRow)\.status\)|escapeHtml\(snapshot\.room\.status\)/);
 });

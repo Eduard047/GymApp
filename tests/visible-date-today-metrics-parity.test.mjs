@@ -26,7 +26,7 @@ const [contractSource, androidDates, androidToday, androidViewModel, androidWork
     readFile("pwa/sw.js", "utf8"),
     readFile("pwa/app.v142.js", "utf8"),
     readFile("pwa/styles.v110.css", "utf8"),
-    readFile("pwa/russian-text.v91.js", "utf8"),
+    readFile("pwa/russian-text.v92.js", "utf8"),
     readFile("pwa/live-workout.v3.js", "utf8")
   ]);
 
@@ -268,18 +268,18 @@ test("PWA date and Today helpers implement the shared localized, history-only co
   assert.deepEqual(contract.pwaReleaseCoupling, {
     appBundle: "app.v142.js",
     styleBundle: "styles.v110.css",
-    russianBundle: "russian-text.v91.js",
+    russianBundle: "russian-text.v92.js",
     liveWorkoutBundle: "live-workout.v3.js",
     serviceWorkerCache: "gym-pwa-v188"
   });
   assert.match(pwaIndex, /src="\.\/app\.v142\.js"/);
   assert.match(pwaIndex, /href="\.\/styles\.v110\.css"/);
-  assert.match(pwaIndex, /src="\.\/russian-text\.v91\.js"/);
+  assert.match(pwaIndex, /src="\.\/russian-text\.v92\.js"/);
   assert.match(pwaIndex, /src="\.\/live-workout\.v3\.js"/);
   assert.match(pwaServiceWorker, /CACHE_VERSION = "v188"/);
   assert.match(pwaServiceWorker, /"\.\/app\.v142\.js"/);
   assert.match(pwaServiceWorker, /"\.\/styles\.v110\.css"/);
-  assert.match(pwaServiceWorker, /"\.\/russian-text\.v91\.js"/);
+  assert.match(pwaServiceWorker, /"\.\/russian-text\.v92\.js"/);
   assert.match(pwaServiceWorker, /"\.\/live-workout\.v3\.js"/);
   assert.equal(pwaAppBundle, pwaApp);
   assert.equal(pwaStyleBundle, pwaStyles);
