@@ -610,6 +610,7 @@ private struct MainTabShell: View {
                 .accessibilityIdentifier("tab-profile")
         }
         .tint(GymTheme.primary)
+        .toggleStyle(GymSwitchToggleStyle())
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .gymTabTransition()

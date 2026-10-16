@@ -984,9 +984,10 @@ struct AddWorkoutView: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(GymTheme.primary)
                             .frame(width: 44, height: 44)
-                            .background(GymTheme.brandFill, in: Circle())
+                            .background(GymTheme.surface, in: Circle())
+                            .overlay { Circle().strokeBorder(GymTheme.primary.opacity(0.4), lineWidth: 1) }
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -1046,7 +1047,7 @@ struct AddWorkoutView: View {
                     systemImage: "plus"
                 )
             }
-            .buttonStyle(GymPrimaryButtonStyle())
+            .buttonStyle(GymSecondaryButtonStyle())
         } else {
             let visibleDraftIDs = self.visibleDraftIDs
             let canDragReorder = visibleDraftIDs.count >= 2 && !isSaving

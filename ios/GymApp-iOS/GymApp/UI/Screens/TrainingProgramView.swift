@@ -88,7 +88,7 @@ struct TrainingProgramView: View {
                 Text(t(
                     "Choose the days you train, then prepare a workout for each day in advance.",
                     "Обери дні тренувань і заздалегідь підготуй тренування для кожного дня.",
-                    "Выберите дни тренировок и заранее подготовьте тренировку для каждого дня."
+                    "Выбери дни тренировок и заранее подготовь тренировку для каждого дня."
                 ))
                 .foregroundStyle(GymTheme.textSecondary)
                 Button(t("Choose training days", "Обрати дні тренувань", "Выбрать дни тренировок")) {
@@ -109,7 +109,7 @@ struct TrainingProgramView: View {
                 Text(t(
                     "Tap a day to view or prepare its workout.",
                     "Натисни на день, щоб переглянути або підготувати тренування.",
-                    "Нажмите на день, чтобы посмотреть или подготовить тренировку."
+                    "Нажми на день, чтобы посмотреть или подготовить тренировку."
                 ))
                 .foregroundStyle(GymTheme.textSecondary)
                 Text(t(

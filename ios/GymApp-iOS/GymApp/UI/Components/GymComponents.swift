@@ -34,14 +34,6 @@ public struct GymPanel<Content: View>: View {
                     )
             }
             .clipShape(RoundedRectangle(cornerRadius: GymTheme.panelCornerRadius, style: .continuous))
-            .shadow(
-                color: highlighted
-                    ? Color.black.opacity(reduceTransparency ? 0.025 : 0.055)
-                    : .clear,
-                radius: highlighted ? 8 : 0,
-                x: 0,
-                y: highlighted ? 4 : 0
-            )
     }
 
     @ViewBuilder
@@ -60,7 +52,6 @@ public struct GymPanel<Content: View>: View {
 
 /// High-emphasis flat tonal card for the single focal message on a screen.
 public struct GymHeroPanel<Content: View>: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     private let contentPadding: EdgeInsets
@@ -87,12 +78,6 @@ public struct GymHeroPanel<Content: View>: View {
                 )
             }
             .clipShape(lensShape)
-            .shadow(
-                color: Color.black.opacity(reduceTransparency ? 0.025 : 0.055),
-                radius: 8,
-                x: 0,
-                y: 4
-            )
     }
 
     private var lensShape: UnevenRoundedRectangle {
@@ -618,6 +603,19 @@ struct GymPressableStyle: ButtonStyle {
     }
 }
 
+/// System switch whose "on" track uses `primaryAction` (accent fill) instead of the
+/// environment tint, which is the pale accent-text blue in dark mode and leaves the
+/// white thumb with weak contrast.
+public struct GymSwitchToggleStyle: ToggleStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        Toggle(configuration)
+            .toggleStyle(.switch)
+            .tint(GymTheme.primaryAction)
+    }
+}
+
 extension View {
     /// System `.borderedProminent` button filled with `accent-fill` instead of the
     /// environment tint (`primary`, which is the pale accent-text blue in dark
@@ -645,9 +643,9 @@ public struct GymPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(GymTheme.onPrimary)
             .padding(.horizontal, 18)
             .padding(.vertical, 13)
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(fillColor)
                     .brightness(configuration.isPressed ? -0.055 : 0)
             )
@@ -673,13 +671,13 @@ public struct GymSecondaryButtonStyle: ButtonStyle {
             .foregroundStyle(isDestructive ? GymTheme.error : GymTheme.primary)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(configuration.isPressed ? GymTheme.surfaceVariant : GymTheme.surface)
             )
             .overlay {
-                Capsule()
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .strokeBorder((isDestructive ? GymTheme.error : GymTheme.primary).opacity(0.4), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.48)

@@ -988,7 +988,7 @@ test("Clear plan is editor-only, confirmed, local, and leaves an actionable empt
   assert.match(iosEmpty, /"Add exercise"/);
   assert.doesNotMatch(iosEmpty, /"Build smart workout"|Button\(action: applySmartCoach\)/);
   assert.doesNotMatch(iosEmpty, /GymContentUnavailableView|"No exercises"|GymPanel/);
-  assert.match(iosEmpty, /\.buttonStyle\(GymPrimaryButtonStyle\(\)\)/);
+  assert.match(iosEmpty, /\.buttonStyle\(GymSecondaryButtonStyle\(\)\)/);
   const iosExerciseHeaderStart = iosEditor.indexOf("private var editorSection: some View");
   const iosExerciseHeaderEnd = iosEditor.indexOf("if drafts.isEmpty {", iosExerciseHeaderStart);
   const iosExerciseHeader = iosEditor.slice(iosExerciseHeaderStart, iosExerciseHeaderEnd);

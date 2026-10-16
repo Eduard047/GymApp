@@ -317,7 +317,7 @@ struct GymDashedAddButton: View {
 
 // MARK: - Set rows
 
-/// "Record" capsule on a set that beats an earlier best.
+/// "Record" capsule on a set that beats an earlier best: accent fill with white text.
 struct GymRecordBadge: View {
     var body: some View {
         Label(
@@ -325,11 +325,11 @@ struct GymRecordBadge: View {
             systemImage: "trophy.fill"
         )
         .font(.caption2.weight(.bold))
-        .foregroundStyle(GymTheme.onRecord)
+        .foregroundStyle(GymTheme.onPrimary)
         .lineLimit(1)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Capsule().fill(GymTheme.record))
+        .background(Capsule().fill(GymTheme.brandFill))
         .fixedSize()
         .accessibilityHidden(true)
     }
@@ -406,29 +406,43 @@ struct GymExpandableSetRow<Trailing: View, Editor: View>: View {
     @ViewBuilder let trailing: () -> Trailing
     @ViewBuilder let editor: () -> Editor
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let toggleButton = Button(action: onToggle) {
             HStack(spacing: 8) {
-                Button(action: onToggle) {
-                    HStack(spacing: 8) {
-                        GymSetNumberBadge(position: position)
-                        Text(summary)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(GymTheme.textSecondary)
-                        if isPersonalRecord {
-                            GymRecordBadge()
-                        }
-                        Spacer(minLength: 8)
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption)
-                            .foregroundStyle(GymTheme.textSecondary)
-                    }
-                    .contentShape(Rectangle())
+                GymSetNumberBadge(position: position)
+                Text(summary)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(GymTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+                if isPersonalRecord {
+                    GymRecordBadge()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(accessibilityLabelText)
-                .accessibilityHint(accessibilityHintText)
-                trailing()
+                Spacer(minLength: 8)
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(GymTheme.textSecondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabelText)
+        .accessibilityHint(accessibilityHintText)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            // At accessibility sizes the action drops under the summary so the
+            // weight and reps keep the full row width instead of breaking mid-number.
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    toggleButton
+                    trailing()
+                }
+            } else {
+                HStack(spacing: 8) {
+                    toggleButton
+                    trailing()
+                }
             }
 
             if isExpanded {

@@ -13158,7 +13158,7 @@ final class CoreParityTests: XCTestCase {
         )
         XCTAssertTrue(emptyEditorSource.contains("showingExercisePicker = true"))
         XCTAssertTrue(emptyEditorSource.contains("systemImage: \"plus\""))
-        XCTAssertTrue(emptyEditorSource.contains(".buttonStyle(GymPrimaryButtonStyle())"))
+        XCTAssertTrue(emptyEditorSource.contains(".buttonStyle(GymSecondaryButtonStyle())"))
         XCTAssertFalse(emptyEditorSource.contains("GymPanel"))
         XCTAssertFalse(emptyEditorSource.contains("GymContentUnavailableView"))
         XCTAssertFalse(emptyEditorSource.contains("No exercises"))
@@ -18736,7 +18736,7 @@ final class CoreParityTests: XCTestCase {
         // The log button's visible text is single line; the fuller phrasing
         // stays only in its accessibility label.
         XCTAssertTrue(source.contains("gymText(\"Log\", \"Записати\", \"Записать\", languageCode: gymCurrentLanguageCode())"))
-        XCTAssertTrue(source.contains("logButtonText(restSeconds: restSeconds)\n                .lineLimit(1)"))
+        XCTAssertTrue(source.contains("logButtonText(restSeconds: restSeconds)\n                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)"))
     }
 
     func testIOSLiveWorkoutLocksStructureButNotPendingSetValues() {

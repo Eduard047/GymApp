@@ -1177,7 +1177,7 @@ private struct ExerciseMuscleMappingSheet: View {
                                 Text(localizedMuscleTitle)
                                     .font(.headline)
                             }
-                            .tint(GymTheme.primary)
+                            .tint(GymTheme.primaryAction)
                             .accessibilityHint(
                                 gymText(
                                     "Adds or removes \(localizedMuscleTitle) from the manual mapping",

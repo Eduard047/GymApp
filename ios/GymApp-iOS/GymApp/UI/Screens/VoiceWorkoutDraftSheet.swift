@@ -213,7 +213,7 @@ struct VoiceWorkoutDraftSheet: View {
                 text("Exercise", "Вправа", "Упражнение"),
                 selection: exerciseSelectionBinding(blockID: blockID)
             ) {
-                Text(text("Choose exercise", "Виберіть вправу", "Выберите упражнение"))
+                Text(text("Choose exercise", "Обери вправу", "Выбери упражнение"))
                     .tag(Self.unresolvedExerciseID)
                 ForEach(pickerExercises(for: block)) { exercise in
                     Text(gymExerciseName(exercise, languageCode: languageCode))

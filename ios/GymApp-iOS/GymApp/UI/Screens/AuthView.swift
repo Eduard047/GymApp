@@ -516,6 +516,8 @@ public struct AuthView: View {
                     } label: {
                         Text(AuthCompactCopy.cancel(languageCode: languageCode))
                             .font(.subheadline)
+                            .foregroundStyle(GymTheme.primary)
+                            .frame(minHeight: 44)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(GymTheme.textSecondary)

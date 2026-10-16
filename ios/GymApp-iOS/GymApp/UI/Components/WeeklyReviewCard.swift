@@ -50,7 +50,7 @@ struct WeeklyReviewCard: View {
                     Button {
                         showsWeeklyTargetEditor = true
                     } label: {
-                        Text(t("Training settings", "Налаштування тренувань", "Настройки тренировок") + " · " + t("edit", "змінити", "изменить"))
+                        Text(t("Training settings", "Налаштування тренувань", "Настройки тренировок") + "\u{00A0}·\u{00A0}" + t("edit", "змінити", "изменить"))
                             .font(.caption)
                             .foregroundStyle(GymTheme.primary)
                             .frame(minHeight: 44, alignment: .leading)

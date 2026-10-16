@@ -451,7 +451,7 @@ struct ExerciseProgressView: View {
                     title: gymText(
                         "Choose an exercise",
                         "Обери вправу",
-                        "Выберите упражнение",
+                        "Выбери упражнение",
                         languageCode: languageCode
                     )
                 )

@@ -763,7 +763,10 @@ struct ActiveWorkoutView: View {
 
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let elapsed = draft.totalElapsedSeconds(at: context.date)
-                    HStack(alignment: .center, spacing: 16) {
+                    let heroLayout: AnyLayout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                        : AnyLayout(HStackLayout(alignment: .center, spacing: 16))
+                    heroLayout {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 6) {
                                 Circle()
@@ -798,11 +801,14 @@ struct ActiveWorkoutView: View {
                                 )
                                 .font(.caption)
                                 .foregroundStyle(GymTheme.onHeroSecondary)
-                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                                .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                             }
                         }
 
-                        Spacer(minLength: 8)
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Spacer(minLength: 8)
+                        }
 
                         ZStack {
                             Circle()
@@ -1766,7 +1772,8 @@ struct ActiveWorkoutView: View {
             // stacking another minHeight on top of that padding was what
             // pushed this button to ~68pt tall.
             logButtonText(restSeconds: restSeconds)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(GymPrimaryButtonStyle())
@@ -1816,8 +1823,11 @@ struct ActiveWorkoutView: View {
             .font(.caption.weight(.semibold).monospacedDigit())
             .foregroundStyle(GymTheme.primary)
             // Metric stays on one line: shrink instead of wrapping "92,5 / × 6".
-            .lineLimit(1)
+            // At accessibility sizes the caption may wrap by words instead, since its
+            // single-line width would stretch the whole exercise card past the gutter.
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             .minimumScaleFactor(0.75)
+            .multilineTextAlignment(.leading)
         }
         .buttonStyle(.plain)
         .disabled(draft.commitIntent != nil)
@@ -2215,9 +2225,9 @@ struct ActiveWorkoutView: View {
     /// A completed row is one compact line — checkmark, weight×reps, and
     /// (only for the latest completed set, only while resting) a trailing
     /// countdown + three small rest-control capsules. While the set is still
-    /// undoable the row also carries a small trailing text "Undo" button, so
-    /// undo is always visible next to the set. Undo is also in the
-    /// "Записано: …" confirmation banner while it's showing, and via
+    /// undoable the row also carries a small trailing text "Undo" button, except
+    /// while the "Записано: …" confirmation banner is showing, which then carries
+    /// the single visible Undo. Undo is also available via
     /// long-press ("Отменить подход") and the equivalent VoiceOver action.
     /// Older recorded rows have no visible button; they carry the same
     /// long-press and VoiceOver undo (see `canUndoOlder`).
@@ -2261,7 +2271,9 @@ struct ActiveWorkoutView: View {
         )
         // Same undo path as the banner and the context menu; shown only while
         // `canUndo` holds, so it disappears as soon as the set is not undoable.
-        let rowUndo: CompletedSetRowUndo? = canUndo
+        // While the "Recorded" banner carries its own Undo for this set, the row
+        // shows none, so exactly one Undo is visible after logging a set.
+        let rowUndo: CompletedSetRowUndo? = canUndo && recordedSetConfirmation?.setID != set.id
             ? CompletedSetRowUndo(
                 title: gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()),
                 accessibilityLabel: "\(undoActionName) \(position + 1)",

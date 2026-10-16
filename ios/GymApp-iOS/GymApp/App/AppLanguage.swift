@@ -647,6 +647,15 @@ func gymCount(
     return "\(count) \(noun)"
 }
 
+extension String {
+    /// Replaces the first space with a no-break space, so a count and its noun
+    /// ("5 тренировок") never wrap apart.
+    var gymBindingFirstSpace: String {
+        guard let space = firstIndex(of: " ") else { return self }
+        return replacingCharacters(in: space...space, with: "\u{00A0}")
+    }
+}
+
 private let gymRussianNounForms: [String: [String]] = [
     "day": ["день", "дня", "дней"],
     "week": ["неделя", "недели", "недель"],

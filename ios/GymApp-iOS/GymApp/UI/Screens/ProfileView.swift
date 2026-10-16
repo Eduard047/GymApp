@@ -579,14 +579,14 @@ struct ProfileView: View {
                     }
                     Toggle(isOn: $hapticsEnabled) { label }
                         .labelsHidden()
-                        .tint(GymTheme.primary)
+                        .tint(GymTheme.primaryAction)
                         .accessibilityLabel(gymText("Haptics", "Тактильний відгук", "Тактильный отклик", languageCode: languageCode))
                 }
             } else {
                 HStack(spacing: 12) {
                     icon
                     Toggle(isOn: $hapticsEnabled) { label }
-                        .tint(GymTheme.primary)
+                        .tint(GymTheme.primaryAction)
                 }
             }
         }
@@ -681,7 +681,7 @@ struct ProfileView: View {
                 ukrainianFew: "тренування",
                 ukrainianMany: "тренувань",
                 languageCode: languageCode
-            ) + " " + gymText("a week", "на тиждень", "в неделю", languageCode: languageCode)
+            ).gymBindingFirstSpace + " " + gymText("a week", "на тиждень", "в неделю", languageCode: languageCode)
         ].joined(separator: " · ")
     }
 
@@ -705,7 +705,7 @@ struct ProfileView: View {
                         gymText(
                             "Connect your Garmin watch to send workouts and keep your results together.",
                             "Підключи годинник Garmin, щоб надсилати тренування та зберігати результати разом.",
-                            "Подключите часы Garmin, чтобы отправлять тренировки и хранить результаты вместе.",
+                            "Подключи часы Garmin, чтобы отправлять тренировки и хранить результаты вместе.",
                             languageCode: languageCode
                         ),
                         systemImage: "applewatch"

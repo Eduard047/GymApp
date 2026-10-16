@@ -210,7 +210,7 @@ struct TrainingSettingsSummaryRow: View {
                 ukrainianFew: "тренування",
                 ukrainianMany: "тренувань",
                 languageCode: languageCode
-            ) + " " + gymText("a week", "на тиждень", "в неделю", languageCode: languageCode)
+            ).gymBindingFirstSpace + " " + gymText("a week", "на тиждень", "в неделю", languageCode: languageCode)
         ].joined(separator: " · ")
     }
 

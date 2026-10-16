@@ -1497,6 +1497,17 @@ struct WorkoutDetailView: View {
                     Button(gymLocalized("Done"), action: finishEditing)
                         .disabled(pendingDeletion != nil)
                 } else if let workout = store.workout(id: workoutID) {
+                    Button(action: beginEditing) {
+                        Text(gymText(
+                            "Edit", "Змінити", "Изменить",
+                            languageCode: gymCurrentLanguageCode()
+                        ))
+                        .frame(minHeight: 44)
+                    }
+                    .accessibilityLabel(gymText(
+                        "Edit workout", "Редагувати тренування", "Редактировать тренировку",
+                        languageCode: gymCurrentLanguageCode()
+                    ))
                     if sharedWorkoutURL(workout) != nil {
                         Button {
                             openWorkoutShareChooser(workout)
@@ -1650,31 +1661,6 @@ struct WorkoutDetailView: View {
                     ))
                     .font(.caption)
                     .foregroundStyle(GymTheme.onHeroSecondary)
-                }
-
-                if !isEditing {
-                    Button {
-                        beginEditing()
-                    } label: {
-                        Label(
-                            gymText(
-                                "Edit workout", "Редагувати тренування", "Редактировать тренировку",
-                                languageCode: languageCode
-                            ),
-                            systemImage: "pencil"
-                        )
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GymTheme.onHero)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 44)
-                        .background(
-                            Capsule().fill(GymTheme.onHero.opacity(0.14))
-                        )
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }
