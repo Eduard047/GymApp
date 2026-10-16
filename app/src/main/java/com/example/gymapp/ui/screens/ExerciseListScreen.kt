@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -2813,6 +2816,7 @@ private fun ExerciseHistoryBottomSheetContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
                         .padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -2856,7 +2860,7 @@ private fun ExerciseHistoryBottomSheetContent(
             item {
                 EmptyStatePanel(
                     title = stringResource(R.string.exercise_history_empty),
-                    supporting = stringResource(R.string.exercise_library_empty_supporting)
+                    supporting = stringResource(R.string.exercise_history_empty_supporting)
                 )
             }
             return@LazyColumn
@@ -2909,16 +2913,20 @@ private fun HistoryStat(
     value: String,
     modifier: Modifier = Modifier
 ) {
+    // The parent row is IntrinsicSize.Min tall; the label takes the spare height and sits at the bottom, so the
+    // three values share one baseline even when a long RU/UK label wraps and the others stay on one line.
     Column(
-        modifier = modifier,
+        modifier = modifier.fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         Text(
             text = value,
             style = MaterialTheme.typography.titleSmall,

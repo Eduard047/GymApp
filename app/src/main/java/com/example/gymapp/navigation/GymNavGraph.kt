@@ -2508,7 +2508,7 @@ internal fun GymAppRoot(
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             // Glass only where content really scrolls under the bar; everywhere else (and
-                            // below API 31 or with battery saver) it stays the solid surface with its shadow.
+                            // below API 31 or with battery saver) it stays the solid surface with its hairline (no shadow).
                             val barGlass = scrollsUnderTabBar && rememberGymGlassActive(glassState)
                             Surface(
                                 modifier = Modifier.gymGlass(
@@ -2519,7 +2519,7 @@ internal fun GymAppRoot(
                                 color = if (barGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
                                 shape = MaterialTheme.shapes.extraLarge,
                                 tonalElevation = 0.dp,
-                                shadowElevation = if (barGlass) 0.dp else 4.dp,
+                                shadowElevation = 0.dp,
                                 border = BorderStroke(
                                     1.dp,
                                     MaterialTheme.colorScheme.outlineVariant.copy(
@@ -2584,7 +2584,8 @@ internal fun GymAppRoot(
                                                     colors = NavigationBarItemDefaults.colors(
                                                         selectedIconColor = MaterialTheme.colorScheme.primary,
                                                         selectedTextColor = MaterialTheme.colorScheme.primary,
-                                                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                                        // DESIGN.md: selected tab = accent icon + label, no pill indicator fill.
+                                                        indicatorColor = Color.Transparent,
                                                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                                     ),

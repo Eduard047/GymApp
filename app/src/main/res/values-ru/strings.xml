@@ -270,7 +270,7 @@
     <string name="auth_display_name">Имя пользователя</string>
     <string name="auth_password_requirements">Используй не менее 6 символов (до 72 байт UTF-8).</string>
     <string name="auth_signup_requirements">Используй не менее 6 символов (до 72 байт UTF-8). В имени разрешены буквы, цифры, пробелы, точка, дефис и подчеркивание.</string>
-    <string name="auth_resend_confirmation">Отправить еще раз подтверждение</string>
+    <string name="auth_resend_confirmation">Отправить ещё раз подтверждение</string>
     <string name="auth_forgot_password">Забыли пароль?</string>
     <string name="auth_choose_new_password">Создай новый пароль</string>
     <string name="auth_recovery_verified">Ссылка на восстановление подтверждена. Обнови пароль, чтобы продолжить.</string>
@@ -355,7 +355,7 @@
     <string name="local_profile_delete_action">Удалить локальный профиль и данные</string>
     <string name="local_profile_delete_confirm_title">Удалить локальный профиль?</string>
     <string name="local_profile_delete_warning">Профиль «%1$s» и его тренировки будут удалены с этого устройства. Это действие нельзя отменить.</string>
-    <string name="local_profile_delete_confirm">Удалить локальный профиль</string>
+    <string name="local_profile_delete_confirm">Удалить</string>
     <string name="local_profile_delete_typed_label">Подтверждение удаления</string>
     <string name="local_profile_delete_typed_explanation">GymApp сотрет локальные данные тренировок этого профиля и выполнит выход. Это действие нельзя отменить.</string>
     <string name="local_profile_delete_typed_hint">Введи DELETE без ошибок, чтобы разрешить окончательное удаление.</string>
@@ -466,7 +466,7 @@
     <string name="calorie_mode_maintenance">Поддержание</string>
     <string name="calorie_mode_surplus">Профицит</string>
     <string name="template_picker_title">Скопировать прошлую тренировку</string>
-    <string name="template_picker_empty">Предыдущих тренировок еще нет.</string>
+    <string name="template_picker_empty">Предыдущих тренировок ещё нет.</string>
     <string name="template_picker_summary">%1$s · %2$s</string>
     <string name="add_workout_save_hint">Проверь подходы и сохрани, чтобы сразу перейти в детали тренировки.</string>
     <string name="add_workout_plan_mode_hint">Режим плана: эти строки отправляются на Garmin как цели и не записываются как выполненные при синхронизации.</string>
@@ -1009,7 +1009,7 @@
     <string name="smart_kind_comeback">Возврат</string>
     <string name="smart_kind_plateau_break">Плато</string>
     <string name="smart_coach_status_compact">%1$s · RIR %2$d–%3$d</string>
-    <string name="smart_reason_no_history">Истории еще нет, поэтому это первая аккуратная база.</string>
+    <string name="smart_reason_no_history">Истории ещё нет, поэтому это первая аккуратная база.</string>
     <string name="smart_reason_last_strong">Последняя сессия была стабильна по подходам.</string>
     <string name="smart_reason_last_unstable">Повторы или объем просели, поэтому план осторожен.</string>
     <string name="smart_reason_recent_break">%1$d дней без этого упражнения, поэтому вес скорректирован вниз.</string>
@@ -1058,7 +1058,8 @@
     <string name="exercise_history_sessions">Сессии</string>
     <string name="exercise_history_max_weight">Максимальный вес</string>
     <string name="exercise_history_volume">Общий объем</string>
-    <string name="exercise_history_empty">Для этого упражнения еще нет истории.</string>
+    <string name="exercise_history_empty">Для этого упражнения ещё нет истории.</string>
+    <string name="exercise_history_empty_supporting">Запиши это упражнение в тренировке, и оно появится здесь.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>
     <string name="exercise_history_volume_inline">Объем: %1$s кг</string>
     <string name="exercise_library_title">Библиотека упражнений</string>

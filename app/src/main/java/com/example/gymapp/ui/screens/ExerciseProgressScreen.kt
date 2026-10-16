@@ -314,11 +314,8 @@ private fun ProgressMuscleBreakdownCard(
                     GymProgressBar(
                         progress = { normalizedIntensity },
                         modifier = Modifier.fillMaxWidth(),
-                        color = if (normalizedIntensity >= 0.75f) {
-                            MaterialTheme.colorScheme.tertiary
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        }
+                        // Every bar uses the accent mark; the leader reads by length, not by hue.
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }

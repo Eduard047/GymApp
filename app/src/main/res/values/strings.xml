@@ -355,7 +355,7 @@
     <string name="local_profile_delete_action">Delete local profile and data</string>
     <string name="local_profile_delete_confirm_title">Delete local profile?</string>
     <string name="local_profile_delete_warning">Profile “%1$s” and its workouts will be removed from this device. This cannot be undone.</string>
-    <string name="local_profile_delete_confirm">Delete local profile</string>
+    <string name="local_profile_delete_confirm">Delete</string>
     <string name="local_profile_delete_typed_label">Deletion confirmation</string>
     <string name="local_profile_delete_typed_explanation">GymApp will erase this profile’s local workout data and sign you out. This action cannot be undone.</string>
     <string name="local_profile_delete_typed_hint">Type DELETE exactly to enable permanent deletion.</string>
@@ -1027,6 +1027,7 @@
     <string name="exercise_history_max_weight">Max weight</string>
     <string name="exercise_history_volume">Total volume</string>
     <string name="exercise_history_empty">No history for this exercise yet.</string>
+    <string name="exercise_history_empty_supporting">Log this exercise in a workout and it will appear here.</string>
     <string name="exercise_history_sets_inline">Sets: %1$d</string>
     <string name="exercise_history_volume_inline">Volume: %1$s kg</string>
     <string name="exercise_library_title">Exercise library</string>

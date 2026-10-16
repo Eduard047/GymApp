@@ -675,19 +675,19 @@ fun <T> GymSegmentedControl(
                     ),
                 shape = GymControlShape,
                 color = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
+                    brandFillColor()
                 } else {
                     Color.Transparent
                 },
                 contentColor = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimary
+                    Color.White
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 border = BorderStroke(
                     1.dp,
                     if (isSelected) {
-                        MaterialTheme.colorScheme.primary
+                        brandFillColor()
                     } else {
                         MaterialTheme.colorScheme.outlineVariant
                     }
