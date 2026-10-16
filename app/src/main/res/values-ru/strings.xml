@@ -1604,6 +1604,9 @@
     <string name="voice_workout_replace_confirm">Заменить план</string>
     <string name="voice_workout_error_unavailable">Распознавание речи на устройстве недоступно. Введи тренировку текстом.</string>
     <string name="voice_workout_error_unsupported">Для этого языка нет распознавания на устройстве. Введи тренировку текстом.</string>
+    <string name="voice_workout_error_downloading">Скачивается языковой пакет распознавания речи (%1$s). Попробуй ещё раз, когда он загрузится.</string>
+    <string name="voice_workout_open_settings">Открыть настройки голосового ввода</string>
+    <string name="voice_workout_try_again">Попробовать снова</string>
     <string name="voice_workout_error_permission">Нужен доступ к микрофону.</string>
     <string name="voice_workout_error_audio">Не удалось запустить микрофон.</string>
     <string name="voice_workout_error_recognition">Не удалось распознать речь. Попробуй ещё раз или введи фразу вручную.</string>

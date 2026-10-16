@@ -1562,6 +1562,9 @@
     <string name="voice_workout_replace_confirm">Replace plan</string>
     <string name="voice_workout_error_unavailable">On-device speech recognition is unavailable. Type the workout instead.</string>
     <string name="voice_workout_error_unsupported">On-device recognition isn\'t available for this language. Type the workout instead.</string>
+    <string name="voice_workout_error_downloading">Downloading the %1$s speech pack. Try again when it finishes.</string>
+    <string name="voice_workout_open_settings">Open voice input settings</string>
+    <string name="voice_workout_try_again">Try again</string>
     <string name="voice_workout_error_permission">Microphone permission is required.</string>
     <string name="voice_workout_error_audio">The microphone could not be started.</string>
     <string name="voice_workout_error_recognition">Speech could not be recognized. Try again or enter the phrase manually.</string>

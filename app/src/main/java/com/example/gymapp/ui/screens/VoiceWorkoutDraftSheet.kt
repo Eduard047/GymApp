@@ -6,9 +6,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.speech.ModelDownloadListener
 import android.speech.RecognitionListener
+import android.speech.RecognitionSupport
+import android.speech.RecognitionSupportCallback
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -86,10 +91,13 @@ import kotlinx.coroutines.delay
 enum class VoiceTranscriptionError {
     Unavailable,
     UnsupportedLanguage,
+    LanguageDownloading,
     PermissionDenied,
     AudioFailure,
     RecognitionFailure
 }
+
+private const val VOICE_LOG_TAG = "VoiceDictation"
 
 /**
  * On-device only: API 31+ `createOnDeviceSpeechRecognizer`. Older Android versions and
@@ -105,10 +113,15 @@ internal fun voiceTranscriptionAvailability(context: Context): VoiceTranscriptio
 internal class OnDeviceVoiceTranscriber(
     private val context: Context,
     private val onPartial: (String) -> Unit,
-    private val onFinished: (VoiceTranscriptionError?) -> Unit
+    private val onFinished: (VoiceTranscriptionError?) -> Unit,
+    /** Called when a requested language pack finished installing (API 34+), so the caller can offer listening again. */
+    private val onLanguageReady: () -> Unit = {}
 ) {
     private var recognizer: SpeechRecognizer? = null
     private var session = 0L
+    private var activeIntent: Intent? = null
+    private var requestedTag = ""
+    private var downloadRequested = false
 
     fun start(languageTag: String) {
         stop()
@@ -117,6 +130,7 @@ internal class OnDeviceVoiceTranscriber(
             return
         }
         val current = ++session
+        downloadRequested = false
         val speech = try {
             SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
         } catch (_: RuntimeException) {
@@ -140,16 +154,15 @@ internal class OnDeviceVoiceTranscriber(
 
             override fun onError(error: Int) {
                 if (current != session) return
-                finish(
-                    when (error) {
-                        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
-                        SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> VoiceTranscriptionError.UnsupportedLanguage
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> VoiceTranscriptionError.PermissionDenied
-                        SpeechRecognizer.ERROR_AUDIO -> VoiceTranscriptionError.AudioFailure
-                        SpeechRecognizer.ERROR_CLIENT -> null
-                        else -> VoiceTranscriptionError.RecognitionFailure
-                    }
-                )
+                logDiagnostics("recognizer error", error, null, null, null)
+                val action = VoiceLanguageSupport.errorAction(error, Build.VERSION.SDK_INT)
+                val intent = activeIntent
+                if (action == VoiceErrorAction.DownloadThenWait && !downloadRequested && intent != null) {
+                    requestDownload(speech, current, intent)
+                    return
+                }
+                val resolved = if (action == VoiceErrorAction.DownloadThenWait) VoiceErrorAction.Unsupported else action
+                finish(VoiceLanguageSupport.errorFor(resolved))
             }
 
             override fun onReadyForSpeech(params: Bundle?) = Unit
@@ -159,22 +172,149 @@ internal class OnDeviceVoiceTranscriber(
             override fun onEndOfSpeech() = Unit
             override fun onEvent(eventType: Int, params: Bundle?) = Unit
         })
-        val locale = VoiceWorkoutDraftParser.LOCALES[languageTag] ?: VoiceWorkoutDraftParser.LOCALES.getValue("en")
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        requestedTag = VoiceWorkoutDraftParser.LOCALES[languageTag] ?: VoiceWorkoutDraftParser.LOCALES.getValue("en")
+        val intent = recognizerIntent(requestedTag)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            checkLanguageThenListen(speech, current, intent)
+        } else {
+            beginListening(speech, current, intent)
+        }
+    }
+
+    private fun recognizerIntent(tag: String): Intent =
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3_000L)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 putExtra(RecognizerIntent.EXTRA_ENABLE_FORMATTING, RecognizerIntent.FORMATTING_OPTIMIZE_QUALITY)
             }
         }
+
+    private fun beginListening(speech: SpeechRecognizer, current: Long, intent: Intent) {
+        if (current != session) return
+        activeIntent = intent
         try {
             speech.startListening(intent)
         } catch (_: RuntimeException) {
             finish(VoiceTranscriptionError.AudioFailure)
         }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun checkLanguageThenListen(speech: SpeechRecognizer, current: Long, intent: Intent) {
+        try {
+            speech.checkRecognitionSupport(
+                intent,
+                ContextCompat.getMainExecutor(context),
+                object : RecognitionSupportCallback {
+                    override fun onSupportResult(recognitionSupport: RecognitionSupport) {
+                        if (current != session) return
+                        val installed = recognitionSupport.installedOnDeviceLanguages
+                        val supported = recognitionSupport.supportedOnDeviceLanguages
+                        val pending = recognitionSupport.pendingOnDeviceLanguages
+                        when (val decision = VoiceLanguageSupport.decide(requestedTag, installed, supported, pending)) {
+                            is VoiceLanguageDecision.Start ->
+                                beginListening(speech, current, recognizerIntent(decision.tag))
+                            is VoiceLanguageDecision.Download -> {
+                                logDiagnostics("language pack missing", null, installed, supported, pending)
+                                requestDownload(speech, current, recognizerIntent(decision.tag))
+                            }
+                            VoiceLanguageDecision.Unsupported -> {
+                                logDiagnostics("language not offered", null, installed, supported, pending)
+                                finish(VoiceTranscriptionError.UnsupportedLanguage)
+                            }
+                            VoiceLanguageDecision.Unchecked -> beginListening(speech, current, intent)
+                        }
+                    }
+
+                    override fun onError(error: Int) {
+                        if (current != session) return
+                        logDiagnostics("language check error", error, null, null, null)
+                        beginListening(speech, current, intent)
+                    }
+                }
+            )
+        } catch (_: RuntimeException) {
+            beginListening(speech, current, intent)
+        }
+    }
+
+    private fun requestDownload(speech: SpeechRecognizer, current: Long, intent: Intent) {
+        if (current != session) return
+        downloadRequested = true
+        activeIntent = intent
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                triggerDownloadWithListener(speech, current, intent)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                triggerDownload(speech, intent)
+            } else {
+                finish(VoiceTranscriptionError.UnsupportedLanguage)
+                return
+            }
+        } catch (_: RuntimeException) {
+            finish(VoiceTranscriptionError.UnsupportedLanguage)
+            return
+        }
+        // The recognizer stays alive so a download listener can still report back; the caller
+        // shows the downloading state and offers listening again.
+        onFinished(VoiceTranscriptionError.LanguageDownloading)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun triggerDownload(speech: SpeechRecognizer, intent: Intent) {
+        speech.triggerModelDownload(intent)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun triggerDownloadWithListener(speech: SpeechRecognizer, current: Long, intent: Intent) {
+        speech.triggerModelDownload(
+            intent,
+            ContextCompat.getMainExecutor(context),
+            object : ModelDownloadListener {
+                override fun onProgress(completedPercent: Int) = Unit
+
+                override fun onSuccess() {
+                    if (current != session) return
+                    stop()
+                    onLanguageReady()
+                }
+
+                override fun onScheduled() = Unit
+
+                override fun onError(error: Int) {
+                    if (current != session) return
+                    logDiagnostics("language download error", error, null, null, null)
+                    finish(VoiceTranscriptionError.UnsupportedLanguage)
+                }
+            }
+        )
+    }
+
+    /** Error code, device, OS level and language tags only: never audio, transcript or user data. */
+    private fun logDiagnostics(
+        event: String,
+        errorCode: Int?,
+        installed: List<String>?,
+        supported: List<String>?,
+        pending: List<String>?
+    ) {
+        Log.w(
+            VOICE_LOG_TAG,
+            VoiceLanguageSupport.diagnosticLine(
+                event = event,
+                errorCode = errorCode,
+                sdkInt = Build.VERSION.SDK_INT,
+                manufacturer = Build.MANUFACTURER,
+                model = Build.MODEL,
+                requestedTag = requestedTag,
+                installed = installed,
+                supported = supported,
+                pending = pending
+            )
+        )
     }
 
     private fun finish(error: VoiceTranscriptionError?) {
@@ -189,19 +329,24 @@ internal class OnDeviceVoiceTranscriber(
             it.destroy()
         }
         recognizer = null
+        activeIntent = null
     }
 }
 
-@Composable
-private fun voiceErrorText(error: VoiceTranscriptionError): String = stringResource(
+internal fun voiceErrorMessage(context: Context, error: VoiceTranscriptionError, languageTag: String): String =
     when (error) {
-        VoiceTranscriptionError.Unavailable -> R.string.voice_workout_error_unavailable
-        VoiceTranscriptionError.UnsupportedLanguage -> R.string.voice_workout_error_unsupported
-        VoiceTranscriptionError.PermissionDenied -> R.string.voice_workout_error_permission
-        VoiceTranscriptionError.AudioFailure -> R.string.voice_workout_error_audio
-        VoiceTranscriptionError.RecognitionFailure -> R.string.voice_workout_error_recognition
+        VoiceTranscriptionError.Unavailable -> context.getString(R.string.voice_workout_error_unavailable)
+        VoiceTranscriptionError.UnsupportedLanguage -> context.getString(R.string.voice_workout_error_unsupported)
+        VoiceTranscriptionError.LanguageDownloading ->
+            context.getString(R.string.voice_workout_error_downloading, voiceLanguageDisplayName(languageTag))
+        VoiceTranscriptionError.PermissionDenied -> context.getString(R.string.voice_workout_error_permission)
+        VoiceTranscriptionError.AudioFailure -> context.getString(R.string.voice_workout_error_audio)
+        VoiceTranscriptionError.RecognitionFailure -> context.getString(R.string.voice_workout_error_recognition)
     }
-)
+
+@Composable
+private fun voiceErrorText(error: VoiceTranscriptionError, languageTag: String): String =
+    voiceErrorMessage(LocalContext.current, error, languageTag)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -238,7 +383,9 @@ internal fun VoiceWorkoutDraftSheet(
             onFinished = { finishedError ->
                 isListening = false
                 if (finishedError != null) error = finishedError
-                if (finishedError == VoiceTranscriptionError.UnsupportedLanguage) unavailable = finishedError
+            },
+            onLanguageReady = {
+                if (error == VoiceTranscriptionError.LanguageDownloading) error = null
             }
         )
     }
@@ -386,7 +533,7 @@ internal fun VoiceWorkoutDraftSheet(
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("voice_workout_unavailable")) {
                             Icon(Icons.Default.MicOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.size(8.dp))
-                            Text(voiceErrorText(currentUnavailable), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(voiceErrorText(currentUnavailable, languageTag), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     Text(
@@ -400,10 +547,39 @@ internal fun VoiceWorkoutDraftSheet(
             val currentError = error
             if (currentError != null && currentError != unavailable) {
                 item {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("voice_workout_error")) {
-                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.size(8.dp))
-                        Text(voiceErrorText(currentError), color = MaterialTheme.colorScheme.error)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag("voice_workout_error")) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (currentError == VoiceTranscriptionError.LanguageDownloading) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                voiceErrorText(currentError, languageTag),
+                                color = if (currentError == VoiceTranscriptionError.LanguageDownloading) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                }
+                            )
+                        }
+                        if (currentError == VoiceTranscriptionError.UnsupportedLanguage ||
+                            currentError == VoiceTranscriptionError.LanguageDownloading
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    onClick = ::toggleListening,
+                                    modifier = Modifier.testTag("voice_workout_retry")
+                                ) { Text(stringResource(R.string.voice_workout_try_again)) }
+                                if (currentError == VoiceTranscriptionError.UnsupportedLanguage) {
+                                    TextButton(
+                                        onClick = { openVoiceInputSettings(context) },
+                                        modifier = Modifier.testTag("voice_workout_open_settings")
+                                    ) { Text(stringResource(R.string.voice_workout_open_settings)) }
+                                }
+                            }
+                        }
                     }
                 }
             }

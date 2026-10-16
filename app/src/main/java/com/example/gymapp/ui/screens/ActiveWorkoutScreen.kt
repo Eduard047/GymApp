@@ -2579,6 +2579,7 @@ private fun rememberSetVoiceCommand(
     }
 
     val handler by rememberUpdatedState<(String) -> Unit>({ heard -> handleHeard(heard) })
+    val feedback by rememberUpdatedState(onFeedback)
 
     val transcriber = remember(set.id) {
         OnDeviceVoiceTranscriber(
@@ -2589,12 +2590,28 @@ private fun rememberSetVoiceCommand(
                     val heard = ui.partial
                     ui.partial = ""
                     when (error) {
+                        VoiceTranscriptionError.LanguageDownloading -> {
+                            // Stay on the mic so another tap listens once the pack is installed.
+                            ui.phase = VoicePhase.Idle
+                            feedback(voiceErrorMessage(context, error, languageTag), null, null)
+                        }
                         VoiceTranscriptionError.Unavailable,
                         VoiceTranscriptionError.UnsupportedLanguage,
                         VoiceTranscriptionError.PermissionDenied,
                         VoiceTranscriptionError.AudioFailure -> {
                             ui.typed = ""
                             ui.phase = VoicePhase.Typed
+                            val settingsAction: (() -> Unit)? =
+                                if (error == VoiceTranscriptionError.UnsupportedLanguage) {
+                                    { openVoiceInputSettings(context) }
+                                } else {
+                                    null
+                                }
+                            feedback(
+                                voiceErrorMessage(context, error, languageTag),
+                                if (settingsAction != null) context.getString(R.string.voice_workout_open_settings) else null,
+                                settingsAction
+                            )
                         }
                         else -> {
                             ui.phase = VoicePhase.Idle
