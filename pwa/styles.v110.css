@@ -61,6 +61,9 @@
   --hero-accent-text: #1f64c9;
   /* Brand fill family for first-plan style cards: white text stays >=4.5:1 at the base, >=3:1 at the bright end. */
   --brand-fill: #216bd7;
+  /* Accent text on blue-tinted fills (chips, pills, set badges, current set card): darker than --sage so it keeps 4.5:1 on the tint. */
+  --accent-on-tint: #1b5cba;
+  --muted-on-tint: #4f5e77;
   --brand-fill-bright: #3a8dff;
   /* DESIGN.md elevation: flat by default; shadows only for floating menus/toasts and reorder drag-lift. */
   --shadow-floating: 0 6px 18px rgba(16, 35, 63, 0.12);
@@ -165,6 +168,8 @@ html.frame-blocked body {
   --hero-accent: #7fb2ff;
   --hero-accent-text: #7fb2ff;
   --brand-fill: #2e72d2;
+  --accent-on-tint: var(--sage);
+  --muted-on-tint: var(--muted);
   --brand-fill-bright: #3f84e5;
   --shadow-floating: 0 6px 18px rgba(0, 0, 0, 0.36);
   --reorder-lift-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
@@ -1215,7 +1220,7 @@ svg.filled-icon.small-icon {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
@@ -1441,7 +1446,7 @@ svg.filled-icon.small-icon {
   width: 30px;
   height: 30px;
   border-radius: 10px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   font-size: 0.75rem;
   font-weight: 800;
@@ -2536,7 +2541,7 @@ svg.filled-icon.small-icon {
   display: grid;
   place-items: center;
   border-radius: 14px;
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 14%, transparent);
   font-size: 1.3125rem;
 }
@@ -2709,7 +2714,7 @@ svg.filled-icon.small-icon {
 }
 
 .button.secondary {
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--sage) 34%, var(--outline));
 }
@@ -3365,7 +3370,7 @@ button.leaderboard-row {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-sm);
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 14%, transparent);
   font-weight: 700;
 }
@@ -3706,7 +3711,7 @@ button.leaderboard-row {
 .weekly-workout-summary-head span {
   padding: 5px 9px;
   border-radius: 999px;
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, var(--surface));
   font-size: 0.75rem;
   font-weight: 700;
@@ -3884,7 +3889,7 @@ button.leaderboard-row {
   gap: 5px;
   padding: 5px 9px;
   border-radius: 999px;
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, var(--surface));
   font-size: 0.75rem;
   font-weight: 700;
@@ -4660,7 +4665,7 @@ button.leaderboard-row {
   padding: 0 9px;
   border: 1px solid color-mix(in srgb, var(--sage) 16%, transparent);
   border-radius: var(--radius-capsule);
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, transparent);
   font-size: 0.8125rem;
   font-weight: 500;
@@ -4738,7 +4743,7 @@ textarea:focus {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   font-size: 0.875rem;
   font-weight: 700;
@@ -5269,6 +5274,8 @@ textarea:focus {
   padding: 10px;
   border-radius: 16px;
   background: color-mix(in srgb, var(--brand-fill) 10%, transparent);
+  /* Supporting text on the blue-tinted current set card keeps 4.5:1 in light. */
+  --muted: var(--muted-on-tint);
 }
 
 .active-set-row.current + .active-set-row,
@@ -5329,14 +5336,14 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-set-hidden-input { display: none; }
 
 .active-set-current-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
-.active-set-title { color: var(--primary); font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.active-set-title { color: var(--accent-on-tint); font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 
 .active-set-previous {
   white-space: nowrap;
   margin: -8px 0 -8px auto;
   min-height: 44px;
   padding: 0 4px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: transparent;
   font-size: 0.75rem;
   font-weight: 600;
@@ -5414,7 +5421,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 44px;
   padding: 0 8px;
   border-radius: 999px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: transparent;
   font-size: 0.75rem;
   font-weight: 700;
@@ -5638,7 +5645,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   font-size: 0.875rem;
   font-weight: 600;
@@ -6369,7 +6376,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .favorite-filter svg { flex: 0 0 auto; }
 .favorite-filter.selected {
-  color: var(--primary);
+  color: var(--accent-on-tint);
   border-color: color-mix(in srgb, var(--primary) 38%, var(--outline-variant));
   background: color-mix(in srgb, var(--primary) 10%, var(--surface));
 }
@@ -7618,8 +7625,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 24px;
   padding: 0 8px;
   border-color: transparent;
-  color: var(--on-primary);
-  background: var(--primary);
+  color: var(--on-accent);
+  background: var(--brand-fill);
   font-size: 0.6875rem;
   font-weight: 700;
 }
@@ -7638,7 +7645,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   margin: -8px 0;
   padding: 0 10px;
   border-radius: 999px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
@@ -7957,7 +7964,7 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
   transition: transform var(--motion-fade-in) var(--ease-standard);
 }
-.settings-switch.on { background: var(--primary); }
+.settings-switch.on { background: var(--brand-fill); }
 .settings-switch.on i { transform: translateX(20px); }
 @media (prefers-reduced-motion: reduce) {
   .settings-switch, .settings-switch i { transition: none; }
@@ -8008,7 +8015,7 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
   flex: none;
   min-height: 44px;
   padding: 0 12px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   border: 0;
   border-radius: 999px;
   background: color-mix(in srgb, var(--primary) 12%, transparent);
@@ -8104,7 +8111,7 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
 }
 
 .rank-row.unlocked .rank-icon {
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
