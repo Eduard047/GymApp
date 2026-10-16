@@ -403,16 +403,15 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                 }
             }
 
-            // Sets, volume and duration of the workout that was just finished.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            // Sets, volume and duration of the workout that was just finished. At large font scales the
+            // three stats stack on their own lines so values and labels are never ellipsized.
+            val stackStats = LocalDensity.current.fontScale >= 1.3f
+            val statsContent: @Composable (Modifier) -> Unit = { statModifier ->
                 HeroStat(
                     value = NumberFormat.getIntegerInstance(locale).format(uiState.setCount),
                     label = stringResource(R.string.post_workout_metric_sets),
                     color = onHero,
-                    modifier = Modifier.weight(1f)
+                    modifier = statModifier
                 )
                 HeroStat(
                     value = stringResource(
@@ -421,7 +420,7 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                     ),
                     label = stringResource(R.string.post_workout_metric_volume),
                     color = onHero,
-                    modifier = Modifier.weight(1f)
+                    modifier = statModifier
                 )
                 HeroStat(
                     value = uiState.durationSeconds
@@ -430,8 +429,20 @@ private fun HeroCard(uiState: PostWorkoutSummaryUiState) {
                         ?: "--",
                     label = stringResource(R.string.post_workout_metric_duration),
                     color = onHero,
-                    modifier = Modifier.weight(1f)
+                    modifier = statModifier
                 )
+            }
+            if (stackStats) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    statsContent(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    statsContent(Modifier.weight(1f))
+                }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

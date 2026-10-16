@@ -96,6 +96,8 @@ import com.example.gymapp.auth.NEW_PASSWORD_POLICY_ERROR
 import com.example.gymapp.auth.newPasswordLengthIsValid
 import com.example.gymapp.auth.validatedNewLocalDisplayNameOrNull
 import com.example.gymapp.ui.components.AppPanel
+import com.example.gymapp.ui.components.WordShrinkText
+import androidx.compose.ui.platform.LocalDensity
 import com.example.gymapp.ui.components.AppBrandMark
 import com.example.gymapp.ui.components.BrandHeroPanel
 import com.example.gymapp.ui.components.brandButtonColors
@@ -1110,37 +1112,58 @@ private fun AuthModeSelector(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(16.dp)
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.56f)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
-            .border(
-                border = BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
-                ),
-                shape = shape
+    val stacked = LocalDensity.current.fontScale >= 1.8f
+    val containerModifier = modifier
+        .fillMaxWidth()
+        .alpha(if (enabled) 1f else 0.56f)
+        .clip(shape)
+        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
+        .border(
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
+            ),
+            shape = shape
+        )
+        .padding(4.dp)
+        .selectableGroup()
+    val logInText = stringResource(R.string.auth_log_in)
+    val signUpText = stringResource(R.string.auth_sign_up)
+    if (stacked) {
+        // Accessibility text sizes: one option per line so no label has to break mid-word.
+        Column(modifier = containerModifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            AuthModeOption(
+                text = logInText,
+                selected = !isSignUp,
+                enabled = enabled,
+                onClick = { onModeSelected(false) },
+                modifier = Modifier.fillMaxWidth()
             )
-            .padding(4.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        AuthModeOption(
-            text = stringResource(R.string.auth_log_in),
-            selected = !isSignUp,
-            enabled = enabled,
-            onClick = { onModeSelected(false) },
-            modifier = Modifier.weight(1f)
-        )
-        AuthModeOption(
-            text = stringResource(R.string.auth_sign_up),
-            selected = isSignUp,
-            enabled = enabled,
-            onClick = { onModeSelected(true) },
-            modifier = Modifier.weight(1f)
-        )
+            AuthModeOption(
+                text = signUpText,
+                selected = isSignUp,
+                enabled = enabled,
+                onClick = { onModeSelected(true) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    } else {
+        Row(modifier = containerModifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            AuthModeOption(
+                text = logInText,
+                selected = !isSignUp,
+                enabled = enabled,
+                onClick = { onModeSelected(false) },
+                modifier = Modifier.weight(1f)
+            )
+            AuthModeOption(
+                text = signUpText,
+                selected = isSignUp,
+                enabled = enabled,
+                onClick = { onModeSelected(true) },
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 
@@ -1178,7 +1201,7 @@ private fun AuthModeOption(
             .padding(horizontal = 10.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(
+        WordShrinkText(
             text = text,
             color = if (selected) {
                 MaterialTheme.colorScheme.primary

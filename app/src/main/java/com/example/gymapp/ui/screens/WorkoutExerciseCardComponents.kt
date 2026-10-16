@@ -190,16 +190,13 @@ internal fun WorkoutExerciseCardHeader(
     val toggleLabel = stringResource(
         if (expanded) R.string.cd_collapse_exercise else R.string.cd_expand_exercise
     )
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        leading?.invoke()
-        media?.invoke()
+    // At large font scales the drag handle, thumbnail and overflow menu leave the title a sliver
+    // (it broke mid-word), so the title block moves to its own full-width line under them.
+    val stackTitle = LocalDensity.current.fontScale >= 1.3f &&
+        (leading != null || media != null || menu != null)
+    val titleBlock: @Composable (Modifier) -> Unit = { titleModifier ->
         Row(
-            modifier = Modifier
-                .weight(1f)
+            modifier = titleModifier
                 .heightIn(min = 48.dp)
                 .then(
                     if (onToggleExpanded != null) {
@@ -248,7 +245,35 @@ internal fun WorkoutExerciseCardHeader(
                 )
             }
         }
-        menu?.invoke()
+    }
+    if (stackTitle) {
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                leading?.invoke()
+                media?.invoke()
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                menu?.invoke()
+            }
+            titleBlock(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            leading?.invoke()
+            media?.invoke()
+            titleBlock(Modifier.weight(1f))
+            menu?.invoke()
+        }
     }
 }
 

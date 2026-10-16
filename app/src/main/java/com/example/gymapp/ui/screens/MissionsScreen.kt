@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -290,6 +291,9 @@ private fun MissionCard(
         ?.coerceIn(0f, 1f)
         ?: 0f
     val accessibilityState = "${mission.cadenceLabel}. $statusText"
+    // At large font scales the progress value and status pill move under the title instead of
+    // squeezing it into an ellipsis.
+    val stackTrailing = LocalDensity.current.fontScale >= 1.3f
 
     AppPanel(
         modifier = modifier
@@ -334,39 +338,20 @@ private fun MissionCard(
                         modifier = Modifier.semantics { heading() },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
+                        maxLines = if (stackTrailing) Int.MAX_VALUE else 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = mission.summary,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 3,
+                        maxLines = if (stackTrailing) Int.MAX_VALUE else 3,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (stackTrailing) MissionTrailing(mission, stacked = true)
                 }
 
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.missions_progress_value,
-                            mission.progress,
-                            mission.goal
-                        ),
-                        style = MaterialTheme.typography.bodyMedium.tabularDigits(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                    if (mission.isComplete) {
-                        InfoPill(
-                            text = stringResource(R.string.missions_status_completed),
-                            leadingIcon = Icons.Default.Check
-                        )
-                    }
-                }
+                if (!stackTrailing) MissionTrailing(mission, stacked = false)
             }
 
             GymProgressBar(
@@ -378,6 +363,39 @@ private fun MissionCard(
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
+    }
+}
+
+@Composable
+private fun MissionTrailing(mission: MissionProgressUiModel, stacked: Boolean) {
+    val content: @Composable () -> Unit = {
+        Text(
+            text = stringResource(
+                R.string.missions_progress_value,
+                mission.progress,
+                mission.goal
+            ),
+            style = MaterialTheme.typography.bodyMedium.tabularDigits(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+        if (mission.isComplete) {
+            InfoPill(
+                text = stringResource(R.string.missions_status_completed),
+                leadingIcon = Icons.Default.Check
+            )
+        }
+    }
+    if (stacked) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) { content() }
+    } else {
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) { content() }
     }
 }
 

@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -298,52 +299,59 @@ internal fun FirstRunTutorialOverlay(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                // At large font scales the actions stack full width (primary first) so no label has to
+                // break mid-word; otherwise they share one row and single-word labels shrink to fit.
+                val stackActions = LocalDensity.current.fontScale >= 1.5f
+                val isLastStep = safeIndex == FIRST_RUN_TUTORIAL_STEPS.lastIndex
+                val actionLabel: @Composable (Int) -> Unit = { labelRes ->
+                    WordShrinkText(
+                        text = stringResource(labelRes),
+                        style = MaterialTheme.typography.labelLarge,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                val skipButton: @Composable (Modifier) -> Unit = { buttonModifier ->
                     FilledTonalButton(
                         onClick = onSkip,
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = GymSpacing.MinimumTouch)
-                    ) {
-                        Text(stringResource(R.string.tutorial_skip))
-                    }
-                    if (safeIndex > 0) {
-                        OutlinedButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = GymSpacing.MinimumTouch)
-                        ) {
-                            Text(stringResource(R.string.tutorial_back))
-                        }
-                    }
+                        modifier = buttonModifier.heightIn(min = GymSpacing.MinimumTouch)
+                    ) { actionLabel(R.string.tutorial_skip) }
+                }
+                val backButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+                    OutlinedButton(
+                        onClick = onBack,
+                        modifier = buttonModifier.heightIn(min = GymSpacing.MinimumTouch)
+                    ) { actionLabel(R.string.tutorial_back) }
+                }
+                val nextButton: @Composable (Modifier) -> Unit = { buttonModifier ->
                     Button(
-                        onClick = if (safeIndex == FIRST_RUN_TUTORIAL_STEPS.lastIndex) {
-                            onDone
-                        } else {
-                            onNext
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = GymSpacing.MinimumTouch)
+                        onClick = if (isLastStep) onDone else onNext,
+                        modifier = buttonModifier.heightIn(min = GymSpacing.MinimumTouch)
                     ) {
-                        Text(
-                            stringResource(
-                                if (safeIndex == FIRST_RUN_TUTORIAL_STEPS.lastIndex) {
-                                    R.string.tutorial_done
-                                } else {
-                                    R.string.tutorial_next
-                                }
-                            )
-                        )
+                        actionLabel(if (isLastStep) R.string.tutorial_done else R.string.tutorial_next)
+                    }
+                }
+                if (stackActions) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(GymSpacing.Small)
+                    ) {
+                        nextButton(Modifier.fillMaxWidth())
+                        if (safeIndex > 0) backButton(Modifier.fillMaxWidth())
+                        skipButton(Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(GymSpacing.Small),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        skipButton(Modifier.weight(1f))
+                        if (safeIndex > 0) backButton(Modifier.weight(1f))
+                        nextButton(Modifier.weight(1f))
                     }
                 }
             }

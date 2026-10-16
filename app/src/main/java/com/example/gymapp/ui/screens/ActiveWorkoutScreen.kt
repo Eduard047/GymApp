@@ -2206,23 +2206,12 @@ private fun CurrentSetCard(
             },
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.label_set, set.orderIndex + 1),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.primary
-            )
-            if (showsPlateCalculator) {
-                PlateCalculatorButton(
-                    weight = com.example.gymapp.util.parseWeightInputOrNull(set.weightInput)
-                )
-            }
-            Spacer(modifier = Modifier.weight(1f))
+        val hasPrevious = caption != null && repeatWeight != null && repeatReps != null
+        // At large font scales the chip no longer fits beside the label, plates and trash: it takes its own line.
+        val stackPrevious = hasPrevious && LocalDensity.current.fontScale >= 1.3f
+        val previousChip: @Composable () -> Unit = {
             if (caption != null && repeatWeight != null && repeatReps != null) {
+
                 val captionText = if (caption.showsWeight) {
                     stringResource(
                         R.string.active_workout_previous_caption,
@@ -2265,8 +2254,28 @@ private fun CurrentSetCard(
                         .wrapContentHeight(Alignment.CenterVertically)
                         .clearAndSetSemantics { contentDescription = captionDescription }
                 )
+                        }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.label_set, set.orderIndex + 1),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.primary
+            )
+            if (showsPlateCalculator) {
+                PlateCalculatorButton(
+                    weight = com.example.gymapp.util.parseWeightInputOrNull(set.weightInput)
+                )
             }
+            Spacer(modifier = Modifier.weight(1f))
+            if (!stackPrevious) previousChip()
             if (canDelete) {
+                // Extra gap so a mistap on the "previous" chip cannot hit the destructive trash.
+                if (!stackPrevious && hasPrevious) Spacer(modifier = Modifier.width(8.dp))
                 // Visible delete; the long-press menu on the card stays as the secondary path.
                 IconButton(
                     onClick = onDelete,
@@ -2283,6 +2292,7 @@ private fun CurrentSetCard(
                 }
             }
         }
+        if (stackPrevious) previousChip()
         if (voice.phase == VoicePhase.Listening) {
             VoiceListeningValueLine(transcript = voice.partial)
         } else {
