@@ -1104,11 +1104,11 @@ test("active-workout topbar minimizes and the overflow sheet holds Adapt and Dis
   for (const reason of ["equipmentUnavailable", "timeCut", "tooHard"]) {
     assert.match(sheet, new RegExp(`data-action="training-adapt" data-reason="${reason}"`));
   }
-  assert.match(sheet, /class="button danger full" data-action="discard-active-workout">Discard<\/button>/);
+  assert.match(sheet, /class="button danger full" data-action="discard-active-workout">Discard workout<\/button>/);
   const screen = vm.runInContext("activeWorkoutScreen()", context);
   assert.doesNotMatch(screen, /training-adapt|discard-active-workout|active-workout-more/);
   const russianSheet = vm.runInContext('state.language = "ru"; activeWorkoutMoreSheetMarkup()', context);
-  assert.match(russianSheet, />Удалить<\/button>/);
+  assert.match(russianSheet, />Удалить тренировку<\/button>/);
 
   vm.runInContext(`modal = { type: "active-more" }; state.language = "en";`, context);
   assert.match(vm.runInContext("modalMarkup()", context), /aria-labelledby="active-more-title"/);

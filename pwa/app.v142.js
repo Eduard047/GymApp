@@ -14842,7 +14842,7 @@ function activeWorkoutMoreSheetMarkup() {
     ? `<section class="active-more-group" aria-labelledby="active-more-adapt"><h3 class="eyebrow" id="active-more-adapt">${tx3("Adapt workout", "Адаптувати тренування", "Адаптировать тренировку")}</h3><div class="exercise-more-actions">${Object.entries(trainingAdaptationLabels()).map(([reason, label]) => `<button class="button secondary full" data-action="training-adapt" data-reason="${reason}">${escapeHtml(label)}</button>`).join("")}</div></section>`
     : "";
   const wakeLockNote = activeWorkoutWakeLockUnsupportedNote();
-  return `<div class="exercise-more-sheet active-more-sheet"><h2 id="active-more-title">${tx3("More workout options", "Інші дії", "Другие действия")}</h2>${adapt}${wakeLockNote ? `<p class="muted active-more-note">${escapeHtml(wakeLockNote)}</p>` : ""}<div class="exercise-more-actions"><button class="button danger full" data-action="discard-active-workout">${tx3("Discard", "Відкинути", "Удалить")}</button></div></div>`;
+  return `<div class="exercise-more-sheet active-more-sheet"><h2 id="active-more-title">${tx3("More workout options", "Інші дії", "Другие действия")}</h2>${adapt}${wakeLockNote ? `<p class="muted active-more-note">${escapeHtml(wakeLockNote)}</p>` : ""}<div class="exercise-more-actions"><button class="button danger full" data-action="discard-active-workout">${tx3("Discard workout", "Відкинути тренування", "Удалить тренировку")}</button></div></div>`;
 }
 
 function trainingAdaptationSnapshot() {
