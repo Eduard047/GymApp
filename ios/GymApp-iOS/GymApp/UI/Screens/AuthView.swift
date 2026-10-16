@@ -323,6 +323,7 @@ public struct AuthView: View {
                     isVisible.wrappedValue.toggle()
                 } label: {
                     Image(systemName: isVisible.wrappedValue ? "eye.slash" : "eye")
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)

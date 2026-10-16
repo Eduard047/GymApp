@@ -102,7 +102,12 @@ private struct GymHorizontalPanRecognizer: UIGestureRecognizerRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            true
+            // Only the enclosing scroll view may keep running alongside the
+            // swipe. Everything else (SwiftUI buttons and links under the
+            // finger) is cancelled once the pan begins, so a drag that starts
+            // on a row never opens it on release.
+            otherGestureRecognizer is UIPanGestureRecognizer
+                && otherGestureRecognizer.view is UIScrollView
         }
     }
 

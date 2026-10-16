@@ -1286,6 +1286,7 @@ struct AddWorkoutView: View {
                     systemImage: "slider.horizontal.3"
                 )
                 .font(.headline)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : nil)
                 .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.6 : 1)
             }
         }
