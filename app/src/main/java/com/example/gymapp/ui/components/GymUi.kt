@@ -30,6 +30,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.example.gymapp.ui.theme.Button
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -982,3 +984,11 @@ fun LoadingStatePanel(
 
 /** Tabular figures on the default font, matching iOS `.monospacedDigit()` for numeric readouts. */
 fun TextStyle.tabularDigits(): TextStyle = copy(fontFeatureSettings = "tnum")
+
+/** Switch colors with the accent fill as the "on" track and a white thumb (the pale dark primary would weaken the thumb). */
+@Composable
+fun gymSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    checkedTrackColor = brandFillColor(),
+    checkedThumbColor = Color.White,
+    checkedBorderColor = brandFillColor()
+)

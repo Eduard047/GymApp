@@ -106,6 +106,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -491,307 +493,310 @@ fun ActiveWorkoutScreen(
     val canReorderExercises = uiState.liveConnectionMode == null && uiState.exercises.size >= 2
     ExerciseReorderSync(reorder, exerciseKeys, enabled = canReorderExercises)
     val displayedExercises = reorder.displayed(uiState.exercises) { it.id }
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxSize().exerciseReorderViewport(reorder),
-        contentPadding = PaddingValues(
-            start = screenHorizontalPadding,
-            top = GymSpacing.ScreenTop,
-            end = screenHorizontalPadding,
-            bottom = 112.dp
-        ),
-        verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
-    ) {
-        if (peerName != null) {
-            item {
-                GymSegmentedControl(
-                    items = listOf(
-                        GymSegmentItem(
-                            LiveParticipantTab.Self,
-                            uiState.liveSelfName ?: stringResource(R.string.live_workout_lane_you)
+    // While the "Recorded" banner carries Undo for a set, that set's row shows none: one Undo at a time.
+    CompositionLocalProvider(LocalRecordedBannerSetId provides recordedConfirmation?.setId) {
+        LazyColumn(
+            state = listState,
+            modifier = modifier.fillMaxSize().exerciseReorderViewport(reorder),
+            contentPadding = PaddingValues(
+                start = screenHorizontalPadding,
+                top = GymSpacing.ScreenTop,
+                end = screenHorizontalPadding,
+                bottom = 112.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(GymSpacing.Large)
+        ) {
+            if (peerName != null) {
+                item {
+                    GymSegmentedControl(
+                        items = listOf(
+                            GymSegmentItem(
+                                LiveParticipantTab.Self,
+                                uiState.liveSelfName ?: stringResource(R.string.live_workout_lane_you)
+                            ),
+                            GymSegmentItem(LiveParticipantTab.Peer, peerName)
                         ),
-                        GymSegmentItem(LiveParticipantTab.Peer, peerName)
-                    ),
-                    selected = liveParticipantTab,
-                    onSelected = { liveParticipantTab = it },
-                    modifier = Modifier.fillMaxWidth()
+                        selected = liveParticipantTab,
+                        onSelected = { liveParticipantTab = it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            item {
+                if (showSelfParticipant) {
+                    ActiveWorkoutHero(uiState)
+                } else {
+                    LivePeerWorkoutHero(uiState = uiState, peerName = peerName.orEmpty())
+                }
+            }
+
+            if (showSelfParticipant) {
+            uiState.note?.takeIf(String::isNotBlank)?.let { note ->
+                item {
+                    AppPanel(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.label_note),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(text = note, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+
+            uiState.message?.takeIf { uiState.messageSetId == null }?.let { message ->
+                item {
+                    val isSuccess = activeWorkoutMessageIsSuccess(message.resourceId)
+                    AppPanel(
+                        modifier = Modifier.fillMaxWidth(),
+                        containerColor = if (isSuccess) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                        } else {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
+                        },
+                        highlighted = true
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = message.asString(),
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isSuccess) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                }
+                            )
+                            if (uiState.batchUndoAvailable &&
+                                message.resourceId == R.string.active_workout_all_sets_saved
+                            ) {
+                                // One undo for the whole "log all remaining" batch, for a few seconds.
+                                TextButton(
+                                    onClick = onUndoRecordedBatch,
+                                    enabled = !operationInProgress,
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Text(text = stringResource(R.string.voice_command_undo))
+                                }
+                            }
+                            TextButton(onClick = onDismissMessage) {
+                                Text(text = stringResource(R.string.action_close))
+                            }
+                        }
+                    }
+                }
+            }
+
+            recordedConfirmation?.let { confirmation ->
+                // animateItem: fades in (150 ms) / out (90 ms) and the cards below slide with spring-standard instead of jumping.
+                item(key = "recorded-confirmation") {
+                    RecordedConfirmationBanner(
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = GymMotion.fadeInSpec(),
+                            placementSpec = if (reduceMotion) null else GymMotion.standardSpring(IntOffset.VisibilityThreshold),
+                            fadeOutSpec = GymMotion.fadeOutSpec()
+                        ),
+                        confirmation = confirmation,
+                        undoEnabled = confirmation.setId == uiState.latestCompletedSetId && !operationInProgress,
+                        onUndo = {
+                            gymHaptics.perform(GymHapticEvent.Undo)
+                            onUndoSet(confirmation.setId)
+                            recordedConfirmation = null
+                        },
+                        onDismiss = { recordedConfirmation = null }
+                    )
+                }
+            }
+
+            itemsIndexed(
+                items = displayedExercises,
+                key = { _, exercise -> exercise.id }
+            ) { exerciseIndex, exercise ->
+                val isDragged = reorder.draggedKey == exercise.id
+                ActiveWorkoutExerciseCard(
+                    modifier = Modifier
+                        .exerciseReorderItem(reorder, exercise.id)
+                        .animateItem(
+                            fadeInSpec = GymMotion.fadeInSpec(),
+                            placementSpec = when {
+                                reduceMotion || isDragged -> null
+                                reorder.isActive -> GymMotion.snappySpring(IntOffset.VisibilityThreshold)
+                                else -> GymMotion.standardSpring(IntOffset.VisibilityThreshold)
+                            },
+                            fadeOutSpec = GymMotion.fadeOutSpec()
+                        ),
+                    reorderHandle = if (canReorderExercises) {
+                        {
+                            ExerciseDragHandle(
+                                state = reorder,
+                                itemKey = exercise.id,
+                                sourceKeys = exerciseKeys,
+                                enabled = !operationInProgress,
+                                onCommit = { _, toIndex -> onMoveExerciseTo(exercise.id, toIndex) }
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    exercise = exercise,
+                    initiallyExpanded = exercise.id == currentExerciseId,
+                    screenEntryToken = screenEntryToken,
+                    isCurrent = exercise.id == currentExerciseId,
+                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                    friendGhost = friendGhosts[exercise.friendGhostKey],
+                    operationInProgress = operationInProgress,
+                    allowExerciseActions = uiState.liveConnectionMode == null,
+                    canSkipRemaining = exercise.canSkipRemaining,
+                    currentSetId = currentSetId,
+                    inFlightSetIds = uiState.setRecordingsInFlight,
+                    latestCompletedSetId = uiState.latestCompletedSetId,
+                    canUndoOlderSets = uiState.canUndoOlderSets,
+                    restSecondsRemaining = uiState.restSecondsRemaining,
+                    restEnded = restEndHighlight,
+                    inlineMessage = uiState.message,
+                    inlineMessageSetId = uiState.messageSetId,
+                    onSetWeightChanged = onSetWeightChanged,
+                    onSetRepsChanged = onSetRepsChanged,
+                    onSaveExercise = { onSaveExercise(exercise.id) },
+                    onAddSet = { onAddSet(exercise.id) },
+                    onSkipRemainingSets = { onSkipRemainingSets(exercise.id) },
+                    canRemoveExercise = uiState.liveConnectionMode == null && uiState.exercises.size > 1,
+                    onRemoveExercise = { onRemoveExercise(exercise.id) },
+                    canMoveUp = exerciseIndex > 0,
+                    canMoveDown = exerciseIndex < uiState.exercises.lastIndex,
+                    onMoveExercise = { offset -> onMoveExercise(exercise.id, offset) },
+                    onDeleteSet = onDeleteSet,
+                    onRecordSet = onRecordSet,
+                    onUndoSet = onUndoSet,
+                    onAdjustRestTimer = adjustRestTimer,
+                    onStopRestTimer = stopRestTimer,
+                    onDismissMessage = onDismissMessage,
+                    onSetRecorded = onSetRecorded,
+                    onVoiceStarted = onVoiceStarted,
+                    onVoiceCommandFeedback = onVoiceCommandFeedback
                 )
             }
-        }
 
-        item {
-            if (showSelfParticipant) {
-                ActiveWorkoutHero(uiState)
-            } else {
-                LivePeerWorkoutHero(uiState = uiState, peerName = peerName.orEmpty())
+            if (uiState.liveConnectionMode == null) {
+                item(key = "add-exercise") {
+                    // Same picker and dashed button as the saved workout screen; hidden in live rooms.
+                    ExerciseCatalogSelector(
+                        selectedExerciseId = null,
+                        exercises = addExerciseCatalog.exercises,
+                        frequentExerciseIds = addExerciseCatalog.frequentExerciseIds,
+                        exerciseWorkoutCounts = addExerciseCatalog.exerciseWorkoutCounts,
+                        exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
+                        exerciseMediaOwnerKey = exerciseMediaOwnerKey,
+                        onExerciseSelected = onAddExercise,
+                        trigger = { openPicker ->
+                            WorkoutFooterButton(
+                                label = stringResource(R.string.workout_detail_add_exercise_short),
+                                accessibilityLabel = stringResource(R.string.action_add_exercise),
+                                dashed = true,
+                                enabled = !operationInProgress && addExerciseCatalog.exercises.isNotEmpty(),
+                                onClick = openPicker,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    )
+                }
             }
-        }
 
-        if (showSelfParticipant) {
-        uiState.note?.takeIf(String::isNotBlank)?.let { note ->
             item {
-                AppPanel(modifier = Modifier.fillMaxWidth()) {
+                AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = stringResource(R.string.label_note),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
+                        SectionTitle(
+                            eyebrow = "",
+                            title = stringResource(R.string.action_finish_workout)
                         )
-                        Text(text = note, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-        }
-
-        uiState.message?.takeIf { uiState.messageSetId == null }?.let { message ->
-            item {
-                val isSuccess = activeWorkoutMessageIsSuccess(message.resourceId)
-                AppPanel(
-                    modifier = Modifier.fillMaxWidth(),
-                    containerColor = if (isSuccess) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                    } else {
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
-                    },
-                    highlighted = true
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = message.asString(),
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isSuccess) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            }
-                        )
-                        if (uiState.batchUndoAvailable &&
-                            message.resourceId == R.string.active_workout_all_sets_saved
-                        ) {
-                            // One undo for the whole "log all remaining" batch, for a few seconds.
-                            TextButton(
-                                onClick = onUndoRecordedBatch,
+                        if (uiState.completedSetCount < uiState.totalSetCount) {
+                            OutlinedButton(
+                                onClick = onRecordAllPendingSets,
                                 enabled = !operationInProgress,
-                                modifier = Modifier.heightIn(min = 48.dp)
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             ) {
-                                Text(text = stringResource(R.string.voice_command_undo))
+                                if (uiState.isRecordingAll) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier
+                                            .padding(end = 8.dp)
+                                            .size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                                Text(text = stringResource(R.string.action_save_all_pending_sets))
                             }
                         }
-                        TextButton(onClick = onDismissMessage) {
-                            Text(text = stringResource(R.string.action_close))
-                        }
-                    }
-                }
-            }
-        }
-
-        recordedConfirmation?.let { confirmation ->
-            // animateItem: fades in (150 ms) / out (90 ms) and the cards below slide with spring-standard instead of jumping.
-            item(key = "recorded-confirmation") {
-                RecordedConfirmationBanner(
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = GymMotion.fadeInSpec(),
-                        placementSpec = if (reduceMotion) null else GymMotion.standardSpring(IntOffset.VisibilityThreshold),
-                        fadeOutSpec = GymMotion.fadeOutSpec()
-                    ),
-                    confirmation = confirmation,
-                    undoEnabled = confirmation.setId == uiState.latestCompletedSetId && !operationInProgress,
-                    onUndo = {
-                        gymHaptics.perform(GymHapticEvent.Undo)
-                        onUndoSet(confirmation.setId)
-                        recordedConfirmation = null
-                    },
-                    onDismiss = { recordedConfirmation = null }
-                )
-            }
-        }
-
-        itemsIndexed(
-            items = displayedExercises,
-            key = { _, exercise -> exercise.id }
-        ) { exerciseIndex, exercise ->
-            val isDragged = reorder.draggedKey == exercise.id
-            ActiveWorkoutExerciseCard(
-                modifier = Modifier
-                    .exerciseReorderItem(reorder, exercise.id)
-                    .animateItem(
-                        fadeInSpec = GymMotion.fadeInSpec(),
-                        placementSpec = when {
-                            reduceMotion || isDragged -> null
-                            reorder.isActive -> GymMotion.snappySpring(IntOffset.VisibilityThreshold)
-                            else -> GymMotion.standardSpring(IntOffset.VisibilityThreshold)
-                        },
-                        fadeOutSpec = GymMotion.fadeOutSpec()
-                    ),
-                reorderHandle = if (canReorderExercises) {
-                    {
-                        ExerciseDragHandle(
-                            state = reorder,
-                            itemKey = exercise.id,
-                            sourceKeys = exerciseKeys,
-                            enabled = !operationInProgress,
-                            onCommit = { _, toIndex -> onMoveExerciseTo(exercise.id, toIndex) }
-                        )
-                    }
-                } else {
-                    null
-                },
-                exercise = exercise,
-                initiallyExpanded = exercise.id == currentExerciseId,
-                screenEntryToken = screenEntryToken,
-                isCurrent = exercise.id == currentExerciseId,
-                exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                friendGhost = friendGhosts[exercise.friendGhostKey],
-                operationInProgress = operationInProgress,
-                allowExerciseActions = uiState.liveConnectionMode == null,
-                canSkipRemaining = exercise.canSkipRemaining,
-                currentSetId = currentSetId,
-                inFlightSetIds = uiState.setRecordingsInFlight,
-                latestCompletedSetId = uiState.latestCompletedSetId,
-                canUndoOlderSets = uiState.canUndoOlderSets,
-                restSecondsRemaining = uiState.restSecondsRemaining,
-                restEnded = restEndHighlight,
-                inlineMessage = uiState.message,
-                inlineMessageSetId = uiState.messageSetId,
-                onSetWeightChanged = onSetWeightChanged,
-                onSetRepsChanged = onSetRepsChanged,
-                onSaveExercise = { onSaveExercise(exercise.id) },
-                onAddSet = { onAddSet(exercise.id) },
-                onSkipRemainingSets = { onSkipRemainingSets(exercise.id) },
-                canRemoveExercise = uiState.liveConnectionMode == null && uiState.exercises.size > 1,
-                onRemoveExercise = { onRemoveExercise(exercise.id) },
-                canMoveUp = exerciseIndex > 0,
-                canMoveDown = exerciseIndex < uiState.exercises.lastIndex,
-                onMoveExercise = { offset -> onMoveExercise(exercise.id, offset) },
-                onDeleteSet = onDeleteSet,
-                onRecordSet = onRecordSet,
-                onUndoSet = onUndoSet,
-                onAdjustRestTimer = adjustRestTimer,
-                onStopRestTimer = stopRestTimer,
-                onDismissMessage = onDismissMessage,
-                onSetRecorded = onSetRecorded,
-                onVoiceStarted = onVoiceStarted,
-                onVoiceCommandFeedback = onVoiceCommandFeedback
-            )
-        }
-
-        if (uiState.liveConnectionMode == null) {
-            item(key = "add-exercise") {
-                // Same picker and dashed button as the saved workout screen; hidden in live rooms.
-                ExerciseCatalogSelector(
-                    selectedExerciseId = null,
-                    exercises = addExerciseCatalog.exercises,
-                    frequentExerciseIds = addExerciseCatalog.frequentExerciseIds,
-                    exerciseWorkoutCounts = addExerciseCatalog.exerciseWorkoutCounts,
-                    exerciseMuscleIds = addExerciseCatalog.exerciseMuscleIds,
-                    exerciseMediaOwnerKey = exerciseMediaOwnerKey,
-                    onExerciseSelected = onAddExercise,
-                    trigger = { openPicker ->
-                        WorkoutFooterButton(
-                            label = stringResource(R.string.workout_detail_add_exercise_short),
-                            accessibilityLabel = stringResource(R.string.action_add_exercise),
-                            dashed = true,
-                            enabled = !operationInProgress && addExerciseCatalog.exercises.isNotEmpty(),
-                            onClick = openPicker,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                )
-            }
-        }
-
-        item {
-            AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = true) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SectionTitle(
-                        eyebrow = "",
-                        title = stringResource(R.string.action_finish_workout)
-                    )
-                    if (uiState.completedSetCount < uiState.totalSetCount) {
-                        OutlinedButton(
-                            onClick = onRecordAllPendingSets,
-                            enabled = !operationInProgress,
+                        Button(
+                            onClick = {
+                                if (activeWorkoutFinishNeedsConfirmation(
+                                        uiState.completedSetCount,
+                                        uiState.totalSetCount
+                                    )
+                                ) {
+                                    showFinishWorkoutConfirmation = true
+                                } else {
+                                    onFinishWorkout()
+                                }
+                            },
+                            enabled = uiState.completedSetCount > 0 && !operationInProgress,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         ) {
-                            if (uiState.isRecordingAll) {
+                            if (uiState.isFinishing) {
                                 CircularProgressIndicator(
                                     modifier = Modifier
                                         .padding(end = 8.dp)
                                         .size(18.dp),
-                                    strokeWidth = 2.dp
+                                    strokeWidth = 2.dp,
+                                    color = LocalContentColor.current
                                 )
-                            }
-                            Text(text = stringResource(R.string.action_save_all_pending_sets))
-                        }
-                    }
-                    Button(
-                        onClick = {
-                            if (activeWorkoutFinishNeedsConfirmation(
-                                    uiState.completedSetCount,
-                                    uiState.totalSetCount
-                                )
-                            ) {
-                                showFinishWorkoutConfirmation = true
                             } else {
-                                onFinishWorkout()
+                                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null)
                             }
-                        },
-                        enabled = uiState.completedSetCount > 0 && !operationInProgress,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) {
-                        if (uiState.isFinishing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = LocalContentColor.current
+                            Text(
+                                text = stringResource(R.string.action_finish_workout),
+                                modifier = Modifier.padding(start = 8.dp)
                             )
-                        } else {
-                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null)
                         }
-                        Text(
-                            text = stringResource(R.string.action_finish_workout),
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
                     }
                 }
             }
-        }
-        } else {
-            item {
-                Text(
-                    text = stringResource(
-                        when (uiState.liveConnectionMode) {
-                            LiveConnectionMode.Realtime -> R.string.live_workout_active_realtime
-                            LiveConnectionMode.Polling -> R.string.live_workout_active_polling
-                            LiveConnectionMode.Offline,
-                            null -> R.string.live_workout_active_offline
-                        },
-                        uiState.livePendingOperationCount
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            items(
-                items = uiState.livePeerExercises,
-                key = LivePeerExerciseSummary::exerciseId
-            ) { exercise ->
-                LivePeerExerciseCard(exercise)
+            } else {
+                item {
+                    Text(
+                        text = stringResource(
+                            when (uiState.liveConnectionMode) {
+                                LiveConnectionMode.Realtime -> R.string.live_workout_active_realtime
+                                LiveConnectionMode.Polling -> R.string.live_workout_active_polling
+                                LiveConnectionMode.Offline,
+                                null -> R.string.live_workout_active_offline
+                            },
+                            uiState.livePendingOperationCount
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(
+                    items = uiState.livePeerExercises,
+                    key = LivePeerExerciseSummary::exerciseId
+                ) { exercise ->
+                    LivePeerExerciseCard(exercise)
+                }
             }
         }
     }
@@ -996,6 +1001,9 @@ fun ActiveWorkoutOverflowMenu(state: ActiveWorkoutToolbarState) {
         }
     }
 }
+
+/** Id of the set whose "Recorded" banner is showing (it carries that set's Undo), or null. */
+private val LocalRecordedBannerSetId = compositionLocalOf<String?> { null }
 
 private enum class LiveParticipantTab { Self, Peer }
 
@@ -1915,7 +1923,7 @@ private fun CompletedSetRow(
             SetRowAction(label = undoLabel, onClick = undoWithHaptic).takeIf { canUndoFromMenu },
             SetRowAction(label = deleteLabel, destructive = true, onClick = onDelete).takeIf { canDelete }
         ),
-        inlineAction = if (canUndo) {
+        inlineAction = if (canUndo && LocalRecordedBannerSetId.current != set.id) {
             {
                 val buttonDescription = "$undoLabel, $description"
                 TextButton(

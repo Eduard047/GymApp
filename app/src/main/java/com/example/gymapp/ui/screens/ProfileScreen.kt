@@ -1,6 +1,7 @@
 package com.example.gymapp.ui.screens
 
 import com.example.gymapp.util.TrainingProfile
+import com.example.gymapp.ui.components.gymSwitchColors
 import com.example.gymapp.ui.components.trainingSettingsSummary
 import com.example.gymapp.ui.components.TrainingSettingsSheet
 import android.Manifest
@@ -725,7 +726,7 @@ private fun ProfileHapticsRow() {
             onValueChange = preference::setEnabled
         ),
         trailing = SettingsRowTrailing.None,
-        trailingContent = { Switch(checked = enabled, onCheckedChange = null) }
+        trailingContent = { Switch(checked = enabled, onCheckedChange = null, colors = gymSwitchColors()) }
     )
 }
 

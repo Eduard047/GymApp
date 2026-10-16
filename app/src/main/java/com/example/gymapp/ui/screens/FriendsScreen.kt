@@ -69,6 +69,7 @@ import com.example.gymapp.auth.hasAnotherBoundedPage
 import com.example.gymapp.auth.rankedSocialFriends
 import com.example.gymapp.push.PushNavigationTarget
 import com.example.gymapp.push.SocialPushType
+import com.example.gymapp.ui.components.gymSwitchColors
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.EmptyStatePanel
 import com.example.gymapp.ui.components.LoadingStatePanel
@@ -1240,7 +1241,7 @@ private fun PrivacySwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled, colors = gymSwitchColors())
     }
 }
 

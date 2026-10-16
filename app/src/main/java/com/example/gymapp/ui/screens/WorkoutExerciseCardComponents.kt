@@ -104,6 +104,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gymapp.R
 import com.example.gymapp.data.repository.VoiceWorkoutDraftParser
+import androidx.compose.ui.graphics.Color
+import com.example.gymapp.ui.components.brandFillColor
 import com.example.gymapp.ui.components.AppPanel
 import com.example.gymapp.ui.components.ExerciseMediaPreview
 import com.example.gymapp.ui.components.GymMotion
@@ -1503,8 +1505,9 @@ private val StepButtonGlyphInset = 6.dp
 internal fun PersonalRecordBadge() {
     Surface(
         shape = RoundedCornerShape(percent = 50),
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary
+        // Accent fill with white text on every client (the pale dark-theme primary would not carry white).
+        color = brandFillColor(),
+        contentColor = Color.White
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
