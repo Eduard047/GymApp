@@ -174,12 +174,12 @@ test("Muscle map card keeps the exercise mapping list behind one row below Top m
 
 test("G1 the missions hero is one compact tappable row that opens ranks", () => {
   for (const [language, summary, hint] of [
-    ["en", /Level 1\u00A0· [^<·]+\u00A0· 0\u00A0XP/, "Opens ranks"],
-    ["uk", /Рівень 1\u00A0· [^<·]+\u00A0· 0\u00A0XP/, "Відкриває ранги"],
-    ["ru", /Уровень 1\u00A0· [^<·]+\u00A0· 0\u00A0XP/, "Открывает ранги"]
+    ["en", /Level 1\u00A0·\u00A0[^<·]+\u00A0·\u00A00\u00A0XP/, "Opens ranks"],
+    ["uk", /Рівень 1\u00A0·\u00A0[^<·]+\u00A0·\u00A00\u00A0XP/, "Відкриває ранги"],
+    ["ru", /Уровень 1\u00A0·\u00A0[^<·]+\u00A0·\u00A00\u00A0XP/, "Открывает ранги"]
   ]) {
     const screen = run(language, "return missionsScreen();");
-    assert.match(screen, /^<div class="settings-panel missions-rank-panel"><button type="button" class="settings-row" data-action="open-ranks" aria-label="/);
+    assert.match(screen, /^<div class="settings-panel missions-rank-panel"><button type="button" class="settings-row has-subtitle" data-action="open-ranks" aria-label="/);
     assert.match(screen, summary);
     assert.ok(screen.includes(`. ${hint}"`), language);
     assert.match(screen, /settings-row-icon"><svg[\s\S]*settings-row-trailing" aria-hidden="true"><svg/);

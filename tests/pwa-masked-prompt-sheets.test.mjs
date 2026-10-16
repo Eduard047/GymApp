@@ -478,9 +478,9 @@ test("sheet field descriptors are bounded and sanitised", () => {
   assert.equal(fields[0].maxLength, 1024);
 });
 
-test("the shipped v138 bundle is a byte copy of the working file and the field-sheet styles ship in styles.v106", async () => {
-  assert.equal(appSource, await readFile("pwa/app.v138.js", "utf8"));
-  const [styles, shipped] = await Promise.all([readFile("pwa/styles.css", "utf8"), readFile("pwa/styles.v106.css", "utf8")]);
+test("the shipped v139 bundle is a byte copy of the working file and the field-sheet styles ship in styles.v107", async () => {
+  assert.equal(appSource, await readFile("pwa/app.v139.js", "utf8"));
+  const [styles, shipped] = await Promise.all([readFile("pwa/styles.css", "utf8"), readFile("pwa/styles.v107.css", "utf8")]);
   assert.equal(styles, shipped);
   assert.match(shipped, /\.confirm-sheet-error \{[^}]*color: var\(--danger\)/);
 });

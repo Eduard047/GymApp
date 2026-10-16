@@ -13,7 +13,7 @@
   --surface-variant-overlay: transparent;
   --text: #10233f;
   --frost: var(--text);
-  --muted: #60708a;
+  --muted: #596881;
   --sage: #216bd7;
   --heat-0: #ffffff;
   --heat-1: #c4d9f8;
@@ -338,7 +338,7 @@ a:focus-visible,
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  padding: 10px 12px;
+  padding: 10px 16px;
   scrollbar-gutter: stable;
 }
 
@@ -383,7 +383,7 @@ a:focus-visible,
   align-items: end;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px 12px 12px;
+  margin: 8px 16px 12px;
 }
 .workouts-screen-copy .button { margin-top: 0; }
 .workouts-screen-copy > div { display: grid; gap: 2px; }
@@ -465,8 +465,8 @@ a:focus-visible,
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
-  min-height: 42px;
-  margin: 0;
+  min-height: 44px;
+  margin: -1px 0;
   padding: 0;
   border: 0;
   outline: 0;
@@ -652,7 +652,7 @@ a:focus-visible,
   gap: 2px;
   padding: 0 4px;
   font: inherit;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 1.15;
   text-align: center;
@@ -1471,8 +1471,8 @@ svg.filled-icon.small-icon {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 2px 4px;
+  gap: 8px;
+  padding: 2px 0;
 }
 
 .exercise-builder-heading > div {
@@ -1495,8 +1495,9 @@ svg.filled-icon.small-icon {
 
 .button.exercise-builder-add,
 .button.exercise-builder-voice {
-  flex: 0 0 54px;
-  width: 54px;
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: 44px;
   padding: 0;
 }
 
@@ -1504,7 +1505,11 @@ svg.filled-icon.small-icon {
 .exercise-builder-voice svg { flex-shrink: 0; }
 
 .exercise-builder-heading > div { flex: 1 1 auto; }
-.exercise-builder-heading .pill { justify-self: start; }
+.exercise-builder-heading .pill {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
 
 /* Voice workout dictation sheet */
 .voice-workout-dictation { display: grid; gap: 10px; }
@@ -1969,6 +1974,24 @@ svg.filled-icon.small-icon {
 .metric-grid.tile-emphasized.tile-compact strong {
   font-size: 1.0625rem;
   line-height: 1.5rem;
+}
+
+/* Lifetime tiles reserve a two-line label slot so every value sits on the same baseline. */
+.lifetime-progress-card .metric-grid.tile-emphasized > div {
+  display: flex;
+  flex-direction: column;
+  padding-inline: 10px;
+}
+
+.lifetime-progress-card .metric-grid.tile-emphasized span {
+  display: block;
+  min-height: 2.25rem;
+  overflow: visible;
+}
+
+.lifetime-progress-card .metric-grid.tile-emphasized strong {
+  margin-top: auto;
+  padding-top: 5px;
 }
 
 /* A long value (such as "80,7 тыс. кг") starts smaller so the fit step keeps it on one line instead of clipping it. */
@@ -2453,7 +2476,7 @@ svg.filled-icon.small-icon {
 
 .store-download-link small {
   color: var(--muted);
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 0.75rem;
   letter-spacing: 0.05em;
@@ -2703,6 +2726,13 @@ svg.filled-icon.small-icon {
 .button.danger {
   color: var(--on-danger);
   background: var(--danger);
+}
+
+/* In the exercise menu Delete is a destructive outline row; fill stays for the sole confirm in a dialog. */
+.exercise-more-actions .button.danger {
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--outline));
 }
 
 .button.mini {
@@ -3228,7 +3258,7 @@ button.leaderboard-row {
 }
 .friend-record-value span {
   color: var(--muted);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -3363,7 +3393,7 @@ button.leaderboard-row {
   gap: 6px;
 }
 
-.workouts-controls .segmented { margin: 0 12px 10px; }
+.workouts-controls .segmented { margin: 0 16px 10px; }
 
 .mission-period-tabs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3462,7 +3492,7 @@ button.leaderboard-row {
   flex-direction: column;
   gap: 10px;
   overflow: visible;
-  padding: 0 12px var(--bottom-nav-clearance);
+  padding: 0 16px var(--bottom-nav-clearance);
 }
 
 .focus-overview { display: block; }
@@ -3736,7 +3766,11 @@ button.leaderboard-row {
   border-color: var(--outline-variant);
   background: var(--surface-2);
 }
-.weekly-summary-metrics strong { color: var(--text); }
+.weekly-summary-metrics strong {
+  color: var(--text);
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
 .weekly-summary-metrics span { color: var(--muted); }
 .weekly-session-list {
   display: grid;
@@ -3976,7 +4010,7 @@ button.leaderboard-row {
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
-.focus-lens.completed.compact .focus-lens-actions { max-width: 420px; }
+.focus-lens.completed.compact .focus-lens-actions { max-width: none; grid-template-columns: minmax(0, 1fr); }
 .workout-date-actions { align-items: center; }
 .workout-date-weekday {
   max-width: 16ch;
@@ -4752,6 +4786,8 @@ textarea:focus {
 .draft-exercise.active-workout-exercise { gap: 12px; }
 .draft-exercise .subpanel.smart { border-color: color-mix(in srgb, var(--primary) 24%, transparent); }
 .draft-exercise .subpanel.smart svg { color: var(--primary); }
+.smart-set-list { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.smart-set { white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .draft-last-logged { font-size: 0.75rem; line-height: 1rem; }
 
@@ -4773,8 +4809,9 @@ textarea:focus {
 }
 
 .button.exercise-builder-more {
-  flex: 0 0 54px;
-  width: 54px;
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: 44px;
   padding: 0;
 }
 
@@ -4957,6 +4994,7 @@ textarea:focus {
 }
 
 .workout-exercise-picker-row small { color: var(--muted); }
+.workout-exercise-picker-row .button.secondary { color: var(--hero-accent-text); }
 
 .active-workout-note {
   margin: 0;
@@ -6090,7 +6128,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .muscle-map-selector small {
   color: var(--muted);
+  font-size: 0.75rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .muscle-tile {
@@ -6327,11 +6367,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   bottom: 4px;
   width: 20px;
   height: 20px;
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
 }
 
 .exercise-list-thumb .exercise-media-play svg { width: 12px; height: 12px; }
-.exercise-list-thumb.empty { font-size: 0.6rem; }
+.exercise-list-thumb.empty { font-size: 0.6875rem; }
 
 .exercise-row .exercise-name {
   display: -webkit-box;
@@ -7178,7 +7218,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 /* Like the iPhone card: the delta is semibold, and only an increase takes the Recovery Mint tint
    (--mint: #23815E light, #77DDB7 dark). A decrease keeps the muted colour; the +/− sign and the
    "no change" text carry the meaning, so colour is never the only cue. */
-.workout-comparison-card small .comparison-delta { font-weight: 600; }
+.workout-comparison-card small .comparison-delta { margin-inline-start: 6px; font-weight: 600; }
 .workout-comparison-card small .comparison-delta.up { color: var(--mint); }
 
 .workout-comparison-card small {
@@ -7421,6 +7461,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
     margin-left: auto;
     margin-right: auto;
   }
+
+  /* The title sits on the same 16px inset as the panels below it. */
+  .screen-workouts .workouts-screen-copy { padding-inline: 16px; }
 
   .focus-lens {
     min-height: 0;
@@ -7826,6 +7869,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .settings-row-text strong { overflow: hidden; color: var(--text); font-size: 1rem; font-weight: 600; line-height: 1.375rem; text-overflow: ellipsis; white-space: nowrap; }
 .settings-row-text small { overflow: hidden; color: var(--muted); font-size: 0.875rem; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
 .settings-row.wrap .settings-row-text small { white-space: normal; }
+/* External link rows (legal, support, store) wrap instead of truncating; the arrow keeps its own width. */
+a.settings-row .settings-row-text strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
 
 .settings-row-trailing { flex: none; display: inline-flex; color: var(--muted); }
 .settings-row-trailing svg {
@@ -7920,7 +7965,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .account-identity-icon svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; }
 .account-identity-text { display: grid; gap: 2px; min-width: 0; }
 .account-identity-text strong { color: var(--text); font-size: 1.125rem; font-weight: 700; line-height: 1.5rem; overflow-wrap: anywhere; }
-.account-identity-text span { overflow: hidden; color: var(--muted); font-size: 0.875rem; text-overflow: ellipsis; white-space: nowrap; }
+.account-identity-text span { color: var(--muted); font-size: 0.875rem; overflow-wrap: anywhere; }
 
 .account-id-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 0 0 40px; }
 .account-id-text { display: grid; gap: 2px; min-width: 0; }
@@ -8153,7 +8198,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 }
 .active-hero-ring-text span {
   color: var(--hero-muted);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   line-height: 0.75rem;
 }
 .active-workout-hero .active-workout-note {
@@ -8317,7 +8362,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   line-clamp: 2;
   overflow-wrap: anywhere;
 }
-.smart-coach-chevron { display: grid; place-items: center; flex: none; min-width: 28px; min-height: 44px; color: var(--muted); cursor: pointer; transition: transform 160ms ease; }
+.smart-coach-chevron { display: grid; place-items: center; flex: none; min-width: 44px; margin-inline: -8px; min-height: 44px; color: var(--muted); cursor: pointer; transition: transform 160ms ease; }
 .smart-coach-chevron.expanded { transform: rotate(180deg); }
 .smart-coach-edit {
   flex: none;
@@ -8763,3 +8808,9 @@ button.workout-template-row:focus-visible {
   .toast,
   :root[data-theme="dark"] .toast { background: var(--surface-strong); }
 }
+
+/* The "How did it feel?" panel keeps the 16px panel padding (the shared compact panel is 6px). */
+.panel.compact.workout-feedback { padding: 16px; }
+.panel.compact.workout-feedback h2 { margin: 0 0 12px; }
+.panel.compact.workout-feedback .segmented.workout-feedback-options { gap: 6px; padding: 0; }
+.panel.compact.workout-feedback .segmented.workout-feedback-options button { padding-inline: 4px; }

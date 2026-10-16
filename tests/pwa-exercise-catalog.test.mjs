@@ -6712,11 +6712,11 @@ test("plan editor set row keeps real inputs, a reps stepper with a floor of one,
   assert.equal(inputs.reps.value, "2");
   assert.equal(vm.runInContext("workoutDraft.blocks[0].sets[0].reps", context), "2");
   await step("draft-step-weight", "1");
-  assert.equal(inputs.weight.value, "62.5");
-  assert.equal(vm.runInContext("workoutDraft.blocks[0].sets[0].weight", context), "62.5");
+  assert.equal(inputs.weight.value, "62,5");
+  assert.equal(vm.runInContext("workoutDraft.blocks[0].sets[0].weight", context), "62,5");
   await step("draft-step-weight", "-1");
   await step("draft-step-weight", "-1");
-  assert.equal(inputs.weight.value, "57.5");
+  assert.equal(inputs.weight.value, "57,5");
 });
 
 test("plan editor ends the draft list with a dashed Add exercise that opens the same picker target as the header plus", () => {

@@ -3131,23 +3131,29 @@ test("a live room hides the friend pill", () => {
 
 test("metric values shrink to fit their tile instead of wrapping", () => {
   const { context, appNode } = loadContext();
-  const values = [
-    { clientWidth: 100, scrollWidth: 160, style: { fontSize: "" } },
-    { clientWidth: 100, scrollWidth: 90, style: { fontSize: "" } },
-    { clientWidth: 100, scrollWidth: 400, style: { fontSize: "" } }
-  ];
-  appNode.querySelectorAll = selector => selector === ".metric-grid strong" ? values : [];
+  // The text width scales with the font size, like a real nowrap value.
+  const tile = naturalWidth => ({
+    clientWidth: 100,
+    style: { fontSize: "" },
+    get scrollWidth() { return Math.ceil(naturalWidth * (parseFloat(this.style.fontSize) || 22) / 22); }
+  });
+  const values = [tile(160), tile(90), tile(400)];
+  appNode.querySelectorAll = selector => selector === ".metric-grid strong, .weekly-summary-metrics strong" ? values : [];
   vm.runInContext("window", context).getComputedStyle = () => ({ fontSize: "22px" });
   vm.runInContext("fitMetricTileValues()", context);
-  assert.equal(values[0].style.fontSize, "13.7px");
+  assert.equal(values[0].style.fontSize, "13.4px");
   assert.equal(values[1].style.fontSize, "");
   assert.equal(values[2].style.fontSize, "13.2px");
 });
 
 test("metric values refit when the window narrows without a new render", async () => {
   const { context, appNode } = loadContext();
-  const value = { clientWidth: 200, scrollWidth: 150, style: { fontSize: "" } };
-  appNode.querySelectorAll = selector => selector === ".metric-grid strong" ? [value] : [];
+  const value = {
+    clientWidth: 200,
+    style: { fontSize: "" },
+    get scrollWidth() { return Math.ceil(150 * (parseFloat(this.style.fontSize) || 22) / 22); }
+  };
+  appNode.querySelectorAll = selector => selector === ".metric-grid strong, .weekly-summary-metrics strong" ? [value] : [];
   const windowObject = vm.runInContext("window", context);
   windowObject.getComputedStyle = () => ({ fontSize: "22px" });
   let onResize = null;
@@ -3164,7 +3170,7 @@ test("metric values refit when the window narrows without a new render", async (
   onResize();
   onResize();
   await new Promise(resolve => setTimeout(resolve, 50));
-  assert.equal(value.style.fontSize, "14.6px");
+  assert.equal(value.style.fontSize, "14.3px");
 });
 
 test("training settings live in one sheet and other screens show a summary", () => {

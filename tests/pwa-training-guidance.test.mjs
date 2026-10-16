@@ -605,7 +605,7 @@ test("weekly decision and compact screens preserve action-first ordering", () =>
   })()`, sandbox));
 
   const ordered = [
-    "Today", "YOUR FIRST PLAN", "Adjust recommendation", "workouts a week", "edit", "Today’s effort",
+    "Today", "Your first plan", "Adjust recommendation", "workouts a week", "edit", "Today’s effort",
     "Review exercises", "Use suggested plan", "Build manually"
   ];
   let cursor = -1;

@@ -12,7 +12,7 @@ const [app, styles, index, manifestSource, worker] = await Promise.all([
 
 test("root routes reserve real mobile navigation clearance and use a desktop side rail", () => {
   assert.match(styles, /--bottom-nav-clearance:\s*calc\([^;]*env\(safe-area-inset-bottom\)\)/);
-  assert.match(styles, /\.workouts-scroll\s*\{[\s\S]*?padding:\s*0 12px var\(--bottom-nav-clearance\);[\s\S]*?\}/);
+  assert.match(styles, /\.workouts-scroll\s*\{[\s\S]*?padding:\s*0 16px var\(--bottom-nav-clearance\);[\s\S]*?\}/);
   assert.match(styles, /\.screen-workouts\s*\{[\s\S]*?padding:\s*0;[\s\S]*?\}/);
   assert.match(styles, /@media \(min-width: 900px\)[\s\S]*?\.root-route-shell \.bottom-nav\s*\{[\s\S]*?grid-template-columns:\s*1fr;[\s\S]*?transform:\s*translateY\(-50%\);/);
   assert.match(styles, /html\[lang="ru"\] \.root-route-shell \.tab-button > span:last-child\s*\{[\s\S]*?font-size:\s*0.6875rem;[\s\S]*?overflow:\s*visible;[\s\S]*?text-overflow:\s*clip;/);
@@ -76,9 +76,9 @@ test("install metadata and immutable PWA entrypoints are one coherent GymApp rel
   assert.equal(Object.hasOwn(manifest, "orientation"), false);
   assert.match(index, /<title>GymApp — Workout Tracker<\/title>/);
   assert.match(index, /apple-mobile-web-app-title" content="GymApp"/);
-  for (const asset of ["styles.v106.css", "russian-text.v91.js", "app.v138.js"]) {
+  for (const asset of ["styles.v107.css", "russian-text.v91.js", "app.v139.js"]) {
     assert.ok(index.includes(`./${asset}`), `index references ${asset}`);
     assert.ok(worker.includes(`"./${asset}"`), `service worker caches ${asset}`);
   }
-  assert.match(worker, /const CACHE_VERSION = "v184";/);
+  assert.match(worker, /const CACHE_VERSION = "v185";/);
 });
