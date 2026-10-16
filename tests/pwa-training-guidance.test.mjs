@@ -977,7 +977,30 @@ test("first-plan card keeps adjust options behind a 44pt toggle beside the title
   assert.match(appSource, /activationDraft = null;\s+activationOptionsOpen = false;/);
 });
 
-test("live room status is a localized label, never the raw server enum", () => {
-  assert.match(appSource, /function liveRoomStatusLabel\(status\) \{\s*if \(status === "active"\) return "LIVE";\s*if \(status === "waiting"\) return tx3\("Waiting", "Очікує", "Ожидает"\);\s*if \(status === "ready"\) return tx3\("Ready", "Готово", "Готово"\);/);
-  assert.doesNotMatch(appSource, /escapeHtml\((room|roomRow)\.status\)|escapeHtml\(snapshot\.room\.status\)/);
+test("live room status is a localized label, never the raw server enum or a dangling separator", () => {
+  const sandbox = context();
+  const labels = plain(vm.runInContext(`(() => {
+    const statuses = ["waiting", "ready", "active", "completed", "cancelled", "expired", "unexpected"];
+    const out = {};
+    for (const language of ["en", "uk", "ru"]) {
+      state.language = language;
+      out[language] = statuses.map(status => ({ status, label: liveRoomStatusLabel(status), eyebrow: liveRoomEyebrowText(status) }));
+    }
+    return out;
+  })()`, sandbox));
+  const byStatus = (language, status) => labels[language].find(item => item.status === status);
+  assert.deepEqual(
+    ["waiting", "ready", "active", "completed", "cancelled", "expired"].map(status => byStatus("ru", status).label),
+    ["Ожидает", "Готово", "LIVE", "Завершено", "Отменено", "Истекло"]
+  );
+  assert.equal(byStatus("en", "cancelled").eyebrow, "LIVE · Cancelled");
+  assert.equal(byStatus("uk", "completed").eyebrow, "LIVE · Завершено");
+  assert.equal(byStatus("en", "active").eyebrow, "LIVE");
+  for (const language of ["en", "uk", "ru"]) {
+    assert.equal(byStatus(language, "unexpected").eyebrow, "LIVE");
+    for (const item of labels[language]) {
+      assert.doesNotMatch(item.eyebrow, /·\s*$/);
+      if (language !== "en") assert.notEqual(item.label.toLowerCase(), item.status);
+    }
+  }
 });

@@ -22643,7 +22643,16 @@ function liveRoomStatusLabel(status) {
   if (status === "active") return "LIVE";
   if (status === "waiting") return tx3("Waiting", "Очікує", "Ожидает");
   if (status === "ready") return tx3("Ready", "Готово", "Готово");
+  if (status === "completed") return tx3("Finished", "Завершено", "Завершено");
+  if (status === "cancelled") return tx3("Cancelled", "Скасовано", "Отменено");
+  if (status === "expired") return tx3("Expired", "Минуло", "Истекло");
   return "";
+}
+
+// "LIVE" alone for an active or unknown status, "LIVE · label" otherwise, so the separator never dangles.
+function liveRoomEyebrowText(status) {
+  const label = status === "active" ? "" : liveRoomStatusLabel(status);
+  return label ? `LIVE · ${label}` : "LIVE";
 }
 
 function scheduleLiveWorkoutPoll() {
@@ -24394,7 +24403,7 @@ function liveWorkoutRoomMarkup() {
   if (!snapshot) {
     if (!roomRow) return `<div><h2>${tx("Room unavailable", "Кімната недоступна")}</h2><p class="muted">${escapeHtml(liveWorkoutState.error || tx("Refresh the room or return to Friends.", "Онови кімнату або повернися до Друзів."))}</p><button class="button full" data-action="refresh-live-workouts">${tx("Refresh", "Оновити")}</button></div>`;
     const terminalAction = roomRow.role === "owner" ? "cancel-live-room" : "leave-live-room";
-    return `<div><span class="eyebrow">${escapeHtml(roomRow.status === "active" ? "LIVE" : `LIVE · ${liveRoomStatusLabel(roomRow.status)}`)}</span><h2>${escapeHtml(roomRow.peer.displayName)}</h2><p>${countNoun(roomRow.summary.exerciseCount, "exercises")} · ${countNoun(roomRow.summary.setCount, "sets")}</p><p class="muted">${roomRow.status === "waiting" ? tx("Waiting for your friend to accept.", "Очікуємо, поки друг прийме запрошення.") : tx("Starting the shared workout…", "Запускаємо спільне тренування…")}</p><div class="actions vertical"><button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh room", "Оновити кімнату")}</button><button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomRow.roomId)}" data-room-revision="${roomRow.roomRevision}" data-membership-revision="${roomRow.membershipRevision}">${roomRow.role === "owner" ? tx("Cancel room", "Скасувати кімнату") : tx("Leave room", "Вийти з кімнати")}</button></div></div>`;
+    return `<div><span class="eyebrow">${escapeHtml(liveRoomEyebrowText(roomRow.status))}</span><h2>${escapeHtml(roomRow.peer.displayName)}</h2><p>${countNoun(roomRow.summary.exerciseCount, "exercises")} · ${countNoun(roomRow.summary.setCount, "sets")}</p><p class="muted">${roomRow.status === "waiting" ? tx("Waiting for your friend to accept.", "Очікуємо, поки друг прийме запрошення.") : tx("Starting the shared workout…", "Запускаємо спільне тренування…")}</p><div class="actions vertical"><button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh room", "Оновити кімнату")}</button><button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomRow.roomId)}" data-room-revision="${roomRow.roomRevision}" data-membership-revision="${roomRow.membershipRevision}">${roomRow.role === "owner" ? tx("Cancel room", "Скасувати кімнату") : tx("Leave room", "Вийти з кімнати")}</button></div></div>`;
   }
   const totalSets = snapshot.room.summary.setCount;
   const self = snapshot.participants.find(row => row.isSelf);
@@ -24407,7 +24416,7 @@ function liveWorkoutRoomMarkup() {
     : self?.role === "participant" && ["ready", "active"].includes(snapshot.room.status) && ["joined", "finished"].includes(self.state);
   const terminalAction = self?.role === "owner" ? "cancel-live-room" : "leave-live-room";
   const terminalLabel = self?.role === "owner" ? tx("Cancel room", "Скасувати кімнату") : tx("Leave room", "Вийти з кімнати");
-  return `<div><span class="eyebrow">${escapeHtml(snapshot.room.status === "active" ? "LIVE" : `LIVE · ${liveRoomStatusLabel(snapshot.room.status)}`)}</span><h2>${tx("Workout room", "Кімната тренування")}</h2><p class="muted">${tx("The plan is frozen for this room. Each participant controls only their own set lane.", "План зафіксовано для цієї кімнати. Кожен учасник керує лише власною шкалою підходів.")}</p>${self?.state === "finished" ? finishedLiveWorkoutMarkup(snapshot) : snapshot.participants.map(row => liveParticipantProgressMarkup(row, totalSets)).join("") + liveWorkoutExerciseMatrixMarkup(snapshot)}<div class="actions vertical">${attached ? `<button class="button full" data-action="continue-active-workout">${tx("Continue workout", "Продовжити тренування")}</button>` : ""}${canAttach ? `<button class="button full" data-action="attach-live-room" data-room-id="${escapeAttr(roomId)}">${tx("Open synchronized workout", "Відкрити синхронізоване тренування")}</button>` : ""}<button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh progress", "Оновити прогрес")}</button>${canTerminate ? `<button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomId)}" data-room-revision="${snapshot.room.roomRevision}" data-membership-revision="${self.membershipRevision}">${terminalLabel}</button>` : ""}</div></div>`;
+  return `<div><span class="eyebrow">${escapeHtml(liveRoomEyebrowText(snapshot.room.status))}</span><h2>${tx("Workout room", "Кімната тренування")}</h2><p class="muted">${tx("The plan is frozen for this room. Each participant controls only their own set lane.", "План зафіксовано для цієї кімнати. Кожен учасник керує лише власною шкалою підходів.")}</p>${self?.state === "finished" ? finishedLiveWorkoutMarkup(snapshot) : snapshot.participants.map(row => liveParticipantProgressMarkup(row, totalSets)).join("") + liveWorkoutExerciseMatrixMarkup(snapshot)}<div class="actions vertical">${attached ? `<button class="button full" data-action="continue-active-workout">${tx("Continue workout", "Продовжити тренування")}</button>` : ""}${canAttach ? `<button class="button full" data-action="attach-live-room" data-room-id="${escapeAttr(roomId)}">${tx("Open synchronized workout", "Відкрити синхронізоване тренування")}</button>` : ""}<button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh progress", "Оновити прогрес")}</button>${canTerminate ? `<button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomId)}" data-room-revision="${snapshot.room.roomRevision}" data-membership-revision="${self.membershipRevision}">${terminalLabel}</button>` : ""}</div></div>`;
 }
 
 async function startLiveWorkoutRoom(element) {
