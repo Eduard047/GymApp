@@ -12156,7 +12156,7 @@ function render() {
     if (current.name !== "active") clearActiveBatchUndo();
     app.classList?.toggle("root-route-shell", isRootRoute(current.name));
     app.innerHTML = `
-      <header class="topbar${routeHasBodyTitle(current.name) ? " topbar-title-hidden" : ""}">
+      <header class="topbar${routeHasBodyTitle(current.name) ? " topbar-root-title" : ""}">
         ${current.name === "active" ? activeWorkoutMinimizeMarkup() : nav.length > 1 ? `<button class="icon-button topbar-action" data-action="back" aria-label="${current.name === "add" ? tx3("Close", "Закрити", "Закрыть") : txAttr("Go back", "Назад")}">${svg("back")}</button>` : `<span class="topbar-slot" aria-hidden="true"></span>`}
         <h1>${titleForRoute(current)}</h1>
         ${current.name === "active" ? activeWorkoutMoreButtonMarkup() : `<span class="topbar-slot" aria-hidden="true"></span>`}
@@ -12244,9 +12244,15 @@ function isRootRoute(name) {
   return ["workouts", "missions", "exercises", "progress", "leaderboard"].includes(name);
 }
 
-// Tab roots that render their own large heading in the body hide the top bar title (kept in the DOM for screen readers).
+// The four root tabs (Today, Exercises, Progress, Profile) share one large left-aligned title in the body. Their top bar
+// is a transparent overlay at rest and fades in as a compact centred title with a hairline once content scrolls under it
+// (DESIGN.md scroll-edge rule). Pushed and detail screens keep the compact bar with a back control.
 function routeHasBodyTitle(name) {
-  return name === "workouts" || name === "exercises";
+  return name === "workouts" || name === "exercises" || name === "progress" || name === "leaderboard";
+}
+
+function rootTitleMarkup(current) {
+  return `<section class="screen-copy compact root-title"><h2>${titleForRoute(current)}</h2></section>`;
 }
 
 function titleForRoute(current) {
@@ -12270,8 +12276,8 @@ function screenMarkup(current) {
   lastScreenRouteName = current.name;
   if (current.name === "missions") return missionsScreen();
   if (current.name === "exercises") return exercisesScreen();
-  if (current.name === "progress") return progressScreen();
-  if (current.name === "leaderboard") return friendsProfileScreen();
+  if (current.name === "progress") return rootTitleMarkup(current) + progressScreen();
+  if (current.name === "leaderboard") return rootTitleMarkup(current) + friendsProfileScreen();
   if (current.name === "add") return addWorkoutScreen();
   if (current.name === "active") return activeWorkoutScreen();
   if (current.name === "detail") return detailScreen(current.id);
@@ -28551,8 +28557,14 @@ function activateDataActionFromKeyboard(event) {
   return true;
 }
 
+// Past 24px of scroll: root tabs materialize the compact title bar (the large title scrolls away with the content, so
+// nothing reflows); other screens still tuck their bar away.
+const TOPBAR_SCROLL_THRESHOLD = 24;
 function syncTopbarVisibility() {
-  app.classList.toggle("topbar-collapsed", (visibleScrollContainer()?.scrollTop || 0) > 24);
+  const scrolled = (visibleScrollContainer()?.scrollTop || 0) > TOPBAR_SCROLL_THRESHOLD;
+  const rootTitle = Boolean(app.querySelector(".topbar-root-title"));
+  app.classList.toggle("title-collapsed", rootTitle && scrolled);
+  app.classList.toggle("topbar-collapsed", !rootTitle && scrolled);
 }
 
 function destructiveReturnFocus(action, element = null) {

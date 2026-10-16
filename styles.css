@@ -296,28 +296,20 @@ a:focus-visible,
 
 .app-shell.topbar-collapsed .screen { height: 100%; }
 
-/* Today and Exercises show their own large title in the body; the top bar title stays in the DOM for the document and screen readers only. */
-.topbar.topbar-title-hidden {
-  height: 0;
-  padding: 0;
-  border-bottom: 0;
-  background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-.topbar.topbar-title-hidden .topbar-slot { display: none; }
-.topbar.topbar-title-hidden + .screen { height: 100%; }
-.topbar.topbar-title-hidden h1 {
+/* Root tabs (Today, Exercises, Progress, Profile) share one large left-aligned title in the body. Their top bar is an overlay that takes no layout space: transparent at rest, and once content scrolls 24px under it the bar material, hairline and compact centred title fade in (DESIGN.md scroll-edge effect). The h1 stays in the DOM for the document and screen readers. */
+.root-route-shell { position: relative; }
+.topbar.topbar-root-title {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
 }
+.root-route-shell.title-collapsed .topbar.topbar-root-title { opacity: 1; }
+.topbar.topbar-root-title + .screen { height: 100%; }
+.root-route-shell.title-collapsed .continue-workout-bar { top: 70px; }
 
 .topbar h1 {
   min-width: 0;
@@ -368,9 +360,13 @@ a:focus-visible,
 
 .screen-copy h2,
 .screen-copy p { margin: 0; }
-.screen-copy h2 { font-size: 2rem; line-height: 2.375rem; }
+.screen-copy h2 { font-size: 2rem; line-height: 2.375rem; letter-spacing: -0.01em; }
 .screen-copy p { color: var(--muted); }
 .screen-copy.compact { gap: 0; padding-bottom: 0; }
+/* One root-tab title rhythm: 10px from the top, a 44px row (the Exercises add button and the Today History shortcut are 44px), title centred in it. */
+.screen-copy.root-title,
+.workouts-screen-copy,
+.exercises-header { min-height: 44px; align-items: center; }
 .profile-screen-copy {
   gap: 6px;
   padding: 8px 2px 4px;
@@ -380,10 +376,10 @@ a:focus-visible,
 }
 .workouts-screen-copy {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px 16px 12px;
+  margin: 10px 16px 12px;
 }
 .workouts-screen-copy .button { margin-top: 0; }
 .workouts-screen-copy > div { display: grid; gap: 2px; }
@@ -7337,7 +7333,6 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   .focus-lens-actions { grid-template-columns: 1fr; }
   .focus-lens-discard,
   .focus-lens-edit { width: 100%; }
-  .workouts-screen-copy { align-items: start; }
   .activation-actions { grid-template-columns: 1fr; }
 
   .login-actions,
