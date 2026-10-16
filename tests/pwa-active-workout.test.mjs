@@ -5257,3 +5257,33 @@ test("metric tile grids that a render detached are unobserved and observed grids
   assert.equal(observed.has(gridC), true);
   assert.equal(observeCalls, 4, "only the new grid is observed again");
 });
+
+test("dismissing the recorded-set banner renders again once it has left, so the row shows its own Undo", () => {
+  const { context, appNode } = loadContext();
+  const result = vm.runInContext(`(() => {
+    let renders = 0;
+    render = () => { renders += 1; };
+    route = () => ({ name: "active" });
+    const outcomes = [];
+    // No leaving animation (reduced motion or no Web Animations): the node is removed and the screen renders at once.
+    app.querySelector = () => ({ remove() {} });
+    activeSetConfirmation = { workoutId: 1, setId: 5, message: "m", announcement: "m", announced: true };
+    clearActiveSetConfirmation({ rerender: true });
+    outcomes.push(renders, activeSetConfirmation);
+    // With a leaving animation the render waits for the exit to finish.
+    let finish = null;
+    bannerExitBegin = options => { finish = options.onEnd; return true; };
+    app.querySelector = () => ({});
+    activeSetConfirmation = { workoutId: 1, setId: 5, message: "m", announcement: "m", announced: true };
+    clearActiveSetConfirmation({ rerender: true });
+    outcomes.push(renders);
+    finish();
+    outcomes.push(renders);
+    // Undo, delete and voice paths keep clearing without an extra render.
+    clearActiveSetConfirmation();
+    outcomes.push(renders);
+    return JSON.stringify(outcomes);
+  })()`, context);
+  assert.deepEqual(JSON.parse(result), [1, null, 1, 2, 2]);
+  void appNode;
+});

@@ -13700,7 +13700,7 @@ function bannerExitEnd(placeholder) {
 
 // Wraps `node` in a collapsing placeholder. In place (no anchorParent) the placeholder takes the node's spot; after a render it is
 // inserted into anchorParent before anchorBefore. Falls back to removing the node.
-function bannerExitBegin({ node, kind, height = undefined, anchorParent = null, anchorBefore = null }) {
+function bannerExitBegin({ node, kind, height = undefined, anchorParent = null, anchorBefore = null, onEnd = null }) {
   try {
     if (!node) return false;
     const parent = anchorParent || node.parentNode;
@@ -13737,7 +13737,8 @@ function bannerExitBegin({ node, kind, height = undefined, anchorParent = null, 
       { duration: plan.collapseMs, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" }
     );
     node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: plan.opacityMs, easing: "linear", fill: "forwards" });
-    const entry = { kind, timer: setTimeout(() => bannerExitEnd(placeholder), plan.collapseMs + 120) };
+    // onEnd runs only when the exit timer finishes; a render that already cleaned the placeholder clears the timer first.
+    const entry = { kind, timer: setTimeout(() => { bannerExitEnd(placeholder); onEnd?.(); }, plan.collapseMs + 120) };
     bannerExits.set(placeholder, entry);
     return true;
   } catch {
@@ -13838,12 +13839,19 @@ function activeBatchUndoMarkup(workout) {
   return `<div class="active-set-confirmation" data-banner-kind="batch" data-active-batch-undo="1"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" role="status" aria-live="polite">${escapeHtml(message)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-batch">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-batch-undo" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
 }
 
-function clearActiveSetConfirmation() {
+function renderActiveRouteAfterBannerExit() {
+  if (route().name === "active") render();
+}
+
+// `rerender` is for a plain dismissal: once the banner has left, the screen renders so the latest row shows its own Undo.
+function clearActiveSetConfirmation({ rerender = false } = {}) {
   activeSetConfirmation = null;
+  let animating = false;
   try {
     const node = app?.querySelector?.("[data-active-set-confirmation]");
-    if (node) bannerExitBegin({ node, kind: "set" });
+    if (node) animating = bannerExitBegin({ node, kind: "set", onEnd: rerender ? renderActiveRouteAfterBannerExit : null });
   } catch { /* The next render drops the banner anyway. */ }
+  if (rerender && !animating) renderActiveRouteAfterBannerExit();
 }
 
 function setActiveSetConfirmation(workoutId, setId, weight, reps, restSeconds = 0) {
@@ -29477,7 +29485,7 @@ async function handleAction(action, el) {
   }
   if (action === "confirm-delete-active-set") return confirmDeleteActiveSet();
   if (action === "dismiss-active-set-confirmation") {
-    clearActiveSetConfirmation();
+    clearActiveSetConfirmation({ rerender: true });
     return true;
   }
   if (action === "active-set-voice-start") {
