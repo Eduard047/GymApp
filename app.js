@@ -11831,6 +11831,12 @@ function initializeOnboardingTour(manual = false) {
   return setOnboardingTourRoute(0);
 }
 
+// A sheet owns the screen while it is open: the coach is left out of the render (the tour state stays untouched) and
+// comes back, on the same step, with the render that follows the sheet closing.
+function onboardingCoachVisible() {
+  return Boolean(onboardingTour && !modal);
+}
+
 function onboardingTourMarkup() {
   if (!onboardingTourIdentityIsCurrent()) return "";
   const steps = onboardingTourSteps();
@@ -12169,7 +12175,7 @@ function render() {
       <main class="screen screen-${escapeAttr(current.name)}" data-scroll-key="${escapeAttr(routeScrollKey(current))}" data-nav-depth="${nav.length}"${current.name === "add" && workoutDraftLiveSendInProgress ? ` inert aria-busy="true"` : ""}>${continueWorkoutBar(current)}${liveWorkoutBanner()}${socialWorkoutInviteBanner()}${pendingSharedWorkoutCard()}${screenMarkup(current)}</main>
       ${isRootRoute(current.name) ? bottomNav() : ""}
       ${modal ? modalMarkup() : ""}
-      ${onboardingTour ? onboardingTourMarkup() : ""}
+      ${onboardingCoachVisible() ? onboardingTourMarkup() : ""}
     `;
     hydrateRecommendationText();
     bindEvents(preservedModalFocus);
