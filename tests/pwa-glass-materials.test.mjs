@@ -4,7 +4,7 @@ import test from "node:test";
 
 const [css, bundle, indexHtml, worker] = await Promise.all([
   readFile("pwa/styles.css", "utf8"),
-  readFile("pwa/styles.v107.css", "utf8"),
+  readFile("pwa/styles.v108.css", "utf8"),
   readFile("pwa/index.html", "utf8"),
   readFile("pwa/sw.js", "utf8")
 ]);
@@ -86,8 +86,8 @@ test("document declares light and dark color schemes while explicit themes keep 
   assert.match(css, /:root\[data-theme="dark"\] \{\s*color-scheme: dark;/);
 });
 
-test("the glass stylesheet ships as the immutable v107 bundle", () => {
+test("the glass stylesheet ships as the immutable v108 bundle", () => {
   assert.equal(bundle, css);
-  assert.ok(indexHtml.includes('href="./styles.v107.css"'));
-  assert.ok(worker.includes('"./styles.v107.css"'));
+  assert.ok(indexHtml.includes('href="./styles.v108.css"'));
+  assert.ok(worker.includes('"./styles.v108.css"'));
 });

@@ -331,7 +331,7 @@ test("primary muscle chips keep a 44px minimum hit area", () => {
   assert.match(stylesSource, /\.exercise-muscle-chips \.chip\s*\{[^}]*min-height:\s*44px;/);
 });
 
-test("muscle mapping chips use a flat tinted selected state with a check and aria-pressed", () => {
+test("muscle mapping chips use the shared accent selected state with a check and aria-pressed", () => {
   const context = loadPwaContext();
   const markup = run(context, `mappingEditor("Bench Press")`);
   const chips = markup.match(/<button class="chip buttonlike mapping-chip[^>]*>/g) || [];
@@ -342,7 +342,8 @@ test("muscle mapping chips use a flat tinted selected state with a check and ari
   assert.match(markup, /mapping-chip-check/);
   const selectedRule = stylesSource.match(/\.mapping-grid \.mapping-chip\.selected\s*\{[^}]*\}/)?.[0] || "";
   assert.match(selectedRule, /box-shadow:\s*none;/);
-  assert.match(selectedRule, /border-color:\s*var\(--primary\);/);
+  assert.match(selectedRule, /background:\s*var\(--brand-fill\);/);
+  assert.match(selectedRule, /color:\s*var\(--on-accent\);/);
   assert.doesNotMatch(selectedRule, /gradient/);
   assert.match(appSource, /action === "toggle-map"\) \{ el\.setAttribute\("aria-pressed"/);
 });

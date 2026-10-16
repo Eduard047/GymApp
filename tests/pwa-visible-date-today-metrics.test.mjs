@@ -819,7 +819,7 @@ test("summary feedback chips stay one row of three equal columns and stack only 
   assert.match(stylesSource, /@media \(max-width: 340px\) \{\s*\.segmented\.workout-feedback-options \{ grid-template-columns: 1fr; \}/);
 });
 
-test("fmtDateRange matches the iOS weekly-review range in EN, UK, and RU", () => {
+test("fmtWeekRange is the one week range for Today and the Weekly review in EN, UK, and RU", () => {
   const sandbox = context();
   const now = new Date(2026, 8, 29, 12).getTime();
   const range = (fromYear, fromMonth, fromDay, toYear, toMonth, toDay) => [
@@ -827,28 +827,26 @@ test("fmtDateRange matches the iOS weekly-review range in EN, UK, and RU", () =>
     new Date(toYear, toMonth, toDay, 12).getTime()
   ];
   const cases = [
-    ["en", range(2026, 8, 21, 2026, 8, 27), "Sep 21\u2009\u2013\u200927"],
-    ["en", range(2026, 8, 28, 2026, 9, 4), "Sep 28\u2009\u2013\u2009Oct 4"],
-    ["en", range(2025, 8, 22, 2025, 8, 28), "Sep 22\u2009\u2013\u200928, 2025"],
-    ["en", range(2025, 11, 29, 2026, 0, 4), "Dec 29, 2025\u2009\u2013\u2009Jan 4, 2026"],
-    ["uk", range(2026, 8, 21, 2026, 8, 27), "21\u201327 вер."],
+    ["en", range(2026, 8, 21, 2026, 8, 27), "Sep 21 \u2013 Sep 27"],
+    ["en", range(2026, 8, 28, 2026, 9, 4), "Sep 28 \u2013 Oct 4"],
+    ["en", range(2025, 11, 29, 2026, 0, 4), "Dec 29, 2025 \u2013 Jan 4, 2026"],
+    ["uk", range(2026, 8, 21, 2026, 8, 27), "21 вер. \u2013 27 вер."],
     ["uk", range(2026, 8, 28, 2026, 9, 4), "28 вер. \u2013 4 жовт."],
-    ["uk", range(2025, 8, 22, 2025, 8, 28), "22\u201328 вер. 2025\u202fр."],
-    ["uk", range(2025, 11, 29, 2026, 0, 4), "29 груд. 2025 \u2013 4 січ. 2026\u202fрр."],
-    ["ru", range(2026, 8, 21, 2026, 8, 27), "21\u201427 сент."],
-    ["ru", range(2026, 8, 28, 2026, 9, 4), "28 сент. \u2014 4 окт."],
-    ["ru", range(2025, 8, 22, 2025, 8, 28), "22\u201428 сент. 2025\u202fг."],
-    ["ru", range(2025, 11, 29, 2026, 0, 4), "29 дек. 2025 \u2014 4 янв. 2026\u202fг."]
+    ["ru", range(2026, 8, 21, 2026, 8, 27), "21 сент. \u2013 27 сент."],
+    ["ru", range(2026, 8, 28, 2026, 9, 4), "28 сент. \u2013 4 окт."]
   ];
   for (const [language, [start, end], expected] of cases) {
     sandbox.language = language;
     sandbox.start = start;
     sandbox.end = end;
     sandbox.now = now;
-    const actual = vm.runInContext(`(() => { state.language = language; return fmtDateRange(start, end, now); })()`, sandbox);
+    const actual = vm.runInContext(`(() => { state.language = language; return fmtWeekRange(start, end, now); })()`, sandbox);
     assert.equal(actual, expected, `${language} ${expected}`);
   }
-  assert.equal(vm.runInContext("fmtDateRange(NaN, 0, now)", sandbox), "");
+  assert.equal(vm.runInContext("fmtWeekRange(NaN, 0, now)", sandbox), "");
+  assert.doesNotMatch(appSource, /function fmtDateRange|fmtDateRange\(/);
+  assert.match(appSource, /fmtWeekRange\(review\.start, review\.end\)/);
+  assert.match(appSource, /const range = weekMode && [^\n]*\n\s*\? fmtWeekRange\(firstDay, lastDay\)/);
 });
 
 test("Progress overview uses the shared inline navigator, compact hero, and lifetime card", () => {

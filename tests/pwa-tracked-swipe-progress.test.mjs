@@ -17,8 +17,8 @@ const between = (from, to) => {
 const plain = value => JSON.parse(JSON.stringify(value));
 
 test("the shipped bundles are byte copies of the working files", async () => {
-  assert.equal(source, await readFile("pwa/app.v139.js", "utf8"));
-  assert.equal(styles, await readFile("pwa/styles.v107.css", "utf8"));
+  assert.equal(source, await readFile("pwa/app.v140.js", "utf8"));
+  assert.equal(styles, await readFile("pwa/styles.v108.css", "utf8"));
 });
 
 // Pure decisions plus the page rules of every navigator, evaluated in isolation.
