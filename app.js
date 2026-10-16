@@ -26041,11 +26041,11 @@ function progressScreen() {
 function exerciseProgressPanel() {
   const selectedId = currentProgressExerciseId();
   const selected = state.exercises.find(ex => Number(ex.id) === selectedId);
-  if (!selected) return `${monthNavigatorInline()}${progressExercisePickerMarkup()}
+  if (!selected) return `<div class="progress-month-swipe">${monthNavigatorInline()}${progressExercisePickerMarkup()}
     <section class="panel progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight × reps across all completed sets.", "Обсяг = вага × повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>0</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>0</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>0</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${escapeHtml(formatLocalizedSetWeight(0))}</strong></div></div></section>
     <section class="hero-panel progress-spotlight"><h2>${tx("No exercise data yet", "За цією вправою поки немає даних")}</h2><p>${tx("Pick an exercise to see solo progress.", "Обери вправу, щоб побачити свій прогрес.")}</p></section>
     <section class="panel highlighted trend-panel"><h2>${tx("Visual Trends", "Візуальні тренди")}</h2><p class="muted">${tx("Maximum weight and session volume over time.", "Максимальна вага та обсяг тренування в динаміці.")}</p><div class="empty">${tx("Add sets to see chart.", "Додай підходи, щоб побачити графік.")}</div></section>
-    <section class="panel"><div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div></section>`;
+    <section class="panel"><div class="empty">${tx("No exercises yet.", "Вправ ще немає.")}</div></section></div>`;
   const history = allSets(selectedMonthSessions()).filter(set => exercisesMatch(set, selected)).sort((a, b) => b.session.startedAt - a.session.startedAt);
   const grouped = progressHistoryGroups(history);
   const best = Math.max(0, ...history.map(s => safeChartValue(s.weight)));
@@ -26057,12 +26057,12 @@ function exerciseProgressPanel() {
   const loggedSessionCount = progressHistoryGroups(allSets().filter(set => exercisesMatch(set, selected))).length;
   const hasMonthData = grouped.length > 0;
   const monthEmpty = `<section class="panel empty-state-panel progress-month-empty"><span class="progress-month-empty-icon" aria-hidden="true">${svg("chart")}</span><h2>${tx3("No progress this month", "Немає прогресу за цей місяць", "В этом месяце прогресса пока нет")}</h2><p>${tx3("Log sets for the selected exercise to unlock trends.", "Додай підходи для вибраної вправи, щоб відкрити тренди.", "Запиши подходы выбранного упражнения, чтобы открыть тренды.")}</p></section>`;
-  return `${monthNavigatorInline()}${progressExercisePickerMarkup(selected, loggedSessionCount)}
+  return `<div class="progress-month-swipe">${monthNavigatorInline()}${progressExercisePickerMarkup(selected, loggedSessionCount)}
     ${hasMuscleMapping ? exerciseMuscleBreakdownCard(selected, true) : ""}
     <section class="panel progress-summary"><h2>${tx("Progress Summary", "Підсумок прогресу")}</h2><p class="muted">${tx("Volume = weight × reps across all completed sets.", "Обсяг = вага × повтори по всіх завершених підходах.")}</p><div class="metric-grid three"><div><span>${tx("Sessions", "Сесії")}</span><strong>${grouped.length}</strong></div><div><span>${tx("Total Sets", "Усього підходів")}</span><strong>${history.length}</strong></div><div><span>${tx("Total Reps", "Усього повторів")}</span><strong>${formatGroupedCount(reps)}</strong></div><div><span>${tx("Best Weight", "Найкраща вага")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(best))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Average Max", "Середній максимум")}</span><strong>${history.length ? `${escapeHtml(formatLocalizedSetWeight(avg))}` : tx("No data", "Немає даних")}</strong></div><div><span>${tx("Total Volume", "Загальний обсяг")}</span><strong>${escapeHtml(formatLocalizedSetWeight(Math.round(vol)))}</strong></div></div></section>
     ${hasMonthData ? `<section class="hero-panel progress-spotlight">${spotlight(selected, grouped, allTimeBest)}</section>
     ${exerciseTrendCharts(grouped, best)}` : ""}
-    ${hasMonthData ? `<section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.map(g => progressHistoryCard(g)).join("")}</section>` : monthEmpty}`;
+    ${hasMonthData ? `<section class="workout-list"><h2>${tx("Workout History", "Історія тренувань")}</h2>${grouped.map(g => progressHistoryCard(g)).join("")}</section>` : monthEmpty}</div>`;
 }
 
 function progressHistoryGroups(history) {
@@ -27880,9 +27880,10 @@ async function handleDelegatedAppClick(event) {
   return false;
 }
 
-// Tracked page swipe for the Training history panel (week / month). The panel follows the pointer
-// (transform only, touch-action: pan-y keeps vertical scrolling), locks to the horizontal axis, rubber-bands
-// where there is no further page and commits on enough travel or a flick. Swiping right shows the previous
+// Tracked page swipe for the Training history panel (week / month), the Weekly review card and the Progress
+// month navigators. The panel follows the pointer (transform only, touch-action: pan-y keeps vertical
+// scrolling), locks to the horizontal axis, rubber-bands where there is no further page and commits on
+// enough travel or a flick. Swiping right shows the previous
 // (older) page, swiping left the next. Reduce Motion swaps the slide for a fade without tracking. The
 // previous/next buttons stay the accessible alternative. Pure decisions first so they can be tested.
 const PAGE_SWIPE_LOCK_SLOP = 8;
@@ -27942,6 +27943,15 @@ function pageSwipeVelocity(samples, now) {
   return elapsed > 0 ? (last.x - first.x) / elapsed : 0;
 }
 
+// Previous / next page rules for every swipeable navigator. They mirror the chevron buttons exactly, so a
+// swipe can never reach a page the buttons refuse to open. `move` receives -1 (older) or +1 (newer).
+function applyPageStep(direction, bounds, move) {
+  const { canPrevious, canNext } = bounds();
+  if (direction === "previous" ? !canPrevious : !canNext) return false;
+  move(direction === "previous" ? -1 : 1);
+  return true;
+}
+
 function historyPageBounds() {
   const month = workoutHistoryPeriod === "month";
   const offset = month ? monthOffsets.workouts : workoutWeekOffset;
@@ -27950,18 +27960,43 @@ function historyPageBounds() {
 }
 
 function applyHistoryPageStep(direction) {
-  const { canPrevious, canNext } = historyPageBounds();
-  if (direction === "previous" ? !canPrevious : !canNext) return false;
-  const delta = direction === "previous" ? -1 : 1;
-  if (workoutHistoryPeriod === "month") monthOffsets.workouts += delta;
-  else workoutWeekOffset += delta;
-  return true;
+  return applyPageStep(direction, historyPageBounds, delta => {
+    if (workoutHistoryPeriod === "month") monthOffsets.workouts += delta;
+    else workoutWeekOffset += delta;
+  });
 }
 
-let historySwipe = null;
-let historySwipePending = null;
+function weeklyReviewPageBounds() {
+  return { canPrevious: trainingReviewOffset > -520, canNext: trainingReviewOffset < 0 };
+}
 
-function historySwipeReducedMotion() {
+function applyWeeklyReviewPageStep(direction) {
+  return applyPageStep(direction, weeklyReviewPageBounds, delta => { trainingReviewOffset += delta; });
+}
+
+function progressMonthPageBounds() {
+  const offset = monthOffsets[activeMonthScope()] || 0;
+  return { canPrevious: offset > -1200, canNext: offset < 0 };
+}
+
+function applyProgressMonthPageStep(direction) {
+  return applyPageStep(direction, progressMonthPageBounds, delta => {
+    const scope = activeMonthScope();
+    monthOffsets[scope] = (monthOffsets[scope] || 0) + delta;
+  });
+}
+
+// Every navigator that follows the pointer: the panel to move, and the rules for its pages.
+const PAGE_SWIPE_TARGETS = Object.freeze([
+  Object.freeze({ selector: ".training-history", bounds: historyPageBounds, step: applyHistoryPageStep }),
+  Object.freeze({ selector: ".training-week-review", bounds: weeklyReviewPageBounds, step: applyWeeklyReviewPageStep }),
+  Object.freeze({ selector: ".activity-heatmap-card, .progress-month-swipe", bounds: progressMonthPageBounds, step: applyProgressMonthPageStep })
+]);
+
+let pageSwipe = null;
+let pageSwipePending = null;
+
+function pageSwipeReducedMotion() {
   try {
     return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
   } catch {
@@ -27969,7 +28004,7 @@ function historySwipeReducedMotion() {
   }
 }
 
-function historySwipeResetCard(card) {
+function pageSwipeResetCard(card) {
   if (!card) return;
   card.classList.remove("swiping");
   card.style.transition = "";
@@ -27977,14 +28012,14 @@ function historySwipeResetCard(card) {
   card.style.opacity = "";
 }
 
-function historySwipePose(card, x, width) {
+function pageSwipePose(card, x, width) {
   const dim = 1 - 0.3 * Math.min(1, Math.abs(x) / Math.max(width, 1));
   card.style.transition = "none";
   card.style.transform = `translate3d(${x}px, 0, 0)`;
   card.style.opacity = String(dim);
 }
 
-function historySwipeSettle(card, reduced) {
+function pageSwipeSettle(card, reduced) {
   if (!card?.isConnected) return;
   card.classList.remove("swiping");
   card.style.transition = reduced
@@ -27998,18 +28033,20 @@ function historySwipeSettle(card, reduced) {
 }
 
 // Swaps the page and brings the new one in from the opposite side (or fades it in under Reduce Motion).
-// Safe to call twice: only the first call acts, so an interrupting touch can finish it early.
-function finishHistorySwipePending() {
-  const pending = historySwipePending;
+// Safe to call twice: only the first call acts, so an interrupting touch can finish it early. The step
+// only applies while the panel is still on screen, so leaving the screen mid-slide changes nothing.
+function finishPageSwipePending() {
+  const pending = pageSwipePending;
   if (!pending) return;
-  historySwipePending = null;
+  pageSwipePending = null;
   clearTimeout(pending.timer);
-  if (!applyHistoryPageStep(pending.direction)) {
-    historySwipeResetCard(pending.card);
+  const { selector, step } = pending.target;
+  if (!app.querySelector?.(selector) || !step(pending.direction)) {
+    pageSwipeResetCard(pending.card);
     return;
   }
   render();
-  const card = app.querySelector?.(".training-history");
+  const card = app.querySelector?.(selector);
   if (!card) return;
   const width = pending.width;
   if (pending.reduced) {
@@ -28020,38 +28057,50 @@ function finishHistorySwipePending() {
     card.style.transform = `translate3d(${pending.direction === "previous" ? -width : width}px, 0, 0)`;
   }
   void card.offsetWidth;
-  historySwipeSettle(card, pending.reduced);
+  pageSwipeSettle(card, pending.reduced);
 }
 
-function beginHistorySwipe(event) {
+function pageSwipeTargetAt(element) {
+  if (typeof element?.closest !== "function") return null;
+  for (const target of PAGE_SWIPE_TARGETS) {
+    const card = element.closest(target.selector);
+    if (card) return { target, card };
+  }
+  return null;
+}
+
+function beginPageSwipe(event) {
   if (event.isPrimary === false || event.button > 0) return;
-  const target = typeof event.target?.closest === "function" ? event.target : event.target?.parentElement;
-  let card = target?.closest?.(".training-history");
-  if (!card || target?.closest?.("input, select, textarea")) return;
+  const origin = typeof event.target?.closest === "function" ? event.target : event.target?.parentElement;
+  const hit = pageSwipeTargetAt(origin);
+  if (!hit || origin?.closest?.("input, select, textarea")) return;
   if (event.clientX < PAGE_SWIPE_EDGE_INSET) return;
-  if (historySwipePending) {
-    finishHistorySwipePending();
-    card = app.querySelector?.(".training-history");
+  const { target } = hit;
+  let card = hit.card;
+  if (pageSwipePending) {
+    finishPageSwipePending();
+    card = app.querySelector?.(target.selector);
     if (!card) return;
   }
   const rect = card.getBoundingClientRect();
-  historySwipe = {
+  pageSwipe = {
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
     card,
+    target,
     width: rect.width,
     axis: null,
     samples: [],
-    reduced: historySwipeReducedMotion()
+    reduced: pageSwipeReducedMotion()
   };
 }
 
-function moveHistorySwipe(event) {
-  const swipe = historySwipe;
+function movePageSwipe(event) {
+  const swipe = pageSwipe;
   if (!swipe || swipe.pointerId !== event.pointerId) return;
   if (!swipe.card.isConnected) {
-    historySwipe = null;
+    pageSwipe = null;
     return;
   }
   const dx = event.clientX - swipe.startX;
@@ -28072,38 +28121,38 @@ function moveHistorySwipe(event) {
   swipe.samples.push({ t: now, x: event.clientX });
   if (swipe.samples.length > 8) swipe.samples.shift();
   if (swipe.reduced) return;
-  const { canPrevious, canNext } = historyPageBounds();
-  historySwipePose(swipe.card, pageSwipeDisplacement(dx, swipe.width, canPrevious, canNext), swipe.width);
+  const { canPrevious, canNext } = swipe.target.bounds();
+  pageSwipePose(swipe.card, pageSwipeDisplacement(dx, swipe.width, canPrevious, canNext), swipe.width);
 }
 
-function endHistorySwipe(event, cancelled) {
-  const swipe = historySwipe;
+function endPageSwipe(event, cancelled) {
+  const swipe = pageSwipe;
   if (!swipe || swipe.pointerId !== event.pointerId) return;
-  historySwipe = null;
+  pageSwipe = null;
   try { swipe.card.releasePointerCapture?.(event.pointerId); } catch { /* already released */ }
   if (swipe.axis !== "x") return;
   const card = swipe.card;
   if (!card.isConnected) return;
   const dx = event.clientX - swipe.startX;
   const velocity = pageSwipeVelocity(swipe.samples, performance.now());
-  const { canPrevious, canNext } = historyPageBounds();
+  const { canPrevious, canNext } = swipe.target.bounds();
   const direction = cancelled ? null : pageSwipeCommitDirection(dx, velocity, swipe.width, canPrevious, canNext);
   if (!direction) {
-    historySwipeSettle(card, swipe.reduced);
+    pageSwipeSettle(card, swipe.reduced);
     return;
   }
-  const pending = { direction, card, width: swipe.width, reduced: swipe.reduced, timer: null };
-  historySwipePending = pending;
+  const pending = { direction, card, target: swipe.target, width: swipe.width, reduced: swipe.reduced, timer: null };
+  pageSwipePending = pending;
   if (swipe.reduced) {
     card.style.transition = `opacity ${PAGE_SWIPE_FADE_OUT_MS}ms var(--ease-standard)`;
     card.style.opacity = "0";
-    pending.timer = setTimeout(finishHistorySwipePending, PAGE_SWIPE_FADE_OUT_MS);
+    pending.timer = setTimeout(finishPageSwipePending, PAGE_SWIPE_FADE_OUT_MS);
   } else {
     const exit = direction === "previous" ? swipe.width : -swipe.width;
     card.style.transition = `transform ${PAGE_SWIPE_EXIT_MS}ms var(--ease-standard), opacity ${PAGE_SWIPE_EXIT_MS}ms var(--ease-standard)`;
     card.style.transform = `translate3d(${exit}px, 0, 0)`;
     card.style.opacity = "0.7";
-    pending.timer = setTimeout(finishHistorySwipePending, PAGE_SWIPE_EXIT_MS);
+    pending.timer = setTimeout(finishPageSwipePending, PAGE_SWIPE_EXIT_MS);
   }
 }
 
@@ -28172,10 +28221,10 @@ function bindEvents(preservedModalFocus = null) {
     appSheetSubmitDelegationBound = true;
   }
   if (!appWeeklySwipeDelegationBound && typeof app.addEventListener === "function") {
-    app.addEventListener("pointerdown", beginHistorySwipe, { passive: true });
-    app.addEventListener("pointermove", moveHistorySwipe, { passive: true });
-    app.addEventListener("pointerup", event => endHistorySwipe(event, false), { passive: true });
-    app.addEventListener("pointercancel", event => endHistorySwipe(event, true), { passive: true });
+    app.addEventListener("pointerdown", beginPageSwipe, { passive: true });
+    app.addEventListener("pointermove", movePageSwipe, { passive: true });
+    app.addEventListener("pointerup", event => endPageSwipe(event, false), { passive: true });
+    app.addEventListener("pointercancel", event => endPageSwipe(event, true), { passive: true });
     appWeeklySwipeDelegationBound = true;
   }
   if (!activeSetUndoGesturesBound && typeof app.addEventListener === "function") {
