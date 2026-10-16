@@ -61,6 +61,9 @@
   --hero-accent-text: #1f64c9;
   /* Brand fill family for first-plan style cards: white text stays >=4.5:1 at the base, >=3:1 at the bright end. */
   --brand-fill: #216bd7;
+  /* Accent text on blue-tinted fills (chips, pills, set badges, current set card): darker than --sage so it keeps 4.5:1 on the tint. */
+  --accent-on-tint: #1b5cba;
+  --muted-on-tint: #4f5e77;
   --brand-fill-bright: #3a8dff;
   /* DESIGN.md elevation: flat by default; shadows only for floating menus/toasts and reorder drag-lift. */
   --shadow-floating: 0 6px 18px rgba(16, 35, 63, 0.12);
@@ -165,6 +168,8 @@ html.frame-blocked body {
   --hero-accent: #7fb2ff;
   --hero-accent-text: #7fb2ff;
   --brand-fill: #2e72d2;
+  --accent-on-tint: var(--sage);
+  --muted-on-tint: var(--muted);
   --brand-fill-bright: #3f84e5;
   --shadow-floating: 0 6px 18px rgba(0, 0, 0, 0.36);
   --reorder-lift-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
@@ -194,10 +199,11 @@ body {
   line-height: 1.25rem;
 }
 
+/* Words wrap whole; only a single word wider than its line may break (never mid-word at large text sizes). */
 h1,
 h2,
 h3,
-p { overflow-wrap: anywhere; }
+p { overflow-wrap: break-word; }
 
 h1,
 h2,
@@ -1204,7 +1210,7 @@ svg.filled-icon.small-icon {
 }
 
 .progress-picker-copy { display: grid; flex: 1; gap: 4px; min-width: 0; }
-.progress-picker-copy strong { font-size: 1.0625rem; font-weight: 600; line-height: 1.375rem; overflow-wrap: anywhere; }
+.progress-picker-copy strong { font-size: 1.0625rem; font-weight: 600; line-height: 1.375rem; overflow-wrap: break-word; }
 .progress-picker-copy small { color: var(--muted); font-size: 0.75rem; line-height: 1rem; }
 
 .progress-picker-search {
@@ -1214,7 +1220,7 @@ svg.filled-icon.small-icon {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
@@ -1440,7 +1446,7 @@ svg.filled-icon.small-icon {
   width: 30px;
   height: 30px;
   border-radius: 10px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   font-size: 0.75rem;
   font-weight: 800;
@@ -1886,7 +1892,7 @@ svg.filled-icon.small-icon {
   text-transform: none;
 }
 
-.solo-identity-row h2 { min-width: 0; hyphens: none; overflow-wrap: anywhere; }
+.solo-identity-row h2 { min-width: 0; hyphens: none; overflow-wrap: break-word; }
 
 .solo-xp {
   margin-left: auto;
@@ -2535,7 +2541,7 @@ svg.filled-icon.small-icon {
   display: grid;
   place-items: center;
   border-radius: 14px;
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 14%, transparent);
   font-size: 1.3125rem;
 }
@@ -2708,7 +2714,7 @@ svg.filled-icon.small-icon {
 }
 
 .button.secondary {
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--sage) 34%, var(--outline));
 }
@@ -2843,10 +2849,12 @@ button:disabled {
   background: color-mix(in srgb, var(--sage) 14%, var(--nav-surface));
 }
 
+/* The label scales with the text size but is capped by the tab width, so "Упражнения" and "Прогресс" never collide at 130-200%. */
 .tab-button > span:last-child {
   max-width: 100%;
-  font-size: 0.75rem;
-  line-height: 1rem;
+  min-width: 0;
+  font-size: min(0.75rem, 3.4vw);
+  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2863,8 +2871,8 @@ button:disabled {
     width: 100%;
     max-width: none;
     padding-inline: 1px;
-    font-size: 0.6875rem;
-    line-height: 0.875rem;
+    font-size: min(0.6875rem, 3.4vw);
+    line-height: 1.25;
     letter-spacing: -0.0073em;
     overflow: visible;
     text-overflow: clip;
@@ -3010,21 +3018,20 @@ button.leaderboard-row {
 }
 
 .progress-empty-state {
-  min-height: min(56dvh, 520px);
   display: grid;
-  align-content: center;
+  align-content: start;
   justify-items: start;
   gap: 12px;
-  padding: clamp(24px, 7vw, 54px);
+  padding: 20px;
 }
 
 .progress-empty-state h2,
 .progress-empty-state p { margin: 0; }
 
 .progress-empty-state h2 {
-  max-width: 19ch;
-  font-size: clamp(1.75rem, 5vw, 2.625rem);
-  line-height: 1.08;
+  max-width: 24ch;
+  font-size: 1.375rem;
+  line-height: 1.75rem;
 }
 
 .progress-empty-state p {
@@ -3362,7 +3369,7 @@ button.leaderboard-row {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-sm);
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 14%, transparent);
   font-weight: 700;
 }
@@ -3593,7 +3600,14 @@ button.leaderboard-row {
   display: block;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
+}
+/* Fallback of the value fit step: when even the smallest size overflows, the unit wraps to its own line. */
+:is(.metric-grid, .weekly-summary-metrics, .summary-hero-stats) strong.fit-wrap.fit-wrap.fit-wrap {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
 }
 .focus-lens-details,
 .focus-lens-more {
@@ -3696,7 +3710,7 @@ button.leaderboard-row {
 .weekly-workout-summary-head span {
   padding: 5px 9px;
   border-radius: 999px;
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, var(--surface));
   font-size: 0.75rem;
   font-weight: 700;
@@ -3874,7 +3888,7 @@ button.leaderboard-row {
   gap: 5px;
   padding: 5px 9px;
   border-radius: 999px;
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, var(--surface));
   font-size: 0.75rem;
   font-weight: 700;
@@ -4450,6 +4464,9 @@ button.leaderboard-row {
   cursor: pointer;
 }
 
+.focus-lens-edit span,
+.focus-lens-action span { text-wrap: balance; }
+
 .focus-lens-edit:focus-visible { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
 
 @media (hover: hover) and (pointer: fine) {
@@ -4647,7 +4664,7 @@ button.leaderboard-row {
   padding: 0 9px;
   border: 1px solid color-mix(in srgb, var(--sage) 16%, transparent);
   border-radius: var(--radius-capsule);
-  color: var(--sage);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--sage) 10%, transparent);
   font-size: 0.8125rem;
   font-weight: 500;
@@ -4725,7 +4742,7 @@ textarea:focus {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   font-size: 0.875rem;
   font-weight: 700;
@@ -5256,6 +5273,8 @@ textarea:focus {
   padding: 10px;
   border-radius: 16px;
   background: color-mix(in srgb, var(--brand-fill) 10%, transparent);
+  /* Supporting text on the blue-tinted current set card keeps 4.5:1 in light. */
+  --muted: var(--muted-on-tint);
 }
 
 .active-set-row.current + .active-set-row,
@@ -5276,9 +5295,9 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-set-index {
   display: grid;
   place-items: center;
-  flex: 0 0 22px;
-  width: 22px;
-  height: 22px;
+  flex: 0 0 max(22px, 1.9em);
+  width: max(22px, 1.9em);
+  height: max(22px, 1.9em);
   border: 1.5px solid var(--outline);
   border-radius: 50%;
   color: var(--muted);
@@ -5315,14 +5334,15 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .active-set-editor-input { width: 96px; min-height: 44px; padding: 6px 12px; text-align: center; }
 .active-set-hidden-input { display: none; }
 
-.active-set-current-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-.active-set-title { color: var(--primary); font-size: 0.75rem; font-weight: 600; }
+.active-set-current-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
+.active-set-title { color: var(--accent-on-tint); font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 
 .active-set-previous {
+  white-space: nowrap;
   margin: -8px 0 -8px auto;
   min-height: 44px;
   padding: 0 4px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: transparent;
   font-size: 0.75rem;
   font-weight: 600;
@@ -5400,7 +5420,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 44px;
   padding: 0 8px;
   border-radius: 999px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: transparent;
   font-size: 0.75rem;
   font-weight: 700;
@@ -5414,6 +5434,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   position: relative;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   text-align: center;
   color: var(--muted);
   font-size: 0.6875rem;
@@ -5622,7 +5644,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   font-size: 0.875rem;
   font-weight: 600;
@@ -6353,7 +6375,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 .favorite-filter svg { flex: 0 0 auto; }
 .favorite-filter.selected {
-  color: var(--primary);
+  color: var(--accent-on-tint);
   border-color: color-mix(in srgb, var(--primary) 38%, var(--outline-variant));
   background: color-mix(in srgb, var(--primary) 10%, var(--surface));
 }
@@ -6393,13 +6415,13 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .exercise-row .exercise-name {
   display: -webkit-box;
   overflow: hidden;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
   font-size: 1.0625rem;
   font-weight: 600;
   line-height: 1.375rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .exercise-row-actions {
@@ -6780,9 +6802,12 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .toast-text {
   flex: 1 1 auto;
   min-width: 0;
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: break-word;
 }
 
 .toast-action {
@@ -7602,8 +7627,8 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   min-height: 24px;
   padding: 0 8px;
   border-color: transparent;
-  color: var(--on-primary);
-  background: var(--primary);
+  color: var(--on-accent);
+  background: var(--brand-fill);
   font-size: 0.6875rem;
   font-weight: 700;
 }
@@ -7622,7 +7647,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   margin: -8px 0;
   padding: 0 10px;
   border-radius: 999px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
@@ -7882,11 +7907,11 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .account-identity-icon svg.filled-icon { fill: currentColor; stroke: none; }
 
 .settings-row-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
-.settings-row-text strong { overflow: hidden; color: var(--text); font-size: 1rem; font-weight: 600; line-height: 1.375rem; text-overflow: ellipsis; white-space: nowrap; }
-.settings-row-text small { overflow: hidden; color: var(--muted); font-size: 0.875rem; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
-.settings-row.wrap .settings-row-text small { white-space: normal; }
+/* Row titles and subtitles wrap at spaces instead of truncating, so large text sizes keep the whole label. */
+.settings-row-text strong { color: var(--text); font-size: 1rem; font-weight: 600; line-height: 1.375rem; overflow-wrap: break-word; }
+.settings-row-text small { color: var(--muted); font-size: 0.875rem; line-height: 1.25rem; overflow-wrap: break-word; }
 /* External link rows (legal, support, store) wrap instead of truncating; the arrow keeps its own width. */
-a.settings-row .settings-row-text strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: break-word; }
 
 .settings-row-trailing { flex: none; display: inline-flex; color: var(--muted); }
 .settings-row-trailing svg {
@@ -7941,7 +7966,7 @@ a.settings-row .settings-row-text strong { overflow: visible; text-overflow: cli
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
   transition: transform var(--motion-fade-in) var(--ease-standard);
 }
-.settings-switch.on { background: var(--primary); }
+.settings-switch.on { background: var(--brand-fill); }
 .settings-switch.on i { transform: translateX(20px); }
 @media (prefers-reduced-motion: reduce) {
   .settings-switch, .settings-switch i { transition: none; }
@@ -7992,7 +8017,7 @@ a.settings-row .settings-row-text strong { overflow: visible; text-overflow: cli
   flex: none;
   min-height: 44px;
   padding: 0 12px;
-  color: var(--primary);
+  color: var(--accent-on-tint);
   border: 0;
   border-radius: 999px;
   background: color-mix(in srgb, var(--primary) 12%, transparent);
@@ -8088,7 +8113,7 @@ a.settings-row .settings-row-text strong { overflow: visible; text-overflow: cli
 }
 
 .rank-row.unlocked .rank-icon {
-  color: var(--primary);
+  color: var(--accent-on-tint);
   background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
@@ -8115,14 +8140,16 @@ a.settings-row .settings-row-text strong { overflow: visible; text-overflow: cli
 .rank-remaining { color: var(--primary); font-size: 0.6875rem; font-weight: 600; }
 
 /* Active workout frame: text Minimize action, brand hero, thumbnail-first exercise header. */
+/* The outer columns keep the full "Свернуть" label and the menu button; the title takes what is left and ellipsizes first at large text. */
 .topbar:has(.topbar-text-action) {
-  grid-template-columns: minmax(48px, 1fr) auto minmax(48px, 1fr);
+  grid-template-columns: minmax(min-content, 1fr) minmax(0, auto) minmax(min-content, 1fr);
 }
 .topbar:has(.topbar-text-action) > .topbar-action { justify-self: end; }
 .topbar-leading { justify-self: start; min-width: 0; }
 .topbar-text-action {
   min-height: 44px;
   padding: 0 10px;
+  white-space: nowrap;
   border: 0;
   border-radius: var(--radius-capsule);
   background: transparent;
@@ -8239,7 +8266,7 @@ a.settings-row .settings-row-text strong { overflow: visible; text-overflow: cli
   transform: translateY(2px) rotate(-135deg);
 }
 .active-workout-exercise-copy { display: grid; gap: 3px; min-width: 0; flex: 1 1 auto; }
-.active-workout-exercise-copy h2 { overflow-wrap: anywhere; }
+.active-workout-exercise-copy h2 { overflow-wrap: break-word; }
 .active-workout-exercise-copy p { color: var(--muted); font-size: 0.75rem; line-height: 1rem; }
 .active-exercise-collapsed-line { display: grid; gap: 2px; }
 .active-workout-exercise details[open] .active-exercise-collapsed-line,
@@ -8411,13 +8438,15 @@ a.settings-row .settings-row-text strong { overflow: visible; text-overflow: cli
   color: var(--hero-text);
 }
 .summary-hero-stats span {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
   color: var(--hero-muted);
   font-size: 0.75rem;
   line-height: 1rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .summary-hero-stats strong {
   display: block;
@@ -8426,7 +8455,7 @@ a.settings-row .settings-row-text strong { overflow: visible; text-overflow: cli
   font-size: 1.125rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.5rem;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 }
 

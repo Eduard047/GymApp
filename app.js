@@ -289,7 +289,7 @@ const text = {
     recommendations: "Recommendations", achievements: "Achievements", noWorkouts: "No workouts in this month.",
     note: "Note", trainingProfile: "Training Profile", smartCoach: "Smart Coach", generateSmart: "Generate Smart Workout",
     syncWatch: "Sync Plan to Watch", addExercise: "Add Exercise", addSet: "Add Set", addPlannedSet: "Add planned set", logSetAndRest: "Log set · rest 90 s", copyLast: "Copy Last Set",
-    copyPlus: "Copy Last +2.5 kg", useLast: "Use Last Weight", applySmart: "Apply Smart Plan", templatePicker: "Copy a previous workout",
+    copyPlus: "Copy Last +2.5 kg", useLast: "Use Last Weight", applySmart: "Apply plan", templatePicker: "Copy a previous workout",
     exerciseName: "Exercise name", backup: "Backup and diagnostics", exportJson: "Export JSON", importJson: "Import JSON",
     diagnostics: "Export redacted diagnostics", sharePdf: "Share PDF report", rename: "Rename Exercise", history: "History",
     workoutComplete: "Workout complete", impact: "Workout impact", personalRecords: "Personal records", levelProgress: "Level progress",
@@ -12441,8 +12441,10 @@ function activationCard() {
   return `<section class="panel highlighted activation-card" data-coach-target="today-focus">
     <div class="activation-plan-heading"><span class="eyebrow">${tx3("Your first plan", "Твій перший план", "Твой первый план")}</span><div class="activation-title-row"><h2>${plan ? escapeHtml(smartFocusLabel(plan.focus)) : tx3("Preparing your plan", "Готуємо твій план", "Готовим твой план")}</h2><button class="activation-options-toggle${optionsOpen ? " open" : ""}" type="button" data-action="activation-options-toggle" aria-label="${optionsLabel}" aria-expanded="${optionsOpen}" aria-pressed="${optionsOpen}">${svg("tune")}</button></div><p>${tx3("Start with the suggestion or build the workout yourself. You can adjust every setting.", "Почни з поради або створи тренування самостійно. Усі налаштування можна змінити.", "Начни с рекомендации или собери тренировку сам. Все настройки можно изменить.")}</p></div>
     ${optionsMarkup}
-    ${plan ? smartPlanMetricsMarkup(plan) : `<p class="muted activation-plan-unavailable">${tx("Create a manual plan if the recommendation is unavailable.", "Створи план вручну, якщо рекомендація недоступна.")}</p>`}
-    <div class="activation-actions"><button class="button full" data-action="activation-start" ${plan ? `data-coach-target="today-primary"` : "disabled"}>${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="activation-manual" type="button" data-action="activation-manual" ${plan ? "" : `data-coach-target="today-primary"`}>${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button></div>
+    ${plan ? smartPlanMetricsMarkup(plan) : ""}
+    <div class="activation-actions">${plan
+      ? `<button class="button full" data-action="activation-start" data-coach-target="today-primary">${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="activation-manual" type="button" data-action="activation-manual">${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button>`
+      : `<button class="button full" type="button" data-action="activation-manual" data-coach-target="today-primary">${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button>`}</div>
     ${todayFriendPillMarkup()}
   </section>`;
 }
@@ -12492,6 +12494,7 @@ const METRIC_TILE_MIN_VALUE_SCALE = 0.6;
 // Metric values stay on one line and shrink to fit their tile instead of wrapping or truncating.
 let metricTileResizeObserver = null;
 let metricTileFitPending = false;
+const metricTileObservedGrids = new Set();
 
 // A narrower window can make a value overflow without a new render, so refit on resize too.
 function observeMetricTileResize() {
@@ -12505,13 +12508,32 @@ function observeMetricTileResize() {
     });
   });
   metricTileResizeObserver.observe(app);
+  // Webfont/system-font swaps change value widths without resizing the app, so refit once fonts settle.
+  try { document.fonts?.ready?.then(() => requestAnimationFrame(fitMetricTileValues)); } catch (_) { /* fonts API unavailable */ }
 }
+
+const METRIC_TILE_VALUE_SELECTOR = ".metric-grid strong, .weekly-summary-metrics strong, .summary-hero-stats strong";
 
 function fitMetricTileValues() {
   if (typeof app?.querySelectorAll !== "function") return;
   observeMetricTileResize();
-  app.querySelectorAll(".metric-grid strong, .weekly-summary-metrics strong").forEach(value => {
+  // Each tile grid is observed too, so a value refits when its own tile changes width (tour overlay, text size, rotation).
+  // Grids replaced by a render are unobserved so the observer never keeps detached trees alive.
+  if (metricTileResizeObserver) {
+    metricTileObservedGrids.forEach(grid => {
+      if (grid.isConnected) return;
+      metricTileResizeObserver.unobserve(grid);
+      metricTileObservedGrids.delete(grid);
+    });
+    app.querySelectorAll(".metric-grid, .weekly-summary-metrics, .summary-hero-stats").forEach(grid => {
+      if (metricTileObservedGrids.has(grid)) return;
+      metricTileObservedGrids.add(grid);
+      metricTileResizeObserver.observe(grid);
+    });
+  }
+  app.querySelectorAll(METRIC_TILE_VALUE_SELECTOR).forEach(value => {
     value.style.fontSize = "";
+    value.classList.remove("fit-wrap");
     const available = value.clientWidth;
     const needed = value.scrollWidth;
     if (!(available > 0) || needed <= available) return;
@@ -12525,6 +12547,11 @@ function fitMetricTileValues() {
     for (let attempt = 0; attempt < 4 && value.scrollWidth > value.clientWidth && size - 0.5 >= floor; attempt += 1) {
       size -= 0.5;
       value.style.fontSize = `${size}px`;
+    }
+    // Still too wide at the floor (large text sizes): wrap the unit onto a second line at spaces rather than clip it.
+    if (value.scrollWidth > value.clientWidth && /\s/.test(value.textContent.trim())) {
+      value.classList.add("fit-wrap");
+      value.style.fontSize = `${Math.floor(baseSize * 0.8 * 10) / 10}px`;
     }
   });
   fitSoloIdentityRows();
@@ -13141,7 +13168,7 @@ function exerciseBuilderHeadingMarkup(draft, selectedCount, setCount) {
   }
   items.push({ action: "discard-plan", icon: "close", danger: true, label: tx3("Discard plan", "Відкинути план", "Удалить план") });
   const menuLabel = tx3("Plan actions", "Дії з планом", "Действия с планом");
-  return `<section class="exercise-builder-heading"><div><h2>${tx("Exercises", "Вправи")}</h2><span class="pill">${countNoun(selectedCount, "exercises")} · ${n(setCount, "set", "sets", "підхід", "підходи", "підходів")}</span></div><button class="button secondary exercise-builder-voice" type="button" data-action="open-voice-workout" aria-label="${escapeAttr(tx3("Create workout plan by voice", "Створити план тренування голосом", "Создать план тренировки голосом"))}">${svg("mic", "small-icon")}</button><button class="button exercise-builder-add" data-action="open-workout-exercise-picker" data-picker-target="draft-new" aria-label="${tAttr("addExercise")}">${svg("add", "small-icon")}</button><div class="plan-menu-wrap">${planMenuTriggerMarkup("header", menuLabel, "button secondary exercise-builder-more")}${planMenuMarkup("header", menuLabel, items)}</div></section>`;
+  return `<section class="exercise-builder-heading"><div><h2>${tx("Exercises", "Вправи")}</h2><span class="pill">${countNoun(selectedCount, "exercises")} · ${n(setCount, "set", "sets", "підхід", "підходи", "підходів")}</span></div><button class="button secondary exercise-builder-voice" type="button" data-action="open-voice-workout" aria-label="${escapeAttr(tx3("Create workout plan by voice", "Створити план тренування голосом", "Создать план тренировки голосом"))}">${svg("mic", "small-icon")}</button><button class="button secondary exercise-builder-add" data-action="open-workout-exercise-picker" data-picker-target="draft-new" aria-label="${tAttr("addExercise")}">${svg("add", "small-icon")}</button><div class="plan-menu-wrap">${planMenuTriggerMarkup("header", menuLabel, "button secondary exercise-builder-more")}${planMenuMarkup("header", menuLabel, items)}</div></section>`;
 }
 
 function addWorkoutSecondaryControls(draft, liveRecipient = null) {
@@ -13673,7 +13700,7 @@ function bannerExitEnd(placeholder) {
 
 // Wraps `node` in a collapsing placeholder. In place (no anchorParent) the placeholder takes the node's spot; after a render it is
 // inserted into anchorParent before anchorBefore. Falls back to removing the node.
-function bannerExitBegin({ node, kind, height = undefined, anchorParent = null, anchorBefore = null }) {
+function bannerExitBegin({ node, kind, height = undefined, anchorParent = null, anchorBefore = null, onEnd = null }) {
   try {
     if (!node) return false;
     const parent = anchorParent || node.parentNode;
@@ -13710,7 +13737,8 @@ function bannerExitBegin({ node, kind, height = undefined, anchorParent = null, 
       { duration: plan.collapseMs, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" }
     );
     node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: plan.opacityMs, easing: "linear", fill: "forwards" });
-    const entry = { kind, timer: setTimeout(() => bannerExitEnd(placeholder), plan.collapseMs + 120) };
+    // onEnd runs only when the exit timer finishes; a render that already cleaned the placeholder clears the timer first.
+    const entry = { kind, timer: setTimeout(() => { bannerExitEnd(placeholder); onEnd?.(); }, plan.collapseMs + 120) };
     bannerExits.set(placeholder, entry);
     return true;
   } catch {
@@ -13811,12 +13839,19 @@ function activeBatchUndoMarkup(workout) {
   return `<div class="active-set-confirmation" data-banner-kind="batch" data-active-batch-undo="1"><span class="active-set-confirmation-icon" aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-confirmation-text" role="status" aria-live="polite">${escapeHtml(message)}</span><button class="active-set-confirmation-undo" type="button" data-action="undo-active-batch">${tx3("Undo", "Скасувати", "Отменить")}</button><button class="active-set-confirmation-dismiss" type="button" data-action="dismiss-active-batch-undo" aria-label="${escapeAttr(tx3("Dismiss", "Закрити", "Закрыть"))}">${svg("close", "small-icon")}</button></div>`;
 }
 
-function clearActiveSetConfirmation() {
+function renderActiveRouteAfterBannerExit() {
+  if (route().name === "active") render();
+}
+
+// `rerender` is for a plain dismissal: once the banner has left, the screen renders so the latest row shows its own Undo.
+function clearActiveSetConfirmation({ rerender = false } = {}) {
   activeSetConfirmation = null;
+  let animating = false;
   try {
     const node = app?.querySelector?.("[data-active-set-confirmation]");
-    if (node) bannerExitBegin({ node, kind: "set" });
+    if (node) animating = bannerExitBegin({ node, kind: "set", onEnd: rerender ? renderActiveRouteAfterBannerExit : null });
   } catch { /* The next render drops the banner anyway. */ }
+  if (rerender && !animating) renderActiveRouteAfterBannerExit();
 }
 
 function setActiveSetConfirmation(workoutId, setId, weight, reps, restSeconds = 0) {
@@ -14807,7 +14842,7 @@ function activeWorkoutMoreSheetMarkup() {
     ? `<section class="active-more-group" aria-labelledby="active-more-adapt"><h3 class="eyebrow" id="active-more-adapt">${tx3("Adapt workout", "Адаптувати тренування", "Адаптировать тренировку")}</h3><div class="exercise-more-actions">${Object.entries(trainingAdaptationLabels()).map(([reason, label]) => `<button class="button secondary full" data-action="training-adapt" data-reason="${reason}">${escapeHtml(label)}</button>`).join("")}</div></section>`
     : "";
   const wakeLockNote = activeWorkoutWakeLockUnsupportedNote();
-  return `<div class="exercise-more-sheet active-more-sheet"><h2 id="active-more-title">${tx3("More workout options", "Інші дії", "Другие действия")}</h2>${adapt}${wakeLockNote ? `<p class="muted active-more-note">${escapeHtml(wakeLockNote)}</p>` : ""}<div class="exercise-more-actions"><button class="button danger full" data-action="discard-active-workout">${tx3("Discard", "Відкинути", "Удалить")}</button></div></div>`;
+  return `<div class="exercise-more-sheet active-more-sheet"><h2 id="active-more-title">${tx3("More workout options", "Інші дії", "Другие действия")}</h2>${adapt}${wakeLockNote ? `<p class="muted active-more-note">${escapeHtml(wakeLockNote)}</p>` : ""}<div class="exercise-more-actions"><button class="button danger full" data-action="discard-active-workout">${tx3("Discard workout", "Відкинути тренування", "Удалить тренировку")}</button></div></div>`;
 }
 
 function trainingAdaptationSnapshot() {
@@ -14940,7 +14975,7 @@ async function applyTrainingAdaptation() {
   });
   if (!result.acquired || result.value !== true) {
     modal = null; reloadActiveWorkoutContext(activeAccount); render();
-    showToast(tx3("Workout changed. Review it and try again.", "Тренування змінилося. Перевір і повтори.", "Тренировка изменилась. Проверьте и повторите."));
+    showToast(tx3("Workout changed. Review it and try again.", "Тренування змінилося. Перевір і повтори.", "Тренировка изменилась. Проверь и повтори."));
     return false;
   }
   return true;
@@ -15476,7 +15511,9 @@ function activeCompletedSetMarkup(set, setIndex, options) {
     `Подход ${number} записан, ${summary}`
   ) + (record ? `, ${tx3("personal record", "особистий рекорд", "личный рекорд")}` : "");
   const restControls = timerKey && remaining > 0 ? activeRestControlsMarkup(timerKey, remaining) : "";
-  const undo = undoable
+  // The recorded-set banner already carries Undo for this set; the standing row button shows only when no banner does (after a reload).
+  const bannerCoversUndo = Boolean(activeSetConfirmation && activeSetConfirmation.workoutId === activeWorkout?.id && String(activeSetConfirmation.setId) === String(set.id));
+  const undo = undoable && !bannerCoversUndo
     ? `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${setId}" aria-label="${escapeAttr(`${tx3("Undo set", "Скасувати підхід", "Отменить подход")} ${number}`)}">${tx3("Undo", "Скасувати", "Отменить")}</button>`
     : "";
   return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""}${undoAny ? ` data-active-set-undo-any="${setId}" tabindex="0"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check"${String(enterAnimationFor("set-record")?.setId) === String(set.id) ? " data-enter" : ""} aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${undo}${restControls}</div></div>`;
@@ -15560,9 +15597,9 @@ const TRAINING_SETTINGS_DAYS = [2, 3, 4, 5, 6];
 
 function trainingSettingsWeeklyText(days) {
   return tx3(
-    `${days} ${days === 1 ? "workout" : "workouts"} a week`,
-    `${days} ${["тренування", "тренування", "тренувань"][slavicPluralIndex(days)]} на тиждень`,
-    `${days} ${["тренировка", "тренировки", "тренировок"][slavicPluralIndex(days)]} в неделю`
+    `${days}\u00A0${days === 1 ? "workout" : "workouts"} a week`,
+    `${days}\u00A0${["тренування", "тренування", "тренувань"][slavicPluralIndex(days)]} на тиждень`,
+    `${days}\u00A0${["тренировка", "тренировки", "тренировок"][slavicPluralIndex(days)]} в неделю`
   );
 }
 
@@ -15820,7 +15857,7 @@ function smartPanel(rec, blockIndex) {
     if (rec.loadMode === "Bodyweight" && set.weight === 0) return tx("bodyweight", "власна вага");
     return `${escapeHtml(formatLocalizedSetWeight(set.weight))}`;
   };
-  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p class="smart-set-list">${rec.sets.map(s => `<span class="smart-set">${setLabel(s)} × ${s.reps}</span>`).join("")}</p>${rec.rirGuidance ? `<p class="smart-rir-guidance">${escapeHtml(rec.rirGuidance)}</p>` : ""}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${svg("auto", "small-icon")}${t("applySmart")}</button></div>`;
+  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p class="smart-set-list">${rec.sets.map(s => `<span class="smart-set">${setLabel(s)} × ${s.reps}</span>`).join("")}</p>${rec.rirGuidance ? `<p class="smart-rir-guidance">${escapeHtml(rec.rirGuidance)}</p>` : ""}<button class="button secondary full" data-action="apply-smart" data-block="${blockIndex}">${svg("auto", "small-icon")}${t("applySmart")}</button></div>`;
 }
 
 function smartRecommendationForBlock(block) {
@@ -20215,11 +20252,11 @@ async function syncCloudNow() {
 }
 
 function profileDataPanel() {
-  const backup = `<details class="settings-disclosure profile-data-details"><summary class="settings-row has-subtitle"><span class="settings-row-icon">${svg("tray")}</span><span class="settings-row-text"><strong>${escapeHtml(tx3("Backup & diagnostics", "Бекап і діагностика", "Бэкап и диагностика"))}</strong><small>${tx3("Export, import, diagnostics", "Експорт, імпорт, діагностика", "Экспорт, импорт, диагностика")}</small></span><span class="settings-row-trailing" aria-hidden="true">${svg("chevronRight")}</span></summary><div class="settings-disclosure-body"><p class="muted">${tx("A full import replaces this profile. Manual backups include favorite exercises; cloud schema-v2 intentionally keeps favorites local to this account and device.", "Повний імпорт замінює цей профіль. Ручна резервна копія містить улюблені вправи; хмарна schema-v2 навмисно зберігає їх локально для цього акаунта й пристрою.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></div></details>`;
+  const backup = `<details class="settings-disclosure profile-data-details"><summary class="settings-row has-subtitle"><span class="settings-row-icon">${svg("tray")}</span><span class="settings-row-text"><strong>${escapeHtml(tx3("Backup & diagnostics", "Бекап і діагностика", "Резервная копия и диагностика"))}</strong><small>${tx3("Export, import, diagnostics", "Експорт, імпорт, діагностика", "Экспорт, импорт, диагностика")}</small></span><span class="settings-row-trailing" aria-hidden="true">${svg("chevronRight")}</span></summary><div class="settings-disclosure-body"><p class="muted">${tx("A full import replaces this profile. Manual backups include favorite exercises; cloud schema-v2 intentionally keeps favorites local to this account and device.", "Повний імпорт замінює цей профіль. Ручна резервна копія містить улюблені вправи; хмарна schema-v2 навмисно зберігає їх локально для цього акаунта й пристрою.")}</p><div class="actions"><button class="button ghost" data-action="export-json">${t("exportJson")}</button><button class="button ghost" data-action="import-json">${t("importJson")}</button><button class="button ghost full" data-action="export-diagnostics">${t("diagnostics")}</button></div></div></details>`;
   const help = settingsRowMarkup({
     icon: "help",
     title: tx3("Help", "Допомога", "Помощь"),
-    subtitle: tx3("Replay the quick GymApp tour.", "Повтори короткий огляд GymApp.", "Повтори короткий обзор GymApp."),
+    subtitle: tx3("Replay the quick GymApp tour", "Повтори короткий огляд GymApp", "Повтори короткий обзор GymApp"),
     action: "replay-onboarding"
   });
   return `${backup}${help}`;
@@ -22602,6 +22639,22 @@ function currentLiveRoomId() {
   return candidates.find(value => window.GymLiveWorkout?.patterns?.ROOM_ID?.test(value || "")) || null;
 }
 
+function liveRoomStatusLabel(status) {
+  if (status === "active") return "LIVE";
+  if (status === "waiting") return tx3("Waiting", "Очікує", "Ожидает");
+  if (status === "ready") return tx3("Ready", "Готово", "Готово");
+  if (status === "completed") return tx3("Finished", "Завершено", "Завершено");
+  if (status === "cancelled") return tx3("Cancelled", "Скасовано", "Отменено");
+  if (status === "expired") return tx3("Expired", "Минуло", "Истекло");
+  return "";
+}
+
+// "LIVE" alone for an active or unknown status, "LIVE · label" otherwise, so the separator never dangles.
+function liveRoomEyebrowText(status) {
+  const label = status === "active" ? "" : liveRoomStatusLabel(status);
+  return label ? `LIVE · ${label}` : "LIVE";
+}
+
 function scheduleLiveWorkoutPoll() {
   clearTimeout(liveWorkoutPollTimer);
   liveWorkoutPollTimer = null;
@@ -22874,7 +22927,7 @@ function liveWorkoutInboxMarkup() {
     return `<section class="panel"><div class="row-head"><div><span class="eyebrow">${tx3("Live workout", "Спільне тренування", "Совместная тренировка")}</span><h2>${tx("Live workouts", "Live-тренування")}</h2><p class="muted">${escapeHtml(liveWorkoutState.error || tx("Refresh to check live rooms.", "Онови, щоб перевірити live-кімнати."))}</p></div><button class="button ghost" data-action="refresh-live-workouts">${tx("Refresh", "Оновити")}</button></div></section>`;
   }
   const invitations = inbox.invitations.map(invite => `<article class="panel highlighted social-invite-card"><div><span class="eyebrow">${tx3("Live invitation", "LIVE-запрошення", "LIVE-приглашение")}</span><h3>${escapeHtml(invite.owner.displayName)}</h3><p>${countNoun(invite.summary.exerciseCount, "exercises")} · ${countNoun(invite.summary.setCount, "sets")}</p><p class="muted">${escapeHtml(invite.summary.exerciseNames.join(" · "))}</p></div><div class="actions"><button class="button mini" data-action="respond-live-invite" data-decision="accept" data-room-id="${escapeAttr(invite.roomId)}" data-revision="${invite.roomRevision}">${tx("Start together", "Почати разом")}</button><button class="button ghost mini" data-action="respond-live-invite" data-decision="decline" data-room-id="${escapeAttr(invite.roomId)}" data-revision="${invite.roomRevision}">${tx("Decline", "Відхилити")}</button></div></article>`).join("");
-  const rooms = inbox.rooms.map(room => `<button class="leaderboard-row social-friend-row" data-action="open-live-room" data-room-id="${escapeAttr(room.roomId)}"><div>${svg("fitness", "small-icon")}</div><div><strong>${escapeHtml(room.peer.displayName)}</strong><small>${room.status === "waiting" ? tx("Invitation pending", "Запрошення очікує") : room.status === "ready" ? tx("Starting…", "Запускаємо…") : tx("Workout is live", "Тренування наживо")}</small></div><span class="pill">${room.status === "active" ? "LIVE" : escapeHtml(room.status)}</span></button>`).join("");
+  const rooms = inbox.rooms.map(room => `<button class="leaderboard-row social-friend-row" data-action="open-live-room" data-room-id="${escapeAttr(room.roomId)}"><div>${svg("fitness", "small-icon")}</div><div><strong>${escapeHtml(room.peer.displayName)}</strong><small>${room.status === "waiting" ? tx("Invitation pending", "Запрошення очікує") : room.status === "ready" ? tx("Starting…", "Запускаємо…") : tx("Workout is live", "Тренування наживо")}</small></div><span class="pill">${escapeHtml(liveRoomStatusLabel(room.status))}</span></button>`).join("");
   if (!invitations && !rooms) return "";
   return `<section class="social-invite-list"><div class="section-title"><div><span class="eyebrow">${tx3("Live workout", "Спільне тренування", "Совместная тренировка")}</span><h2>${tx("Shared live workouts", "Спільні live-тренування")}</h2></div><button class="button ghost mini" data-action="refresh-live-workouts">${tx("Refresh", "Оновити")}</button></div>${invitations}${rooms}<p class="muted">${tx("Each set is saved locally first and then synchronized. Your friend sees progress, not private notes or account data.", "Кожен підхід спочатку зберігається локально, а потім синхронізується. Друг бачить прогрес, але не приватні нотатки чи дані акаунта.")}</p></section>`;
 }
@@ -24350,7 +24403,7 @@ function liveWorkoutRoomMarkup() {
   if (!snapshot) {
     if (!roomRow) return `<div><h2>${tx("Room unavailable", "Кімната недоступна")}</h2><p class="muted">${escapeHtml(liveWorkoutState.error || tx("Refresh the room or return to Friends.", "Онови кімнату або повернися до Друзів."))}</p><button class="button full" data-action="refresh-live-workouts">${tx("Refresh", "Оновити")}</button></div>`;
     const terminalAction = roomRow.role === "owner" ? "cancel-live-room" : "leave-live-room";
-    return `<div><span class="eyebrow">LIVE · ${escapeHtml(roomRow.status)}</span><h2>${escapeHtml(roomRow.peer.displayName)}</h2><p>${countNoun(roomRow.summary.exerciseCount, "exercises")} · ${countNoun(roomRow.summary.setCount, "sets")}</p><p class="muted">${roomRow.status === "waiting" ? tx("Waiting for your friend to accept.", "Очікуємо, поки друг прийме запрошення.") : tx("Starting the shared workout…", "Запускаємо спільне тренування…")}</p><div class="actions vertical"><button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh room", "Оновити кімнату")}</button><button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomRow.roomId)}" data-room-revision="${roomRow.roomRevision}" data-membership-revision="${roomRow.membershipRevision}">${roomRow.role === "owner" ? tx("Cancel room", "Скасувати кімнату") : tx("Leave room", "Вийти з кімнати")}</button></div></div>`;
+    return `<div><span class="eyebrow">${escapeHtml(liveRoomEyebrowText(roomRow.status))}</span><h2>${escapeHtml(roomRow.peer.displayName)}</h2><p>${countNoun(roomRow.summary.exerciseCount, "exercises")} · ${countNoun(roomRow.summary.setCount, "sets")}</p><p class="muted">${roomRow.status === "waiting" ? tx("Waiting for your friend to accept.", "Очікуємо, поки друг прийме запрошення.") : tx("Starting the shared workout…", "Запускаємо спільне тренування…")}</p><div class="actions vertical"><button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh room", "Оновити кімнату")}</button><button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomRow.roomId)}" data-room-revision="${roomRow.roomRevision}" data-membership-revision="${roomRow.membershipRevision}">${roomRow.role === "owner" ? tx("Cancel room", "Скасувати кімнату") : tx("Leave room", "Вийти з кімнати")}</button></div></div>`;
   }
   const totalSets = snapshot.room.summary.setCount;
   const self = snapshot.participants.find(row => row.isSelf);
@@ -24363,7 +24416,7 @@ function liveWorkoutRoomMarkup() {
     : self?.role === "participant" && ["ready", "active"].includes(snapshot.room.status) && ["joined", "finished"].includes(self.state);
   const terminalAction = self?.role === "owner" ? "cancel-live-room" : "leave-live-room";
   const terminalLabel = self?.role === "owner" ? tx("Cancel room", "Скасувати кімнату") : tx("Leave room", "Вийти з кімнати");
-  return `<div><span class="eyebrow">LIVE · ${escapeHtml(snapshot.room.status)}</span><h2>${tx("Workout room", "Кімната тренування")}</h2><p class="muted">${tx("The plan is frozen for this room. Each participant controls only their own set lane.", "План зафіксовано для цієї кімнати. Кожен учасник керує лише власною шкалою підходів.")}</p>${self?.state === "finished" ? finishedLiveWorkoutMarkup(snapshot) : snapshot.participants.map(row => liveParticipantProgressMarkup(row, totalSets)).join("") + liveWorkoutExerciseMatrixMarkup(snapshot)}<div class="actions vertical">${attached ? `<button class="button full" data-action="continue-active-workout">${tx("Continue workout", "Продовжити тренування")}</button>` : ""}${canAttach ? `<button class="button full" data-action="attach-live-room" data-room-id="${escapeAttr(roomId)}">${tx("Open synchronized workout", "Відкрити синхронізоване тренування")}</button>` : ""}<button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh progress", "Оновити прогрес")}</button>${canTerminate ? `<button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomId)}" data-room-revision="${snapshot.room.roomRevision}" data-membership-revision="${self.membershipRevision}">${terminalLabel}</button>` : ""}</div></div>`;
+  return `<div><span class="eyebrow">${escapeHtml(liveRoomEyebrowText(snapshot.room.status))}</span><h2>${tx("Workout room", "Кімната тренування")}</h2><p class="muted">${tx("The plan is frozen for this room. Each participant controls only their own set lane.", "План зафіксовано для цієї кімнати. Кожен учасник керує лише власною шкалою підходів.")}</p>${self?.state === "finished" ? finishedLiveWorkoutMarkup(snapshot) : snapshot.participants.map(row => liveParticipantProgressMarkup(row, totalSets)).join("") + liveWorkoutExerciseMatrixMarkup(snapshot)}<div class="actions vertical">${attached ? `<button class="button full" data-action="continue-active-workout">${tx("Continue workout", "Продовжити тренування")}</button>` : ""}${canAttach ? `<button class="button full" data-action="attach-live-room" data-room-id="${escapeAttr(roomId)}">${tx("Open synchronized workout", "Відкрити синхронізоване тренування")}</button>` : ""}<button class="button ghost full" data-action="refresh-live-workouts">${tx("Refresh progress", "Оновити прогрес")}</button>${canTerminate ? `<button class="button danger full" data-action="${terminalAction}" data-room-id="${escapeAttr(roomId)}" data-room-revision="${snapshot.room.roomRevision}" data-membership-revision="${self.membershipRevision}">${terminalLabel}</button>` : ""}</div></div>`;
 }
 
 async function startLiveWorkoutRoom(element) {
@@ -25554,7 +25607,9 @@ function exercisesScreen() {
   const mappingRows = filteredLibraryExercises();
   return `<div class="coach-screen-anchor"><section class="screen-copy compact exercises-header" data-coach-target="exercises-screen"><h2>${t("exercises")}</h2><button class="exercise-add-button" data-action="open-exercise-add" aria-label="${escapeAttr(t("addExercise"))}">${svg("add")}</button></section>
     ${exerciseFilterControls()}
-    <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : `<section class="panel empty-state-panel"><h3>${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</h3><p>${tx("Clear filters to return to the full exercise library.", "Очисть фільтри, щоб повернутися до повного каталогу вправ.")}</p><button class="button secondary" data-action="reset-exercise-filters">${tx("Clear filters", "Очистити фільтри")}</button></section>`}</section></div>`;
+    <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : state.exercises.length === 0
+      ? `<section class="panel empty-state-panel"><h3>${tx3("No exercises yet", "Ще немає вправ", "Пока нет упражнений")}</h3><p>${tx3("Add your first exercise to start building workouts.", "Додай першу вправу, щоб складати тренування.", "Добавь первое упражнение, чтобы собирать тренировки.")}</p><button class="button" data-action="open-exercise-add">${svg("add", "small-icon")}${tx3("Add exercise", "Додати вправу", "Добавить упражнение")}</button></section>`
+      : `<section class="panel empty-state-panel"><h3>${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</h3><p>${tx("Clear filters to return to the full exercise library.", "Очисть фільтри, щоб повернутися до повного каталогу вправ.")}</p><button class="button secondary" data-action="reset-exercise-filters">${tx("Clear filters", "Очистити фільтри")}</button></section>`}</section></div>`;
 }
 
 function exerciseFilterControls() {
@@ -25780,7 +25835,7 @@ function exerciseMoreSheetMarkup(exerciseId) {
 
 // One card: title, then thumbnail + name + logged-session count + search affordance (opens the picker sheet).
 function progressExercisePickerMarkup(selected = null, sessionCount = 0) {
-  const title = `<h2 class="progress-picker-title">${tx3("Choose an exercise", "Обери вправу", "Выберите упражнение")}</h2>`;
+  const title = `<h2 class="progress-picker-title">${tx3("Choose an exercise", "Обери вправу", "Выбери упражнение")}</h2>`;
   if (!selected) {
     return `<section class="panel progress-exercise-picker">${title}<p class="muted">${tx3("Add an exercise and log a workout to see progress.", "Додай вправу й запиши тренування, щоб побачити прогрес.", "Добавь упражнение и запиши тренировку, чтобы увидеть прогресс.")}</p></section>`;
   }
@@ -25813,7 +25868,7 @@ function progressExercisePickerSheetMarkup() {
   const rows = matchingRows.slice(0, PROGRESS_EXERCISE_PICKER_LIMIT);
   const omitted = matchingRows.length - rows.length;
   const searchLabel = tx3("Search exercises", "Пошук вправ", "Поиск упражнений");
-  return `<div class="progress-exercise-picker-sheet"><h2 id="progress-picker-sheet-title">${tx3("Choose an exercise", "Обери вправу", "Выберите упражнение")}</h2><div class="field-row"><input id="progress-exercise-search" type="search" maxlength="${EXERCISE_SEARCH_QUERY_MAX_CHARS}" value="${escapeAttr(query)}" placeholder="${escapeAttr(searchLabel)}" aria-label="${escapeAttr(searchLabel)}" autocomplete="off">${query ? `<button class="icon-button" data-action="clear-progress-exercise-search" aria-label="${txAttr("Clear search", "Очистити пошук")}">${svg("close")}</button>` : ""}</div><div class="progress-exercise-options" role="listbox" aria-label="${txAttr("Exercise progress selection", "Вибір вправи для прогресу")}">${rows.length ? rows.map(({ exercise }) => {
+  return `<div class="progress-exercise-picker-sheet"><h2 id="progress-picker-sheet-title">${tx3("Choose an exercise", "Обери вправу", "Выбери упражнение")}</h2><div class="field-row"><input id="progress-exercise-search" type="search" maxlength="${EXERCISE_SEARCH_QUERY_MAX_CHARS}" value="${escapeAttr(query)}" placeholder="${escapeAttr(searchLabel)}" aria-label="${escapeAttr(searchLabel)}" autocomplete="off">${query ? `<button class="icon-button" data-action="clear-progress-exercise-search" aria-label="${txAttr("Clear search", "Очистити пошук")}">${svg("close")}</button>` : ""}</div><div class="progress-exercise-options" role="listbox" aria-label="${txAttr("Exercise progress selection", "Вибір вправи для прогресу")}">${rows.length ? rows.map(({ exercise }) => {
     const isSelected = Number(exercise.id) === selectedId;
     return `<button type="button" class="progress-exercise-option ${isSelected ? "selected" : ""}" role="option" aria-selected="${isSelected}"${isSelected ? ' aria-current="true"' : ""} data-action="select-progress-exercise" data-id="${escapeAttr(String(exercise.id))}"><span class="progress-exercise-option-copy"><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong>${exerciseSearchReasonMarkup(exercise, query)}<small>${escapeHtml(countNoun(exerciseWorkoutCount(exercise), "sessions"))}</small></span>${isSelected ? `<span class="progress-exercise-option-check" aria-hidden="true">${svg("check", "small-icon")}</span>` : ""}</button>`;
   }).join("") : `<div class="empty">${tx("No matching exercises.", "Вправ за цим запитом не знайдено.")}</div>`}</div>${omitted > 0 ? `<p class="muted">${tx3(`${countedText(omitted, ["more match", "more matches"], ["збіг", "збіги", "збігів"], ["совпадение", "совпадения", "совпадений"])}. Refine the search to see them.`, `Ще ${countedText(omitted, ["more match", "more matches"], ["збіг", "збіги", "збігів"], ["совпадение", "совпадения", "совпадений"])}. Уточни пошук, щоб побачити їх.`, `Ещё ${countedText(omitted, ["more match", "more matches"], ["збіг", "збіги", "збігів"], ["совпадение", "совпадения", "совпадений"])}. Уточните поиск, чтобы увидеть их.`)}</p>` : ""}</div>`;
@@ -26056,7 +26111,7 @@ function progressScreen() {
   } else if (selectedSection === "goals") {
     content = missionsScreen();
   } else if (!state.sessions.some(session => Array.isArray(session?.sets) && session.sets.length > 0)) {
-    content = `${trainingWeeklyReviewMarkup()}<section class="hero-panel progress-empty-state"><span class="eyebrow">${tx3("First workout", "Перше тренування", "Первая тренировка")}</span><h2>${tx3("Progress starts with your first saved set", "Прогрес починається з першого збереженого підходу", "Прогресс начинается с первого сохранённого подхода")}</h2><p>${tx3("Finish a workout to unlock your calendar, muscle map, and exercise trends.", "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.", "Завершите тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.")}</p><button class="button" data-action="open-add">${svg("fitness", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
+    content = `<section class="hero-panel progress-empty-state"><span class="eyebrow">${tx3("First workout", "Перше тренування", "Первая тренировка")}</span><h2>${tx3("Progress starts with your first saved set", "Прогрес починається з першого збереженого підходу", "Прогресс начинается с первого сохранённого подхода")}</h2><p>${tx3("Finish a workout to unlock your calendar, muscle map, and exercise trends.", "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.", "Заверши тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.")}</p><button class="button" data-action="open-add">${svg("fitness", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
   } else {
     content = `${trainingWeeklyReviewMarkup()}${overviewCards(selectedMonthSessions())}`;
   }
@@ -27062,10 +27117,10 @@ function modalMarkup() {
     if (!current || !alternatives.length) return "";
     return bottomSheet(`<div class="smart-alternatives-sheet"><h2>${tx("Replace with a similar exercise", "Замінити схожою вправою")}</h2><p><strong>${escapeHtml(exerciseDisplayName(current))}</strong></p><div class="smart-alternative-list">${alternatives.map(exercise => {
       const analysis = analyzeSmartExercise(exercise);
-      return `<article class="smart-alternative-card">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(smartMovementLabel(analysis))} · ${escapeHtml(smartRoleLabel(analysis.role))}</small></div><button class="button mini" data-action="apply-smart-alternative" data-block="${modal.blockIndex}" data-replacement-id="${Number(exercise.id)}">${tx3("Use this exercise", "Використати цю вправу", "Использовать это упражнение")}</button></article>`;
+      return `<article class="smart-alternative-card">${exerciseMediaThumbnail(exercise, { className: "compact" })}<div><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong><small>${escapeHtml(smartMovementLabel(analysis))} · ${escapeHtml(smartRoleLabel(analysis.role))}</small></div><button class="button mini secondary" data-action="apply-smart-alternative" data-block="${modal.blockIndex}" data-replacement-id="${Number(exercise.id)}">${tx3("Replace", "Замінити", "Заменить")}</button></article>`;
     }).join("")}</div></div>`);
   }
-  if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "Резервна копія JSON готова")}</h2>${backupSummaryMarkup(modal.json)}<div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx("Download", "Завантажити")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
+  if (modal.type === "backup-json") return bottomSheet(`<h2>${modal.diagnostics ? tx("Redacted diagnostics ready", "Знеособлена діагностика готова") : tx("Backup JSON ready", "Резервна копія JSON готова")}</h2>${backupSummaryMarkup(modal.json)}<div class="actions"><button class="button" data-action="copy-json">${tx("Copy JSON", "Копіювати JSON")}</button><button class="button ghost" data-action="download-json">${tx3("Download", "Завантажити", "Скачать")}</button></div><button class="button ghost full" data-action="pdf-report">${t("sharePdf")}</button>`);
   if (modal.type === "rename") return bottomSheet(`<h2>${t("rename")}</h2><input id="rename-name" maxlength="320" value="${escapeAttr(exerciseDisplayName(modal.exercise))}"><button class="button full" data-action="apply-rename" data-id="${modal.exercise.id}">${tx("Save", "Зберегти")}</button>`);
   if (modal.type === "load-profile") {
     const exercise = state.exercises.find(item => Number(item.id) === Number(modal.exerciseId));
@@ -29439,7 +29494,7 @@ async function handleAction(action, el) {
   }
   if (action === "confirm-delete-active-set") return confirmDeleteActiveSet();
   if (action === "dismiss-active-set-confirmation") {
-    clearActiveSetConfirmation();
+    clearActiveSetConfirmation({ rerender: true });
     return true;
   }
   if (action === "active-set-voice-start") {
@@ -29850,7 +29905,7 @@ function voiceWorkoutBlockMarkup(block) {
     return `<div class="voice-workout-set"><input id="voice-weight-${setId}" type="text" inputmode="decimal" autocomplete="off" data-voice-weight data-voice-block="${blockId}" data-voice-set="${setId}" value="${escapeAttr(weight)}" placeholder="${txAttr("Weight", "Вага")}" aria-label="${txAttr("Weight", "Вага")}"><span class="muted">${tx3("kg ×", "кг ×", "кг ×")}</span><input id="voice-reps-${setId}" type="text" inputmode="numeric" autocomplete="off" data-voice-reps data-voice-block="${blockId}" data-voice-set="${setId}" value="${escapeAttr(reps)}" placeholder="${escapeAttr(tx3("Reps", "Повтори", "Повторы"))}" aria-label="${escapeAttr(tx3("Reps", "Повтори", "Повторы"))}"><button class="icon-button" type="button" data-action="voice-workout-remove-set" data-block="${blockId}" data-set="${setId}" aria-label="${escapeAttr(tx3("Remove set", "Видалити підхід", "Удалить подход"))}">${svg("close")}</button></div>`;
   }).join("");
   const issue = voiceWorkoutBlockIssueText(block);
-  return `<article class="panel voice-workout-block" data-voice-block-id="${blockId}">${block.spokenName ? `<p class="muted voice-workout-spoken">“${escapeHtml(block.spokenName)}”</p>` : ""}<label class="sr-only" for="voice-exercise-${blockId}">${tx3("Exercise", "Вправа", "Упражнение")}</label><select id="voice-exercise-${blockId}" data-voice-exercise="${blockId}"><option value="">${escapeHtml(tx3("Choose exercise", "Виберіть вправу", "Выберите упражнение"))}</option>${options}</select>${sets}<p class="voice-workout-issue" data-voice-issue="${blockId}" ${issue ? "" : "hidden"}>${escapeHtml(issue)}</p><div class="voice-workout-block-actions"><button class="button ghost mini" type="button" data-action="voice-workout-add-set" data-block="${blockId}" ${block.sets.length >= window.GymVoiceWorkout.LIMITS.maxSetsPerBlock ? "disabled" : ""}>${svg("add", "small-icon")}${tx3("Add set", "Додати підхід", "Добавить подход")}</button><button class="button ghost mini danger-text" type="button" data-action="voice-workout-remove-block" data-block="${blockId}">${svg("delete", "small-icon")}${tx3("Remove exercise", "Видалити вправу", "Удалить упражнение")}</button></div></article>`;
+  return `<article class="panel voice-workout-block" data-voice-block-id="${blockId}">${block.spokenName ? `<p class="muted voice-workout-spoken">“${escapeHtml(block.spokenName)}”</p>` : ""}<label class="sr-only" for="voice-exercise-${blockId}">${tx3("Exercise", "Вправа", "Упражнение")}</label><select id="voice-exercise-${blockId}" data-voice-exercise="${blockId}"><option value="">${escapeHtml(tx3("Choose exercise", "Обери вправу", "Выбери упражнение"))}</option>${options}</select>${sets}<p class="voice-workout-issue" data-voice-issue="${blockId}" ${issue ? "" : "hidden"}>${escapeHtml(issue)}</p><div class="voice-workout-block-actions"><button class="button ghost mini" type="button" data-action="voice-workout-add-set" data-block="${blockId}" ${block.sets.length >= window.GymVoiceWorkout.LIMITS.maxSetsPerBlock ? "disabled" : ""}>${svg("add", "small-icon")}${tx3("Add set", "Додати підхід", "Добавить подход")}</button><button class="button ghost mini danger-text" type="button" data-action="voice-workout-remove-block" data-block="${blockId}">${svg("delete", "small-icon")}${tx3("Remove exercise", "Видалити вправу", "Удалить упражнение")}</button></div></article>`;
 }
 
 function voiceWorkoutDynamicMarkup() {
