@@ -883,18 +883,17 @@ private fun GarminDeviceCard(
                     Text(stringResource(R.string.garmin_open_app))
                 }
             }
-            // Nothing to reset until a watch is paired with this account.
-            if (state.devices.any { it.trustedForActiveAccount }) {
-                OutlinedButton(
-                    onClick = onResetGarminPairing,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.garmin_reset_pairing_action))
-                }
+            // Always available: the reset is also the explicit user action that clears a pending
+            // reset left by an account change, and the SDK device list can be empty while it is not ready.
+            OutlinedButton(
+                onClick = onResetGarminPairing,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+            ) {
+                Text(stringResource(R.string.garmin_reset_pairing_action))
             }
         }
     }
