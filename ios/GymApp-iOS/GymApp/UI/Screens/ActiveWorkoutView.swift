@@ -1056,21 +1056,18 @@ struct ActiveWorkoutView: View {
             "Друг",
             languageCode: gymCurrentLanguageCode()
         )
-        return Picker(
+        return GymSegmentedControl(
             gymText(
                 "Participant",
                 "Учасник",
                 "Участник",
                 languageCode: gymCurrentLanguageCode()
             ),
-            selection: $liveParticipantSelection
-        ) {
-            Text(selfName).tag(LiveParticipantSelection.current)
-            Text(peerName).tag(LiveParticipantSelection.peer)
-        }
-        .gymSegmentedPicker()
-        .accessibilityValue(
-            liveParticipantSelection == .current ? selfName : peerName
+            selection: $liveParticipantSelection,
+            options: [
+                (.current, selfName),
+                (.peer, peerName)
+            ]
         )
     }
 

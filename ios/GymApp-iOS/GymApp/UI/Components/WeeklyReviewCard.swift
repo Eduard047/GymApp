@@ -33,7 +33,9 @@ struct WeeklyReviewCard: View {
                     Button { offset = max(-520, offset - 1) } label: { Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44) }
                         .accessibilityLabel(t("Previous week", "Попередній тиждень", "Предыдущая неделя"))
                     Spacer()
-                    Text(gymFormattedDateRange(from: review.start, to: review.end)).font(.caption)
+                    Text(gymFormattedDateRange(from: review.start, to: review.end))
+                        .font(.caption)
+                        .accessibilityLabel(gymSpokenDateRange(from: review.start, to: review.end))
                     Spacer()
                     Button { offset = min(0, offset + 1) } label: { Image(systemName: "chevron.right").frame(minWidth: 44, minHeight: 44) }
                         .disabled(offset == 0).accessibilityLabel(t("Next week", "Наступний тиждень", "Следующая неделя"))

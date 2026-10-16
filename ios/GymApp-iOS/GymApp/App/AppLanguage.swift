@@ -248,9 +248,11 @@ func gymFormattedWeekday(
     return value.formatted(.dateTime.weekday(.wide).locale(locale))
 }
 
-/// Compact, locale-aware range like "21–27 сент." (same month) or
-/// "29 сент. – 5 окт." (cross-month), including the year only when it
-/// differs from the current year.
+/// Week/date-range label shared with the PWA (`fmtWeekRange`): "12 окт. – 18 окт."
+/// (ru), "12 жовт. – 18 жовт." (uk), "Oct 12 – Oct 18" (en). Both ends carry the
+/// day and abbreviated month, joined by an en dash with plain spaces. The year is
+/// added to both ends ("12 окт. 2025 г. – 18 окт. 2025 г.") only when either end
+/// falls outside the current year.
 func gymFormattedDateRange(
     from start: Date,
     to end: Date,
@@ -258,13 +260,42 @@ func gymFormattedDateRange(
     now: Date = Date(),
     languageCode: String = gymCurrentLanguageCode()
 ) -> String {
+    let (from, to) = gymDateRangeEnds(from: start, to: end, calendar: calendar, now: now, languageCode: languageCode)
+    return "\(from) \u{2013} \(to)"
+}
+
+/// Spoken form of `gymFormattedDateRange` for VoiceOver ("from 12 окт. to 18 окт.").
+func gymSpokenDateRange(
+    from start: Date,
+    to end: Date,
+    calendar: Calendar = .current,
+    now: Date = Date(),
+    languageCode: String = gymCurrentLanguageCode()
+) -> String {
+    let (from, to) = gymDateRangeEnds(from: start, to: end, calendar: calendar, now: now, languageCode: languageCode)
+    switch languageCode {
+    case "uk": return "з \(from) по \(to)"
+    case "ru": return "с \(from) по \(to)"
+    default: return "from \(from) to \(to)"
+    }
+}
+
+private func gymDateRangeEnds(
+    from start: Date,
+    to end: Date,
+    calendar: Calendar,
+    now: Date,
+    languageCode: String
+) -> (String, String) {
     let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
-    let includeYear = calendar.component(.year, from: end) != calendar.component(.year, from: now)
-    let formatter = DateIntervalFormatter()
+    let currentYear = calendar.component(.year, from: now)
+    let includeYear = calendar.component(.year, from: start) != currentYear
+        || calendar.component(.year, from: end) != currentYear
+    let formatter = DateFormatter()
     formatter.locale = locale
     formatter.calendar = calendar
-    formatter.dateTemplate = includeYear ? "d MMM yyyy" : "d MMM"
-    return formatter.string(from: start, to: end) ?? ""
+    formatter.setLocalizedDateFormatFromTemplate(includeYear ? "d MMM yyyy" : "d MMM")
+    return (formatter.string(from: start), formatter.string(from: end))
 }
 
 /// "Сб, 26 сент." — abbreviated weekday + day + abbreviated month in the

@@ -386,10 +386,9 @@ private struct GarminHeartRateRangeChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(GarminWorkoutDetailCopy.heartRateChart(languageCode: languageCode))
-                .font(.caption.weight(.bold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(GymTheme.textSecondary)
-                .textCase(.uppercase)
-                .tracking(0.35)
+                .tracking(0.2)
 
             Canvas { context, size in
                 let startX: CGFloat = 10
@@ -628,10 +627,9 @@ private struct GarminWorkoutTimelineChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(GarminWorkoutDetailCopy.workoutTimeline(languageCode: languageCode))
-                .font(.caption.weight(.bold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(GymTheme.textSecondary)
-                .textCase(.uppercase)
-                .tracking(0.35)
+                .tracking(0.2)
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {

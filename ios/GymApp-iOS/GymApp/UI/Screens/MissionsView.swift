@@ -110,12 +110,12 @@ struct MissionsView: View {
             .accessibilityLabel(label)
             .accessibilityValue(period.shortTitle(languageCode))
         } else {
-            Picker(label, selection: $period) {
-                ForEach(MissionCadence.allCases) { item in
-                    Text(item.shortTitle(languageCode)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
+            GymSegmentedControl(
+                label,
+                selection: $period,
+                options: MissionCadence.allCases.map { ($0, $0.shortTitle(languageCode)) },
+                menuFallback: false
+            )
         }
     }
 

@@ -144,12 +144,12 @@ struct ProgressHubView: View {
             .accessibilityLabel(label)
             .accessibilityValue(section.title(languageCode))
         } else {
-            Picker(label, selection: $section) {
-                ForEach(Section.allCases) { item in
-                    Text(item.title(languageCode)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
+            GymSegmentedControl(
+                label,
+                selection: $section,
+                options: Section.allCases.map { ($0, $0.title(languageCode)) },
+                menuFallback: false
+            )
         }
     }
 

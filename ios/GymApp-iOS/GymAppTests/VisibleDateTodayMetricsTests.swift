@@ -31,6 +31,45 @@ final class VisibleDateTodayMetricsTests: XCTestCase {
         XCTAssertFalse(ukrainianDate.contains("13 серпень"))
     }
 
+    func testWeekRangeMatchesWebFormat() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func day(_ y: Int, _ m: Int, _ d: Int) -> Date {
+            calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!
+        }
+        let now = day(2026, 10, 16)
+        func range(_ a: Date, _ b: Date, _ code: String) -> String {
+            gymFormattedDateRange(from: a, to: b, calendar: calendar, now: now, languageCode: code)
+        }
+        let sameMonth = (day(2026, 10, 12), day(2026, 10, 18))
+        let crossMonth = (day(2026, 9, 28), day(2026, 10, 4))
+        let otherYear = (day(2025, 9, 22), day(2025, 9, 28))
+        let crossYear = (day(2025, 12, 29), day(2026, 1, 4))
+
+        XCTAssertEqual(range(sameMonth.0, sameMonth.1, "ru"), "12 окт. \u{2013} 18 окт.")
+        XCTAssertEqual(range(sameMonth.0, sameMonth.1, "uk"), "12 жовт. \u{2013} 18 жовт.")
+        XCTAssertEqual(range(sameMonth.0, sameMonth.1, "en"), "Oct 12 \u{2013} Oct 18")
+        XCTAssertEqual(range(crossMonth.0, crossMonth.1, "ru"), "28 сент. \u{2013} 4 окт.")
+        XCTAssertEqual(range(crossMonth.0, crossMonth.1, "en"), "Sep 28 \u{2013} Oct 4")
+
+        // The year is added to both ends when either end is outside the current year.
+        XCTAssertEqual(range(otherYear.0, otherYear.1, "en"), "Sep 22, 2025 \u{2013} Sep 28, 2025")
+        XCTAssertEqual(range(crossYear.0, crossYear.1, "en"), "Dec 29, 2025 \u{2013} Jan 4, 2026")
+        for code in ["ru", "uk"] {
+            let text = range(crossYear.0, crossYear.1, code)
+            XCTAssertTrue(text.contains("2025") && text.contains("2026") && text.contains("\u{2013}"), text)
+        }
+
+        XCTAssertEqual(
+            gymSpokenDateRange(from: sameMonth.0, to: sameMonth.1, calendar: calendar, now: now, languageCode: "ru"),
+            "с 12 окт. по 18 окт."
+        )
+        XCTAssertEqual(
+            gymSpokenDateRange(from: sameMonth.0, to: sameMonth.1, calendar: calendar, now: now, languageCode: "en"),
+            "from Oct 12 to Oct 18"
+        )
+    }
+
     func testStatusTimestampDoesNotGainWeekday() {
         let date = Date(timeIntervalSince1970: 1_786_588_800)
         let timestamp = gymFormattedTimestamp(

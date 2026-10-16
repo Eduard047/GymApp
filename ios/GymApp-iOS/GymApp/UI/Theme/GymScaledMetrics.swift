@@ -118,26 +118,6 @@ extension View {
     }
 }
 
-private struct GymAdaptivePickerStyleModifier: ViewModifier {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    func body(content: Content) -> some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            content.pickerStyle(.menu)
-        } else {
-            content.pickerStyle(.segmented)
-        }
-    }
-}
-
-extension View {
-    /// Segmented picker that becomes a menu at accessibility text sizes, where
-    /// segment labels no longer fit on one line.
-    func gymSegmentedPicker() -> some View {
-        modifier(GymAdaptivePickerStyleModifier())
-    }
-}
-
 /// A row that turns into a column at accessibility text sizes, so labels and
 /// trailing values stop competing for one line. Use `GymAdaptiveSpacer` instead
 /// of `Spacer` inside it.

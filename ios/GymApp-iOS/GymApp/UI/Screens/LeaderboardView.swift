@@ -22,11 +22,14 @@ private struct FinishedLiveWorkoutView: View {
                                   snapshot.allowsFinishedViewing,
                                   let current = snapshot.currentParticipant,
                                   let peer = snapshot.peerParticipant {
-                            Picker(t("Live workout participants", "Учасники live-тренування", "Участники live-тренировки"), selection: $showsPeer) {
-                                Text(current.profile.displayName).tag(false)
-                                Text(peer.profile.displayName).tag(true)
-                            }
-                            .gymSegmentedPicker()
+                            GymSegmentedControl(
+                                t("Live workout participants", "Учасники live-тренування", "Участники live-тренировки"),
+                                selection: $showsPeer,
+                                options: [
+                                    (false, current.profile.displayName),
+                                    (true, peer.profile.displayName)
+                                ]
+                            )
                             Text(t("Live progress · Read only", "Live-прогрес · Лише перегляд", "Live-прогресс · Только просмотр"))
                                 .font(.subheadline)
                                 .foregroundStyle(GymTheme.textSecondary)
@@ -1699,16 +1702,14 @@ private struct FriendDetailView: View {
                     }
                     if let details {
                         sharingStrip(details)
-                        Picker(
+                        GymSegmentedControl(
                             t("Friend activity", "Активність друга", "Активность друга"),
-                            selection: $activitySection
-                        ) {
-                            Text(t("Workouts", "Тренування", "Тренировки"))
-                                .tag(ActivitySection.workouts)
-                            Text(t("Records", "Рекорди", "Рекорды"))
-                                .tag(ActivitySection.records)
-                        }
-                        .gymSegmentedPicker()
+                            selection: $activitySection,
+                            options: [
+                                (.workouts, t("Workouts", "Тренування", "Тренировки")),
+                                (.records, t("Records", "Рекорди", "Рекорды"))
+                            ]
+                        )
                         if activitySection == .workouts {
                             recentWorkoutsCard(details)
                         } else {

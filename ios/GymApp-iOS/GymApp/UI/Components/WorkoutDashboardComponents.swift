@@ -980,12 +980,11 @@ struct WorkoutMuscleLoadCard: View {
                         .foregroundStyle(GymTheme.textSecondary)
                 }
 
-                Picker("Muscle load period", selection: $period) {
-                    ForEach(WorkoutMusclePeriod.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .gymSegmentedPicker()
+                GymSegmentedControl(
+                    "Muscle load period",
+                    selection: $period,
+                    options: WorkoutMusclePeriod.allCases.map { ($0, $0.title) }
+                )
 
                 HStack(spacing: 8) {
                     GymMetricTile(
@@ -1387,9 +1386,9 @@ struct AchievementGallery: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(gymLocalized("Achievements", languageCode: languageCode))
-                    .font(GymTheme.TypeScale.utility)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.primary)
-                    .tracking(0.55)
+                    .tracking(0.2)
                 Text(
                     gymText(
                         "Your badge collection",

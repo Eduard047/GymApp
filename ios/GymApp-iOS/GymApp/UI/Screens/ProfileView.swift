@@ -395,14 +395,12 @@ struct ProfileView: View {
             .accessibilityLabel(label)
             .accessibilityValue(profileSectionTitle(selectedSection))
         } else {
-            Picker(label, selection: $selectedSection) {
-                ForEach(ProfileSection.allCases) { section in
-                    Text(profileSectionTitle(section)).tag(section)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityLabel(label)
+            GymSegmentedControl(
+                label,
+                selection: $selectedSection,
+                options: ProfileSection.allCases.map { ($0, profileSectionTitle($0)) },
+                menuFallback: false
+            )
         }
     }
 

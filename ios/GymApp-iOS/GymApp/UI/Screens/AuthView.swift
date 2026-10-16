@@ -132,12 +132,11 @@ public struct AuthView: View {
                 if let pendingEmail = authService.pendingConfirmationEmail {
                     emailConfirmationCard(email: pendingEmail)
                 } else {
-                Picker("Account action", selection: $mode) {
-                    ForEach(AuthMode.allCases) { item in
-                        Text(item.title(languageCode: languageCode)).tag(item)
-                    }
-                }
-                .gymSegmentedPicker()
+                GymSegmentedControl(
+                    "Account action",
+                    selection: $mode,
+                    options: AuthMode.allCases.map { ($0, $0.title(languageCode: languageCode)) }
+                )
                 .accessibilityHint("Switch between signing in and creating an account")
 
                 VStack(alignment: .leading, spacing: 13) {

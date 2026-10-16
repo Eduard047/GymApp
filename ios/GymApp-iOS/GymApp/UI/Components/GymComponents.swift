@@ -184,10 +184,9 @@ public struct GymScreenHeader<Trailing: View>: View {
         VStack(alignment: .leading, spacing: GymTheme.Spacing.xSmall) {
             if let eyebrow {
                 Text(gymLocalized(eyebrow, locale: locale))
-                    .font(GymTheme.TypeScale.utility)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.primary)
-                    .textCase(.uppercase)
-                    .tracking(0.55)
+                    .tracking(0.2)
             }
             Text(gymLocalized(title, locale: locale))
                 .font(GymTheme.TypeScale.screenTitle)
@@ -262,7 +261,6 @@ public struct GymMetricTile: View {
     private let value: String
     private let emphasized: Bool
     private let onHero: Bool
-    private let labelUppercase: Bool
     private let compactValue: Bool
     private let singleLineLabel: Bool
 
@@ -271,7 +269,6 @@ public struct GymMetricTile: View {
         value: String,
         emphasized: Bool = false,
         onHero: Bool = false,
-        labelUppercase: Bool = false,
         compactValue: Bool = false,
         singleLineLabel: Bool = false
     ) {
@@ -279,7 +276,6 @@ public struct GymMetricTile: View {
         self.value = value
         self.emphasized = emphasized
         self.onHero = onHero
-        self.labelUppercase = labelUppercase
         self.compactValue = compactValue
         self.singleLineLabel = singleLineLabel
     }
@@ -297,8 +293,6 @@ public struct GymMetricTile: View {
                 Text(gymLocalized(label, locale: locale))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(onHero ? GymTheme.onHeroSecondary : GymTheme.textSecondary)
-                    .textCase(labelUppercase ? .uppercase : nil)
-                    .tracking(labelUppercase ? 0.35 : 0)
                     .lineLimit(singleLineLabel ? 1 : 2)
                     .minimumScaleFactor(singleLineLabel ? 0.7 : 1)
                     .fixedSize(horizontal: false, vertical: true)
@@ -380,10 +374,9 @@ public struct GymSectionTitle: View {
         VStack(alignment: .leading, spacing: 5) {
             if let eyebrow {
                 Text(gymLocalized(eyebrow, locale: locale))
-                    .font(GymTheme.TypeScale.utility)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.primary)
-                    .textCase(.uppercase)
-                    .tracking(0.55)
+                    .tracking(0.2)
             }
             Text(gymLocalized(title, locale: locale))
                 .font(GymTheme.TypeScale.sectionTitle)

@@ -640,8 +640,7 @@ public struct WorkoutsView: View {
                         "Сохранённый план",
                         languageCode: languageCode
                     ))
-                    .font(.caption.weight(.bold))
-                    .textCase(.uppercase)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(GymTheme.onHeroSecondary)
                     Text(gymText(
                         "Continue your plan",
@@ -1449,19 +1448,17 @@ public struct WorkoutsView: View {
                     )
                 }
 
-                Picker(
+                GymSegmentedControl(
                     gymText(
                         "History period", "Період історії", "Период истории",
                         languageCode: languageCode
                     ),
-                    selection: $historyPeriod
-                ) {
-                    Text(gymText("Week", "Тиждень", "Неделя", languageCode: languageCode))
-                        .tag(TrainingHistoryPeriod.week)
-                    Text(gymText("Month", "Місяць", "Месяц", languageCode: languageCode))
-                        .tag(TrainingHistoryPeriod.month)
-                }
-                .gymSegmentedPicker()
+                    selection: $historyPeriod,
+                    options: [
+                        (.week, gymText("Week", "Тиждень", "Неделя", languageCode: languageCode)),
+                        (.month, gymText("Month", "Місяць", "Месяц", languageCode: languageCode))
+                    ]
+                )
 
                 HStack(spacing: 8) {
                     weekNavigationButton(
