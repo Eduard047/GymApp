@@ -1,6 +1,12 @@
 package com.example.gymapp.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import com.example.gymapp.ui.theme.GymPanelShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +25,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import com.example.gymapp.ui.components.GymModalBottomSheet
 import com.example.gymapp.ui.components.GymSheetTitleRow
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -150,7 +155,10 @@ internal fun ExerciseCatalogSelector(
                     title = stringResource(
                         if (isChooseMode) R.string.progress_choose_exercise else R.string.action_add_exercise
                     ),
-                    onClose = closePicker
+                    onClose = closePicker,
+                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    )
                 )
                 if (!isChooseMode) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ExerciseMuscleChip(
@@ -210,19 +218,27 @@ internal fun ExerciseCatalogSelector(
                     } else {
                         items(visibleExercises, key = { it.id }) { exercise ->
                             val searchMatchReason = exerciseSearchMatch(exercise.name, query)?.reason
-                            OutlinedButton(
+                            // Same solid hairline row as the Exercises list: primary text, no blue capsule.
+                            Surface(
                                 onClick = {
                                     onExerciseSelected(exercise.id)
                                     closePicker()
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = if (isChooseMode) {
-                                    ButtonDefaults.outlinedButtonColors(
-                                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
-                                    )
-                                } else {
-                                    ButtonDefaults.outlinedButtonColors()
-                                }
+                                shape = GymPanelShape,
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+                                contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+                                border = BorderStroke(
+                                    1.dp,
+                                    androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+                                )
+                            ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 ExerciseMediaPreview(
                                     exerciseId = exercise.id,
@@ -243,6 +259,8 @@ internal fun ExerciseCatalogSelector(
                                             exercise.name,
                                             languageTag
                                         ),
+                                        style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -279,6 +297,7 @@ internal fun ExerciseCatalogSelector(
                                         tint = androidx.compose.material3.MaterialTheme.colorScheme.primary
                                     )
                                 }
+                            }
                             }
                         }
                     }
