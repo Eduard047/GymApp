@@ -261,7 +261,7 @@ test("toast CSS: above the sheet, below nothing that matters, chip material with
   assert.match(rule(".toast-region"), /max-width:\s*560px/);
   assert.match(rule(".toast"), /border-radius:\s*var\(--radius-capsule\)/);
   assert.match(rule(".toast"), /var\(--shadow-floating\)/);
-  assert.match(rule(".toast-text"), /text-overflow:\s*ellipsis/);
+  assert.match(rule(".toast-text"), /line-clamp:\s*2/);
   assert.match(cssSource, /\.toast \{\s*background: color-mix\(in srgb, var\(--surface-strong\) 70%, transparent\);\s*-webkit-backdrop-filter: blur\(14px\) saturate\(140%\);/);
   assert.match(cssSource, /:root\[data-theme="dark"\] \.toast \{ background: color-mix\(in srgb, var\(--surface-strong\) 66%, transparent\); \}/);
   assert.match(cssSource, /@media \(prefers-reduced-transparency: reduce\) \{\s*\.toast,[^}]*background: var\(--surface-strong\);[^}]*backdrop-filter: none;/);

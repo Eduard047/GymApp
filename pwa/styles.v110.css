@@ -6803,9 +6803,12 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 .toast-text {
   flex: 1 1 auto;
   min-width: 0;
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: break-word;
 }
 
 .toast-action {
