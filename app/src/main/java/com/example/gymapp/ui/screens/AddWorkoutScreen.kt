@@ -1689,7 +1689,7 @@ private fun SmartWorkoutAlternativePickerContent(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(R.string.action_close))
             }
         }
     }

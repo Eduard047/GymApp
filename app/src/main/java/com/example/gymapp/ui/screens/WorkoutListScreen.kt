@@ -1254,6 +1254,14 @@ private fun TrainingHistoryWeekStrip(
                                     MaterialTheme.colorScheme.surfaceVariant
                                 }
                             )
+                            // An empty day keeps a 3:1 outline so the dot reads on the white panel.
+                            .then(
+                                if (day.isCompleted) {
+                                    Modifier
+                                } else {
+                                    Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                }
+                            )
                     )
                     if (day.isToday) {
                         Box(

@@ -1228,7 +1228,7 @@ fun ExerciseListScreen(
                                 IconButton(
                                     onClick = { onToggleFavorite(exercise) },
                                     modifier = Modifier
-                                        .size(44.dp)
+                                        .size(48.dp)
                                         .semantics { selected = exercise.isFavorite }
                                 ) {
                                     Icon(

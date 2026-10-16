@@ -475,7 +475,7 @@
     <string name="active_workout_title">Тренування</string>
     <string name="active_workout_minimize">Згорнути</string>
     <string name="active_workout_minimize_hint">Згортає екран; тренування продовжує йти, усі зміни вже збережено</string>
-    <string name="active_workout_discard_short">Відкинути</string>
+    <string name="active_workout_discard_short">Відкинути тренування</string>
     <string name="active_workout_status_in_progress">Триває</string>
     <string name="active_workout_now">Зараз: %1$s</string>
     <string name="active_workout_sets_caption">підх.</string>
@@ -994,7 +994,7 @@
     <string name="smart_effort_adjustment_feedback_easy">Після останнього відгуку додано один безпечний підхід.</string>
     <string name="action_replace_with_similar">Замінити схожою вправою</string>
     <string name="smart_alternatives_title">Схожі вправи</string>
-    <string name="smart_alternatives_for">Замість %1$s</string>
+    <string name="smart_alternatives_for">Заміна для: %1$s</string>
     <string name="smart_alternatives_empty">У поточному списку немає відповідної безпечної заміни.</string>
     <string name="smart_alternative_prescription">%1$d підходи · %2$d повторів · RIR %3$d–%4$d</string>
     <string name="smart_alternative_select">Обрати цю вправу</string>

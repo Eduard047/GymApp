@@ -882,15 +882,18 @@ private fun GarminDeviceCard(
                     Text(stringResource(R.string.garmin_open_app))
                 }
             }
-            OutlinedButton(
-                onClick = onResetGarminPairing,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-            ) {
-                Text(stringResource(R.string.garmin_reset_pairing_action))
+            // Nothing to reset until a watch is paired with this account.
+            if (state.devices.any { it.trustedForActiveAccount }) {
+                OutlinedButton(
+                    onClick = onResetGarminPairing,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.garmin_reset_pairing_action))
+                }
             }
         }
     }

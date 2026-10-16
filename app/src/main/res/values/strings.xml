@@ -473,7 +473,7 @@
     <string name="active_workout_title">Workout</string>
     <string name="active_workout_minimize">Minimize</string>
     <string name="active_workout_minimize_hint">Minimizes the screen; the workout keeps running and all changes are already saved</string>
-    <string name="active_workout_discard_short">Discard</string>
+    <string name="active_workout_discard_short">Discard workout</string>
     <string name="active_workout_status_in_progress">In progress</string>
     <string name="active_workout_now">Now: %1$s</string>
     <string name="active_workout_sets_caption">sets</string>

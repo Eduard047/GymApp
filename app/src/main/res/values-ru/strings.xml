@@ -475,7 +475,7 @@
     <string name="active_workout_title">Тренировка</string>
     <string name="active_workout_minimize">Свернуть</string>
     <string name="active_workout_minimize_hint">Сворачивает экран; тренировка продолжает идти, все изменения уже сохранены</string>
-    <string name="active_workout_discard_short">Удалить</string>
+    <string name="active_workout_discard_short">Удалить тренировку</string>
     <string name="active_workout_status_in_progress">Идёт</string>
     <string name="active_workout_now">Сейчас: %1$s</string>
     <string name="active_workout_sets_caption">подх.</string>
@@ -709,10 +709,10 @@
 
     <string name="stats_exercises">Упражнений: %1$d</string>
     <string name="stats_sets">Подходов: %1$d</string>
-    <string name="stats_volume">Объем: %1$s кг</string>
+    <string name="stats_volume">Объём: %1$s кг</string>
 
     <string name="dashboard_title">Итог месяца</string>
-    <string name="dashboard_subtitle">Отслежи регулярность, объем и интенсивность одним взглядом.</string>
+    <string name="dashboard_subtitle">Отслежи регулярность, объём и интенсивность одним взглядом.</string>
     <string name="kpi_workouts">Тренировки</string>
     <string name="kpi_streak">Серия</string>
     <string name="kpi_streak_value">%1$d дн</string>
@@ -789,7 +789,7 @@
     <string name="activity_heatmap_legend">Чем насыщеннее синий, тем больше объём тренировок за день.</string>
     <string name="activity_heatmap_less">Меньше</string>
     <string name="activity_heatmap_more">Больше</string>
-    <string name="activity_heatmap_day_a11y">%1$s. Сессий: %2$d. Объем: %3$d кг.</string>
+    <string name="activity_heatmap_day_a11y">%1$s. Сессий: %2$d. Объём: %3$d кг.</string>
     <string-array name="activity_heatmap_weekdays">
         <item>П</item>
         <item>В</item>
@@ -994,7 +994,7 @@
     <string name="smart_effort_adjustment_feedback_easy">После последнего отзыва добавлен один безопасный подход.</string>
     <string name="action_replace_with_similar">Заменить похожим упражнением</string>
     <string name="smart_alternatives_title">Похожие упражнения</string>
-    <string name="smart_alternatives_for">Вместо %1$s</string>
+    <string name="smart_alternatives_for">Замена для: %1$s</string>
     <string name="smart_alternatives_empty">В текущем списке нет подходящей безопасной замены.</string>
     <string name="smart_alternative_prescription">%1$d подхода · %2$d повторов · RIR %3$d–%4$d</string>
     <string name="smart_alternative_select">Выбрать это упражнение</string>
@@ -1013,10 +1013,10 @@
     <string name="smart_coach_status_compact">%1$s · RIR %2$d–%3$d</string>
     <string name="smart_reason_no_history">Истории ещё нет, поэтому это первая аккуратная база.</string>
     <string name="smart_reason_last_strong">Последняя сессия была стабильна по подходам.</string>
-    <string name="smart_reason_last_unstable">Повторы или объем просели, поэтому план осторожен.</string>
+    <string name="smart_reason_last_unstable">Повторы или объём просели, поэтому план осторожен.</string>
     <string name="smart_reason_recent_break">%1$d дней без этого упражнения, поэтому вес скорректирован вниз.</string>
-    <string name="smart_reason_volume_up">Последний объем идет вверх.</string>
-    <string name="smart_reason_volume_dropped">Последний объем ниже предыдущей сессии.</string>
+    <string name="smart_reason_volume_up">Последний объём идет вверх.</string>
+    <string name="smart_reason_volume_dropped">Последний объём ниже предыдущей сессии.</string>
     <string name="smart_reason_plateau">Несколько сессий держались у одного максимального веса.</string>
     <string name="smart_reason_near_best">Это близко к твоей лучшей расчетной силе в упражнении.</string>
     <string name="smart_reason_conservative">Увеличение намеренно осторожно.</string>
@@ -1035,7 +1035,7 @@
     <string name="progress_recent_sessions_title">Последние сессии</string>
     <string name="progress_recent_sessions_subtitle">Список обновляется для выбранного месяца и упражнения.</string>
     <string name="progress_chart_max_weight">Тренд максимального веса</string>
-    <string name="progress_chart_volume">Объем по сессиям</string>
+    <string name="progress_chart_volume">Объём по сессиям</string>
     <string name="progress_visual_trends_title">Визуальные тренды</string>
     <string name="progress_visual_trends_subtitle">Последние %1$s в выбранном месяце.</string>
     <string name="progress_stat_sessions">Сессии</string>
@@ -1051,7 +1051,7 @@
     <string name="progress_weight_value">%1$s кг</string>
     <string name="progress_reps_value">%1$d повт</string>
     <string name="progress_session_max_weight_inline">Макс %1$s кг</string>
-    <string name="progress_session_volume_inline">Объем %1$s кг</string>
+    <string name="progress_session_volume_inline">Объём %1$s кг</string>
     <string name="chart_no_data">Добавь подходы, чтобы увидеть график.</string>
     <string name="splash_tagline">Развивай силу с фокусом и системностью.</string>
     <string name="splash_wordmark">GymApp</string>
@@ -1063,7 +1063,7 @@
     <string name="exercise_history_empty">Для этого упражнения ещё нет истории.</string>
     <string name="exercise_history_empty_supporting">Запиши это упражнение в тренировке, и оно появится здесь.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>
-    <string name="exercise_history_volume_inline">Объем: %1$s кг</string>
+    <string name="exercise_history_volume_inline">Объём: %1$s кг</string>
     <string name="exercise_library_title">Библиотека упражнений</string>
     <string name="exercise_card_supporting">Коснись, чтобы открыть историю и детали тренировок.</string>
     <string name="exercise_card_history">История</string>

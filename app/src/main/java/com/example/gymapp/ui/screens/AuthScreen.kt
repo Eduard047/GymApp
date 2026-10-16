@@ -1176,16 +1176,13 @@ private fun AuthModeOption(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(13.dp)
+    // Selected = accent fill with white text, the same as GymSegmentedControl on every other screen.
     val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.surface
+        brandFillColor()
     } else {
         Color.Transparent
     }
-    val borderColor = if (selected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
-    } else {
-        Color.Transparent
-    }
+    val borderColor = Color.Transparent
     Box(
         modifier = modifier
             .clip(shape)
@@ -1204,7 +1201,7 @@ private fun AuthModeOption(
         WordShrinkText(
             text = text,
             color = if (selected) {
-                MaterialTheme.colorScheme.primary
+                Color.White
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },

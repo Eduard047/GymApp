@@ -156,7 +156,7 @@ internal fun ProgressHubScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(GymSpacing.Medium)
                 ) {
-                    if (overviewState.todayHeroMetrics.totalWorkouts == 0 && weeklyHistory.isEmpty()) {
+                    if (overviewState.todayHeroMetrics.totalWorkouts == 0) {
                         // Nothing is saved yet: one message and one action instead of a wall of zeros.
                         item {
                             EmptyStatePanel(

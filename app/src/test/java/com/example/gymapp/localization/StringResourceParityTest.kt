@@ -87,15 +87,15 @@ class StringResourceParityTest {
         )
 
         assertEquals(
-            listOf("Workout", "Minimize", "In progress", "Now: %1\$s", "sets", "Discard"),
+            listOf("Workout", "Minimize", "In progress", "Now: %1\$s", "sets", "Discard workout"),
             keys.map { english[it] }
         )
         assertEquals(
-            listOf("Тренування", "Згорнути", "Триває", "Зараз: %1\$s", "підх.", "Відкинути"),
+            listOf("Тренування", "Згорнути", "Триває", "Зараз: %1\$s", "підх.", "Відкинути тренування"),
             keys.map { ukrainian[it] }
         )
         assertEquals(
-            listOf("Тренировка", "Свернуть", "Идёт", "Сейчас: %1\$s", "подх.", "Удалить"),
+            listOf("Тренировка", "Свернуть", "Идёт", "Сейчас: %1\$s", "подх.", "Удалить тренировку"),
             keys.map { russian[it] }
         )
     }
