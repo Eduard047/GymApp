@@ -625,6 +625,16 @@ struct GymPressableStyle: ButtonStyle {
     }
 }
 
+extension View {
+    /// System `.borderedProminent` button filled with `accent-fill` instead of the
+    /// environment tint (`primary`, which is the pale accent-text blue in dark
+    /// mode and would put white text on a pale fill).
+    func gymProminentButtonStyle() -> some View {
+        buttonStyle(.borderedProminent)
+            .tint(GymTheme.primaryAction)
+    }
+}
+
 /// Solid `accent-fill` capsule (radius 999 per DESIGN.md); carries white text.
 public struct GymPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled

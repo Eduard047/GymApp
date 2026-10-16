@@ -600,7 +600,11 @@ struct AppTutorialOverlay: View {
             .ignoresSafeArea()
             .mask {
                 ZStack {
+                    // Extends under the status bar and home indicator; the
+                    // cut-out below stays positioned in the safe-area frame.
                     Rectangle().fill(Color.white)
+                        .padding(.vertical, -120)
+                        .padding(.horizontal, -20)
                     if let targetRect {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .frame(width: targetRect.width + 16, height: targetRect.height + 16)
@@ -809,7 +813,7 @@ struct AppTutorialOverlay: View {
                     : gymText("Next", "Далі", "Далее", languageCode: languageCode))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .gymProminentButtonStyle()
             .keyboardShortcut(.defaultAction)
         }
     }
@@ -837,7 +841,7 @@ struct AppTutorialOverlay: View {
                 : gymText("Next", "Далі", "Далее", languageCode: languageCode),
             action: onNext
         )
-        .buttonStyle(.borderedProminent)
+        .gymProminentButtonStyle()
         .keyboardShortcut(.defaultAction)
     }
 }

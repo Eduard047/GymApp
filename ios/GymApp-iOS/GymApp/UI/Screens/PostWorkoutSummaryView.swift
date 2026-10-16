@@ -568,7 +568,7 @@ struct PostWorkoutSummaryView: View {
                                 .foregroundStyle(GymTheme.textSecondary)
                         }
                         ProgressView(value: item.load, total: max(1, trainedMuscles.first?.load ?? 1))
-                            .tint(GymTheme.tertiary)
+                            .tint(GymTheme.heroAccent)
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -598,7 +598,7 @@ struct PostWorkoutSummaryView: View {
                             )
                         } else {
                             Image(systemName: "trophy.fill")
-                                .foregroundStyle(GymTheme.tertiary)
+                                .foregroundStyle(GymTheme.record)
                                 .frame(width: 40, height: 40)
                         }
                         VStack(alignment: .leading, spacing: 2) {

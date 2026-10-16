@@ -221,7 +221,7 @@ private struct CloudSyncConflictView: View {
                                 )
                                 .frame(maxWidth: .infinity, minHeight: 52)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .gymProminentButtonStyle()
                             .disabled(isWorking)
 
                             Text(
@@ -403,7 +403,7 @@ private struct AccountPreparationView: View {
                     gymText("Try again", "Спробувати ще раз", "Попробовать еще раз", languageCode: languageCode),
                     action: retry
                 )
-                .buttonStyle(.borderedProminent)
+                .gymProminentButtonStyle()
                 Button(
                     gymText("Sign out", "Вийти", "Выйти", languageCode: languageCode),
                     action: signOut
@@ -2043,7 +2043,7 @@ private struct SharedWorkoutPreviewView: View {
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .gymProminentButtonStyle()
                     .disabled(!canOpenAsDraft)
 
                     if !canOpenAsDraft {

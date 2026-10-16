@@ -157,7 +157,7 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
     var body: some View {
         GymPanel(highlighted: highlighted) {
             VStack(alignment: .leading, spacing: contentSpacing) {
-                if dynamicTypeSize.isAccessibilitySize {
+                if dynamicTypeSize.isAccessibilitySize || nameNeedsOwnRow {
                     // Media, grip and menu share one row; the name gets the full
                     // width below instead of breaking mid-word beside them.
                     VStack(alignment: .leading, spacing: 8) {
@@ -184,6 +184,21 @@ struct GymExerciseCard<Media: View, Info: View, Overflow: View, Content: View>: 
                 content()
             }
         }
+    }
+
+    /// Beside the grip, media and menu the title column is about 100pt wide; a
+    /// single word wider than that (for example "Приседания") would break
+    /// mid-word, so such names take the full-width row below the media instead.
+    private var nameNeedsOwnRow: Bool {
+        let font = UIFont.systemFont(
+            ofSize: UIFont.preferredFont(forTextStyle: .headline).pointSize,
+            weight: .semibold
+        )
+        return name
+            .split(whereSeparator: { $0.isWhitespace || $0 == "-" || $0 == "/" })
+            .contains { word in
+                (String(word) as NSString).size(withAttributes: [.font: font]).width > 96
+            }
     }
 
     @ViewBuilder
@@ -310,11 +325,11 @@ struct GymRecordBadge: View {
             systemImage: "trophy.fill"
         )
         .font(.caption2.weight(.bold))
-        .foregroundStyle(.white)
+        .foregroundStyle(GymTheme.onRecord)
         .lineLimit(1)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Capsule().fill(GymTheme.brandFill))
+        .background(Capsule().fill(GymTheme.record))
         .fixedSize()
         .accessibilityHidden(true)
     }

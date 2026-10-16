@@ -887,7 +887,8 @@ struct ProfileView: View {
                     .foregroundStyle(GymTheme.textSecondary)
                     .lineLimit(1)
                 }
-                Spacer(minLength: 6)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 12)
             .frame(minHeight: 56)

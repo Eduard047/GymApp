@@ -575,7 +575,7 @@ struct SmartExerciseAlternativesSheet: View {
                 } label: {
                     Label("Use this exercise", systemImage: "checkmark.circle.fill")
                 }
-                .buttonStyle(GymPrimaryButtonStyle())
+                .buttonStyle(GymSecondaryButtonStyle())
             }
         }
     }
@@ -713,7 +713,7 @@ struct ExerciseMediaThumbnail: View {
                             width: playOverlayDiameter,
                             height: playOverlayDiameter
                         )
-                        .background(GymTheme.primary, in: Circle())
+                        .background(GymTheme.brandFill, in: Circle())
                         .padding(5)
                 }
             }

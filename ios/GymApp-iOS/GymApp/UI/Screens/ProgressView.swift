@@ -549,7 +549,7 @@ struct ExerciseProgressView: View {
                                     .foregroundStyle(GymTheme.textSecondary)
                             }
                             SwiftUI.ProgressView(value: contribution.weight, total: 1)
-                                .tint(contribution.weight >= 0.75 ? GymTheme.tertiary : GymTheme.primary)
+                                .tint(GymTheme.heroAccent)
                                 .accessibilityLabel(contribution.label)
                                 .accessibilityValue(
                                     contribution.weight.formatted(.percent.locale(gymAppLocale()).precision(.fractionLength(0)))
@@ -1268,7 +1268,7 @@ private struct ExerciseProgressChartsCard: View {
                     x: .value(t("Session", "Сесія", "Сессия"), point.date),
                     y: .value(t("Max weight", "Максимальна вага", "Максимальный вес"), point.maxWeight)
                 )
-                .foregroundStyle(point.id == latestPointID ? GymTheme.tertiary : GymTheme.primary)
+                .foregroundStyle(GymTheme.heroAccent)
                 .symbolSize(point.id == latestPointID ? 75 : 40)
                 .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))
                 .accessibilityValue(formatWeight(point.maxWeight))
@@ -1308,8 +1308,8 @@ private struct ExerciseProgressChartsCard: View {
                 )
                 .foregroundStyle(
                     point.id == latestPointID
-                        ? GymTheme.tertiary
-                        : GymTheme.secondary
+                        ? GymTheme.heroAccent
+                        : GymTheme.heroAccent.opacity(0.45)
                 )
                 .cornerRadius(7)
                 .accessibilityLabel(gymFormattedDate(point.date, date: .long, time: .omitted))

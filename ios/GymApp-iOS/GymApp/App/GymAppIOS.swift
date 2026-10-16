@@ -139,7 +139,7 @@ private struct StartupFailureView: View {
                 gymText("Try again", "Спробувати ще раз", "Попробовать еще раз", languageCode: languageCode),
                 action: retry
             )
-            .buttonStyle(.borderedProminent)
+            .gymProminentButtonStyle()
         }
         .environment(
             \.locale,

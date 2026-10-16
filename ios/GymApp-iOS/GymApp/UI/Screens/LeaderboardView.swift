@@ -516,7 +516,7 @@ struct FriendsView: View {
                 Text(t("Accept", "Прийняти", "Принять"))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .gymProminentButtonStyle()
 
             Button(role: .destructive) {
                 Task { await respond(request, accept: false) }
@@ -625,7 +625,7 @@ struct FriendsView: View {
                             Button(t("Start together", "Почати разом", "Начать вместе")) {
                                 Task { await respondToLiveInvitation(invitation, accept: true) }
                             }
-                            .buttonStyle(.borderedProminent)
+                            .gymProminentButtonStyle()
                             .disabled(
                                 !canAcceptWorkoutInvites
                                     || appState.pendingSharedWorkout != nil
@@ -674,7 +674,7 @@ struct FriendsView: View {
                                 ) {
                                     Task { await openLiveRoom(room) }
                                 }
-                                .buttonStyle(.borderedProminent)
+                                .gymProminentButtonStyle()
                             }
 
                             if room.role == .owner {
@@ -801,7 +801,7 @@ struct FriendsView: View {
                     Button(t("Accept workout", "Прийняти тренування", "Принять тренировку")) {
                         prepareWorkoutInvite(invite, action: .accept)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .gymProminentButtonStyle()
                     Button(t("Decline", "Відхилити", "Отклонить"), role: .destructive) {
                         Task { await respondWorkoutInvite(invite, accept: false) }
                     }
@@ -810,7 +810,7 @@ struct FriendsView: View {
                     Button(t("Open local copy", "Відкрити локальну копію", "Открыть локальную копию")) {
                         prepareWorkoutInvite(invite, action: .recover)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .gymProminentButtonStyle()
                 } else {
                     Button(t("Cancel invite", "Скасувати запрошення", "Отменить приглашение"), role: .destructive) {
                         Task { await cancelWorkoutInvite(invite) }

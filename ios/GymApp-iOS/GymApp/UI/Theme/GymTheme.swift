@@ -39,6 +39,10 @@ public enum GymTheme {
     public static let onPrimary = Color.white
     public static let secondary = adaptive(light: 0x23815E, dark: 0x77DDB7)
     public static let tertiary = adaptive(light: 0x6753D6, dark: 0xB4A6FF)
+    /// Effort coral (`record` in DESIGN.md): PR / record marks only.
+    public static let record = adaptive(light: 0xFF6F66, dark: 0xFF9D94)
+    /// Label on a solid `record` fill: deep navy (about 5.7:1 on #FF6F66, 8:1 on #FF9D94).
+    public static let onRecord = adaptive(light: 0x10233F, dark: 0x10233F)
 
     public static let background = adaptive(light: 0xF7FAFF, dark: 0x071321)
     public static let surface = adaptive(light: 0xFFFFFF, dark: 0x0D1D30)
@@ -152,6 +156,9 @@ public struct GymBackground<Content: View>: View {
         }
         .foregroundStyle(GymTheme.textPrimary)
         .tint(GymTheme.primary)
+        // `primary` is the pale accent-text blue in dark mode; a switch track
+        // carries a white thumb, so it takes the accent-fill blue instead.
+        .toggleStyle(SwitchToggleStyle(tint: GymTheme.primaryAction))
     }
 }
 

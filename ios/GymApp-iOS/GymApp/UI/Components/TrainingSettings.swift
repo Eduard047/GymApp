@@ -100,7 +100,10 @@ struct TrainingSettingsView: View {
             .onAppear {
                 guard scrollToWorkoutsPerWeek else { return }
                 DispatchQueue.main.async {
-                    proxy.scrollTo(Self.workoutsPerWeekSectionID, anchor: .top)
+                    // Bottom anchor: when the sections nearly fit, a top anchor
+                    // still scrolled a few points and left the first label half
+                    // hidden under the sheet header.
+                    proxy.scrollTo(Self.workoutsPerWeekSectionID, anchor: .bottom)
                 }
             }
             }

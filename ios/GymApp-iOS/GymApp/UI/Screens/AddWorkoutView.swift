@@ -1423,7 +1423,7 @@ struct AddWorkoutView: View {
                                                         systemImage: "wave.3.right.circle.fill"
                                                     )
                                                 }
-                                                .buttonStyle(.borderedProminent)
+                                                .gymProminentButtonStyle()
                                                 .disabled(sendLiveWorkoutInvite == nil)
                                             }
                                         }
