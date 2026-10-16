@@ -8438,7 +8438,11 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
   color: var(--hero-text);
 }
 .summary-hero-stats span {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   color: var(--hero-muted);
   font-size: 0.75rem;
   line-height: 1rem;
