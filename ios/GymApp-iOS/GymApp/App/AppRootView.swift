@@ -400,7 +400,7 @@ private struct AccountPreparationView: View {
                 ProgressView()
             } else {
                 Button(
-                    gymText("Try again", "Спробувати ще раз", "Попробовать еще раз", languageCode: languageCode),
+                    gymText("Try again", "Спробувати ще раз", "Попробовать ещё раз", languageCode: languageCode),
                     action: retry
                 )
                 .gymProminentButtonStyle()
@@ -1876,7 +1876,19 @@ private struct MainTabShell: View {
         NavigationStack(path: $missionPath) {
             ProgressHubView(
                 store: store,
-                onOpenRanks: { missionPath.append(.ranks) }
+                onOpenRanks: { missionPath.append(.ranks) },
+                onStartWorkout: {
+                    if activeWorkoutStore.draft != nil {
+                        showsActiveWorkout = true
+                        return
+                    }
+                    sharedWorkoutDraftSeed = []
+                    workoutLaunchSeed = nil
+                    workoutLaunchConsumerID = nil
+                    workoutLaunchDrafts = nil
+                    workoutEditorLiveRecipient = nil
+                    showsAddWorkout = true
+                }
             )
                 .navigationDestination(for: MissionRoute.self) { route in
                     switch route {

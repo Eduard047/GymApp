@@ -18725,12 +18725,13 @@ final class CoreParityTests: XCTestCase {
             "private func recordedSetAnnouncement(weight: Double, reps: Int, restSeconds: Int) -> String {"
         ))
         XCTAssertTrue(source.contains("announce(recordedSetAnnouncement("))
+        // The banner keeps its message on one line (shrinking a little) and only wraps it in full,
+        // with Undo on its own line, at accessibility text sizes.
+        XCTAssertTrue(source.contains("undoBanner(message: confirmation.message)"))
         XCTAssertTrue(source.contains(
-            "Text(confirmation.message)\n"
-                + "                .font(.subheadline)\n"
-                + "                .foregroundStyle(GymTheme.textPrimary)\n"
-                + "                .lineLimit(1)\n"
-                + "                .minimumScaleFactor(0.85)"
+            "text\n"
+                + "                        .lineLimit(1)\n"
+                + "                        .minimumScaleFactor(0.85)"
         ))
 
         // The log button's visible text is single line; the fuller phrasing

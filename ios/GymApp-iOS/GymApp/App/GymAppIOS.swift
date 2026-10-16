@@ -136,7 +136,7 @@ private struct StartupFailureView: View {
             )
         } actions: {
             Button(
-                gymText("Try again", "Спробувати ще раз", "Попробовать еще раз", languageCode: languageCode),
+                gymText("Try again", "Спробувати ще раз", "Попробовать ещё раз", languageCode: languageCode),
                 action: retry
             )
             .gymProminentButtonStyle()

@@ -477,7 +477,7 @@ public extension TrainingSplit {
         case .upperLower:
             gymText("Upper / Lower", "Верх / низ", "Верх/низ", languageCode: gymCurrentLanguageCode())
         case .fullBody:
-            gymText("Full Body", "Все тіло", "Все тело", languageCode: gymCurrentLanguageCode())
+            gymText("Full Body", "Все тіло", "Всё тело", languageCode: gymCurrentLanguageCode())
         case .pushPullLegs:
             gymText("Push Pull Legs", "Жим / тяга / ноги", "Жим/тяга/ноги", languageCode: gymCurrentLanguageCode())
         case .custom:

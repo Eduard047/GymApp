@@ -2067,7 +2067,7 @@ struct ActiveWorkoutView: View {
         .font(.headline)
         guard restSeconds > 0 else { return main }
         let mmss = String(format: "%d:%02d", restSeconds / 60, restSeconds % 60)
-        let suffix = Text(verbatim: " · \(mmss)")
+        let suffix = Text(verbatim: dynamicTypeSize.isAccessibilitySize ? "\n\(mmss)" : " · \(mmss)")
         .font(.subheadline)
         .foregroundStyle(Color.white)
         return main + suffix
@@ -2486,7 +2486,10 @@ struct ActiveWorkoutView: View {
         isEnded: Bool = false
     ) -> some View {
         let locked = draft.commitIntent != nil
-        return HStack(spacing: 6) {
+        let restLayout: AnyLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 6))
+        return restLayout {
             Text(Self.clock(TimeInterval(remainingSeconds)))
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(GymTheme.primary)
@@ -2579,7 +2582,8 @@ struct ActiveWorkoutView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(minWidth: 44, minHeight: 44)
+            // The visual capsule scales with the text size; the frame reserves its height so it never spills into the next row.
+            .frame(minWidth: 44, minHeight: max(44, compactCapsuleHeight))
         }
         .buttonStyle(GymPressableStyle(highlight: GymPressHighlight(color: GymTheme.surfaceVariant, height: compactCapsuleHeight)))
         .foregroundStyle(GymTheme.primary)
@@ -4065,29 +4069,52 @@ struct ActiveWorkoutView: View {
     /// "Записано: 80 кг × 8" with an "Отменить" action wired to the same
     /// undo path as a completed row's long-press "Отменить подход".
     private func recordedSetConfirmationBanner(_ confirmation: (message: String, setID: UUID)) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(GymTheme.primary)
-                .accessibilityHidden(true)
-            Text(confirmation.message)
-                .font(.subheadline)
-                .foregroundStyle(GymTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            Spacer(minLength: 8)
-            Button {
-                if let draft = currentDraft, let set = activeSet(id: confirmation.setID) {
-                    undoLatestSet(set, draft: draft)
-                }
-                dismissRecordedSetConfirmation()
-            } label: {
-                Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
-                    .font(.subheadline.weight(.semibold))
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
+        undoBanner(message: confirmation.message) {
+            if let draft = currentDraft, let set = activeSet(id: confirmation.setID) {
+                undoLatestSet(set, draft: draft)
             }
-            .buttonStyle(GymPressableStyle())
+            dismissRecordedSetConfirmation()
+        }
+    }
+
+    /// Confirmation text plus an Undo action. At accessibility sizes the message wraps in
+    /// full and Undo sits on its own line, so neither is truncated or broken mid-word.
+    private func undoBanner(message: String, onUndo: @escaping () -> Void) -> some View {
+        let icon = Image(systemName: "checkmark.circle.fill")
             .foregroundStyle(GymTheme.primary)
+            .accessibilityHidden(true)
+        let text = Text(message)
+            .font(.subheadline)
+            .foregroundStyle(GymTheme.textPrimary)
+        let undoButton = Button(action: onUndo) {
+            Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
+                .font(.subheadline.weight(.semibold))
+                .fixedSize()
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(GymPressableStyle())
+        .foregroundStyle(GymTheme.primary)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        icon
+                        text.fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 10)
+                    undoButton
+                }
+            } else {
+                HStack(alignment: .center, spacing: 10) {
+                    icon
+                    text
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Spacer(minLength: 8)
+                    undoButton
+                }
+            }
         }
         // The Undo target is 44pt tall, so the banner needs little vertical padding.
         .padding(.horizontal, 12)
@@ -4110,40 +4137,9 @@ struct ActiveWorkoutView: View {
         _ batch: RecordedBatchUndo,
         draft: ActiveWorkoutDraft
     ) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(GymTheme.primary)
-                .accessibilityHidden(true)
-            Text(batch.message)
-                .font(.subheadline)
-                .foregroundStyle(GymTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            Spacer(minLength: 8)
-            Button {
-                undoRecordedBatch(batch, draft: draft)
-            } label: {
-                Text(gymText("Undo", "Скасувати", "Отменить", languageCode: gymCurrentLanguageCode()))
-                    .font(.subheadline.weight(.semibold))
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(GymPressableStyle())
-            .foregroundStyle(GymTheme.primary)
+        undoBanner(message: batch.message) {
+            undoRecordedBatch(batch, draft: draft)
         }
-        // The Undo target is 44pt tall, so the banner needs little vertical padding.
-        .padding(.horizontal, 12)
-        .padding(.vertical, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .fill(GymTheme.surface)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: GymTheme.controlCornerRadius, style: .continuous)
-                .strokeBorder(GymTheme.primary.opacity(0.36), lineWidth: 1)
-        }
-        .accessibilityElement(children: .combine)
     }
 
     /// The mic button (idle look) is only rendered outside the listening/

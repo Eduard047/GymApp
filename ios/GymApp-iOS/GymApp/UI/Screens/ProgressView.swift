@@ -34,10 +34,16 @@ struct ProgressHubView: View {
     @State private var selectedMuscleID: String?
 
     private let onOpenRanks: () -> Void
+    private let onStartWorkout: () -> Void
 
-    init(store: WorkoutStore, onOpenRanks: @escaping () -> Void) {
+    init(
+        store: WorkoutStore,
+        onOpenRanks: @escaping () -> Void,
+        onStartWorkout: @escaping () -> Void = {}
+    ) {
         self.store = store
         self.onOpenRanks = onOpenRanks
+        self.onStartWorkout = onStartWorkout
     }
 
     var body: some View {
@@ -157,40 +163,44 @@ struct ProgressHubView: View {
         ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(spacing: GymTheme.contentSpacing) {
-                WeeklyReviewCard(store: store)
+                if store.workoutSummaries.isEmpty {
+                    emptyOverview
+                } else {
+                    WeeklyReviewCard(store: store)
 
-                WorkoutProgressHero(
-                    snapshot: gamification,
-                    monthXP: monthXP,
-                    weeklyStreakWeeks: weeklyStreakWeeks,
-                    weeklyTarget: trainingProfile.workoutsPerWeek,
-                    onOpenRanks: onOpenRanks
-                )
+                    WorkoutProgressHero(
+                        snapshot: gamification,
+                        monthXP: monthXP,
+                        weeklyStreakWeeks: weeklyStreakWeeks,
+                        weeklyTarget: trainingProfile.workoutsPerWeek,
+                        onOpenRanks: onOpenRanks
+                    )
 
-                lifetimeMetricsCard
+                    lifetimeMetricsCard
 
-                WorkoutActivityHeatmap(
-                    month: selectedMonth,
-                    sessions: store.workoutSummaries,
-                    now: referenceDate,
-                    calendar: calendar,
-                    isCurrentMonth: monthOffset == 0,
-                    onPreviousMonth: { monthOffset -= 1 },
-                    onCurrentMonth: { monthOffset = 0 },
-                    onNextMonth: { monthOffset = min(0, monthOffset + 1) }
-                )
+                    WorkoutActivityHeatmap(
+                        month: selectedMonth,
+                        sessions: store.workoutSummaries,
+                        now: referenceDate,
+                        calendar: calendar,
+                        isCurrentMonth: monthOffset == 0,
+                        onPreviousMonth: { monthOffset -= 1 },
+                        onCurrentMonth: { monthOffset = 0 },
+                        onNextMonth: { monthOffset = min(0, monthOffset + 1) }
+                    )
 #if DEBUG
-                .id("ui-audit-activity-heatmap")
+                    .id("ui-audit-activity-heatmap")
 #endif
 
-                WorkoutMuscleLoadCard(
-                    period: $musclePeriod,
-                    selectedMuscleID: $selectedMuscleID,
-                    data: muscleDashboardData
-                )
+                    WorkoutMuscleLoadCard(
+                        period: $musclePeriod,
+                        selectedMuscleID: $selectedMuscleID,
+                        data: muscleDashboardData
+                    )
 #if DEBUG
-                .id("ui-audit-muscle-map")
+                    .id("ui-audit-muscle-map")
 #endif
+                }
             }
             .padding(.horizontal, GymTheme.screenHorizontalInset)
             .padding(.top, GymTheme.contentSpacing)
@@ -200,6 +210,35 @@ struct ProgressHubView: View {
 #if DEBUG
         .task { await scrollToUIAuditCardIfRequested(proxy) }
 #endif
+        }
+    }
+
+    /// Nothing is saved yet: one message and one action instead of a wall of zero tiles.
+    private var emptyOverview: some View {
+        GymPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(gymText(
+                    "Progress starts with your first saved set",
+                    "Прогрес починається з першого збереженого підходу",
+                    "Прогресс начинается с первого сохранённого подхода",
+                    languageCode: languageCode
+                ))
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(GymTheme.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+                Text(gymText(
+                    "Finish a workout to unlock your calendar, muscle map, and exercise trends.",
+                    "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.",
+                    "Заверши тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.",
+                    languageCode: languageCode
+                ))
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.textSecondary)
+                Button(action: onStartWorkout) {
+                    Text(gymText("Start workout", "Почати тренування", "Начать тренировку", languageCode: languageCode))
+                }
+                .buttonStyle(GymPrimaryButtonStyle())
+            }
         }
     }
 
@@ -622,7 +661,7 @@ struct ExerciseProgressView: View {
                         value: averageMaximumWeight.map(formatWeight) ?? "—"
                     )
                     GymMetricTile(
-                        label: t("Total Volume", "Загальний обсяг", "Общий объем"),
+                        label: t("Total Volume", "Загальний обсяг", "Общий объём"),
                         value: gymVolumeText(totalVolume, compact: true)
                     )
                 }
@@ -787,7 +826,7 @@ struct ExerciseProgressView: View {
     private var noExerciseState: some View {
         GymPanel {
             GymContentUnavailableView {
-                Label(t("No exercises yet", "Ще немає вправ", "Упражнений еще нет"), systemImage: "dumbbell")
+                Label(t("No exercises yet", "Ще немає вправ", "Упражнений ещё нет"), systemImage: "dumbbell")
             } description: {
                 Text(t("Create an exercise and log a workout first.", "Спочатку створи вправу й запиши тренування.", "Сначала создай упражнение и запиши тренировку."))
             }

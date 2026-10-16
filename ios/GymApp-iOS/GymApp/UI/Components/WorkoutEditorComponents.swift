@@ -1892,6 +1892,20 @@ struct ExercisePickerSheet: View {
         )
     }
 
+    /// One horizontally scrolling chip row that bleeds to the sheet edges (no list inset or
+    /// separator), so a chip is never cut by the row's own padding.
+    private func chipRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                content()
+            }
+            .padding(.horizontal, 16)
+        }
+        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -1914,77 +1928,71 @@ struct ExercisePickerSheet: View {
                 }
 
                 Section("Exercises") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            Button {
-                                favoritesOnly.toggle()
-                            } label: {
-                                Label(
-                                    gymLocalized("Favorites"),
-                                    systemImage: favoritesOnly ? "heart.fill" : "heart"
+                    chipRow {
+                        Button {
+                            favoritesOnly.toggle()
+                        } label: {
+                            Label(
+                                gymLocalized("Favorites"),
+                                systemImage: favoritesOnly ? "heart.fill" : "heart"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(favoritesOnly ? GymTheme.primary : GymTheme.textSecondary)
+                        .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
+
+                        ForEach(ExerciseBodyFilter.allCases) { filter in
+                            Button(filter.localizedTitle) { bodyFilter = filter }
+                                .buttonStyle(.bordered)
+                                .tint(
+                                    bodyFilter == filter
+                                        ? GymTheme.primary
+                                        : GymTheme.textSecondary
                                 )
+                                .accessibilityAddTraits(
+                                    bodyFilter == filter ? .isSelected : []
+                                )
+                        }
+                    }
+
+                    chipRow {
+                        ForEach(ExerciseSortMode.allCases) { mode in
+                            Button(mode.localizedTitle) { sortMode = mode }
+                                .buttonStyle(.bordered)
+                                .tint(
+                                    sortMode == mode
+                                        ? GymTheme.primary
+                                        : GymTheme.textSecondary
+                                )
+                                .accessibilityAddTraits(sortMode == mode ? .isSelected : [])
+                        }
+                    }
+
+                    chipRow {
+                        Button(gymLocalized("All muscles")) { muscleFilter = nil }
+                            .buttonStyle(.bordered)
+                            .tint(
+                                muscleFilter == nil
+                                    ? GymTheme.primary
+                                    : GymTheme.textSecondary
+                            )
+                        ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
+                            Button(
+                                gymText(
+                                    muscle.titleEn,
+                                    muscle.titleUk,
+                                    muscle.titleRu,
+                                    languageCode: gymCurrentLanguageCode()
+                                )
+                            ) {
+                                muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
                             }
                             .buttonStyle(.bordered)
-                            .tint(favoritesOnly ? GymTheme.primary : GymTheme.textSecondary)
-                            .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
-
-                            ForEach(ExerciseBodyFilter.allCases) { filter in
-                                Button(filter.localizedTitle) { bodyFilter = filter }
-                                    .buttonStyle(.bordered)
-                                    .tint(
-                                        bodyFilter == filter
-                                            ? GymTheme.primary
-                                            : GymTheme.textSecondary
-                                    )
-                                    .accessibilityAddTraits(
-                                        bodyFilter == filter ? .isSelected : []
-                                    )
-                            }
-                        }
-                    }
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(ExerciseSortMode.allCases) { mode in
-                                Button(mode.localizedTitle) { sortMode = mode }
-                                    .buttonStyle(.bordered)
-                                    .tint(
-                                        sortMode == mode
-                                            ? GymTheme.primary
-                                            : GymTheme.textSecondary
-                                    )
-                                    .accessibilityAddTraits(sortMode == mode ? .isSelected : [])
-                            }
-                        }
-                    }
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            Button(gymLocalized("All muscles")) { muscleFilter = nil }
-                                .buttonStyle(.bordered)
-                                .tint(
-                                    muscleFilter == nil
-                                        ? GymTheme.primary
-                                        : GymTheme.textSecondary
-                                )
-                            ForEach(MuscleMappingEngine.muscleDefinitions) { muscle in
-                                Button(
-                                    gymText(
-                                        muscle.titleEn,
-                                        muscle.titleUk,
-                                        muscle.titleRu,
-                                        languageCode: gymCurrentLanguageCode()
-                                    )
-                                ) {
-                                    muscleFilter = muscleFilter == muscle.id ? nil : muscle.id
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(
-                                    muscleFilter == muscle.id
-                                        ? GymTheme.primary
-                                        : GymTheme.textSecondary
-                                )
-                            }
+                            .tint(
+                                muscleFilter == muscle.id
+                                    ? GymTheme.primary
+                                    : GymTheme.textSecondary
+                            )
                         }
                     }
 
@@ -2042,7 +2050,7 @@ struct ExercisePickerSheet: View {
                     }
                 }
             }
-            .searchable(text: $search, prompt: "Search exercises")
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
             .navigationTitle("Add exercise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
