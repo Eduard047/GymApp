@@ -266,12 +266,12 @@ test("retained browser source accepts Russian while the public landing owns its 
   assert.match(appSource, /tx\("metrics parsed from the saved note", "показники прочитано зі збереженої нотатки"\)/);
   assert.match(appSource, /tx3\("Search exercises", "Пошук вправ", "Поиск упражнений"\)/);
   assert.doesNotMatch(appSource, /Name in English, Ukrainian or Russian|Name in English, Ukrainian, or Russian/);
-  assert.match(indexSource, /russian-text\.v92\.js/);
+  assert.match(indexSource, /russian-text\.v93\.js/);
   assert.match(indexSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(indexSource, /app\.v142\.js/);
-  assert.match(workerSource, /russian-text\.v92\.js/);
+  assert.match(indexSource, /app\.v143\.js/);
+  assert.match(workerSource, /russian-text\.v93\.js/);
   assert.match(workerSource, /exercise-search-vocabulary\.v1\.js/);
-  assert.match(workerSource, /app\.v142\.js/);
+  assert.match(workerSource, /app\.v143\.js/);
   assert.match(retirementSource, /title: "Тренируйтесь в GymApp"/);
   assert.match(retirementSource, /deletion: "Удаление аккаунта и данных"/);
 });
@@ -373,4 +373,19 @@ test("Garmin accepts Russian language sync and uses direct touch hit targets", a
   assert.match(ukrainianResources, /Хмарний токен/);
   assert.match(buildScript, /--output "\$temporary_output" --export/);
   assert.equal([...manifest.matchAll(/<iq:product id=/g)].length, 108);
+});
+
+test("Russian copy writes ё where it belongs on every client", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const sources = {
+    pwaTable: await readFile("pwa/russian-text.js", "utf8"),
+    android: await readFile("app/src/main/res/values-ru/strings.xml", "utf8"),
+    ios: await readFile("ios/GymApp-iOS/GymApp/Resources/Localizable.xcstrings", "utf8")
+  };
+  const cyr = "а-яёА-ЯЁ";
+  const wrong = new RegExp(`(?<![${cyr}])(растет|идет|берет|ведет|еще|объем|Объем|Все тело)(?![${cyr}])`);
+  for (const [name, text] of Object.entries(sources)) {
+    const match = wrong.exec(text);
+    assert.equal(match, null, `${name}: "${match?.[0]}" should use ё`);
+  }
 });

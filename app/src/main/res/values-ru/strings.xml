@@ -1015,7 +1015,7 @@
     <string name="smart_reason_last_strong">Последняя сессия была стабильна по подходам.</string>
     <string name="smart_reason_last_unstable">Повторы или объём просели, поэтому план осторожен.</string>
     <string name="smart_reason_recent_break">%1$d дней без этого упражнения, поэтому вес скорректирован вниз.</string>
-    <string name="smart_reason_volume_up">Последний объём идет вверх.</string>
+    <string name="smart_reason_volume_up">Последний объём идёт вверх.</string>
     <string name="smart_reason_volume_dropped">Последний объём ниже предыдущей сессии.</string>
     <string name="smart_reason_plateau">Несколько сессий держались у одного максимального веса.</string>
     <string name="smart_reason_near_best">Это близко к твоей лучшей расчетной силе в упражнении.</string>
