@@ -153,7 +153,7 @@ test("lifetime tiles reserve a two-line label slot and align values", () => {
 
 test("the screen gutter is the 16px DESIGN gutter on every root screen", () => {
   assert.match(stylesSource, /\n\.screen \{[^}]*padding: 10px 16px;/);
-  assert.match(stylesSource, /\.workouts-screen-copy \{[^}]*margin: 8px 16px 12px;/);
+  assert.match(stylesSource, /\.workouts-screen-copy \{[^}]*margin: 10px 16px 12px;/);
   assert.match(stylesSource, /\.workouts-controls \.segmented \{ margin: 0 16px 10px; \}/);
   assert.match(stylesSource, /\.workouts-scroll \{[^}]*padding: 0 16px var\(--bottom-nav-clearance\);/);
   assert.match(stylesSource, /\.screen-leaderboard \{[^}]*padding-right: 16px;[^}]*padding-left: 16px;/);
