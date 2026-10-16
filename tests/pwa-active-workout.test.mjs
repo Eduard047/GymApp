@@ -1012,7 +1012,9 @@ test("the latest completed exercise stays expanded while the next exercise becom
   const completedMarkup = markup.slice(completedStart, currentStart);
   assert.match(completedMarkup, /<details data-active-block-details="\d+" open>/);
   assert.match(completedMarkup, /data-timer-display=/);
-  assert.match(completedMarkup, new RegExp(`data-action="undo-active-set" data-id="${firstSetId}"`));
+  // The banner carries the one Undo; the completed row has no second standing button.
+  assert.match(markup, new RegExp(`data-action="undo-active-set" data-id="${firstSetId}"`));
+  assert.doesNotMatch(completedMarkup, /active-set-undo-key/);
   assert.match(markup, new RegExp(
     `active-workout-exercise current"><details data-active-block-details="\\d+" open>[\\s\\S]*?data-action="record-active-set" data-id="${nextSetId}"`
   ));
@@ -1915,6 +1917,7 @@ test("a separate durable marker preserves exactly one latest undo across reload 
   assert.equal(Object.hasOwn(JSON.parse(localStorage.getItem(activeStorageKey(context))), "undoableSetId"), false);
   vm.runInContext("clearActiveWorkoutMemory(); reloadActiveWorkoutContext();", context);
   assert.equal(vm.runInContext("activeWorkoutUndoMarker.setId", context), secondSetId);
+  vm.runInContext("activeSetConfirmation = null;", context);
   const reloadMarkup = vm.runInContext("activeWorkoutScreen()", context);
   assert.match(reloadMarkup, /data-action="undo-active-set"/);
   assert.doesNotMatch(reloadMarkup, /Undo last set/);
@@ -2161,6 +2164,10 @@ test("undo: visible Undo button on the latest set row plus latest-only long-pres
   assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, firstId, 80, 8), true);
   assert.equal(await recordTwoSetWorkoutSet(context, runtimeNodes, secondId, 82.5, 6), true);
 
+  // With the recorded-set banner showing, the row has no second Undo; without it (after a reload) the row keeps the button.
+  const bannerMarkup = vm.runInContext("activeWorkoutScreen()", context);
+  assert.doesNotMatch(completedRowMarkup(bannerMarkup, secondId), /active-set-undo-key/);
+  vm.runInContext("activeSetConfirmation = null;", context);
   const markup = vm.runInContext("activeWorkoutScreen()", context);
   assert.doesNotMatch(markup, /Undo last set|Скасувати останній підхід|Отменить последний подход/);
   const olderRow = completedRowMarkup(markup, firstId);

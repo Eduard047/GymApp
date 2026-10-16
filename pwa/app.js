@@ -15488,7 +15488,9 @@ function activeCompletedSetMarkup(set, setIndex, options) {
     `Подход ${number} записан, ${summary}`
   ) + (record ? `, ${tx3("personal record", "особистий рекорд", "личный рекорд")}` : "");
   const restControls = timerKey && remaining > 0 ? activeRestControlsMarkup(timerKey, remaining) : "";
-  const undo = undoable
+  // The recorded-set banner already carries Undo for this set; the standing row button shows only when no banner does (after a reload).
+  const bannerCoversUndo = Boolean(activeSetConfirmation && activeSetConfirmation.workoutId === activeWorkout?.id && String(activeSetConfirmation.setId) === String(set.id));
+  const undo = undoable && !bannerCoversUndo
     ? `<button class="active-set-undo-key" type="button" data-action="undo-active-set" data-id="${setId}" aria-label="${escapeAttr(`${tx3("Undo set", "Скасувати підхід", "Отменить подход")} ${number}`)}">${tx3("Undo", "Скасувати", "Отменить")}</button>`
     : "";
   return `<div class="active-set-row completed" data-active-set-row="${setId}"${undoable ? ` data-active-set-undoable="${setId}"` : ""}${undoAny ? ` data-active-set-undo-any="${setId}" tabindex="0"` : ""} role="group" aria-label="${escapeAttr(label)}"><div class="active-set-completed-line"><div class="active-set-summary"><span class="active-set-check"${String(enterAnimationFor("set-record")?.setId) === String(set.id) ? " data-enter" : ""} aria-hidden="true">${svg("checkCircle", "small-icon")}</span><span class="active-set-summary-text">${escapeHtml(summary)}</span>${record ? personalRecordBadgeMarkup() : ""}</div><span hidden>${activeSetInputMarkup(set, "weight", "active-set-hidden-input", activeSetWeightLabel(number))}${activeSetInputMarkup(set, "reps", "active-set-hidden-input", activeSetRepsLabel(number))}</span>${undo}${restControls}</div></div>`;
