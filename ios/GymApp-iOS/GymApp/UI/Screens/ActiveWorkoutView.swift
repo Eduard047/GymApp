@@ -522,9 +522,9 @@ struct ActiveWorkoutView: View {
                         } label: {
                             Label(
                                 gymText(
-                                    "Discard",
-                                    "Відкинути",
-                                    "Удалить",
+                                    "Discard workout",
+                                    "Відкинути тренування",
+                                    "Удалить тренировку",
                                     languageCode: gymCurrentLanguageCode()
                                 ),
                                 systemImage: "trash"
@@ -1472,7 +1472,12 @@ struct ActiveWorkoutView: View {
                         }
                     }
 
-                    HStack(spacing: 8) {
+                    // At accessibility sizes the two actions stack, so neither label has to
+                    // squeeze beside the other and stretch the whole card past the gutter.
+                    let footerLayout: AnyLayout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(spacing: 8))
+                        : AnyLayout(HStackLayout(spacing: 8))
+                    footerLayout {
                         GymDashedAddButton(
                             title: gymText(
                                 "+ Set",
@@ -1512,7 +1517,7 @@ struct ActiveWorkoutView: View {
                         }
                         .buttonStyle(.plain)
                         .overlay(
-                            Capsule()
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .strokeBorder(GymTheme.primary.opacity(0.7), lineWidth: 1)
                         )
                         .accessibilityLabel(
@@ -1631,35 +1636,19 @@ struct ActiveWorkoutView: View {
         let isTypedHere = voiceCommandSetID == set.id && voiceCommandPhase == .typed
 
         let content = VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(
-                    gymText(
-                        "Set \(position + 1)",
-                        "Підхід \(position + 1)",
-                        "Подход \(position + 1)",
-                        languageCode: gymCurrentLanguageCode()
-                    )
+            let setTitle = Text(
+                gymText(
+                    "Set \(position + 1)",
+                    "Підхід \(position + 1)",
+                    "Подход \(position + 1)",
+                    languageCode: gymCurrentLanguageCode()
                 )
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(GymTheme.primary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-
-                if usesPlateCalculator(exercise) {
-                    PlateCalculatorButton(weight: set.weight)
-                }
-
-                Spacer(minLength: 8)
-
-                // At accessibility text sizes the caption moves to its own line
-                // below so it never has to share the row with the chip and trash.
-                if dynamicTypeSize < .xxxLarge, showsPrevious, let last, let repeatWeight, let repeatReps {
-                    previousPerformanceButton(
-                        last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
-                        isBodyweight: isBodyweightExercise, set: set, draft: draft
-                    )
-                }
-
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(GymTheme.primary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            let deleteButton = Group {
                 if canDeletePendingSet(set, exercise: exercise, draft: draft) {
                     GymSetDeleteButton(
                         accessibilityLabelText: deleteSetAccessibilityLabel(
@@ -1668,6 +1657,40 @@ struct ActiveWorkoutView: View {
                     ) {
                         deleteSet(set, draft: draft)
                     }
+                }
+            }
+
+            if dynamicTypeSize.isAccessibilitySize {
+                // The title, Plates chip and trash do not fit one row at accessibility
+                // sizes: the chip drops below instead of stretching the whole card.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        setTitle
+                        Spacer(minLength: 8)
+                        deleteButton
+                    }
+                    if usesPlateCalculator(exercise) {
+                        PlateCalculatorButton(weight: set.weight)
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    setTitle
+
+                    if usesPlateCalculator(exercise) {
+                        PlateCalculatorButton(weight: set.weight)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if dynamicTypeSize < .xxxLarge, showsPrevious, let last, let repeatWeight, let repeatReps {
+                        previousPerformanceButton(
+                            last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
+                            isBodyweight: isBodyweightExercise, set: set, draft: draft
+                        )
+                    }
+
+                    deleteButton
                 }
             }
 
@@ -1768,7 +1791,7 @@ struct ActiveWorkoutView: View {
             recordSet(set, exercise: exercise, exerciseName: exerciseName, draft: draft)
         } label: {
             // No extra vertical padding/minHeight here: GymPrimaryButtonStyle
-            // already adds its own vertical padding + minHeight 48, and
+            // already adds its own vertical padding + minHeight 52, and
             // stacking another minHeight on top of that padding was what
             // pushed this button to ~68pt tall.
             logButtonText(restSeconds: restSeconds)
@@ -1808,9 +1831,9 @@ struct ActiveWorkoutView: View {
             Text(
                 showsWeight
                     ? gymText(
-                        "previous \(last.weight.formatted(.number.locale(gymAppLocale()))) × \(last.reps)",
-                        "минулого разу \(last.weight.formatted(.number.locale(gymAppLocale()))) × \(last.reps)",
-                        "прошлый раз \(last.weight.formatted(.number.locale(gymAppLocale()))) × \(last.reps)",
+                        "previous \(last.weight.formatted(.number.locale(gymAppLocale())))\u{00A0}×\u{00A0}\(last.reps)",
+                        "минулого разу \(last.weight.formatted(.number.locale(gymAppLocale())))\u{00A0}×\u{00A0}\(last.reps)",
+                        "прошлый раз \(last.weight.formatted(.number.locale(gymAppLocale())))\u{00A0}×\u{00A0}\(last.reps)",
                         languageCode: gymCurrentLanguageCode()
                     )
                     : gymText(
@@ -1825,8 +1848,8 @@ struct ActiveWorkoutView: View {
             // Metric stays on one line: shrink instead of wrapping "92,5 / × 6".
             // At accessibility sizes the caption may wrap by words instead, since its
             // single-line width would stretch the whole exercise card past the gutter.
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-            .minimumScaleFactor(0.75)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.75)
             .multilineTextAlignment(.leading)
         }
         .buttonStyle(.plain)

@@ -693,9 +693,9 @@ struct ProfileView: View {
                 GymSectionTitle(
                     title: gymText("Your watch", "Твій годинник", "Твои часы", languageCode: languageCode),
                     supporting: gymText(
-                        "Live Bluetooth status is available for watches shared with this iPhone. Cloud watches show their latest synchronization state.",
-                        "Поточний статус Bluetooth доступний для годинників, підключених до цього iPhone. Для хмарних годинників показано стан останньої синхронізації.",
-                        "Текущий статус Bluetooth доступен для часов, подключённых к этому iPhone. Для облачных часов показано состояние последней синхронизации.",
+                        "Bluetooth status for watches on this iPhone; cloud watches show their last sync.",
+                        "Bluetooth-статус годинників на цьому iPhone; хмарні показують останню синхронізацію.",
+                        "Bluetooth-статус часов на этом iPhone; облачные показывают последнюю синхронизацию.",
                         languageCode: languageCode
                     )
                 )

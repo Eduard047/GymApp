@@ -850,7 +850,7 @@ struct ExerciseMediaSheet: View {
                                 errorMessage = gymText(
                                     "Couldn’t remove this image. Try again.",
                                     "Не вдалося видалити фото. Спробуйте ще раз.",
-                                    "Не удалось удалить фото. Попробуйте ещё раз.",
+                                    "Не удалось удалить фото. Попробуй ещё раз.",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                             }
