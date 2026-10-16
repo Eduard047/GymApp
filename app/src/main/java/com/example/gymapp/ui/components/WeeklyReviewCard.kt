@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -67,9 +68,10 @@ fun WeeklyReviewCard(
                 IconButton(onClick = { offset = (offset - 1).coerceAtLeast(-520) }, enabled = offset > -520) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.training_previous_week))
                 }
+                val spokenRange = DateTimeUtils.formatDateRangeSpoken(review.start, review.end, locale, LocalDate.now())
                 Text(
                     DateTimeUtils.formatDateRange(review.start, review.end, locale, LocalDate.now()),
-                    modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center
+                    modifier = Modifier.weight(1f).semantics { contentDescription = spokenRange }, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center
                 )
                 IconButton(onClick = { offset = (offset + 1).coerceAtMost(0) }, enabled = offset < 0) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.training_next_week))

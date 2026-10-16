@@ -196,9 +196,10 @@ object DateTimeUtils {
     }
 
     /**
-     * Compact date span such as "Sep 21 – 27", "21–27 вер." or "21—27 сент."; the year (with the
-     * locale's suffix) is added only when the end year differs from the year of [now]. Reproduces
-     * the iOS `DateIntervalFormatter` output, including its thin and narrow spaces.
+     * Week/date-range label shared with the PWA (`fmtWeekRange`) and iOS: "12 окт. – 18 окт." (ru),
+     * "12 жовт. – 18 жовт." (uk), "Oct 12 – Oct 18" (en). Both ends carry the day and abbreviated
+     * month, joined by an en dash with plain spaces. The year (with the locale's suffix) is added to
+     * both ends only when either end falls outside the year of [now].
      */
     fun formatDateRange(
         start: LocalDate,
@@ -206,38 +207,40 @@ object DateTimeUtils {
         locale: Locale = Locale.getDefault(),
         now: LocalDate = LocalDate.now()
     ): String {
-        val sameMonth = start.year == end.year && start.month == end.month
-        val crossYear = start.year != end.year
-        val includeYear = crossYear || end.year != now.year
-        fun month(date: LocalDate) = date.format(formatter("MMM", locale))
-        val startDay = start.dayOfMonth
-        val endDay = end.dayOfMonth
+        val (from, to) = dateRangeEnds(start, end, locale, now)
+        return "$from \u2013 $to"
+    }
+
+    /** Spoken form of [formatDateRange] for screen readers ("from 12 окт. to 18 окт."). */
+    fun formatDateRangeSpoken(
+        start: LocalDate,
+        end: LocalDate,
+        locale: Locale = Locale.getDefault(),
+        now: LocalDate = LocalDate.now()
+    ): String {
+        val (from, to) = dateRangeEnds(start, end, locale, now)
         return when (locale.language.lowercase(Locale.ROOT)) {
-            "uk" -> {
-                val suffix = if (crossYear) "\u202Fрр." else "\u202Fр."
-                val endYear = if (includeYear) " ${end.year}$suffix" else ""
-                when {
-                    sameMonth -> "$startDay\u2013$endDay ${month(end)}$endYear"
-                    crossYear -> "$startDay ${month(start)} ${start.year} \u2013 $endDay ${month(end)}$endYear"
-                    else -> "$startDay ${month(start)} \u2013 $endDay ${month(end)}$endYear"
-                }
-            }
-            "ru" -> {
-                val endYear = if (includeYear) " ${end.year}\u202Fг." else ""
-                when {
-                    sameMonth -> "$startDay\u2014$endDay ${month(end)}$endYear"
-                    crossYear -> "$startDay ${month(start)} ${start.year}\u2009\u2014\u2009$endDay ${month(end)}$endYear"
-                    else -> "$startDay ${month(start)}\u2009\u2014\u2009$endDay ${month(end)}$endYear"
-                }
-            }
-            else -> {
-                val endYear = if (includeYear) ", ${end.year}" else ""
-                when {
-                    sameMonth -> "${month(start)} $startDay\u2009\u2013\u2009$endDay$endYear"
-                    crossYear -> "${month(start)} $startDay, ${start.year}\u2009\u2013\u2009${month(end)} $endDay$endYear"
-                    else -> "${month(start)} $startDay\u2009\u2013\u2009${month(end)} $endDay$endYear"
-                }
+            "uk" -> "з $from по $to"
+            "ru" -> "с $from по $to"
+            else -> "from $from to $to"
+        }
+    }
+
+    private fun dateRangeEnds(
+        start: LocalDate,
+        end: LocalDate,
+        locale: Locale,
+        now: LocalDate
+    ): Pair<String, String> {
+        val includeYear = start.year != now.year || end.year != now.year
+        fun part(date: LocalDate): String {
+            val month = date.format(formatter("MMM", locale))
+            return when (locale.language.lowercase(Locale.ROOT)) {
+                "uk" -> "${date.dayOfMonth} $month" + if (includeYear) " ${date.year} \u0440." else ""
+                "ru" -> "${date.dayOfMonth} $month" + if (includeYear) " ${date.year} \u0433." else ""
+                else -> "$month ${date.dayOfMonth}" + if (includeYear) ", ${date.year}" else ""
             }
         }
+        return part(start) to part(end)
     }
 }
