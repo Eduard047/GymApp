@@ -13,8 +13,8 @@ const between = (from, to) => {
 };
 
 test("the shipped bundles are byte copies of the working files", async () => {
-  assert.equal(source, await readFile("pwa/app.v137.js", "utf8"));
-  assert.equal(await readFile("pwa/styles.css", "utf8"), await readFile("pwa/styles.v105.css", "utf8"));
+  assert.equal(source, await readFile("pwa/app.v138.js", "utf8"));
+  assert.equal(await readFile("pwa/styles.css", "utf8"), await readFile("pwa/styles.v106.css", "utf8"));
 });
 
 // Haptics gate.
@@ -105,7 +105,7 @@ test("deleting a pending set offers a 6 s Undo toast and a recorded-set delete k
 });
 
 // Tracked page swipe decisions.
-const swipeSource = between("const PAGE_SWIPE_LOCK_SLOP", "function historySwipeReducedMotion()");
+const swipeSource = between("const PAGE_SWIPE_LOCK_SLOP", "function pageSwipeReducedMotion()");
 const swipeContext = vm.createContext({ Math, workoutHistoryPeriod: "week", workoutWeekOffset: 0, monthOffsets: { workouts: 0 } });
 vm.runInContext(swipeSource, swipeContext);
 const swipe = (code, vars = {}) => {
@@ -169,15 +169,15 @@ test("history page steps respect the bounds of the week and month ranges", () =>
 });
 
 test("the swipe controller uses pointer events with capture, an edge inset and a no-tracking reduced-motion path", () => {
-  const controller = between("function beginHistorySwipe(", "function inertModalBackground(");
+  const controller = between("function beginPageSwipe(", "function inertModalBackground(");
   assert.match(controller, /event\.clientX < PAGE_SWIPE_EDGE_INSET/);
   assert.match(controller, /setPointerCapture\(event\.pointerId\)/);
   assert.match(controller, /if \(swipe\.reduced\) return;/);
   assert.match(controller, /PAGE_SWIPE_FADE_OUT_MS/);
-  assert.match(controller, /finishHistorySwipePending\(\);\s*card = app\.querySelector/, "an interrupting touch finishes the pending change first");
+  assert.match(controller, /finishPageSwipePending\(\);\s*card = app\.querySelector/, "an interrupting touch finishes the pending change first");
   assert.match(source, /const PAGE_SWIPE_FADE_OUT_MS = 90;/);
   assert.match(source, /const PAGE_SWIPE_FADE_IN_MS = 150;/);
-  assert.match(source, /app\.addEventListener\("pointermove", moveHistorySwipe/);
+  assert.match(source, /app\.addEventListener\("pointermove", movePageSwipe/);
   assert.equal(/Math\.abs\(deltaX\) < 72/.test(source), false, "the 72 px non-tracking swipe is gone");
 });
 

@@ -3791,6 +3791,24 @@ button.leaderboard-row {
   -webkit-user-select: none;
   will-change: transform;
 }
+.training-week-review,
+.activity-heatmap-card,
+.progress-month-swipe {
+  touch-action: pan-y;
+}
+.progress-month-swipe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+.training-week-review.swiping,
+.activity-heatmap-card.swiping,
+.progress-month-swipe.swiping {
+  user-select: none;
+  -webkit-user-select: none;
+  will-change: transform;
+}
 .training-history-head {
   display: flex;
   align-items: center;

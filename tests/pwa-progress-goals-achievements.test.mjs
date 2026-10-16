@@ -86,11 +86,11 @@ function run(language, code) {
 
 test("X1 exercise progress uses the inline month navigator and the card switcher is gone", () => {
   const panel = progressPanel("en", true);
-  assert.ok(panel.startsWith('<div class="month-navigator-inline">'));
+  assert.ok(panel.startsWith('<div class="progress-month-swipe"><div class="month-navigator-inline">'));
   assert.equal((panel.match(/month-navigator-inline/g) || []).length, 1);
   assert.doesNotMatch(appSource, /function monthSwitcher|monthSwitcher\(\)/);
   assert.doesNotMatch(stylesSource, /\.month-switcher|\.month-current-button/);
-  assert.ok(progressPanel("en", false).startsWith('<div class="month-navigator-inline">'));
+  assert.ok(progressPanel("en", false).startsWith('<div class="progress-month-swipe"><div class="month-navigator-inline">'));
 });
 
 test("X2 muscle breakdown drops the duplicate exercise name and shows a groups pill", () => {
