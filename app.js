@@ -11589,8 +11589,8 @@ function storeDownloadPanel() {
       <p class="muted">${tx("Install the Android app or add the companion app to your Garmin watch.", "Встанови застосунок для Android або додай супутній застосунок на годинник Garmin.")}</p>
     </div>
     <div class="store-download-actions">
-      <a class="store-download-link" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("fitness", "store-download-icon")}<span><small>${tx("GET IT ON", "ЗАВАНТАЖИТИ В")}</small><strong>Google Play</strong></span></a>
-      <a class="store-download-link" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${svg("watch", "store-download-icon")}<span><small>${tx("AVAILABLE ON", "ДОСТУПНО В")}</small><strong>Garmin Connect IQ</strong></span></a>
+      <a class="store-download-link" href="${escapeAttr(GOOGLE_PLAY_APP_URL)}" target="_blank" rel="noopener noreferrer">${svg("fitness", "store-download-icon")}<span><small>${tx3("Get it on", "Завантажити в", "Скачать в")}</small><strong>Google Play</strong></span></a>
+      <a class="store-download-link" href="${escapeAttr(garminStoreAppLink())}" target="_blank" rel="noopener noreferrer">${svg("watch", "store-download-icon")}<span><small>${tx3("Available on", "Доступно в", "Доступно в")}</small><strong>Garmin Connect IQ</strong></span></a>
     </div>
   </section>`;
 }
@@ -12444,7 +12444,7 @@ function activationCard() {
       <button class="button ghost full" data-action="activation-edit" ${plan ? "" : "disabled"}>${svg("edit", "small-icon")}${tx3("Review exercises", "Переглянути вправи", "Посмотреть упражнения")}</button>
     </div>` : "";
   return `<section class="panel highlighted activation-card" data-coach-target="today-focus">
-    <div class="activation-plan-heading"><span class="eyebrow">${tx3("YOUR FIRST PLAN", "ТВІЙ ПЕРШИЙ ПЛАН", "ТВОЙ ПЕРВЫЙ ПЛАН")}</span><div class="activation-title-row"><h2>${plan ? escapeHtml(smartFocusLabel(plan.focus)) : tx3("Preparing your plan", "Готуємо твій план", "Готовим твой план")}</h2><button class="activation-options-toggle${optionsOpen ? " open" : ""}" type="button" data-action="activation-options-toggle" aria-label="${optionsLabel}" aria-expanded="${optionsOpen}" aria-pressed="${optionsOpen}">${svg("tune")}</button></div><p>${tx3("Start with the suggestion or build the workout yourself. You can adjust every setting.", "Почни з поради або створи тренування самостійно. Усі налаштування можна змінити.", "Начни с рекомендации или собери тренировку сам. Все настройки можно изменить.")}</p></div>
+    <div class="activation-plan-heading"><span class="eyebrow">${tx3("Your first plan", "Твій перший план", "Твой первый план")}</span><div class="activation-title-row"><h2>${plan ? escapeHtml(smartFocusLabel(plan.focus)) : tx3("Preparing your plan", "Готуємо твій план", "Готовим твой план")}</h2><button class="activation-options-toggle${optionsOpen ? " open" : ""}" type="button" data-action="activation-options-toggle" aria-label="${optionsLabel}" aria-expanded="${optionsOpen}" aria-pressed="${optionsOpen}">${svg("tune")}</button></div><p>${tx3("Start with the suggestion or build the workout yourself. You can adjust every setting.", "Почни з поради або створи тренування самостійно. Усі налаштування можна змінити.", "Начни с рекомендации или собери тренировку сам. Все настройки можно изменить.")}</p></div>
     ${optionsMarkup}
     ${plan ? smartPlanMetricsMarkup(plan) : `<p class="muted activation-plan-unavailable">${tx("Create a manual plan if the recommendation is unavailable.", "Створи план вручну, якщо рекомендація недоступна.")}</p>`}
     <div class="activation-actions"><button class="button full" data-action="activation-start" ${plan ? `data-coach-target="today-primary"` : "disabled"}>${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="activation-manual" type="button" data-action="activation-manual" ${plan ? "" : `data-coach-target="today-primary"`}>${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button></div>
@@ -12515,14 +12515,22 @@ function observeMetricTileResize() {
 function fitMetricTileValues() {
   if (typeof app?.querySelectorAll !== "function") return;
   observeMetricTileResize();
-  app.querySelectorAll(".metric-grid strong").forEach(value => {
+  app.querySelectorAll(".metric-grid strong, .weekly-summary-metrics strong").forEach(value => {
     value.style.fontSize = "";
     const available = value.clientWidth;
     const needed = value.scrollWidth;
     if (!(available > 0) || needed <= available) return;
     const baseSize = parseFloat(window.getComputedStyle(value).fontSize) || 22;
-    const scale = Math.max(METRIC_TILE_MIN_VALUE_SCALE, available / needed);
-    value.style.fontSize = `${Math.floor(baseSize * scale * 10) / 10}px`;
+    // Two pixels of slack: scrollWidth rounds and glyph advances scale unevenly, so an exact fit could still clip the last glyph.
+    const scale = Math.max(METRIC_TILE_MIN_VALUE_SCALE, (available - 2) / needed);
+    let size = Math.floor(baseSize * scale * 10) / 10;
+    value.style.fontSize = `${size}px`;
+    // Rounded glyph advances can leave the value a pixel wide; step down until it fits or reaches the floor.
+    const floor = baseSize * METRIC_TILE_MIN_VALUE_SCALE;
+    for (let attempt = 0; attempt < 4 && value.scrollWidth > value.clientWidth && size - 0.5 >= floor; attempt += 1) {
+      size -= 0.5;
+      value.style.fontSize = `${size}px`;
+    }
   });
   fitSoloIdentityRows();
 }
@@ -12868,7 +12876,7 @@ function sourceBodyMapSvg(data, maxLoad, { interactive = true, showLabels = true
     const intensity = item && maxLoad > 0 ? Math.min(1, item.load / maxLoad) : 0;
     const selected = interactive && muscleId && selectedMuscle === muscleId;
     const interactionAttrs = interactive && muscleId ? ` data-action="select-muscle" data-id="${muscleId}"` : "";
-    return `<path class="body-region heat-${heatStep(intensity)}${selected ? " selected" : ""}" d="${escapeAttr(region.pathData)}" aria-hidden="true" focusable="false"${interactionAttrs}><title>${escapeHtml(region.name)}${item ? ` · ${formatGroupedCount(item.load)} ${tx("load", "навантаження")}` : ""}</title></path>`;
+    return `<path class="body-region heat-${heatStep(intensity)}${selected ? " selected" : ""}" d="${escapeAttr(region.pathData)}" aria-hidden="true" focusable="false"${interactionAttrs}>${muscleId ? `<title>${escapeHtml(muscleLabel(muscleId))}${item ? ` · ${formatGroupedCount(item.load)} ${tx("load", "навантаження")}` : ""}</title>` : ""}</path>`;
   }).join("");
   return `<div class="body-map-svg-wrap">
     <svg class="body-map-svg" viewBox="0 0 72 93" role="img" aria-label="${txAttr("Muscle load map", "Карта навантаження м'язів")}">
@@ -12882,7 +12890,7 @@ function muscleMapSelectionList(data) {
   return `<div class="muscle-map-selector" role="group" aria-label="${escapeAttr(tx3("Choose muscle group", "Обрати групу м’язів", "Выбрать группу мышц"))}">${data.map(item => {
     const selected = selectedMuscle === item.id;
     const load = formatGroupedCount(Math.max(0, Number(item.load) || 0));
-    return `<button class="chip buttonlike ${selected ? "selected" : ""}" data-action="select-muscle" data-id="${escapeAttr(item.id)}" aria-pressed="${selected}"><span>${escapeHtml(item.label)}</span><small>${escapeHtml(load)} ${tx("load", "навантаження")}</small></button>`;
+    return `<button class="chip buttonlike ${selected ? "selected" : ""}" data-action="select-muscle" data-id="${escapeAttr(item.id)}" aria-pressed="${selected}" aria-label="${escapeAttr(`${item.label}: ${load} ${tx("load", "навантаження")}`)}"><span>${escapeHtml(item.label)}</span><small>${escapeHtml(load)}</small></button>`;
   }).join("")}</div>`;
 }
 
@@ -15300,7 +15308,7 @@ function applyDraftStep(blockIndex, setIndex, field, direction) {
     const allowed = smartExerciseLoadProfile(block)?.allowedWeightsKg || [];
     const target = activeWeightStepInfo(weight, allowed)[direction > 0 ? "plus" : "minus"];
     if (!target.canMove) return false;
-    input.value = String(target.weight);
+    input.value = activeWeightFieldText(String(target.weight));
   } else {
     const reps = activeStepReps(input.value, direction);
     if (reps == null) return false;
@@ -15705,7 +15713,7 @@ function draftSetRowMarkup(block, blockIndex, set, setIndex, lastWeight) {
   const refAttrs = ` data-block="${b}" data-set="${i}"`;
   const chip = (action, label, aria, disabled = false) => `<button type="button" class="set-chip" data-action="${action}"${refAttrs} aria-label="${escapeAttr(aria)}"${disabled ? " disabled" : ""}>${escapeHtml(label)}</button>`;
   const title = block.exerciseName ? exerciseDisplayName(block) : "";
-  const weightText = String(set.weight ?? "");
+  const weightText = activeWeightFieldText(String(set.weight ?? ""));
   const repsText = String(set.reps ?? "");
   const input = (field, label, placeholder, mode) => `<input class="set-editor-input" inputmode="${mode}" aria-label="${escapeAttr(label)}"${refAttrs} data-field="${field}" value="${escapeAttr(field === "weight" ? weightText : repsText)}" placeholder="${escapeAttr(placeholder)}">`;
   const editor = setEditorCapsulesMarkup(`${b}-${i}`, activeStepperState(block, weightText, repsText), {
@@ -15817,7 +15825,7 @@ function smartPanel(rec, blockIndex) {
     if (rec.loadMode === "Bodyweight" && set.weight === 0) return tx("bodyweight", "власна вага");
     return `${escapeHtml(formatLocalizedSetWeight(set.weight))}`;
   };
-  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p>${rec.sets.map(s => `${setLabel(s)} × ${s.reps}`).join(" | ")}</p>${rec.rirGuidance ? `<p class="smart-rir-guidance">${escapeHtml(rec.rirGuidance)}</p>` : ""}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${svg("auto", "small-icon")}${t("applySmart")}</button></div>`;
+  return `<div class="subpanel smart"><div class="row-head"><div><strong>${t("smartCoach")}</strong><p>${rec.kind}</p></div>${svg("auto", "small-icon")}</div><p class="smart-set-list">${rec.sets.map(s => `<span class="smart-set">${setLabel(s)} × ${s.reps}</span>`).join("")}</p>${rec.rirGuidance ? `<p class="smart-rir-guidance">${escapeHtml(rec.rirGuidance)}</p>` : ""}<button class="button full" data-action="apply-smart" data-block="${blockIndex}">${svg("auto", "small-icon")}${t("applySmart")}</button></div>`;
 }
 
 function smartRecommendationForBlock(block) {
@@ -17332,7 +17340,7 @@ function workoutComparisonCard(session) {
     const delta = difference === 0
       ? tx3("no change", "без змін", "без изменений")
       : `${difference > 0 ? "+" : "−"}${amount(Math.abs(difference))}`;
-    return `<div><span>${escapeHtml(metric.label)}</span><strong>${amount(current)}${unitSuffix}</strong><small>${tx3("Previous", "Раніше", "Раньше")} ${amount(previous)}${unitSuffix} · <span class="nowrap comparison-delta${difference > 0 ? " up" : ""}">${escapeHtml(delta)}${difference !== 0 ? unitSuffix : ""}</span></small></div>`;
+    return `<div><span>${escapeHtml(metric.label)}</span><strong>${amount(current)}${unitSuffix}</strong><small><span class="nowrap">${tx3("Previous", "Раніше", "Раньше")} ${amount(previous)}${unitSuffix}</span> <span class="nowrap comparison-delta${difference > 0 ? " up" : ""}">${escapeHtml(delta)}${difference !== 0 ? unitSuffix : ""}</span></small></div>`;
   }).join("")}</div></section>`;
 }
 
@@ -17650,10 +17658,17 @@ function savedWorkoutHeroToggle(session, editing) {
   return `<button class="button hero-text-button" type="button" data-action="${editing ? "finish-workout-edit" : "edit-workout"}" data-id="${id}">${svg(editing ? "checkCircle" : "edit", "small-icon")}${editing ? tx3("Done editing", "Завершити редагування", "Завершить редактирование") : tx3("Edit workout", "Редагувати тренування", "Редактировать тренировку")}</button>`;
 }
 
-function formatSetWeight(weight) {
+// Raw dot-decimal text for values that are parsed back (voice plan weights).
+function formatSetWeightRaw(weight) {
   const value = Number(weight);
   if (!Number.isFinite(value)) return "0";
   return value % 1 === 0 ? String(value.toFixed(0)) : value.toFixed(1);
+}
+
+// Displayed weight in the active locale (RU/UK decimal comma).
+function formatSetWeight(weight) {
+  const value = Number(weight);
+  return new Intl.NumberFormat(displayLocale(), { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0);
 }
 
 function formatLocalizedSetWeight(weight) {
@@ -25675,14 +25690,29 @@ function applyLoadProfilePreset(step) {
   if (![2.5, 5].includes(step)) return;
   const input = document.querySelector("#load-profile-weights");
   if (!input) return;
-  input.value = Array.from({ length: Math.floor(200 / step) }, (_, index) => (index + 1) * step).join(", ");
+  input.value = loadProfileWeightsText(Array.from({ length: Math.floor(200 / step) }, (_, index) => (index + 1) * step));
   input.focus();
+}
+
+// Decimal-comma locales (RU/UK) list machine weights as "20; 22,5; 25" because the comma is the decimal mark there.
+function loadProfileUsesDecimalComma() {
+  return state.language === "ru" || state.language === "uk";
+}
+
+function loadProfileWeightsText(weights) {
+  const list = Array.isArray(weights) ? weights : [];
+  return loadProfileUsesDecimalComma()
+    ? list.map(weight => String(weight).replace(".", ",")).join("; ")
+    : list.join(", ");
 }
 
 function parsedLoadProfileWeights(rawValue) {
   const value = String(rawValue || "").trim();
   if (!value || !/^[\d\s,.;]+$/u.test(value)) return null;
-  const tokens = value.split(/[\s,;]+/u).filter(Boolean);
+  // In RU/UK the comma is a decimal mark; values are separated by spaces, semicolons or new lines.
+  const tokens = loadProfileUsesDecimalComma()
+    ? value.split(/[\s;]+/u).map(token => token.replace(/^,+|,+$/gu, "").replace(",", ".")).filter(Boolean)
+    : value.split(/[\s,;]+/u).filter(Boolean);
   if (tokens.some(token => !/^\d+(?:\.\d+)?$/u.test(token))) return null;
   const weights = [...new Set(tokens.map(Number))]
     .sort((left, right) => left - right);
@@ -26031,7 +26061,7 @@ function progressScreen() {
   } else if (selectedSection === "goals") {
     content = missionsScreen();
   } else if (!state.sessions.some(session => Array.isArray(session?.sets) && session.sets.length > 0)) {
-    content = `${trainingWeeklyReviewMarkup()}<section class="hero-panel progress-empty-state"><span class="eyebrow">${tx3("FIRST WORKOUT", "ПЕРШЕ ТРЕНУВАННЯ", "ПЕРВАЯ ТРЕНИРОВКА")}</span><h2>${tx3("Progress starts with your first saved set", "Прогрес починається з першого збереженого підходу", "Прогресс начинается с первого сохранённого подхода")}</h2><p>${tx3("Finish a workout to unlock your calendar, muscle map, and exercise trends.", "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.", "Завершите тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.")}</p><button class="button" data-action="open-add">${svg("fitness", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
+    content = `${trainingWeeklyReviewMarkup()}<section class="hero-panel progress-empty-state"><span class="eyebrow">${tx3("First workout", "Перше тренування", "Первая тренировка")}</span><h2>${tx3("Progress starts with your first saved set", "Прогрес починається з першого збереженого підходу", "Прогресс начинается с первого сохранённого подхода")}</h2><p>${tx3("Finish a workout to unlock your calendar, muscle map, and exercise trends.", "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.", "Завершите тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.")}</p><button class="button" data-action="open-add">${svg("fitness", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
   } else {
     content = `${trainingWeeklyReviewMarkup()}${overviewCards(selectedMonthSessions())}`;
   }
@@ -26171,7 +26201,7 @@ function safeChartValue(value) {
 function progressHistoryCard(group) {
   const volume = group.sets.reduce((sum, s) => sum + Number(s.weight || 0) * Number(s.reps || 0), 0);
   const reps = group.sets.reduce((sum, x) => sum + Number(x.reps || 0), 0);
-  return `<article class="workout-item"><h3>${fmtShortDate(group.session.startedAt)}</h3><div class="chip-row"><span class="chip">${tx("Sets", "Підходи")}: ${group.sets.length}</span><span class="chip">${tx("Reps", "Повтори")}: ${reps}</span><span class="chip">${tx("Volume", "Обсяг")}: ${escapeHtml(formatLocalizedSetWeight(Math.round(volume)))}</span></div><div class="table progress-history-table"><div class="table-row"><strong>${tx("Set", "Підхід")}</strong><strong>${tx("Weight", "Вага")}</strong><strong>${tx("Reps", "Повтори")}</strong></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${Number(set.weight || 0).toFixed(1)}</span><span>${Number(set.reps || 0)}</span></div>`).join("")}</div></article>`;
+  return `<article class="workout-item"><h3>${fmtShortDate(group.session.startedAt)}</h3><div class="chip-row"><span class="chip">${tx("Sets", "Підходи")}: ${group.sets.length}</span><span class="chip">${tx("Reps", "Повтори")}: ${reps}</span><span class="chip">${tx("Volume", "Обсяг")}: ${escapeHtml(formatLocalizedSetWeight(Math.round(volume)))}</span></div><div class="table progress-history-table"><div class="table-row"><strong>${tx("Set", "Підхід")}</strong><strong>${tx("Weight", "Вага")}</strong><strong>${tx("Reps", "Повтори")}</strong></div>${group.sets.map((set, i) => `<div class="table-row"><span>${tx("Set", "Підхід")} ${i + 1}</span><span>${escapeHtml(formatLocalizedSetWeight(set.weight))}</span><span>${Number(set.reps || 0)}</span></div>`).join("")}</div></article>`;
 }
 
 function missionsScreen() {
@@ -26201,17 +26231,20 @@ function missionsScreen() {
     ? `<section class="mission-list" id="mission-panel-${missionPeriod}" role="tabpanel" aria-labelledby="mission-tab-${missionPeriod}">${selected.missions.map(missionCard).join("")}</section>`
     : `<section class="panel empty-state-panel"><h2>${tx("No missions yet", "Місій ще немає")}</h2><p>${tx("Add workouts to unlock daily, weekly, and monthly goals.", "Додай тренування, щоб відкрити щоденні, тижневі й місячні цілі.")}</p><button class="button" data-action="open-add">${svg("add", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
   const formatXpNumber = value => Number(value).toLocaleString(displayLocale());
-  // A non-breaking space before each separator keeps the dot with the item it follows, so a wrapped rank row never starts a line with a dot.
+  // Level and rank stay together on the title line (non-breaking spaces around the dot); the XP total is the row subtitle, so no wrapped line ever starts or ends with a dot.
   const nbsp = "\u00A0";
-  const levelSummary = tx3(
-    `Level ${levelState.level}${nbsp}· ${rankTitle(xp)}${nbsp}· ${formatXpNumber(xp)}${nbsp}XP`,
-    `Рівень ${levelState.level}${nbsp}· ${rankTitle(xp)}${nbsp}· ${formatXpNumber(xp)}${nbsp}XP`,
-    `Уровень ${levelState.level}${nbsp}· ${rankTitle(xp)}${nbsp}· ${formatXpNumber(xp)}${nbsp}XP`
+  const levelTitle = tx3(
+    `Level ${levelState.level}${nbsp}·${nbsp}${rankTitle(xp)}`,
+    `Рівень ${levelState.level}${nbsp}·${nbsp}${rankTitle(xp)}`,
+    `Уровень ${levelState.level}${nbsp}·${nbsp}${rankTitle(xp)}`
   );
+  const xpSubtitle = `${formatXpNumber(xp)}${nbsp}XP`;
+  const levelSummary = `${levelTitle}${nbsp}·${nbsp}${xpSubtitle}`;
   const ranksHint = tx3("Opens ranks", "Відкриває ранги", "Открывает ранги");
   const rankRow = settingsPanelMarkup([settingsRowMarkup({
     icon: "trophy",
-    title: levelSummary,
+    title: levelTitle,
+    subtitle: xpSubtitle,
     action: "open-ranks",
     attrs: `aria-label="${escapeAttr(`${levelSummary}. ${ranksHint}`)}"`
   })], "missions-rank-panel");
@@ -27044,8 +27077,8 @@ function modalMarkup() {
     if (!exercise) return "";
     const profile = normalizeExerciseLoadProfile(exercise.loadProfile);
     const direction = profile?.direction || (analyzeSmartExercise(exercise).loadMode === "Assistance" ? "lowerIsHarder" : "higherIsHarder");
-    const weights = profile?.allowedWeightsKg.join(", ") || "";
-    return bottomSheet(`<h2>${tx("Machine weights", "Ваги тренажера")}</h2><p><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong></p><p class="muted">${tx("Enter only the weights this machine can actually select. Smart Coach will never invent a value between them; saved history stays unchanged.", "Вкажи лише ті ваги, які реально можна вибрати на цьому тренажері. Розумний тренер не вигадуватиме проміжні значення; збережена історія не зміниться.")}</p><label>${tx("Difficulty direction", "Напрям складності")}<select id="load-profile-direction"><option value="higherIsHarder" ${direction === "higherIsHarder" ? "selected" : ""}>${tx("More kg is harder", "Більше кг — складніше")}</option><option value="lowerIsHarder" ${direction === "lowerIsHarder" ? "selected" : ""}>${tx("Less kg is harder (assistance machine)", "Менше кг — складніше (гравітрон)")}</option></select></label><span class="field-caption">${tx("Quick machine-stack presets", "Швидкі шаблони стека")}</span><div class="chip-row"><button class="chip buttonlike" data-action="load-profile-preset" data-step="2.5">2.5 kg</button><button class="chip buttonlike" data-action="load-profile-preset" data-step="5">5 kg</button></div><label>${tx("Selectable weights in kg", "Доступні ваги в кг")}<textarea id="load-profile-weights" maxlength="2048" placeholder="20, 22.5, 25, 27.5">${escapeHtml(weights)}</textarea></label><p class="muted">${tx("Use spaces, commas, semicolons, or new lines; use a dot for decimals. Up to 128 unique values.", "Використовуй пробіли, коми, крапки з комою або нові рядки; для дробів використовуй крапку. До 128 унікальних значень.")}</p><div class="actions vertical"><button class="button full" data-action="save-load-profile" data-id="${exercise.id}">${tx("Save machine weights", "Зберегти ваги тренажера")}</button>${profile ? `<button class="button ghost full" data-action="remove-load-profile" data-id="${exercise.id}">${tx("Use automatic weight steps", "Використовувати автоматичні кроки ваги")}</button>` : ""}</div>`);
+    const weights = loadProfileWeightsText(profile?.allowedWeightsKg || []);
+    return bottomSheet(`<h2>${tx("Machine weights", "Ваги тренажера")}</h2><p><strong>${escapeHtml(exerciseDisplayName(exercise))}</strong></p><p class="muted">${tx("Enter only the weights this machine can actually select. Smart Coach will never invent a value between them; saved history stays unchanged.", "Вкажи лише ті ваги, які реально можна вибрати на цьому тренажері. Розумний тренер не вигадуватиме проміжні значення; збережена історія не зміниться.")}</p><label>${tx("Difficulty direction", "Напрям складності")}<select id="load-profile-direction"><option value="higherIsHarder" ${direction === "higherIsHarder" ? "selected" : ""}>${tx("More kg is harder", "Більше кг — складніше")}</option><option value="lowerIsHarder" ${direction === "lowerIsHarder" ? "selected" : ""}>${tx("Less kg is harder (assistance machine)", "Менше кг — складніше (гравітрон)")}</option></select></label><span class="field-caption">${tx("Quick machine-stack presets", "Швидкі шаблони стека")}</span><div class="chip-row"><button class="chip buttonlike" data-action="load-profile-preset" data-step="2.5">${escapeHtml(formatLocalizedSetWeight(2.5))}</button><button class="chip buttonlike" data-action="load-profile-preset" data-step="5">${escapeHtml(formatLocalizedSetWeight(5))}</button></div><label>${tx("Selectable weights in kg", "Доступні ваги в кг")}<textarea id="load-profile-weights" maxlength="2048" placeholder="${escapeAttr(loadProfileWeightsText([20, 22.5, 25, 27.5]))}">${escapeHtml(weights)}</textarea></label><p class="muted">${tx3("Use spaces, commas, semicolons, or new lines; use a dot for decimals. Up to 128 unique values.", "Розділяй значення пробілами, крапкою з комою або новими рядками; для дробів використовуй кому. До 128 унікальних значень.", "Разделяй значения пробелами, точкой с запятой или новыми строками; для дробей используй запятую. До 128 уникальных значений.")}</p><div class="actions vertical"><button class="button full" data-action="save-load-profile" data-id="${exercise.id}">${tx("Save machine weights", "Зберегти ваги тренажера")}</button>${profile ? `<button class="button ghost full" data-action="remove-load-profile" data-id="${exercise.id}">${tx("Use automatic weight steps", "Використовувати автоматичні кроки ваги")}</button>` : ""}</div>`);
   }
   if (modal.type === "history") return bottomSheet(exerciseHistoryMarkup(modal.exercise));
   if (modal.type === "map") return bottomSheet(mappingEditor(modal.name));
@@ -34039,7 +34072,7 @@ function selectWorkoutExercise(exerciseId) {
     const lastWeight = lastWeightFor(identity.exerciseName);
     const nextBlock = {
       ...identity,
-      sets: [{ weight: lastWeight != null && Number.isFinite(lastWeight) && lastWeight > 0 ? formatSetWeight(lastWeight) : "", reps: "" }]
+      sets: [{ weight: lastWeight != null && Number.isFinite(lastWeight) && lastWeight > 0 ? formatSetWeightRaw(lastWeight) : "", reps: "" }]
     };
     if (pristineOnly) workoutDraft.blocks[0] = nextBlock;
     else workoutDraft.blocks.push(nextBlock);
