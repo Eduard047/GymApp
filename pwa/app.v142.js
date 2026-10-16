@@ -12441,8 +12441,10 @@ function activationCard() {
   return `<section class="panel highlighted activation-card" data-coach-target="today-focus">
     <div class="activation-plan-heading"><span class="eyebrow">${tx3("Your first plan", "Твій перший план", "Твой первый план")}</span><div class="activation-title-row"><h2>${plan ? escapeHtml(smartFocusLabel(plan.focus)) : tx3("Preparing your plan", "Готуємо твій план", "Готовим твой план")}</h2><button class="activation-options-toggle${optionsOpen ? " open" : ""}" type="button" data-action="activation-options-toggle" aria-label="${optionsLabel}" aria-expanded="${optionsOpen}" aria-pressed="${optionsOpen}">${svg("tune")}</button></div><p>${tx3("Start with the suggestion or build the workout yourself. You can adjust every setting.", "Почни з поради або створи тренування самостійно. Усі налаштування можна змінити.", "Начни с рекомендации или собери тренировку сам. Все настройки можно изменить.")}</p></div>
     ${optionsMarkup}
-    ${plan ? smartPlanMetricsMarkup(plan) : `<p class="muted activation-plan-unavailable">${tx("Create a manual plan if the recommendation is unavailable.", "Створи план вручну, якщо рекомендація недоступна.")}</p>`}
-    <div class="activation-actions"><button class="button full" data-action="activation-start" ${plan ? `data-coach-target="today-primary"` : "disabled"}>${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="activation-manual" type="button" data-action="activation-manual" ${plan ? "" : `data-coach-target="today-primary"`}>${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button></div>
+    ${plan ? smartPlanMetricsMarkup(plan) : ""}
+    <div class="activation-actions">${plan
+      ? `<button class="button full" data-action="activation-start" data-coach-target="today-primary">${tx3("Use suggested plan", "Використати пораду", "Использовать рекомендацию")}</button><button class="activation-manual" type="button" data-action="activation-manual">${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button>`
+      : `<button class="button full" type="button" data-action="activation-manual" data-coach-target="today-primary">${tx3("Build manually", "Створити вручну", "Собрать вручную")}</button>`}</div>
     ${todayFriendPillMarkup()}
   </section>`;
 }
@@ -25568,7 +25570,9 @@ function exercisesScreen() {
   const mappingRows = filteredLibraryExercises();
   return `<div class="coach-screen-anchor"><section class="screen-copy compact exercises-header" data-coach-target="exercises-screen"><h2>${t("exercises")}</h2><button class="exercise-add-button" data-action="open-exercise-add" aria-label="${escapeAttr(t("addExercise"))}">${svg("add")}</button></section>
     ${exerciseFilterControls()}
-    <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : `<section class="panel empty-state-panel"><h3>${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</h3><p>${tx("Clear filters to return to the full exercise library.", "Очисть фільтри, щоб повернутися до повного каталогу вправ.")}</p><button class="button secondary" data-action="reset-exercise-filters">${tx("Clear filters", "Очистити фільтри")}</button></section>`}</section></div>`;
+    <section class="exercise-list">${mappingRows.length ? mappingRows.map(exerciseRow).join("") : state.exercises.length === 0
+      ? `<section class="panel empty-state-panel"><h3>${tx3("No exercises yet", "Ще немає вправ", "Пока нет упражнений")}</h3><p>${tx3("Add your first exercise to start building workouts.", "Додай першу вправу, щоб складати тренування.", "Добавь первое упражнение, чтобы собирать тренировки.")}</p><button class="button" data-action="open-exercise-add">${svg("add", "small-icon")}${tx3("Add exercise", "Додати вправу", "Добавить упражнение")}</button></section>`
+      : `<section class="panel empty-state-panel"><h3>${tx("No matching exercises.", "Вправ за цими фільтрами не знайдено.")}</h3><p>${tx("Clear filters to return to the full exercise library.", "Очисть фільтри, щоб повернутися до повного каталогу вправ.")}</p><button class="button secondary" data-action="reset-exercise-filters">${tx("Clear filters", "Очистити фільтри")}</button></section>`}</section></div>`;
 }
 
 function exerciseFilterControls() {
@@ -26070,7 +26074,7 @@ function progressScreen() {
   } else if (selectedSection === "goals") {
     content = missionsScreen();
   } else if (!state.sessions.some(session => Array.isArray(session?.sets) && session.sets.length > 0)) {
-    content = `${trainingWeeklyReviewMarkup()}<section class="hero-panel progress-empty-state"><span class="eyebrow">${tx3("First workout", "Перше тренування", "Первая тренировка")}</span><h2>${tx3("Progress starts with your first saved set", "Прогрес починається з першого збереженого підходу", "Прогресс начинается с первого сохранённого подхода")}</h2><p>${tx3("Finish a workout to unlock your calendar, muscle map, and exercise trends.", "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.", "Завершите тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.")}</p><button class="button" data-action="open-add">${svg("fitness", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
+    content = `<section class="hero-panel progress-empty-state"><span class="eyebrow">${tx3("First workout", "Перше тренування", "Первая тренировка")}</span><h2>${tx3("Progress starts with your first saved set", "Прогрес починається з першого збереженого підходу", "Прогресс начинается с первого сохранённого подхода")}</h2><p>${tx3("Finish a workout to unlock your calendar, muscle map, and exercise trends.", "Заверши тренування, щоб відкрити календар, карту м’язів і тренди вправ.", "Завершите тренировку, чтобы открыть календарь, карту мышц и динамику упражнений.")}</p><button class="button" data-action="open-add">${svg("fitness", "small-icon")}${tx("Start workout", "Почати тренування")}</button></section>`;
   } else {
     content = `${trainingWeeklyReviewMarkup()}${overviewCards(selectedMonthSessions())}`;
   }

@@ -684,12 +684,14 @@ test("first-plan actions use the exact shared EN, UK, and RU terminology", () =>
     ru: ["Использовать рекомендацию", "Посмотреть упражнения", "Собрать вручную"]
   };
   for (const [language, labels] of Object.entries(expected)) {
-    const actions = ["activation-start", "activation-edit", "activation-manual"];
-    actions.forEach((action, index) => {
-      assert.match(markup[language], new RegExp(`data-action="${action}"[^>]*>(?:<svg[^>]*>.*?</svg>)?${labels[index]}</button>`));
-    });
+    // Without a ready recommendation there is no dead "Use suggested plan" control: manual build is the one primary.
+    assert.doesNotMatch(markup[language], /data-action="activation-start"/);
+    assert.match(markup[language], new RegExp(`class="button full"[^>]*data-action="activation-manual"[^>]*>${labels[2]}</button>`));
+    assert.match(markup[language], new RegExp(`data-action="activation-edit"[^>]*>(?:<svg[^>]*>.*?</svg>)?${labels[1]}</button>`));
     assert.doesNotMatch(markup[language], /Start exact plan|Edit exact plan|Почати цей план|Редагувати цей план|Начать этот план|Редактировать этот план/);
   }
+  // With a ready recommendation the suggested plan is the one primary and manual build is secondary.
+  assert.match(appSource, /data-action="activation-start" data-coach-target="today-primary">\$\{tx3\("Use suggested plan", "Використати пораду", "Использовать рекомендацию"\)\}/);
 });
 
 test("onboarding mirrors the exact five-step EN, UK, and RU product contract", () => {
