@@ -12494,6 +12494,7 @@ const METRIC_TILE_MIN_VALUE_SCALE = 0.6;
 // Metric values stay on one line and shrink to fit their tile instead of wrapping or truncating.
 let metricTileResizeObserver = null;
 let metricTileFitPending = false;
+const metricTileObservedGrids = new Set();
 
 // A narrower window can make a value overflow without a new render, so refit on resize too.
 function observeMetricTileResize() {
@@ -12517,7 +12518,19 @@ function fitMetricTileValues() {
   if (typeof app?.querySelectorAll !== "function") return;
   observeMetricTileResize();
   // Each tile grid is observed too, so a value refits when its own tile changes width (tour overlay, text size, rotation).
-  if (metricTileResizeObserver) app.querySelectorAll(".metric-grid, .weekly-summary-metrics, .summary-hero-stats").forEach(grid => metricTileResizeObserver.observe(grid));
+  // Grids replaced by a render are unobserved so the observer never keeps detached trees alive.
+  if (metricTileResizeObserver) {
+    metricTileObservedGrids.forEach(grid => {
+      if (grid.isConnected) return;
+      metricTileResizeObserver.unobserve(grid);
+      metricTileObservedGrids.delete(grid);
+    });
+    app.querySelectorAll(".metric-grid, .weekly-summary-metrics, .summary-hero-stats").forEach(grid => {
+      if (metricTileObservedGrids.has(grid)) return;
+      metricTileObservedGrids.add(grid);
+      metricTileResizeObserver.observe(grid);
+    });
+  }
   app.querySelectorAll(METRIC_TILE_VALUE_SELECTOR).forEach(value => {
     value.style.fontSize = "";
     value.classList.remove("fit-wrap");

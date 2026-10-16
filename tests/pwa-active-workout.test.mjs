@@ -5229,3 +5229,31 @@ test("a drag drop adds no haptic of its own (pickup and slot ticks already fired
   assert.equal(await vm.runInContext(`requestMoveActiveExercise(${bench}, -1)`, context), true);
   assert.deepEqual(activeRunJson(context, "globalThis.__vibrations"), [6]);
 });
+
+test("metric tile grids that a render detached are unobserved and observed grids are not re-observed", () => {
+  const { context, appNode } = loadContext();
+  const windowObject = vm.runInContext("window", context);
+  windowObject.getComputedStyle = () => ({ fontSize: "22px" });
+  const observed = new Set();
+  let observeCalls = 0;
+  windowObject.ResizeObserver = class {
+    constructor() {}
+    observe(target) { observeCalls += 1; observed.add(target); }
+    unobserve(target) { observed.delete(target); }
+  };
+  const gridA = { isConnected: true };
+  const gridB = { isConnected: true };
+  let grids = [gridA, gridB];
+  appNode.querySelectorAll = selector => selector === ".metric-grid, .weekly-summary-metrics, .summary-hero-stats" ? grids : [];
+  vm.runInContext("fitMetricTileValues()", context);
+  assert.equal(observeCalls, 3, "app plus both grids");
+  // A render replaces gridA with a new grid; the old one is detached.
+  const gridC = { isConnected: true };
+  gridA.isConnected = false;
+  grids = [gridB, gridC];
+  vm.runInContext("fitMetricTileValues()", context);
+  assert.equal(observed.has(gridA), false, "the detached grid is released");
+  assert.equal(observed.has(gridB), true);
+  assert.equal(observed.has(gridC), true);
+  assert.equal(observeCalls, 4, "only the new grid is observed again");
+});
