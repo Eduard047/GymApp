@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,8 +53,15 @@ fun WeeklyReviewCard(
     var evidence by remember { mutableStateOf<WeeklyReviewInsight?>(null) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val review = WeeklyReview.build(history, offset)
-    AppPanel {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // The card follows the finger between weeks (rubber-banded at the current week); the chevrons stay.
+    val swipe = rememberGymTrackedSwipe(
+        canPrevious = offset > -520,
+        canNext = offset < 0,
+        onPrevious = { offset = (offset - 1).coerceAtLeast(-520) },
+        onNext = { offset = (offset + 1).coerceAtMost(0) }
+    )
+    AppPanel(modifier = Modifier.then(swipe.gesture)) {
+        Column(Modifier.fillMaxWidth().graphicsLayer { translationX = swipe.offset }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.training_weekly_review), style = MaterialTheme.typography.titleLarge)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { offset = (offset - 1).coerceAtLeast(-520) }, enabled = offset > -520) {

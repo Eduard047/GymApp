@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
@@ -55,6 +56,7 @@ import com.example.gymapp.ui.components.GymMonthNavigator
 import com.example.gymapp.ui.components.InfoPill
 import com.example.gymapp.ui.components.MetricTile
 import com.example.gymapp.ui.components.SectionTitle
+import com.example.gymapp.ui.components.rememberGymTrackedSwipe
 import com.example.gymapp.ui.components.adaptiveScreenHorizontalPadding
 import com.example.gymapp.ui.theme.GymSpacing
 import com.example.gymapp.ui.util.currentAppLanguageTag
@@ -127,8 +129,18 @@ fun ExerciseProgressScreen(
             .sortedByDescending { it.sessionDate }
     }
 
+    // The month page follows the finger (rubber-banded at the current month); the chevrons stay.
+    val swipe = rememberGymTrackedSwipe(
+        canPrevious = true,
+        canNext = uiState.monthOffset < 0,
+        onPrevious = onPreviousMonth,
+        onNext = onNextMonth
+    )
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .then(swipe.gesture)
+            .graphicsLayer { translationX = swipe.offset },
         contentPadding = PaddingValues(
             start = screenHorizontalPadding,
             top = GymSpacing.ScreenTop,

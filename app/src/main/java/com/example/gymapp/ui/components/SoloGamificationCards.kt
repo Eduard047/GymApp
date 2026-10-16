@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -354,12 +355,23 @@ fun ActivityHeatmapCard(
     onCurrentMonth: () -> Unit = {},
     onNextMonth: () -> Unit = {}
 ) {
+    // The card follows the finger between months (rubber-banded at the current month); the chevrons stay.
+    val swipe = rememberGymTrackedSwipe(
+        canPrevious = true,
+        canNext = !isCurrentMonth,
+        onPrevious = onPreviousMonth,
+        onNext = onNextMonth
+    )
     AppPanel(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(swipe.gesture),
         highlighted = true
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .graphicsLayer { translationX = swipe.offset }
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Left block = title over month navigator, glued together. The pill sits beside it
