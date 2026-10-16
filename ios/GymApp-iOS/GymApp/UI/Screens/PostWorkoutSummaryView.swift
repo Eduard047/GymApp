@@ -318,7 +318,11 @@ struct PostWorkoutSummaryView: View {
     /// Compact "sets · volume · duration" row at the top of the hero.
     private func heroStatsRow(_ workout: WorkoutSession) -> some View {
         let duration = gymCompactDuration(workout.durationSeconds ?? 0, languageCode: languageCode)
-        return HStack(alignment: .top, spacing: 8) {
+        // At large text the three stats stack so values and labels keep whole words.
+        let layout: AnyLayout = dynamicTypeSize >= .xxxLarge
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 8))
+        return layout {
             heroStat(
                 value: workout.setCount.formatted(.number.locale(gymAppLocale())),
                 label: gymText("Sets", "Підходи", "Подходы", languageCode: languageCode)
@@ -365,7 +369,7 @@ struct PostWorkoutSummaryView: View {
         let progression = gamification.progression
         return GymHeroPanel {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
+                GymAdaptiveStack(rowAlignment: .top, spacing: 12, columnSpacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
                         .gymScaledFont(size: 30, weight: .bold, relativeTo: .title2, maxScale: 1.6)
                         .foregroundStyle(GymTheme.heroAccentText)

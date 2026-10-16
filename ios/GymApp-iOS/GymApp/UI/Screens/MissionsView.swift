@@ -119,7 +119,7 @@ struct MissionsView: View {
         }
     }
 
-    private var levelSummaryText: String {
+    private var levelSummaryParts: [String] {
         let levelText = gymText(
             "Level \(snapshot.progression.level)",
             "Рівень \(snapshot.progression.level)",
@@ -128,7 +128,11 @@ struct MissionsView: View {
         )
         let titleText = RankCatalog.title(forLevel: snapshot.progression.level, languageCode: languageCode)
         let xpText = "\(snapshot.progression.totalXP.formatted(.number.locale(gymAppLocale()))) XP"
-        return "\(levelText) · \(titleText) · \(xpText)"
+        return [levelText, titleText, xpText]
+    }
+
+    private var levelSummaryText: String {
+        levelSummaryParts.joined(separator: " · ")
     }
 
     private var hero: some View {
@@ -140,11 +144,25 @@ struct MissionsView: View {
                     .gymScaledFrame(width: 28, relativeTo: .title3)
                     .accessibilityHidden(true)
 
-                Text(levelSummaryText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(GymTheme.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                if dynamicTypeSize.isLargeText {
+                    // One short line per part, each shrinking instead of breaking
+                    // a long rank title mid-word.
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(levelSummaryParts.enumerated()), id: \.offset) { _, part in
+                            Text(part)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(GymTheme.textPrimary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.5)
+                        }
+                    }
+                } else {
+                    Text(levelSummaryText)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(GymTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
 
                 Spacer(minLength: 8)
 
@@ -177,6 +195,20 @@ struct MissionsView: View {
     private func missionCard(_ mission: MissionSnapshot) -> some View {
         let progressLabel = missionValue(mission.progress)
         let targetLabel = missionValue(mission.target)
+        // At large text the progress count and the Completed pill drop below the
+        // description instead of squeezing the title into a few letters per line.
+        let stacked = dynamicTypeSize >= .xxxLarge
+        let trailing = VStack(alignment: stacked ? .leading : .trailing, spacing: 4) {
+            Text("\(progressLabel) / \(targetLabel)")
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(GymTheme.textSecondary)
+            if mission.completed {
+                GymInfoPill(
+                    gymText("Completed", "Виконано", "Выполнено", languageCode: languageCode),
+                    systemImage: "checkmark"
+                )
+            }
+        }
         return GymPanel(
             highlighted: mission.completed,
             contentPadding: EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16)
@@ -196,18 +228,11 @@ struct MissionsView: View {
                         Text(mission.description.resolved(languageCode: languageCode))
                             .font(.subheadline)
                             .foregroundStyle(GymTheme.textSecondary)
+                        if stacked { trailing }
                     }
-                    Spacer(minLength: 6)
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("\(progressLabel) / \(targetLabel)")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(GymTheme.textSecondary)
-                        if mission.completed {
-                            GymInfoPill(
-                                gymText("Completed", "Виконано", "Выполнено", languageCode: languageCode),
-                                systemImage: "checkmark"
-                            )
-                        }
+                    if !stacked {
+                        Spacer(minLength: 6)
+                        trailing
                     }
                 }
 

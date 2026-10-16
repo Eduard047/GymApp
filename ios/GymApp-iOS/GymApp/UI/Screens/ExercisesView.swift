@@ -180,6 +180,7 @@ struct ExerciseLibraryDeletionTarget: Equatable, Identifiable {
 
 @MainActor
 struct ExercisesView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private enum PresentedSheet: Identifiable {
         case addExercise
         case editExercise(Exercise)
@@ -474,84 +475,98 @@ struct ExercisesView: View {
     private func exerciseCard(_ exercise: Exercise) -> some View {
         let displayName = gymExerciseName(exercise)
 
-        return GymPanel(
-            contentPadding: EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
-        ) {
-            HStack(alignment: .center, spacing: 10) {
-                ExerciseMediaButton(
-                    rawExerciseName: exercise.name,
-                    catalogKey: exercise.catalogKey,
-                    exerciseID: exercise.id,
-                    ownerKey: store.accountStorageKey,
-                    width: 60,
-                    height: 60,
-                    playOverlayDiameter: 20
-                )
-                Text(displayName)
-                    .font(.headline)
-                    .lineLimit(2)
-                    .foregroundStyle(GymTheme.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
+        let media = ExerciseMediaButton(
+            rawExerciseName: exercise.name,
+            catalogKey: exercise.catalogKey,
+            exerciseID: exercise.id,
+            ownerKey: store.accountStorageKey,
+            width: 60,
+            height: 60,
+            playOverlayDiameter: 20
+        )
+        let nameText = Text(displayName)
+            .font(.headline)
+            .gymLineLimit(2)
+            .foregroundStyle(GymTheme.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+        let actions = HStack(spacing: 0) {
+            favoriteButton(exercise, displayName: displayName)
 
-                Spacer(minLength: 4)
+            Menu {
+                Button {
+                    presentedSheet = .history(exercise)
+                } label: {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
 
-                HStack(spacing: 0) {
-                favoriteButton(exercise, displayName: displayName)
+                Button {
+                    presentedSheet = .muscles(exercise)
+                } label: {
+                    Label("Muscle groups", systemImage: "figure.strengthtraining.traditional")
+                }
 
-                Menu {
-                    Button {
-                        presentedSheet = .history(exercise)
-                    } label: {
-                        Label("History", systemImage: "clock.arrow.circlepath")
-                    }
+                Button {
+                    presentedSheet = .editExercise(exercise)
+                } label: {
+                    Label("Machine weights", systemImage: "scalemass")
+                }
 
-                    Button {
-                        presentedSheet = .muscles(exercise)
-                    } label: {
-                        Label("Muscle groups", systemImage: "figure.strengthtraining.traditional")
-                    }
-
+                if catalogDefinition(for: exercise) == nil {
                     Button {
                         presentedSheet = .editExercise(exercise)
                     } label: {
-                        Label("Machine weights", systemImage: "scalemass")
+                        Label("Rename", systemImage: "pencil")
                     }
-
-                    if catalogDefinition(for: exercise) == nil {
-                        Button {
-                            presentedSheet = .editExercise(exercise)
-                        } label: {
-                            Label("Rename", systemImage: "pencil")
-                        }
-                    }
-
-                    Divider()
-
-                    Button(role: .destructive) {
-                        activeAlert = .delete(
-                            ExerciseLibraryDeletionTarget(
-                                store: store,
-                                exercise: exercise,
-                                displayName: displayName
-                            )
-                        )
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.title3)
-                        .frame(minWidth: 44, minHeight: 44)
                 }
-                .accessibilityLabel(
-                    gymText(
-                        "More actions for \(displayName)",
-                        "Більше дій для «\(displayName)»",
-                        "Другие действия для «\(displayName)»",
-                        languageCode: gymCurrentLanguageCode()
+
+                Divider()
+
+                Button(role: .destructive) {
+                    activeAlert = .delete(
+                        ExerciseLibraryDeletionTarget(
+                            store: store,
+                            exercise: exercise,
+                            displayName: displayName
+                        )
                     )
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel(
+                gymText(
+                    "More actions for \(displayName)",
+                    "Більше дій для «\(displayName)»",
+                    "Другие действия для «\(displayName)»",
+                    languageCode: gymCurrentLanguageCode()
                 )
+            )
+        }
+
+        return GymPanel(
+            contentPadding: EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
+        ) {
+            if dynamicTypeSize.isAccessibilitySize {
+                // Media and actions share a row; the name gets the full width below.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        media
+                        Spacer(minLength: 4)
+                        actions
+                    }
+                    nameText
+                }
+            } else {
+                HStack(alignment: .center, spacing: 10) {
+                    media
+                    nameText
+                    Spacer(minLength: 4)
+                    actions
                 }
             }
         }

@@ -80,13 +80,66 @@ enum GymPageSwipe {
     }
 }
 
+/// Horizontal-only pan recognizer. It begins only when the first movement is
+/// mostly horizontal, so a vertical drag that starts on the content still
+/// scrolls the enclosing `ScrollView` (a SwiftUI `DragGesture` would take the
+/// touch and block the scroll). Translations are in window space, so the view
+/// moving under the finger does not feed back into them.
+private struct GymHorizontalPanRecognizer: UIGestureRecognizerRepresentable {
+    let onBegan: (_ startX: CGFloat) -> Void
+    let onChanged: (_ translationX: CGFloat) -> Void
+    let onEnded: (_ translationX: CGFloat, _ velocityX: CGFloat) -> Void
+    let onCancelled: () -> Void
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+            let velocity = pan.velocity(in: nil)
+            return abs(velocity.x) > abs(velocity.y) * GymPageSwipe.axisBias
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.maximumNumberOfTouches = 1
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let translation = recognizer.translation(in: nil).x
+        switch recognizer.state {
+        case .began:
+            onBegan(recognizer.location(in: nil).x - translation)
+            onChanged(translation)
+        case .changed:
+            onChanged(translation)
+        case .ended:
+            onEnded(translation, recognizer.velocity(in: nil).x)
+        case .cancelled, .failed:
+            onCancelled()
+        default:
+            break
+        }
+    }
+}
+
 private struct GymTrackedPageSwipe: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @GestureState private var isTracking = false
     @State private var width: CGFloat = 0
     @State private var dragX: CGFloat = 0
     @State private var fade: Double = 1
-    @State private var axis: GymPageSwipe.Axis?
+    /// True while a horizontal drag owns the gesture.
+    @State private var isDragging = false
     /// A committed page change waiting for its exit animation to finish.
     @State private var pending: GymPageSwipe.Direction?
 
@@ -100,33 +153,26 @@ private struct GymTrackedPageSwipe: ViewModifier {
             .offset(x: dragX)
             .opacity(fade * (1 - 0.3 * min(1, abs(dragX) / max(width, 1))))
             .clipped()
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 10, coordinateSpace: .global)
-                    .updating($isTracking) { _, state, _ in state = true }
-                    .onChanged(changed)
-                    .onEnded(ended)
+            .gesture(
+                GymHorizontalPanRecognizer(
+                    onBegan: began,
+                    onChanged: changed,
+                    onEnded: ended,
+                    onCancelled: cancelled
+                )
             )
-            .onChange(of: isTracking) { _, tracking in
-                guard !tracking else { return }
-                // A cancelled gesture never reports its end; let a normal end run first.
-                Task { @MainActor in
-                    guard axis == .horizontal else { return }
-                    axis = nil
-                    springBack()
-                }
-            }
     }
 
-    private func changed(_ value: DragGesture.Value) {
-        if axis == nil {
-            guard let locked = GymPageSwipe.lockAxis(translation: value.translation) else { return }
-            axis = value.startLocation.x < GymPageSwipe.minimumEdgeInset ? .vertical : locked
-        }
-        guard axis == .horizontal else { return }
-        if pending != nil { finishPending() }
-        guard !reduceMotion else { return }
+    private func began(startX: CGFloat) {
+        // Never override the system back swipe at the screen edge.
+        isDragging = startX >= GymPageSwipe.minimumEdgeInset
+        if isDragging, pending != nil { finishPending() }
+    }
+
+    private func changed(translationX: CGFloat) {
+        guard isDragging, !reduceMotion else { return }
         let displacement = GymPageSwipe.displacement(
-            translation: value.translation.width,
+            translation: translationX,
             width: width,
             canGoPrevious: canGoPrevious,
             canGoNext: canGoNext
@@ -134,13 +180,12 @@ private struct GymTrackedPageSwipe: ViewModifier {
         withTransaction(Transaction(animation: nil)) { dragX = displacement }
     }
 
-    private func ended(_ value: DragGesture.Value) {
-        let wasHorizontal = axis == .horizontal
-        axis = nil
-        guard wasHorizontal else { return }
+    private func ended(translationX: CGFloat, velocityX: CGFloat) {
+        guard isDragging else { return }
+        isDragging = false
         let direction = GymPageSwipe.commitDirection(
-            translation: value.translation.width,
-            velocity: value.velocity.width,
+            translation: translationX,
+            velocity: velocityX,
             width: width,
             canGoPrevious: canGoPrevious,
             canGoNext: canGoNext
@@ -156,6 +201,12 @@ private struct GymTrackedPageSwipe: ViewModifier {
             let exit = direction == .previous ? width : -width
             withAnimation(GymMotion.quick) { dragX = exit } completion: { finishPending() }
         }
+    }
+
+    private func cancelled() {
+        guard isDragging else { return }
+        isDragging = false
+        springBack()
     }
 
     private func springBack() {

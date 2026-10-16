@@ -443,7 +443,9 @@ struct ProfileView: View {
 
     /// Icon column width shared by every row in `settingsGroup`, so titles
     /// line up regardless of which SF Symbol a row uses.
-    @ScaledMetric(relativeTo: .title3) private var settingsRowIconWidth: CGFloat = 28
+    @ScaledMetric(relativeTo: .title3) private var scaledSettingsRowIconWidth: CGFloat = 28
+    /// Capped so the icon column never takes the room titles need at large text.
+    private var settingsRowIconWidth: CGFloat { min(scaledSettingsRowIconWidth, 36) }
     /// Divider leading inset = icon width + the row's icon/text spacing, so
     /// the divider starts under the title, not under the icon.
     private var settingsRowDividerInset: CGFloat { settingsRowIconWidth + 12 }
@@ -460,7 +462,7 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "person.2.slash")
-                    .font(.title3)
+                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
                     .foregroundStyle(GymTheme.primary)
                     .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
@@ -468,7 +470,7 @@ struct ProfileView: View {
                     Text(gymText("Friends & live", "Друзі та live", "Друзья и live", languageCode: languageCode))
                         .font(.body.weight(.semibold))
                         .foregroundStyle(GymTheme.textPrimary)
-                        .lineLimit(1)
+                        .gymLineLimit(1)
                     Text(gymText(
                         "Requires a cloud account",
                         "Потрібен хмарний акаунт",
@@ -477,7 +479,7 @@ struct ProfileView: View {
                     ))
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
-                    .lineLimit(1)
+                    .gymLineLimit(1)
                 }
                 Spacer(minLength: 6)
                 Image(systemName: "chevron.right")
@@ -503,7 +505,7 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: isCloudAccount ? "person.crop.circle.badge.checkmark" : "iphone")
-                    .font(.title3)
+                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
                     .foregroundStyle(GymTheme.primary)
                     .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
@@ -514,7 +516,7 @@ struct ProfileView: View {
                     Text(accountRowSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .lineLimit(1)
+                        .gymLineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 6)
@@ -544,7 +546,7 @@ struct ProfileView: View {
     private var languageRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "globe")
-                .font(.title3)
+                .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
                 .foregroundStyle(GymTheme.primary)
                 .frame(width: settingsRowIconWidth)
                 .accessibilityHidden(true)
@@ -561,18 +563,34 @@ struct ProfileView: View {
     /// In-app Haptics switch (DESIGN.md "Feedback and haptics"): gates every
     /// haptic the app plays; stored on this device only.
     private var hapticsRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "iphone.radiowaves.left.and.right")
-                .font(.title3)
-                .foregroundStyle(GymTheme.primary)
-                .frame(width: settingsRowIconWidth)
-                .accessibilityHidden(true)
-            Toggle(isOn: $hapticsEnabled) {
-                Text(gymText("Haptics", "Тактильний відгук", "Тактильный отклик", languageCode: languageCode))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(GymTheme.textPrimary)
+        let icon = Image(systemName: "iphone.radiowaves.left.and.right")
+            .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
+            .foregroundStyle(GymTheme.primary)
+            .frame(width: settingsRowIconWidth)
+            .accessibilityHidden(true)
+        let label = Text(gymText("Haptics", "Тактильний відгук", "Тактильный отклик", languageCode: languageCode))
+            .font(.body.weight(.semibold))
+            .foregroundStyle(GymTheme.textPrimary)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // The label gets the full width; the switch sits on its own line.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        icon
+                        label
+                    }
+                    Toggle(isOn: $hapticsEnabled) { label }
+                        .labelsHidden()
+                        .tint(GymTheme.primary)
+                        .accessibilityLabel(gymText("Haptics", "Тактильний відгук", "Тактильный отклик", languageCode: languageCode))
+                }
+            } else {
+                HStack(spacing: 12) {
+                    icon
+                    Toggle(isOn: $hapticsEnabled) { label }
+                        .tint(GymTheme.primary)
+                }
             }
-            .tint(GymTheme.primary)
         }
         .padding(.vertical, 12)
         .frame(minHeight: 48)
@@ -585,7 +603,7 @@ struct ProfileView: View {
         Button(action: onShowTutorial) {
             HStack(spacing: 12) {
                 Image(systemName: "questionmark.circle.fill")
-                    .font(.title3)
+                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
                     .foregroundStyle(GymTheme.primary)
                     .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
@@ -601,7 +619,7 @@ struct ProfileView: View {
                     ))
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
-                    .lineLimit(1)
+                    .gymLineLimit(1)
                     .minimumScaleFactor(0.9)
                 }
                 Spacer(minLength: 6)
@@ -624,7 +642,7 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "target")
-                    .font(.title3)
+                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
                     .foregroundStyle(GymTheme.primary)
                     .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
@@ -638,7 +656,7 @@ struct ProfileView: View {
                     Text(trainingSettingsSummaryText)
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .lineLimit(2)
+                        .gymLineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 6)
@@ -864,7 +882,7 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "tray.and.arrow.down.fill")
-                    .font(.title3)
+                    .gymScaledFont(size: 20, relativeTo: .title3, maxScale: 1.3)
                     .foregroundStyle(GymTheme.primary)
                     .frame(width: settingsRowIconWidth)
                     .accessibilityHidden(true)
@@ -885,7 +903,7 @@ struct ProfileView: View {
                     ))
                     .font(.subheadline)
                     .foregroundStyle(GymTheme.textSecondary)
-                    .lineLimit(1)
+                    .gymLineLimit(1)
                 }
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -1394,7 +1394,7 @@ public struct WorkoutsView: View {
         let totalVolume = historyPeriod == .week ? weekly.totalVolume : monthly.totalVolume
         return GymPanel {
             VStack(alignment: .leading, spacing: 14) {
-                GymAdaptiveStack(rowAlignment: .center, spacing: 10, columnSpacing: 8) {
+                GymAdaptiveStack(stacksFromLargeText: true, rowAlignment: .center, spacing: 10, columnSpacing: 8) {
                     Text(gymText(
                         "Training history",
                         "Історія тренувань",
@@ -1402,10 +1402,10 @@ public struct WorkoutsView: View {
                         languageCode: languageCode
                     ))
                     .font(GymTheme.TypeScale.sectionTitle)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .lineLimit(dynamicTypeSize.isLargeText ? nil : 1)
                     .minimumScaleFactor(0.85)
                     .accessibilityAddTraits(.isHeader)
-                    GymAdaptiveSpacer(minLength: 8)
+                    GymAdaptiveSpacer(minLength: 8, stacksFromLargeText: true)
                     GymInfoPill(
                         historyPeriod == .week
                             ? gymText(

@@ -320,6 +320,7 @@ struct GymMonthNavigator: View {
     let onPrevious: () -> Void
     let onCurrent: () -> Void
     let onNext: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 2) {
@@ -332,18 +333,23 @@ struct GymMonthNavigator: View {
             .accessibilityLabel(gymLocalized("Previous month"))
 
             Button(action: onCurrent) {
-                HStack(spacing: 5) {
+                // At accessibility sizes the "Current month" caption drops under
+                // the month so neither has to truncate.
+                GymAdaptiveStack(rowAlignment: .center, columnAlignment: .center, spacing: 5, columnSpacing: 2) {
                     Text(month.formatted(.dateTime.month(.wide).year().locale(locale)))
                         .font(.caption)
                         .foregroundStyle(GymTheme.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.center)
                     if isCurrentMonth {
                         Text(gymLocalized("Current month"))
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(GymTheme.primary)
+                            .multilineTextAlignment(.center)
                     }
                 }
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -426,6 +432,7 @@ struct WorkoutMonthSwitcher: View {
 }
 
 struct WorkoutProgressHero: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let snapshot: GamificationSnapshot
     let monthXP: Int
     let weeklyStreakWeeks: Int
@@ -468,7 +475,10 @@ struct WorkoutProgressHero: View {
                         )
                     )
 
-                HStack(spacing: 8) {
+                let tileLayout: AnyLayout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(spacing: 8))
+                    : AnyLayout(HStackLayout(spacing: 8))
+                tileLayout {
                     GymMetricTile(
                         label: "Month XP",
                         value: "\(monthXP.formatted(.number.locale(gymAppLocale()))) XP",
@@ -524,10 +534,16 @@ struct WorkoutProgressHero: View {
                         .contentTransition(.numericText())
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                    // At large text the pill sits above the title so a long rank
+                    // name keeps the full width instead of breaking mid-word.
+                    let titleLayout: AnyLayout = dynamicTypeSize.isLargeText
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                        : AnyLayout(HStackLayout(spacing: 8))
+                    titleLayout {
                         levelPill
                         Text(RankCatalog.title(forLevel: progression.level, languageCode: gymCurrentLanguageCode()))
                             .font(.title2.bold())
+                            .minimumScaleFactor(0.7)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(totalXPEarnedLabel)
@@ -826,6 +842,12 @@ struct WorkoutActivityHeatmap: View {
                 .foregroundStyle(GymTheme.textSecondary)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Heatmap scale, less activity to more activity")
+            }
+            .gymTrackedPageSwipe(canGoPrevious: true, canGoNext: !isCurrentMonth) { direction in
+                switch direction {
+                case .previous: onPreviousMonth()
+                case .next: onNextMonth()
+                }
             }
         }
     }

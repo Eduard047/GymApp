@@ -798,7 +798,7 @@ struct ActiveWorkoutView: View {
                                 )
                                 .font(.caption)
                                 .foregroundStyle(GymTheme.onHeroSecondary)
-                                .lineLimit(1)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                             }
                         }
 
@@ -817,7 +817,7 @@ struct ActiveWorkoutView: View {
                                 .animation(reduceMotion ? nil : GymMotion.gentle, value: draft.completedSetCount)
                             VStack(spacing: 1) {
                                 Text("\(draft.completedSetCount)/\(draft.plannedSetCount)")
-                                    .font(.headline.monospacedDigit())
+                                    .gymScaledFont(size: 17, weight: .semibold, relativeTo: .headline, monospacedDigit: true, maxScale: 1.3)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.6)
                                     .foregroundStyle(GymTheme.onHero)
@@ -834,9 +834,12 @@ struct ActiveWorkoutView: View {
                                         languageCode: gymCurrentLanguageCode()
                                     )
                                 )
-                                .gymScaledFont(size: 10, relativeTo: .caption2)
+                                .gymScaledFont(size: 10, relativeTo: .caption2, maxScale: 1.3)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
                                 .foregroundStyle(GymTheme.onHeroSecondary)
                             }
+                            .padding(.horizontal, 6)
                         }
                         .gymScaledFrame(width: 68, height: 68, relativeTo: .headline, maxScale: 1.3)
                         .accessibilityHidden(true)
@@ -1647,7 +1650,7 @@ struct ActiveWorkoutView: View {
 
                 // At accessibility text sizes the caption moves to its own line
                 // below so it never has to share the row with the chip and trash.
-                if !dynamicTypeSize.isAccessibilitySize, showsPrevious, let last, let repeatWeight, let repeatReps {
+                if dynamicTypeSize < .xxxLarge, showsPrevious, let last, let repeatWeight, let repeatReps {
                     previousPerformanceButton(
                         last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
                         isBodyweight: isBodyweightExercise, set: set, draft: draft
@@ -1665,7 +1668,7 @@ struct ActiveWorkoutView: View {
                 }
             }
 
-            if dynamicTypeSize.isAccessibilitySize, showsPrevious, let last, let repeatWeight, let repeatReps {
+            if dynamicTypeSize >= .xxxLarge, showsPrevious, let last, let repeatWeight, let repeatReps {
                 previousPerformanceButton(
                     last: last, repeatWeight: repeatWeight, repeatReps: repeatReps,
                     isBodyweight: isBodyweightExercise, set: set, draft: draft

@@ -385,20 +385,30 @@ struct ExerciseProgressView: View {
 
                     exerciseSelector
 
-                    if let selectedExercise {
-                        muscleBreakdown(for: selectedExercise)
-                        summaryCard
-                        if !monthHistory.isEmpty {
-                            spotlightCard(for: selectedExercise)
-                            ExerciseProgressChartsCard(
-                                points: visibleChartPoints,
-                                languageCode: languageCode,
-                                locale: appLocale
-                            )
+                    // Everything below the selector depends on the month, so it
+                    // follows the finger when the month changes by swipe.
+                    LazyVStack(spacing: GymTheme.contentSpacing) {
+                        if let selectedExercise {
+                            muscleBreakdown(for: selectedExercise)
+                            summaryCard
+                            if !monthHistory.isEmpty {
+                                spotlightCard(for: selectedExercise)
+                                ExerciseProgressChartsCard(
+                                    points: visibleChartPoints,
+                                    languageCode: languageCode,
+                                    locale: appLocale
+                                )
+                            }
+                            historySection
+                        } else {
+                            noExerciseState
                         }
-                        historySection
-                    } else {
-                        noExerciseState
+                    }
+                    .gymTrackedPageSwipe(canGoPrevious: monthOffset > -1_200, canGoNext: monthOffset < 0) { direction in
+                        switch direction {
+                        case .previous: monthOffset -= 1
+                        case .next: monthOffset = min(0, monthOffset + 1)
+                        }
                     }
                 }
                 .padding(.horizontal, GymTheme.screenHorizontalInset)
@@ -451,7 +461,7 @@ struct ExerciseProgressView: View {
                         .font(.subheadline)
                         .foregroundStyle(GymTheme.textSecondary)
                 } else if let selectedExercise {
-                    HStack(spacing: 12) {
+                    GymAdaptiveStack(rowAlignment: .center, spacing: 12, columnSpacing: 8) {
                         ExerciseMediaButton(
                             rawExerciseName: selectedExercise.name,
                             catalogKey: selectedExercise.catalogKey,

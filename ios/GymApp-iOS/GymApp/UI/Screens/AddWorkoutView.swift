@@ -158,6 +158,7 @@ struct AddWorkoutView: View {
     @ObservedObject private var garminCloud: GarminCloudService
     private let garminPhone: GarminPhoneSyncService?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var moveExerciseFeedbackTrigger = 0
     @State private var exerciseReorder = GymReorderCoordinator(spacing: 14)
@@ -876,52 +877,72 @@ struct AddWorkoutView: View {
         let toggle = {
             withAnimation(GymMotion.animation(GymMotion.quick, reduceMotion: reduceMotion)) { smartCoachExpanded.toggle() }
         }
-        return HStack(spacing: 6) {
-            Button(action: toggle) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Smart Coach")
-                        .font(.headline)
-                        .foregroundStyle(GymTheme.textPrimary)
-                    Text(TrainingSettingsSummaryRow(profile: profile, languageCode: languageCode, action: {}).summaryText)
-                        .font(.subheadline)
-                        .foregroundStyle(GymTheme.textSecondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Smart Coach")
-            .accessibilityValue(smartCoachExpanded
-                ? gymText("Expanded", "Розгорнуто", "Развёрнуто", languageCode: languageCode)
-                : gymText("Collapsed", "Згорнуто", "Свёрнуто", languageCode: languageCode))
-            .accessibilityHint(gymText(
-                "Shows or hides effort choices and the workout builder",
-                "Показує або ховає вибір навантаження та створення тренування",
-                "Показывает или скрывает выбор нагрузки и создание тренировки",
-                languageCode: languageCode
-            ))
-
-            Button {
-                showsWeeklyTargetEditor = true
-            } label: {
-                Text(gymText("edit", "змінити", "изменить", languageCode: languageCode))
+        let titleButton = Button(action: toggle) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Smart Coach")
+                    .font(.headline)
+                    .foregroundStyle(GymTheme.textPrimary)
+                Text(TrainingSettingsSummaryRow(profile: profile, languageCode: languageCode, action: {}).summaryText)
                     .font(.subheadline)
-                    .foregroundStyle(GymTheme.primary)
-                    .frame(minWidth: 44, minHeight: 44)
-            }
-            .buttonStyle(.plain)
-
-            Button(action: toggle) {
-                Image(systemName: smartCoachExpanded ? "chevron.up" : "chevron.down")
-                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(GymTheme.textSecondary)
-                    .frame(width: 32, height: 44)
-                    .contentShape(Rectangle())
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+                    .multilineTextAlignment(.leading)
             }
-            .buttonStyle(.plain)
-            .accessibilityHidden(true)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Smart Coach")
+        .accessibilityValue(smartCoachExpanded
+            ? gymText("Expanded", "Розгорнуто", "Развёрнуто", languageCode: languageCode)
+            : gymText("Collapsed", "Згорнуто", "Свёрнуто", languageCode: languageCode))
+        .accessibilityHint(gymText(
+            "Shows or hides effort choices and the workout builder",
+            "Показує або ховає вибір навантаження та створення тренування",
+            "Показывает или скрывает выбор нагрузки и создание тренировки",
+            languageCode: languageCode
+        ))
+
+        let editButton = Button {
+            showsWeeklyTargetEditor = true
+        } label: {
+            Text(gymText("edit", "змінити", "изменить", languageCode: languageCode))
+                .font(.subheadline)
+                .foregroundStyle(GymTheme.primary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+
+        let chevronButton = Button(action: toggle) {
+            Image(systemName: smartCoachExpanded ? "chevron.up" : "chevron.down")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(GymTheme.textSecondary)
+                .frame(width: 32, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHidden(true)
+
+        // At accessibility sizes the edit link moves under the title row so the
+        // title and summary keep the full width.
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        titleButton
+                        chevronButton
+                    }
+                    editButton
+                }
+            } else {
+                HStack(spacing: 6) {
+                    titleButton
+                    editButton
+                    chevronButton
+                }
+            }
         }
     }
 
@@ -1265,6 +1286,7 @@ struct AddWorkoutView: View {
                     systemImage: "slider.horizontal.3"
                 )
                 .font(.headline)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.6 : 1)
             }
         }
     }

@@ -147,9 +147,13 @@ struct GymAdaptiveStack<Content: View>: View {
     private let columnAlignment: HorizontalAlignment
     private let spacing: CGFloat?
     private let columnSpacing: CGFloat?
+    private let stacksFromLargeText: Bool
     private let content: Content
 
+    /// `stacksFromLargeText` switches to a column from `xxxLarge` instead of only
+    /// at accessibility sizes, for rows whose pills already truncate there.
     init(
+        stacksFromLargeText: Bool = false,
         rowAlignment: VerticalAlignment = .center,
         columnAlignment: HorizontalAlignment = .leading,
         spacing: CGFloat? = nil,
@@ -160,11 +164,13 @@ struct GymAdaptiveStack<Content: View>: View {
         self.columnAlignment = columnAlignment
         self.spacing = spacing
         self.columnSpacing = columnSpacing
+        self.stacksFromLargeText = stacksFromLargeText
         self.content = content()
     }
 
     var body: some View {
-        let layout: AnyLayout = dynamicTypeSize.isAccessibilitySize
+        let stacked = stacksFromLargeText ? dynamicTypeSize.isLargeText : dynamicTypeSize.isAccessibilitySize
+        let layout: AnyLayout = stacked
             ? AnyLayout(VStackLayout(alignment: columnAlignment, spacing: columnSpacing ?? spacing))
             : AnyLayout(HStackLayout(alignment: rowAlignment, spacing: spacing))
         layout { content }
@@ -175,9 +181,10 @@ struct GymAdaptiveStack<Content: View>: View {
 struct GymAdaptiveSpacer: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var minLength: CGFloat?
+    var stacksFromLargeText = false
 
     var body: some View {
-        if !dynamicTypeSize.isAccessibilitySize {
+        if !(stacksFromLargeText ? dynamicTypeSize.isLargeText : dynamicTypeSize.isAccessibilitySize) {
             Spacer(minLength: minLength)
         }
     }
@@ -198,4 +205,29 @@ extension View {
     func gymAccessibilityVerticalPadding(_ value: CGFloat = 10) -> some View {
         modifier(GymAccessibilityPaddingModifier(value: value))
     }
+}
+
+private struct GymAdaptiveLineLimitModifier: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let limit: Int
+    let accessibilityLimit: Int?
+
+    func body(content: Content) -> some View {
+        content.lineLimit(dynamicTypeSize.isAccessibilitySize ? accessibilityLimit : limit)
+    }
+}
+
+extension View {
+    /// `lineLimit(limit)` that lifts to `accessibilityLimit` (nil = unlimited) at
+    /// accessibility text sizes, so one-line subtitles wrap instead of truncating.
+    func gymLineLimit(_ limit: Int, accessibility accessibilityLimit: Int? = nil) -> some View {
+        modifier(GymAdaptiveLineLimitModifier(limit: limit, accessibilityLimit: accessibilityLimit))
+    }
+}
+
+extension DynamicTypeSize {
+    /// True from `xxxLarge` up (the largest non-accessibility size and every
+    /// accessibility size): where three-column rows and side-by-side pills no
+    /// longer fit a phone width.
+    var isLargeText: Bool { self >= .xxxLarge }
 }
