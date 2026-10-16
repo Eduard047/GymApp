@@ -165,7 +165,8 @@ private fun comparisonMetric(
     val current = formatter(comparison.currentValue)
     val previous = formatter(comparison.previousValue)
     val delta = if (abs(comparison.delta) < 0.000_001) {
-        androidx.compose.ui.res.stringResource(R.string.workout_comparison_no_change)
+        // Kept on one line: "без изменений" never splits across two lines inside the tile.
+        androidx.compose.ui.res.stringResource(R.string.workout_comparison_no_change).replace(' ', '\u00A0')
     } else {
         val sign = if (comparison.delta > 0.0) "+" else "−"
         sign + formatter(abs(comparison.delta))

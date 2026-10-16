@@ -437,10 +437,10 @@
     <string name="training_settings_edit">змінити</string>
     <string name="training_settings_edit_description">Змінити налаштування тренувань</string>
     <plurals name="training_settings_workouts_a_week">
-        <item quantity="one">%1$d тренування на тиждень</item>
-        <item quantity="few">%1$d тренування на тиждень</item>
-        <item quantity="many">%1$d тренувань на тиждень</item>
-        <item quantity="other">%1$d тренування на тиждень</item>
+        <item quantity="one">%1$d\u00A0тренування на тиждень</item>
+        <item quantity="few">%1$d\u00A0тренування на тиждень</item>
+        <item quantity="many">%1$d\u00A0тренувань на тиждень</item>
+        <item quantity="other">%1$d\u00A0тренування на тиждень</item>
     </plurals>
     <string name="activation_effort_light">Легка</string>
     <string name="activation_effort_normal">Звичайна</string>
@@ -1058,9 +1058,9 @@
     <string name="splash_loading">Готуємо твою сесію...</string>
 
     <string name="exercise_history_sessions">Сесії</string>
-    <string name="exercise_history_max_weight">Максимальна вага</string>
+    <string name="exercise_history_max_weight">Макс. вага</string>
     <string name="exercise_history_volume">Загальний обсяг</string>
-    <string name="exercise_history_empty">Для цієї вправи ще немає історії.</string>
+    <string name="exercise_history_empty">Для цієї вправи ще немає історії</string>
     <string name="exercise_history_empty_supporting">Запиши цю вправу в тренуванні, і вона з’явиться тут.</string>
     <string name="exercise_history_sets_inline">Підходів: %1$d</string>
     <string name="exercise_history_volume_inline">Обсяг: %1$s кг</string>
@@ -1225,7 +1225,7 @@
         <item quantity="other">%1$d спільної вправи</item>
     </plurals>
     <string name="workout_comparison_supporting">%1$s · %2$s</string>
-    <string name="workout_comparison_previous_delta">Раніше %1$s · %2$s</string>
+    <string name="workout_comparison_previous_delta">Раніше %1$s\u00A0·\u00A0%2$s</string>
     <string name="workout_comparison_no_change">без змін</string>
 
     <string name="dialog_edit_set_title">Редагувати підхід</string>

@@ -437,8 +437,8 @@
     <string name="training_settings_edit">edit</string>
     <string name="training_settings_edit_description">Edit training settings</string>
     <plurals name="training_settings_workouts_a_week">
-        <item quantity="one">%1$d workout a week</item>
-        <item quantity="other">%1$d workouts a week</item>
+        <item quantity="one">%1$d\u00A0workout a week</item>
+        <item quantity="other">%1$d\u00A0workouts a week</item>
     </plurals>
     <string name="activation_effort_light">Light</string>
     <string name="activation_effort_normal">Normal</string>
@@ -1028,7 +1028,7 @@
     <string name="exercise_history_sessions">Sessions</string>
     <string name="exercise_history_max_weight">Max weight</string>
     <string name="exercise_history_volume">Total volume</string>
-    <string name="exercise_history_empty">No history for this exercise yet.</string>
+    <string name="exercise_history_empty">No history for this exercise yet</string>
     <string name="exercise_history_empty_supporting">Log this exercise in a workout and it will appear here.</string>
     <string name="exercise_history_sets_inline">Sets: %1$d</string>
     <string name="exercise_history_volume_inline">Volume: %1$s kg</string>
@@ -1191,7 +1191,7 @@
         <item quantity="other">%1$d matching exercises</item>
     </plurals>
     <string name="workout_comparison_supporting">%1$s · %2$s</string>
-    <string name="workout_comparison_previous_delta">Previous %1$s · %2$s</string>
+    <string name="workout_comparison_previous_delta">Previous %1$s\u00A0·\u00A0%2$s</string>
     <string name="workout_comparison_no_change">no change</string>
 
     <string name="dialog_edit_set_title">Edit Set</string>

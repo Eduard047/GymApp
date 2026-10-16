@@ -437,10 +437,10 @@
     <string name="training_settings_edit">изменить</string>
     <string name="training_settings_edit_description">Изменить настройки тренировок</string>
     <plurals name="training_settings_workouts_a_week">
-        <item quantity="one">%1$d тренировка в неделю</item>
-        <item quantity="few">%1$d тренировки в неделю</item>
-        <item quantity="many">%1$d тренировок в неделю</item>
-        <item quantity="other">%1$d тренировки в неделю</item>
+        <item quantity="one">%1$d\u00A0тренировка в неделю</item>
+        <item quantity="few">%1$d\u00A0тренировки в неделю</item>
+        <item quantity="many">%1$d\u00A0тренировок в неделю</item>
+        <item quantity="other">%1$d\u00A0тренировки в неделю</item>
     </plurals>
     <string name="activation_effort_light">Лёгкая</string>
     <string name="activation_effort_normal">Обычная</string>
@@ -704,7 +704,7 @@
     <string name="message_add_set_failed">Не удалось записать подход. Таймер отдыха не запущен.</string>
     <string name="message_add_exercise_failed">Не удалось добавить упражнение. Обнови тренировку и попробуй ещё раз.</string>
     <string name="message_rest_timer_save_failed">Подход сохранён, но не удалось запустить таймер отдыха.</string>
-    <string name="message_invalid_set_input">Введите корректные вес и повторы.</string>
+    <string name="message_invalid_set_input">Введи корректные вес и повторы.</string>
     <string name="message_exercise_error">Не удалось сохранить упражнение. Возможно, такое название уже существует.</string>
 
     <string name="stats_exercises">Упражнений: %1$d</string>
@@ -805,7 +805,7 @@
     <string name="achievement_rarity_rare">Редкий</string>
     <string name="achievement_rarity_epic">Эпический</string>
     <string name="achievement_rarity_legendary">Легендарный</string>
-    <string name="progress_choose_exercise">Выберите упражнение</string>
+    <string name="progress_choose_exercise">Выбери упражнение</string>
     <string name="cd_change_exercise">Сменить упражнение</string>
     <string name="progress_muscle_breakdown_title">Распределение по мышцам</string>
     <plurals name="progress_muscle_groups_count">
@@ -1058,9 +1058,9 @@
     <string name="splash_loading">Готовим твою сессию...</string>
 
     <string name="exercise_history_sessions">Сессии</string>
-    <string name="exercise_history_max_weight">Максимальный вес</string>
+    <string name="exercise_history_max_weight">Макс. вес</string>
     <string name="exercise_history_volume">Общий объём</string>
-    <string name="exercise_history_empty">Для этого упражнения ещё нет истории.</string>
+    <string name="exercise_history_empty">Для этого упражнения ещё нет истории</string>
     <string name="exercise_history_empty_supporting">Запиши это упражнение в тренировке, и оно появится здесь.</string>
     <string name="exercise_history_sets_inline">Подходов: %1$d</string>
     <string name="exercise_history_volume_inline">Объём: %1$s кг</string>
@@ -1225,7 +1225,7 @@
         <item quantity="other">%1$d совпадающего упражнения</item>
     </plurals>
     <string name="workout_comparison_supporting">%1$s · %2$s</string>
-    <string name="workout_comparison_previous_delta">Раньше %1$s · %2$s</string>
+    <string name="workout_comparison_previous_delta">Раньше %1$s\u00A0·\u00A0%2$s</string>
     <string name="workout_comparison_no_change">без изменений</string>
 
     <string name="dialog_edit_set_title">Редактировать подход</string>
@@ -1323,7 +1323,7 @@
     <string name="exercise_load_option_count">Весов: %1$d</string>
     <string name="exercise_load_profile_action">Веса тренажера</string>
     <string name="exercise_load_profile_eyebrow">Настройка тренажера</string>
-    <string name="exercise_load_profile_supporting">Укажите точные веса, доступные на этом тренажёре. Умный тренер будет рекомендовать только эти положения; ручные веса и история не изменятся.</string>
+    <string name="exercise_load_profile_supporting">Укажи точные веса, доступные на этом тренажёре. Умный тренер будет рекомендовать только эти положения; ручные веса и история не изменятся.</string>
     <string name="exercise_load_direction_title">Что делает упражнение тяжелее?</string>
     <string name="exercise_load_higher_is_harder">Больше веса</string>
     <string name="exercise_load_lower_is_harder">Меньше помощи</string>
@@ -1331,7 +1331,7 @@
     <string name="exercise_load_preset_5">Шаг 5 кг</string>
     <string name="exercise_load_weights_label">Доступные веса, кг</string>
     <string name="exercise_load_weights_hint">Одно значение в строке или через пробел/точку с запятой, например: 69 73 77. Десятичная запятая поддерживается.</string>
-    <string name="exercise_load_profile_error">Укажите от 1 до 128 уникальных весов в пределах 0–1 000 000 кг.</string>
+    <string name="exercise_load_profile_error">Укажи от 1 до 128 уникальных весов в пределах 0–1 000 000 кг.</string>
     <string name="exercise_load_profile_save">Сохранить настройку</string>
     <string name="exercise_load_profile_clear">Использовать автоматический шаг</string>
     <string name="exercise_filter_all">Все</string>
@@ -1369,8 +1369,8 @@
     <string name="exercise_media_open_preview_named">Открыть демонстрацию упражнения %1$s</string>
     <string name="exercise_media_choose">Выбрать своё фото</string>
     <string name="exercise_media_restore">Вернуть встроенную демонстрацию</string>
-    <string name="exercise_media_hint">Нажмите, чтобы увидеть начальное и конечное положение</string>
-    <string name="exercise_media_error">Не удалось использовать фото. Выберите JPEG, PNG или WebP до 8 МБ.</string>
+    <string name="exercise_media_hint">Нажми, чтобы увидеть начальное и конечное положение</string>
+    <string name="exercise_media_error">Не удалось использовать фото. Выбери JPEG, PNG или WebP до 8 МБ.</string>
     <string name="live_workout_load_failed">Не удалось обновить совместную тренировку. Опрос повторится автоматически.</string>
     <string name="live_workout_send_failed">Не удалось отправить приглашение на совместную тренировку.</string>
     <string name="live_workout_invite_unavailable">Приглашение отправлено. Возможно, друг сейчас недоступен.</string>
@@ -1380,7 +1380,7 @@
     <string name="live_workout_started_after_accept">Совместная тренировка началась.</string>
     <string name="live_workout_invite_declined">Приглашение на совместную тренировку отклонено.</string>
     <string name="live_workout_start_failed">Не удалось начать совместную тренировку.</string>
-    <string name="live_workout_active_blocked">Завершите или удалите текущую тренировку перед подключением.</string>
+    <string name="live_workout_active_blocked">Заверши или удали текущую тренировку перед подключением.</string>
     <string name="live_workout_queue_full">Очередь синхронизации переполнена. Локальная тренировка сохранена, но совместный режим отключён.</string>
     <string name="live_workout_mapping_failed">Связь подходов устарела. Тренировка продолжится локально.</string>
     <string name="live_workout_queue_save_failed">Не удалось сохранить обновление для повтора. Локальная тренировка не потеряна.</string>
@@ -1558,7 +1558,7 @@
     <string name="training_program_resume">Продолжить</string>
     <string name="training_program_finish">Завершить</string>
     <string name="training_program_count">Выполнено тренировок: %1$d из %2$d</string>
-    <string name="training_program_save_error">Не удалось подтвердить сохранение программы. Загрузите её заново и повторите.</string>
+    <string name="training_program_save_error">Не удалось подтвердить сохранение программы. Загрузи её заново и повтори.</string>
     <string name="training_program_reload">Загрузить программу заново</string>
     <string name="training_program_new">Новая программа</string>
     <string name="training_program_reopen">Возобновить программу</string>
@@ -1585,7 +1585,7 @@
     <string name="voice_workout_listening">Слушаю…</string>
     <string name="voice_workout_privacy">Аудио и транскрипт остаются на этом устройстве и не сохраняются.</string>
     <string name="voice_workout_preview">Предпросмотр</string>
-    <string name="voice_workout_choose_exercise">Выберите упражнение</string>
+    <string name="voice_workout_choose_exercise">Выбери упражнение</string>
     <string name="voice_workout_weight">Вес</string>
     <string name="voice_workout_reps">Повторы</string>
     <string name="voice_workout_kg_times">кг ×</string>
@@ -1644,7 +1644,7 @@
     <string name="active_workout_notification_set">Подход %1$d из %2$d</string>
     <string name="active_workout_notification_next">Далее: %1$s кг × %2$d</string>
     <string name="active_workout_notification_resting">Отдых</string>
-    <string name="active_workout_notification_all_done">Все подходы выполнены. Завершите в приложении.</string>
+    <string name="active_workout_notification_all_done">Все подходы выполнены. Заверши в приложении.</string>
     <string name="active_workout_notification_log_set">Записать подход</string>
     <string name="active_workout_notification_skip_rest">Пропустить отдых</string>
     <string name="today_friend_pill">С другом</string>
@@ -1675,8 +1675,8 @@
     <string name="workout_detail_add_exercise_short">+ Добавить упражнение</string>
     <string name="workout_detail_details_title">Дата и заметка</string>
     <string name="message_workout_details_saved">Данные тренировки сохранены</string>
-    <string name="message_workout_details_invalid">Проверьте дату и заметку</string>
+    <string name="message_workout_details_invalid">Проверь дату и заметку</string>
     <string name="message_workout_details_failed">Не удалось сохранить данные тренировки</string>
     <string name="message_exercise_removed">Упражнение удалено</string>
-    <string name="message_remove_exercise_failed">Не удалось удалить упражнение. Обновите тренировку и попробуйте снова.</string>
+    <string name="message_remove_exercise_failed">Не удалось удалить упражнение. Обнови тренировку и попробуй снова.</string>
 </resources>
