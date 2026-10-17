@@ -139,18 +139,24 @@ fun WorkoutComparisonCard(
                     DateTimeUtils.formatDate(comparison.previousSessionDate)
                 )
             )
-            // One tile per row at large font sizes, so "Раньше 13 · без изменений" is never cut off.
-            val tilesPerRow = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) 1 else 2
-            metrics.chunked(tilesPerRow).forEach { rowMetrics ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowMetrics.forEach { metric ->
-                        ComparisonMetricCell(metric = metric, modifier = Modifier.weight(1f))
-                    }
-                    if (rowMetrics.size == 1 && tilesPerRow == 2) {
-                        Spacer(modifier = Modifier.weight(1f))
+            // Two tiles per row only when two scaled tiles really fit the card; otherwise one per row,
+            // so "Раньше 13 · без изменений" is never cut off, whatever the screen width or font size.
+            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+            androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val tilesPerRow = if (maxWidth >= 110.dp * fontScale * 2 + 8.dp) 2 else 1
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    metrics.chunked(tilesPerRow).forEach { rowMetrics ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowMetrics.forEach { metric ->
+                                ComparisonMetricCell(metric = metric, modifier = Modifier.weight(1f))
+                            }
+                            if (rowMetrics.size == 1 && tilesPerRow == 2) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
             }
