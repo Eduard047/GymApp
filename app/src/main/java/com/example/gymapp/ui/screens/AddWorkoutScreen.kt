@@ -1020,8 +1020,7 @@ private fun SmartCoachPanel(
                             text = trainingProfile.trainingSettingsSummary(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            maxLines = 4
                         )
                     }
                 }

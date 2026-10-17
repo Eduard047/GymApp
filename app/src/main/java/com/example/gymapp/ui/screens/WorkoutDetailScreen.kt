@@ -640,7 +640,7 @@ private fun WorkoutHeaderCard(
                 )
             )
             durationSeconds?.let { add(formatWorkoutDuration(it)) }
-        }.joinToString(" · ")
+        }.joinToString("\u00A0· ")
     }
     val noteText = note?.takeIf { it.isNotBlank() && !isActivityOnly }
     HeroPanel(

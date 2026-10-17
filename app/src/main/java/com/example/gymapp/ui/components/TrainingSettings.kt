@@ -247,7 +247,7 @@ fun TrainingProfile.trainingSettingsSummary(): String = listOf(
         workoutsPerWeek,
         workoutsPerWeek
     )
-).joinToString(" · ")
+).joinToString("\u00A0· ")
 
 /** Read-only "Goal · Calories · N workouts a week · edit" line; the link opens the editor. */
 @Composable

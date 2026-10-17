@@ -2629,7 +2629,7 @@ internal fun GymAppRoot(
                                                         CompositionLocalProvider(
                                                             LocalDensity provides Density(
                                                                 density = barDensity.density,
-                                                                fontScale = minOf(barDensity.fontScale, 1.15f)
+                                                                fontScale = minOf(barDensity.fontScale, 1.0f)
                                                             )
                                                         ) {
                                                             Text(

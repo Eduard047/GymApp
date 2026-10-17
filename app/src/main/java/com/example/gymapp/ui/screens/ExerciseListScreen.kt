@@ -1167,7 +1167,7 @@ fun ExerciseListScreen(
                 val isBuiltIn = BuiltInExerciseCatalog.definitionForName(exercise.name) != null
                 val displayExerciseName = localizedExerciseName(exercise.name)
                 val searchMatchReason = exerciseSearchMatch(exercise.name, searchQuery)?.reason
-                val fullWidthTitle = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.4f
+                val fullWidthTitle = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
                 val titleContent: @Composable (Modifier) -> Unit = { titleModifier ->
                     Column(
                         modifier = titleModifier,
@@ -1177,7 +1177,8 @@ fun ExerciseListScreen(
                             text = displayExerciseName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            maxLines = 2,
+                            // Names wrap by words (up to four lines) rather than being cut off with an ellipsis.
+                            maxLines = 4,
                             overflow = TextOverflow.Ellipsis
                         )
                         if (searchMatchReason != null) {
