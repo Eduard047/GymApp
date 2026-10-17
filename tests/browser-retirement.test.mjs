@@ -101,7 +101,7 @@ test("root restores the installable first-party workout application", () => {
   assert.ok(scripts.includes("./live-workout.v3.js"));
   assert.match(rootHtml, /rel="manifest" href="\.\/manifest\.webmanifest"/);
   assert.match(rootHtml, /apple-mobile-web-app-capable/);
-  assert.match(rootHtml, /styles\.v110\.css/);
+  assert.match(rootHtml, /styles\.v111\.css/);
   assert.match(rootHtml, /connect-src 'self' https:\/\/owrcbsrectdgaotndtxy\.supabase\.co/);
   assert.doesNotMatch(rootHtml, /retirement\.v1\.(?:js|css)/);
 });

@@ -15,7 +15,7 @@ const VERSIONED_ASSET_PAIRS = [
   ["confirmed.js", "confirmed.v58.js"],
   ["frame-guard.js", "frame-guard.v56.js"],
   ["theme.js", "theme.v56.js"],
-  ["styles.css", "styles.v110.css"],
+  ["styles.css", "styles.v111.css"],
   ["muscle-regions.js", "muscle-regions.v56.js"],
   ["supabase-config.js", "supabase-config.v58.js"],
   ["state-contract.js", "state-contract.v73.js"],
@@ -619,7 +619,7 @@ test("current versioned pathname assets cannot be mistaken for predecessor asset
     "russian-text.js", "app.js", "workout/landing.css", "workout/landing.js"
   ]);
   const currentPaths = [
-    "confirmed.v59.css", "confirmed.v58.js", "frame-guard.v56.js", "theme.v56.js", "styles.v110.css",
+    "confirmed.v59.css", "confirmed.v58.js", "frame-guard.v56.js", "theme.v56.js", "styles.v111.css",
     "muscle-regions.v56.js", "supabase-config.v58.js", "state-contract.v73.js",
     "garmin-cloud-sync.v58.js", "progression-rules.v57.js", "shared-workout.v66.js",
     "shared-workout-flow.v71.js", "supabase-realtime.v1.js", "live-workout.v3.js",
@@ -803,7 +803,7 @@ test("install reloads one internally consistent fully served version before prom
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/workout/index.html")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/workout/landing.v4.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/theme.v56.js")));
-  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v110.css")));
+  assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/styles.v111.css")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/russian-text.v93.js")));
   assert.ok(worker.addedAssets.some(asset => asset.url.endsWith("/exercise-media/bench_press_0.jpg")));
   assert.equal(worker.addedAssets.some(asset => /retirement(?:\.v1)?\.(?:js|css)$/.test(asset.url)), false);
