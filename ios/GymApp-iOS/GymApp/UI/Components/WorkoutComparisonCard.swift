@@ -4,6 +4,7 @@ import SwiftUI
 /// trained the same exercises. Hidden by the caller when there is no such workout.
 struct WorkoutComparisonCard: View {
     let comparison: WorkoutComparison
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private struct Tile: Identifiable {
         let id: String
@@ -30,12 +31,14 @@ struct WorkoutComparisonCard: View {
                     supporting: supportingText(languageCode: languageCode)
                 )
                 VStack(spacing: 8) {
-                    ForEach(Array(stride(from: 0, to: tiles.count, by: 2)), id: \.self) { start in
+                    // One tile per row at accessibility sizes, so "Раньше 13 / без изменений" is never cut off.
+                    let columns = dynamicTypeSize.isAccessibilitySize ? 1 : 2
+                    ForEach(Array(stride(from: 0, to: tiles.count, by: columns)), id: \.self) { start in
                         HStack(alignment: .top, spacing: 8) {
-                            ForEach(tiles[start ..< min(start + 2, tiles.count)]) { tile in
+                            ForEach(tiles[start ..< min(start + columns, tiles.count)]) { tile in
                                 tileView(tile, languageCode: languageCode)
                             }
-                            if start + 1 >= tiles.count {
+                            if columns == 2, start + 1 >= tiles.count {
                                 Color.clear.frame(maxWidth: .infinity)
                             }
                         }
@@ -61,12 +64,12 @@ struct WorkoutComparisonCard: View {
             Text(gymText("Previous", "Раніше", "Раньше", languageCode: languageCode) + " " + tile.previous)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(GymTheme.textSecondary)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 .minimumScaleFactor(0.8)
             Text(tile.delta)
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(tile.isIncrease ? GymTheme.secondary : GymTheme.textSecondary)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 .minimumScaleFactor(0.8)
         }
         .padding(GymTheme.Spacing.medium)

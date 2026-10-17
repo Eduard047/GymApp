@@ -1309,6 +1309,7 @@ private struct WorkoutSharePayload: Identifiable {
 
 @MainActor
 struct WorkoutDetailView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private enum ActiveAlert: Identifiable {
         case deleteWorkout(WorkoutDetailWorkoutDeletionTarget)
         case deleteItem(WorkoutDetailDeletionTarget)
@@ -1498,11 +1499,17 @@ struct WorkoutDetailView: View {
                         .disabled(pendingDeletion != nil)
                 } else if let workout = store.workout(id: workoutID) {
                     Button(action: beginEditing) {
-                        Text(gymText(
-                            "Edit", "Змінити", "Изменить",
-                            languageCode: gymCurrentLanguageCode()
-                        ))
-                        .frame(minHeight: 44)
+                        // A pencil at accessibility sizes: the word would crowd the title out of the bar.
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Image(systemName: "pencil")
+                                .frame(minWidth: 44, minHeight: 44)
+                        } else {
+                            Text(gymText(
+                                "Edit", "Змінити", "Изменить",
+                                languageCode: gymCurrentLanguageCode()
+                            ))
+                            .frame(minHeight: 44)
+                        }
                     }
                     .accessibilityLabel(gymText(
                         "Edit workout", "Редагувати тренування", "Редактировать тренировку",

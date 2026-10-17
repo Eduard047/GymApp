@@ -682,7 +682,7 @@ struct ProfileView: View {
                 ukrainianMany: "тренувань",
                 languageCode: languageCode
             ).gymBindingFirstSpace + " " + gymText("a week", "на тиждень", "в неделю", languageCode: languageCode)
-        ].joined(separator: " · ")
+        ].joined(separator: "\u{00A0}· ")
     }
 
     private var isCloudAccount: Bool { auth.session?.cloud != nil }

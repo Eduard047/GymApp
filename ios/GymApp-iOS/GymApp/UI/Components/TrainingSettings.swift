@@ -211,7 +211,7 @@ struct TrainingSettingsSummaryRow: View {
                 ukrainianMany: "тренувань",
                 languageCode: languageCode
             ).gymBindingFirstSpace + " " + gymText("a week", "на тиждень", "в неделю", languageCode: languageCode)
-        ].joined(separator: " · ")
+        ].joined(separator: "\u{00A0}· ")
     }
 
     var body: some View {

@@ -769,7 +769,7 @@ public struct WorkoutsView: View {
                     .foregroundStyle(GymTheme.onPrimary)
                     .frame(maxWidth: .infinity, minHeight: 54)
                     .gymAccessibilityVerticalPadding()
-                    .background(GymTheme.brandFill, in: Capsule())
+                    .background(GymTheme.brandFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .appTutorialPrimaryActionTarget()
@@ -1203,7 +1203,7 @@ public struct WorkoutsView: View {
                 .gymAccessibilityVerticalPadding()
             }
             .buttonStyle(.plain)
-            .background(GymTheme.brandFill, in: Capsule())
+            .background(GymTheme.brandFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             .appTutorialPrimaryActionTarget()
             .appTutorialPrimaryActionFrame(
                 isEnabled: tracksTutorialPrimaryActionFrame,
@@ -1235,8 +1235,8 @@ public struct WorkoutsView: View {
                     .gymAccessibilityVerticalPadding()
                 }
                 .buttonStyle(.plain)
-                .background(GymTheme.heroTile, in: Capsule())
-                .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
+                .background(GymTheme.heroTile, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
                 .transition(GymMotion.transition(.opacity.combined(with: .move(edge: .top)), reduceMotion: reduceMotion))
             }
         }
@@ -1278,8 +1278,8 @@ public struct WorkoutsView: View {
             .gymAccessibilityVerticalPadding()
         }
         .buttonStyle(.plain)
-        .background(GymTheme.heroTile, in: Capsule())
-        .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
+        .background(GymTheme.heroTile, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         .accessibilityLabel(gymText(
             "More workout options",
             "Інші дії",
@@ -2371,11 +2371,11 @@ public struct WorkoutsView: View {
 
         if !primary {
             button
-                .background(GymTheme.heroTile, in: Capsule())
-                .overlay { Capsule().strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
+                .background(GymTheme.heroTile, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(GymTheme.heroOutline, lineWidth: 1) }
         } else {
             button
-                .background(GymTheme.brandFill, in: Capsule())
+                .background(GymTheme.brandFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
     }
 
@@ -2418,7 +2418,7 @@ public struct WorkoutsView: View {
                             .foregroundStyle(GymTheme.onPrimary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(GymTheme.brandFill, in: Capsule())
+                            .background(GymTheme.brandFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     }
                 }
                 .font(.subheadline.bold())
@@ -2428,9 +2428,9 @@ public struct WorkoutsView: View {
                 .gymAccessibilityVerticalPadding()
             }
             .buttonStyle(.plain)
-            .background(GymTheme.heroTile, in: Capsule())
+            .background(GymTheme.heroTile, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             .overlay {
-                Capsule().strokeBorder(
+                RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(
                     badgeCount != nil ? GymTheme.heroAccent : GymTheme.heroOutline,
                     lineWidth: 1
                 )
@@ -2863,10 +2863,10 @@ private struct ActivationChipButtonStyle: ButtonStyle {
             .frame(minHeight: 44)
             .background(
                 isSelected ? GymTheme.brandFill : GymTheme.heroTile,
-                in: Capsule()
+                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
             )
             .overlay {
-                Capsule().strokeBorder(
+                RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(
                     isSelected ? GymTheme.brandFill : GymTheme.heroOutline,
                     lineWidth: 1
                 )
