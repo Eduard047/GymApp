@@ -239,22 +239,40 @@ private fun TrainingMetricsCard(uiState: PostWorkoutSummaryUiState) {
             val exercisesLabel = stringResource(R.string.post_workout_metric_exercises)
             val exercisesValue = NumberFormat.getIntegerInstance(locale).format(uiState.exerciseCount)
             val topMuscleLabel = stringResource(R.string.post_workout_metric_top_muscle)
-            // Two tiles side by side only when two scaled tiles really fit the card; otherwise one per row,
-            // so "Главная мышца" and its value are never squeezed, whatever the screen width or font size.
-            val fontScale = LocalDensity.current.fontScale
+            val density = LocalDensity.current
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val labelStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+            val valueStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            // Two tiles side by side only when every label (wrapped by words) and value really fits half the
+            // card; otherwise one per row, so nothing is squeezed, shrunk or cut off at any width or font size.
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                if (maxWidth >= 130.dp * fontScale * 2 + 10.dp) {
+                val rowWidthDp = with(density) { constraints.maxWidth.toDp().value }
+                val sideBySide = remember(
+                    exercisesLabel, exercisesValue, topMuscleLabel, topMuscle,
+                    labelStyle, valueStyle, rowWidthDp, density.density, density.fontScale
+                ) {
+                    fun widthDp(text: String, style: androidx.compose.ui.text.TextStyle) = with(density) {
+                        measurer.measure(text, style, maxLines = 1, softWrap = false).size.width.toDp().value
+                    }
+                    val space = widthDp("a a", labelStyle) - 2 * widthDp("a", labelStyle)
+                    val tiles = listOf(exercisesLabel to exercisesValue, topMuscleLabel to topMuscle).map { (label, value) ->
+                        val words = label.split(' ', '\u00A0').filter { it.isNotEmpty() }.map { widthDp(it, labelStyle) }
+                        maxOf(FeedbackChipsLayout.minTwoLineWidthDp(words, space), widthDp(value, valueStyle))
+                    }
+                    MetricTilesLayout.sideBySide(rowWidthDp, tiles)
+                }
+                if (sideBySide) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(IntrinsicSize.Min),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(MetricTilesLayout.TileGapDp.dp)
                     ) {
                         MetricTile(label = exercisesLabel, value = exercisesValue, modifier = Modifier.weight(1f))
                         MetricTile(label = topMuscleLabel, value = topMuscle, modifier = Modifier.weight(1f))
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(MetricTilesLayout.TileGapDp.dp)) {
                         MetricTile(label = exercisesLabel, value = exercisesValue, modifier = Modifier.fillMaxWidth())
                         MetricTile(label = topMuscleLabel, value = topMuscle, modifier = Modifier.fillMaxWidth())
                     }
@@ -262,6 +280,24 @@ private fun TrainingMetricsCard(uiState: PostWorkoutSummaryUiState) {
             }
         }
     }
+}
+
+/** Layout constants of [MetricTile] rows; the side-by-side decision and the real layout share them. */
+internal object MetricTilesLayout {
+    const val TileGapDp = 10f
+    const val TilePaddingDp = 12f
+    const val TileBorderDp = 1f
+    const val TileCount = 2
+
+    /** Width available to the text of one tile when the tiles share a row of [rowWidthDp]. */
+    fun contentWidthDp(rowWidthDp: Float): Float {
+        val tile = (rowWidthDp - (TileCount - 1) * TileGapDp) / TileCount
+        return tile - 2 * TilePaddingDp - 2 * TileBorderDp
+    }
+
+    /** True while the widest text of every tile ([tileTextWidthsDp]) fits the tile without shrinking or cutting. */
+    fun sideBySide(rowWidthDp: Float, tileTextWidthsDp: List<Float>): Boolean =
+        tileTextWidthsDp.all { it <= contentWidthDp(rowWidthDp) }
 }
 
 /** Layout constants of [WorkoutFeedbackCard]; the stacking decision and the real layout share them. */
