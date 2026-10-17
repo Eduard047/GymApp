@@ -53,7 +53,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -121,6 +120,7 @@ import com.example.gymapp.push.SocialPushType
 import com.example.gymapp.push.matchesSession
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_STEPS
 import com.example.gymapp.ui.components.FIRST_RUN_TUTORIAL_VERSION
+import com.example.gymapp.ui.components.FitSingleLineLabel
 import com.example.gymapp.ui.components.FirstRunTutorialOverlay
 import com.example.gymapp.ui.components.TutorialAnchorRegistry
 import com.example.gymapp.ui.components.TutorialTarget
@@ -2622,30 +2622,17 @@ internal fun GymAppRoot(
                                                         }
                                                     },
                                                     label = {
-                                                        // Four tabs share the bar width, so the label keeps one line and
-                                                        // its text scale is capped: it never breaks mid-word at large
-                                                        // font sizes (the icon and the selected state carry the tab).
-                                                        val barDensity = LocalDensity.current
-                                                        CompositionLocalProvider(
-                                                            LocalDensity provides Density(
-                                                                density = barDensity.density,
-                                                                fontScale = minOf(barDensity.fontScale, 1.0f)
+                                                        // Four tabs share the bar width: the label follows the system
+                                                        // text size and shrinks only when it would not fit, so it never
+                                                        // breaks mid-word.
+                                                        FitSingleLineLabel(
+                                                            text = stringResource(tab.labelRes),
+                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                fontSize = 12.sp,
+                                                                lineHeight = 14.sp,
+                                                                letterSpacing = 0.2.sp
                                                             )
-                                                        ) {
-                                                            Text(
-                                                                text = stringResource(tab.labelRes),
-                                                                style = MaterialTheme.typography.labelSmall.copy(
-                                                                    fontSize = 12.sp,
-                                                                    lineHeight = 14.sp,
-                                                                    letterSpacing = 0.2.sp
-                                                                ),
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                textAlign = TextAlign.Center,
-                                                                maxLines = 1,
-                                                                softWrap = false,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
+                                                        )
                                                     }
                                                 )
                                             }

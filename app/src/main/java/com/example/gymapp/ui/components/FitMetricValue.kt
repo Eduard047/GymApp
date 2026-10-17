@@ -1,6 +1,7 @@
 package com.example.gymapp.ui.components
 
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -84,5 +85,39 @@ internal fun fitMetricValue(
         MetricValueFit(WrappedMetricValueScale, wraps = true)
     } else {
         MetricValueFit(MinMetricValueScale, wraps = false)
+    }
+}
+
+/**
+ * One-line label that follows the system text size and shrinks (to 60%) only when it would not fit
+ * its slot, so a tab label never breaks mid-word and is not cut off by an ellipsis unless even the
+ * smallest size does not fit.
+ */
+@Composable
+fun FitSingleLineLabel(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    textAlign: androidx.compose.ui.text.style.TextAlign = androidx.compose.ui.text.style.TextAlign.Center
+) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier = modifier) {
+        val maxWidthPx = constraints.maxWidth
+        val scale = remember(text, style, maxWidthPx, density.density, density.fontScale) {
+            fitMetricValue(measurer, text, style, maxWidthPx).scale
+        }
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            style = style.copy(
+                fontSize = style.fontSize * scale,
+                lineHeight = style.lineHeight * scale
+            ),
+            textAlign = textAlign,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
