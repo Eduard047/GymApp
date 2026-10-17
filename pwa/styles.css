@@ -1521,7 +1521,8 @@ svg.filled-icon.small-icon {
 .exercise-builder-add svg,
 .exercise-builder-voice svg { flex-shrink: 0; }
 
-.exercise-builder-heading > div { flex: 1 1 10rem; }
+.exercise-builder-heading > div:first-child { flex: 1 1 10rem; }
+.exercise-builder-heading > .plan-menu-wrap { flex: 0 0 auto; }
 .exercise-builder-heading .pill {
   justify-self: start;
   max-width: 100%;
