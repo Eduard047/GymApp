@@ -1680,7 +1680,7 @@ struct WorkoutDetailView: View {
         let locale = AppLanguage(rawValue: languageCode)?.locale ?? AppLanguage.english.locale
         let datePart = gymShortDate(date, languageCode: languageCode)
         let timePart = date.formatted(.dateTime.hour().minute().locale(locale))
-        return "\(datePart) · \(timePart)"
+        return "\(datePart)\u{00A0}· \(timePart)"
     }
 
     /// "1 упражнение · 5 подходов · 3 ч 52 мин · 1 250 кг" — plural-aware
@@ -1712,9 +1712,9 @@ struct WorkoutDetailView: View {
         if !durationText.isEmpty {
             parts.append(durationText)
         }
-        var line = parts.joined(separator: " · ")
+        var line = parts.joined(separator: "\u{00A0}· ")
         if workout.totalVolume > 0 {
-            line += " · \(gymVolumeText(workout.totalVolume, languageCode: languageCode))"
+            line += "\u{00A0}· \(gymVolumeText(workout.totalVolume, languageCode: languageCode))"
         }
         return line
     }
