@@ -383,7 +383,7 @@ test("Russian copy writes ё where it belongs on every client", async () => {
     ios: await readFile("ios/GymApp-iOS/GymApp/Resources/Localizable.xcstrings", "utf8")
   };
   const cyr = "а-яёА-ЯЁ";
-  const wrong = new RegExp(`(?<![${cyr}])(растет|идет|берет|ведет|еще|объем|Объем|Все тело)(?![${cyr}])`);
+  const wrong = new RegExp(`(?<![${cyr}])(растет|идет|берет|ведет|еще|объем|Объем|Все тело|свое)(?![${cyr}])`);
   for (const [name, text] of Object.entries(sources)) {
     const match = wrong.exec(text);
     assert.equal(match, null, `${name}: "${match?.[0]}" should use ё`);

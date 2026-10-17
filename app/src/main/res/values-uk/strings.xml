@@ -664,7 +664,7 @@
     <string name="cd_expand_exercise">Розгорнути вправу</string>
 
     <string name="empty_workouts">У цьому місяці тренувань немає.</string>
-    <string name="empty_exercises">Вправ поки немає.</string>
+    <string name="empty_exercises">Вправ поки немає</string>
     <string name="exercise_library_empty_supporting">Додай власну вправу, щоб почати формувати бібліотеку.</string>
     <string name="empty_progress">У цьому місяці історії немає.</string>
     <string name="empty_detail">Тренування не знайдено.</string>

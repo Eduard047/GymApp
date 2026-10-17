@@ -331,7 +331,7 @@ struct ExercisesView: View {
                                 ? gymText(
                                     "Add a custom exercise to start building your library.",
                                     "Додай власну вправу, щоб почати формувати бібліотеку.",
-                                    "Добавь свое упражнение, чтобы начать формировать библиотеку.",
+                                    "Добавь своё упражнение, чтобы начать формировать библиотеку.",
                                     languageCode: gymCurrentLanguageCode()
                                 )
                                 : gymText(

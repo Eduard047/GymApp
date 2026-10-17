@@ -664,8 +664,8 @@
     <string name="cd_expand_exercise">Развернуть упражнение</string>
 
     <string name="empty_workouts">В этом месяце тренировок нет.</string>
-    <string name="empty_exercises">Упражнений пока нет.</string>
-    <string name="exercise_library_empty_supporting">Добавь свое упражнение, чтобы начать формировать библиотеку.</string>
+    <string name="empty_exercises">Упражнений пока нет</string>
+    <string name="exercise_library_empty_supporting">Добавь своё упражнение, чтобы начать формировать библиотеку.</string>
     <string name="empty_progress">В этом месяце истории нет.</string>
     <string name="empty_detail">Тренировка не найдена.</string>
 

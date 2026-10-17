@@ -646,7 +646,7 @@
     <string name="cd_expand_exercise">Expand exercise</string>
 
     <string name="empty_workouts">No workouts in this month.</string>
-    <string name="empty_exercises">No exercises yet.</string>
+    <string name="empty_exercises">No exercises yet</string>
     <string name="exercise_library_empty_supporting">Add a custom exercise to start building your library.</string>
     <string name="empty_progress">No history in this month.</string>
     <string name="empty_detail">Workout not found.</string>
