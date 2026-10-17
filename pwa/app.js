@@ -15609,7 +15609,7 @@ function trainingSettingsSummaryText() {
     profileValueLabel(profile.goal),
     profileValueLabel(profile.calories),
     trainingSettingsWeeklyText(profile.days)
-  ].join(" · ");
+  ].join("\u00A0· ");
 }
 
 // Every training-profile field is edited in one sheet; other screens show this one-line summary.
