@@ -91,7 +91,7 @@ object RussianText {
         "Workhorse" to "Трудяга",
         "Accumulate 10000 total volume." to "Набери общий объём 10 000.",
         "Adductors" to "Приводные",
-        "All time" to "За все время",
+        "All time" to "За всё время",
         "Apex" to "Апекс",
         "Ascendant" to "Вознесенный",
         "Assisted Pull Up" to "Подтягивание в гравитроне",
