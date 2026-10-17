@@ -2,12 +2,14 @@ package com.example.gymapp.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -28,7 +30,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +63,7 @@ import com.example.gymapp.ui.components.achievementGridColumns
 import com.example.gymapp.ui.components.achievementRarityLabel
 import com.example.gymapp.ui.components.tabularDigits
 import com.example.gymapp.ui.theme.GymCapsuleShape
+import com.example.gymapp.ui.components.brandFillColor
 import com.example.gymapp.ui.util.currentAppLanguageTag
 import com.example.gymapp.ui.util.localizedExerciseName
 import com.example.gymapp.ui.util.localizedMuscleName
@@ -254,6 +256,40 @@ private fun TrainingMetricsCard(uiState: PostWorkoutSummaryUiState) {
     }
 }
 
+/** Layout constants of [WorkoutFeedbackCard]; the stacking decision and the real layout share them. */
+internal object FeedbackChipsLayout {
+    const val CardPaddingDp = 14f
+    const val ChipGapDp = 8f
+    const val ChipLabelPaddingDp = 8f
+    const val ChipBorderDp = 1f
+    const val ChipCount = 3
+
+    /** Width available to the label text of one chip when the chips share a row. */
+    fun labelWidthDp(cardWidthDp: Float): Float {
+        val row = cardWidthDp - 2 * CardPaddingDp
+        val chip = (row - (ChipCount - 1) * ChipGapDp) / ChipCount
+        return chip - 2 * ChipLabelPaddingDp - 2 * ChipBorderDp
+    }
+
+    /** Narrowest width in which a label (its words with their widths) fits in at most two lines. */
+    fun minTwoLineWidthDp(wordWidthsDp: List<Float>, spaceDp: Float): Float {
+        if (wordWidthsDp.size <= 1) return wordWidthsDp.firstOrNull() ?: 0f
+        fun line(words: List<Float>) = words.sum() + spaceDp * (words.size - 1)
+        return (1 until wordWidthsDp.size).minOf { split ->
+            maxOf(line(wordWidthsDp.subList(0, split)), line(wordWidthsDp.subList(split, wordWidthsDp.size)))
+        }
+    }
+
+    /**
+     * The chips stay in one row while every label fits its chip in at most two lines (wrapping by
+     * words, like the web app): a label is never shrunk, cut off or broken mid-word. Otherwise they stack.
+     */
+    fun stacks(cardWidthDp: Float, labelWordWidthsDp: List<List<Float>>, spaceDp: Float): Boolean {
+        val available = labelWidthDp(cardWidthDp)
+        return labelWordWidthsDp.any { minTwoLineWidthDp(it, spaceDp) > available }
+    }
+}
+
 @Composable
 private fun WorkoutFeedbackCard(
     selected: WorkoutFeedback?,
@@ -270,44 +306,49 @@ private fun WorkoutFeedbackCard(
 
     AppPanel(modifier = Modifier.fillMaxWidth(), highlighted = selected != null) {
         androidx.compose.foundation.layout.BoxWithConstraints {
-            // Three chips in a row only while every label fits whole at its natural size (chip
-            // padding included); otherwise they stack, so a label is never shrunk or cut off.
-            val stacked = remember(options, labelStyle, constraints.maxWidth, density.density, density.fontScale) {
-                val padding = with(density) { (14.dp * 2 + 8.dp * 2 + 8.dp * 2).toPx() }
-                val chipWidth = (constraints.maxWidth - padding) / 3f
-                options.any { (_, label) ->
-                    measurer.measure(label, labelStyle, maxLines = 1, softWrap = false).size.width > chipWidth
+            val cardWidthDp = with(density) { constraints.maxWidth.toDp().value }
+            val stacked = remember(options, labelStyle, cardWidthDp, density.density, density.fontScale) {
+                fun widthDp(text: String) = with(density) {
+                    measurer.measure(text, labelStyle, maxLines = 1, softWrap = false).size.width.toDp().value
                 }
+                val words = options.map { (_, label) ->
+                    label.split(' ', '\u00A0').filter { it.isNotEmpty() }.map(::widthDp)
+                }
+                FeedbackChipsLayout.stacks(cardWidthDp, words, spaceDp = widthDp(" "))
             }
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SectionHeading(text = stringResource(R.string.workout_feedback_title))
-            if (stacked) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    options.forEach { (feedback, label) ->
-                        FeedbackChip(
-                            label = label,
-                            selected = selected == feedback,
-                            onClick = { onSelected(feedback) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+            Column(
+                modifier = Modifier.padding(FeedbackChipsLayout.CardPaddingDp.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SectionHeading(text = stringResource(R.string.workout_feedback_title))
+                if (stacked) {
+                    Column(verticalArrangement = Arrangement.spacedBy(FeedbackChipsLayout.ChipGapDp.dp)) {
+                        options.forEach { (feedback, label) ->
+                            FeedbackChip(
+                                label = label,
+                                selected = selected == feedback,
+                                onClick = { onSelected(feedback) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                } else {
+                    // Equal-width chips of equal height: a label that needs two lines makes the whole row taller.
+                    Row(
+                        modifier = Modifier.height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(FeedbackChipsLayout.ChipGapDp.dp)
+                    ) {
+                        options.forEach { (feedback, label) ->
+                            FeedbackChip(
+                                label = label,
+                                selected = selected == feedback,
+                                onClick = { onSelected(feedback) },
+                                modifier = Modifier.weight(1f).fillMaxHeight()
+                            )
+                        }
                     }
                 }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    options.forEach { (feedback, label) ->
-                        FeedbackChip(
-                            label = label,
-                            selected = selected == feedback,
-                            onClick = { onSelected(feedback) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
             }
-        }
         }
     }
 }
@@ -324,57 +365,27 @@ private fun FeedbackChip(
             .heightIn(min = 44.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         shape = GymCapsuleShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        },
-        contentColor = if (selected) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
+        // Selected = accent fill with white text on every screen (the pale dark-theme primary is too weak).
+        color = if (selected) brandFillColor() else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(
-            1.dp,
-            if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
-            }
+            FeedbackChipsLayout.ChipBorderDp.dp,
+            if (selected) brandFillColor() else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
-        ShrinkToFitLabel(
-            text = label,
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 10.dp)
-                .fillMaxWidth()
-        )
-    }
-}
-
-/** One-line label that scales down (to 80%) before it would be cut off, like iOS `minimumScaleFactor(0.8)`. */
-@Composable
-private fun ShrinkToFitLabel(text: String, modifier: Modifier = Modifier) {
-    val base = MaterialTheme.typography.titleSmall
-    var scale by remember(text) { mutableFloatStateOf(1f) }
-    Text(
-        text = text,
-        modifier = modifier,
-        style = base.copy(
-            fontSize = base.fontSize * scale,
-            lineHeight = base.lineHeight * scale
-        ),
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        softWrap = false,
-        overflow = TextOverflow.Ellipsis,
-        textAlign = TextAlign.Center,
-        onTextLayout = { layout ->
-            if (layout.hasVisualOverflow && scale > 0.8f) {
-                scale = (scale - 0.05f).coerceAtLeast(0.8f)
-            }
+        Box(
+            modifier = Modifier.padding(horizontal = FeedbackChipsLayout.ChipLabelPaddingDp.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 2
+            )
         }
-    )
+    }
 }
 
 @Composable
