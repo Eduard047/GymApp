@@ -1044,6 +1044,16 @@ a:focus-visible,
   stroke-linejoin: round;
 }
 
+/* Inline icons next to text scale with it; bar icons keep their fixed hit-target size. */
+.button .small-icon,
+.hero-text-button .small-icon,
+.focus-lens-edit .small-icon,
+.focus-lens-action .small-icon,
+.pill .small-icon {
+  width: 1.3125rem;
+  height: 1.3125rem;
+}
+
 .icon-button svg.filled-icon,
 .tab-button svg.filled-icon,
 svg.filled-icon.small-icon {
@@ -4468,7 +4478,7 @@ button.leaderboard-row {
 }
 
 .focus-lens-edit span,
-.focus-lens-action span { text-wrap: balance; }
+.focus-lens-action span { text-wrap: balance; text-align: center; }
 
 .focus-lens-edit:focus-visible { background: color-mix(in srgb, var(--hero-action) 10%, var(--hero-tile)); }
 
@@ -7079,7 +7089,10 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
   background: var(--hero-tile);
   font-size: 0.875rem;
   font-weight: 600;
-  white-space: nowrap;
+  /* Wraps at large text instead of running past the hero's edge. */
+  white-space: normal;
+  text-align: left;
+  padding-block: 8px;
 }
 
 .garmin-metrics-disclosure { padding: 0; }
@@ -7222,7 +7235,7 @@ summary.active-set-summary { min-height: 44px; cursor: pointer; }
 
 /* Tiles drop to one column as soon as two would not fit (large text), and never push the card wider. */
 .workout-comparison-card .metric-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
 }
 
 .workout-comparison-card .metric-grid > div {
@@ -8459,7 +8472,7 @@ a.settings-row .settings-row-text strong { white-space: normal; overflow-wrap: b
   color: var(--hero-muted);
   font-size: 0.75rem;
   line-height: 1rem;
-  overflow-wrap: normal;
+  overflow-wrap: break-word;
   hyphens: auto;
 }
 .summary-hero-stats strong {

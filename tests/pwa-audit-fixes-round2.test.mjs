@@ -159,10 +159,10 @@ test("metric values wrap the unit when shrinking alone cannot fit, and stat labe
 
 test("large-text layout: comparison tiles reflow, header actions wrap, icons never shrink, stat labels hyphenate", () => {
   assert.match(rule(".workout-comparison-card"), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-  assert.match(rule(".workout-comparison-card .metric-grid"), /auto-fit,\s*minmax\(min\(100%,\s*9\.5rem\),\s*1fr\)/);
+  assert.match(rule(".workout-comparison-card .metric-grid"), /auto-fit,\s*minmax\(min\(100%,\s*8\.5rem\),\s*1fr\)/);
   assert.match(rule(".workout-comparison-card .metric-grid > div"), /min-width:\s*0/);
   assert.match(rule(".exercise-builder-heading"), /flex-wrap:\s*wrap/);
   assert.match(rule(".small-icon"), /flex-shrink:\s*0/);
   assert.match(rule(".summary-hero-stats span"), /hyphens:\s*auto/);
-  assert.match(rule(".summary-hero-stats span"), /overflow-wrap:\s*normal/);
+  assert.match(rule(".summary-hero-stats span"), /overflow-wrap:\s*break-word/);
 });
