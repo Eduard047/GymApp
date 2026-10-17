@@ -105,7 +105,10 @@ fun FitSingleLineLabel(
     BoxWithConstraints(modifier = modifier) {
         val maxWidthPx = constraints.maxWidth
         val scale = remember(text, style, maxWidthPx, density.density, density.fontScale) {
-            fitMetricValue(measurer, text, style, maxWidthPx).scale
+            // A one-line label never wraps: when even the smallest size does not fit, it stays at the
+            // floor (fitMetricValue reports the wrap size for such text, which does not apply here).
+            val fit = fitMetricValue(measurer, text, style, maxWidthPx)
+            if (fit.wraps) MinMetricValueScale else fit.scale
         }
         Text(
             text = text,
