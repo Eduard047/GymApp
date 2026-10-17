@@ -505,38 +505,64 @@ struct PostWorkoutSummaryView: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(spacing: 8) {
                 ForEach(WorkoutFeedback.allCases) { feedback in
-                    feedbackButton(feedback, singleLine: false)
+                    feedbackButton(feedback, wraps: false)
                 }
             }
         } else {
-            // Three chips in a row while every label fits whole at its natural size; otherwise they
-            // stack, so a label such as "В самый раз" is never shrunk or cut off at large text sizes.
+            // Three equal chips in a row; a label may wrap by words to two lines (like the web app)
+            // but is never shrunk or cut off. They stack only when a single word would not fit.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
+                EqualWidthHStack(spacing: 8, minimumChildWidth: feedbackMinimumChipWidth) {
                     ForEach(WorkoutFeedback.allCases) { feedback in
-                        feedbackButton(feedback, singleLine: true)
+                        feedbackButton(feedback, wraps: true)
                     }
                 }
                 VStack(spacing: 8) {
                     ForEach(WorkoutFeedback.allCases) { feedback in
-                        feedbackButton(feedback, singleLine: false)
+                        feedbackButton(feedback, wraps: false)
                     }
                 }
             }
         }
     }
 
-    private func feedbackButton(_ feedback: WorkoutFeedback, singleLine: Bool) -> some View {
+    /// Narrowest chip in which every label fits in at most two lines: for each label the best
+    /// split of its words into two lines, plus the chip's horizontal padding, measured at the
+    /// view's own Dynamic Type size.
+    private var feedbackMinimumChipWidth: CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let font = UIFont.systemFont(
+            ofSize: UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).pointSize,
+            weight: .semibold
+        )
+        func width(_ text: String) -> CGFloat {
+            (text as NSString).size(withAttributes: [.font: font]).width
+        }
+        let widest = WorkoutFeedback.allCases.map { feedback -> CGFloat in
+            let words = feedbackTitle(feedback)
+                .split(whereSeparator: { $0 == " " || $0 == "\u{00A0}" })
+                .map(String.init)
+            guard words.count > 1 else { return width(words.first ?? "") }
+            return (1 ..< words.count).map { split in
+                max(width(words[..<split].joined(separator: " ")), width(words[split...].joined(separator: " ")))
+            }.min() ?? 0
+        }.max() ?? 0
+        return ceil(widest) + 2 * Self.feedbackChipPadding + 2
+    }
+
+    private static let feedbackChipPadding: CGFloat = 12
+
+    private func feedbackButton(_ feedback: WorkoutFeedback, wraps: Bool) -> some View {
         let selected = store.feedback(for: workoutID) == feedback
         return Button {
             saveFeedback(feedback)
         } label: {
             Text(feedbackTitle(feedback))
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(singleLine ? 1 : nil)
-                .fixedSize(horizontal: singleLine, vertical: !singleLine)
+                .lineLimit(wraps ? 2 : 1)
+                .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Self.feedbackChipPadding)
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(WorkoutFeedbackButtonStyle(selected: selected))
@@ -744,13 +770,13 @@ private struct WorkoutFeedbackButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(selected ? Color.white : GymTheme.textPrimary)
             .background(
-                (selected ? GymTheme.primary : GymTheme.surfaceVariant)
+                (selected ? GymTheme.primaryAction : GymTheme.surfaceVariant)
                     .opacity(configuration.isPressed ? 0.72 : 1),
                 in: Capsule()
             )
             .overlay {
                 Capsule()
-                    .strokeBorder(selected ? GymTheme.primary : GymTheme.outlineSoft, lineWidth: 1)
+                    .strokeBorder(selected ? GymTheme.primaryAction : GymTheme.outlineSoft, lineWidth: 1)
             }
     }
 }
@@ -758,5 +784,45 @@ private struct WorkoutFeedbackButtonStyle: ButtonStyle {
 private extension BadgeRarity {
     var displayName: String {
         gymLocalized(rawValue.capitalized)
+    }
+}
+
+
+/// A row of equal-width children that fills the proposed width. Its ideal width is the minimum the
+/// children need (`minimumChildWidth` each), which is what `ViewThatFits` compares with the space
+/// available; children taller than the others make the whole row as tall as the tallest.
+private struct EqualWidthHStack: Layout {
+    var spacing: CGFloat = 8
+    var minimumChildWidth: CGFloat = 0
+
+    private func childWidth(for total: CGFloat, count: Int) -> CGFloat {
+        (total - spacing * CGFloat(count - 1)) / CGFloat(count)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let count = subviews.count
+        let ideal = minimumChildWidth * CGFloat(count) + spacing * CGFloat(count - 1)
+        let width = proposal.width ?? ideal
+        let each = proposal.width == nil ? minimumChildWidth : childWidth(for: width, count: count)
+        let height = subviews
+            .map { $0.sizeThatFits(ProposedViewSize(width: each, height: nil)).height }
+            .max() ?? 0
+        // Below the minimum the row reports its ideal width, so ViewThatFits falls through to the stack.
+        return CGSize(width: max(width, ideal), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let width = childWidth(for: bounds.width, count: subviews.count)
+        var x = bounds.minX
+        for subview in subviews {
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: bounds.height)
+            )
+            x += width + spacing
+        }
     }
 }

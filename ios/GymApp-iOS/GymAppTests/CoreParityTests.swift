@@ -18617,6 +18617,21 @@ final class CoreParityTests: XCTestCase {
     /// "−15"/"+15"/"Стоп" capsules calling the same `adjustManualRest`/
     /// `stopManualRest` actions, and undo reachable via long-press +
     /// accessibility action instead of a standing button.
+    func testIOSWorkoutFeedbackChipsAreEqualWidthWrapByWordsAndStackOnlyWhenAWordDoesNotFit() throws {
+        let summary = try iosSource("GymApp/UI/Screens/PostWorkoutSummaryView.swift")
+        // One row of equal-width chips while every label fits in two lines, otherwise a stack.
+        XCTAssertTrue(summary.contains("ViewThatFits(in: .horizontal) {\n                EqualWidthHStack("))
+        XCTAssertTrue(summary.contains("private struct EqualWidthHStack: Layout"))
+        XCTAssertTrue(summary.contains(".lineLimit(wraps ? 2 : 1)"))
+        // No shrinking and no truncation of the label.
+        XCTAssertFalse(summary.contains("minimumScaleFactor(0.8)\n                .frame(maxWidth: .infinity, minHeight: 44)"))
+        // The measurement uses the view's own Dynamic Type size and the best two-line split.
+        XCTAssertTrue(summary.contains("UIContentSizeCategory(dynamicTypeSize)"))
+        XCTAssertTrue(summary.contains("(1 ..< words.count).map { split in"))
+        // Selected chip: accent fill (white text), not the pale dark-mode primary.
+        XCTAssertTrue(summary.contains("(selected ? GymTheme.primaryAction : GymTheme.surfaceVariant)"))
+    }
+
     func testIOSActiveWorkoutExposesRecordRestAndUndoLifecycle() throws {
         let source = try iosSource("GymApp/UI/Screens/ActiveWorkoutView.swift")
 
