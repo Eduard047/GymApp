@@ -505,27 +505,38 @@ struct PostWorkoutSummaryView: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(spacing: 8) {
                 ForEach(WorkoutFeedback.allCases) { feedback in
-                    feedbackButton(feedback)
+                    feedbackButton(feedback, singleLine: false)
                 }
             }
         } else {
-            HStack(spacing: 8) {
-                ForEach(WorkoutFeedback.allCases) { feedback in
-                    feedbackButton(feedback)
+            // Three chips in a row while every label fits whole at its natural size; otherwise they
+            // stack, so a label such as "В самый раз" is never shrunk or cut off at large text sizes.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(WorkoutFeedback.allCases) { feedback in
+                        feedbackButton(feedback, singleLine: true)
+                    }
+                }
+                VStack(spacing: 8) {
+                    ForEach(WorkoutFeedback.allCases) { feedback in
+                        feedbackButton(feedback, singleLine: false)
+                    }
                 }
             }
         }
     }
 
-    private func feedbackButton(_ feedback: WorkoutFeedback) -> some View {
+    private func feedbackButton(_ feedback: WorkoutFeedback, singleLine: Bool) -> some View {
         let selected = store.feedback(for: workoutID) == feedback
         return Button {
             saveFeedback(feedback)
         } label: {
             Text(feedbackTitle(feedback))
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .lineLimit(singleLine ? 1 : nil)
+                .fixedSize(horizontal: singleLine, vertical: !singleLine)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(WorkoutFeedbackButtonStyle(selected: selected))
